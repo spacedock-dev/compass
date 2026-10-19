@@ -40,6 +40,8 @@ export interface IntentPanelProps {
   readonly drift?: ReactNode;
   /** The What the session has done card, drawn between the Intent card and the Drift card. */
   readonly summary?: ReactNode;
+  /** The Drift card header's model and when the analysis last ran, beside its title. */
+  readonly stamp?: ReactNode;
   /** What the session page composes beneath: the delegated-work line and the departures raised away. */
   readonly children?: ReactNode;
 }
@@ -61,6 +63,7 @@ export function IntentPanel({
   project,
   drift,
   summary,
+  stamp,
   children,
 }: IntentPanelProps) {
   const shell = useShell();
@@ -172,6 +175,7 @@ export function IntentPanel({
               <h2 id="next-session-drift-heading" className="next-session-drift-heading">
                 Drift
               </h2>
+              {stamp}
               <p className="next-session-drift-sub basis-full text-body">{DRIFT_SUBTITLE}</p>
             </div>
             {/* The live monitor and what it does, in the head of the card it controls now that More is retired:

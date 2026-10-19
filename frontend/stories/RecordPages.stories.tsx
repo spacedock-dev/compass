@@ -377,7 +377,7 @@ export const ReadingNamesEntriesItHasNotLoaded: Story = {
   },
 };
 
-/* The entries a reading cites are found at a glance: pressing "Show cited entries" tints each cited row,
+/* The entries a reading cites are found at a glance: pressing a cited entry's number tints each cited row,
    so it stands apart from the list around it. Read from the computed style, since a tint is only visible. */
 export const CitedEntriesAreTinted: Story = {
   render: () => <SessionRecordExample intent reading />,
@@ -392,7 +392,7 @@ export const CitedEntriesAreTinted: Story = {
     const background = (node: HTMLElement) => getComputedStyle(node).backgroundColor;
     await expect(row()).not.toHaveAttribute('data-next-cited');
     const plain = background(row());
-    await userEvent.click(await canvas.findByRole('button', { name: /^Show cited entries/ }));
+    await userEvent.click(await canvas.findByRole('button', { name: /^Show #\d+/ }));
     await waitFor(() => expect(row()).toHaveAttribute('data-next-cited'));
     await expect(background(row())).not.toBe(plain);
     await expect(getComputedStyle(row()).borderLeftWidth).toBe('3px');

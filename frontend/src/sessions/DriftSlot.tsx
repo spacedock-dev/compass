@@ -18,6 +18,7 @@ export function DriftSlot({
   project,
   drift,
   summary,
+  stamp,
   children,
 }: {
   readonly session: Row;
@@ -25,6 +26,7 @@ export function DriftSlot({
   readonly project: string;
   readonly drift?: ReactNode;
   readonly summary?: ReactNode;
+  readonly stamp?: ReactNode;
   readonly children?: ReactNode;
 }) {
   return (
@@ -37,6 +39,7 @@ export function DriftSlot({
       project={project}
       {...(drift ? { drift } : {})}
       {...(summary ? { summary } : {})}
+      {...(stamp ? { stamp } : {})}
     >
       {children}
     </IntentPanel>

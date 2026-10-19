@@ -79,8 +79,8 @@ nowhere. Every other write is refused with a 403 and a sentence saying this is a
 
 The press layer is `ViewOnly`. It stops a press that would edit, save, allow or run, before it reaches
 a handler, and says in one line why, so a reader sees a sentence and not an error from a request that
-was never going to work. Links, disclosures, the select, the marks, Show cited entries, Steer back and
-Copy stay live, because they only read or compose words. Typing needs its own listener: React's
+was never going to work. Links, disclosures, the select, the marks, a finding's cited entry numbers and
+Back to the finding, Steer back and Copy stay live, because they only read or compose words. Typing needs its own listener: React's
 `onBeforeInput` is an older event than the browser's `beforeinput`, which is what typing, pasting and
 deleting raise, so the guard listens for the native one on the node, in the capture phase.
 

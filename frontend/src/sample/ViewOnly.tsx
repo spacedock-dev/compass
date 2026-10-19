@@ -4,7 +4,8 @@ import { isHeld } from './held';
 /* The sample is view only. Nothing it can send reaches a server (`sampleFetch` refuses every write), and
    this stops the press itself, so a reader sees one sentence about why rather than an error from a request
    that was never going to work. Reading controls stay live: links, disclosures, the select, the numbered
-   marks, Show cited entries, Steer back and Copy, which only composes and copies words. Everything else
+   marks, the cited entry numbers and Back to the finding, Steer back and Copy, which only composes and
+   copies words. Everything else
    that edits, saves, allows or runs is held. */
 export function ViewOnly({
   children,

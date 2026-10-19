@@ -24,14 +24,14 @@ export const TOUR: readonly TourNote[] = [
     body: 'One reading asks a model to compare your goal with what is on record. It found a departure: after a clean rebase the agent added a test and started changing code, when only history was meant to change. It is an account of the evidence, never a verification that the work was done.',
   },
   {
+    id: 'cited',
+    title: 'Check the evidence yourself',
+    body: 'Every finding names the entries it rests on, by number. Press a number and Full activity opens on that entry, with every entry the finding cites lit up in the list and the words of the finding beside them, so you can see what the claim stands on.',
+  },
+  {
     id: 'steer',
     title: 'Steer back',
     body: 'A correction written from your own goal and expected outcomes, naming the entries by number. Copy it and paste it into the session yourself. Compass never sends anything into a session.',
-  },
-  {
-    id: 'cited',
-    title: 'Check the evidence yourself',
-    body: 'Every finding names the entries it rests on. Press Show cited entries and Full activity opens on them, lit up in the list, with the words of the finding beside them, so you can see what the claim stands on.',
   },
   {
     id: 'sent',

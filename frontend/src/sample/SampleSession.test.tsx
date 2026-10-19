@@ -123,7 +123,7 @@ describe('the sample session', () => {
     expect(checks.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('lights up the entries a finding cites when Show cited entries is pressed', async () => {
+  it('lights up the entries a finding cites when one of its numbers is pressed, and goes back', async () => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     await mountSample();
@@ -136,6 +136,15 @@ describe('the sample session', () => {
     const cited = [...document.querySelectorAll('[data-next-cited]')];
     expect(cited.length).toBeGreaterThanOrEqual(2);
     for (const row of cited) expect(row.className).toContain('var(--accent)');
+    // The row it named has focus, and Back to the finding returns it to the number, held by nothing.
+    expect(document.activeElement?.getAttribute('data-next-entry-id')).toBe(
+      jump.getAttribute('data-next-cite'),
+    );
+    await act(async () => {
+      fireEvent.click(document.querySelector('[data-next-jump-back]') as HTMLElement);
+    });
+    expect(held()).toBe('');
+    expect(document.activeElement).toBe(jump);
   });
 
   it('composes the stored correction when Steer back is pressed, without sending anything', async () => {

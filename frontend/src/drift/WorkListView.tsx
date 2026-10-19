@@ -106,15 +106,18 @@ export function WorkListView() {
       block: 'center',
     });
   };
-  /* A press of Show cited entries lands once, on the first cited row drawn, as soon as one is: the rows may
+  /* A press of a cited entry lands once, on the row it named or else the first cited row drawn, as soon as one is: the rows may
      arrive with an older page the press asked for. A press whose pages are read with none of its entries drawn
      lands on the sentence saying so instead, so focus never stays on a control whose result is elsewhere. */
   // biome-ignore lint/correctness/useExhaustiveDependencies: a newly read page is the retry trigger, not a value the body reads.
   useEffect(() => {
     if (finding && jump && jumped.current !== jump) {
-      const target = [
+      const rows = [
         ...(panel.current?.querySelectorAll<HTMLElement>('[data-next-entry-id]') ?? []),
-      ].find((node) => finding.citedIds.includes(node.dataset['nextEntryId'] ?? ''));
+      ];
+      const target =
+        rows.find((node) => jump.entry !== null && node.dataset['nextEntryId'] === jump.entry) ??
+        rows.find((node) => finding.citedIds.includes(node.dataset['nextEntryId'] ?? ''));
       if (target) {
         jumped.current = jump;
         land(target);
@@ -135,9 +138,12 @@ export function WorkListView() {
     if (!press) return;
     const origin = press.origin?.isConnected
       ? press.origin
-      : document.querySelector<HTMLElement>(
+      : (document.querySelector<HTMLElement>(
+          `[data-next-cockpit-action="finding-jump"][data-next-finding="${CSS.escape(press.key)}"][data-next-cite="${CSS.escape(press.entry ?? '')}"]`,
+        ) ??
+        document.querySelector<HTMLElement>(
           `[data-next-cockpit-action="finding-jump"][data-next-finding="${CSS.escape(press.key)}"]`,
-        );
+        ));
     if (origin) land(origin);
   };
   const backOnEscape = (event: KeyboardEvent<HTMLElement>) => {

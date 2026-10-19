@@ -166,6 +166,16 @@ first back for the shape and result differentials, `recordedNumbering` in
 the drift browser proof restates the second and the third in the recorded steer box and live estimate.
 Every other word, the placeholders dropped and their order stay held to the recording.
 
+The analysis level's line says "Analysis last run 14:03" where the retired page said "Analysis at 14:03"
+(owner, 2026-10-19), because the old words read as a time inside the session; the Drift card header
+says the same beside the model. The `drift__level` comparison in
+`frontend/src/drift/level.differential.test.ts` projects that one prefix back to the recorded words
+before comparing, and every other field of the analysis level stays held to the recording, which is
+untouched. The departure cards that replace "Model assessment" in the same change draw from the same
+`result.ts` functions, which the `drift__result` comparison still holds unchanged. The first analysis
+journey proof (`frontend/e2e/journey-budget.mjs`, run on demand) now finds the departure's account in
+its card and its cited entries under What; each entry's recorded time moved behind Evidence.
+
 ## The ownership map
 
 [The machine-readable inventory](../scripts/frontend-migration.json) maps each legacy script

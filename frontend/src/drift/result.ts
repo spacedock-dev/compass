@@ -414,3 +414,36 @@ export function entryKind(entry: WorkEntry): string {
         ? 'Agent message'
         : String(entry.type || 'Recorded entry');
 }
+
+/* What a cited entry is, in Compass's own words, beside its number on a finding: never a model's account of
+   it. A raw record type is not a reader's word, so anything unnamed here is a recorded entry. */
+export function citedKind(entry: WorkEntry): string {
+  if (entry.subject === 'check') return `${entry.result || 'Recorded'} check`;
+  if (entry.subject === 'write') return 'File write';
+  if (agentMessage(entry)) return 'Agent message';
+  if (personAuthored(entry)) return 'Your message';
+  return 'Recorded entry';
+}
+
+/* The model a stored reading names, from the stamp the server composes as "<model> · read at HH:MM". Only
+   that shape is split; anything else ("unasked check at HH:MM") names no model rather than guessing. */
+export function stampModel(stamp: string): string {
+  const found = /^(.+?) · read at \d\d:\d\d$/.exec(stamp.trim());
+  return found?.[1]?.trim() ?? '';
+}
+
+/* The Drift card's header line for a stored reading. "Last run", because "Analysis at 22:27" read as a time
+   inside the session (2026-10-15 feedback, item 5); the time is `read_at`'s, never the stamp's text. */
+export function lastRunLine(stamp: string, readAt: number | null): string {
+  if (readAt === null || readAt <= 0) return '';
+  return [stampModel(stamp), `Analysis last run ${clock(readAt)}`].filter(Boolean).join(' · ');
+}
+
+/* The constraint a finding is about, as a card's label says it. An outcome line is numbered only where more
+   than one was read, as What the analysis read numbers them. */
+export function constraintName(key: string, outcomes: number): string {
+  if (key === 'goal') return 'Goal';
+  if (key === CLAIMS) return 'What the agent claimed';
+  const n = key === 'output' ? '1' : key.slice(5);
+  return outcomes > 1 ? `Expected outcome ${n}` : 'Expected outcome';
+}

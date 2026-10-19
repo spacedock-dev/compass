@@ -1,0 +1,807 @@
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
+import {
+  CHECK_DOES_NOT_SHOW_IT,
+  LEVEL_HIDDEN_MARKED,
+  READ_NEVER,
+  READ_SUMMARY,
+  READING_DEFINITION,
+  RESULT_CANT_TELL,
+  RESULT_DEPARTS,
+  RESULT_MARKED,
+  RESULT_NOT_ACCURATE,
+  RESULT_NOTHING_SHOWS,
+  RESULT_UNMARK,
+  UNKNOWN_KEY,
+} from '../src/drift/sentences';
+import { neverDone } from './drift.checks';
+import { routeFor } from './drift.reasons';
+import {
+  DEPARTURE_READING,
+  DriftScenario,
+  failedCheck,
+  fact,
+  passedCheck,
+  type Scenario,
+} from './drift.scenario';
+
+/* The Drift card's result, one story per state it can draw: each departure as its own card (its constraint, the
+   constraint's own words, What as the cited entries by number and Why as the stored detail), then one quiet row
+   per remaining line, Steer back by its unchanged rules, and the quiet footer. The table of these states, with
+   the rendering before and after, is in the pull request. Every story asserts what a reader can check: which
+   constraint a card is about, that each number names a row in Full activity and opens on it, whose words each
+   sentence is, and that nothing says the work was done. */
+
+const meta = {
+  title: 'Drift/Departure cards and quiet rows',
+  component: DriftScenario,
+} satisfies Meta<typeof DriftScenario>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+const scenario = (value: Scenario): Pick<Story, 'args'> => ({ args: { scenario: value } });
+
+/* The record every story reads from, by role: the person's message, a failing and a passing check, the agent's
+   claim, and an agent entry that is not a message. */
+const PERSON = fact('u1', 200, { type: 'user_message', by: 'person:me', summary: 'Ship it' });
+const FAILED = failedCheck('c1', 500);
+const PASSED = passedCheck('c2', 600);
+const CLAIM = fact('m1', 650, {
+  type: 'agent_message',
+  by: 'agent',
+  summary: 'All green locally: the tests pass.',
+});
+const NOTE = fact('n1', 700, { type: 'task_update', by: 'agent', summary: 'Queue worker started' });
+const STAMP = 'claude-sonnet-5-5 · read at 09:38';
+
+const reading = (criteria: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+  ...DEPARTURE_READING,
+  stamp: STAMP,
+  criteria,
+  ...extra,
+});
+const stored = (assessment: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+  annotation_assessment: assessment,
+  annotation_reading_count: 1,
+  ...extra,
+});
+
+const GOAL_DEPARTS = {
+  result: 'departure',
+  cites: ['c1'],
+  detail: 'It stopped running the tests.',
+  clause: 'Ship the queue',
+};
+const GOAL_CONSISTENT = {
+  result: 'consistent with the evidence read',
+  cites: ['c2'],
+  detail: '',
+  clause: 'Ship the queue',
+};
+const LINE_CONSISTENT = {
+  result: 'consistent with the evidence read',
+  cites: ['c2'],
+  detail: '',
+  clause: 'Tests pass',
+};
+
+async function card(canvasElement: HTMLElement): Promise<HTMLElement> {
+  return within(canvasElement).findByRole('region', { name: 'Drift' });
+}
+
+async function result(root: HTMLElement): Promise<HTMLElement> {
+  return waitFor(() => {
+    const node = root.querySelector<HTMLElement>('[data-next-result]');
+    expect(node).not.toBeNull();
+    return node as HTMLElement;
+  });
+}
+
+const departures = (root: HTMLElement) => [
+  ...root.querySelectorAll<HTMLElement>('[data-next-departure]'),
+];
+const quietRow = (root: HTMLElement, key: string) =>
+  root.querySelector<HTMLElement>(`[data-next-result-row="${key}"]`) as HTMLElement;
+const chips = (root: HTMLElement) => [
+  ...root.querySelectorAll<HTMLElement>('[data-next-cite]:not([data-next-cite=""])'),
+];
+const primaries = (root: HTMLElement) => [
+  ...root.querySelectorAll<HTMLElement>('[data-variant="primary"]'),
+];
+
+/* Each number on a finding is the activity list's own: a button named for the number, the constraint and the
+   reader's words, with what the entry is beside it in Compass's words, and a row in Full activity that carries
+   the same number. */
+async function citesResolvably(root: HTMLElement, constraint: string, clause: string) {
+  const found = chips(root);
+  await expect(found.length).toBeGreaterThan(0);
+  for (const chip of found) {
+    const number = chip.textContent ?? '';
+    await expect(number).toMatch(/^#\d+(\.\d+)?$/);
+    await expect(chip).toHaveAccessibleName(
+      `Show ${number} in Full activity for ${clause ? `${constraint}: ${clause}` : constraint}`,
+    );
+    await expect(chip.nextElementSibling?.textContent).toMatch(
+      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry) · /,
+    );
+    const row = document.querySelector<HTMLElement>(
+      `[data-next-entry-id="${CSS.escape(chip.dataset['nextCite'] ?? '')}"]`,
+    );
+    await expect(row).not.toBeNull();
+    await expect(row?.textContent).toContain(number);
+  }
+}
+
+/* A departure card names its constraint, quotes the reader's own words as its headline, and gives Why as the
+   stored detail under its label, so no sentence on it is a model's but the one it is attributed to. */
+async function departureCard(
+  node: HTMLElement,
+  label: string,
+  clause: string,
+  detail: string,
+  constraint: string,
+) {
+  await expect(node).toHaveAttribute('data-next-result-state', 'departs');
+  await expect(node.querySelector('[data-next-departure-label]')).toHaveTextContent(
+    `Departure · ${label}`,
+  );
+  await expect(within(node).getByRole('heading', { level: 4 })).toHaveTextContent(clause);
+  await expect(node).toHaveAccessibleName(clause);
+  const why = node.querySelector('[data-next-departure-why]') as HTMLElement;
+  await expect(why.firstElementChild).toHaveTextContent('Why Compass reads this as drift');
+  await expect(why.lastElementChild).toHaveTextContent(detail);
+  const what = node.querySelector('[data-next-departure-what]') as HTMLElement;
+  await expect(what.firstElementChild).toHaveTextContent('What');
+  await citesResolvably(what, constraint, clause);
+  await expect(node.querySelector('[data-next-departure-status]')).toHaveTextContent(
+    /^Departs; evidence #\d+/,
+  );
+}
+
+async function stamp(root: HTMLElement) {
+  await waitFor(() =>
+    expect(root.querySelector('[data-next-drift-stamp]')).toHaveTextContent(
+      /^claude-sonnet-5-5 · Analysis last run \d\d:\d\d$/,
+    ),
+  );
+}
+
+async function noRetiredResultWords(root: HTMLElement) {
+  await expect(root.textContent).not.toContain('Model assessment');
+  await expect(root.textContent).not.toContain('Show cited entries');
+}
+
+/* The acceptance case: two departures, a line it can't tell and an unbacked claim. Two cards, then a divider and
+   two quiet rows, then Steer back as the one primary. */
+export const TwoDeparturesACantTellAndAClaim: Story = {
+  ...scenario({
+    session: {
+      annotation_line_1: 'Tests pass',
+      annotation_line_2: 'The docs say how to run it',
+      ...stored(
+        reading({
+          goal: GOAL_DEPARTS,
+          line_1: {
+            result: 'departure',
+            cites: ['c1'],
+            detail: 'pytest failed after your words.',
+            clause: 'Tests pass',
+          },
+          line_2: {
+            result: 'not verifiable from available evidence',
+            cites: [],
+            detail: '',
+            clause: 'The docs say how to run it',
+            why: 'check-does-not-show-it',
+          },
+          claims: {
+            result: 'not shown by the record',
+            cites: ['m1'],
+            detail: 'Nothing on record shows the tests passing.',
+            clause: '',
+          },
+        }),
+      ),
+    },
+    facts: [PERSON, FAILED, CLAIM],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await stamp(drift);
+    const heading = await within(shown).findByRole('heading', {
+      name: new RegExp(`^${RESULT_DEPARTS}`),
+    });
+    await expect(heading).toHaveTextContent('2 departures');
+    const cards = departures(shown);
+    await expect(cards.map((node) => node.dataset['nextDeparture'])).toEqual(['goal', 'line_1']);
+    await departureCard(
+      cards[0] as HTMLElement,
+      'Goal',
+      'Ship the queue',
+      'It stopped running the tests.',
+      'Goal',
+    );
+    await departureCard(
+      cards[1] as HTMLElement,
+      'Expected outcome 1',
+      'Tests pass',
+      'pytest failed after your words.',
+      'Expected outcome line 1',
+    );
+    const quiet = shown.querySelector('[data-next-result-quiet]') as HTMLElement;
+    // The divider stands between the cards and the quiet rows.
+    await expect(getComputedStyle(quiet).borderTopStyle).toBe('solid');
+    const cantTell = quietRow(quiet, 'line_2');
+    await expect(cantTell).toHaveAttribute('data-next-result-state', 'cant-tell');
+    await expect(cantTell).toHaveTextContent(`${RESULT_CANT_TELL} · “The docs say how to run it”`);
+    await expect(cantTell).toHaveTextContent(CHECK_DOES_NOT_SHOW_IT);
+    const claim = quietRow(quiet, 'claims');
+    await expect(claim).toHaveAttribute('data-next-result-state', 'unshown');
+    await expect(claim).toHaveTextContent(/What the agent said at #\d+ is not shown by the record/);
+    await citesResolvably(claim, 'What the agent claimed', '');
+    await expect(claim.textContent).toContain('Agent message · All green locally');
+    // The quiet rows come after every card.
+    await expect(
+      (cards[1] as HTMLElement).compareDocumentPosition(quiet) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const steer = await within(drift).findByRole('button', { name: 'Steer back' });
+    await expect(primaries(canvasElement)).toEqual([steer]);
+    await expect(
+      quiet.compareDocumentPosition(steer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await neverDone(shown);
+    await noRetiredResultWords(shown);
+  },
+};
+
+/* A number opens Full activity on that entry, not on the finding's first; Back to the finding returns to it. */
+export const ANumberOpensFullActivityAtItsEntry: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: { ...GOAL_DEPARTS, cites: ['c1', 'c3'] },
+        line_1: LINE_CONSISTENT,
+      }),
+    ),
+    facts: [PERSON, FAILED, failedCheck('c3', 550), PASSED],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    const goal = departures(shown)[0] as HTMLElement;
+    await waitFor(() => expect(chips(goal)).toHaveLength(2));
+    const second = chips(goal)[1] as HTMLElement;
+    await userEvent.click(second);
+    const row = await waitFor(() => {
+      const node = document.activeElement as HTMLElement;
+      expect(node.dataset['nextEntryId']).toBe('c3');
+      return node;
+    });
+    await expect(row).toHaveTextContent(second.textContent ?? '');
+    await expect(document.querySelectorAll('[data-next-cited]').length).toBe(2);
+    await userEvent.click(within(row).getByRole('button', { name: 'Back to the finding' }));
+    await waitFor(() => expect(document.activeElement).toBe(second));
+  },
+};
+
+/* Not reached at this stop, beside a goal consistent with a check, as the tool reported it. No card, no divider,
+   no Steer back. */
+export const NotReachedAndConsistentWithACheck: Story = {
+  ...scenario({
+    session: stored(
+      reading(
+        {
+          goal: GOAL_CONSISTENT,
+          line_1: {
+            result: 'not reached at this stop',
+            cites: ['m1'],
+            detail: 'The work stopped before the tests.',
+            clause: 'Tests pass',
+          },
+        },
+        { scope: 'last-turn' },
+      ),
+    ),
+    facts: [PERSON, PASSED, CLAIM],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await within(shown).findByRole('heading', { name: 'Not reached at this stop.' });
+    await expect(departures(shown)).toHaveLength(0);
+    const quiet = shown.querySelector('[data-next-result-quiet]') as HTMLElement;
+    await expect(getComputedStyle(quiet).borderTopStyle).toBe('none');
+    const goal = quietRow(quiet, 'goal');
+    await expect(goal).toHaveAttribute('data-next-result-state', 'consistent');
+    await expect(goal).toHaveTextContent(/^Consistent with #\d+(\.\d+)? · “Ship the queue”/);
+    await citesResolvably(goal, 'Goal', 'Ship the queue');
+    const line = quietRow(quiet, 'line_1');
+    await expect(line).toHaveAttribute('data-next-result-state', 'not-reached');
+    await expect(line).toHaveTextContent('Not reached at this stop · “Tests pass”');
+    // The tool's report is named as the tool's, in full, behind Evidence.
+    await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
+    await waitFor(() => expect(goal).toHaveTextContent('as the tool reported; not inspected'));
+    await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await neverDone(shown);
+  },
+};
+
+/* Consistent with what the agent said: the agent's own words, never a check. */
+export const ConsistentWithTheAgent: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: { ...GOAL_CONSISTENT, cites: ['m1'] },
+        line_1: LINE_CONSISTENT,
+      }),
+    ),
+    facts: [PERSON, PASSED, CLAIM],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const goal = await waitFor(() => {
+      const node = quietRow(shown, 'goal');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await expect(goal).toHaveTextContent(/^Consistent with what the agent said at #\d+/);
+    await citesResolvably(goal, 'Goal', 'Ship the queue');
+    await expect(goal.textContent).toContain('Agent message · All green locally');
+    await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
+    await waitFor(() => expect(goal).toHaveTextContent('; not a check'));
+    await neverDone(shown);
+  },
+};
+
+/* Consistent with what the session said: an agent entry that is not one of its messages. */
+export const ConsistentWithTheSession: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: { ...GOAL_CONSISTENT, cites: ['n1'] },
+        line_1: LINE_CONSISTENT,
+      }),
+    ),
+    facts: [PERSON, PASSED, NOTE],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const goal = await waitFor(() => {
+      const node = quietRow(shown, 'goal');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await expect(goal).toHaveTextContent(
+      /^Consistent with what the session said at (#\d+(\.\d+)?|\d\d:\d\d)/,
+    );
+    await expect(goal.textContent).toContain('Recorded entry · Queue worker started');
+    await neverDone(shown);
+  },
+};
+
+/* Can't tell, with the page's own reason, and nothing shown, where no reason was given. */
+export const CantTellAndNothingShown: Story = {
+  ...scenario({
+    session: {
+      annotation_line_2: 'The docs say how to run it',
+      ...stored(
+        reading({
+          goal: GOAL_CONSISTENT,
+          line_1: {
+            result: 'not verifiable from available evidence',
+            cites: [],
+            detail: '',
+            clause: 'Tests pass',
+            why: 'check-does-not-show-it',
+          },
+          line_2: {
+            result: 'not verifiable from available evidence',
+            cites: [],
+            detail: '',
+            clause: 'The docs say how to run it',
+          },
+        }),
+      ),
+    },
+    facts: [PERSON, PASSED],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    await within(shown).findByRole('heading', { name: RESULT_CANT_TELL });
+    await expect(departures(shown)).toHaveLength(0);
+    const cantTell = quietRow(shown, 'line_1');
+    await expect(cantTell).toHaveAttribute('data-next-result-state', 'cant-tell');
+    await expect(cantTell).toHaveTextContent(`${RESULT_CANT_TELL} · “Tests pass”`);
+    await expect(cantTell).toHaveTextContent(CHECK_DOES_NOT_SHOW_IT);
+    const nothing = quietRow(shown, 'line_2');
+    await expect(nothing).toHaveTextContent(
+      `${RESULT_NOTHING_SHOWS} · “The docs say how to run it”`,
+    );
+    await expect(chips(nothing)).toHaveLength(0);
+    await neverDone(shown);
+  },
+};
+
+/* The agent's claim, contradicted: the quiet row says where, gives the stored detail and cites both entries. */
+export const ClaimContradicted: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: LINE_CONSISTENT,
+        claims: {
+          result: 'departure',
+          cites: ['m1', 'c1'],
+          detail: 'pytest failed after the agent said the tests pass.',
+          clause: '',
+        },
+      }),
+    ),
+    facts: [PERSON, PASSED, CLAIM, failedCheck('c1', 700)],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const claim = await waitFor(() => {
+      const node = quietRow(shown, 'claims');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await expect(claim).toHaveAttribute('data-next-result-state', 'departs');
+    await expect(claim).toHaveTextContent(
+      /What the agent said at #\d+ is contradicted at #\d+(\.\d+)?/,
+    );
+    await expect(claim).toHaveTextContent('pytest failed after the agent said the tests pass.');
+    await citesResolvably(claim, 'What the agent claimed', '');
+    await expect(chips(claim)).toHaveLength(2);
+    // A claim never departs from the intent: no card for it.
+    await expect(departures(shown)).toHaveLength(0);
+    await neverDone(shown);
+  },
+};
+
+/* The agent's claim, shown by the record: at the check, as the tool reported. */
+export const ClaimShownByTheRecord: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: LINE_CONSISTENT,
+        claims: {
+          result: 'consistent with the evidence read',
+          cites: ['m1', 'c2'],
+          detail: '',
+          clause: '',
+        },
+      }),
+    ),
+    facts: [PERSON, CLAIM, passedCheck('c2', 700)],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const claim = await waitFor(() => {
+      const node = quietRow(shown, 'claims');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await expect(claim).toHaveAttribute('data-next-result-state', 'consistent');
+    await expect(claim).toHaveTextContent(/What the agent said at #\d+ is shown at #\d+(\.\d+)?/);
+    await citesResolvably(claim, 'What the agent claimed', '');
+    await neverDone(shown);
+  },
+};
+
+/* The agent's claim, not shown by the record: about what was read, never that the thing did not happen. With no
+   departure from the intent, Steer back stands for the claim alone, and a claim alone is secondary. */
+export const ClaimNotShownIsASecondarySteerBack: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: LINE_CONSISTENT,
+        claims: {
+          result: 'not shown by the record',
+          cites: ['m1'],
+          detail: '',
+          clause: '',
+        },
+      }),
+    ),
+    facts: [PERSON, PASSED, CLAIM],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    const claim = await waitFor(() => {
+      const node = quietRow(shown, 'claims');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await expect(claim).toHaveTextContent(/What the agent said at #\d+ is not shown by the record/);
+    await citesResolvably(claim, 'What the agent claimed', '');
+    const steer = await within(drift).findByRole('button', { name: 'Steer back' });
+    await expect(steer).not.toHaveAttribute('data-variant', 'primary');
+    await expect(departures(shown)).toHaveLength(0);
+    await neverDone(shown);
+  },
+};
+
+/* The fourth claim state, can't tell, is never drawn as a row: the shape withdraws a claim it cannot place, and
+   a withdrawn claim is the reading saying the agent made none it could check. */
+export const ClaimItCannotTellIsNotDrawn: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: LINE_CONSISTENT,
+        claims: {
+          result: 'consistent with the evidence read',
+          cites: ['m1'],
+          detail: '',
+          clause: '',
+        },
+      }),
+    ),
+    facts: [PERSON, PASSED, CLAIM],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    await waitFor(() => expect(quietRow(shown, 'goal')).not.toBeNull());
+    await expect(quietRow(shown, 'claims')).toBeNull();
+    await expect(shown.textContent).not.toContain('What the agent said');
+    await neverDone(shown);
+  },
+};
+
+/* A later direction still unsettled: the question keeps the head of the card, and the result stays below it. */
+export const PendingLaterDirection: Story = {
+  ...scenario({
+    session: stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
+    facts: [
+      PERSON,
+      FAILED,
+      PASSED,
+      fact('u2', 1100, {
+        type: 'user_message',
+        by: 'person:me',
+        summary: 'Also add a retry to the queue worker.',
+      }),
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const keep = await within(drift).findByRole('button', { name: /^Keep my intent/ });
+    const shown = await result(drift);
+    await expect(shown.contains(keep)).toBe(true);
+    await waitFor(() => expect(departures(shown)).toHaveLength(1));
+    await expect(
+      keep.compareDocumentPosition(departures(shown)[0] as HTMLElement) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // While the question stands, Keep is the one primary and Steer back is not offered.
+    await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await neverDone(shown);
+  },
+};
+
+/* No reader on this machine: the stored reading still draws its cards, the reason stands where Analyze would,
+   and Steer back is primary under a departure as before. */
+export const NoReaderKeepsTheCards: Story = {
+  ...scenario({
+    session: stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
+    facts: [PERSON, FAILED, PASSED],
+    route: routeFor('not-installed'),
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await waitFor(() => expect(departures(shown)).toHaveLength(1));
+    await departureCard(
+      departures(shown)[0] as HTMLElement,
+      'Goal',
+      'Ship the queue',
+      'It stopped running the tests.',
+      'Goal',
+    );
+    await expect(within(drift).queryByRole('button', { name: /^Analyze/ })).toBeNull();
+    const steer = await within(drift).findByRole('button', { name: 'Steer back' });
+    await expect(primaries(canvasElement)).toEqual([steer]);
+    await neverDone(shown);
+  },
+};
+
+/* A stored reading this build refused on read back: said in its own section, with no result and no header line. */
+export const RefusedReading: Story = {
+  ...scenario({ session: { annotation_reading_refused: true, annotation_reading_count: 1 } }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    await expect(
+      await within(drift).findByText(
+        'A reading is stored for this session and this build could not read it, so nothing from it is shown. Asking again replaces it.',
+      ),
+    ).toBeVisible();
+    await expect(within(drift).getByText(READING_DEFINITION)).toBeVisible();
+    await expect(drift.querySelector('[data-next-result]')).toBeNull();
+    await expect(drift.querySelector('[data-next-drift-stamp]')).toBeNull();
+  },
+};
+
+/* A reading carrying a field this build does not know: no verdict of any kind, and no header line. */
+export const MalformedReading: Story = {
+  ...scenario({
+    session: stored({ ...reading({ goal: GOAL_DEPARTS }), surprise: true }),
+    facts: [PERSON, FAILED],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    await expect(await within(drift).findByText(UNKNOWN_KEY)).toBeVisible();
+    await expect(within(drift).getByText('Unrecognised: surprise.')).toBeVisible();
+    await expect(drift.querySelector('[data-next-result]')).toBeNull();
+    await expect(drift.querySelector('[data-next-departure]')).toBeNull();
+    await expect(drift.querySelector('[data-next-drift-stamp]')).toBeNull();
+  },
+};
+
+/* A session blocked on the reader: the departure card stands, Steer back is offered and is not primary, because
+   the answer the session waits for comes first. */
+export const BlockedSessionSteerBackIsNotPrimary: Story = {
+  ...scenario({
+    session: {
+      state: 'needs_input',
+      ...stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
+    },
+    facts: [PERSON, FAILED, PASSED],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await waitFor(() => expect(departures(shown)).toHaveLength(1));
+    const steer = await within(drift).findByRole('button', { name: 'Steer back' });
+    await expect(steer).not.toHaveAttribute('data-variant', 'primary');
+    await expect(primaries(drift)).toEqual([]);
+    await neverDone(shown);
+  },
+};
+
+/* A current Pi result: the same cards, and no Steer back, because Compass writes no correction for Pi. */
+export const CurrentPiResult: Story = {
+  ...scenario({
+    harness: 'pi',
+    session: stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
+    facts: [
+      fact('u1', 200, { type: 'user_message', by: 'person:me', summary: 'Ship it' }, 'pi'),
+      failedCheck('c1', 500, 'pi'),
+      passedCheck('c2', 600, 'pi'),
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await waitFor(() => expect(departures(shown)).toHaveLength(1));
+    await departureCard(
+      departures(shown)[0] as HTMLElement,
+      'Goal',
+      'Ship the queue',
+      'It stopped running the tests.',
+      'Goal',
+    );
+    await stamp(drift);
+    await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await expect(primaries(canvasElement)).toHaveLength(0);
+    await neverDone(shown);
+  },
+};
+
+/* Mark as inaccurate and What the analysis read share one quiet footer row; the mark keeps its effect and Undo. */
+export const FooterMarkAsInaccurateAndUndo: Story = {
+  ...scenario({
+    session: stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
+    /* The person's message after the failed check, so Steer back stands on the analysis alone and the mark is
+       seen to withdraw it. */
+    facts: [FAILED, fact('u1', 550, { type: 'user_message', by: 'person:me' }), PASSED],
+    keepsMarks: true,
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    const footer = await waitFor(() => {
+      const node = shown.querySelector<HTMLElement>('[data-next-result-footer]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    const mark = await within(footer).findByRole('button', { name: RESULT_NOT_ACCURATE });
+    const read = within(footer).getByRole('button', { name: READ_SUMMARY });
+    // One row: the two controls share a line at this width.
+    await expect(
+      Math.abs(mark.getBoundingClientRect().top - read.getBoundingClientRect().top),
+    ).toBeLessThan(mark.getBoundingClientRect().height);
+    await userEvent.click(mark);
+    await waitFor(() =>
+      expect(footer.querySelector('[data-next-result-mark]')).toHaveAttribute(
+        'data-next-result-mark',
+        'marked',
+      ),
+    );
+    await expect(within(footer).getByRole('status')).toHaveTextContent(RESULT_MARKED);
+    await expect(drift.querySelector('[data-next-drift-marked]')).toHaveTextContent(
+      LEVEL_HIDDEN_MARKED,
+    );
+    await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await userEvent.click(within(footer).getByRole('button', { name: RESULT_UNMARK }));
+    await waitFor(() =>
+      expect(footer.querySelector('[data-next-result-mark]')).toHaveAttribute(
+        'data-next-result-mark',
+        'unmarked',
+      ),
+    );
+    await within(drift).findByRole('button', { name: 'Steer back' });
+  },
+};
+
+/* What the analysis read, from the footer: the model, the intent, the session and what is never read. */
+export const FooterWhatTheAnalysisRead: Story = {
+  ...scenario({
+    session: stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
+    facts: [PERSON, FAILED, PASSED],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const footer = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-result-footer]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await userEvent.click(within(footer).getByRole('button', { name: READ_SUMMARY }));
+    const read = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-read]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect([...read.querySelectorAll('h4')].map((h) => h.textContent)).toEqual([
+      'Model',
+      'Your intent',
+      'The session',
+      'Not read',
+    ]);
+    await expect(read.querySelector('[data-next-read-section="model"]')).toHaveTextContent(STAMP);
+    await expect(read.querySelector('[data-next-read-section="not-read"]')).toHaveTextContent(
+      READ_NEVER,
+    );
+  },
+};
+
+/* Raised while you were away: the unasked lane's rows keep their own section under the result, collapsed under
+   their count, and the reading's cards do not repeat them. */
+export const RaisedWhileYouWereAway: Story = {
+  ...scenario({
+    payload: { unasked: true },
+    session: {
+      ...stored(reading({ goal: GOAL_DEPARTS, line_1: LINE_CONSISTENT })),
+      departures: [
+        {
+          constraint: 'TYPED GOAL',
+          at: 960,
+          clause: 'Ship the queue',
+          reading: 'It stopped running the tests.',
+          revision: 3,
+          cutoff: 970,
+          evidence: 'pytest failed',
+        },
+      ],
+      departure_checked: true,
+    },
+    facts: [PERSON, FAILED, PASSED],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    const away = await within(drift).findByRole('button', {
+      name: 'Raised while you were away: 1',
+    });
+    await expect(
+      shown.compareDocumentPosition(away) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await expect(shown.contains(away)).toBe(false);
+    await waitFor(() => expect(departures(shown)).toHaveLength(1));
+  },
+};
