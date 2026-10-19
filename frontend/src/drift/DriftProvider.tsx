@@ -1,5 +1,5 @@
 import './drift.css';
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { payloadSessions } from '../api/bootstrap';
 import { compatSessKey, contextKey, stableProjectKey } from '../api/identity';
 import { useLiveEstimateOn } from '../intent/liveMonitor';
@@ -93,23 +93,32 @@ export function DriftProvider({
   const [chosen, setChosen] = useState<Jump | null>(null);
   const [settled, setSettled] = useState<Jump | null>(null);
   const [missing, setMissing] = useState<JumpMissing | null>(null);
+  // The latest press: a read that ends after another press began says nothing about the one now standing.
+  const latestPress = useRef<Jump | null>(null);
+  const readAt = model.raw?.['read_at'];
+  const pressed =
+    chosen?.session === key && chosen.readAt === readAt
+      ? (model.shape?.criteria.find((row) => row.key === chosen.key) ?? null)
+      : null;
   /* A selection stands while its cited rows are held, and while the pages its press asked for are still being
      read, when none may be held yet. */
-  const finding =
-    chosen?.session === key && chosen.readAt === model.raw?.['read_at']
-      ? (model.shape?.criteria.find(
-          (row) => row.key === chosen.key && (row.citedIds.length || settled !== chosen),
-        ) ?? null)
-      : null;
+  const finding = pressed && (pressed.citedIds.length || settled !== chosen) ? pressed : null;
+  /* Every cited entry held and none drawn as the finding's: the reading's own rules (its window, its request,
+     its limit) set them aside. Said where the press would have landed, so focus has somewhere to go. */
+  if (chosen && settled === chosen && pressed && !pressed.citedIds.length && !missing)
+    setMissing({ press: chosen, count: 0, reason: 'unshown' });
   // Invalidation ends the press, so returning to its session or citations cannot restore its marks.
   if (chosen && !finding) setChosen(null);
-  if (missing && missing.press.session !== key) setMissing(null);
+  // The note answers one press on one reading; a new reading or another session takes it down, as it does `chosen`.
+  if (missing && (missing.press.session !== key || missing.press.readAt !== readAt))
+    setMissing(null);
   /* A press of Show cited entries opens Full activity and, where an entry it cites is not one the page holds,
      reads older record pages until it is, the record's start, or the page cap. The reader asked for these
      entries, so this is their read, as Show more is; docs/design-reader-state.md#the-inventory owns it.
      Whatever is still not held when the read ends is counted, and the list says so. */
   const chooseFinding = (findingKey: string, origin: HTMLElement | null = null) => {
-    const next: Jump = { session: key, readAt: model.raw?.['read_at'], key: findingKey, origin };
+    const next: Jump = { session: key, readAt, key: findingKey, origin };
+    latestPress.current = next;
     setChosen(next);
     setSettled(null);
     setMissing(null);
@@ -118,10 +127,17 @@ export function DriftProvider({
     const identity = model.identity;
     const scope = { projectKey: model.projectKey, session: model.session, cited };
     const settle = () => {
-      const held = heldIds(ctx.shell.runtime.store.getSnapshot(), scope);
+      if (latestPress.current !== next) return;
+      const snapshot = ctx.shell.runtime.store.getSnapshot();
+      const held = heldIds(snapshot, scope);
       const count = cited.filter((id) => !held.has(id)).length;
+      /* "Does not list it" only once the record's start was read: the page cap or a failed page also end the
+         read, and older pages may still hold the entry then. */
+      const reached =
+        snapshot.records.get(contextKey(model.projectKey, model.session as never))?.reachedStart ===
+        true;
       setSettled(next);
-      setMissing(count ? { press: next, count } : null);
+      setMissing(count ? { press: next, count, reason: reached ? 'start' : 'stopped' } : null);
     };
     if (!identity || !cited.length) {
       settle();

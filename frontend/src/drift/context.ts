@@ -14,10 +14,13 @@ export interface Jump {
   readonly origin: HTMLElement | null;
 }
 
-/* The cited entries a press could not bring into the list once its pages were read. */
+/* The cited entries a press could not bring into the list once its pages were read, and why the read ended:
+   at the record's start, short of it (the page cap or a failed page), or with every entry held but set aside by
+   the reading's own rules (`count` is 0 then). */
 export interface JumpMissing {
   readonly press: Jump;
   readonly count: number;
+  readonly reason: 'start' | 'stopped' | 'unshown';
 }
 
 export interface DriftValue {
@@ -25,7 +28,7 @@ export interface DriftValue {
   readonly model: DriftModel;
   readonly finding: Criterion | null;
   readonly jump: Jump | null;
-  /** What the last press could not load, kept until the next press or another session. */
+  /** What the last press could not load, kept until the next press, a new reading or another session. */
   readonly jumpMissing: JumpMissing | null;
   readonly chooseFinding: (key: string, origin?: HTMLElement | null) => void;
 }

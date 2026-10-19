@@ -36,9 +36,16 @@ export function unloadedCites(count: number): string {
     ? 'This reading cites an entry that is not listed. Show more, under the list, may load it.'
     : `This reading cites ${String(count)} entries that are not listed. Show more, under the list, may load them.`;
 }
-/* What a press of Show cited entries found it could not list, once every page it may read has been read. "May
-   not": the record pages may stop short of the entry, or it may not be an entry they return. */
-export function missingCites(count: number): string {
+/* What a press of Show cited entries found it could not list, once every page it may read has been read. Only a
+   read that reached the record's start may say the record does not list it; one that stopped short (the page
+   cap, a failed page) says Show more may still load it, as `unloadedCites` does. */
+export function missingCites(count: number, reason: 'start' | 'stopped' | 'unshown'): string {
+  if (reason === 'unshown')
+    return 'The entries this finding cites are loaded, but none is marked in the list: they fall outside what this reading read, or its stated limit sets them aside.';
+  if (reason === 'stopped')
+    return count === 1
+      ? 'An entry this finding cites could not be loaded: the read stopped before the start of the record. Show more, under the list, may load it.'
+      : `${String(count)} entries this finding cites could not be loaded: the read stopped before the start of the record. Show more, under the list, may load them.`;
   return count === 1
     ? 'An entry this finding cites could not be loaded: the record read for this session does not list it.'
     : `${String(count)} entries this finding cites could not be loaded: the record read for this session does not list them.`;

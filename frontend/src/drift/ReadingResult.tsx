@@ -126,6 +126,9 @@ function ResultItem({
   const full = resultStatus(row, numbers, byId);
   const unloaded =
     row.unloaded > 0 && olderEntriesRemain(record, entryWindow(model.session, model.payload));
+  /* The press reads by the record's cursor alone, with no window shortcut, so a retained reading that cites an
+     entry from before the current window keeps its way there. The sentence above stays window-bound. */
+  const loadable = row.unloaded > 0 && record?.status === 'loaded' && !record.reachedStart;
   const Tag = tag;
   return (
     <Tag
@@ -141,7 +144,7 @@ function ResultItem({
       <span className="next-cockpit-result-body">
         <ClauseCell row={row} />
         <em className="next-cockpit-reading-result">{status}</em>
-        <FindingJump row={row} loadable={unloaded} />
+        <FindingJump row={row} loadable={loadable} />
         {row.key === CLAIMS && row.result === DEPARTURE ? (
           <Account row={row} showClause={false} />
         ) : null}

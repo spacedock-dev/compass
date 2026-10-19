@@ -152,6 +152,12 @@ export function WorkListView() {
       className="inline underline"
       data-next-jump-back
       onClick={back}
+      onKeyDown={(event) => {
+        // Inside the row or the note, so the page's own Escape (back to the session's home) must not see it.
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        back();
+      }}
     >
       Back to the finding
     </Button>
@@ -185,7 +191,6 @@ export function WorkListView() {
     const boundary = panel.current.querySelector<HTMLElement>('[data-record-stop]');
     (retained ?? firstNew ?? boundary)?.focus({ preventScroll: true });
   }, [record]);
-  const missing = jumpMissing?.count ?? 0;
   const hasChecks = list.rows.some((row) => 'check' in row.head && row.head.check);
   const about = (
     <>
@@ -214,7 +219,7 @@ export function WorkListView() {
         data-next-cockpit-work
       >
         {list.anchor ? <p className="next-cockpit-work-anchor">{list.anchor}</p> : null}
-        {missing ? (
+        {jumpMissing ? (
           <p
             className="next-cockpit-work-absent"
             role="status"
@@ -222,7 +227,7 @@ export function WorkListView() {
             data-next-jump-missing
             onKeyDown={backOnEscape}
           >
-            {missingCites(missing)} {backButton}
+            {missingCites(jumpMissing.count, jumpMissing.reason)} {backButton}
           </p>
         ) : null}
         {list.unnumbered ? <p className="next-cockpit-work-absent">{list.unnumbered}</p> : null}

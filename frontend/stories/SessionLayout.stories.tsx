@@ -34,11 +34,11 @@ const message = (n: number) => ({
 });
 
 /* A stored reading whose Goal cites what `cites` names: `e5` sits on the older record page, `ghost` on none. */
-const reading = (cites: readonly string[]) => ({
+const reading = (cites: readonly string[], readAt: number, windowStart: number) => ({
   revision_read: 1,
   revision_read_at: G - 190,
-  window_start: G - 200,
-  read_at: G - 10,
+  window_start: windowStart,
+  read_at: readAt,
   evidence_through: G - 10,
   goal_source: 'typed',
   scope: 'last-turn',
@@ -75,20 +75,50 @@ interface Log {
   answers: string[];
   asking: boolean;
   release: (() => void) | null;
+  readAt: number;
+  served: number;
+  stallOlder: boolean;
+  olderAsked: boolean;
+  releaseOlder: (() => void) | null;
 }
-const log: Log = { answers: [], asking: false, release: null };
+const log: Log = {
+  answers: [],
+  asking: false,
+  release: null,
+  readAt: G - 10,
+  served: 0,
+  stallOlder: false,
+  olderAsked: false,
+  releaseOlder: null,
+};
 
+/* `windowStart` is the session's current intent window; the stored reading keeps its own, so a later window
+   makes it a retained reading whose citations may sit before the one now open. `stallOlder` holds the older
+   record page until the story releases it. */
 function PageExample({
   asking = false,
   cites = null,
+  windowStart = G - 200,
+  stallOlder = false,
+  ended = false,
+  readingWindow = G - 200,
 }: {
   readonly asking?: boolean;
   readonly cites?: readonly string[] | null;
+  readonly windowStart?: number;
+  readonly stallOlder?: boolean;
+  readonly ended?: boolean;
+  readonly readingWindow?: number;
 }) {
   const [shell] = useState(() => {
     log.answers = [];
     log.asking = asking;
     log.release = null;
+    log.readAt = G - 10;
+    log.served = 0;
+    log.stallOlder = stallOlder;
+    log.olderAsked = false;
+    log.releaseOlder = null;
     const history = fakeRouterEnvironment('#n=session:demo:claude:s1');
     let generation = G;
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -101,7 +131,8 @@ function PageExample({
       doc: null,
       reducedMotion: () => true,
       fetch: async (url, init) => {
-        if (url.startsWith('/api/data'))
+        if (url.startsWith('/api/data')) {
+          log.served += 1;
           return json({
             generated: generation++,
             annotate: true,
@@ -140,20 +171,27 @@ function PageExample({
                 delegated_unpaired: 1,
                 delegated_visibility: 'full',
                 delegated_latest_launch_at: G - 300,
+                // Quiet for 50 minutes with a launch unpaired, so the "still running?" check is drawn.
+                delegated_quiet_since: G - 3000,
+                ...(ended ? { ended_at: G - 60 } : {}),
                 reading_eligibility: { ok: true, reason: null, until: null, sentence: null },
                 annotation_goal: 'Synthetic goal',
                 annotation_revision: 1,
                 annotation_revision_count: 1,
                 annotation_at: G - 200,
                 annotation_goal_saved_at: G - 200,
-                annotation_window_start: G - 200,
+                annotation_window_start: windowStart,
                 annotation_binding_why: 'These words are bound to claude:s1.',
                 ...(cites
-                  ? { annotation_reading_count: 1, annotation_assessment: reading(cites) }
+                  ? {
+                      annotation_reading_count: 1,
+                      annotation_assessment: reading(cites, log.readAt, readingWindow),
+                    }
                   : {}),
               },
             ],
           });
+        }
         if (url === '/api/answer') {
           log.answers.push(String(init?.body));
           await new Promise<void>((resolve) => {
@@ -168,6 +206,12 @@ function PageExample({
           return json({ annotations: [], intent_revision: 'r1' });
         if (url.startsWith('/api/session-record')) {
           const older = url.includes('before=');
+          if (older && log.stallOlder) {
+            log.olderAsked = true;
+            await new Promise<void>((resolve) => {
+              log.releaseOlder = resolve;
+            });
+          }
           return json({
             state: 'ok',
             session: { harness: 'claude', sid: 's1' },
@@ -294,12 +338,28 @@ export const MoreIsRetired: Story = {
       inIntent.getAllByRole('button', { name: 'Discard everything' })[0],
     ).toHaveAttribute('aria-expanded', 'false');
     await expect(inIntent.getByRole('button', { name: /^Later directions: / })).toBeVisible();
+    // Behind their summaries: the saved stamp's definition and binding key, the binding sentence, and the
+    // limit under Later directions.
+    await userEvent.click(inIntent.getByRole('button', { name: /^Saved · reads from/ }));
+    await waitFor(() => expect(inIntent.getByText('Each save is a revision.')).toBeVisible());
+    await expect(intent.querySelector('.next-cockpit-held-bound')).toHaveTextContent(/s1/);
+    await userEvent.click(inIntent.getByRole('button', { name: 'About these saved words' }));
+    await waitFor(() =>
+      expect(inIntent.getByText('These words are bound to claude:s1.')).toBeVisible(),
+    );
+    await userEvent.click(inIntent.getByRole('button', { name: /^Later directions: / }));
+    await waitFor(() =>
+      expect(inIntent.getByText(/^Nothing here decides whether it changes/)).toBeVisible(),
+    );
     const inDrift = within(drift);
     const head = drift.querySelector('header') as HTMLElement;
     await expect(within(head).getByRole('switch', { name: 'Live monitor' })).toBeVisible();
     await expect(within(head).getByText(DRIFT_SUBTITLE)).toBeVisible();
     await expect(within(head).getByText(LIVE_HINT)).toBeVisible();
     await expect(inDrift.getByText(/^Delegated work: 2 recorded launches/)).toBeVisible();
+    await expect(
+      inDrift.getByText(/^Is the work this session launched still running\?/),
+    ).toBeVisible();
     await expect(inDrift.getByRole('button', { name: 'Analyze drift' })).toBeVisible();
     await expect(inDrift.queryByRole('button', { name: 'Turn off readings' })).toBeNull();
     await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
@@ -307,6 +367,24 @@ export const MoreIsRetired: Story = {
     await waitFor(() => expect(off).toBeVisible());
     await expect(off.closest('[data-slot="popover-content"]')).not.toBeNull();
     await userEvent.keyboard('{Escape}');
+  },
+};
+
+/* An ended session: the note that nothing is promised to read what is saved sits in About these saved words. */
+export const MoreIsRetiredForAnEndedSession: Story = {
+  render: () => <PageExample ended />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    const about = await canvas.findByRole('button', { name: 'About these saved words' });
+    await userEvent.click(about);
+    await waitFor(() =>
+      expect(
+        canvas.getByText(
+          'This session has ended. Anything you save against it is kept, and nothing is promised to read it.',
+        ),
+      ).toBeVisible(),
+    );
   },
 };
 
@@ -403,6 +481,117 @@ export const CitationThatCannotLoadSaysSo: Story = {
     await expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100);
     await userEvent.click(within(note).getByRole('button', { name: 'Back to the finding' }));
     await expect(document.activeElement).toBe(jump());
+    // Escape on the way back, too, returns to the finding rather than leaving the session page.
+    await userEvent.click(jump());
+    // The press takes the old sentence down and draws its own.
+    const again = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-jump-missing]');
+      if (!found || document.activeElement !== found) throw new Error('not landed yet');
+      return found;
+    });
+    within(again).getByRole('button', { name: 'Back to the finding' }).focus();
+    await userEvent.keyboard('{Escape}');
+    await expect(document.activeElement).toBe(jump());
+    await expect(
+      canvas.getByRole('heading', { level: 1, name: 'Synthetic layout session' }),
+    ).toBeVisible();
+  },
+};
+
+/* A retained reading: the intent was saved again with a later window, and the Goal cites `e5`, from before
+   that window and on the older record page. The first page already reaches past the window, so Show more says
+   nothing about older entries, yet the press still reads the older page and lands on the entry. */
+export const RetainedReadingCitesBeforeTheWindow: Story = {
+  render: () => <PageExample cites={['e5']} windowStart={G - 30} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThan(0),
+    );
+    const jump = await canvas.findByRole('button', {
+      name: 'Show cited entries in Full activity for Goal: Synthetic goal',
+    });
+    await expect(canvasElement.querySelector('[data-next-unloaded]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
+    await userEvent.click(jump);
+    const row = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="e5"]');
+      if (!found) throw new Error('the older page has not arrived');
+      return found;
+    });
+    await waitFor(() => expect(document.activeElement).toBe(row));
+    await expect(row).toHaveAttribute('data-next-cited');
+  },
+};
+
+/* The Goal cites `e5`, on the older page and from before the window the reading itself read. The press loads it,
+   but the reading's own rules set it aside, so no row is marked: the sentence says so and takes focus. */
+export const CitationSetAsideByTheReadingSaysSo: Story = {
+  render: () => <PageExample cites={['e5']} readingWindow={G - 60} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole('button', {
+        name: 'Show cited entries in Full activity for Goal: Synthetic goal',
+      }),
+    );
+    const note = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-jump-missing]');
+      if (!found) throw new Error('the read has not finished');
+      return found;
+    });
+    await expect(note).toHaveTextContent(
+      /^The entries this finding cites are loaded, but none is marked/,
+    );
+    await waitFor(() => expect(document.activeElement).toBe(note));
+    await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).not.toBeNull();
+    await expect(canvasElement.querySelector('[data-next-cited]')).toBeNull();
+  },
+};
+
+async function pollWithNewReading(canvasElement: HTMLElement) {
+  const before = log.served;
+  log.readAt = G - 5;
+  await userEvent.click(within(canvasElement).getByRole('button', { name: 'Simulate board poll' }));
+  await waitFor(() => expect(log.served).toBeGreaterThan(before));
+}
+
+/* The press's older page is slow, and a new reading arrives while it is read. When the page finally answers,
+   the press it served belongs to a reading that is gone, so no "could not be loaded" sentence appears. */
+export const SlowReadEndsAfterANewReading: Story = {
+  render: () => <PageExample cites={['ghost']} stallOlder />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const jump = await canvas.findByRole('button', {
+      name: 'Show cited entries in Full activity for Goal: Synthetic goal',
+    });
+    await userEvent.click(jump);
+    await waitFor(() => expect(log.releaseOlder).not.toBeNull());
+    await pollWithNewReading(canvasElement);
+    log.releaseOlder?.();
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(100),
+    );
+    // Long enough for the ended read's settle to have drawn the sentence, were it going to.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await expect(canvasElement.querySelector('[data-next-jump-missing]')).toBeNull();
+  },
+};
+
+/* The sentence stands, then a new reading arrives: the sentence and the press it answered go with the old
+   reading, and the control it kept drawn goes too, since the record has been read to its start. */
+export const NoteLeavesWithItsReading: Story = {
+  render: () => <PageExample cites={['ghost']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const name = 'Show cited entries in Full activity for Goal: Synthetic goal';
+    await userEvent.click(await canvas.findByRole('button', { name }));
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-jump-missing]')).not.toBeNull(),
+    );
+    await pollWithNewReading(canvasElement);
+    await waitFor(() => expect(canvasElement.querySelector('[data-next-jump-missing]')).toBeNull());
+    await expect(canvas.queryByRole('button', { name })).toBeNull();
   },
 };
 

@@ -147,11 +147,11 @@
 
 .next-session-detail--blocked{box-shadow:inset 3px 0 var(--amber)}
 /* ===== SESSION ===== */
-/* Two columns under a full-width header (DRC-4680): the activity, and the
-   Intent and drift panel at the design's 460px. The panel is first in the
-   markup and placed in the second track, so it leads a single column without
-   a reordering trick. The page scrolls as one document with no scroll
-   container; only the spent-budget banner sticks, and it holds no state. */
+/* One column at every width (owner, 2026-10-19): the header, the answer
+   block, Intent, What the session has done, Drift and Full activity, in that
+   order, with no second track. The page scrolls as one document with no
+   scroll container; only the spent-budget banner sticks, and it holds no
+   state. */
 .next-session-detail{margin:12px 0 0;padding:0 0 34px;box-shadow:none}
 .next-session-panel{display:flex;flex-direction:column;gap:var(--sp-5);min-width:0}
 .next-session-activity{min-width:0}

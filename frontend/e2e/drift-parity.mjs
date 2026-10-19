@@ -109,6 +109,9 @@ const summarizeCard = () => {
     trigger.after(panels[0].cloneNode(true));
     joined.add(trigger);
   }
+  /* Predates the one-column page (2026-10-19): the session More is retired and these parts now sit in the
+     Drift card's head and the Intent card, so this lookup finds nothing until the proof is brought forward.
+     The proof is on demand only; docs/design-reading-a-session.md#where-everything-in-more-went is the map. */
   const more = document.querySelector('[data-next-session-more]');
   const copy = (selector) => more?.querySelector(selector)?.cloneNode(true);
   const header = card.querySelector('.next-session-drift-head');
@@ -675,8 +678,8 @@ try {
         .locator('[data-next-finding]')
         .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label')));
       assert.deepEqual(names, [
-        'Show cited entries in Session activity for Goal: Ship the queue worker',
-        'Show cited entries in Session activity for Expected outcome line 1: Tests pass',
+        'Show cited entries in Full activity for Goal: Ship the queue worker',
+        'Show cited entries in Full activity for Expected outcome line 1: Tests pass',
       ]);
       assert.equal(new Set(names).size, names.length);
       for (const name of names)
