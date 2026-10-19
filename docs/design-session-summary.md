@@ -185,3 +185,171 @@ until a later change adds their record they say they cannot be summarized.
 | The summary store, Delete summary and `--forget` | A new store module under the Compass home, and `cli.py` |
 | The one-column page and the retired More | `frontend/src/sessions/SessionDetail.tsx` |
 | The ceilings' numbers | The measurement of a model summary against a deterministic outline |
+
+## Measurement and ceilings
+
+Measured on 2026-10-19 on the owner's machine, to set the numbers answer 6 leaves open and to
+decide whether the multi-part summary is worth building. Nothing from the sessions is committed:
+this section holds counts, timings and the method only. The scripts, the outputs and the prompts
+stayed outside the repository.
+
+### Method
+
+Four real Claude Code sessions of this repository's own work were summarized, none of them
+running at the time. A is a milestone burndown that ran for about 14 hours and holds a pasted
+correction and a person's interrupt. B is a medium session ending in a major release. C has a
+known steering moment: the person rejected a tool call, interrupted and restated the request with
+one item dropped. D is a small session driven by a coordinating agent rather than a person.
+
+Each record was cut into numbered entries: the person's words (`asked`), the agent's text
+(`said`), each tool call by name and main argument (`did`), and each tool error (`failed`).
+Successful tool output was left out. Every entry was redacted with `records.redact_secrets` and
+then clipped. Two products were made from those entries:
+
+- **The outline**, made by code: one block at each person message, with counts of what followed.
+- **The summary**, made by the model: the entries cut into contiguous windows of at most 16 KiB of
+  record text, one call per window asking for phases with titled bullets, a proposed kind and
+  citations by entry number, then one lede call over the phase titles and the person's entries,
+  bounded to 16 KiB. The calls ran one after another through `observer.claude_exec`, with the
+  reader's argv, model (`claude-sonnet-5-5`, effort high), scrubbed environment and 180-second
+  timeout. Only the one-line system prompt was changed, from assessing against goals to
+  summarizing. A call that returned no output was retried once.
+
+Accuracy was judged by hand against the entries. A second, independent judge (Codex,
+`gpt-6.1-sol`, reasoning effort high, read-only sandbox) checked 15 of session A's sampled
+bullets against the same cited entries. The CLI's text output reports no token counts, so model
+capacity is given in bytes. Bytes divided by four suggests about 175,000 input tokens and 29,000
+output tokens for the whole run, but that figure was estimated, not measured.
+
+### Cost and latency
+
+| Session | Transcript | Lines | Entries | Span | Windows | Calls | Calls with no output | Bytes sent | Bytes back | Wall time |
+| -- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+| A | 45.0 MiB | 12,805 | 2,266 | 849 min | 30 | 36 | 6 | 541,407 | 87,999 | 307 s |
+| B | 4.3 MiB | 2,296 | 370 | 250 min | 5 | 6 | 0 | 91,945 | 16,500 | 51 s |
+| C | 2.9 MiB | 1,172 | 204 | 72 min | 3 | 4 | 0 | 49,173 | 10,265 | 28 s |
+| D | 0.98 MiB | 256 | 47 | 18 min | 1 | 3 | 1 | 17,810 | 2,939 | 12 s |
+| All | | | | | 39 | 49 | 7 | 700,335 | 117,703 | 398 s |
+
+- A window call took a median of 8.9 s, with a p90 of 10.1 s and a maximum of 12.3 s, across 38
+  calls. A lede call took 2.0 to 2.8 s. No call came near the 180-second timeout.
+- The largest prompt was 17,714 bytes, which is 16 KiB of record text plus the instructions. The
+  largest reply was 3,839 bytes.
+- The 45 MiB burndown took 5.1 minutes end to end, which is under the owner's 10-minute estimate.
+  A cut was not needed for it.
+- Seven of the 49 calls ended with status `unstopped` and no output after 2 to 11 seconds, so they
+  probably spent capacity. Each was retried once. One of session A's windows failed twice and
+  became a gap of 86 entries. The cause was not investigated. A job must treat a call with no
+  output as a spent call and a failed part.
+
+### Accuracy
+
+| | A | B | C | D |
+| -- | --: | --: | --: | --: |
+| Phases, bullets | 109, 419 | 20, 79 | 12, 49 | 3, 12 |
+| Outline blocks with no cited entry | 2 of 46 | 0 of 12 | 0 of 9 | 0 of 3 |
+| Parts lost to failed calls (shown as a gap) | 1 of 30 | 0 | 0 | 0 |
+| Completion statements the cited entries do not back | 20 | 6 | 2 | 0 |
+| Wrong or irrelevant citations, in a sample | 0 of 25 | 0 of 25 | 0 of 25 | 0 of 12 |
+| Partly supported bullets, same sample | 1 of 25 | 1 of 25 | 0 of 25 | 0 of 12 |
+| Bullets whose kind the code overrides | 80 | 14 | 5 | 2 |
+| Bullets citing only the person's and the agent's words | 3 | 1 | 1 | 0 |
+
+- **Omitted phases.** The two uncovered blocks in A were a short merge request and an
+  "update main" request. The model returned an empty, untitled phase at the end of that window.
+  A also had three phases with no title, two of them with no bullets. The parser must withhold an
+  untitled phase as a shape fault.
+- **Completion statements.** A plain word list (fixed, done, complete, working, verified, passed,
+  merged, green and their forms) matched 138 of the 707 displayed strings. Of those, 28 were
+  completion claims in the summary's own voice whose cited entries show only that a command was
+  issued or an edit made. These are the counts above, and they include two phase titles. 66 were
+  attributed speech, such as "the agent said …" or "as the tool reported", and 3 were backed by
+  the output a cited tool error carried. The other 41 used the word for something else, such as a
+  branch name, a tracker state or the person's own words. A backstop that withholds every match
+  would withhold about one string in five, so the backstop has to tell the summary's own voice
+  from attributed speech. A plain word list cannot do that.
+- **Citations.** No bullet across all 559 lacked a citation, cited an entry that does not exist,
+  or cited outside its window. Hand judging found no wrong citation in 87 sampled bullets. The
+  partial ones state a detail the cited entries do not show.
+- **Kinds.** The model's own kind differed from the code-set kind on 101 of 559 bullets. In 79 of
+  them the model said `said` where the bullet also cites a tool call. The independent judge chose
+  the code-set kind on 15 of 15 bullets, and the model's own kind on 12 of them. The five bullets
+  that cite only the person's and the agent's words were each a person deciding on the agent's
+  proposal.
+- **Independent judge.** It agreed with the hand judging on wrong citations (none, 15 of 15) and on
+  unbacked completion statements (13 of 15). It was stricter on support, rating 7 of 15 bullets
+  partly supported against 1 by hand, and agreed on that rating for 9 of 15. Four of its seven
+  partial ratings were for a cited command or browser action whose outcome is not in the record,
+  because successful tool output was left out.
+- **Departures.** None of the four ledes mentions a departure or a correction, although A and C
+  each had one. In both sessions a bullet carried the moment.
+
+### What a reader can find, outline against summary
+
+- **The goal.** The outline is as fast or faster. The first block's head is the person's own
+  words, and every later instruction heads its own block. The summary's lede restated the goal
+  correctly in all four sessions, but as a paraphrase. In A, 10 of the outline's 46 blocks were
+  messages from other agents or the text of a resumed conversation, shown as though the person had
+  written them. The summary named them correctly, but the record as cut here kinds them as the
+  person's, so the outline needs the fix in recommendation 3 as much as the summary does.
+- **The work.** The summary is much faster. An outline block is a person's words and a count, and
+  A's largest block covered 177 entries, so the work under it was invisible. The summary names that
+  work in titled phases with citations a reader can follow. For B to D, the phases matched the
+  record's actual steps in order.
+- **The departure.** Neither surfaced it unprompted. In A and C the summary did carry the moment as
+  a cited bullet, either as a `failed` bullet for the rejected tool call or as an `asked` bullet
+  for the pasted correction, so a reader who scans the phases finds it. In the outline, the
+  departure is visible only if the person's words make it so.
+- **A correction.** The outline is better for the person's side. The restated request is its own
+  block head next to the original, and the change shows by comparison. The summary is better for
+  what the agent did about it. It recorded C's rejected call and restated request, and A's
+  investigation after the pasted correction, but did not name the item the person dropped in C.
+
+### Proposed ceilings
+
+The owner pre-approved accepting the ceilings this measurement proposes. They are proposed values
+until the build that enforces them records them in `config.py`.
+
+| Ceiling | Value | Basis |
+| -- | --: | -- |
+| Window | 16 KiB of redacted record text | 17.7 KB prompts answered in 12.3 s or less, and 30 windows covered the largest session measured |
+| Windows per summary | 32 | The 45 MiB burndown needed 30 |
+| Calls per summary | 37 | 32 windows, 1 lede and 4 retries. The burndown used 36 |
+| Bytes sent per summary | 768 KiB | 37 calls at the measured maximum prompt is about 640 KiB. The burndown sent 529 KiB |
+| Seconds per summary | 600 | 37 calls at the measured maximum is about 455 s. The burndown took 307 s |
+| Per-call timeout | 180 s, unchanged | The slowest call took 12.3 s |
+| Summary rolling cap | 200 calls per 24 hours | Five summaries the size of the largest measured, or about 33 of the medium one. Separate from Analyze's 100 attempts |
+
+- **Cutting rule.** Keep windows contiguous. When the next entry would overflow the window, cut
+  before the last person message in the window's back half, or at the overflow when there is none.
+  This kept a person's instruction and the work after it in one window.
+- **Longer sessions.** A session that needs more than 32 windows is summarized from its newest 32
+  windows. The summary states the entry it starts at, and the part before it shows as a gap that
+  points to the outline. Update summary on a running session reads only windows that end after
+  the stored summary, plus one new lede, under the same ceilings.
+- **Retries.** A call with no output is retried once, within the call ceiling. A second failure
+  leaves a gap. The job stops at the first ceiling it reaches, and every window after it shows as a
+  gap.
+
+### Recommendation
+
+Build the multi-part summary as designed, sequential, with these changes:
+
+1. **Hold the backstop to the summary's own voice.** Withhold a completion word in the summary's
+   own voice. Admit it when it is attributed to the agent or the person, or quoted as the tool's
+   report. A word list alone would withhold one string in five, and four in five of those
+   withholdings would be wrong.
+2. **Add a bounded outcome to each tool call in the record**, such as an exit status and a short
+   prefix of the output, inside the same window budget. Most partly supported bullets and most
+   unbacked completion statements cited a command whose outcome the model never saw.
+3. **Kind the person's entries by who wrote them.** Messages from other agents and the text of a
+   resumed conversation are not the person's words. Without this, the code sets `asked` from text
+   the person did not write, and the outline heads blocks with it.
+4. **Give a bullet that cites only the person's and the agent's words the kind `asked`.** In every
+   measured case the person was deciding on what the agent proposed.
+5. **Add a lede rule for the departure.** If the reader is meant to see a departure or a correction
+   in the lede, the lede prompt must ask for it, because no measured lede mentioned one.
+
+Keep the outline as the free view, and as the place every gap points to. Stopping at the outline
+is not recommended. It was no help with the work in long sessions, which is what a reader opening
+one most wants to know.
