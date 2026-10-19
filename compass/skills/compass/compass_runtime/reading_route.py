@@ -394,9 +394,7 @@ def destinations(
     return {provider: destination(provider, environ=environ, root=root) for provider in PROVIDERS}
 
 
-def _tool_output_sentence(
-    provider: str, harness: str, where: str, *, pre_granted: bool = False
-) -> str:
+def _tool_output_sentence(provider: str, harness: str, where: str) -> str:
     """What a check sends, or that none is sent; where it goes is the `To:` item after it.
 
     The expected outcome lines rode here on Claude Code while a check was the
@@ -414,10 +412,8 @@ def _tool_output_sentence(
             "Tool output is not sent, because Compass cannot name where it would go, though "
             "the agent's messages may quote it."
         )
-    # `--allow-tool-output` is the reader's consent, given at launch; the words still need an Allow.
-    lead = "allowed when this dashboard started" if pre_granted else "only after you allow it"
     return (
-        f"Tool output, {lead}: a check's command, result and last "
+        "Tool output is included by default: a check's command, result and last "
         f"{TOOL_OUTPUT_TAIL_CHARS} characters of output as printed, the paths of the files it "
         "wrote; agent messages may quote it."
     )
@@ -567,12 +563,11 @@ def _route(
     fallback: bool,
     where: Callable[[str], str],
     claude_model: str,
-    pre_granted: bool = False,
 ) -> Route:
     # Where the words go, on every harness; tool output, only where checks exist.
     to = where(provider) if provider else ""
     reached = to if harness in TOOL_OUTPUT_HARNESSES else ""
-    sentence = _tool_output_sentence(provider, harness, reached, pre_granted=pre_granted)
+    sentence = _tool_output_sentence(provider, harness, reached)
     parts = (
         [
             note,
@@ -618,8 +613,6 @@ def resolve(
         config.claude_reading_model if config is not None else observer.CLAUDE_READING_MODEL
     )
 
-    pre_granted = config is not None and config.tool_output_pre_grant
-
     def where(provider: str) -> str:
         return destination(provider, environ=environ, root=root)
 
@@ -641,7 +634,6 @@ def resolve(
                 fallback=False,
                 where=where,
                 claude_model=claude_model,
-                pre_granted=pre_granted,
             )
         return _route(
             harness,
@@ -651,7 +643,6 @@ def resolve(
             fallback=False,
             where=where,
             claude_model=claude_model,
-            pre_granted=pre_granted,
         )
     second = _state(other, which)
     if second == "usable":
@@ -665,7 +656,6 @@ def resolve(
             fallback=True,
             where=where,
             claude_model=claude_model,
-            pre_granted=pre_granted,
         )
     # The harness's own lack stands as a sentence of its own, so the two
     # machine facts after it join with one "and" rather than a chain of them.
@@ -682,7 +672,6 @@ def resolve(
         fallback=False,
         where=where,
         claude_model=claude_model,
-        pre_granted=pre_granted,
     )
 
 

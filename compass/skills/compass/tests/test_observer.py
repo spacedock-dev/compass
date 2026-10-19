@@ -2196,9 +2196,9 @@ class ReadingTimeoutTest(unittest.TestCase):
 
 
 class ObserverModelSecurityTest(unittest.TestCase):
-    def test_cli_requires_opt_in_and_rollback_always_wins(self) -> None:
+    def test_cli_defaults_on_and_rollback_always_wins(self) -> None:
         for flags, enabled in (
-            ([], False),
+            ([], True),
             (["--observer-model"], True),
             (["--observer-model", "--no-observer-model"], False),
             (["--no-observer-model", "--observer-model"], False),
@@ -2210,7 +2210,9 @@ class ObserverModelSecurityTest(unittest.TestCase):
 
     def test_disabled_model_never_resolves_or_runs(self) -> None:
         runner, resolver = mock.Mock(), mock.Mock()
-        caller = observer.CodexGoalModel(make_config(), runner=runner, binary_resolver=resolver)
+        caller = observer.CodexGoalModel(
+            make_config(observer_model_enabled=False), runner=runner, binary_resolver=resolver
+        )
         self.assertIsNone(caller("private transcript", "stage"))
         runner.assert_not_called()
         resolver.assert_not_called()
@@ -2224,6 +2226,93 @@ class ObserverModelSecurityTest(unittest.TestCase):
                 caller = observer.CodexGoalModel(config, runner=runner, **kwargs)
                 self.assertIsNone(caller("private", "stage"))
                 runner.assert_not_called()
+
+    def test_goal_notice_is_recorded_at_call_and_stored_off_prevents_the_runner(self) -> None:
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(state_dir=Path(home))
+            prompts: list[str] = []
+
+            def runner(argv: Any, **kwargs: Any) -> Any:
+                prompts.append(kwargs["input"])
+                Path(argv[argv.index("--output-last-message") + 1]).write_text("ship parser")
+                return subprocess.CompletedProcess(argv, 0)
+
+            def caller() -> Any:
+                return observer.CodexGoalModel(
+                    config,
+                    runner=runner,
+                    binary_resolver=lambda _: "/usr/bin/codex",
+                    consent=True,
+                    session_key="pi:one",
+                )
+
+            first = caller()
+            first("private transcript", "stage")
+            self.assertEqual(1, len(prompts))
+            self.assertEqual("goal", first.notice["kind"])
+            self.assertEqual("", first.notice["tool_output"])
+            second = caller()
+            second("private transcript", "stage")
+            self.assertIsNone(second.notice)
+            reading_policy.set_consent(config, False, now=time.time())
+            off = caller()
+            self.assertIsNone(off("private transcript", "stage"))
+            self.assertEqual("readings-off", off.status)
+            self.assertEqual(2, len(prompts))
+
+    def test_goal_notice_names_the_agents_messages_at_the_given_clock(self) -> None:
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        config = make_config()
+        sent = observer._model_context(
+            config,
+            [
+                {"role": "user", "text": "ship the parser"},
+                {"role": "assistant", "text": "rewriting the tokenizer now"},
+            ],
+        )
+        # The goal prompt carries what the agent said, so its notice cannot
+        # claim the words-only tier.
+        self.assertIn("rewriting the tokenizer now", sent)
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(state_dir=Path(home))
+            caller = observer.CodexGoalModel(
+                config, consent=True, session_key="pi:one", clock=lambda: 1_700_000_000.0
+            )
+
+            def execute(*_args: Any, **kwargs: Any) -> tuple[str, str]:
+                kwargs["before_call"]()
+                return "ship parser", "ok"
+
+            with mock.patch.object(observer, "codex_exec", side_effect=execute):
+                caller(sent, "stage")
+            assert caller.notice is not None
+            self.assertEqual(reading_policy.CONTENT_VERSION, caller.notice["content"])
+            self.assertGreater(caller.notice["content"], reading_policy.WORDS_CONTENT_VERSION)
+            self.assertEqual(1_700_000_000.0, caller.notice["at"])
+
+    def test_an_off_stored_mid_call_is_named_off_even_at_the_cap(self) -> None:
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(state_dir=Path(home))
+            now = 1_700_000_000.0
+            caller = observer.CodexGoalModel(
+                config, consent=True, session_key="pi:one", clock=lambda: now
+            )
+
+            def execute(*_args: Any, **kwargs: Any) -> tuple[str, str]:
+                for _ in range(reading_policy.DAILY_CAP):
+                    reading_policy.reserve(config, now=now)
+                reading_policy.set_consent(config, False, now=now)
+                kwargs["before_call"]()
+                return "ship parser", "ok"
+
+            with mock.patch.object(observer, "codex_exec", side_effect=execute):
+                self.assertIsNone(caller("private transcript", "stage"))
+            self.assertEqual("readings-off", caller.status)
 
     def test_relative_resolution_is_refused(self) -> None:
         config = dataclasses.replace(make_config(), observer_model_enabled=True)

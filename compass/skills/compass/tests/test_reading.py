@@ -1667,7 +1667,10 @@ class TheWarningIsOnThePageAndNotOnlyInAConstant(unittest.TestCase):
         source = (
             pathlib.Path(__file__).resolve().parents[1] / "compass_runtime" / "aggregate.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('"reading_routes": reading_route.resolve_all(', source)
+        # Each route carries its notice due beside it (DEC-28), so a helper builds them.
+        self.assertIn("routes = reading_route.resolve_all(", source)
+        self.assertIn('"reading_routes": {', source)
+        self.assertIn("**_reading_permissions(config, out_sessions, now)", source)
         # Beside the check, because a reader who cannot press still needs to
         # know what pressing would do.
         self.assertIn('"reading_check"', source)

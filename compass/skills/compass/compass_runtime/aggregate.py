@@ -680,6 +680,32 @@ def _hide_unmeasured_rates(rows: list[Session], harnesses: tuple[HarnessSpec, ..
             row["rate_per_min"] = None
 
 
+def _reading_permissions(config: RuntimeConfig, rows: list[Session], now: float) -> dict[str, Any]:
+    answer = reading_policy.status(config, now=now, destinations=reading_route.destinations())
+    routes = reading_route.resolve_all(
+        (str(row.get("harness") or "") for row in rows), config=config
+    )
+    return {
+        "reading": answer,
+        "reading_routes": {
+            harness: {
+                **route,
+                "notice_due": reading_policy.notice_due(
+                    answer,
+                    kind="reading",
+                    provider=str(route.get("provider") or ""),
+                    destination=str(route.get("words_destination") or ""),
+                    tool_output=str(route.get("destination") or ""),
+                    content=reading_policy.CONTENT_VERSION
+                    if harness in reading_route.AGENT_MESSAGE_HARNESSES
+                    else reading_policy.WORDS_CONTENT_VERSION,
+                ),
+            }
+            for harness, route in routes.items()
+        },
+    }
+
+
 class Application:
     """One dashboard process's collection surface.
 
@@ -961,15 +987,7 @@ class Application:
                         # receivers, and a sentence naming the wrong one under
                         # a button that sends a reader's words is the failure
                         # the disclosure exists to prevent.
-                        "reading_routes": reading_route.resolve_all(
-                            (str(row.get("harness") or "") for row in out_sessions), config=config
-                        ),
-                        # Covered only where today's destination is the one
-                        # each Allow was given for, from the resolver the
-                        # routes above use (owner, 2026-10-02).
-                        "reading": reading_policy.status(
-                            config, now=now, destinations=reading_route.destinations()
-                        ),
+                        **_reading_permissions(config, out_sessions, now),
                         # The reader's running analyses, board-wide rather than
                         # per row so a job is never a session field or history
                         # (DRC-4686). A reload reads the job from here.

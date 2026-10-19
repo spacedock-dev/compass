@@ -1241,14 +1241,17 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             "An Allow given for a destination other than today's is refused 409, and records "
             "no consent.",
         )
-        consent = recorder.capture(
+        # A fresh store no longer refuses a press (DEC-28), so the refusal recorded is a
+        # stored Turn off readings, the one answer that still stops a reader-started call.
+        rig.send(post("/api/reading", {**press, "consent": "off"}))
+        off = recorder.capture(
             rig,
-            "reading-consent-required",
+            "reading-off",
             post("/api/reading", {**press, "provider": "claude", "model": model}),
-            "A resolved route with no stored permission answers 403 and names its route; "
-            "nothing is read.",
+            "With readings turned off, a resolved route answers 403 readings-off and names its "
+            "route; nothing is read.",
         )
-        route = consent["body"].get("route", {})
+        route = off["body"].get("route", {})
         recorder.capture(
             rig,
             "reading-unknown-session",

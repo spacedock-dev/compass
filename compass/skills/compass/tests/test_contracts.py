@@ -1143,9 +1143,6 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.frontend_dev",
             "compass_runtime.deliveries",
             "compass_runtime.reading_policy",
-            # `--allow-tool-output` names each provider's destination once at startup, by the
-            # same function a route's disclosure takes it from, so the grant and the press agree.
-            "compass_runtime.reading_route",
             # `--forget` deletes the copied-correction digests (DRC-4678).
             "compass_runtime.copied_corrections",
             "compass_runtime.aggregate",
@@ -1388,6 +1385,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.reading": {
             "compass_runtime.config",
             "compass_runtime.observer",
+            "compass_runtime.reading_policy",
             "compass_runtime.records",
             "compass_runtime.supervise",
         },
@@ -1433,6 +1431,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.observer": {
             "compass_runtime.config",
             "compass_runtime.io",
+            "compass_runtime.reading_policy",
             "compass_runtime.records",
             "compass_runtime.spacedock",
             "compass_runtime.state",
@@ -1583,6 +1582,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.observer",
+            # The goal notice names the Codex destination the reading route resolves.
+            "compass_runtime.reading_route",
             "compass_runtime.record_pages",
             "compass_runtime.records",
             "compass_runtime.semantic_history",

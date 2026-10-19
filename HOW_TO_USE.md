@@ -413,33 +413,30 @@ dashboard was started with. Tested: a dashboard started under a scratch `COMPASS
 by a `--stop` issued with no `COMPASS_HOME` at all, and its state file was cleaned up anyway, because
 the process removes its own on the way out.
 
-To analyze drift, press **Analyze drift** on the session page, then read the disclosure and
-choose **Allow and analyze**. With no saved goal, the check adopts the goal drafted from your first
+To analyze drift, press **Analyze drift** on the session page. It runs on your press and tells
+you once what is sent and where. With no saved goal, the check adopts the goal drafted from your first
 permitted Claude Code or Codex prompt, or from your latest prompt where no first prompt with a time
 is published. **Use your prompt** beside the goal lists up to five of your own prompts from the
 session; choosing one fills the goal box without saving it, and **Save intent** saves it. You
 can also type your own goal. Adopted words say "from your prompt", and editing them makes a typed
-goal. An unavailable prompt time means you must type a goal instead. The permission is remembered across tabs and restarts
-for as long as the words go where it named: where the disclosure named a destination, start the
-dashboard with a setting that moves it, such as `ANTHROPIC_BASE_URL` or `CLAUDE_CODE_USE_BEDROCK`,
-and the next press asks again first. Where the disclosure said Compass cannot name the
-destination, which is always on Windows and for a Codex base URL, a later move is not detected,
-and the Allow keeps covering it.
+goal. An unavailable prompt time means you must type a goal instead. The notice is remembered
+across tabs and restarts and shown again if the destination or content tier changes. Where Compass
+cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
+destinations cannot be detected.
 Use **Turn off readings** on a session page to revoke it. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
 read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever
 reads. **What is sent**, under the button, opens a short list naming it, and with neither installed that reason takes
-the button's place and says no analysis can run. Permission is kept per provider, and
-Turn off readings revokes all of them. Twelve attempts are allowed in a rolling twenty-four
-hours; a refused check names when capacity under that limit becomes available again. Goal summaries
-in Console still require their separate startup flag and consent.
+the button's place and says no analysis can run. Turn off readings stops readings and goal
+summaries; an off saved before an upgrade stays off. Analyze allows 100 attempts in a rolling
+twenty-four hours and says when capacity becomes available again. Codex goal summaries are on by
+default on a focused refresh, with their own one-time notice.
 
-A Claude Code reading is only as good as the checks it can see. The first press of Allow and analyze
-already grants tool output, which is a check's command, its result and the last 180 characters of its
-output, and the paths the session wrote, for the destination the disclosure names. To grant it when
-the dashboard starts, so the card asks only for the words, start it with `--allow-tool-output`, or set
-`COMPASS_ALLOW_TOOL_OUTPUT=1`. It grants nothing else and no reading runs until you allow the words.
-`--no-observer-model` refuses it, and Turn off readings and `--forget` clear it. If the permission store cannot take the grant, the start prints a line saying so and the card asks as usual.
+A Claude Code reading includes its checks by default where Compass can name the destination: the
+command, result, last 180 characters of output and written paths. The notice names tool output too.
+`--observer-model`, `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do
+nothing in this release; they will be removed in a later release. Turn off readings or
+`--no-observer-model` stops these calls.
 
 `--forget` also clears reading permission without resetting its rolling spend budget. It deletes the local history store and the session-end store, removes the records of any
 session you discarded everything for, and exits. It belongs with `--status` and `--stop` rather
@@ -508,7 +505,7 @@ Start the dashboard with `--claude-reading-model claude-sonnet-5` to select the 
 The default requests `claude-sonnet-5-5`. Use an explicit Sonnet or Opus generation 5 or later ID;
 floating aliases such as `sonnet` are refused. An account that cannot use the chosen model gets a
 failed reading, without a retry on another model. A daemon respawn keeps your selection.
-The disclosure before **Allow and analyze** names the selected Claude model.
+The disclosure beside **Analyze drift** names the selected Claude model.
 [SECURITY.md](SECURITY.md#amended-2026-10-05-claude-reading-model-baseline) owns the admission policy.
 
 ### Move the history's two bounds

@@ -1494,9 +1494,9 @@ class LightHarnessUsageContractDocumentationTest(unittest.TestCase):
     def test_the_section_exists_under_a_heading_other_documents_can_anchor(self) -> None:
         self.assertIn("## Light harness usage (asking a harness a bounded question)", self.SECURITY)
 
-    def test_the_observer_pathway_is_opt_in_and_has_both_rollback_spellings(self) -> None:
+    def test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings(self) -> None:
         self.assertIn("The observer model is the first implementation", self.SECTION)
-        self.assertIn("off unless `--observer-model` was supplied", self.SECTION)
+        self.assertIn("on by default", self.SECTION)
         self.assertIn("16,384 bytes", self.SECTION)
         for flag in ("--no-observer-model", "--no-harness-usage"):
             args = cli.build_parser().parse_args(["--observer-model", flag])
@@ -1519,9 +1519,11 @@ class LightHarnessUsageContractDocumentationTest(unittest.TestCase):
         # The asymmetry is the point: reading a number is not spending capacity,
         # and the section has to say which one it is. DEC-28 (owner, 2026-10-19)
         # made a reader-started call opt-out with a notice; the opt-in bound it
-        # replaces is still named, because it governs until that change ships.
+        # replaces is named only as superseded.
         self.assertIn("Opt-out, with a notice, for a call a reader's action starts", self.FLAT)
-        self.assertIn("Opt-in, and off until answered", self.FLAT)
+        self.assertIn('replaces the former "Opt-in, and off until answered" bound', self.FLAT)
+        self.assertNotIn("Until then", self.SECTION)
+        self.assertNotIn("consent change ships", self.FLAT)
         self.assertIn("spends their capacity rather than reading a number", self.FLAT)
         self.assertIn("unasked drift checks", self.SECTION)
 

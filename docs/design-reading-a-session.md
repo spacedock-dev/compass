@@ -1480,7 +1480,7 @@ doing a different job: it was one of the three things that stop a local process,
 fetch metadata, from spending readings through a route with no capability token. Removing it is
 allowed only with something that does that job instead.
 
-1. The first press of "Check for drift" shows the reading disclosure with "Allow and check". The
+1. **Superseded by [DEC-28](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts).** The first press of "Check for drift" shows the reading disclosure with "Allow and check". The
    answer is kept in `~/.compass`, so every tab and a respawned daemon agree; `--forget` clears it,
    and the session page carries the off switch. The startup flag is no longer needed for
    reader-requested readings. It still governs goal summaries, which keep their own consent.
@@ -1549,6 +1549,10 @@ qualification claim: each comparison remains bound to its own selected model and
 
 ### Amended 2026-09-24: Analyze drift and Allow and analyze
 
+**Superseded by DEC-28:** the prior Allow step and destination/content re-authorization below are replaced by
+[opt-out with a notice](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+for reader-started calls. Explicit coverage still governs unasked checks.
+
 [DEC-24](#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
 renames item 1's labels: the first press of "Analyze drift" shows the reading disclosure with "Allow
 and analyze". Where the answer is kept, what `--forget` revokes and the off switch are unchanged.
@@ -1609,6 +1613,10 @@ correctly with 4 false reassurances. The ruling named the README and the popup o
 qualification tool changes.
 
 ### Amended 2026-10-02 (owner): the Allow is bound to where the words go
+
+**Superseded by DEC-28:** the prior Allow step and destination/content re-authorization below are replaced by
+[opt-out with a notice](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+for reader-started calls. Explicit coverage still governs unasked checks.
 
 The owner, 2026-10-02: "bind the allow to the destination". The tool-output grant was already
 keyed by destination (item 7 of DEC-23). The Allow for the reader's words was not, so a dashboard
@@ -2180,7 +2188,7 @@ qualifies the producer against it.
    kept out of the semantic history store and out of every session row field, and it is named in
    `history.PROMPT_DERIVED_CARRIERS`. SECURITY.md adds it to the named reads, moving the count
    `test_documentation` pins, and scopes the irreversible-actions sentence about tool output.
-7. Where it may go: to the reading producer that reads the session, or to the fallback route
+7. **The prior Allow requirement is superseded by [DEC-28](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts); the destination and content bounds remain.** Where it may go: to the reading producer that reads the session, or to the fallback route
    `reading_route.resolve` selects and discloses before the press, and on either only after a fresh
    "Allow and analyze" (DEC-21's "Allow and check" as DEC-24 item 5 renames it) whose disclosure
    names tool output and the receiving vendor. An answer given before tool output was named does not
@@ -3283,6 +3291,10 @@ throughout (arbiter spec, `ui3`).
   stored reading whose scope is mid-flight leads its answer with "So far:".
 
 #### Amended 2026-10-01: the first press is a consent step
+
+**Superseded by DEC-28:** the prior Allow step and destination/content re-authorization below are replaced by
+[opt-out with a notice](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+for reader-started calls. Explicit coverage still governs unasked checks.
 
 Owner ruling Q1, 2026-10-01 (DRC-4758 slice B). The first press asked its question by relabelling the
 button "Allow and analyze" and moving it below the whole ~180-word disclosure, so the owner's walk

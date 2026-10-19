@@ -9,14 +9,11 @@ and the route is the single place both are decided.
 
 from __future__ import annotations
 
-import contextlib
-import io
 import itertools
 import json
 import os
 import platform
 import shutil
-import socket
 import sys
 import tempfile
 import unittest
@@ -26,12 +23,9 @@ from unittest import mock
 
 from compass_runtime import (
     aggregate,
-    cli,
-    lifecycle,
     observer,
     project_context,
     reading,
-    reading_policy,
     reading_route,
     sessions,
 )
@@ -778,7 +772,7 @@ class AClaudeCodeReaderIsToldWhatTheChecksSendBeforeThePress(unittest.TestCase):
         self.assertTrue(
             parts[parts.index(route["tool_output"]) + 1].startswith("To: OpenAI, off this machine")
         )
-        self.assertIn("only after you allow", route["tool_output"])
+        self.assertIn("included by default", route["tool_output"])
         # K6: the grant sends the written paths too, so the sentence names them.
         self.assertIn("the paths of the files it wrote", route["tool_output"])
         self.assertIn(route["tool_output"], route["disclosure"])
@@ -826,8 +820,8 @@ def _named(harness: str, installed: set[str]) -> dict[str, Any]:
         )
 
 
-class AToolOutputGrantGivenAtLaunchIsDisclosedAsSuch(unittest.TestCase):
-    """With `--allow-tool-output` the disclosure may not say tool output waits for an Allow."""
+class ToolOutputIsDisclosedByDefaultTest(unittest.TestCase):
+    """A named route discloses tool output without requiring a second grant."""
 
     def _route(self, **changes: Any) -> dict[str, Any]:
         config = make_config(**changes)
@@ -842,96 +836,20 @@ class AToolOutputGrantGivenAtLaunchIsDisclosedAsSuch(unittest.TestCase):
                 )
             )
 
-    def test_the_sentence_says_it_was_allowed_when_the_dashboard_started(self) -> None:
-        route = self._route(tool_output_pre_grant=True)
-        self.assertIn("Tool output, allowed when this dashboard started:", route["tool_output"])
+    def test_the_sentence_names_tool_output_included_by_default(self) -> None:
+        route = self._route()
+        self.assertIn("Tool output is included by default:", route["tool_output"])
         self.assertNotIn("only after you allow it", route["disclosure"])
         # What is sent is unchanged: the same four facts follow the lead.
         for fact in ("a check's command", "180 characters", "paths of the files it wrote"):
             self.assertIn(fact, route["tool_output"])
         self.assertIn(route["tool_output"], route["disclosure_parts"])
 
-    def test_without_the_flag_the_wording_is_unchanged(self) -> None:
-        route = self._route(tool_output_pre_grant=False)
-        self.assertIn("Tool output, only after you allow it:", route["tool_output"])
-        self.assertNotIn("started", route["tool_output"])
-
-    def test_no_destination_means_no_tool_output_whatever_the_flag_says(self) -> None:
+    def test_no_destination_means_no_tool_output(self) -> None:
         with mock.patch.object(reading_route, "destination", return_value=""):
-            route = self._route(tool_output_pre_grant=True)
+            route = self._route()
         self.assertEqual("", route["destination"])
         self.assertIn("Tool output is not sent", route["tool_output"])
-
-
-class ALaunchGrantThatWasNotRecordedIsNotClaimed(unittest.TestCase):
-    """The card says tool output was allowed when the dashboard started only if the row is there.
-
-    `--allow-tool-output` writes its grant after the bind, and the write can fail. The
-    server stays safe either way (a press is refused `tool-output-consent-required`
-    without the row), so what is pinned here is what the reader is told.
-    """
-
-    def _start(
-        self, *flags: str, recorded: bool
-    ) -> tuple[int, str, list[dict[str, Any]], mock.Mock]:
-        routes: list[dict[str, Any]] = []
-
-        def close_server(_config: object, server: Any, _port: int, **_kwargs: object) -> None:
-            config = server.application.config
-            with named_platform():
-                routes.append(
-                    dict(
-                        reading_route.resolve(
-                            "claude",
-                            binary_resolver=_resolver({"claude"}),
-                            environ={},
-                            root=Path("/x"),
-                            config=config,
-                        )
-                    )
-                )
-            server.server_close()
-
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            mock.patch.dict(os.environ, {"COMPASS_HOME": tmp}),
-            # The environment variable grants too, so a machine that exports it would make
-            # the no-flag case a grant case. Only the flag under test may.
-            mock.patch.dict(os.environ, {cli.TOOL_OUTPUT_ENV: ""}),
-            mock.patch.object(
-                sys, "argv", ["server.py", "--port", str(port), "--no-events", *flags]
-            ),
-            mock.patch.object(lifecycle, "serve", side_effect=close_server),
-            mock.patch.object(reading_policy, "grant_tool_output", return_value=recorded) as grant,
-            contextlib.redirect_stdout(io.StringIO()) as stdout,
-        ):
-            code = cli.main()
-        return code, stdout.getvalue(), routes, grant
-
-    def test_a_grant_the_store_refused_leaves_the_card_asking_and_says_so(self) -> None:
-        code, said, routes, _grant = self._start("--allow-tool-output", recorded=False)
-        self.assertEqual(0, code)
-        (route,) = routes
-        self.assertIn("Tool output, only after you allow it:", route["tool_output"])
-        self.assertNotIn("started", route["tool_output"])
-        self.assertIn("--allow-tool-output", said)
-        self.assertIn("not recorded", said)
-
-    def test_a_grant_the_store_took_is_still_disclosed_as_given_at_launch(self) -> None:
-        code, said, routes, _grant = self._start("--allow-tool-output", recorded=True)
-        self.assertEqual(0, code)
-        (route,) = routes
-        self.assertIn("Tool output, allowed when this dashboard started:", route["tool_output"])
-        self.assertNotIn("not recorded", said)
-
-    def test_no_flag_means_no_grant_attempt_and_no_diagnostic(self) -> None:
-        _code, said, routes, grant = self._start(recorded=False)
-        grant.assert_not_called()
-        self.assertNotIn("not recorded", said)
-        self.assertIn("only after you allow it", routes[0]["tool_output"])
 
 
 class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
@@ -1064,7 +982,7 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
             parts = route["disclosure_parts"]
             with self.subTest(route=name):
                 for fact in (
-                    "only after you allow it",
+                    "included by default",
                     "command",
                     "result",
                     f"last {reading_route.TOOL_OUTPUT_TAIL_CHARS} characters of output",

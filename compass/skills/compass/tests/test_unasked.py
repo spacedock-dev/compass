@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from unittest import mock
 
-from compass_runtime import departures, diagnostics, reading, unasked
+from compass_runtime import departures, diagnostics, reading, reading_policy, unasked
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -1480,3 +1480,15 @@ class TheLaneSendsOnlyWhereAPressWouldNotAskAgainTest(unittest.TestCase):
             {"OPENAI_BASE_URL": "https://gw.corp.example"}, ""
         )
         self.assertEqual(["the prompt"], sent)
+
+
+class FreshStoreStillRequiresExplicitAllowTest(unittest.TestCase):
+    def test_default_on_reader_permission_never_authorizes_an_unasked_call(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            config = _config(Path(home))
+            model = mock.Mock(return_value=("{}", "ok"))
+            self.assertTrue(reading_policy.status(config, now=100.0)["consent"])
+            guarded = unasked._Bound(config, model, lambda: 100.0)
+            with self.assertRaises(unasked.UncoveredError):
+                guarded("private words", output_cap_bytes=100)
+            model.assert_not_called()
