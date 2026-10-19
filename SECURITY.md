@@ -177,7 +177,9 @@ The posture rests on two invariants:
    read, eviction and owner-only temp-file rename; unavailable filesystem locks refuse the write.
    The bound allows 64 summaries at 512 KiB each (32 MiB), plus 32 MiB for comparison metadata
    and envelopes. Eviction drops the least recently read or written summaries, never the summary
-   being saved, and cannot touch the annotation store. Delete summary removes one session;
+   being saved, and cannot touch the annotation store. Delete summary removes one session; no
+   marker of the deletion is stored, so the next open of that finished session summarizes it again
+   and sends its text once more, unless summaries are turned off or model calls are paused.
    `--forget` deletes the whole store, even when unreadable and even when the filesystem lock is
    unsupported or unusable; only a lock another holder keeps past ten seconds refuses it.
    `--no-annotations` does not govern it.
@@ -1226,14 +1228,18 @@ Concurrent processes share the transaction bound. A denied or corrupt store fail
 reports the cap, once it is spent, and the earliest time another attempt can be admitted. Turning permission off,
 back on, or forgetting it does not erase unexpired spend timestamps or refill the budget.
 
-The store is created owner-only; SQLite is required for this permission path. Deleting the file
+The store is created owner-only; SQLite is required for this permission path. Every
+reader-started model call (Analyze drift, goal summaries and session summaries) records its notice
+there, so without `sqlite3` or a writable state directory each is refused as `store-unavailable`. Deleting the file
 manually can reset its budget, as can any other modification by the owning local user. The cap
 bounds requests through the HTTP route, not a hostile owner editing their own files.
 
 Legacy explicit Allows remain per provider, bound to the disclosed destination and content tier.
 An explicit Allow covers every session routed to that provider.
 They govern unasked checks, which still require a stored Allow covering today's destination; a
-fresh store does not authorize them. The board's `providers`, `words`, `rebind` and `tool_output`
+fresh store does not authorize them. This build has no way to grant one: no reader press writes an
+Allow, an `allow: true` from an older page is read as a plain press, and Pause model calls followed
+by Resume model calls clears a stored one. Only an Allow an earlier build stored covers the lane. The board's `providers`, `words`, `rebind` and `tool_output`
 fields retain that explicit-coverage meaning during the page migration. Reader-started calls use
 the off switch and notices instead.
 
@@ -2145,8 +2151,9 @@ Opening a stored summary makes no summary call or charge.
   session and independent of any saved intent, so Discard everything does not remove it. Each field
   is named and admitted. Strings are redacted on the way in and again on the way out, because any
   local process can rewrite the file. It has an aggregate byte bound and an eviction that can never
-  push out a reader's saved words. Delete summary removes one session's summary, and `--forget`
-  deletes the store. Invariant 2 names its separate file and 64 MiB aggregate bound.
+  push out a reader's saved words. Delete summary removes one session's summary, which the next
+  open of that finished session makes again unless summaries are off or model calls are paused, and
+  `--forget` deletes the store. Invariant 2 names its separate file and 64 MiB aggregate bound.
   `--no-annotations` does not govern this store: summaries need no saved intent. The model job
   must honor `--no-observer-model`; this store only reads, writes and deletes local state.
 

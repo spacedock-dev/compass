@@ -432,7 +432,10 @@ summaries and session summaries until **Resume model calls**. Compass stops send
 to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.
 An off saved before an upgrade stays paused. **Turn off summaries** stops session summaries alone;
 while paused, that control stays disabled with "Model calls are paused" beside it. Pause and Resume
-keep its saved answer, so summaries resume exactly as you left them. Analyze allows 100 attempts in a rolling
+keep its saved answer, so summaries resume exactly as you left them. **Delete summary** removes one
+session's saved summary, but it lasts until that finished session is opened again: opening it makes
+a new summary and sends its text once more, unless summaries are turned off or model calls are paused.
+Analyze allows 100 attempts in a rolling
 twenty-four hours and says when capacity becomes available again. Codex goal summaries need no
 startup flag: press **Summarize this session** in Console, and the first one shows its own one-time
 notice.

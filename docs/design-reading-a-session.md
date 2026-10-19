@@ -5325,8 +5325,9 @@ ACTIVITY, the numbered list newest first, subagents, session facts, the current 
 tasks, command-shape reports, notifications and How it landed, in that order, and a blocked
 session's measured line. The header gains a status dot beside the state word, which now leads the
 measured line ("working · running Bash · turn started 3m ago"); the raise control, the drift pill
-and the reading cap banner stay where they were. A finding's citation, now "Show cited entries in
-Full activity", opens the section, reads older record pages until every cited entry is held, the
+and the reading cap banner stay where they were. A finding's citation, drawn as "Show cited entries in
+Full activity" when this amendment was written and since replaced by each cited entry's own number
+(see the departure-card amendment below), opens the section, reads older record pages until every cited entry is held, the
 record's start or the page cap, and moves focus to the first cited row. It is offered while any cited
 entry is unloaded and the record has older pages, whatever the intent's current window, so a retained
 reading that cites an entry from before that window keeps its way there. An entry no page returns is
