@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from compass_runtime import config as runtime_config
-from compass_runtime import http_api, reading_jobs, supervise
+from compass_runtime import http_api, reading_jobs, summary_jobs, supervise
 from compass_runtime import interaction_prototype as runtime_interaction
 from compass_runtime import io as runtime_io
 
@@ -990,6 +990,8 @@ def serve(
             # compared against is a daemon's and never the parent that exits.
             with contextlib.suppress(Exception):
                 reading_jobs.recover(served, alive=functools.partial(dashboard_alive, config))
+            with contextlib.suppress(Exception):
+                summary_jobs.recover(served, alive=functools.partial(dashboard_alive, config))
         if observation is not None:
             observation.start()
         else:

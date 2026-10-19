@@ -67,7 +67,7 @@ The posture rests on two invariants:
    no network on Compass's own account: the hand-off request in Hand-off requests below writes one
    line to a socket on this machine, and what travels afterwards travels on the receiving session's
    own connection, which is why it is named here rather than counted above.
-2. Read-only against harness stores. They are opened read-only and never written. Fourteen endpoints
+2. Read-only against harness stores. They are opened read-only and never written. Sixteen endpoints
    mutate, and seven of them only in memory: `POST /api/notify` updates needs-input state, and
    `POST /api/usage` stores a quota figure a harness published to its own status-line command.
    `POST /api/events/<harness>` also mutates in memory only, behind the capability described under
@@ -78,7 +78,7 @@ The posture rests on two invariants:
    timestamp for the whole board, never written to disk, and a body that names a session is refused
    rather than stripped. Delivery records below is where that refusal is stated. The long
    poll that delivers an answer, `GET /api/ask/<id>`, drops that question from memory once it has,
-   which is the delivery completing rather than a change a caller asked for. Seven write to disk.
+   which is the delivery completing rather than a change a caller asked for. Nine write to disk.
    `POST /api/dismiss` writes the sessions you marked handled,
    `POST /api/annotate` writes the goal you typed or explicitly adopted and the expected outcome lines you typed against a session, including a line you added from a later direction you gave and the settlement of those directions, and
    `POST /api/reading` writes a model's reading of that session back into the same annotation
@@ -148,6 +148,20 @@ The posture rests on two invariants:
    `POST /api/reading` writes. The sixth, `POST /api/correction/copied`, records the digest of a
    correction you copied, never its text, in `compass-copied-corrections.json`; [Analyze drift,
    Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections) owns its bounds.
+   Two more disk writers, `POST /api/summary` and `POST /api/summary/cancel`,
+   start or stop a server-owned summary job, and the first also stores Turn off summaries or
+   Turn summaries on. The first writes the separate summary store incrementally after each part.
+   Both write identifier-only progress markers in `state_dir/summary-jobs/` before any charge;
+   startup reports a dead job as interrupted with its finished parts and never resumes it.
+   Delete summary stops a running summary before a later reply can publish. Discard everything
+   neither stops a summary job nor removes a stored summary. A publication lock at `state_dir/summary-jobs.lock` serializes
+   admission, save, cancel, deletion and grant changes across dashboards. The independent
+   `summary_permission` row and `summary_spends` receipt/timestamp rows live in the permission
+   SQLite file; neither reads or charges Analyze's `spends` or `spend_jobs` tables. A receipt is
+   the random job id and attempt number, never a session id or source text, and is retained for
+   30 days for restart accounting; the rolling cap reads only the newest 24 hours.
+   All three summary POST routes are loopback-only, enforce Host/Origin and fetch-site checks,
+   and refuse document navigation before parsing a body or touching a store.
    The seventh, `POST /api/summary/delete`, deletes one stored summary, and reading one writes
    too: a focused `GET /api/project-context` records its last access time, named with the other
    writing `GET` below. The separate
@@ -1108,8 +1122,8 @@ invocation carries session-derived text, which is why invariant 1 names it separ
 widening the quota exception to cover it. The consent below is not the quota fetch's: a call a
 reader's action starts runs only on that action, and an unasked check runs only under
 `--unasked-readings` and DEC-18's preconditions. Every kind of call announces itself the first time
-it runs, with Turn off readings beside that notice: one off switch for readings and goal summaries
-alike. `--no-observer-model` refuses all of them for the run, where `--no-usage` is a startup flag
+it runs. Turn off readings governs readings and goal summaries; Turn off summaries governs
+session summaries independently. `--no-observer-model` refuses all of them for the run, where `--no-usage` is a startup flag
 alone.
 
 The bounds, all of which hold together:
@@ -1131,8 +1145,8 @@ The bounds, all of which hold together:
     not left silent like the quota fetch, for a stronger reason: this one spends their capacity
     rather than reading a number.
   - The off switch. Turn off readings stops readings and goal summaries alike until turned back
-    on, and an answer of off already stored is kept across the upgrade. Session summaries are not
-    built yet; the ruling gives them a Turn off summaries of their own.
+    on, and an answer of off already stored is kept across the upgrade. Session summaries have
+    Turn off summaries and Turn summaries on of their own, independent of that answer.
     `--no-observer-model` still refuses every model call. `--allow-tool-output` and
     `--observer-model` are accepted no-ops for one release.
 - Goal summaries are on by default. The browser still sends `observer_model=1` on the focused
@@ -1191,12 +1205,13 @@ notice mechanism and are on by default on a focused refresh carrying `observer_m
 
 The answer and notices live under `COMPASS_HOME` (by default `~/.compass`) in
 `compass-reading-permission.sqlite3`, shared by tabs and respawned daemons. Turn off readings and
-`--forget` store an explicit off, block readings and goal summaries, and clear notices, so after
+`--forget` store an explicit off, block readings and goal summaries, and clear their notices, so after
 `--forget` they stay off until Turn on. Turning readings back on shows the notice again. An off
 saved by an older build stays off after upgrade; an old Allow reads as on, including an older
 build's Allow given after its own off, which left that off's other rows in place. `--no-observer-model` refuses every model call for the run.
 
-The same SQLite store holds only that answer, notice rows (kind, provider, destination, content
+The same SQLite store holds the independent summary answer and ledger described under
+Session summary calls, that reading answer, notice rows (kind, provider, destination, content
 tier, tool-output destination and time), model-attempt timestamps and, for 30 days, the
 random id of the job each attempt was charged to, never session ids or content. A transaction reserves
 one of 100 reader-requested attempts in a rolling twenty-four hours before the model starts. Eligibility checks and a known missing CLI spend nothing; a failed
@@ -2067,9 +2082,8 @@ the time is where the record is whole from. The keys, types and exposure are unc
 
 ### Session summary calls
 
-Ruled 2026-10-19 by the owner ([DEC-28](docs/design-session-summary.md)). The producer and store
-are built; automatic generation, model calls and the job remain to be wired. This entry holds
-that future caller to its bounds. Opening a stored summary makes no summary call or charge.
+Ruled 2026-10-19 by the owner ([DEC-28](docs/design-session-summary.md)). Summary jobs run on a reader's open or press and keep finished parts as they arrive.
+Opening a stored summary makes no summary call or charge.
 
 - What it is. A model-written summary of what a session did: a lede and phases with titled bullets,
   each bullet citing at least one entry by fact id, in the
@@ -2079,9 +2093,8 @@ that future caller to its bounds. Opening a stored summary makes no summary call
   string that fails it is withheld in place.
 - What is sent. Entries from the session's own record, read in order and bounded in bytes and time:
   the person's words, the agent's words where the harness record admits them (Claude Code only
-  today), the checks and files the record shows, and, on Claude Code, tool output under the
-  opt-out rule above. Everything goes through `records.redact_secrets` first and the byte bound
-  second, as every harness invocation does. No saved intent is needed or sent. The producer sends
+  today), and the checks and files the record shows. Everything goes through
+  `records.redact_secrets` first and the byte bound second, as every harness invocation does. No saved intent is needed or sent. The producer sends
   exactly these carriers, each redacted before it is clipped: the person's words and text relayed
   in a person turn, at most 1,200 characters per entry; the agent's words, at most 700; a check's
   masked title, at most 220, with the source's result token (`failed`, `passed` or
@@ -2102,12 +2115,23 @@ that future caller to its bounds. Opening a stored summary makes no summary call
   unasked ones.
 - Ceilings. Each summary has whole-job ceilings on calls, bytes sent and seconds, and summaries have
   a rolling cap of their own, so a summary cannot spend Analyze's 100 attempts in 24 hours. The
-  numbers are set by measurement and accepted by the owner; the job does not ship without them.
-- Timeout. Every call is a bounded question under a subprocess timeout, as the bounds above require.
-  The ruling does not set a per-call value; the whole-job seconds ceiling bounds the job as a whole.
+  measured ceilings are 37 calls, 768 KiB sent and 600 seconds, with a separate rolling cap of
+  200 summary calls per 24 hours. The producer's plan refuses oversized jobs before the first
+  charge and reports the allowed windows, bytes, calls and seconds. Each attempted part has an
+  idempotent receipt in `summary_spends`; failed and timed-out attempts stay charged. Analyze's
+  ledger is untouched. Cancel keeps finished parts; an interrupted job reports them at restart
+  without resuming. Jobs outlive the page that started them.
+- Timeout. Every call has a 180-second subprocess timeout (`session_summary_call_timeout`). No call
+  starts unless its full timeout fits inside the remaining whole-job seconds.
 - Off switch. Turn off summaries, one press from the notice and the card, stops every summary call
-  until it is turned back on, and an answer of off already stored is kept. `--no-observer-model`
-  refuses every summary call at startup.
+  until it is turned back on, and an answer of off already stored survives restart and upgrade.
+  It changes neither Analyze's grant nor a goal-summary answer. The first summary shows a
+  non-blocking notice naming all the carriers above, Claude Code/Anthropic and the configured
+  destination, and the off switch. A new destination or wider content tier repeats the notice.
+  Each part rechecks grant, destination and content; this source sends no tool output and
+  cannot infer a tool-output grant. Turn off summaries, Delete summary and Cancel bar late
+  publication: a reply that returns after one of them is not stored.
+  `--no-observer-model` refuses every summary call at startup.
 - Storage. A store of its own under `COMPASS_HOME` (by default `~/.compass`), keyed by harness and
   session and independent of any saved intent, so Discard everything does not remove it. Each field
   is named and admitted. Strings are redacted on the way in and again on the way out, because any
@@ -3748,14 +3772,14 @@ that was.
 saying the machine's network may read the board, and there is no second gate behind it: everything
 the paragraph below grants another account on the machine, a non-default bind grants anything that
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
-project paths. Writing is the eighteen POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
+project paths. Writing is the twenty POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Two of the eighteen store nothing of their own: `POST /api/direction` returns the whole text
+somebody other than you. Two of the twenty store nothing of their own: `POST /api/direction` returns the whole text
 of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
 message's published title of at most 112 characters. Both answer only a loopback peer, so a non-default bind does not widen them; their
-bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on sixteen of them, for the reason the
+bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on eighteen of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client

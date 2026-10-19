@@ -184,9 +184,9 @@ until a later change adds their record they say they cannot be summarized.
 | The in-order, paged read with fact ids and fingerprints | `session_source.py`, reusing `record_pages.py` message facts and `project_context.py` tool classification |
 | The deterministic outline | `session_outline.py`, served on `/api/project-context` as `sources.outline` for a focused session only |
 | The What the session has done card and the outline drawn in it | `frontend/src/sessions/WhatItDid.tsx` and `outline.ts`, parsing `sources.outline` in `frontend/src/api/outline.ts` |
-| The summary producer and its closed-shape parser | A new producer module beside `reading.py` |
-| The multi-part job, its ceilings and its own rolling cap | `reading_jobs.py`, `reading_policy.py` and `config.py` |
-| The summary store, Delete summary and `--forget` | A new store module under the Compass home, and `cli.py` |
+| The summary producer and its closed-shape parser | `session_summary.py` |
+| The multi-part job, its ceilings and its own rolling cap | `summary_jobs.py`, `session_summary.py`, `reading_policy.py` and `config.py` |
+| The summary store, Delete summary and `--forget` | `summary_store.py`, `summary_jobs.py`, `http_api.py` and `cli.py` |
 | The one-column page and the retired More | `frontend/src/sessions/SessionDetail.tsx` |
 | The ceilings' numbers | The measurement of a model summary against a deterministic outline |
 
@@ -312,7 +312,7 @@ output tokens for the whole run, but that figure was estimated, not measured.
 ### Proposed ceilings
 
 The owner pre-approved accepting the ceilings this measurement proposes. The producer now records
-them in `config.py`; the job lane must still wire the per-call timeout and rolling admission.
+them in `config.py`; `summary_jobs` wires the per-call timeout and rolling admission.
 
 | Ceiling | Value | Basis |
 | -- | --: | -- |
@@ -370,13 +370,13 @@ The producer reads no transcript and owns no store, cache, thread or subprocess.
 the frozen result. The production seam is **not** the reading policy's `GuardedModel`: its
 `__call__` always calls `reading_policy.reserve()`, which charges Analyze's one rolling ledger and
 refuses on Analyze's off switch and daily cap, both of which
-[Session summary calls](../SECURITY.md#session-summary-calls) forbids a summary to touch. The job
-lane needs a summary-specific guard in front of the model: its own grant and off check, its own
-ledger for `session_summary_rolling_cap`, and the consent, destination and tool-output checks
-again before every part. The existing Claude reading invocation fixes its own system prompt, so
+[Session summary calls](../SECURITY.md#session-summary-calls) forbids a summary to touch. The
+summary's own guard, `summary_jobs.GuardedSummaryModel`, stands in front of the model instead: its
+own grant and off check, its own ledger for `session_summary_rolling_cap`, and the consent,
+destination and tool-output checks again before every part. The existing Claude reading invocation fixes its own system prompt, so
 its exec path needs a system-prompt parameter, carrying `session_summary.SYSTEM_PROMPT` and that
-prompt's provenance digest. The job lane also wires `session_summary_call_timeout`. Defining those
-values here does not wire a summary job, guard or page. The [store contract](#store-contract)
+prompt's provenance digest in the stored model stamp. `summary_jobs` wires
+`session_summary_call_timeout` through the exec path. The [store contract](#store-contract)
 names the separate storage and delete endpoint.
 
 ### Menu, windows and prompts
@@ -509,6 +509,7 @@ All tunable bounds are declared once in `config.py` and carried by `RuntimeConfi
 
 Before the first call the producer plans the retained windows plus a lede. Exceeding planned
 calls or prompt bytes refuses the job with `planned_calls` or `planned_bytes`, spending nothing.
+A seconds allowance smaller than one call timeout refuses with `planned_seconds`.
 The byte plan reserves the full lede window and each later context allowance because their
 actual contents depend on replies. Retries are not prepaid; every call checks remaining calls,
 prompt bytes and elapsed monotonic seconds immediately before invoking the seam. Reaching a
@@ -517,6 +518,15 @@ elapsed seconds plus `session_summary_call_timeout` stay within `session_summary
 the job ends inside its ceiling without cancelling a call in flight. With the defaults, no call
 starts after 420 seconds; the largest measured job took 307. The job lane's per-call timeout
 bounds each wait. The producer does not pass a timeout to any subprocess function.
+
+`session_summary.plan(entries, harness, *, config, prior=None, change=None)` runs that same
+admission without a model and returns `reason`, `parts` (retained windows plus one lede) and
+`largest_read`, so a job refuses before it writes a marker or charges anything. `summarize` and
+`update` take an optional `on_part(summary, part, parts)` callback, called with part 0 before the
+first call, after every window, and with the final result as part `parts`. The intermediate
+summaries carry the unanswered windows as one `stopped` gap; the final one is offered unless its
+state is `refused`. The callback changes no result: the returned `Summary` is the one produced
+without it.
 
 An empty reply, including `unstopped`, counts as a call and is retried once within those ceilings.
 Two empty replies leave `no_output`. Nonempty invalid text leaves `no_valid_reply` without a
@@ -763,9 +773,9 @@ This table describes the implementation and does not amend the owner-ruled table
 
 ## Consent notice payload
 
-Reader-started readings and goal summaries use the durable off switch. Session summaries are not
-implemented by this change; `NOTICE_KINDS = ("reading", "goal", "summary")` reserves their kind.
-No session field is added.
+Reader-started readings and goal summaries use the reading off switch. Session summaries use
+`summary` notices with an independent durable off switch; the [job and grant contract](#job-and-grant-contract)
+records their admission and publication shapes. No new session field is added.
 
 - `board.reading.consent: bool` is true unless an explicit stored off exists, model calls are
   disabled for this run, or the store is unavailable. A missing store or missing answer is on.
@@ -939,6 +949,183 @@ processes without browser metadata can delete summaries; this is not authenticat
 `--forget` deletes this file even with annotations disabled. Discard everything leaves it alone.
 The ruling was silent on `--no-annotations`: it does **not** govern this independent store.
 `--no-observer-model` is the job's call gate and does not hide or prevent deleting saved summaries.
-Start/cancel routes and summary generation belong to the next lane and are not implemented here.
+Start/cancel routes and summary generation follow the [job and grant contract](#job-and-grant-contract).
 Neither `events.PATCHABLE` nor `history.OBSERVATION_FIELDS` admits `summary`: events cannot write
 this store-derived field, and session observation history must not duplicate summary state or prose.
+
+
+## Job and grant contract
+
+`summary_jobs.py` owns the server thread and its slot, independent of Analyze. Only Claude Code
+summaries are admitted. Leaving the page does not stop a job. There is no interval or timer, and
+GET requests never start summary work. Opening a finished session is expressed by the page as an
+explicit POST with `origin: "open"`.
+
+### Requests and replies
+
+Every summary POST first checks loopback, Host/Origin, fetch site and document navigation, before
+parsing the body or touching the store. Rejected transport metadata answers 403. Local processes
+without browser metadata remain admitted; this is a loopback boundary, not authentication.
+Malformed JSON, unknown keys, invalid identity strings and invalid action/origin pairs answer 400;
+bodies above `annotation_body_cap_bytes` answer 413. Identity widths use
+`summary_store_key_cap_chars`, not a second limit.
+
+`POST /api/summary` accepts exactly one of these shapes:
+
+```json
+{"harness":"claude","sid":"session-id","action":"start","origin":"open"}
+{"harness":"claude","sid":"session-id","action":"update","origin":"press"}
+{"harness":"claude","sid":"session-id","action":"rerun","origin":"press"}
+{"consent":"off"}
+{"consent":"on"}
+```
+
+`start` also accepts `origin: "press"`. Open accepts only `start`, only for a published session
+with `ended_at` set, no stored summary, and summaries on. It refuses `session-running` or
+`summary-exists` with 409 and does no model work or charge. `session-unavailable` also answers
+409 without confirming whether an unlisted session exists. An unavailable summary store answers
+503 `store-unavailable`, never masquerading as an absent summary. Store presence is checked again
+under the publication lock at admission, so an open racing the previous job's final save cannot
+launch a second job. Later opens continue to read `sources.summary` from the focused GET.
+
+An admitted start/update/rerun answers 202:
+
+```json
+{"ok":true,"job":{"id":"random-id","state":"running","part":0,"parts":12,"reason":"","finished_parts":[],"attempts":0,"started_at":1900000000.0,"notice":null}}
+```
+
+When a notice is due, `notice` in the job is the record below and the same record also appears as
+`notice` beside `job` in that response. An identical later job omits that top-level key. Notices
+are non-blocking: no Allow reply is needed.
+
+```json
+{"kind":"summary","provider":"claude","destination":"Anthropic","content":1,"tool_output":"","at":1900000000.0}
+```
+
+The server's disclosure names exactly what is sent: redacted session text in 16 KiB menu windows
+with the person's words, relayed text in a person turn, agent replies, masked check titles with
+`failed`, `passed` or `not-recorded` as their per-check tool-reported result, and file-write display
+paths. Earlier phase titles are context, and cited menu entries are resent for the lede. No tool
+output is sent because the source admits none. The notice names Claude Code/Anthropic, the
+configured destination (or that it is unknown), Turn off summaries and Turn summaries on. A wider
+content tier or changed destination shows it again. An unnamed destination has the same detection
+limit as a reading route: changes between two unnamed endpoints cannot be distinguished.
+
+An independent stored off is honoured through restart and upgrade. Grant presses answer
+`{"ok":true,"summaries": <the board summaries block>}` with 200 (503 on store failure), including
+under `--no-observer-model` and `--no-annotations`. They change neither Analyze's answer nor a
+stored goal-summary answer. `--no-observer-model` refuses every model call with 503 `run-disabled`.
+Off refuses starts with 403 `summaries-off`; the rolling cap refuses them with 429 `daily-cap`.
+The cap outranks off in board status when both apply; neither turning on nor off resets spend. `--forget`
+stores summaries off as it stores readings off: it forgets the answer as Turn off does, and the
+ruling is silent on whether forgetting should instead return to the default of on, so the
+conservative reading is kept. It never resets the summary ledger.
+
+`POST /api/summary/cancel` accepts exactly `{"harness":"claude","sid":"session-id"}`.
+It answers 202 `{"ok":true,"cancelling":true}` when a job is running, otherwise 409
+`{"ok":false,"reason":"not-running"}`. An unreadable marker or unavailable publication lock
+answers 503 `store-unavailable`. It keeps already saved parts and refuses later replies.
+The identity names the current job, so a stale tab can cancel a newer job on that same session;
+this conservative choice follows the specified identity-only request. Delete uses the existing
+`/api/summary/delete` shape and outcome; it cancels the job and deletes the stored summary under
+the publication lock; a lock failure answers the existing `unwritable` outcome. Discard
+everything, on the Intent card, neither stops a running summary job nor removes a saved summary:
+a summary does not depend on saved intent (answer 3 of [the ruling](#the-ruling)), and "Discard of
+the summary" in the issue is Delete summary.
+
+`update` requires a stored summary (`422 no-summary` otherwise), fully re-reads the source and
+calls `session_summary.update` with its saved snapshot. Only new evidence is sent, subject to the
+producer's newest-block check-result exception. Earlier source changes refuse before any call;
+`rerun` calls `summarize` fresh. A part saved while the job runs carries the windows not yet
+answered as one `stopped` gap, with `lede_reason: "stopped"`, so a summary left by Cancel, a revoke
+or a restart names what it does not cover instead of comparing as unchanged against a snapshot of
+the whole read. The producer's final result is offered for saving even after a ceiling or the cap
+stopped it, keeping its named gaps; it is never offered when its state is `refused`. Summarize
+again covers the remainder; an unchanged update preserves the saved answer. A start on a session
+whose job is still `running` or `stopping` answers 409 `in-flight` before the source is read.
+
+### Published fields
+
+The grant is published as a board-level `summaries` block, beside `reading` but outside the
+`annotate` group, because the summary store does not depend on the annotation store and so the
+block is present under `--no-annotations` too. It is not `summary`, because that key already
+holds the board's session counts. The grant-press reply and the start refusals carry the same
+object under `summaries`:
+
+```json
+{"consent":true,"off":false,"used":0,"limit":200,"retry_at":null,"reason":"","notice_due":true,"provider":"claude","destination":"Anthropic","disclosure":"server-authored disclosure","notices":{}}
+```
+
+`notices` maps provider `claude` to the last summary notice record; it is empty before the first
+notice. `consent` is true by default and at the cap, false while explicitly off, run-disabled or
+store-unavailable. `off` means an explicit stored off (false when that answer cannot be read).
+`retry_at` is Unix seconds for the oldest unexpired charge plus 24 hours when at the cap, otherwise
+null. `reason` is exactly `""`, `daily-cap`, `summaries-off`, `run-disabled` or `store-unavailable`.
+The summary content tier is 1 and has its own epoch, independent of the reading's epoch.
+
+Each row's already-declared `summary.job` and focused `sources.summary.job` is null until this
+process knows a job, then the exact job shape in the 202 example. No prose is added to board rows.
+`part` is the current one-based part, or zero before work; `parts` is the planned retained windows
+plus one lede. `finished_parts` contains one-based parts successfully saved, including a finished
+window represented by a gap. `attempts` counts charged seam attempts, including retries. While a
+part is in flight the page can say `part 3 of 12`. Terminal metadata stays in the runtime's bounded
+`max_cache_entries` registry until replaced or evicted; saved prose stays in the summary store.
+
+Job states are `running`, `stopping` (Cancel accepted while the worker unwinds), `complete`,
+`partial`, `cancelled`, `refused` and `interrupted`. A restart never resumes a job: a dead marker
+becomes an `interrupted` job carrying its saved part numbers and charged attempts. Terminal
+metadata itself is not a new persistent store. A later restart without a marker still serves
+saved prose, but no longer carries that process's terminal job metadata.
+
+Job reasons are `""`, `cancelled`, `deleted`, `summaries-off`, `grant-changed` (including
+off then on while a reply was in flight), `destination-changed`, `daily-cap`, `run-disabled`,
+`store-unavailable`, `stopping`, `model-unavailable`, `interrupted`, `job-failed`, `store-refused`,
+`store-unwritable`, and producer outcomes `gaps`, `bytes`, `source_incomplete`, `no_entries`,
+`ceiling`, `refused`, `stopped` or `output_bound_too_small`. The job is `cancelled`
+for cancel and delete, `refused` for other reasons with no finished parts, and `partial` when
+parts were kept. A recovered marker is always state `interrupted`, preserving its stop reason if
+one was recorded. Stored summary states and gap tokens remain the producer's contract above.
+
+Admission failures use `{"ok":false,"reason":"token"}`. An occupied slot adds `job` (possibly
+null when another process holds it) and answers 409 `in-flight`. Other preflight refusals answer
+422 with the producer's `plan` and `largest_read`: `harness_not_supported`, `invalid_bounds`,
+`planned_calls`, `planned_bytes`, `planned_seconds`, `output_bound_full`, or source-change reasons
+`truncated`, `replaced`, `changed_earlier`, `late_evidence`, `span_mismatch`, `unknown_change`.
+A missing/unreadable source answers 422 `source-unavailable`; a marker that cannot be written
+answers 503 `job-unrecorded`; a thread that cannot start answers 503 `no-thread`. Both spend
+nothing and withdraw any notice they recorded without launching.
+
+```json
+{"reason":"planned_calls","parts":12,"largest_read":{"windows":32,"window_bytes":16384,"calls":37,"bytes_sent":786432,"seconds":600,"call_timeout":180}}
+```
+
+`largest_read` gives the maximum retained window count under the configured window/call limits
+and the independent byte/time bounds, not a promise that arbitrary entries fit all of them.
+The byte plan includes instructions, earlier-title allowance and a whole lede window. Preflight
+refuses without charging if any planned bound fails. The producer rechecks whole-job ceilings at
+every attempt; no call starts unless its entire timeout fits within the remaining 600 seconds.
+
+### Markers, charges and publication
+
+One hashed session path in `state_dir/summary-jobs/` is the cross-process slot. It is written before
+the first atomic charge, contains only job/session identifiers, pid, times, destination/grant
+generation and progress (never source text or model prose), and is removed after the worker ends.
+Startup takes `summary-jobs.lock`, recovers dead markers once, and leaves live processes alone.
+Finished parts have already gone through `summary_store.put`; recovery makes no model call.
+
+`summary_permission` and `summary_spends` are new tables in `compass-reading-permission.sqlite3`.
+The first holds `id`, `allowed`, `generation`; the second holds a primary-key `receipt` and `at`.
+A receipt is random job id plus one-based attempted call number, never a harness/session identity.
+Each transaction checks off and the rolling 200-call cap, inserts once, and commits before the
+model seam. Failed, empty and timed-out attempts stay charged. Receipts remain for 30 days for
+restart accounting; only the newest 24 hours count against the cap. Analyze's `spends` and
+`spend_jobs` are untouched. Revocation never refunds either ledger.
+
+Every part checks the summary grant generation and current destination again, even after a
+previous part was admitted. The tool-output tier is fixed absent on this source, so no legacy
+Analyze tool-output grant is borrowed. Publication checks the same gates under the lock used by
+Delete, Cancel and grant presses. A reply admitted before a revoke cannot publish after
+it, even if the reader has since turned summaries on again. The last admitted call may publish
+at the rolling limit; a refused subsequent call publishes nothing. Nothing from that call or a
+later part overwrites the finished prefix. The supervised Claude call uses the summary system
+prompt and configured per-call timeout; the stored model stamp includes the prompt's SHA-256.

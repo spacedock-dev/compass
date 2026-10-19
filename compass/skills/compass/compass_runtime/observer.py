@@ -420,7 +420,7 @@ def claude_environment(environ: Mapping[str, str]) -> dict[str, str]:
     return env
 
 
-def claude_exec(
+def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and timeout
     config: RuntimeConfig,
     prompt: str,
     *,
@@ -428,6 +428,8 @@ def claude_exec(
     runner: Any = supervise.run,
     binary_resolver: Any = shutil.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
+    system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
+    timeout: float = OBSERVER_READING_TIMEOUT_SEC,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[str, str]:
     """One bounded, non-persistent Claude Code call. Returns the output and a status.
@@ -463,6 +465,8 @@ def claude_exec(
             binary_resolver=binary_resolver,
             on_spawn=on_spawn,
             on_diagnostic=on_diagnostic,
+            system_prompt=system_prompt,
+            timeout=timeout,
         ) as prepared:
             return prepared(prompt, output_cap_bytes=output_cap_bytes)
     except ClaudePreparationError as error:
@@ -490,6 +494,8 @@ class PreparedClaude:
         on_spawn: Callable[[supervise.Group], None] | None,
         model: str,
         *,
+        system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
+        timeout: float = OBSERVER_READING_TIMEOUT_SEC,
         error_path: str = "",
         error_output: Any = subprocess.DEVNULL,
         on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
@@ -501,12 +507,14 @@ class PreparedClaude:
         self.runner = runner
         self.on_spawn = on_spawn
         self.model = model
+        self.system_prompt = system_prompt
+        self.timeout = timeout
         self.error_path = error_path
         self.error_output = error_output
         self.on_diagnostic = on_diagnostic
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
-        command = [self.binary, *_claude_reading_argv(self.model)]
+        command = [self.binary, *_claude_reading_argv(self.model, system_prompt=self.system_prompt)]
         started = time.monotonic()
         status = "failed"
         returncode: int | None = None
@@ -524,7 +532,7 @@ class PreparedClaude:
                 env=claude_environment(os.environ),
                 text=True,
                 encoding="utf-8",
-                timeout=OBSERVER_READING_TIMEOUT_SEC,
+                timeout=self.timeout,
                 check=False,
                 **options,
             )
@@ -609,7 +617,9 @@ def _claude_failure_reason(path: str) -> str:
     return "unknown"
 
 
-def _claude_reading_argv(model: str) -> list[str]:
+def _claude_reading_argv(
+    model: str, *, system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT
+) -> list[str]:
     return [
         "--print",
         "--safe-mode",
@@ -633,7 +643,7 @@ def _claude_reading_argv(model: str) -> list[str]:
         "--effort",
         CLAUDE_READING_EFFORT,
         "--system-prompt",
-        CLAUDE_READING_SYSTEM_PROMPT,
+        system_prompt,
     ]
 
 
@@ -660,6 +670,8 @@ def prepare_claude_exec(
     runner: Any = supervise.run,
     binary_resolver: Any = shutil.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
+    system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
+    timeout: float = OBSERVER_READING_TIMEOUT_SEC,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
 ) -> Iterator[PreparedClaude]:
     """Prepare the private cwd and output before qualification spends a call.
@@ -710,6 +722,8 @@ def prepare_claude_exec(
             runner,
             on_spawn,
             selected_model,
+            system_prompt=system_prompt,
+            timeout=timeout,
             error_path=error_path,
             error_output=error_output if error_output is not None else subprocess.DEVNULL,
             on_diagnostic=on_diagnostic,

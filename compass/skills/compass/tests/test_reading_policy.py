@@ -34,6 +34,52 @@ class ReadingPolicyTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def test_summary_switch_leaves_analyze_coverage_and_goal_notice_unchanged(self) -> None:
+        reading_policy.set_consent(
+            self.config,
+            True,
+            now=100.0,
+            provider="claude",
+            destination="Anthropic",
+            tool_output="Anthropic",
+        )
+        reading_policy.note(
+            self.config,
+            kind="goal",
+            provider="codex",
+            destination="OpenAI",
+            content=4,
+            tool_output="",
+            now=100.0,
+        )
+        before = reading_policy.status(self.config, now=100.0)
+        for allowed in (False, True):
+            reading_policy.set_summary_consent(self.config, allowed, now=101.0)
+            self.assertEqual(before, reading_policy.status(self.config, now=100.0))
+
+    def test_legacy_reading_notice_triggers_cannot_erase_a_summary_notice(self) -> None:
+        reading_policy.set_consent(self.config, True, now=100.0)
+        assert runtime_io.sqlite_module is not None
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+        ) as db:
+            db.execute("DROP TRIGGER IF EXISTS notice_off_permission_insert")
+            db.execute(
+                "CREATE TRIGGER notice_off_permission_insert AFTER INSERT ON permission WHEN NEW.allowed=0 BEGIN DELETE FROM notice; END"
+            )
+            db.commit()
+        reading_policy.note(
+            self.config,
+            kind="summary",
+            provider="claude",
+            destination="Anthropic",
+            content=1,
+            tool_output="",
+            now=100.0,
+        )
+        reading_policy.set_consent(self.config, False, now=101.0)
+        self.assertIn("summary", reading_policy.summary_status(self.config, now=102.0)["notices"])
+
     def test_fresh_store_is_on_without_explicit_unasked_coverage(self) -> None:
         answer = reading_policy.status(self.config, now=100.0)
         self.assertTrue(answer["consent"])

@@ -824,6 +824,8 @@ class ThePostRoutesAreTheListedOnesTest(unittest.TestCase):
             "/api/reading",
             "/api/reading/cancel",
             "/api/shutdown",
+            "/api/summary",
+            "/api/summary/cancel",
             "/api/summary/delete",
             "/api/tripwire",
             "/api/usage",

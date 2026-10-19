@@ -11,7 +11,7 @@ import contextlib
 import math
 import os
 import time
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
 from . import io as runtime_io
 from . import supervise
@@ -75,6 +75,7 @@ class Notice(TypedDict):
 
 
 class Status(TypedDict):
+    generation: NotRequired[int]
     consent: bool
     off: bool
     notices: dict[str, dict[str, Notice]]
@@ -321,11 +322,13 @@ def _notice_schema(db: Any) -> None:
     )
     for table in ("permission", "provider_permission"):
         for event in ("INSERT", "UPDATE"):
-            # Separate triggers preserve compatibility with schemas created by older builds.
+            # The pre-summary triggers cleared every kind. Replace those by name on upgrade,
+            # retaining summary notices when an older reading answer is turned off.
+            db.execute(f"DROP TRIGGER IF EXISTS notice_off_{table}_{event.lower()}")
             db.execute(
-                f"CREATE TRIGGER IF NOT EXISTS notice_off_{table}_{event.lower()} "  # noqa: S608
+                f"CREATE TRIGGER IF NOT EXISTS reading_notice_off_{table}_{event.lower()} "  # noqa: S608
                 f"AFTER {event} ON {table} WHEN NEW.allowed = 0 BEGIN "
-                "DELETE FROM notice; END"
+                "DELETE FROM notice WHERE kind != 'summary'; END"
             )
 
 
@@ -497,7 +500,7 @@ def _transaction(
                 _write(db, name, False)
             allowed = dict.fromkeys(PROVIDERS, False)
             db.execute("DELETE FROM tool_output_permission")
-            db.execute("DELETE FROM notice")
+            db.execute("DELETE FROM notice WHERE kind != 'summary'")
             # Every bound destination and disclosure goes too, by the triggers
             # the legacy row's write above fires, as for an older build's off.
         bound, disclosed = _bound(db), _disclosed(db)
@@ -777,7 +780,11 @@ def note(
         at=now,
     )
     try:
-        answer, recorded = _transaction(config, now, notice, provider)
+        answer, recorded = (
+            _summary_transaction(config, now, notice)
+            if kind == "summary"
+            else _transaction(config, now, notice, provider)
+        )
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         raise RefusedError(_answer(reason="store-unavailable")) from None
     if answer["reason"] == "store-unavailable":
@@ -813,7 +820,143 @@ def retract(config: RuntimeConfig, notice: Notice) -> None:
 def forget(config: RuntimeConfig, *, now: float | None = None) -> bool:
     # Forgetting the answer cannot refill a rolling budget. No session content
     # is retained here, only the timestamps protecting the spend bound.
-    return (
-        set_consent(config, False, now=time.time() if now is None else now)["reason"]
-        != "store-unavailable"
-    )
+    when = time.time() if now is None else now
+    reading = set_consent(config, False, now=when)
+    summary = set_summary_consent(config, False, now=when)
+    return reading["reason"] != "store-unavailable" and summary["reason"] != "store-unavailable"
+
+
+def _summary_answer(
+    config: RuntimeConfig,
+    dates: tuple[float, ...] = (),
+    *,
+    off: bool = False,
+    reason: str = "",
+    generation: int = 0,
+    notices: dict[str, dict[str, Notice]] | None = None,
+) -> Status:
+    answer = _answer(off=off, reason=reason, notices=notices)
+    full = len(dates) >= config.session_summary_rolling_cap
+    answer["used"] = len(dates)
+    answer["limit"] = config.session_summary_rolling_cap
+    answer["retry_at"] = min(dates) + DAY_SEC if full and dates else None
+    answer["reason"] = reason or ("daily-cap" if full else "summaries-off" if off else "")
+    answer["generation"] = generation
+    return answer
+
+
+def _summary_transaction(
+    config: RuntimeConfig, now: float, operation: str | Notice, receipt: str = ""
+) -> tuple[Status, Notice | None]:
+    if not math.isfinite(now) or now <= 0:
+        raise ValueError("Invalid summary timestamp")
+    with contextlib.closing(
+        _connect(config, READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC)
+    ) as db:
+        db.execute("BEGIN IMMEDIATE")
+        # Independent rows preserve an explicit summary off through upgrades without changing
+        # Analyze or goal answers: docs/design-session-summary.md#the-ruling.
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS summary_permission (id INTEGER PRIMARY KEY CHECK(id=1), "
+            "allowed INTEGER NOT NULL CHECK(allowed IN (0,1)), generation INTEGER NOT NULL)"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS summary_spends (receipt TEXT PRIMARY KEY, at REAL NOT NULL)"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS notice (kind TEXT NOT NULL, provider TEXT NOT NULL, "
+            "destination TEXT NOT NULL, content INTEGER NOT NULL, tool_output TEXT NOT NULL, "
+            "at REAL NOT NULL, PRIMARY KEY (kind, provider))"
+        )
+        db.execute("DELETE FROM summary_spends WHERE at <= ?", (now - JOB_LEDGER_SEC,))
+        row = db.execute("SELECT allowed, generation FROM summary_permission WHERE id=1").fetchone()
+        if operation in ("on", "off"):
+            was_off = row is not None and row[0] == 0
+            off = operation == "off"
+            generation = (row[1] if row else 0) + int(was_off != off)
+            db.execute(
+                "INSERT OR REPLACE INTO summary_permission VALUES (1, ?, ?)",
+                (int(not off), generation),
+            )
+            if off:
+                db.execute("DELETE FROM notice WHERE kind = 'summary'")
+            row = (int(not off), generation)
+        dates = tuple(
+            float(at)
+            for (at,) in db.execute(
+                "SELECT at FROM summary_spends WHERE at > ? ORDER BY at", (now - DAY_SEC,)
+            )
+        )
+        if any(not math.isfinite(at) or at <= 0 for at in dates):
+            raise ValueError("Invalid summary spend")
+        answer = _summary_answer(
+            config,
+            dates,
+            off=row is not None and row[0] == 0,
+            generation=row[1] if row else 0,
+            notices=_notices(db),
+        )
+        recorded = _store_notice(db, answer, operation)
+        if operation == "reserve" and not answer["reason"]:
+            with supervise.admitting() as open_:
+                if not open_:
+                    answer["reason"] = "stopping"
+                else:
+                    db.execute("INSERT OR IGNORE INTO summary_spends VALUES (?, ?)", (receipt, now))
+                    dates = tuple(
+                        float(at)
+                        for (at,) in db.execute(
+                            "SELECT at FROM summary_spends WHERE at > ? ORDER BY at",
+                            (now - DAY_SEC,),
+                        )
+                    )
+                    answer["used"] = len(dates)
+        elif (
+            operation == "reserve"
+            and answer["reason"] == "daily-cap"
+            and db.execute("SELECT 1 FROM summary_spends WHERE receipt=?", (receipt,)).fetchone()
+        ):
+            # A retried receipt is already charged, including at the cap; no second spend.
+            answer["reason"] = "summaries-off" if answer["off"] else ""
+        db.execute("COMMIT")
+        return answer, recorded
+
+
+def _summary_run(config: RuntimeConfig, now: float, operation: str, receipt: str = "") -> Status:
+    if config.model_calls_disabled and operation not in {"off", "on"}:
+        return _summary_answer(config, reason="run-disabled")
+    try:
+        return _summary_transaction(config, now, operation, receipt)[0]
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return _summary_answer(config, reason="store-unavailable")
+
+
+def summary_status(config: RuntimeConfig, *, now: float) -> Status:
+    """The summary grant and its own rolling ledger; never Analyze's answer."""
+    if not os.path.lexists(store_path(config)) and not config.model_calls_disabled:
+        return _summary_answer(config)
+    return _summary_run(config, now, "read")
+
+
+def set_summary_consent(config: RuntimeConfig, allowed: bool, *, now: float) -> Status:
+    return _summary_run(config, now, "on" if allowed else "off")
+
+
+def reserve_summary(config: RuntimeConfig, *, now: float, receipt: str) -> Status:
+    """Charge an attempted part exactly once, before the model seam."""
+    if not receipt:
+        raise ValueError("Summary attempts require an idempotent receipt")
+    return _summary_run(config, now, "reserve", receipt)
+
+
+def summary_receipts(config: RuntimeConfig, job_id: str) -> int | None:
+    """Recover the charges committed even if the process died before its marker rewrite."""
+    try:
+        with contextlib.closing(_connect(config, READ_WAIT_SEC)) as db:
+            return int(
+                db.execute(
+                    "SELECT count(*) FROM summary_spends WHERE receipt GLOB ?", (job_id + ":*",)
+                ).fetchone()[0]
+            )
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return None

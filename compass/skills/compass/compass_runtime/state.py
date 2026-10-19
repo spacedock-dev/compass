@@ -67,6 +67,8 @@ class RuntimeState:
     entry_index_lock: LockType = field(default_factory=threading.Lock)
     session_outlines: dict[str, Any] = field(default_factory=dict)
     session_outline_lock: LockType = field(default_factory=threading.Lock)
+    # "harness:sid" -> the latest summary job this process knows, bounded by max_cache_entries.
+    summary_jobs: dict[str, Any] = field(default_factory=dict)
     # (harness, sid) -> (source stamps and stored record identity, out-of-date report).
     summary_freshness: dict[tuple[str, str], Any] = field(default_factory=dict)
     summary_freshness_lock: LockType = field(default_factory=threading.Lock)

@@ -33,6 +33,7 @@ from compass_runtime import (
     reading_policy,
     session_source,
     session_summary,
+    summary_jobs,
     summary_store,
 )
 from compass_runtime import annotations as annotation_store
@@ -69,6 +70,7 @@ from .support import (
 )
 from .test_claude_checks import Transcript
 from .test_session_summary import Replies
+from .test_summary_jobs import wait_job
 
 
 def _application(os_name: str) -> Any:
@@ -6165,3 +6167,190 @@ class SummaryStoreHTTPTest(unittest.TestCase):
                     handler._reject.assert_called_once_with(403)
                     delete.assert_not_called()
                     self.assertEqual(0, handler.rfile.tell())
+
+
+class SummaryJobHTTPTest(unittest.TestCase):
+    temp: Any
+    config: Any
+    state: Any
+    store: Any
+    path: Path
+    application: Any
+    row: dict[str, Any]
+
+    def handler(self, path: str = "/api/summary", body: bytes = b"{}") -> Any:
+        factory: Any = SummaryStoreHTTPTest.handler
+        return factory(self, path, body)
+
+    def setUp(self) -> None:
+        setup: Any = SummaryStoreHTTPTest.setUp
+        setup(self)
+        self.jobs = summary_jobs
+        self.config = dataclasses.replace(self.config, model_calls_disabled=False)
+        self.application.config = self.config
+        row_patcher = mock.patch.object(
+            http_api._RequestHandler, "_published_row", return_value=self.row
+        )
+        row_patcher.start()
+        self.addCleanup(row_patcher.stop)
+        self.store.delete(self.config, "claude", "root")
+        patcher = mock.patch.object(runtime_supervise, "_SHUTDOWN", threading.Event())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def request_summary(self, **changes: Any) -> Any:
+        body = json.dumps(
+            {"harness": "claude", "sid": "root", "action": "start", "origin": "open", **changes}
+        ).encode()
+        handler = self.handler("/api/summary", body)
+        handler.do_POST()
+        return handler
+
+    def test_second_open_with_models_enabled_makes_no_call_and_no_summary_charge(self) -> None:
+        model = Replies()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            first = self.request_summary()
+            self.assertEqual(202, first._send.call_args.args[2])
+            wait_job(self.application, "claude", "root", timeout=5)
+            calls = len(model.prompts)
+            used = reading_policy.summary_status(self.config, now=self.application.clock())["used"]
+            second = self.request_summary()
+            self.assertEqual("summary-exists", json.loads(second._send.call_args.args[0])["reason"])
+            focused = self.handler()
+            focused._project_context(
+                urlparse("/api/project-context?project=synthetic&session=claude:root")
+            )
+            saved = json.loads(focused._send.call_args.args[0])["sources"]["summary"]
+            self.assertTrue(saved["exists"])
+            self.assertEqual("unchanged", saved["out_of_date"]["kind"])
+            self.assertEqual(1, len(saved["blocks"]))
+            self.assertEqual(calls, len(model.prompts))
+            self.assertEqual(
+                used,
+                reading_policy.summary_status(self.config, now=self.application.clock())["used"],
+            )
+            self.assertEqual(2, used)
+
+    def test_open_refuses_running_session_and_stored_summary(self) -> None:
+        self.row["ended_at"] = None
+        self.assertEqual(
+            "session-running", json.loads(self.request_summary()._send.call_args.args[0])["reason"]
+        )
+
+    def test_plan_refusal_reports_largest_read_before_first_call(self) -> None:
+        self.application.config = dataclasses.replace(self.config, session_summary_max_calls=1)
+        with mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)):
+            answer = json.loads(self.request_summary()._send.call_args.args[0])
+        self.assertEqual("planned_calls", answer["reason"])
+        self.assertEqual(1, answer["largest_read"]["calls"])
+        self.assertEqual(
+            0, reading_policy.summary_status(self.config, now=self.application.clock())["used"]
+        )
+
+    def test_summary_routes_refuse_before_reading_body_or_store(self) -> None:
+        for path in ("/api/summary", "/api/summary/cancel", "/api/summary/delete"):
+            for headers in (
+                {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"},
+                {"Sec-Fetch-Site": "cross-site"},
+                {"Origin": "https://evil.example"},
+                {"Host": "evil.example"},
+            ):
+                handler = self.handler(path, b"invalid")
+                handler.headers.update(headers)
+                with (
+                    mock.patch.object(
+                        handler, "_read_body", side_effect=AssertionError("body read")
+                    ),
+                    mock.patch.object(self.store, "load", side_effect=AssertionError("store read")),
+                ):
+                    handler.do_POST()
+                handler._reject.assert_called_once_with(403)
+            handler = self.handler(path)
+            handler.client_address = ("192.0.2.1", 9999)
+            with mock.patch.object(handler, "_read_body", side_effect=AssertionError("body read")):
+                handler.do_POST()
+            handler._reject.assert_called_once_with(403)
+
+    def test_discard_everything_leaves_a_running_summary_and_its_store_alone(self) -> None:
+        # DEC-28 answer 3: a summary does not depend on saved intent and Discard everything
+        # does not remove it, so discarding the words neither stops nor erases the summary.
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        entered, release = threading.Event(), threading.Event()
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return Replies()(prompt, output_cap_bytes=output_cap_bytes)
+
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            self.request_summary()
+            self.assertTrue(entered.wait(5))
+            try:
+                handler = self.handler(
+                    "/api/annotate", b'{"harness":"claude","sid":"root","clear":true}'
+                )
+                handler.do_POST()
+            finally:
+                release.set()
+            wait_job(self.application, "claude", "root", timeout=5)
+        self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
+        self.assertEqual("complete", self.state.summary_jobs["claude:root"].state)
+
+    def test_consent_route_does_not_touch_reading_or_goal_and_off_survives_restart(self) -> None:
+        reading_policy.note(
+            self.config,
+            kind="goal",
+            provider="codex",
+            destination="OpenAI",
+            content=4,
+            tool_output="",
+            now=100.0,
+        )
+        before = reading_policy.status(self.config, now=100.0)
+        for consent in ("off", "on", "off"):
+            handler = self.handler("/api/summary", json.dumps({"consent": consent}).encode())
+            handler.do_POST()
+            self.assertEqual(200, handler._send.call_args.args[2])
+            self.assertEqual(before, reading_policy.status(self.config, now=100.0))
+        config, _ = make_runtime(state_home=self.temp.name, state_dir=Path(self.temp.name))
+        self.assertEqual(
+            "summaries-off", reading_policy.summary_status(config, now=100.0)["reason"]
+        )
+
+    def test_malformed_summary_values_are_refused_without_model_work(self) -> None:
+        payload: dict[str, Any]
+        for payload in (
+            {"consent": []},
+            {"consent": {}},
+            {"consent": True},
+            {"harness": "claude", "sid": "root", "action": [], "origin": "press"},
+        ):
+            handler = self.handler("/api/summary", json.dumps(payload).encode())
+            handler.do_POST()
+            handler._reject.assert_called_once_with(400)
+
+    def test_summary_mutations_report_publication_lock_failure(self) -> None:
+        for path, payload in (
+            ("/api/summary", {"consent": "off"}),
+            ("/api/summary/cancel", {"harness": "claude", "sid": "root"}),
+            ("/api/summary/delete", {"harness": "claude", "sid": "root"}),
+        ):
+            handler = self.handler(path, json.dumps(payload).encode())
+            with mock.patch.object(
+                summary_jobs, "_locked", side_effect=OSError("lock unavailable")
+            ):
+                handler.do_POST()
+            reply = json.loads(handler._send.call_args.args[0])
+            self.assertIn(
+                reply.get("reason") or reply.get("outcome"), ("store-unavailable", "unwritable")
+            )
