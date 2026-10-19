@@ -83,6 +83,23 @@ export const MarksTeachThePage: Story = {
   },
 };
 
+/* The marks follow their parts down the one-column page, so the numbers read in order from the top: the
+   tour's order is the page's. Full activity's mark sits beside its trigger, in view while it is collapsed. */
+export const MarksFollowThePage: Story = {
+  render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
+  play: async ({ canvasElement }) => {
+    await loaded(canvasElement);
+    await expect(marks(canvasElement).map((mark) => mark.getAttribute('data-sample-mark'))).toEqual(
+      TOUR.map((note) => note.id),
+    );
+    const activity = canvasElement.querySelector('[data-sample-mark="activity"]') as HTMLElement;
+    await expect(activity).toBeVisible();
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Full activity' }),
+    ).toHaveAttribute('aria-expanded', 'false');
+  },
+};
+
 export const FindingTintsItsEvidence: Story = {
   render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
   play: async ({ canvasElement }) => {

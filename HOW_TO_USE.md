@@ -425,7 +425,7 @@ dashboard with a setting that moves it, such as `ANTHROPIC_BASE_URL` or `CLAUDE_
 and the next press asks again first. Where the disclosure said Compass cannot name the
 destination, which is always on Windows and for a Codex base URL, a later move is not detected,
 and the Allow keeps covering it.
-Use **Turn off readings** on a session page to revoke it. A Claude Code session is read by Claude
+Use **Turn off readings** on a session page, in the **What is sent** popover beside Analyze drift, to revoke it. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
 read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever
 reads. **What is sent**, under the button, opens a short list naming it, and with neither installed that reason takes

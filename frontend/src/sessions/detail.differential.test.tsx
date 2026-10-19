@@ -43,6 +43,19 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
     };
   const copy = article.cloneNode(true) as Element;
   copy.querySelector('.next-session-panel')?.remove();
+  /* The one-column page (owner, 2026-10-19; docs/design-frontend-migration.md#held-to-recorded-answers): the
+     state badge moved under the title beside a new line that restates CURRENT ACTIVITY and the turn, and the
+     activity heading became the Full activity trigger. Read back in the recorded order and words; the rest of
+     the activity, in its recorded order, is compared unchanged. */
+  const status = copy.querySelector('[data-next-session-status]');
+  if (status) {
+    const badge = status.querySelector('.next-session-state');
+    badge?.querySelector('[data-next-session-status-dot]')?.remove();
+    if (badge) copy.querySelector('.next-session-detail-title')?.prepend(badge);
+    status.remove();
+  }
+  const activityHeading = copy.querySelector('[data-next-full-activity-heading]');
+  if (activityHeading) activityHeading.textContent = 'Session activity';
   const header = copy.querySelector('.next-session-detail-header');
   if (header) copy.prepend(header);
   /* The numbered activity list and the header's drift pill and entry count belong to the Drift step: the legacy

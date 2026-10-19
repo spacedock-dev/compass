@@ -12,14 +12,18 @@ import { DirectionQuestion } from './DirectionQuestion';
 import { chosenIsStale, goalKey, intentDraft, type DraftInput } from './derive';
 import { reconcileDirection } from './directions';
 import { IntentSection } from './IntentSection';
-import { SessionMore } from './SessionMore';
+import { LIVE_HARNESSES } from './liveMonitor';
+import { LiveMonitorSwitch } from './LiveMonitorSwitch';
+import { DRIFT_SUBTITLE } from './sentences';
+import { LIVE_HINT } from '../drift/sentences';
 import { PanelContext, useHeldVersion, useIntentCtx, type Panel } from './useIntent';
 import { workSource } from './work';
 
-/* The Intent and drift panel beside the session page's activity column: the reader's own words first (the
-   goal, the expected outcome and the one save for both), then the Drift section, where the reading, its
-   control and the departures belong to the Analyze step and arrive through `drift`. Your words come first, so
-   nothing above the reading is a model's.
+/* The Intent card, the What the session has done card and the Drift card, top to bottom in the session page's
+   one column: the reader's own words first (the goal, the expected outcome and the one save for both), then
+   what the session did, then the Drift section, where the reading, its control and the departures belong to
+   the Analyze step and arrive through `drift`. Your words come first, so nothing above the reading is a
+   model's.
 
    Everything the panel sends it sends on a press: a save, a discard, an adopted prompt, a direction opened
    for review. Mounting it, mounting it twice under StrictMode, a board refresh or a reconnect sends none of
@@ -34,6 +38,8 @@ export interface IntentPanelProps {
   readonly project: string;
   /** The Drift section's body: the live estimate, the reading control, the reading and its departures. */
   readonly drift?: ReactNode;
+  /** The What the session has done card, drawn between the Intent card and the Drift card. */
+  readonly summary?: ReactNode;
   /** What the session page composes beneath: the delegated-work line and the departures raised away. */
   readonly children?: ReactNode;
 }
@@ -49,7 +55,14 @@ function DriftSlotPlaceholder() {
   );
 }
 
-export function IntentPanel({ session, payload, project, drift, children }: IntentPanelProps) {
+export function IntentPanel({
+  session,
+  payload,
+  project,
+  drift,
+  summary,
+  children,
+}: IntentPanelProps) {
   const shell = useShell();
   const { runtime, controls } = shell;
   const ctx = useIntentCtx();
@@ -60,6 +73,7 @@ export function IntentPanel({ session, payload, project, drift, children }: Inte
   const harness = String(session['harness'] || '');
   const sid = String(session['sid'] || '');
   const annotating = annotateOn(payload);
+  const monitor = annotating && LIVE_HARNESSES.has(harness);
   const projectKey = useMemo(
     () =>
       stableProjectKey({
@@ -139,13 +153,13 @@ export function IntentPanel({ session, payload, project, drift, children }: Inte
   };
   return (
     <PanelContext value={panel}>
-      <aside
-        className="next-session-panel max-[760px]:gap-1 min-[1101px]:col-start-2 min-[1101px]:row-start-1"
+      <div
+        className="next-session-panel max-[760px]:gap-1"
         data-next-session-drift
         data-next-session-panel="intent"
-        aria-label="Intent and drift"
       >
         {annotating ? <IntentSection /> : null}
+        {summary}
         <Card
           variant="drift-panel"
           as="section"
@@ -158,7 +172,19 @@ export function IntentPanel({ session, payload, project, drift, children }: Inte
               <h2 id="next-session-drift-heading" className="next-session-drift-heading">
                 Drift
               </h2>
+              <p className="next-session-drift-sub basis-full text-body">{DRIFT_SUBTITLE}</p>
             </div>
+            {/* The live monitor and what it does, in the head of the card it controls now that More is retired:
+                placement only, its value and default are unchanged.
+                [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */}
+            <LiveMonitorSwitch />
+            {monitor ? (
+              <div className="basis-full">
+                <p className="next-cockpit-reading-why m-0" data-next-live-hint>
+                  {LIVE_HINT}
+                </p>
+              </div>
+            ) : null}
           </header>
           {drift ?? (
             <>
@@ -168,8 +194,7 @@ export function IntentPanel({ session, payload, project, drift, children }: Inte
           )}
           {children}
         </Card>
-        <SessionMore />
-      </aside>
+      </div>
     </PanelContext>
   );
 }

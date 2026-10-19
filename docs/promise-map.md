@@ -103,8 +103,9 @@ It calls no model and raises no notification. An analysis result keeps the sourc
 outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
 A current result offers no rerun button; new work or changed intent gives one `Analyze again`
-control with that reason. A finding's `Show cited entries in Session activity` button jumps to
-its resolved entries, marked with the finding's words and their current numbers. Departure
+control with that reason. A finding's `Show cited entries in Full activity` button opens that
+section and jumps to its entries, loading older record pages for one not yet listed, marked with
+the finding's words and their current numbers. Departure
 citations keep the neutral `Cited` tag.
 
 The Intent log brings every board session and retained annotation/discard record into one list,
@@ -290,7 +291,7 @@ an acceptance of each provider's checks enables that control (the captain's of C
 Claude Code). A reading is an account of the evidence, never
 verification that the work was done. The words are kept under a
 session count rather than a date, so an old enough annotation is evicted rather than expired. The
-goal's Clear in More empties that box; outcome lines have Remove after use. Neither is Discard
+goal's Clear in the Intent card empties that box; outcome lines have Remove after use. Neither is Discard
 everything: the save after a clear or removal keeps every earlier revision, so anything raised
 against those words goes on quoting them. The board says which is which where the two controls
 sit. And both of those

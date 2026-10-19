@@ -79,6 +79,15 @@ legacy page said; they say nothing the React page was not also asserted to do. S
 port was "run next to" or "compared with" the legacy page describe how it was proved while that page
 existed.
 
+The one-column session page is a deliberate departure (owner, 2026-10-19;
+[the reversal](design-reading-a-session.md#amended-2026-10-19-owner-one-column-again)). The
+`sessions__detail` comparison in `frontend/src/sessions/detail.differential.test.tsx` reads it back in
+the recorded order and words before comparing: the state badge, which now leads the measured line
+with a status dot, returns to the start of the title row without its dot, and the Full activity
+trigger reads as the recorded "Session activity" heading. The header still comes first, the panel is
+still outside the comparison, and every other sentence of the activity, in its recorded order, is
+compared unchanged. The recording is untouched.
+
 Base UI Select is a deliberate departure from native option DOM (owner, 2026-10-12). The Intent
 editor comparison retires its native-menu column and excludes the combobox trigger from action
 buttons; its browser role proof checks offered labels, order and pending adoption. The Console
@@ -545,6 +554,9 @@ press before settlement. Activity Add stays mounted and becomes visible on hover
 Below 1101 px the panel precedes the activity in one column; from 1101 px the activity reads on the left
 and the panel on the right, level at the top (owner request, 2026-10-12). The unblocked header moves into
 the activity area.
+The owner reversed that on 2026-10-19: the page is one column at every width, More is retired, and
+each of its parts has a new home in the Intent card, the Drift card or the "What is sent" popover
+([the inventory](design-reading-a-session.md#where-everything-in-more-went)).
 From 761 px the Intent section is a card like the Drift card, 24 px above it, and its text fields show
 three lines; at 760 px and below the earlier compact spacing and one-line fields stay so the goal and the
 primary control remain in the 375 by 667 first view. The field chrome reference table records the card's

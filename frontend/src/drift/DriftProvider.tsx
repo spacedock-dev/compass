@@ -6,13 +6,14 @@ import { useLiveEstimateOn } from '../intent/liveMonitor';
 import { useHeldVersion } from '../intent/useIntent';
 import type { Row } from '../observed';
 import { useDisplayed, useShell } from '../shell/context';
-import { DriftContext, type DriftValue } from './context';
+import { DriftContext, type DriftValue, type Jump, type JumpMissing } from './context';
 import { buildModel, type DriftModel } from './model';
 import { overlaid } from './overlay';
 import { driftCtxFor, useDriftVersion, type DriftCtx } from './state';
 import { clearFlipLines } from './flip';
 import { entryWindow } from '../intent/work';
-import { citationsHeld, citedIdsOf } from './citations';
+import { citationsHeld, citedIdsOf, citesOf, entriesHeld, heldIds } from './citations';
+import { fullActivityKey } from '../sessions/fullActivityKey';
 import { trackJobs } from './jobs';
 import { syncPaused } from './steerActions';
 
@@ -89,22 +90,56 @@ export function DriftProvider({
     held: ctx.intent.held,
     ...(record ? { record } : {}),
   });
-  const [chosen, setChosen] = useState<{ session: string; readAt: unknown; key: string } | null>(
-    null,
-  );
+  const [chosen, setChosen] = useState<Jump | null>(null);
+  const [settled, setSettled] = useState<Jump | null>(null);
+  const [missing, setMissing] = useState<JumpMissing | null>(null);
+  /* A selection stands while its cited rows are held, and while the pages its press asked for are still being
+     read, when none may be held yet. */
   const finding =
     chosen?.session === key && chosen.readAt === model.raw?.['read_at']
-      ? (model.shape?.criteria.find((row) => row.key === chosen.key && row.citedIds.length) ?? null)
+      ? (model.shape?.criteria.find(
+          (row) => row.key === chosen.key && (row.citedIds.length || settled !== chosen),
+        ) ?? null)
       : null;
   // Invalidation ends the press, so returning to its session or citations cannot restore its marks.
   if (chosen && !finding) setChosen(null);
+  if (missing && missing.press.session !== key) setMissing(null);
+  /* A press of Show cited entries opens Full activity and, where an entry it cites is not one the page holds,
+     reads older record pages until it is, the record's start, or the page cap. The reader asked for these
+     entries, so this is their read, as Show more is; docs/design-reader-state.md#the-inventory owns it.
+     Whatever is still not held when the read ends is counted, and the list says so. */
+  const chooseFinding = (findingKey: string, origin: HTMLElement | null = null) => {
+    const next: Jump = { session: key, readAt: model.raw?.['read_at'], key: findingKey, origin };
+    setChosen(next);
+    setSettled(null);
+    setMissing(null);
+    ctx.shell.controls.disclosures.set(fullActivityKey(project, session), true);
+    const cited = citesOf(model.raw, findingKey);
+    const identity = model.identity;
+    const scope = { projectKey: model.projectKey, session: model.session, cited };
+    const settle = () => {
+      const held = heldIds(ctx.shell.runtime.store.getSnapshot(), scope);
+      const count = cited.filter((id) => !held.has(id)).length;
+      setSettled(next);
+      setMissing(count ? { press: next, count } : null);
+    };
+    if (!identity || !cited.length) {
+      settle();
+      return;
+    }
+    void ctx.shell.runtime
+      .resolveRecord({ projectKey: model.projectKey, focus: identity }, (snapshot) =>
+        entriesHeld(snapshot, scope),
+      )
+      .finally(settle);
+  };
   const value: DriftValue = {
     ctx,
     model,
     finding,
-    jump: chosen,
-    chooseFinding: (findingKey) =>
-      setChosen({ session: key, readAt: model.raw?.['read_at'], key: findingKey }),
+    jump: finding ? chosen : null,
+    jumpMissing: missing,
+    chooseFinding,
   };
 
   /* After the commit, never from the render: the timers the card asked for, the announcements of a running

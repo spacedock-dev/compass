@@ -5281,6 +5281,42 @@ control, sentence and limit in it gets a new home, so the principle above, that 
 an honest limit moves and is never deleted, still holds. The record is
 [DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept).
 
+The owner signed this reversal on 2026-10-19 in the milestone "Session page: what the session did,
+and where it left your intent"; that sign-off supersedes the 2026-10-12 layout amendment above.
+
+#### Where everything in More went
+
+The written inventory of the retired session More, by group in its order, with the new home of each
+part. Nothing in it was dropped; the Storybook story `Sessions/One-column page` asserts each by role,
+name or text.
+
+| More held | Kind | New home |
+| -- | -- | -- |
+| Live monitor switch | Control | The Drift card's heading, on the right of the title |
+| "How far the session has moved from the goal" | Sentence | The Drift card's heading, under the title |
+| "Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header." (Claude Code, annotations on) | Limit | The Drift card's heading, under the switch |
+| About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | The Intent card, under the save |
+| What became of discarded words | Sentences | The Intent card, under the save |
+| Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
+| Delegated work, and the "still running?" check | Limit | The Drift card, under the reading and its control, where Analyze drift is (row 6e) |
+| Turn off readings | Control | The "What is sent" popover beside Analyze drift; under the control where no popover is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
+| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside Clear |
+| "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
+| Clear | Control | The Intent card, beside the saved stamp |
+| Later directions: unknown, none or settled, with "Nothing here decides…" | Disclosure and limit | The Intent card, last |
+
+The activity column becomes **Full activity**, collapsed at the foot of the page. It keeps CURRENT
+ACTIVITY, the numbered list newest first, subagents, session facts, the current task, health,
+tasks, command-shape reports, notifications and How it landed, in that order, and a blocked
+session's measured line. The header gains a status dot beside the state word, which now leads the
+measured line ("working · running Bash · turn started 3m ago"); the raise control, the drift pill
+and the reading cap banner stay where they were. A finding's citation, now "Show cited entries in
+Full activity", opens the section, reads older record pages until every cited entry is held, the
+record's start or the page cap, and moves focus to the first cited row; an entry no page returns is
+named in a status sentence, which takes focus instead. Escape on the row or the sentence, or "Back to
+the finding", returns focus to the citation, and both moves scroll without animation when the reader
+prefers reduced motion.
+
 ## DEC-28: a model may summarize a session, and the summary is kept
 
 Decided by the owner on 2026-10-19. The ruling, what it amends, the alternatives it rejected, the

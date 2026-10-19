@@ -117,16 +117,16 @@ a separate prototype store; `--forget` does not delete it. The terminal is also 
 requires both interaction flags and registration from inside the selected session's tmux pane,
 and accepts no input. Its xterm assets are vendored and served from loopback.
 
-Exact session detail is reachable from Sessions, cockpit session links and the Intent log. A
-session waiting on you shows its name, state and question first. Otherwise the page leads with
-the **Intent and drift** panel: an **Intent** section with the goal and the expected
-outcome lines you typed, then a **Drift** section with the `Analyze drift` control, what an
-analysis reads and sends under it, the reading, and every departure on record, asked for or not.
-While a direction you gave after your intent is unsettled, the question about it stands where
-`Analyze drift` would be (see below). **Session activity** follows it, with the session's name and
-state when it is not waiting on you, the agent's current activity, the session's numbered entries,
-the recorded request, tasks, subagents, token measurements
-and how the session landed. On a harness other than Claude Code or Pi the Drift section says "Compass
+Exact session detail is reachable from Sessions, cockpit session links and the Intent log. The
+page is one column at every width. It opens with the session's name, its state beside a status dot
+and what it is doing, then the question first when the session is waiting on you. Then come the
+**Intent** card with the goal and the expected outcome lines you typed, a **What the session has
+done** card, and a **Drift** card with the `Analyze drift` control, what an analysis reads and
+sends under it, the reading, and every departure on record, asked for or not. While a direction you
+gave after your intent is unsettled, the question about it stands where `Analyze drift` would be
+(see below). **Full activity** closes the page, collapsed until you open it: the agent's current
+activity, the session's numbered entries, the recorded request, tasks, subagents, token
+measurements and how the session landed. On a harness other than Claude Code or Pi the Drift section says "Compass
 can't read work from this harness" where a drift level will go; `Analyze drift` stays wherever a
 reader is named. With no reader on this machine, the reason stands where the control would be. The
 page has at most one primary run control. No answer option is ever emphasised: a session blocked on
@@ -305,7 +305,7 @@ characters. The goal is one line of at most 240. Both are optional and set indep
 leaves the other alone. Open the session's page: the fields are the first thing in its drift
 block, for a session with or without a project. The how-to beside Intent says what an analysis
 reads and that Compass never writes into the session. Each box shows how many of its 240 characters
-you have used as you type. More holds the goal's `Clear` control and the saved reads-from line.
+you have used as you type. Under the save, the Intent card holds the goal's `Clear` control and the saved reads-from line.
 After an outcome line is used,
 `Remove` and `Add a line` appear; Add adds another until there are six, where it stays
 on the page, refuses a seventh and says why (replace or merge a line instead). `Save intent` stays
@@ -350,8 +350,8 @@ short identity prefix, another session sharing that prefix would share these wor
 so rather than leaving you to assume otherwise.
 
 Below the two fields the Drift section holds the run control (or the question about a later
-direction), the reading and the departures on record. Notes about your saved words are in More.
-The agent's current activity leads Session activity below it, and the session's entries follow it,
+direction), the reading and the departures on record. Notes about your saved words are in the
+Intent card under the save. The agent's current activity leads Full activity, and the session's entries follow it,
 numbered. The departures section appears only with `--unasked-readings` on, or once a reading or a
 departure is on record. How it landed follows the session's own facts further down. With saved
 words the list starts at the entry where their evidence window opens; earlier entries are
@@ -359,15 +359,18 @@ counted and not listed, and with nothing saved the whole record is listed. A Cla
 numbers are fixed: #1 is its oldest message, a message keeps its number as the session grows, and a
 check or file is numbered by the message it follows and its place after it (#41.2). Other harnesses
 number what the page holds, from the oldest. The measured line
-gives the count, below a blocked session's header in Session activity and otherwise in the header,
+gives the count, in Full activity when the session is blocked and otherwise in the header,
 and leaves it out when the record was not read. It lists the twenty most
 recent entries in the window, the ten most recent messages the agent wrote, every check and file in
 the window and every later direction still to settle, each at its own number, and says how many it
 counted and did not list. An entry a departure cites is flagged "Cited" and always listed, and a direction you
 gave after saving is flagged "A later direction you gave", which records no finding. Numbers are
-worked out again on every render. A finding's "Show cited entries in Session activity" button
-scrolls to and marks its resolved entries with its saved words and their current numbers, and tints
-each of those rows so it stands apart from the list, without requesting another analysis. A finding that cites nothing resolvable says so and marks nothing.
+worked out again on every render. A finding's "Show cited entries in Full activity" button
+opens Full activity, scrolls to and marks its entries with its saved words and their current
+numbers, and tints each of those rows so it stands apart from the list, without requesting another
+analysis. An entry it cites that is not loaded yet is read from older record pages first; one no
+page returns is named as not loaded, and focus goes there instead. Escape or "Back to the finding"
+returns focus to the button. A finding that cites nothing resolvable says so and marks nothing.
 On a harness without fixed numbers, a check that re-runs or a file written again moves the entries
 after it. Each entry shows who wrote it, its own type and the source that published it, and the
 list states the limit under it: demonstrated work results are read on Pi, and on
@@ -443,12 +446,12 @@ figures beneath are one line per collection — the departures the reading raise
 the away checks raised, each counted from the rows shown beside it — then the board's raises,
 attempts and hand-overs, with no arithmetic between any of them. A count identifies a session worth
 reading and settles nothing else, and where the away checks have never read the session the figure
-says it was not measured rather than reading zero. The goal's `Clear` in More empties that box, and
+says it was not measured rather than reading zero. The goal's `Clear` in the Intent card empties that box, and
 the save after it keeps every earlier revision, so the raises quoting those words stay. Discarding
 the whole annotation withdraws them: the quotations go from the departure record too, and what
 stays is the fact that a check ran and a record of the discard itself, holding when it happened
 and no text at all. That record is why a discarded session still has a line in the Intent log,
-and why the board never describes it as a session nobody typed against. That act is the `Discard everything` control, inside More, behind the summary of the same name and offered only
+and why the board never describes it as a session nobody typed against. That act is the `Discard everything` control, in the Intent card, behind the summary of the same name and offered only
 where a revision is stored; it takes two presses, and between them the board names what it will
 delete and what it will withdraw. That sentence is the control's own description, and it is
 written to the page's live region when the first press arms it, so it reaches a reader who is not
@@ -470,7 +473,7 @@ unknown. Consistent readings add no mark or rank, and there is no drift total. W
 off the slot has no link and there is no Drift mark; the screen explains that once.
 
 One thing here evaluates on a cadence, and only when you turn it on: the session page's `Live
-monitor` switch in More, off by default and remembered per session in this browser only, never sent to the
+monitor` switch in the Drift card's heading, off by default and remembered per session in this browser only, never sent to the
 server. With it on, a Claude Code session's page shows a live estimate (None or low, Medium, High or
 Extreme, or Not enough recorded yet), labelled `Live estimate` with the time it was computed and
 worked out after every turn from the recorded checks and written paths against your saved intent,

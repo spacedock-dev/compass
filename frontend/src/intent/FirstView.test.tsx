@@ -22,15 +22,17 @@ describe('the first view of a session', () => {
     expect(control('held-undo')).toBeNull();
   });
 
-  it('keeps Save visible and puts Clear and the monitor inside session More', async () => {
+  it('keeps Save visible, Clear in the Intent card and the monitor in the Drift card head', async () => {
     const page = mountSession();
     await settle(page);
     expect(control('held-save')).not.toBeNull();
     expect(control('held-undo')).toBeNull();
-    const more = document.querySelector('[data-next-session-more]');
-    expect(more).not.toBeNull();
-    expect(more?.contains(control('held-clear'))).toBe(true);
-    expect(more?.contains(control('live-monitor'))).toBe(true);
+    expect(document.querySelector('[data-next-session-more]')).toBeNull();
+    const intent = document.querySelector('[aria-labelledby="next-session-intent-heading"]');
+    expect(intent?.contains(control('held-clear'))).toBe(true);
+    expect(
+      document.querySelector('.next-session-drift-head')?.contains(control('live-monitor')),
+    ).toBe(true);
     expect(text('.next-session-reentry-none')).toBe('');
     type(goalBox(), 'Changed goal');
     expect(control('held-undo')).not.toBeNull();
@@ -68,26 +70,21 @@ describe('the first view of a session', () => {
     expect(text('[data-next-ended-goal]')).not.toContain('can only read');
   });
 
-  it('keeps More open and held fields across refresh and a remount', async () => {
+  it('keeps Full activity open and held fields across refresh and a remount', async () => {
     const page = mountSession({ store: { goal: 'Saved', lines: ['A check'], revision: 1 } });
     await settle(page);
-    const trigger = document.querySelector(
-      '[data-next-session-more] [data-slot="accordion-trigger"]',
-    );
+    const trigger = () => document.querySelector('[data-next-full-activity-trigger]');
+    expect(trigger()?.getAttribute('aria-expanded')).toBe('false');
     await act(async () => {
-      fireEvent.click(trigger as Element);
+      fireEvent.click(trigger() as Element);
     });
     type(goalBox(), 'Held words');
     type(lineBoxes()[0] as HTMLTextAreaElement, 'Held outcome');
     await page.poll({ ...(page.state.data as object), generated: 1100 });
-    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
     await page.go('#n=sessions');
     await page.go('#n=session:alpha%2Fapp:claude:s1');
-    expect(
-      document
-        .querySelector('[data-next-session-more] [data-slot="accordion-trigger"]')
-        ?.getAttribute('aria-expanded'),
-    ).toBe('true');
+    expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
     expect(goalBox().value).toBe('Held words');
     expect(lineBoxes()[0]?.value).toBe('Held outcome');
     expect(page.posts()).toBe(0);

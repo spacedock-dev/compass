@@ -109,6 +109,16 @@ export function mountDrift(
   } as never);
 }
 
+/* Full activity starts collapsed; a reader opens it before reading or paging the record. Idempotent, so a
+   test may call it after every settle. */
+export const openActivity = async (): Promise<void> => {
+  const trigger = document.querySelector('[data-next-full-activity-trigger]');
+  if (!trigger || trigger.getAttribute('aria-expanded') === 'true') return;
+  await act(async () => {
+    fireEvent.click(trigger);
+  });
+};
+
 export const byAction = (action: string): HTMLButtonElement | null =>
   document.querySelector<HTMLButtonElement>(`[data-next-cockpit-action="${action}"]`);
 

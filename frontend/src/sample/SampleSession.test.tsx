@@ -62,7 +62,7 @@ describe('the sample session', () => {
 
   it('opens the words of a note from its mark, and the same words are in the text legend', async () => {
     await mountSample();
-    const note = TOUR[2];
+    const note = TOUR.find((each) => each.id === 'level');
     const mark = document.querySelector('[data-sample-mark="level"]') as HTMLElement;
     await act(async () => {
       fireEvent.click(mark);
@@ -100,14 +100,9 @@ describe('the sample session', () => {
     expect(box.value).toBe(text);
   });
 
-  it('holds a press inside the Intent popover, and lets the grouped checks open', async () => {
+  it('holds a press on Clear in the Intent card, and lets the grouped checks open', async () => {
     await mountSample();
-    const more = [...document.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'More',
-    ) as HTMLElement;
-    await act(async () => {
-      fireEvent.click(more);
-    });
+    expect(document.querySelector('[data-next-session-more]')).toBeNull();
     const clear = document.querySelector(
       '[data-next-cockpit-action="held-clear"]',
     ) as HTMLElement | null;

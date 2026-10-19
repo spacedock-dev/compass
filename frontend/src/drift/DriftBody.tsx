@@ -16,6 +16,7 @@ import {
   ReadingCount,
   REFUSED_ID,
   JobBox,
+  TurnOff,
   type SteerSlot,
 } from './ReadingControl';
 import { ReadingResult } from './ReadingResult';
@@ -225,8 +226,11 @@ function QuestionWithAnalysis({
                 parts={disclosureParts(route, provider, disclosure)}
                 id={DISCLOSURE_ID}
               />
+              <TurnOff />
             </Why>
-          ) : null}
+          ) : (
+            <TurnOff />
+          )}
           {annotation ? <ReadingCount count={count} /> : null}
           {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
         </>

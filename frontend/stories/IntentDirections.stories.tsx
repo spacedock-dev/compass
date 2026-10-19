@@ -159,6 +159,8 @@ export const OutsideSearch: Story = {
       'direction-keep',
       `${prefix} Nothing was settled and no analysis was started.`,
     );
+    // The row's own control is in Full activity, which starts collapsed.
+    await userEvent.click(canvas.getByRole('button', { name: 'Full activity' }));
     const row = canvasElement.querySelector('[data-next-entry-id="f2"]') as HTMLElement;
     await failedPress(row, 'direction-add', `${prefix} No outcome line was added.`);
     await expect(canvas.getByRole('textbox', { name: 'Goal' })).toHaveValue('Ship synthetic work');
