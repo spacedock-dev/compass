@@ -250,6 +250,74 @@
           "omitted": [],
           "unavailable": []
         },
+        "outline": {
+          "basis": "grouping",
+          "blocks": [
+            {
+              "checks": [],
+              "counts": {
+                "agent_messages": 1,
+                "checks": 0,
+                "checks_failed": 0,
+                "files": 0,
+                "subagent_entries": 0
+              },
+              "failures": [],
+              "folders": [],
+              "prompt": {
+                "at": 1899996400.0,
+                "fact_id": "fact:1b3f7a63986acb47",
+                "title": "Add retry with backoff to the webhook handler."
+              },
+              "span": {
+                "entries": 2,
+                "first": "fact:1b3f7a63986acb47",
+                "from_at": 1899996400.0,
+                "last": "fact:97096f7eb5b6d42d",
+                "to_at": 1899996460.0
+              }
+            },
+            {
+              "checks": [],
+              "counts": {
+                "agent_messages": 0,
+                "checks": 0,
+                "checks_failed": 0,
+                "files": 0,
+                "subagent_entries": 0
+              },
+              "failures": [],
+              "folders": [],
+              "prompt": {
+                "at": 1899998200.0,
+                "fact_id": "fact:4aae9c22a7d95d9a",
+                "title": "Keep the diff small and leave the tests alone."
+              },
+              "span": {
+                "entries": 1,
+                "first": "fact:4aae9c22a7d95d9a",
+                "from_at": 1899998200.0,
+                "last": "fact:4aae9c22a7d95d9a",
+                "to_at": 1899998200.0
+              }
+            }
+          ],
+          "coverage": {
+            "agent_replies": "read",
+            "checks_and_files": "read",
+            "complete": true,
+            "end_offset": 890,
+            "notes": [],
+            "start_offset": 0,
+            "starts_at": null,
+            "unread": []
+          },
+          "harness": "claude",
+          "made_by": "compass",
+          "more_blocks": 0,
+          "reason": null,
+          "state": "ok"
+        },
         "scope": "focused session",
         "steer": {
           "live": 2,
@@ -326,7 +394,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "6194",
+      "Content-Length": "7228",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

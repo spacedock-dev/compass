@@ -75,6 +75,16 @@
             }
           ]
         },
+        "outline": {
+          "basis": "grouping",
+          "blocks": [],
+          "coverage": null,
+          "harness": "claude",
+          "made_by": "compass",
+          "more_blocks": 0,
+          "reason": "unavailable",
+          "state": "unavailable"
+        },
         "scope": "focused session",
         "steer": {
           "live": 0,
@@ -120,7 +130,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "1902",
+      "Content-Length": "2061",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },
