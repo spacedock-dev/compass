@@ -13,7 +13,7 @@ describe('the first view of a session', () => {
     const page = mountSession();
     await settle(page);
     expect(lineBoxes()).toHaveLength(1);
-    expect(text('.next-cockpit-held-lines label')).toBe('Expected outcome (optional)');
+    expect(text('.next-cockpit-held-lines label')).toBe('Expected outcome · up to 6 lines');
     expect(control('held-line-add')).toBeNull();
     expect(control('held-line-remove')).toBeNull();
     type(lineBoxes()[0] as HTMLTextAreaElement, 'A passing check');

@@ -11,6 +11,7 @@ import {
 import type { ContextEntry } from '../store/board';
 import {
   annotateOn,
+  annotationDiscarded,
   annotationLines,
   storeUnreadable,
   OUTCOME_LINES_MAX,
@@ -18,7 +19,10 @@ import {
 } from './annotation';
 import type { Held, PromptChoice } from './held';
 import {
+  ADOPT_CHANGED,
+  ADOPT_REFUSED,
   DIRECTION_CLIPPED,
+  EXCERPT_READ_WHOLE,
   INTENT_EDITED,
   INTENT_EDITED_ADD,
   INTENT_SAVING,
@@ -497,4 +501,95 @@ export function promptMenu(input: DraftInput): PromptMenu {
     options,
     value: options.find((option) => option.selected)?.value ?? '',
   };
+}
+
+export type IntentStatus =
+  | 'Saving…'
+  | 'Not confirmed'
+  | 'Not saved'
+  | 'Unsaved changes'
+  | 'Saved'
+  | '';
+
+/* Header status: derived purely from the session's annotation and held state, ranked so a pending save
+   never flashes "Saved" and an edit held over a newer board revision still says "Unsaved changes". */
+export function intentStatus(
+  input: DraftInput,
+  pending: readonly string[] | boolean = [],
+): IntentStatus {
+  if (storeUnreadable(input.payload)) return '';
+  const key = intentKey(input.session);
+  const saving = typeof pending === 'boolean' ? pending : pending.includes(`${key}:save`);
+  if (saving) return 'Saving…';
+  const kind = input.held.kind(key);
+  if (kind === 'unconfirmed') return 'Not confirmed';
+  if (['error', 'unpersisted', 'untrusted', 'unreadable'].includes(kind)) return 'Not saved';
+  const requestMessage = input.held.requests.get(compatSessKey(input.session))?.message ?? '';
+  if (requestMessage === ADOPT_CHANGED || Object.values(ADOPT_REFUSED).includes(requestMessage)) {
+    return 'Not saved';
+  }
+  const changes = intentChanges(input);
+  if (changes.any || changes.adoptable || changes.undoable) return 'Unsaved changes';
+  const discarded = annotationDiscarded(input.annotation);
+  const saved =
+    !discarded &&
+    ((nextNumber(input.annotation?.['revision']) ?? 0) > 0 ||
+      Boolean(String(input.annotation?.['goal'] || '').trim()) ||
+      annotationLines(input.annotation).length > 0 ||
+      kind === 'saved' ||
+      kind === 'unchanged');
+  return saved ? 'Saved' : '';
+}
+
+/* Goal source line under the textarea: one honest state derived from the annotation and held draft. */
+export function goalSourceLine(input: DraftInput): string {
+  if (storeUnreadable(input.payload)) return '';
+  const { held, session, annotation } = input;
+  const key = goalKey(session);
+  const drafted = intentDraft(input);
+  const baseline = goalBaseline(input);
+  const discarded = annotationDiscarded(annotation);
+  const stored = discarded ? '' : String(annotation?.['goal'] || '');
+  const text = held.goals.has(key) ? (held.goals.get(key) ?? baseline) : baseline;
+  if (!text.trim()) return '';
+  if (drafted && text === drafted.text) {
+    const at = nextNumber(drafted.at);
+    const which =
+      drafted.source === 'first-prompt'
+        ? 'first'
+        : drafted.source === 'latest-prompt'
+          ? 'latest'
+          : at !== null && at > 0
+            ? clockText(at)
+            : 'chosen';
+    const clipped = drafted.cut === true || drafted.text.endsWith('…');
+    return `From your prompt · ${which} · not saved. Analyze reads up to 1,000 characters.${clipped ? ` ${EXCERPT_READ_WHOLE}` : ''}`;
+  }
+  const savedFromPrompt =
+    !discarded && PROMPT_SOURCES.includes(String(annotation?.['goal_source'] || ''));
+  const startedFromPrompt =
+    !held.cleared.has(key) && (held.chosen.has(key) || Boolean(drafted) || savedFromPrompt);
+  if (held.goals.has(key) && text !== stored) {
+    return startedFromPrompt ? 'From your prompt, edited · not saved' : 'Typed · not saved';
+  }
+  if (stored.trim()) {
+    const savedAt = nextNumber(annotation?.['goal_saved_at']) ?? nextNumber(annotation?.['at']);
+    const stamp = savedAt !== null && savedAt > 0 ? `saved ${clockText(savedAt)}` : 'saved';
+    if (savedFromPrompt) {
+      const source = annotation?.['goal_source'];
+      const at = nextNumber(annotation?.['goal_source_at']);
+      const which =
+        source === 'first-prompt'
+          ? 'first'
+          : source === 'latest-prompt'
+            ? 'latest'
+            : at !== null && at > 0
+              ? clockText(at)
+              : 'chosen';
+      const clipped = stored.endsWith('…') ? ` ${EXCERPT_READ_WHOLE}` : '';
+      return `From your prompt · ${which} · ${stamp}${clipped}`;
+    }
+    return `Typed · ${stamp}`;
+  }
+  return '';
 }

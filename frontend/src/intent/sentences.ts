@@ -43,6 +43,8 @@ export const INTENT_EDITED_ADD = 'Save your intent, or undo your edit, to add th
 export const INTENT_CHOSEN_SAID = 'Goal filled from your prompt. Not saved.';
 export const INTENT_MEASURED = 'Drift is measured against these. Edit anything that is off.';
 export const EXCERPT_READ_WHOLE = 'Excerpt. Analyze looks up the source when pressed.';
+export const INTENT_LEDE =
+  'Say what this session should achieve. Type it, or start from a prompt you gave the session. Compass reads the session against these words and never writes into the session.';
 
 /* The ended-session caveat the goal box already carries, repeated where the save is confirmed: a reader who
    saved late read "Saved as a new revision." and had no sign that Analyze would still read the drafted goal

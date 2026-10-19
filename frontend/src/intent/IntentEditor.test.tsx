@@ -28,7 +28,9 @@ describe('a goal-less session arrives with its first prompt drafted and nothing 
     const page = mountSession();
     await settle(page);
     expect(goalBox().value).toBe('Ship the queue worker');
-    expect(text('[data-next-cockpit-draft-marks]')).toBe('from your prompt');
+    expect(text('[data-next-cockpit-draft-marks]')).toBe(
+      'From your prompt · first · not saved. Analyze reads up to 1,000 characters.',
+    );
     // The draft is adopted by Save intent, which is live over it; nothing else is.
     expect(inert(control('held-save'))).toBe(false);
     expect(control('held-undo')).toBeNull();
@@ -53,7 +55,7 @@ describe('typing in the goal box', () => {
     const page = mountSession();
     await settle(page);
     type(goalBox(), 'Ship the queue worker, then verify');
-    expect(text('[data-next-cockpit-held-count="goal"]')).toBe('34/240');
+    expect(text('[data-next-cockpit-held-count="goal"]')).toBe('34 / 240');
     expect(document.querySelector('[data-next-cockpit-draft-marks]')).toBeNull();
     expect(inert(control('held-undo'))).toBe(false);
     expect(page.posts()).toBe(0);
@@ -66,7 +68,7 @@ describe('typing in the goal box', () => {
     expect(goalBox().value).toBe('one two');
     type(goalBox(), 'x'.repeat(300));
     expect(goalBox().value).toHaveLength(240);
-    expect(text('[data-next-cockpit-held-count="goal"]')).toBe('240/240');
+    expect(text('[data-next-cockpit-held-count="goal"]')).toBe('240 / 240');
   });
 
   it('keeps the words, the caret and the selection across a board refresh that changes nothing they stand on', async () => {
@@ -339,5 +341,85 @@ describe('Undo changes', () => {
     fireEvent.keyDown(lineBoxes()[0] as HTMLTextAreaElement, { key: 'Escape' });
     await settle(page);
     expect(lineBoxes().map((box) => box.value)).toEqual(['One', 'Two']);
+  });
+});
+
+describe('header status and goal source line', () => {
+  it('derives the lede, numbered outcome lines, source line, and header status across typed, prompt, saving, refused, unconfirmed, and concurrent-revision states', async () => {
+    const page = mountSession({
+      session: { first_prompt: '', first_prompt_at: null },
+      routes: { '/api/annotate': () => 'hold' },
+    });
+    await settle(page);
+    expect(text('[data-next-intent-lede]')).toBe(
+      'Say what this session should achieve. Type it, or start from a prompt you gave the session. Compass reads the session against these words and never writes into the session.',
+    );
+    expect(text('[data-next-cockpit-held-line-number="0"]')).toBe('1');
+    expect(text('[data-next-intent-status]')).toBe('');
+    expect(text('[data-next-cockpit-goal-source]')).toBe('');
+
+    type(goalBox(), 'Typed goal');
+    expect(text('[data-next-cockpit-goal-source]')).toBe('Typed · not saved');
+    expect(text('[data-next-intent-status]')).toBe('Unsaved changes');
+
+    await act(async () => {
+      fireEvent.click(control('held-save') as Element);
+    });
+    expect(text('[data-next-intent-status]')).toBe('Saving…');
+
+    page.state.data = board({}, { goal: 'Typed goal', revision: 1, goal_source: '' });
+    await page.release('/api/annotate', stored(1));
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Saved');
+    expect(text('[data-next-cockpit-goal-source]')).toMatch(/^Typed · saved \d\d:\d\d$/);
+
+    // Concurrent revision while holding a local edit keeps Unsaved changes.
+    type(goalBox(), 'Typed goal — local edit');
+    expect(text('[data-next-intent-status]')).toBe('Unsaved changes');
+    await page.poll(board({}, { goal: 'Concurrent save', revision: 2, goal_source: '' }));
+    expect(text('[data-next-intent-status]')).toBe('Unsaved changes');
+    expect(goalBox().value).toBe('Typed goal — local edit');
+
+    // Refused save shows Not saved in the header.
+    page.state.routes['/api/annotate'] = () =>
+      json({ ok: true, outcome: 'refused', persisted: false });
+    await act(async () => {
+      fireEvent.click(control('held-save') as Element);
+    });
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Not saved');
+
+    // Unconfirmed save shows Not confirmed in the header.
+    type(goalBox(), 'Typed goal — retry');
+    expect(text('[data-next-intent-status]')).toBe('Unsaved changes');
+    page.state.routes['/api/annotate'] = () => new Response('<html>', { status: 200 });
+    await act(async () => {
+      fireEvent.click(control('held-save') as Element);
+    });
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Not confirmed');
+  });
+
+  it('distinguishes adopted-then-edited from cleared-then-typed over a prompt', async () => {
+    const page = mountSession({
+      store: {
+        goal: 'Ship the queue worker',
+        revision: 1,
+        goal_source: 'first-prompt',
+        goal_source_at: 100,
+      },
+    });
+    await settle(page);
+    expect(text('[data-next-cockpit-goal-source]')).toMatch(
+      /^From your prompt · first · saved \d\d:\d\d$/,
+    );
+    type(goalBox(), 'Ship the queue worker, carefully');
+    expect(text('[data-next-cockpit-goal-source]')).toBe('From your prompt, edited · not saved');
+    await act(async () => {
+      fireEvent.click(control('held-clear') as Element);
+    });
+    expect(text('[data-next-cockpit-goal-source]')).toBe('');
+    type(goalBox(), 'Freshly typed goal');
+    expect(text('[data-next-cockpit-goal-source]')).toBe('Typed · not saved');
   });
 });

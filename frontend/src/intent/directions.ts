@@ -404,7 +404,9 @@ export async function adoptDirectionAsGoal(
       direction: true,
       linesAnswer: savedLines(first.annotation).length ? null : 'keep',
     });
+    ctx.held.cleared.delete(key);
     ctx.held.goals.delete(key);
+    ctx.held.drop(intentKey(row));
     ctx.held.directions.delete(compat(row));
     announce(ctx, `${key}:chosen`, INTENT_CHOSEN_SAID);
   } catch {

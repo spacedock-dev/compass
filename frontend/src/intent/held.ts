@@ -101,6 +101,7 @@ export interface HeldDeps {
 export function createHeld(deps: HeldDeps) {
   const { clock, announcer } = deps;
   const goals = new Map<string, string>();
+  const cleared = new Set<string>();
   const lines = new Map<string, string[]>();
   /* Which saved line each draft line came from, by position, or null for one added here. Kept beside the
      draft so the save can say it, and the store can give a line its own source when two lines share
@@ -152,6 +153,7 @@ export function createHeld(deps: HeldDeps) {
     clock,
     announcer,
     goals,
+    cleared,
     lines,
     origins,
     chosen,

@@ -147,7 +147,7 @@ export const IdleWithADraftedGoal: Story = {
     const page = within(canvasElement);
     const goal = await page.findByRole('textbox', { name: 'Goal' });
     await expect(goal).toHaveValue('Ship the queue worker');
-    await expect(await page.findByText('from your prompt')).toBeVisible();
+    await expect(await page.findByText(/^From your prompt · first · not saved\./)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
       'aria-disabled',
       'true',

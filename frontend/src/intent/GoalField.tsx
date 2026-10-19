@@ -1,63 +1,22 @@
-import { Badge } from '../ui/badge';
 import { useId } from 'react';
 import { Label } from '../ui/label';
-import { nextNumber } from '../api/bootstrap';
-import { clock, endedAt } from '../observed';
-import { PROMPT_CHOSEN, PROMPT_SOURCES } from '../sessions/intent';
+import { endedAt } from '../observed';
 import { ActionButton } from './ActionButton';
 import { storeUnreadable } from './annotation';
 import { heldSentence } from './cues';
 import { clearGoal, escapeGoal, typeGoal } from './edit';
-import { directionLinesQuestion, goalBaseline, goalKey, intentDraft, type Draft } from './derive';
+import {
+  directionLinesQuestion,
+  goalBaseline,
+  goalKey,
+  goalSourceLine,
+  intentDraft,
+} from './derive';
 import { answerLines } from './directions';
 import { HeldTextarea } from './HeldTextarea';
 import { PromptSelect } from './PromptSelect';
-import { ENDED_CAVEAT, EXCERPT_READ_WHOLE } from './sentences';
+import { ENDED_CAVEAT } from './sentences';
 import { usePanel } from './useIntent';
-
-/* Where the goal came from, and that an excerpt is one. Drawn while the box holds the draft; the first edit
-   takes it away, and a box put back to the draft brings it back. Save intent is the one way to save the
-   draft. */
-function DraftMarks({ draft }: { readonly draft: Draft }) {
-  /* A chosen prompt is named by its own time, which is what tells it apart from the others the menu listed. */
-  const which =
-    draft.source === 'latest-prompt'
-      ? ' · latest'
-      : draft.source === PROMPT_CHOSEN
-        ? ` · ${clock(draft.at ?? 0)}`
-        : '';
-  const clipped = draft.cut === true || draft.text.endsWith('…');
-  return (
-    <span className="next-intent-draft-marks" data-next-cockpit-draft-marks>
-      <Badge
-        variant="draft-source"
-        className="next-intent-draft-source"
-      >{`from your prompt${which}`}</Badge>
-      {clipped ? <span className="next-cockpit-held-cue">{EXCERPT_READ_WHOLE}</span> : null}
-    </span>
-  );
-}
-
-/* The saved goal's own source line, for a goal adopted from a prompt. */
-function SourceLine() {
-  const { input } = usePanel();
-  const annotation = input.annotation;
-  if (!annotation || !PROMPT_SOURCES.includes(annotation['goal_source'] as string)) return null;
-  const at = nextNumber(annotation['goal_source_at']);
-  const source = annotation['goal_source'];
-  const which =
-    source === 'first-prompt'
-      ? 'first'
-      : source === 'latest-prompt'
-        ? 'latest'
-        : at !== null && at > 0
-          ? clock(at)
-          : 'chosen';
-  const clipped = String(annotation['goal'] || '').endsWith('…') ? ` ${EXCERPT_READ_WHOLE}` : '';
-  return (
-    <small className="next-cockpit-held-cue">{`from your prompt · ${which}.${clipped}`}</small>
-  );
-}
 
 /* "Keep your standing outcome lines with this goal?": asked once when a direction became the goal, and Save
    intent waits for the answer. */
@@ -94,6 +53,7 @@ export function GoalField() {
   const saved = goalBaseline(input);
   const text = held.goals.has(key) ? (held.goals.get(key) ?? saved) : saved;
   const untouched = Boolean(drafted) && text === drafted?.text;
+  const sourceLine = goalSourceLine(input);
   const why = storeUnreadable(input.payload) ? '' : String(input.annotation?.['goal_why'] || '');
   const cue = heldSentence(held.kind(key), null);
   return (
@@ -121,7 +81,7 @@ export function GoalField() {
         memoryKey={key}
         focusKey={key}
         text={text}
-        placeholder="what you are after, in one line"
+        placeholder="What should this session achieve?"
         data-next-cockpit-held-kind="goal"
         data-next-cockpit-held-key={key}
         data-next-focus={key}
@@ -133,13 +93,19 @@ export function GoalField() {
           escapeGoal(ctx, input);
         }}
       />
-      <div className="next-cockpit-held-under min-h-0">
-        <span className="next-cockpit-held-count" data-next-cockpit-held-count="goal">
-          {`${String(text.length)}/${String(cap)}`}
+      <div className="next-cockpit-held-under min-h-0 flex-wrap justify-between">
+        {sourceLine ? (
+          <small
+            className="next-cockpit-held-source"
+            data-next-cockpit-goal-source
+            {...(untouched && drafted ? { 'data-next-cockpit-draft-marks': '' } : {})}
+          >
+            {sourceLine}
+          </small>
+        ) : null}
+        <span className="next-cockpit-held-count ms-auto" data-next-cockpit-held-count="goal">
+          {`${String(text.length)} / ${String(cap)}`}
         </span>
-        {/* The source stays beside the count: in the label row it moved the box 25px down and back up
-            on the first keystroke. */}
-        {untouched && drafted ? <DraftMarks draft={drafted} /> : <SourceLine />}
       </div>
       {/* The absence sentence answers "why is this empty", so it goes when the box stops being empty. It
           stays in the document, visually hidden, because the inert Save intent is described by it. */}

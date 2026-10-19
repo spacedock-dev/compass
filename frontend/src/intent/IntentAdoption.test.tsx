@@ -73,9 +73,9 @@ describe('the "Use your prompt" menu', () => {
     await settle(page);
     await open(page);
     const labels = screen.getAllByRole('option').map((option) => option.textContent ?? '');
-    expect(labels[0]).toMatch(/^First prompt · \d\d:\d\d — Fix the login redirect$/);
+    expect(labels[0]).toMatch(/^First prompt · \d\d:\d\d Fix the login redirect$/);
     expect(labels[1]).toMatch(
-      /^Latest prompt · \d\d:\d\d · excerpt — Then ship the queue worker behind a flag$/,
+      /^Latest prompt · \d\d:\d\d · excerpt Then ship the queue worker behind a flag$/,
     );
   });
 
@@ -167,7 +167,7 @@ describe('Save intent over an adopted prompt', () => {
     });
     expect(goalBox().value).toBe('Fix the login redirect');
     expect(text('.next-cockpit-held-field[data-next-cockpit-held-field="goal"] small')).toMatch(
-      /^from your prompt · \d\d:\d\d\.$/,
+      /^From your prompt · \d\d:\d\d · saved \d\d:\d\d$/,
     );
   });
 
