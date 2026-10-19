@@ -1,5 +1,5 @@
 @layer legacy {
-/* The Drift step's own parts: the level and its meter, the Analyze control and its consent step, the running
+/* The Drift step's own parts: the level and its meter, the Analyze control and its notice, the running
    analysis, the result, Steer back and its box, the departures section and the numbered activity list. Ported rule
    for rule from the legacy sheet's COCKPIT and SESSIONS sections so the two renderers look alike (the browser parity
    test compares their layout at 320, 375 and 1280 CSS px); rules the Sessions and Intent steps already carry are not
@@ -73,8 +73,6 @@
 .next-cockpit-reading-step[data-state="active"] .next-cockpit-reading-step-mark{background:radial-gradient(circle,currentColor 0 35%,transparent 40%)}
 .next-cockpit-reading-step[data-state="todo"] .next-cockpit-reading-step-mark{border-style:dashed}
 .next-cockpit-reading-job-note{margin:0;color:var(--ink2);font:var(--fs-body)/1.5 var(--sans)}
-.next-cockpit-reading-consent-title{margin:0;color:var(--ink);font:600 var(--fs-body)/1.4 var(--sans)}
-.next-cockpit-reading-consent-title:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .next-cockpit-reading-parts{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:var(--sp-2);color:var(--ink2);font:500 var(--fs-body)/1.5 var(--sans)}
 .next-cockpit-why{margin:0}
 .next-cockpit-why :is(summary,[data-slot="accordion-trigger"],[data-slot="collapsible-trigger"],[data-slot="popover-trigger"]){color:var(--ink2);font:500 var(--fs-body)/1.55 var(--sans);max-width:var(--measure);cursor:pointer}

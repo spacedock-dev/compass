@@ -214,7 +214,6 @@ export const FLIP_OPEN_ENDED = 'Analyze is open: the session ended.';
 export const FLIP_CLOSED = 'Analyze closed: the session went quiet.';
 export const FLIP_CLOSED_REVISION =
   'Analyze closed: your intent was saved after the session ended.';
-export const FLIP_CLOSED_UNANSWERED = 'Analyze closed before you answered, so nothing was sent.';
 
 export const WORK_HARNESSES: readonly string[] = ['claude', 'pi'];
 export const WORK_READ_FROM = 'Compass reads work results from Claude Code and Pi only.';
@@ -299,3 +298,17 @@ export const absenceAttr = (text: string): Record<string, string> => {
   const kind = REFUSAL_ABSENCE.get(text);
   return kind ? { 'data-absence': kind } : {};
 };
+
+export const READINGS_OFF =
+  'Readings are off. Nothing is sent to a model until you turn them back on.';
+export const PAGE_OUTDATED = 'Reload this page before turning readings on. Nothing was sent.';
+export const NOTICE_SENT = 'This request sends:';
+export const NOTICE_WORDS = "The session's words, without the agent's messages.";
+export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
+export const READINGS_OFF_CONSOLE =
+  'Readings are off. Nothing is sent to a model until you turn them back on with Turn on readings and analyze in the Drift card.';
+export const noticeProvider = (label: string): string => `Provider: ${label}`;
+export const noticeDestination = (destination: string): string =>
+  `Words go to: ${destination || 'destination not published'}`;
+export const noticeToolOutput = (destination: string): string =>
+  `Tool output goes to: ${destination}`;

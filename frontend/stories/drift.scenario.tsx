@@ -26,7 +26,12 @@ export function routeOf(harness: string, fields: RouteFields): Record<string, un
   const reads = fields.provider !== '';
   const claude = fields.provider === 'claude';
   const parts = reads
-    ? [fields.note, `This sends the session to ${fields.label}.`, 'Your saved words.']
+    ? [
+        fields.note,
+        `This sends the session to ${fields.label}.`,
+        'Your saved words.',
+        ...(harness === 'claude' ? ['The agent messages and tool output are included.'] : []),
+      ]
     : [];
   return {
     harness,
@@ -74,7 +79,19 @@ function healthyRoute(harness: Harness): Record<string, unknown> {
       });
 }
 
+export interface ReadingScenario {
+  readonly replies: readonly (Record<string, unknown> | null)[];
+  readonly posts: Record<string, unknown>[];
+  finish: (() => Promise<void>) | null;
+}
+
+export const readingScenario = (
+  replies: readonly (Record<string, unknown> | null)[],
+): ReadingScenario => ({ replies, posts: [], finish: null });
+
 export interface Scenario {
+  readonly reading?: ReadingScenario;
+
   readonly harness?: Harness;
   /** What the board publishes for this session, over the saved intent below. */
   readonly session?: Record<string, unknown>;
@@ -141,6 +158,9 @@ const SAVED = {
 const ELIGIBLE = { ok: true, reason: null, until: null, sentence: null };
 
 const POLICY = {
+  consent: true,
+  off: false,
+  reason: '',
   providers: { claude: true, codex: true },
   words: { claude: true, codex: true },
   tool_output: { claude: ['api'] },
@@ -156,7 +176,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
     let generation = 1000;
     let marked: boolean | null = null;
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
-    return createShell({
+    let job: Record<string, unknown> | null = null;
+    let reading = scenario.payload?.['reading'] ?? POLICY;
+    if (scenario.reading) scenario.reading.posts.length = 0;
+    const shell = createShell({
       env: createFakeEnvironment({ clock }),
       router: createRouter(history.env),
       provider: () => fakeBackend(),
@@ -165,6 +188,21 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
       doc: null,
       reducedMotion: () => true,
       fetch: async (url, init) => {
+        if (url.startsWith('/api/reading') && scenario.reading) {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          const index = scenario.reading.posts.length;
+          scenario.reading.posts.push(body);
+          if (body['consent'] === 'off') {
+            reading = { consent: false, off: true, reason: 'readings-off' };
+            return json({ ok: true, reading });
+          }
+          reading = POLICY;
+          const notice = scenario.reading.replies[index];
+          job = { ...JOB, id: `notice-${index}`, ...(notice ? { notice } : {}) };
+          return new Response(JSON.stringify({ ok: true, job, ...(notice ? { notice } : {}) }), {
+            status: 202,
+          });
+        }
         if (scenario.keepsMarks && url.startsWith('/api/annotate')) {
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
           if (typeof body['not_accurate'] === 'boolean') {
@@ -178,9 +216,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
             annotate: true,
             annotate_cap: 240,
             reading_check: 'passed',
-            reading: POLICY,
             reading_routes: { [harness]: scenario.route ?? healthyRoute(harness) },
             ...(scenario.payload ?? {}),
+            reading,
+            ...(job ? { reading_jobs: { [`${harness}:s1`]: job } } : {}),
             sessions: [
               {
                 harness,
@@ -210,6 +249,12 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
         return json({});
       },
     });
+    if (scenario.reading)
+      scenario.reading.finish = async () => {
+        job = null;
+        await shell.runtime.refresh({ manual: true });
+      };
+    return shell;
   });
   useEffect(
     () => () => {

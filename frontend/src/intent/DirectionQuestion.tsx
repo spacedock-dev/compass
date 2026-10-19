@@ -117,7 +117,7 @@ export function DirectionQuestion({
   const saving = ctx.shell.runtime.pending.has(`${intentKey(session)}:save`);
   const reason = edited ? editedRefusal(saving) : (reading?.reason ?? '');
   const job = reading?.job ?? false;
-  const analyze = Boolean(reading) && !reason && !job && !(reading?.owed ?? false);
+  const analyze = Boolean(reading) && !reason && !job;
   const request = ctx.held.requests.get(key);
 
   const earliest = directionSelected(ctx.held, session, pending);

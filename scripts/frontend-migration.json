@@ -351,14 +351,13 @@
       "contract": "Live estimates and model readings show the actual drift in words, times/evidence and limitations; monitoring choice does not imply a new model reading."
     },
     {
-      "name": "analyze-consent-and-reading-result",
+      "name": "analyze-notice-and-reading-result",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/drift/ReadingStart.test.tsx",
-        "frontend/src/drift/ReadingResult.test.tsx",
-        "frontend/e2e/drift-parity.mjs"
+        "frontend/src/drift/ReadingResult.test.tsx"
       ],
-      "contract": "Only explicit authorized Analyze starts work; consent/destination, revision floor, pending/error/withheld/completed state and result cues remain correct."
+      "contract": "Only explicit authorized Analyze starts work; notice/destination, durable off switch, revision floor, pending/error/withheld/completed state and result cues remain correct."
     },
     {
       "name": "correction-to-copy",
@@ -575,13 +574,13 @@
       "contract": "Explicit browser permission and server/native lane ownership avoid duplicate notifications and preserve reporting across refresh."
     },
     {
-      "name": "observer-model-consent-controls",
+      "name": "observer-model-request-controls",
       "owner": "DRC-4827",
       "oracles": [
         "frontend/src/capacity/ObserverControls.test.tsx",
         "frontend/e2e/capacity-parity.mjs"
       ],
-      "contract": "Console observer controls distinguish unread capability from disabled and require an explicit consented exact request without automatic model invocation."
+      "contract": "Console observer controls distinguish unread capability from disabled and require an explicit exact request with the server off switch and a non-blocking notice without automatic model invocation."
     },
     {
       "name": "live-update-and-fallback-continuity",
@@ -1211,7 +1210,7 @@
         "frontend/src/drift/ReadingRefusals.test.tsx",
         "frontend/e2e/drift-parity.mjs"
       ],
-      "contract": "Reading pending/latest feedback survives scope changes for tab; duplicate press suppressed; local refusal disappears when its reason changes; payload eligibility wins.",
+      "contract": "Reading pending/latest feedback and notice survive scope changes for tab; successful no-notice reply clears notice, pending/lost/refused press keeps it, running job notice survives reload; duplicate press suppressed; local refusal disappears when its reason changes; payload eligibility wins.",
       "disposition": "store-held"
     },
     {
@@ -1257,7 +1256,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "Observer model consent and request status",
+      "name": "Observer model request status and notice",
       "owner": "DRC-4822",
       "oracles": [
         "frontend/src/capacity/ObserverControls.test.tsx",
@@ -1265,7 +1264,7 @@
         "frontend/src/storage/consent.test.ts",
         "frontend/e2e/capacity-parity.mjs"
       ],
-      "contract": "Observer summary consent persists with tab fallback; explicit request only, per-session pending/result keeps redraw; passive stale read cannot replace requested result.",
+      "contract": "Observer summary uses the server off switch; payload notices name destinations; explicit request only, per-session pending/result keeps redraw; passive stale read cannot replace requested result.",
       "disposition": "store-held"
     },
     {
@@ -1415,7 +1414,7 @@
         "frontend/src/capacity/ObserverControls.test.tsx",
         "frontend/e2e/storage-conformance.mjs"
       ],
-      "contract": "Summary consent survives reload without automatic model action; source availability and explicit press remain separate.",
+      "contract": "Retired browser answer retained for storage compatibility only; it never gates goal summaries. The server off switch and explicit press govern requests.",
       "format": "Fixed key raw 'granted'|'declined'; missing/unrecognized falls back to null/memo; no TTL; storage consulted first, setter memo before write; not qualification or Analyze authorization."
     },
     {

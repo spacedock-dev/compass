@@ -140,6 +140,10 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
     fixture["board"]["intent_revision"] = str(fixture["board"]["intent_revision"])[:32]
     # One reading was read; a refused attempt on the way to it is not part of the story.
     fixture["board"]["reading"]["used"] = 1
+    # The reading was captured under the old Allow step, so its server read consent as missing. The
+    # sample is shown as this build reads a store with no stored off: readings on, nothing refused,
+    # and no notice recorded yet.
+    fixture["board"]["reading"].update(consent=True, off=False, reason="", notices={})
     row["annotation_reading_count"] = 1
     return fixture
 

@@ -113,13 +113,8 @@ export const KEEP = 'Keep my intent';
 export const ADD_DIRECTION = 'Add it to my intent';
 export const KEEP_NO_ANALYSIS =
   'Kept your intent and settled the direction. No analysis was started.';
-/* Keep never grants consent: where none is given it only settles, and the Allow and analyze beside its
-   disclosure does the sending. */
-export const KEEP_ALLOW =
-  'Kept your intent and settled the direction. Press Allow and analyze to send it for a reading.';
-
-export function keptDirections(count: number, owed = false): string {
-  const sentence = owed ? KEEP_ALLOW : KEEP_NO_ANALYSIS;
+export function keptDirections(count: number): string {
+  const sentence = KEEP_NO_ANALYSIS;
   return count === 1
     ? sentence
     : sentence.replace('the direction.', `all ${String(count)} directions.`);
@@ -148,7 +143,7 @@ const FEEDBACK_SHORT: readonly (readonly [RegExp, string])[] = [
   /* Only the bare settlement is "Intent kept". The same sentence with a reason after it (the reader changed,
      the daily limit, a store that could not be reached) says the reading did not start, and the line says so. */
   [
-    /^Kept your intent and settled (?:the direction|all \d+ directions)\.(?: No analysis was started\.| Press Allow and analyze to send it for a reading\.)$/,
+    /^Kept your intent and settled (?:the direction|all \d+ directions)\. No analysis was started\.$/,
     'Intent kept',
   ],
   [/^Kept your intent/, 'Kept, not analyzed'],

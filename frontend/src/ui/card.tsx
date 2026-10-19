@@ -24,7 +24,7 @@ const cardVariants = cva('min-w-0', {
         'block m-0 pt-0 px-0 pb-[4px] border border-solid border-[var(--rule)] rounded-card bg-card',
       'reading-job':
         'flex flex-col [gap:var(--sp-3)] [padding:var(--sp-4)] bg-card rounded-card max-w-[var(--measure)]',
-      'reading-consent':
+      'reading-notice':
         'flex flex-col [gap:var(--sp-3)] [padding:var(--sp-4)] bg-card border border-solid border-border rounded-card max-w-[var(--measure)]',
       'reading-stale':
         'flex flex-col gap-[6px] px-[12px] py-[10px] border border-solid border-[var(--amber)] rounded-control',
@@ -55,7 +55,7 @@ const cardVariants = cva('min-w-0', {
         'block px-[18px] py-[15px] [border-left:2px_solid_var(--accent-dim)] [border-radius:0_var(--r-card)_var(--r-card)_0] bg-card text-muted-foreground text-body leading-[1.6]',
       'quota-consent':
         'block px-[18px] py-[16px] [border-left:3px_solid_var(--amber)] bg-card text-body leading-[1.5] [.next-project-detail-rail_&]:p-[12px] [.next-project-detail-rail_&]:text-label',
-      'observer-consent':
+      'observer-controls':
         'block px-[18px] py-[16px] [border-left:3px_solid_var(--amber)] bg-card text-body leading-[1.5] [.next-project-detail-rail_&]:p-[12px] [.next-project-detail-rail_&]:text-label',
       'work-panel': 'flex flex-col gap-[8px] pt-[12px] px-[16px] pb-[14px]',
     },

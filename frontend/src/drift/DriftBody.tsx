@@ -17,11 +17,21 @@ import {
   REFUSED_ID,
   JobBox,
   TurnOff,
+  ReadingNotice,
+  ReadingsOffAsk,
   type SteerSlot,
 } from './ReadingControl';
+import { useNoticeShown } from './notice';
 import { ReadingResult } from './ReadingResult';
-import { disclosureParts, needsAllow, promptReadingRefusal, routeRefusal } from './route';
-import { absenceAttr, OFFER, READING_DEFINITION, SCOPE, UNKNOWN_KEY } from './sentences';
+import { disclosureParts, promptReadingRefusal, routeRefusal, readingsOff } from './route';
+import {
+  absenceAttr,
+  READINGS_OFF,
+  OFFER,
+  READING_DEFINITION,
+  SCOPE,
+  UNKNOWN_KEY,
+} from './sentences';
 import { SteerBox, SteerButton, UpdateIntentButton } from './SteerBack';
 import { useFollowCorrection } from './useFollowCorrection';
 import { Why } from './Why';
@@ -180,21 +190,21 @@ function QuestionWithAnalysis({
   readonly primary: boolean;
 }) {
   const { ctx, model } = useDrift();
-  const { payload, session, annotation, route, identity, job } = model;
+  const { session, annotation, route, identity, job } = model;
   const edited = intentUnsaved(model.input);
-  const reason = board.reason;
-  const owed = needsAllow(payload, route);
+  const off = readingsOff(model.payload);
+  const reason = off ? READINGS_OFF : board.reason;
   const provider = route?.['provider'] ? String(route['provider']) : '';
   const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
   const receiver = String(route?.['label'] || provider);
-  const analyze = !edited && !reason && !job && !owed;
+  const analyze = !edited && !reason && !job;
   const request = ctx.intent.held.requests.get(model.key);
+  const noticeShown = useNoticeShown();
   const count = Number(annotation?.['reading_count']) || 0;
   const running = endedAt(session) === null && session['state'] !== 'idle';
   const reading: DirectionReading = {
     reason,
     job: Boolean(job),
-    owed,
     ...(disclosure ? { disclosureId: DISCLOSURE_ID } : {}),
     start: (request2) => {
       if (!identity) throw new Error('no identity');
@@ -207,33 +217,40 @@ function QuestionWithAnalysis({
       primary={primary}
       before={job ? <JobBox job={job} running={running} /> : null}
       after={
-        <>
-          {board.changed ? (
-            <p className="next-cockpit-reading-why next-cockpit-reading-change">{board.changed}</p>
-          ) : null}
-          {analyze && disclosure ? (
-            /* The same "What is sent" popover the idle Analyze button draws, in the same words: this
-               question's Keep runs under an Allow already given, and the whole list stays one click away
-               and describes Keep, instead of standing as a paragraph under the buttons. */
-            <Why
-              name="reading-sent"
-              pop
-              summary={
-                route?.['fallback'] === true ? `What is sent to ${receiver}` : 'What is sent'
-              }
-            >
-              <DisclosureParts
-                parts={disclosureParts(route, provider, disclosure)}
-                id={DISCLOSURE_ID}
-              />
+        off ? (
+          <ReadingsOffAsk refusedId={!edited} />
+        ) : (
+          <>
+            <ReadingNotice />
+            {board.changed ? (
+              <p className="next-cockpit-reading-why next-cockpit-reading-change">
+                {board.changed}
+              </p>
+            ) : null}
+            {analyze && disclosure ? (
+              /* The notice and this popover share the server's disclosure words. */
+              <Why
+                name="reading-sent"
+                pop
+                summary={
+                  route?.['fallback'] === true || route?.['notice_due'] === true
+                    ? `What is sent to ${receiver}`
+                    : 'What is sent'
+                }
+              >
+                <DisclosureParts
+                  parts={disclosureParts(route, provider, disclosure)}
+                  id={DISCLOSURE_ID}
+                />
+                <TurnOff />
+              </Why>
+            ) : noticeShown ? null : (
               <TurnOff />
-            </Why>
-          ) : (
-            <TurnOff />
-          )}
-          {annotation ? <ReadingCount count={count} /> : null}
-          {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
-        </>
+            )}
+            {annotation ? <ReadingCount count={count} /> : null}
+            {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
+          </>
+        )
       }
     />
   );

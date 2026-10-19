@@ -64,11 +64,26 @@ export interface PayloadData {
   readonly dismiss?: boolean;
   readonly annotate?: boolean;
   readonly usage_fetch?: boolean;
+  readonly reading?: {
+    readonly consent?: boolean;
+    readonly off?: boolean;
+    readonly reason?: string;
+  };
   readonly reading_jobs?: unknown;
   readonly reading_routes?: unknown;
 }
 
+export interface ModelNoticeRecord {
+  readonly kind: string;
+  readonly provider: string;
+  readonly destination: string;
+  readonly content: number;
+  readonly tool_output: string;
+  readonly at: number;
+}
+
 export interface ObserverModelOffer {
+  readonly notice?: ModelNoticeRecord;
   readonly enabled?: boolean;
   readonly disclosure?: string;
 }
@@ -157,6 +172,7 @@ export interface CorrectionReceipt {
 }
 
 export interface ReadingReceipt {
+  readonly notice?: ModelNoticeRecord;
   readonly ok?: boolean;
   readonly produced?: boolean;
   readonly reason?: string;

@@ -22,18 +22,13 @@ export const ROUTE = {
 };
 
 export const POLICY = {
+  consent: true,
+  off: false,
+  reason: '',
   providers: { claude: true },
   words: { claude: true },
   tool_output: { claude: ['api'] },
   used: 1,
-  limit: 10,
-};
-
-export const UNCONSENTED = {
-  providers: { claude: false },
-  words: {},
-  tool_output: {},
-  used: 0,
   limit: 10,
 };
 

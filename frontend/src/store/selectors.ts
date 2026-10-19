@@ -146,3 +146,26 @@ export function selectObserverModel(
 export function isPending(snapshot: BoardSnapshot, key: string): boolean {
   return snapshot.pending.includes(key);
 }
+
+export function selectReadingsOff(snapshot: BoardSnapshot): boolean {
+  const policy = snapshot.data?.reading;
+  return policy?.off === true || policy?.reason === 'readings-off';
+}
+
+export function selectObserverOff(
+  snapshot: BoardSnapshot,
+  key: string,
+  identity: SessionIdentity | null,
+): boolean {
+  return (
+    selectReadingsOff(snapshot) ||
+    snapshot.contexts
+      .get(key)
+      ?.data?.observers?.some(
+        (row) =>
+          row.harness === identity?.harness &&
+          row.sid === identity?.sid &&
+          row.model?.status === 'readings-off',
+      ) === true
+  );
+}

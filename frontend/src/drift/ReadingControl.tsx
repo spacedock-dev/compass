@@ -1,20 +1,20 @@
 import { SampleBeside } from '../sample/SampleMark';
 import { Card } from '../ui/card';
-import { Button } from '../ui/button';
 import { useEffect, type ReactNode } from 'react';
 import { nextNumber } from '../api/bootstrap';
 import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { endedAt, readHint, type Row } from '../observed';
 import { PROMPT_SOURCES } from '../sessions/intent';
-import { useDisplayed } from '../shell/context';
-import { askForReading, cancelReading, readingNotNow, readingOff } from './actions';
+import { askForReading, cancelReading, readingOff } from './actions';
 import { useDrift } from './context';
 import type { Board } from './flip';
 import {
-  anyConsent,
+  readingsOn,
+  readingsOff,
+  turnOnPayload,
+  promptReadingRefusal,
   disclosureParts,
-  needsAllow,
   readingJob,
   routeRefusal,
   withheldAge,
@@ -26,48 +26,20 @@ import {
   JOB_NOTE,
   JOB_NOTE_SO_FAR,
   JOB_TITLE,
+  READINGS_OFF,
 } from './sentences';
 import { Why } from './Why';
+import { ModelNotice, DisclosureParts } from './ModelNotice';
+import { noticeContentParts, noticeLabel, sessionNotice } from './notice';
 
-/* The Analyze control in all of its states: idle, asking for consent, running, refused, and with no reader on
+/* The Analyze control in all of its states: idle, running, off, refused, and with no reader on
    this machine. Each state is drawn from the payload and the reader's held state alone, and nothing here
    sends a request: a press does, through `actions.ts`. */
 
 export const REFUSED_ID = 'next-cockpit-reading-refused';
 export const DISCLOSURE_ID = 'next-cockpit-reading-disclosure';
 
-/* An item that opens with its own label ("Sent:", "To:", "Tool output, only after you allow it:") draws the
-   label in weight and the rest after it, so the list reads as a short form to scan rather than as one
-   paragraph. The words are the server's, unchanged and in order. */
-const PART_LABEL = /^([A-Z][A-Za-z' ,]{1,40}?):\s+(\S[\s\S]*)$/;
-
-export function DisclosureParts({
-  parts,
-  id,
-}: {
-  readonly parts: readonly string[];
-  readonly id: string;
-}) {
-  return (
-    <ul className="next-cockpit-reading-parts" id={id}>
-      {parts.map((part, index) => {
-        const labelled = parts.length > 1 ? PART_LABEL.exec(part) : null;
-        return (
-          <li key={index}>
-            {labelled ? (
-              <>
-                <strong className="font-semibold text-foreground">{`${labelled[1] ?? ''}:`}</strong>
-                {` ${labelled[2] ?? ''}`}
-              </>
-            ) : (
-              part
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
+export { DisclosureParts } from './ModelNotice';
 
 /* The attempt count beside the control, worded the same in every state: short to the eye, and the whole
    sentence to a screen reader, which the short form is hidden from. */
@@ -81,14 +53,13 @@ export function ReadingCount({ count }: { readonly count: number }) {
   );
 }
 
-/* Turn off readings, busy state and all, drawn only while some receiver's permission is on record. It sits in
-   the "What is sent" popover beside what it stops, and where no popover is drawn (a running job, no reader,
-   the consent step, a route with no disclosure) under the control instead, so the off switch is never only in
-   a part the page did not draw.
+/* Turn off readings, drawn while readings are on. It sits in the notice and in the "What is sent" popover
+   beside what it stops, and where neither is drawn (a running job, no reader, a route with no disclosure)
+   under the control instead, so the off switch is never only in a part the page did not draw.
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
 export function TurnOff() {
   const { ctx, model } = useDrift();
-  if (!anyConsent(model.payload)) return null;
+  if (!readingsOn(model.payload)) return null;
   return (
     <ActionButton
       weight="secondary"
@@ -208,32 +179,30 @@ export function ReadingControl({
      session" standing under a button that is no longer refused, which is the board asserting an absence after
      it stopped being true. A response is an event and is kept. */
   const stale = Boolean(raw?.refusal) && raw?.message !== refusalOf;
-  const request = stale ? undefined : raw;
+  const request = stale ? (raw?.notice !== undefined ? { notice: raw.notice } : undefined) : raw;
   useEffect(() => {
-    if (stale) held.requests.delete(key);
+    if (stale) {
+      if (request) held.requests.set(key, request);
+      else held.requests.delete(key);
+    }
   });
   const { reason, pressed, inert, changed, settling } = board;
   const pending = Boolean(request?.pending);
   const route = model.route;
   const provider = route?.['provider'] ? String(route['provider']) : '';
-  const allowKey = `reading-allow:${key}`;
-  const allowPending = useDisplayed((snapshot) => snapshot.pending.includes(allowKey));
-  /* The question stays drawn while its Allow is being answered: the card is the consent, and taking it away
-     mid-press left a bare hatched button. */
-  const confirming = Boolean(
-    provider && !inert && ((request?.consent && needsAllow(payload, route)) || allowPending),
-  );
-  const busyKey = confirming ? allowKey : `reading:${key}`;
-  const enabled = !reason && !pending;
+  const off = readingsOff(payload);
+  const busyKey = `reading:${key}`;
+  const turnOnReason = off
+    ? promptReadingRefusal({
+        input: { ...model.input, payload: turnOnPayload(payload) },
+        saving: false,
+        answered: request,
+        nowMs: ctx.shell.clock.now(),
+      })
+    : '';
+  const enabled = !(off ? turnOnReason : reason) && !pending;
   const count = nextNumber(annotation?.['reading_count']) || 0;
-  /* The route's disclosure, naming this session's own receiver, whose capacity is spent and where the words
-     go. It is the owner's ruling where it sits: idle, under the button with the hint; confirming, before
-     "Allow and analyze", because that press is the consent. Either way the button is described by it, unless
-     a refusal is what describes it. */
   const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
-  /* The server's own parts, a short list in its order and unreworded: in the consent step, and idle in the
-     "What is sent" popover, so the two cannot differ. A route from before the parts were published shows its
-     whole disclosure as one item. */
   const parts = disclosureParts(route, provider, disclosure);
   const partsList = parts.length ? <DisclosureParts parts={parts} id={DISCLOSURE_ID} /> : null;
   /* What an analysis will read, under the control, and only where a press could read it: a provider, no
@@ -255,6 +224,7 @@ export function ReadingControl({
       : '';
   const readLine = hint && !again ? `${hint} ${BACKGROUND}` : '';
   const job = readingJob(payload, session);
+  const hasNotice = Boolean(sessionNotice(request, job)) && !off;
   /* Only from a published annotation: with the store off there is no count to read, and "0 requests" would be
      a default standing in for one. */
   const counted = annotation ? <ReadingCount count={count} /> : null;
@@ -271,10 +241,9 @@ export function ReadingControl({
         {text}
       </p>
     ) : null;
-  /* While a job runs, the box stands where the button was, as the design draws it, with the disclosure and the
-     count after it in the idle order. A refusal is about a new press, which is not offered, so it waits. The
-     disclosure is not drawn under the box: nothing more is sent by this job, and the reader allowed it, or it
-     ran under an Allow, after the same words. */
+  /* While a job runs, the box stands where the button was, with the count after it in the idle order. A
+     refusal is about a new press, which is not offered, so it waits. The notice stays under the box because
+     the job carries it, so a reload mid-run still says where the words went. */
   if (job) {
     const running = ended === null && session['state'] !== 'idle';
     return (
@@ -282,7 +251,9 @@ export function ReadingControl({
         <JobBox job={job} running={running} />
         {said(answered)}
         {counted}
-        <TurnOff />
+        {off ? said(READINGS_OFF) : null}
+        <ReadingNotice />
+        {hasNotice ? null : <TurnOff />}
       </>
     );
   }
@@ -303,6 +274,7 @@ export function ReadingControl({
       <>
         <div className="next-cockpit-reading-ask next-cockpit-reading-ask--none">
           <NoReader reason={noReader} />
+          {off ? <p className="next-cockpit-reading-why">{READINGS_OFF}</p> : null}
           {steerButton}
         </div>
         {steerBox}
@@ -313,8 +285,16 @@ export function ReadingControl({
       </>
     );
   }
-  const described = reason ? REFUSED_ID : disclosure ? DISCLOSURE_ID : '';
-  const label = confirming ? 'Allow and analyze' : again ? 'Analyze again' : 'Analyze drift';
+  const described = off
+    ? `${REFUSED_ID}${turnOnReason ? ` ${REFUSED_ID}-turn-on` : ''}`
+    : reason
+      ? REFUSED_ID
+      : disclosure
+        ? DISCLOSURE_ID
+        : '';
+  const label = off ? 'Turn on readings and analyze' : again ? 'Analyze again' : 'Analyze drift';
+  /* A current result draws no run control (DEC-27), and off does not add one: Turn on readings and analyze
+     starts a reading, which on an unchanged session is the second run control the ruling keeps away. */
   const press = showRun ? (
     <ActionButton
       weight={primary && provider && !inert ? 'primary' : 'secondary'}
@@ -323,12 +303,11 @@ export function ReadingControl({
       pendingKey={busyKey}
       inert={!enabled}
       describes={described}
-      action={confirming ? 'reading-allow' : 'reading-ask'}
-      focusKey={confirming ? allowKey : `reading:${key}`}
-      {...(confirming ? { fallbackKey: `reading:${key}` } : {})}
+      action={off ? 'reading-on' : 'reading-ask'}
+      focusKey={`reading:${key}`}
       onPress={() => {
         if (identity) {
-          void askForReading(ctx, identity, confirming, {
+          void askForReading(ctx, identity, off, {
             route,
             revision: nextNumber(annotation?.['revision']) || 0,
           });
@@ -340,19 +319,31 @@ export function ReadingControl({
      the reason separately rendered the same sentence twice, adjacent and identical, where the contract is that
      it renders exactly once. The press is still announced, because this node carries `role="status"` when it
      is the refusal. */
-  const refused = reason ? (
+  /* Off leads only when turning readings on would lift the refusal; a higher-ranked reason (run-disabled, the
+     store, the cap) leads when it stands too, with the off sentence after it. */
+  const refusalText = off ? turnOnReason || READINGS_OFF : reason;
+  const refused = refusalText ? (
     <>
       <p
         className="next-cockpit-reading-why"
         id={REFUSED_ID}
         {...(request?.refusal && !request.announced ? { role: 'status' } : {})}
-        {...absenceAttr(reason)}
+        {...absenceAttr(refusalText)}
       >
         {/* Waiting, not busy: the record is settling and Analyze opens by itself at `until`, so a dot pulses
             rather than the press's spinner. */}
         {settling ? <span className="next-wait-dot" aria-hidden="true" /> : null}
-        {reason}
+        {refusalText}
       </p>
+      {off && turnOnReason ? (
+        <p
+          id={`${REFUSED_ID}-turn-on`}
+          className="next-cockpit-reading-why"
+          {...absenceAttr(READINGS_OFF)}
+        >
+          {READINGS_OFF}
+        </p>
+      ) : null}
       {inert && pressed ? (
         <Why
           name={`reading-why:${key}`}
@@ -387,56 +378,16 @@ export function ReadingControl({
   const changeLine = changed ? (
     <p className="next-cockpit-reading-why next-cockpit-reading-change">{changed}</p>
   ) : null;
-  if (confirming) {
-    /* The consent step stands in the button's slot: a question naming the receiver, the disclosure's parts in
-       view, then the press that is the consent and the way out. The heading takes the press's focus key, as the
-       job box's title does, so focus lands on the question rather than on Allow, and a second Enter or the
-       rest of a double-click cannot give consent unread. */
-    const receiver = String(route?.['label'] || provider);
-    const steers = steerButton ? (
-      <div className="next-cockpit-reading-ask">{steerButton}</div>
-    ) : null;
-    /* The server's line when an Allow is on record that no longer covers where the words go, so the step says
-       why it is asking again. Never composed here: only the store knows it was given. */
-    const policy = payload['reading'];
-    const rebindMap = policy && typeof policy === 'object' ? (policy as Row)['rebind'] : null;
-    const rebind =
-      rebindMap && typeof rebindMap === 'object' ? String((rebindMap as Row)[provider] || '') : '';
-    return (
-      <>
-        {lead ? steers : null}
-        <ConsentCard
-          receiver={receiver}
-          rebind={rebind}
-          partsList={partsList}
-          press={press}
-          allowBusy={allowPending || pending}
-          onNotNow={() => {
-            if (identity) readingNotNow(ctx, identity);
-          }}
-        />
-        {changeLine}
-        {lead ? null : steers}
-        {accounts}
-        {counted}
-        {aboutWhy}
-        <TurnOff />
-      </>
-    );
-  }
-  /* Idle: the button and its count, the accounts and the one hint line, then the provider disclosure one click
-     away under a worded summary that names the receiver until it is allowed, and always on a fallback route,
-     whose receiver is a second provider that an Allow given on another harness's session lets a press reach at
-     once. Idle sends nothing: the press that would send either opens the consent step above or runs under an
-     Allow given after these same words. A popover, so the body is taken out of flow under its summary and
-     opening it moves nothing and covers no control above it. */
+  /* Idle: the provider disclosure one click away, in a popover so opening it moves nothing and covers no
+     control above it. Its summary names the receiver while a press would record a new notice, and always on
+     a fallback route, whose receiver is a second provider. */
   const receiver = provider ? String(route?.['label'] || provider) : '';
   const sent = disclosure ? (
     <Why
       name="reading-sent"
       pop
       summary={
-        route?.['fallback'] === true || needsAllow(payload, route)
+        route?.['fallback'] === true || route?.['notice_due'] === true
           ? `What is sent to ${receiver}`
           : 'What is sent'
       }
@@ -448,7 +399,7 @@ export function ReadingControl({
   ) : (
     <>
       {aboutWhy}
-      <TurnOff />
+      {hasNotice ? null : <TurnOff />}
     </>
   );
   return (
@@ -469,6 +420,7 @@ export function ReadingControl({
       {changeLine}
       {inert ? null : counted}
       {accounts}
+      <ReadingNotice />
       <SampleBeside id="sent">{sent}</SampleBeside>
     </>
   );
@@ -496,65 +448,86 @@ function NoReader({ reason }: { readonly reason: string }) {
   );
 }
 
-function ConsentCard({
-  receiver,
-  rebind,
-  partsList,
-  press,
-  allowBusy,
-  onNotNow,
-}: {
-  readonly receiver: string;
-  readonly rebind: string;
-  readonly partsList: ReactNode;
-  readonly press: ReactNode;
-  readonly allowBusy: boolean;
-  readonly onNotNow: () => void;
-}) {
+export function ReadingNotice() {
   const { ctx, model } = useDrift();
-  const titleRef = useFocusKey<HTMLHeadingElement>(
-    ctx.shell.controls.focusLane,
-    `reading:${model.key}`,
-  );
-  const notNowRef = useFocusKey<HTMLButtonElement>(
-    ctx.shell.controls.focusLane,
-    `reading-not-now:${model.key}`,
-    { fallback: `reading:${model.key}` },
-  );
+  const notice = sessionNotice(ctx.intent.held.requests.get(model.key), model.job);
+  if (!notice || readingsOff(model.payload)) return null;
+  const route = model.route;
+  /* The route's words describe what the route sends now; they stand beside the notice only while the route
+     is still the provider the notice was recorded for. */
+  const same = String(route?.['provider'] || '') === String(notice['provider'] || '');
+  const parts = same
+    ? disclosureParts(route, String(route?.['provider'] || ''), String(route?.['disclosure'] || ''))
+    : [];
   return (
-    <Card
-      variant="reading-consent"
-      className="next-cockpit-reading-consent"
-      role="group"
-      aria-labelledby="next-cockpit-reading-consent-title"
+    <ModelNotice
+      notice={notice}
+      provider={noticeLabel(notice)}
+      parts={parts.length ? parts : noticeContentParts(notice)}
     >
-      <h3
-        ref={titleRef}
-        className="next-cockpit-reading-consent-title"
-        id="next-cockpit-reading-consent-title"
-        tabIndex={-1}
-        data-next-focus={`reading:${model.key}`}
-      >
-        {`Send this session to ${receiver} for analysis?`}
-      </h3>
-      {rebind ? <p className="next-cockpit-reading-why">{rebind}</p> : null}
-      {partsList}
-      <div className="next-cockpit-reading-ask">
-        {press}
-        <Button
-          ref={notNowRef}
-          type="button"
-          data-next-cockpit-action="reading-not-now"
-          data-next-focus={`reading-not-now:${model.key}`}
-          {...(allowBusy ? { 'aria-disabled': true } : {})}
-          onClick={(event) => {
-            event.preventDefault();
-            onNotNow();
-          }}
+      <TurnOff />
+    </ModelNotice>
+  );
+}
+
+/* Off beside an open direction question, in its `after` slot: the off sentence and the one control that lifts
+   it. The question already draws a running job above it, so no second box and no second Cancel is drawn here,
+   and while that job runs no turn-on is offered, as the job branch above offers no press. `refusedId` is false
+   when the question already holds the refusal id for an unsaved edit. */
+export function ReadingsOffAsk({ refusedId }: { readonly refusedId: boolean }) {
+  const { ctx, model } = useDrift();
+  const { payload, annotation, key, identity, route, job } = model;
+  const request = ctx.intent.held.requests.get(key);
+  const turnOnReason = promptReadingRefusal({
+    input: { ...model.input, payload: turnOnPayload(payload) },
+    saving: false,
+    answered: request,
+    nowMs: ctx.shell.clock.now(),
+  });
+  const lead = turnOnReason || READINGS_OFF;
+  const id = refusedId ? REFUSED_ID : undefined;
+  const answered = request?.message && !request.refusal ? String(request.message) : '';
+  return (
+    <>
+      {job ? null : (
+        <div className="next-cockpit-reading-ask">
+          <ActionButton
+            weight="secondary"
+            label="Turn on readings and analyze"
+            busyLabel="Starting…"
+            pendingKey={`reading:${key}`}
+            inert={Boolean(turnOnReason) || Boolean(request?.pending)}
+            {...(id ? { describes: id } : {})}
+            action="reading-on"
+            focusKey={`reading:${key}`}
+            onPress={() => {
+              if (identity) {
+                void askForReading(ctx, identity, true, {
+                  route,
+                  revision: nextNumber(annotation?.['revision']) || 0,
+                });
+              }
+            }}
+          />
+        </div>
+      )}
+      <p className="next-cockpit-reading-why" id={id} {...absenceAttr(lead)}>
+        {lead}
+      </p>
+      {turnOnReason ? (
+        <p className="next-cockpit-reading-why" {...absenceAttr(READINGS_OFF)}>
+          {READINGS_OFF}
+        </p>
+      ) : null}
+      {answered ? (
+        <p
+          className="next-cockpit-reading-why"
+          {...(request?.announced ? {} : { role: 'status' })}
+          {...absenceAttr(answered)}
         >
-          Not now
-        </Button>
-      </div>
-    </Card>
+          {answered}
+        </p>
+      ) : null}
+    </>
   );
 }

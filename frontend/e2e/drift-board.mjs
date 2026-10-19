@@ -28,6 +28,9 @@ export const ROUTE = {
 };
 
 export const POLICY = {
+  consent: true,
+  off: false,
+  reason: '',
   providers: { claude: true },
   words: { claude: true },
   tool_output: { claude: ['api'] },
@@ -35,7 +38,11 @@ export const POLICY = {
   limit: 10,
 };
 
-export const UNCONSENTED = {
+export const FIRST_PRESS = {
+  consent: true,
+  off: false,
+  reason: '',
+  notices: {},
   providers: { claude: false },
   words: {},
   tool_output: {},

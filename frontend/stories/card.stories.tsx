@@ -60,8 +60,8 @@ export const ReadingJob: Story = {
     await expect(canvas.getByText(args.children as string)).toBeVisible();
   },
 };
-export const ReadingConsent: Story = {
-  args: { variant: 'reading-consent', children: 'Card reading-consent' },
+export const ReadingNotice: Story = {
+  args: { variant: 'reading-notice', children: 'Card reading-notice' },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText(args.children as string)).toBeVisible();
@@ -186,8 +186,8 @@ export const QuotaConsent: Story = {
     await expect(canvas.getByText(args.children as string)).toBeVisible();
   },
 };
-export const ObserverConsent: Story = {
-  args: { variant: 'observer-consent', children: 'Card observer-consent' },
+export const ObserverControls: Story = {
+  args: { variant: 'observer-controls', children: 'Card observer-controls' },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText(args.children as string)).toBeVisible();

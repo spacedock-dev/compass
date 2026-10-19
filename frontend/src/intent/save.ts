@@ -145,7 +145,10 @@ export async function adoptPrompt(
     if (reply.ok && body && ['untrusted', 'unreadable'].includes(String(body.outcome || ''))) {
       /* Not a changed prompt: the store could not take the save at all, and saying the prompt changed would
          send the reader to the wrong place. */
-      ctx.held.requests.set(compat(row), { message: ADOPT_REFUSED[String(body.outcome)] ?? '' });
+      ctx.held.requests.set(compat(row), {
+        ...ctx.held.requests.get(compat(row)),
+        message: ADOPT_REFUSED[String(body.outcome)] ?? '',
+      });
       return false;
     }
     if (!reply.ok || !body || !body.persisted) throw new Error('adoption not saved');
@@ -173,7 +176,10 @@ export async function adoptPrompt(
     await refresh(ctx);
     return true;
   } catch {
-    ctx.held.requests.set(compat(row), { message: ADOPT_CHANGED });
+    ctx.held.requests.set(compat(row), {
+      ...ctx.held.requests.get(compat(row)),
+      message: ADOPT_CHANGED,
+    });
     return false;
   } finally {
     ctx.held.notify();

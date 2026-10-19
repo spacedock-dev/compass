@@ -52,7 +52,7 @@ export const SentListReadsAsAShortForm: StoryObj<typeof DisclosureParts> = {
         parts={[
           "This session's own harness reads it.",
           'Sent: your goal and a bounded set of the session’s entries, with your messages and the agent’s messages up to 1,000 characters each.',
-          'Tool output, only after you allow it: a check’s command, result and last 180 characters of output.',
+          'Tool output included: a check’s command, result and last 180 characters of output.',
           'To: Anthropic, off this machine, with credential shapes redacted, through your Claude Code CLI.',
         ]}
       />
@@ -64,7 +64,7 @@ export const SentListReadsAsAShortForm: StoryObj<typeof DisclosureParts> = {
     const labels = [...canvasElement.querySelectorAll('li strong')];
     await expect(labels.map((label) => label.textContent)).toEqual([
       'Sent:',
-      'Tool output, only after you allow it:',
+      'Tool output included:',
       'To:',
     ]);
     for (const label of labels) {

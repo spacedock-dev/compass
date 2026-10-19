@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { byAction, fact, json, mountDrift, press, readingPosts, textOf } from './testing';
 
-/* Keep my intent, where an analysis may start: one request to settle and read together, never carrying an
-   Allow. Where an Allow is still owed it settles through `/api/annotate` and reads nothing. */
+/* Keep settles and reads together when the reading policy permits it. */
 const LATER = fact('d1', 995, { summary: 'Do it the careful way' });
 const routes = {
   '/api/direction': () => json({ ok: true, text: 'Do it the careful way', clipped: false }),
@@ -113,18 +112,26 @@ describe('Keep my intent and analyze', () => {
     ).toEqual([]);
   });
 
-  it('only settles while an Allow is still owed, and leaves the Allow to the step that names the receiver', async () => {
+  it('settles and analyzes directly with no legacy provider grant', async () => {
     const page = mountDrift({
       facts: [LATER],
       session,
       routes,
       payload: {
-        reading: { providers: { claude: false }, words: {}, tool_output: {}, used: 0, limit: 10 },
+        reading: {
+          consent: true,
+          off: false,
+          providers: {},
+          words: {},
+          tool_output: {},
+          used: 0,
+          limit: 10,
+        },
       },
     });
     await page.settle();
     await page.settle();
-    expect(byAction('direction-keep')?.textContent).toBe('Keep my intent');
+    expect(byAction('direction-keep')?.textContent).toBe('Keep my intent and analyze');
     await press(byAction('direction-keep'));
     await page.settle();
     expect(readingPosts(page)).toEqual([]);
@@ -133,8 +140,9 @@ describe('Keep my intent and analyze', () => {
     await page.settle();
     expect(
       page.state.requests.filter((r) => r.method === 'POST' && r.path === '/api/annotate'),
-    ).toHaveLength(1);
-    expect(textOf('.next-cockpit-direction-question')).toContain('Press Allow and analyze');
+    ).toHaveLength(0);
+    expect(readingPosts(page)).toHaveLength(1);
+    expect(readingPosts(page)[0]?.body).not.toHaveProperty('allow');
   });
 });
 

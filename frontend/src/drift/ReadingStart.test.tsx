@@ -134,57 +134,238 @@ describe('a refusal is a state', () => {
   });
 });
 
-describe('consent and destination', () => {
-  const unconsented = {
-    reading: { providers: { claude: false }, words: {}, tool_output: {}, used: 0, limit: 10 },
+describe('notices and the durable off switch', () => {
+  const fresh = {
+    reading: { consent: true, off: false, providers: {}, words: {}, used: 0, limit: 10 },
+  };
+  const notice = {
+    kind: 'reading',
+    provider: 'claude',
+    destination: 'first.example',
+    content: 4,
+    tool_output: 'tools.example',
+    at: 1000,
   };
 
-  it('asks before sending, names the receiver, and sends only on Allow', async () => {
+  it('runs on the first press, keeps its notice through refresh and navigation, and clears it on a press without one', async () => {
+    let calls = 0;
     const page = mountDrift({
-      payload: unconsented,
-      routes: { '/api/reading': () => json({ ok: true, produced: false }) },
+      payload: fresh,
+      routes: {
+        '/api/reading': () => {
+          calls++;
+          return json(
+            {
+              ok: true,
+              job: { id: `j${calls}`, steps: [] },
+              ...(calls === 1
+                ? { notice }
+                : calls === 3
+                  ? { notice: { ...notice, destination: 'changed.example', at: 1100 } }
+                  : {}),
+            },
+            202,
+          );
+        },
+      },
     });
     await page.settle();
     await page.settle();
-    expect(textOf('.next-cockpit-reading-ask')).toContain('Analyze drift');
+    expect(readingPosts(page)).toHaveLength(0);
     await press(byAction('reading-ask'));
-    expect(readingPosts(page)).toEqual([]);
-    expect(textOf('.next-cockpit-reading-consent')).toContain(
-      'Send this session to Claude Code for analysis?',
-    );
-    expect(textOf('.next-cockpit-reading-consent')).toContain('Your saved words.');
-    // Not now: nothing was sent, allowed or recorded.
-    await press(byAction('reading-not-now'));
-    expect(readingPosts(page)).toEqual([]);
-    expect(byAction('reading-ask')).not.toBeNull();
-    await press(byAction('reading-ask'));
-    await press(byAction('reading-allow'));
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);
-    expect(readingPosts(page)[0]?.body).toMatchObject({
-      allow: true,
-      words_destination: 'api',
-      tool_output: 'api',
-    });
+    expect(readingPosts(page)[0]?.body).not.toHaveProperty('allow');
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    expect(textOf('[data-next-reading-notice]')).toContain('Tool output goes to: tools.example');
+    expect(textOf('[data-next-reading-notice]')).toContain('Your saved words.');
+    expect(textOf('[data-next-reading-notice]')).toContain('Claude Code');
+    expect(
+      document.querySelector('[data-next-reading-notice] [data-next-cockpit-action="reading-off"]'),
+    ).not.toBeNull();
+    await page.go('#n=sessions');
+    await page.go('#n=session:alpha%2Fapp:claude:s1');
+    await page.settle();
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(document.querySelector('[data-next-reading-notice]')).toBeNull();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(textOf('[data-next-reading-notice]')).toContain('changed.example');
+    expect(textOf('[data-next-reading-notice]')).not.toContain('first.example');
   });
 
-  it('refuses with the stated reason, sending nothing more, when the destination moved since the draw', async () => {
+  it('names the provider the notice was recorded for after the route falls back to another', async () => {
     const page = mountDrift({
-      payload: unconsented,
+      payload: fresh,
       routes: {
-        '/api/reading': () => json({ ok: false, reason: 'destination-changed' }, 409),
+        '/api/reading': () => json({ ok: true, job: { id: 'j', steps: [] }, notice }, 202),
       },
     });
     await page.settle();
     await page.settle();
     await press(byAction('reading-ask'));
-    await press(byAction('reading-allow'));
+    await page.settle();
+    expect(textOf('[data-next-reading-notice]')).toContain('Your saved words.');
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_routes: {
+        claude: {
+          ...ROUTE,
+          provider: 'codex',
+          label: 'Codex',
+          fallback: true,
+          disclosure: 'This sends the session to Codex.',
+          disclosure_parts: ['Codex words.'],
+        },
+      },
+    });
+    const shown = textOf('[data-next-reading-notice]');
+    expect(shown).toContain('Provider: Claude Code');
+    expect(shown).toContain('first.example');
+    expect(shown).not.toContain('Codex');
+    expect(shown).toContain("The session's words and the agent's messages.");
+  });
+
+  it('draws one Turn off readings beside a notice when no disclosure popover is drawn', async () => {
+    const page = mountDrift({
+      payload: { ...fresh, reading_routes: { claude: { ...ROUTE, disclosure: '' } } },
+      routes: { '/api/reading': () => json({ ok: true, produced: false, notice }) },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(document.querySelector('[data-next-reading-notice]')).not.toBeNull();
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
+  });
+
+  it('leads with the cap when the cap and off both stand, since turning on cannot lift it', async () => {
+    const page = mountDrift({
+      payload: {
+        reading: {
+          consent: false,
+          off: true,
+          reason: 'daily-cap',
+          used: 10,
+          limit: 10,
+          retry_at: null,
+        },
+      },
+    });
+    await page.settle();
+    await page.settle();
+    const lines = [
+      ...document.querySelectorAll('.next-session-drift-check .next-cockpit-reading-why'),
+    ]
+      .map((node) => node.textContent ?? '')
+      .filter((line) => /Analysis limit|Readings are off/.test(line));
+    expect(lines[0]).toContain('Analysis limit reached');
+    expect(lines).toContain(
+      'Readings are off. Nothing is sent to a model until you turn them back on.',
+    );
+  });
+
+  it('keeps the last notice while another press is pending or its response is lost', async () => {
+    let first = true;
+    const page = mountDrift({
+      payload: fresh,
+      routes: {
+        '/api/reading': () => {
+          if (!first) return 'hold';
+          first = false;
+          return json({ ok: true, job: { id: 'first', steps: [] }, notice }, 202);
+        },
+      },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    await press(byAction('reading-ask'));
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    await page.release('/api/reading', new Response('lost', { status: 200 }));
+    await page.settle();
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    expect(textOf('.next-session-drift-check')).toContain('Could not confirm the reading');
+  });
+
+  it('shows a newly published job notice after this tab had a no-notice reply', async () => {
+    const page = mountDrift({
+      payload: fresh,
+      routes: { '/api/reading': () => json({ ok: true, produced: false }) },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(document.querySelector('[data-next-reading-notice]')).toBeNull();
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_jobs: { 'claude:s1': { id: 'other-tab', steps: [], notice } },
+    });
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+  });
+
+  it('restores a running job notice from the payload without sending anything', async () => {
+    const page = mountDrift({
+      payload: { ...fresh, reading_jobs: { 'claude:s1': { id: 'running', steps: [], notice } } },
+    });
+    await page.settle();
+    await page.settle();
+    expect(document.querySelector('[data-next-analyzing="running"]')).not.toBeNull();
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    expect(readingPosts(page)).toHaveLength(0);
+  });
+
+  it.each([
+    { consent: false, off: true, reason: '' },
+    { consent: false, reason: 'readings-off' },
+  ])('stays off until a turn-on press runs the reading', async (reading) => {
+    const page = mountDrift({
+      payload: { reading },
+      routes: {
+        '/api/reading': () => json({ ok: true, job: { id: 'on', steps: [] }, notice }, 202),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    expect(byAction('reading-ask')).toBeNull();
+    expect(textOf('.next-session-drift-check')).toContain(
+      'Readings are off. Nothing is sent to a model until you turn them back on.',
+    );
+    expect(readingPosts(page)).toHaveLength(0);
+    expect(byAction('reading-on')?.textContent).toBe('Turn on readings and analyze');
+    await press(byAction('reading-on'));
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);
-    expect(textOf('.next-session-drift-check')).toContain(
-      'Where this session would be sent changed',
-    );
-    await page.advance(5_000);
+    expect(readingPosts(page)[0]?.body).toMatchObject({
+      allow: true,
+      provider: 'claude',
+      words_destination: 'api',
+      tool_output: 'api',
+      press: true,
+      observer_model: 1,
+    });
+  });
+
+  it.each([
+    [409, 'destination-changed', 'Where this session would be sent changed'],
+    [400, 'page-outdated', 'Reload this page'],
+  ])('explains a refused turn-on without retrying (%s)', async (status, reason, sentence) => {
+    const page = mountDrift({
+      payload: { reading: { consent: false, off: true, reason: 'readings-off' } },
+      routes: { '/api/reading': () => json({ ok: false, reason }, status as number) },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-on'));
+    await page.settle();
+    expect(textOf('.next-session-drift-check')).toContain(sentence);
     expect(readingPosts(page)).toHaveLength(1);
   });
 });
