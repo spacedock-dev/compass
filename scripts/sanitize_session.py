@@ -16,7 +16,8 @@ What it does, by walking every string value (and every key) of every record:
   rewritten by a later rule. An entry may be `"word": true` to match only whole words.
 - Ids regenerated through one consistent mapping, so parent and child chains and tool_use and
   tool_result pairs stay linked: UUIDs, `toolu_`, `msg_` and `req_` ids, the commit hashes and long
-  numbers the mapping lists, and any 40-hex hash.
+  numbers the mapping lists, any 40-hex hash, and, when the mapping names the source repository
+  (`commit_repo`), every 7 to 40 character hex token that resolves as a commit there.
 - Dates shifted by a whole number of days (`day_shift`), so order, gaps and times of day survive
   and a date in a filename still agrees with the timestamps.
 - Thinking blocks dropped, images replaced by a placeholder, secrets by `<REDACTED_TOKEN>`, any
@@ -47,6 +48,10 @@ from urllib.parse import quote
 UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
 PREFIXED = re.compile(r"\b(toolu|msg|req)_([A-Za-z0-9]{8,})\b")
 LONG_HASH = re.compile(r"\b[0-9a-f]{40}\b")
+# A short commit hash is any hex run git accepts as an abbreviation. Only the ones that resolve in
+# the source repository are replaced: a mapping cannot list them by hand, because a session quotes
+# hashes from `git log`, CI output and pasted text that nobody reads closely enough to collect.
+HEX_TOKEN = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])")
 DATE = re.compile(r"\b(20\d\d)-(\d\d)-(\d\d)(?:T(\d\d):(\d\d):(\d\d)(\.\d+)?Z)?")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+")
 OTHER_HOME = re.compile(r"(/Users/|/home/|C:\\\\?Users\\\\?)(?!dev\b)[A-Za-z0-9._-]+")
@@ -112,6 +117,44 @@ REFERENCE_KEYS = (
     "snapshotMessageId",
     "sourceToolAssistantUUID",
 )
+# Keys whose integers Claude Code writes as counts, sizes, durations or positions, never as an id,
+# so one that happens to equal a listed run or issue number is not that number.
+COUNT_KEYS = frozenset(
+    {
+        "apiBlockIndex",
+        "coordinate",
+        "cumulativeDroppedTokens",
+        "duration",
+        "durationMs",
+        "exitCode",
+        "itemCount",
+        "limit",
+        "max_results",
+        "messageCount",
+        "newLines",
+        "newStart",
+        "numLines",
+        "offset",
+        "oldLines",
+        "oldStart",
+        "pendingBackgroundAgentCount",
+        "postTokens",
+        "preTokens",
+        "promptIndex",
+        "scroll_amount",
+        "startLine",
+        "thinkingDurationMs",
+        "timeout",
+        "timeoutMs",
+        "timeout_ms",
+        "tokens",
+        "total_deferred_tools",
+        "totalLines",
+        "turnIndex",
+        "web_fetch_requests",
+        "web_search_requests",
+    }
+)
 PLACEHOLDER_TOKEN = "<REDACTED_TOKEN>"  # noqa: S105 - a placeholder, not a credential
 
 
@@ -135,6 +178,9 @@ class Mapping:
     # says UTC, and the timestamps are UTC, so leaving the difference would let a reader subtract
     # one from the other and recover the time zone. Removing it makes a local time read as UTC.
     local_clock_offset_seconds: int = 0
+    # The repository the session worked in, read only by `git cat-file`, so every quoted hash that
+    # names one of its commits is regenerated and verified absent, not only the listed ones.
+    commit_repo: str = ""
 
     @classmethod
     def load(cls, path: Path) -> Mapping:
@@ -150,6 +196,7 @@ class Mapping:
             drop_blocks=list(raw.get("drop_blocks", ["thinking", "redacted_thinking"])),
             shift_bare_times=bool(raw.get("shift_bare_times", False)),
             local_clock_offset_seconds=int(raw.get("local_clock_offset_seconds", 0)),
+            commit_repo=str(raw.get("commit_repo", "")),
         )
 
 
@@ -180,6 +227,30 @@ class Sanitizer:
         )
         self.short_ids: dict[str, str] = {}
         self.short_re: re.Pattern[str] | None = None
+        self.commits: dict[str, str] = {}
+        self.commit_re: re.Pattern[str] | None = None
+
+    def learn_commits(self, raw: str) -> None:
+        """Map every hex token in the source that names a commit in `commit_repo` to its full hash.
+
+        The replacement is taken from the full hash, so a short form still reads as the prefix of
+        the full form's replacement wherever the session quotes both.
+        """
+        if not self.mapping.commit_repo:
+            return
+        # A full hash is left to LONG_HASH, which gives it the same replacement; replacing it here
+        # as well would hand LONG_HASH a fresh 40-hex run to replace a second time.
+        self.commits = {
+            token: full
+            for token, full in resolving_commits(raw, Path(self.mapping.commit_repo)).items()
+            if not LONG_HASH.fullmatch(token)
+        }
+        if self.commits:
+            self.commit_re = re.compile(
+                r"(?<![0-9A-Za-z])(?:"
+                + "|".join(sorted(self.commits, key=len, reverse=True))
+                + r")(?![0-9A-Za-z])"
+            )
 
     def learn_short_ids(self, raw: str) -> None:
         """Map the eight-character short form of every session or record id in the source.
@@ -221,6 +292,11 @@ class Sanitizer:
             digits, index = divmod(digits, len(alphabet))
             chars.append(alphabet[index])
         return self._note(original, f"{kind}_{''.join(chars)}", f"id: {kind}")
+
+    def _commit(self, match: re.Match[str]) -> str:
+        original = match.group(0)
+        text = (self._digest(self.commits[original]) * 2)[: len(original)]
+        return self._note(original, text, "id: commit hash")
 
     def _hash(self, match: re.Match[str]) -> str:
         original = match.group(0)
@@ -301,6 +377,8 @@ class Sanitizer:
                 value,
             )
         value = PREFIXED.sub(self._prefixed, value)
+        if self.commit_re:
+            value = self.commit_re.sub(self._commit, value)
         if self.hash_re:
             value = self.hash_re.sub(self._hash, value)
         value = LONG_HASH.sub(self._hash, value)
@@ -381,6 +459,7 @@ def sanitize(mapping: Mapping, source: Path, target: Path) -> tuple[Sanitizer, d
     cleaner = Sanitizer(mapping)
     raw = source.read_text(encoding="utf-8")
     cleaner.learn_short_ids(raw)
+    cleaner.learn_commits(raw)
     records = [json.loads(line) for line in raw.splitlines() if line.strip()]
     out = [cleaner.record(record) for record in records]
     known = {record.get("uuid") for record in out if record.get("uuid")}
@@ -402,6 +481,27 @@ def sanitize(mapping: Mapping, source: Path, target: Path) -> tuple[Sanitizer, d
     return cleaner, {"dangling_references_nulled": orphans, "lines": len(out)}
 
 
+def resolving_commits(text: str, repo: Path) -> dict[str, str]:
+    """Every hex token in `text` that `repo` resolves as a commit, with the commit's full hash."""
+    tokens = sorted(set(HEX_TOKEN.findall(text)))
+    if not tokens:
+        return {}
+    result = subprocess.run(  # noqa: S603 - fixed arguments; the tokens go to stdin
+        ["git", "-C", str(repo), "cat-file", "--batch-check=%(objectname) %(objecttype)"],  # noqa: S607
+        input="".join(f"{token}^{{commit}}\n" for token in tokens),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    # One output line per input line, in order; a token that names nothing reads "<token> missing".
+    found: dict[str, str] = {}
+    for token, line in zip(tokens, result.stdout.splitlines(), strict=True):
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == "commit":
+            found[token] = parts[0]
+    return found
+
+
 def originals(mapping: Mapping, source: Path) -> set[str]:
     """Everything that must not appear: the mapping's originals and every original id."""
     found = (
@@ -412,6 +512,8 @@ def originals(mapping: Mapping, source: Path) -> set[str]:
         found.update(pattern.findall(raw))
     found.update(match.group(0) for match in PREFIXED.finditer(raw))
     found.update(u[:8] for u in UUID.findall(raw))
+    if mapping.commit_repo:
+        found.update(resolving_commits(raw, Path(mapping.commit_repo)))
     return {item for item in found if len(item) >= 4}
 
 
@@ -463,24 +565,49 @@ def _strings(node: Any) -> list[str]:
     return []
 
 
+def _integers(node: Any, key: str = "") -> list[tuple[str, int]]:
+    if type(node) is int:
+        return [(key, node)]
+    if isinstance(node, list):
+        return [pair for item in node for pair in _integers(item, key)]
+    if isinstance(node, dict):
+        return [pair for name, item in node.items() for pair in _integers(item, str(name))]
+    return []
+
+
+def _is_count(key: str) -> bool:
+    return key in COUNT_KEYS or key.endswith("_tokens")
+
+
 def _leak_problems(mapping: Mapping, source: Path, out_text: str) -> list[str]:
     problems: list[str] = []
     lowered = out_text.lower()
     # A run or issue number is replaced only where it stands alone in text, so it is a leak only
-    # there: "4647" inside a token count of 146475, or a JSON number Claude Code wrote for a token
-    # count, is a different number.
-    texts = "\n".join(
-        text for line in out_text.splitlines() if line.strip() for text in _strings(_parsed(line))
-    )
+    # there: "4647" inside a token count of 146475 is a different number.
+    parsed = [_parsed(line) for line in out_text.splitlines() if line.strip()]
+    texts = "\n".join(text for node in parsed for text in _strings(node))
+    # A JSON integer is a leak when it equals a listed number, unless it sits under a key that only
+    # ever holds a count: a pull-request link's `prNumber` once carried the real number past a
+    # check that read text alone.
+    integers = {
+        str(value) for node in parsed for key, value in _integers(node) if not _is_count(key)
+    }
     for original in sorted(originals(mapping, source)):
         if original.isdigit():
-            if re.search(rf"(?<!\d){original}(?!\d)", texts):
+            if re.search(rf"(?<!\d){original}(?!\d)", texts) or original in integers:
                 problems.append(f"original still present: {original!r}")
             continue
         for form in _forms(original):
             if form.lower() in lowered:
                 problems.append(f"original still present: {original!r} (as {form!r})")
                 break
+    if mapping.commit_repo:
+        # A replacement is random hex of the original's length, so a short one can land on another
+        # real commit; that names the repository's history as surely as the original did.
+        resolving = resolving_commits(out_text, Path(mapping.commit_repo))
+        if resolving:
+            example = min(resolving)
+            problems.append(f"{len(resolving)} hex token(s) name a commit, e.g. {example!r}")
     for label, pattern in SWEEPS.items():
         hits = Counter(match.group(0) for match in pattern.finditer(out_text))
         if hits:

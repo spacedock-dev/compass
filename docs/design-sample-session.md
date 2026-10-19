@@ -145,8 +145,12 @@ was added.
 - The fixture is the shape of the page's payloads on the day it was captured. A payload change the
   page cannot parse fails the sample's tests, and a change it can parse leaves the sample as it was.
 - Times in the session are shifted by one fixed offset, a whole number of days plus a time of day, so
-  the order and the gaps survive and the real dates and hours do not. The page shows them in the
-  reader's own time zone.
+  the order and the gaps survive and no timestamp shows the real date or hour. The page shows them in
+  the reader's own time zone. The longer session is about this product, so its feature names, files
+  and tool versions stay, and a reader with the public repository can place it within a few weeks; its
+  quoted commit hashes, branch names, pull-request titles and commit subjects are replaced so that
+  none leads to a dated commit ([the README](../sample-session/README.md#how-it-was-made) says what is
+  replaced and what is not).
 - The transcript is committed. That is an exception to the policy in
   [tests/README.md](../tests/README.md#what-is-committed-and-what-is-not), made by the owner on
   2026-10-14 for this one session, with its mapping kept out of the repository. The owner made a

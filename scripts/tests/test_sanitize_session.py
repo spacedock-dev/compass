@@ -6,6 +6,8 @@ Every value here is invented. The real mapping, which holds originals, lives out
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -281,6 +283,53 @@ class SanitizerTest(unittest.TestCase):
         )
         problems = ss.verify(self.mapping, self.source, self.target)
         self.assertTrue(any("'4647'" in p for p in problems), problems)
+
+    def test_an_integer_identity_that_survives_is_reported_and_a_count_is_not(self) -> None:
+        self.mapping.numbers = ["4647"]
+        self.source.write_text(
+            json.dumps({"type": "pr-link", "prNumber": 4647}) + "\n", encoding="utf-8"
+        )
+        self.target.write_text(
+            json.dumps({"type": "pr-link", "prNumber": 4647}) + "\n", encoding="utf-8"
+        )
+        problems = ss.verify(self.mapping, self.source, self.target)
+        self.assertTrue(any("'4647'" in p for p in problems), problems)
+        self.target.write_text(
+            json.dumps({"type": "pr-link", "output_tokens": 4647, "durationMs": 4647}) + "\n",
+            encoding="utf-8",
+        )
+        self.assertEqual([], ss.verify(self.mapping, self.source, self.target))
+
+    def test_every_quoted_hash_that_names_a_commit_is_regenerated_and_checked(self) -> None:
+        if not shutil.which("git"):
+            self.skipTest("git is not installed")
+        repo = self.root / "repo"
+        git = ["git", "-C", str(repo), "-c", "user.name=T", "-c", "user.email=t@example.com"]
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)  # noqa: S607
+        subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], check=True)
+        full = subprocess.run(
+            [*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        short = full[:8]
+        self.mapping.commit_repo = str(repo)
+        self.mapping.hashes = []
+        self.source.write_text(
+            json.dumps({"type": "x", "t": f"{short} fix, merged as {full}; deadbeef0 stays"})
+            + "\n",
+            encoding="utf-8",
+        )
+        out = str(self.run_it()[0]["t"])
+        self.assertNotIn(short, out)
+        new_short, _, rest = out.partition(" fix, merged as ")
+        self.assertTrue(rest.startswith(new_short), out)
+        self.assertIn("deadbeef0 stays", out)
+        self.assertEqual([], ss.verify(self.mapping, self.source, self.target))
+        self.target.write_text(
+            json.dumps({"type": "x", "t": f"still {short}"}) + "\n", encoding="utf-8"
+        )
+        problems = ss.verify(self.mapping, self.source, self.target)
+        self.assertTrue(any("name a commit" in p for p in problems), problems)
+        self.assertTrue(any(f"'{short}'" in p for p in problems), problems)
 
     def test_verification_passes_a_clean_output(self) -> None:
         self.run_it()

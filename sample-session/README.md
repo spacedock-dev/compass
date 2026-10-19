@@ -18,7 +18,7 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   `scripts/sanitize_session.py`. The project reads as `dashboard`, the organization as `example-org`,
   the person as `Alex Doe`, and the home directory as `/Users/dev`. Thinking blocks are dropped. Run and
   job numbers and commit hashes are regenerated, and every timestamp moves by one fixed offset, so the
-  order and the gaps survive and the real dates and hours do not.
+  order and the gaps survive and no timestamp shows the real date or hour.
 - **Cut.** The record is one turn of a longer session: from the person's request to resolve a pull
   request's merge conflicts, to the moment after the agent has reproduced a Windows-only test failure and
   before it writes the fix. The first record's parent, which the cut removed, is `null`.
@@ -64,7 +64,9 @@ committed, and `.gitignore` refuses a mapping file kept in this directory.
 
 The mapping file (`mapping.json`) holds the originals and lives outside the repository. Its shape is a
 `salt`, a `day_shift`, a `time_shift_seconds`, an `ai_title`, a list of `literals` (`from`, `to`,
-`category`, and `word` for whole-word matches), and lists of `hashes` and `numbers` to regenerate.
+`category`, and `word` for whole-word matches), lists of `hashes` and `numbers` to regenerate, and
+optionally `commit_repo`, the repository the session worked in: every hex token in the session that
+names a commit there is regenerated, and `--verify` fails if any token in the output names one.
 
 1. Cut the original to the turn, then `python3 scripts/sanitize_session.py --mapping mapping.json
    --input cut.jsonl --output out.jsonl`, and again with `--verify`.
@@ -128,10 +130,23 @@ holds the story from start to end:
   correction, a Unix time in an API answer) move with the timestamps. A machine's local times are
   turned into UTC on the way, because a local time beside its UTC timestamp gives the time zone away.
   The tracker reads as `tracker.example.com`, its issue keys as `DASH-<n>` with regenerated numbers,
-  and the product, under its current and its earlier name alike, as `Dashboard`, so the session about
-  Compass reads as a session about a dashboard. A companion tool, other projects and sessions on the
-  machine, a status-line script and a desktop utility read under neutral names, and pull request
-  numbers are regenerated wherever they appear, the pull-request link records included.
+  and the slugs its links and branch names carry, which spell issue titles, are dropped. The product's
+  name, under its current and its earlier name alike, reads as `Dashboard`. A companion tool, other
+  projects and sessions on the machine, a status-line script and a desktop utility read under neutral
+  names, and pull request numbers are regenerated wherever they appear, the pull-request link records
+  included. So is everything that would find this repository's public history: every quoted hash that
+  names a commit in it, the branch names (as `work/branch-<letter>`), the pull-request titles and
+  commit subjects the session quotes, cut short or whole, and each line it quotes from a pull request's
+  description or a commit's body, which reads as "(a line of the pull request's description)". The project key Compass prints, a hash of the repository's path,
+  is the hash of the replaced path.
+- **What is not replaced.** The product's feature names (Intent and drift, Steer back and the others),
+  its documents and file names, the identifiers in the code the session quotes, and the versions of
+  the tools it ran. A reader who knows the product will recognise it, and one with the public
+  repository can place the session within a few weeks, from the files it reads and the versions it
+  records. Matching the work it quotes against that history could narrow it further, and a few
+  sentences the agent wrote in its own messages and later reused, reworded, in a pull request's
+  description are close enough to search for; the replacements above make that a search rather than a
+  lookup.
   No shaping was needed: the failing check the story turns on was already run on its own and recorded
   as a failure.
 - **Nothing is authored yet.** The intent is the person's own words, from the record. The summary and
@@ -140,14 +155,10 @@ holds the story from start to end:
 
 ### How big it may be
 
-The fixture ships inside the built page, so the size was bounded before anything was built. The page
-as built on 2026-10-19 is 1,884,747 bytes, and it may grow by at most 400 KiB, to 2,294,347 bytes. The
-page carries its script base64-encoded, so each fixture byte costs about four thirds of a page byte. The
-fixture may be at most 250,000 bytes of compact JSON, which is at most about 233 KB more page than the
-first sample's 75,130 bytes, and leaves the rest of the 400 KiB for code. Measured against an isolated
-server, this session's record is 81 entries in two pages, and the capture without a summary or a
-reading is 112,166 bytes. `frontend/build/page-size.test.mjs` holds both bounds, and runs in
-`pnpm test`.
+The fixture ships inside the built page, so both are bounded before anything is built;
+[the design record](../docs/design-sample-session.md#how-big-it-may-be) owns the bounds and why.
+Measured against an isolated server, this session's record is 81 entries in two pages, and the capture
+without a summary or a reading is 112,166 bytes.
 
 ### Permission to commit it
 
@@ -166,14 +177,27 @@ stay outside the repository.
   timestamps, a machine's uptime clock, pull request numbers held as integers in the link records and
   in a form the rule missed, a companion tool's name, two other sessions' titles, other projects on the
   machine, and a status-line script and desktop utility by name. On 2026-10-19 the last round of each,
-  run on the committed file, returned no leak found.
+  run on the committed file, returned no leak found. A later review against the repository itself
+  found what a reader of the file alone could not: eight short commit hashes and the branch names,
+  pull-request titles, commit subjects and pull-request descriptions the session quotes, all of which
+  lead to dated public history;
+  the tracker slugs, which spell issue titles; and a project key computed from the real path. They are replaced as described above, `--verify` and the file tests now
+  check the hashes, branch names and project key against the repository, and both reviews ran again on
+  the result, asked this time to look for those classes too. Both returned "leak found", and each
+  finding was checked against the repository rather than the file: the titles, subjects, hashes,
+  branch prefix and review slug they named are the regenerated replacements, none of which appears in
+  the repository's commits or pull requests; the project key is the hash of the replaced path; and the
+  rest is what is kept on purpose below, or worktree and scratch-folder names that exist only on the
+  machine.
 - Kept on purpose, after review: the names of public tools (Claude, Codex, AGY, Chrome and the
   others); the identifiers in the code the session quotes (`next-cockpit-*` and the other class and
   attribute names, and a string-length constant), which belong to this public repository and would
-  only point back to the product the sample is shown in; dates, which moved by one fixed offset and
-  fall in April and May 2026; and the hash of the project's own repository key.
+  only point back to the product the sample is shown in; and dates, which moved by one fixed offset and
+  fall in April and May 2026.
 - `scripts/tests/test_sample_session_files.py` runs the repository's sweeps on it, including the newer
-  ones for tracker references, encoded home directories and machine temp paths.
+  ones for tracker references, encoded home directories and machine temp paths, and checks against this
+  repository that no quoted hash names a commit, no branch name is one of its refs, and the project key
+  is the hash of the sample's own path.
 
 ### Switching the page to it
 

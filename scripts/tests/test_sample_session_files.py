@@ -6,8 +6,11 @@ chain of records, fails here before it is reviewed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -25,6 +28,19 @@ MILESTONE = ROOT / "sample-session" / "milestone-session.jsonl"
 SESSIONS = (SESSION, MILESTONE)
 FIXTURE = ROOT / "frontend" / "src" / "sample" / "session.fixture.json"
 README = ROOT / "sample-session" / "README.md"
+
+
+def git(*args: str) -> str | None:
+    """The repository's own git output, or None when there is no history to ask."""
+    if not shutil.which("git"):
+        return None
+    result = subprocess.run(
+        ["git", "-C", str(ROOT), *args],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout if result.returncode == 0 else None
 
 
 class SampleSessionFilesTest(unittest.TestCase):
@@ -80,6 +96,36 @@ class SampleSessionFilesTest(unittest.TestCase):
             for label, pattern in ss.SWEEPS.items():
                 with self.subTest(file=path.name, sweep=label):
                     self.assertEqual([], [m.group(0)[:50] for m in pattern.finditer(text)][:3])
+
+    def test_no_quoted_hash_names_a_commit_in_this_repository(self) -> None:
+        # A commit's date and time zone are public, so one resolving hash undoes the time shift.
+        if git("rev-parse", "--verify", "HEAD") is None:
+            self.skipTest("no git history to resolve hashes against")
+        for path in SESSIONS:
+            with self.subTest(file=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertEqual({}, ss.resolving_commits(text, ROOT))
+
+    def test_the_milestone_names_no_branch_from_this_repository(self) -> None:
+        branches = {str(r["gitBranch"]) for r in self.records(MILESTONE) if r.get("gitBranch")}
+        self.assertEqual(
+            set(), {b for b in branches if not re.fullmatch(r"main|work/branch-[a-z]", b)}
+        )
+        refs = git("for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads", "refs/remotes")
+        if refs is None:
+            self.skipTest("no git history to compare branch names against")
+        known = {ref.split("/", 1)[1] if ref.startswith("origin/") else ref for ref in refs.split()}
+        self.assertEqual(set(), (branches - {"main"}) & known)
+
+    def test_the_project_key_is_the_hash_of_the_samples_own_path(self) -> None:
+        # The key is an unsalted hash of the repository path (sessions._project_identity_key), so
+        # the real path's key would confirm the real path to anyone who guessed it.
+        records = self.records(MILESTONE)
+        cwds = {r["cwd"] for r in records if r.get("cwd")}
+        own = {hashlib.blake2b(c.encode(), digest_size=12).hexdigest() for c in cwds}
+        keys = set(re.findall(r"git:([0-9a-f]{24})", MILESTONE.read_text(encoding="utf-8")))
+        self.assertTrue(keys)
+        self.assertEqual(set(), keys - own)
 
     def test_the_only_identity_is_the_placeholder_one(self) -> None:
         placeholders = {SESSION: {"dev@example.com"}, MILESTONE: {"user@example.com"}}

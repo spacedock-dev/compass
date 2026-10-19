@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import unittest
 import urllib.parse
@@ -102,6 +103,23 @@ class RecordPagesTest(unittest.TestCase):
         self.serve([{**self.page(0, last=False), "state": "stale"}])
         with self.assertRaises(SystemExit):
             bf.capture_record("http://x", "s")
+
+
+class PageConstantsTest(unittest.TestCase):
+    def test_the_capture_reads_pages_the_way_the_page_does(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[2] / "frontend" / "src" / "transport" / "record.ts"
+        ).read_text(encoding="utf-8")
+
+        def exported(name: str) -> int:
+            match = re.search(rf"^export const {name} = (\d+);", source, re.MULTILINE)
+            self.assertIsNotNone(match, name)
+            return int(match.group(1)) if match else 0
+
+        self.assertEqual(
+            (exported("RECORD_PAGE_SIZE"), exported("RESOLVE_MAX_PAGES")),
+            (bf.RECORD_PAGE_SIZE, bf.RECORD_MAX_PAGES),
+        )
 
 
 if __name__ == "__main__":
