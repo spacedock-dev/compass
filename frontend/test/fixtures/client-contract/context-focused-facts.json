@@ -50,7 +50,7 @@
         "sid": "a1b2c3d4"
       },
       "observer_model": {
-        "disclosure": "Send redacted transcript excerpts and workflow stage to OpenAI through Codex for a goal summary? Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. --no-observer-model refuses calls for this run.",
+        "disclosure": "A focused refresh sends redacted transcript excerpts and workflow stage through Codex to OpenAI for a goal summary. Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. Turn off readings or --no-observer-model stops these calls.",
         "enabled": false,
         "max_prompt_bytes": 16384
       },
@@ -308,7 +308,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "5858",
+      "Content-Length": "5889",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

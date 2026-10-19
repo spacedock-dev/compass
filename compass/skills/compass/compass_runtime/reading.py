@@ -60,6 +60,7 @@ from .config import validate_claude_reading_model
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
+    from . import reading_policy
     from .config import RuntimeConfig
 
     # Given the selected agent rows' identities, names the newest recorded final reply.
@@ -1069,6 +1070,7 @@ class Job:
     # Set just before the outcome is written. A Cancel after it is refused,
     # because the result it would discard is already being stored.
     sealed: bool = False
+    notice: reading_policy.Notice | None = None
 
 
 # Beside `_IN_FLIGHT` and under its lock rather than in a registry of its own:
@@ -1198,6 +1200,7 @@ def published_jobs(config: RuntimeConfig) -> dict[str, dict[str, Any]]:
                 "phase_at": found.phase_at,
                 "started_at": found.started_at,
                 "provider": found.provider,
+                **({"notice": dict(found.notice)} if found.notice else {}),
                 # A Cancel was accepted and the job is finishing: the page keeps
                 # the box and disables its Cancel, and a reload draws the same.
                 "cancelling": found.cancelled_at is not None,

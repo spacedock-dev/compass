@@ -1,5 +1,9 @@
 """The press check and the job agree on what an Allow covers (owner, 2026-10-02).
 
+Since DEC-28 the coverage below is the explicit coverage the board publishes (`words`)
+for the unasked lane and the current page; a press and its job run on any row that was
+not turned off, and a moved destination shows the notice again instead of refusing.
+
 "Bind the allow to the destination": an Allow for the reader's words covers a
 press only while the provider's destination is exactly the one the Allow's
 disclosure named. Two places decide it, and each row of one table is put to
@@ -144,11 +148,10 @@ class ThePressAndTheJobAgree(RuntimeTestCase):
                 published = seen["board"]["reading"]
                 self.assertIs(covered, published["words"]["claude"])
                 self.assertFalse(published["providers"]["claude"], "narrow Allow widened the grant")
-                # The press check.
-                self.assertEqual(202 if covered else 403, seen["press"])
-                self.assertEqual(1 if covered else 0, seen["pressed"], "sent before an Allow")
-                # The job.
-                self.assertEqual(1 if covered else 0, seen["job"])
+                # The press and the job: refused only by a stored off (DEC-28).
+                self.assertEqual(403 if declined else 202, seen["press"])
+                self.assertEqual(0 if declined else 1, seen["pressed"], "sent while off")
+                self.assertEqual(0 if declined else 1, seen["job"])
 
     def test_a_url_the_cli_reads_differently_binds_and_publishes_no_name(self) -> None:
         """Consent F1 and F3 (ui5), end to end: where the CLI's parser and this
@@ -190,10 +193,9 @@ class ThePressAndTheJobAgree(RuntimeTestCase):
                     self.assertFalse(PATH_KEY.lower() in where.lower(), "the key was stored")
                     self.assertFalse("4598" in where, "a host the CLI never reaches was bound")
 
-    def test_a_press_refused_for_a_moved_destination_answers_with_the_new_one(self) -> None:
-        """Regressions minor 2 (ui5): a page drawn before the move presses, the server
-        answers 403 with the changed line, and the reply carries today's route, which the
-        page adopts so its consent step names where the words go now."""
+    def test_a_press_after_a_moved_destination_runs_and_names_the_new_one(self) -> None:
+        """DEC-28: a page drawn before the move presses, the reading runs, and the reply's
+        notice names where the words go now, rather than a blocking Allow."""
         config, state = self.route._runtime()
         self._give(config, state, "Anthropic", False)
         stack, _calls = self._on("Anthropic")
@@ -207,7 +209,16 @@ class ThePressAndTheJobAgree(RuntimeTestCase):
         with stack, self.route._serving(self.route._app(config, state)) as port:
             status, raw = self.route._post(port, self.route._press(provider="claude"))
         reply = json.loads(raw)
-        self.assertEqual(403, status)
-        self.assertEqual([], calls)
-        self.assertIn(reading_policy.DESTINATION_CHANGED, raw.decode())
-        self.assertEqual("gw.corp.example", reply["route"]["words_destination"])
+        self.assertEqual(202, status, raw)
+        self.assertEqual(1, len(calls))
+        self.assertEqual("reading", reply["notice"]["kind"])
+        self.assertEqual("gw.corp.example", reply["notice"]["destination"])
+        # The legacy explicit coverage still says the Allow no longer covers it.
+        legacy = reading_policy.status(
+            config,
+            now=1_700_000_100.0,
+            provider="claude",
+            destinations={"claude": "gw.corp.example"},
+            content=reading_policy.WORDS_CONTENT_VERSION,
+        )
+        self.assertEqual(reading_policy.DESTINATION_CHANGED, legacy["rebind"]["claude"])

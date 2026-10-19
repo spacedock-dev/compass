@@ -100,7 +100,7 @@ REQUIRED = frozenset(
         "answer-disabled",
         "annotate-stale-lines",
         "annotate-current-revision",
-        "reading-consent-required",
+        "reading-off",
         "reading-forbidden-same-site",
         "reading-cancel-malformed",
         "reading-cancel-model-disabled",

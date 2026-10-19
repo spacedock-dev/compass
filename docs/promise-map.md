@@ -68,8 +68,8 @@ disabled rather than silently missing.
 **We promise:** for each live session, what it is doing now, what it plans next, how far into the
 current turn it is, and an estimate of when that turn ends. It tells you when that changes instead
 of making you poll. The first screen sets your goal or a permitted prompt beside current activity
-and brings recorded departures forward. The session page asks once before a reading, remembers
-your answer, and offers an off switch, without steering it for you. Open a session, set a goal and
+and brings recorded departures forward. The session page tells you once what a reading sends and
+where, and you can turn it off, without steering it for you. Open a session, set a goal and
 press Analyze drift. The How Intent and drift works button beside Intent explains the steps and
 the limits; Not enough recorded yet is normal until you add an expected outcome line.
 On Claude Code sessions, you can turn on a live drift estimate in the panel and header after every

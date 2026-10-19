@@ -2196,9 +2196,9 @@ class ReadingTimeoutTest(unittest.TestCase):
 
 
 class ObserverModelSecurityTest(unittest.TestCase):
-    def test_cli_requires_opt_in_and_rollback_always_wins(self) -> None:
+    def test_cli_defaults_on_and_rollback_always_wins(self) -> None:
         for flags, enabled in (
-            ([], False),
+            ([], True),
             (["--observer-model"], True),
             (["--observer-model", "--no-observer-model"], False),
             (["--no-observer-model", "--observer-model"], False),
@@ -2210,7 +2210,9 @@ class ObserverModelSecurityTest(unittest.TestCase):
 
     def test_disabled_model_never_resolves_or_runs(self) -> None:
         runner, resolver = mock.Mock(), mock.Mock()
-        caller = observer.CodexGoalModel(make_config(), runner=runner, binary_resolver=resolver)
+        caller = observer.CodexGoalModel(
+            make_config(observer_model_enabled=False), runner=runner, binary_resolver=resolver
+        )
         self.assertIsNone(caller("private transcript", "stage"))
         runner.assert_not_called()
         resolver.assert_not_called()
@@ -2224,6 +2226,41 @@ class ObserverModelSecurityTest(unittest.TestCase):
                 caller = observer.CodexGoalModel(config, runner=runner, **kwargs)
                 self.assertIsNone(caller("private", "stage"))
                 runner.assert_not_called()
+
+    def test_goal_notice_is_recorded_at_call_and_stored_off_prevents_the_runner(self) -> None:
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(state_dir=Path(home))
+            prompts: list[str] = []
+
+            def runner(argv: Any, **kwargs: Any) -> Any:
+                prompts.append(kwargs["input"])
+                Path(argv[argv.index("--output-last-message") + 1]).write_text("ship parser")
+                return subprocess.CompletedProcess(argv, 0)
+
+            def caller() -> Any:
+                return observer.CodexGoalModel(
+                    config,
+                    runner=runner,
+                    binary_resolver=lambda _: "/usr/bin/codex",
+                    consent=True,
+                    session_key="pi:one",
+                )
+
+            first = caller()
+            first("private transcript", "stage")
+            self.assertEqual(1, len(prompts))
+            self.assertEqual("goal", first.notice["kind"])
+            self.assertEqual("", first.notice["tool_output"])
+            second = caller()
+            second("private transcript", "stage")
+            self.assertIsNone(second.notice)
+            reading_policy.set_consent(config, False, now=time.time())
+            off = caller()
+            self.assertIsNone(off("private transcript", "stage"))
+            self.assertEqual("readings-off", off.status)
+            self.assertEqual(2, len(prompts))
 
     def test_relative_resolution_is_refused(self) -> None:
         config = dataclasses.replace(make_config(), observer_model_enabled=True)

@@ -24,6 +24,7 @@ from . import (
     entry_numbers,
     events,
     observer,
+    reading_route,
     records,
     semantic_history,
     spacedock,
@@ -446,6 +447,7 @@ def _observe_session(
         child_assignment=child_activity_fallback,
         consent=model_consent,
         session_key=f"{harness}:{sid}",
+        resolve_destination=lambda: reading_route.destination(reading_route.CODEX),
     )
     model = caller if config.observer_model_enabled and model_consent else None
     result = observer.analyze(
@@ -476,6 +478,7 @@ def _observe_session(
         "model": model_metadata,
         "observed_at": now,
         "snapshot_status": "refreshed",
+        **({"notice": caller.notice} if caller.notice is not None else {}),
     }
 
 
@@ -8390,13 +8393,20 @@ def collect(  # noqa: PLR0913 - the press's window rides beside the focus it bel
     )
     return {
         "observer_model": {
-            "enabled": config.observer_model_enabled,
+            "enabled": config.observer_model_enabled and not config.model_calls_disabled,
+            **(
+                {"notice": next(row["notice"] for row in observers if "notice" in row)}
+                if any("notice" in row for row in observers)
+                else {}
+            ),
             "max_prompt_bytes": observer.OBSERVER_MODEL_MAX_PROMPT_BYTES,
             "disclosure": (
-                "Send redacted transcript excerpts and workflow stage to OpenAI through Codex "
-                "for a goal summary? Each prompt is capped at 16 KiB, with a 60-second timeout "
+                "A focused refresh sends redacted transcript excerpts and workflow stage through "
+                f"Codex to {reading_route.destination('codex') or 'an unnamed destination'} "
+                "for a goal summary. Each prompt is capped "
+                "at 16 KiB, with a 60-second timeout "
                 "and one call in flight per session. A focused refresh can include up to three "
-                "active child sessions. --no-observer-model refuses calls for this run."
+                "active child sessions. Turn off readings or --no-observer-model stops these calls."
             ),
         },
         "project": project,

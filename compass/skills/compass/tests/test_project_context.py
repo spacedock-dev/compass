@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import observer, project_context, semantic_history, sessions, spacedock
+from compass_runtime import (
+    observer,
+    project_context,
+    reading_route,
+    semantic_history,
+    sessions,
+    spacedock,
+)
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -171,7 +178,9 @@ class ProjectContextTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def collect(self, *, refresh: bool = True, focused: bool = True) -> dict[str, Any]:
+    def collect(
+        self, *, refresh: bool = True, focused: bool = True, model_consent: bool = False
+    ) -> dict[str, Any]:
         state = build_runtime_state(self.config, started=self.NOW)
         sessions = [
             {
@@ -198,6 +207,7 @@ class ProjectContextTest(unittest.TestCase):
             "repo/proj",
             now=self.NOW,
             refresh=refresh,
+            model_consent=model_consent,
             focus=("pi", self.SID) if focused else None,
         )
 
@@ -611,6 +621,35 @@ class ProjectContextTest(unittest.TestCase):
             project_context.MAX_PROJECT_OBSERVERS,
             result["sources"]["surrounding_active"],
         )
+
+    def test_focused_goal_refresh_honors_off_and_publishes_the_notice(self) -> None:
+        self.model.stop()
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        reading_policy.set_consent(self.config, False, now=self.NOW)
+        with mock.patch.object(observer, "codex_exec") as execute:
+            off = self.collect(model_consent=True)
+        execute.assert_not_called()
+        self.assertEqual("readings-off", off["observers"][0]["model"]["status"])
+        self.assertNotIn("notice", off["observer_model"])
+        reading_policy.set_consent(self.config, True, now=self.NOW + 1)
+
+        def execute_goal(*_args: Any, **kwargs: Any) -> tuple[str, str]:
+            kwargs["before_call"]()
+            return "ship the parser", "ok"
+
+        with mock.patch.object(observer, "codex_exec", side_effect=execute_goal):
+            on = self.collect(model_consent=True)
+            again = self.collect(model_consent=True)
+        self.assertTrue(on["observer_model"]["enabled"])
+        self.assertEqual("goal", on["observer_model"]["notice"]["kind"])
+        self.assertEqual(
+            reading_route.destination(reading_route.CODEX),
+            on["observer_model"]["notice"]["destination"],
+        )
+        self.assertNotIn("notice", again["observer_model"])
+        self.assertNotIn("?", on["observer_model"]["disclosure"])
+        self.assertIn("Turn off readings", on["observer_model"]["disclosure"])
 
     def test_refresh_without_model_consent_uses_local_analysis(self) -> None:
         # Given: model analysis is enabled but no consent was supplied.

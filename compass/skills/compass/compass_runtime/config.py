@@ -156,11 +156,6 @@ class RuntimeConfig:
     # four preconditions rather than its existence: the switch ships off, and
     # the flag is what turns it on.
     unasked_enabled: bool
-    # The reader's launch-time consent to send a Claude Code reading's checks and written paths to
-    # the destination Compass names, written as the grant at startup so the first press asks only
-    # for the words. `--no-observer-model` refuses it, as it refuses every model call
-    # ([the ruling](SECURITY.md#tool-output-in-a-claude-code-reading)).
-    tool_output_pre_grant: bool
     # Whether the local history store is read and written at all.
     # `--no-history` is the off switch
     # [DEC-6](SECURITY.md#local-history-the-session-history-store)'s contract made part of the
@@ -676,7 +671,7 @@ def build_runtime_config(
     spacedock_enabled: bool = True,
     tripwires_enabled: bool = True,
     usage_fetch_enabled: bool = True,
-    observer_model_enabled: bool = False,
+    observer_model_enabled: bool = True,
     model_calls_disabled: bool = False,
     claude_reading_model: str = CLAUDE_READING_DEFAULT_MODEL,
     git_probe_enabled: bool = True,
@@ -685,7 +680,6 @@ def build_runtime_config(
     dismissals_enabled: bool = True,
     annotations_enabled: bool = True,
     unasked_enabled: bool = False,
-    tool_output_pre_grant: bool = False,
     ask_enabled: bool = True,
     reach_enabled: bool = True,
     reach_url: str | None = None,
@@ -747,7 +741,6 @@ def build_runtime_config(
         dismissals_enabled=dismissals_enabled,
         annotations_enabled=annotations_enabled,
         unasked_enabled=unasked_enabled,
-        tool_output_pre_grant=tool_output_pre_grant and not model_calls_disabled,
         ask_enabled=ask_enabled,
         reach_enabled=reach_enabled,
         reach_url=reach_url,

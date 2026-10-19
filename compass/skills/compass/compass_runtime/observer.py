@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from . import config as runtime_config
 from . import io as runtime_io
-from . import records, spacedock, supervise, transcripts
+from . import reading_policy, records, spacedock, supervise, transcripts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
@@ -169,8 +169,8 @@ class ModelCaller(Protocol):
     cannot produce one. None is the only failure signal: the analyzer degrades
     to the deterministic fallback rather than raising.
 
-    The project observer passes CodexGoalModel only after explicit enablement
-    and per-request disclosure consent. The deterministic analyzer needs neither.
+    The project observer passes CodexGoalModel on a reader-started focused refresh;
+    stored off still refuses it. The deterministic analyzer needs neither.
     """
 
     def __call__(self, recent_text: str, entity_stage: str) -> str | None: ...
@@ -196,6 +196,7 @@ def codex_exec(
     binary_resolver: Any = shutil.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
     timeout: float | None = None,
+    before_call: Callable[[], None] | None = None,
 ) -> tuple[str, str]:
     """One bounded, ephemeral Codex call. Returns the output and a status.
 
@@ -255,6 +256,8 @@ def codex_exec(
             output_path,
             "-",
         ]
+        if before_call is not None:
+            before_call()
         result = runner(
             command,
             input=prompt,
@@ -749,20 +752,27 @@ class CodexGoalModel:
         child_assignment: bool = False,
         consent: bool = False,
         session_key: str = "",
+        resolve_destination: Callable[[], str] | None = None,
     ) -> None:
         self.config = config
+        # Passed in rather than imported: `reading_route` imports this module, and an
+        # unnamed destination ("") is still a notice the reader is shown.
+        self.resolve_destination = resolve_destination
         self.runner = runner
         self.binary_resolver = binary_resolver
         self.child_assignment = child_assignment
         self.consent = consent
         self.session_key = session_key
-        self.status = (
-            "disabled"
-            if not config.observer_model_enabled
-            else "not-run"
-            if consent and session_key
-            else "consent-required"
+        self.notice: reading_policy.Notice | None = None
+        self.status = self._refusal() or (
+            "not-run" if consent and session_key else "consent-required"
         )
+
+    def _refusal(self) -> str:
+        if not self.config.observer_model_enabled or self.config.model_calls_disabled:
+            return "disabled"
+        answer = reading_policy.status(self.config, now=time.time())
+        return "" if answer["consent"] else "readings-off" if answer["off"] else answer["reason"]
 
     def metadata(self) -> dict[str, str]:
         return {
@@ -773,8 +783,9 @@ class CodexGoalModel:
         }
 
     def __call__(self, recent_text: str, entity_stage: str) -> str | None:
-        if not self.config.observer_model_enabled:
-            self.status = "disabled"
+        refusal = self._refusal()
+        if refusal:
+            self.status = refusal
             return None
         if not self.consent or not self.session_key:
             self.status = "consent-required"
@@ -790,6 +801,25 @@ class CodexGoalModel:
         finally:
             with _MODEL_FLIGHT_LOCK:
                 _MODEL_IN_FLIGHT.discard(key)
+
+    def _note(self) -> None:
+        answer = reading_policy.status(self.config, now=time.time())
+        if not answer["consent"]:
+            raise reading_policy.RefusedError(answer)
+        notice = reading_policy.note(
+            self.config,
+            kind="goal",
+            provider="codex",
+            destination=self.resolve_destination() if self.resolve_destination else "",
+            content=reading_policy.WORDS_CONTENT_VERSION,
+            tool_output="",
+            now=time.time(),
+        )
+        if notice is not None:
+            self.notice = notice
+        refusal = self._refusal()
+        if refusal:
+            raise reading_policy.RefusedError(reading_policy.status(self.config, now=time.time()))
 
     def _invoke(self, recent_text: str, entity_stage: str) -> str | None:
         instruction = (
@@ -814,14 +844,19 @@ class CodexGoalModel:
             .encode("utf-8", "replace")[:OBSERVER_MODEL_MAX_PROMPT_BYTES]
             .decode("utf-8", "ignore")
         )
-        enhanced, status = codex_exec(
-            self.config,
-            prompt,
-            output_cap_bytes=self.config.observer_goal_cap_chars * 4,
-            runner=self.runner,
-            binary_resolver=self.binary_resolver,
-            timeout=OBSERVER_MODEL_TIMEOUT_SEC,
-        )
+        try:
+            enhanced, status = codex_exec(
+                self.config,
+                prompt,
+                output_cap_bytes=self.config.observer_goal_cap_chars * 4,
+                runner=self.runner,
+                binary_resolver=self.binary_resolver,
+                timeout=OBSERVER_MODEL_TIMEOUT_SEC,
+                before_call=self._note,
+            )
+        except reading_policy.RefusedError as exc:
+            self.status = exc.answer["reason"]
+            return None
         if status != "ok":
             self.status = status
             return None

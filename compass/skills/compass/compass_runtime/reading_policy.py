@@ -54,35 +54,30 @@ DESTINATION_CHANGED = "Where your words go has changed since you allowed this, s
 # The reason a job's reservation is refused when the destination moved after
 # the press was admitted: the token the press answers `409` with.
 DESTINATION_MOVED = "destination-changed"
-# What a reading sends, as a number the Allow is bound to beside its
-# destination. 2 is the agent's own messages (owner ruling, 2026-10-03): an
-# Allow given before the disclosure named them never covers sending them, so
-# the first press after asks once more (review, 2026-10-03). Raise it whenever
-# the disclosure names a new class of content.
-#
-# 3 is the agent's newest final reply sent whole (owner amendment, 2026-10-05): where a
-# Claude Code transcript records a message as ending its turn and the whole of it fits
-# 4,096 bytes of the prompt, that reply goes in full rather than as its first 1,000
-# characters. The agent's other messages keep the 1,000, and nothing is added from a shell or
-# an MCP tool, so an Allow from 2 does not cover the longer reply and asks once more.
-#
-# Required only of a press on a route that can carry the agent's words: a
-# Claude Code session, read by Claude Code or by Codex. A press on another
-# harness, and the unasked lane, which never sends them, read at
-# `WORDS_CONTENT_VERSION`, so an Allow from before the bump still covers them
-# (final review, 2026-10-03). The version is stored with the destination it
-# was given for, and covers only while that is still the bound destination.
-#
-# 4 repairs a version-3 Allow written from a narrower harness disclosure. Those
-# rows cannot prove which tier was shown, so the next Claude Code press asks
-# again. New Allows record the route's actual tier; words-only presses stay at 1.
+# The content epoch serves both notices and legacy explicit coverage. Epoch 2 added agent
+# messages, 3 added the newest final reply whole within 4,096 bytes, and 4 repaired the
+# ambiguity of a version-3 Allow written from a narrower harness disclosure. Words-only
+# routes and the unasked lane retain epoch 1. Reader-started calls renew the notice when
+# the epoch changes; unasked calls retain the explicit coverage boundary.
 CONTENT_VERSION = 4
 WORDS_CONTENT_VERSION = 1
+NOTICE_KINDS = ("reading", "goal", "summary")
 CONTENT_CHANGED = "What a reading sends has changed since you allowed this, so allow it again."
+
+
+class Notice(TypedDict):
+    kind: str
+    provider: str
+    destination: str
+    content: int
+    tool_output: str
+    at: float
 
 
 class Status(TypedDict):
     consent: bool
+    off: bool
+    notices: dict[str, dict[str, Notice]]
     used: int
     limit: int
     retry_at: float | None
@@ -90,7 +85,7 @@ class Status(TypedDict):
     # Which receivers an Allow covers today, so the page can tell whether the
     # provider its route names still needs one. An Allow covers a provider only
     # while its destination is the one the Allow was given for (owner,
-    # 2026-10-02). `consent` answers for the one provider the call asked about.
+    # 2026-10-02). Reader admission no longer depends on this legacy coverage.
     providers: dict[str, bool]
     # Provider to `DESTINATION_CHANGED`, for each Allow on record that does not
     # cover today's destination. Never for a refusal, which holds anywhere.
@@ -112,17 +107,20 @@ def store_path(config: RuntimeConfig) -> Path:
 
 
 def _answer(
-    consent: bool = False,
     dates: tuple[float, ...] = (),
     reason: str = "",
     providers: dict[str, bool] | None = None,
     tool_output: dict[str, list[str]] | None = None,
     rebind: dict[str, str] | None = None,
     words: dict[str, bool] | None = None,
+    off: bool = False,
+    notices: dict[str, dict[str, Notice]] | None = None,
 ) -> Status:
     full = len(dates) >= DAILY_CAP
     return {
-        "consent": consent,
+        "consent": not off and reason not in {"run-disabled", "store-unavailable"},
+        "off": off,
+        "notices": notices or {},
         "used": len(dates),
         "limit": DAILY_CAP,
         "retry_at": min(dates) + DAY_SEC if full else None,
@@ -130,7 +128,7 @@ def _answer(
         # provider, and the page reads the Codex answer. Consent first told a
         # reader with only Claude Code allowed that nothing stood in the way
         # (DRC-4666).
-        "reason": reason or ("daily-cap" if full else "consent-required" if not consent else ""),
+        "reason": reason or ("daily-cap" if full else "readings-off" if off else ""),
         "providers": dict(providers) if providers else dict.fromkeys(PROVIDERS, False),
         "tool_output": {name: list(where) for name, where in (tool_output or {}).items()},
         "rebind": dict(rebind or {}),
@@ -164,6 +162,49 @@ def _allowed(db: Any) -> dict[str, bool]:
         if name in allowed and name != LEGACY_PROVIDER:
             allowed[name] = value == 1
     return allowed
+
+
+def _off(db: Any) -> bool:
+    return any(
+        db.execute(query).fetchone() is not None
+        for query in (
+            "SELECT 1 FROM permission WHERE allowed = 0",
+            "SELECT 1 FROM provider_permission WHERE allowed = 0",
+        )
+    )
+
+
+def _notices(db: Any) -> dict[str, dict[str, Notice]]:
+    notices: dict[str, dict[str, Notice]] = {}
+    for kind, provider, destination, content, tool_output, at in db.execute(
+        "SELECT kind, provider, destination, content, tool_output, at FROM notice"
+    ):
+        if kind in NOTICE_KINDS and provider in PROVIDERS:
+            notices.setdefault(kind, {})[provider] = Notice(
+                kind=kind,
+                provider=provider,
+                destination=destination,
+                content=content,
+                tool_output=tool_output,
+                at=at,
+            )
+    return notices
+
+
+def notice_due(
+    answer: Status, *, kind: str, provider: str, destination: str, content: int, tool_output: str
+) -> bool:
+    """Whether today's disclosure differs from the last notice for this kind and provider."""
+    previous = answer["notices"].get(kind, {}).get(provider)
+    return (
+        answer["consent"]
+        and provider in PROVIDERS
+        and (
+            previous is None
+            or (previous["destination"], previous["content"], previous["tool_output"])
+            != (destination, content, tool_output)
+        )
+    )
 
 
 def _bound(db: Any) -> dict[str, str]:
@@ -245,18 +286,63 @@ def _write(db: Any, provider: str, allowed: bool) -> None:
         )
 
 
+def _notice_schema(db: Any) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS notice (kind TEXT NOT NULL, provider TEXT NOT NULL, "
+        "destination TEXT NOT NULL, content INTEGER NOT NULL, tool_output TEXT NOT NULL, "
+        "at REAL NOT NULL, PRIMARY KEY (kind, provider))"
+    )
+    for table in ("permission", "provider_permission"):
+        for event in ("INSERT", "UPDATE"):
+            # Separate triggers preserve compatibility with schemas created by older builds.
+            db.execute(
+                f"CREATE TRIGGER IF NOT EXISTS notice_off_{table}_{event.lower()} "  # noqa: S608
+                f"AFTER {event} ON {table} WHEN NEW.allowed = 0 BEGIN "
+                "DELETE FROM notice; END"
+            )
+
+
+def _store_notice(db: Any, answer: Status, operation: str | Notice) -> Notice | None:
+    if not isinstance(operation, dict) or not notice_due(
+        answer,
+        kind=operation["kind"],
+        provider=operation["provider"],
+        destination=operation["destination"],
+        content=operation["content"],
+        tool_output=operation["tool_output"],
+    ):
+        return None
+    db.execute(
+        "INSERT OR REPLACE INTO notice VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            operation["kind"],
+            operation["provider"],
+            operation["destination"],
+            operation["content"],
+            operation["tool_output"],
+            operation["at"],
+        ),
+    )
+    return operation
+
+
+def _clear_off(db: Any) -> None:
+    db.execute("DELETE FROM permission WHERE allowed = 0")
+    db.execute("DELETE FROM provider_permission WHERE allowed = 0")
+
+
 def _transaction(
     config: RuntimeConfig,
     now: float,
-    operation: str,
+    operation: str | Notice,
     provider: str,
     tool_output: str = "",
     job_id: str = "",
     today: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
-) -> Status:
+) -> tuple[Status, Notice | None]:
     if not math.isfinite(now) or now <= 0:
-        return _answer(reason="store-unavailable")
+        return _answer(reason="store-unavailable"), None
     wait = READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC
     with contextlib.closing(_connect(config, wait)) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -332,6 +418,7 @@ def _transaction(
                 f"AFTER {event} ON permission WHEN NEW.allowed = 0 BEGIN "
                 "DELETE FROM permission_disclosure; END"
             )
+        _notice_schema(db)
         allowed = _allowed(db)
         db.execute("DELETE FROM spends WHERE at <= ?", (now - DAY_SEC,))
         db.execute("DELETE FROM spend_jobs WHERE at <= ?", (now - JOB_LEDGER_SEC,))
@@ -356,6 +443,9 @@ def _transaction(
                 # A narrower disclosure cannot widen consent, or erase an
                 # earlier wider Allow that still covers this destination.
                 version = max(content, previous[0])
+            # An Allow turns the global off switch back on without granting the unasked lane
+            # permission for any other provider.
+            _clear_off(db)
             _write(db, provider, True)
             allowed[provider] = True
             # Bound to the destination the Allow's disclosure named, which
@@ -380,23 +470,26 @@ def _transaction(
                 _write(db, name, False)
             allowed = dict.fromkeys(PROVIDERS, False)
             db.execute("DELETE FROM tool_output_permission")
+            db.execute("DELETE FROM notice")
             # Every bound destination and disclosure goes too, by the triggers
             # the legacy row's write above fires, as for an older build's off.
         bound, disclosed = _bound(db), _disclosed(db)
         covered, rebind = _covered(allowed, bound, current, disclosed, content=content)
         words, _ = _covered(allowed, bound, current, disclosed, content=WORDS_CONTENT_VERSION)
         answer = _answer(
-            covered.get(provider, False),
             dates,
             providers=covered,
             tool_output=_tool_output(db),
             rebind=rebind,
             words=words,
+            off=_off(db),
+            notices=_notices(db),
         )
+        recorded = _store_notice(db, answer, operation)
         if operation == "reserve" and not answer["reason"]:
-            return _commit_charge(db, answer, now, job_id)
+            return _commit_charge(db, answer, now, job_id), None
         db.execute("COMMIT")
-        return answer
+        return answer, recorded
 
 
 def _commit_charge(db: Any, answer: Status, now: float, job_id: str) -> Status:
@@ -430,7 +523,7 @@ def _run(
     try:
         return _transaction(
             config, now, operation, provider, tool_output, job_id, today, content=content
-        )
+        )[0]
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         return _answer(reason="store-unavailable")
 
@@ -443,16 +536,16 @@ def status(
     destinations: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
 ) -> Status:
-    """The stored answer, as it covers a press to `destinations` today.
+    """Reader admission, recorded notices, and legacy explicit coverage for today's routes.
 
-    `destinations` is each provider's `reading_route.destination` now. One left
-    out is read as unnamed (""), which an Allow given for a named one never
-    covers, so a caller that forgets it asks again rather than sends.
-    `content` is what the press would send: `WORDS_CONTENT_VERSION` for one
-    that never carries the agent's words.
+    A missing destination is unnamed (""), so it cannot inherit named explicit coverage.
+    Reader admission depends on stored off, not on that coverage. `content` selects the
+    legacy coverage tier; words-only callers use `WORDS_CONTENT_VERSION`.
     """
     if config.model_calls_disabled:
         return _answer(reason="run-disabled")
+    if runtime_io.sqlite_module is None:
+        return _answer(reason="store-unavailable")
     if not os.path.lexists(store_path(config)):
         return _answer()
     return _run(config, now, "read", provider, today=destinations, content=content)
@@ -469,7 +562,7 @@ def set_consent(
     destinations: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
 ) -> Status:
-    """Allow one provider, or revoke every provider: off never names one.
+    """Turn readings on with one explicit Allow, or revoke every provider.
 
     `destination` is where the press's disclosure said the words go, and the
     Allow covers presses only while they still go there. `tool_output` is the
@@ -499,7 +592,7 @@ def reserve(
     be a way to double a reader's daily readings. `job_id` commits with the
     charge, so a restart can ask `charged` whether that job's attempt was made.
     A shutdown before the commit answers `stopping` and charges nothing.
-    `destination` is where this call's words go, which the Allow must cover.
+    `destination` and `content` retain the legacy coverage fields in the returned status.
     """
     today = {provider: destination}
     if config.model_calls_disabled:
@@ -576,14 +669,10 @@ class GuardedModel:
         content: int = CONTENT_VERSION,
     ) -> None:
         self.config = config
-        # What the press sends, which the reservation's Allow must cover.
         self.content = content
         self.model = model
         self.clock = clock
         self.provider = provider
-        # Where the route that admitted the press sends the words: the
-        # reservation is refused unless the Allow covers it, so the job checks
-        # what the press checked, from the same route.
         self.destination = destination
         # Where the words go now, asked again at the reservation (consent F4,
         # ui5): a managed drop-in or remote settings file can move the endpoint
@@ -615,8 +704,7 @@ class GuardedModel:
         if self.cancelled is not None and self.cancelled():
             return "", "cancelled"
         if self.resolve_destination is not None and self.resolve_destination() != self.destination:
-            # Refused as the press refuses an Allow for a moved destination,
-            # before the marker and the charge, so nothing is spent.
+            # The press-time notice cannot cover a destination that moved mid-job.
             raise RefusedError(_answer(reason=DESTINATION_MOVED))
         job_id = self.before_reserve() if self.before_reserve is not None else None
         answer = reserve(
@@ -638,31 +726,36 @@ class GuardedModel:
         return self.model(prompt, output_cap_bytes=output_cap_bytes)
 
 
-def grant_tool_output(config: RuntimeConfig, destinations: Mapping[str, str]) -> bool:
-    """Record the reader's launch-time consent to tool output, as an Allow would.
-
-    `destinations` is each provider's `reading_route.destination` now. A provider
-    Compass cannot name gets no grant, as with an Allow. The row is kept like an
-    Allow's: "Turn off readings" and `--forget` clear it, and starting again without
-    the flag leaves it. It covers tool output only and writes no words Allow, so no
-    reading runs until the reader has allowed the words. Returns whether the store
-    took it.
-    """
-    if config.model_calls_disabled or not config.tool_output_pre_grant:
-        return False
-    named = [(name, where) for name, where in destinations.items() if name in PROVIDERS and where]
+def note(
+    config: RuntimeConfig,
+    *,
+    kind: str,
+    provider: str,
+    destination: str,
+    content: int,
+    tool_output: str,
+    now: float,
+) -> Notice | None:
+    """Record a due notice atomically, refusing the call if the store cannot record it."""
+    if config.model_calls_disabled:
+        return None
+    if kind not in NOTICE_KINDS or provider not in PROVIDERS:
+        raise ValueError("Unknown notice kind or provider")
+    notice = Notice(
+        kind=kind,
+        provider=provider,
+        destination=destination,
+        content=content,
+        tool_output=tool_output,
+        at=now,
+    )
     try:
-        with contextlib.closing(_connect(config, WRITE_WAIT_SEC)) as db:
-            db.execute("BEGIN IMMEDIATE")
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS tool_output_permission (provider TEXT NOT NULL, "
-                "destination TEXT NOT NULL, PRIMARY KEY (provider, destination))"
-            )
-            db.executemany("INSERT OR IGNORE INTO tool_output_permission VALUES (?, ?)", named)
-            db.execute("COMMIT")
+        answer, recorded = _transaction(config, now, notice, provider)
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
-        return False
-    return True
+        raise RefusedError(_answer(reason="store-unavailable")) from None
+    if answer["reason"] == "store-unavailable":
+        raise RefusedError(answer)
+    return recorded
 
 
 def forget(config: RuntimeConfig, *, now: float | None = None) -> bool:

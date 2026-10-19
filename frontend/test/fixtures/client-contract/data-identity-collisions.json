@@ -70,6 +70,8 @@
       "reading": {
         "consent": false,
         "limit": 100,
+        "notices": {},
+        "off": false,
         "providers": {
           "claude": false,
           "codex": false
@@ -96,6 +98,7 @@
           "label": "",
           "model": "",
           "note": "The Claude Code CLI was not found on this machine, and the Codex CLI was not found on this machine, so no analysis can run for this session.",
+          "notice_due": false,
           "provider": "",
           "reason": "not-installed",
           "tool_output": "",
@@ -111,6 +114,7 @@
           "label": "",
           "model": "",
           "note": "The Codex CLI was not found on this machine, and the Claude Code CLI was not found on this machine, so no analysis can run for this session.",
+          "notice_due": false,
           "provider": "",
           "reason": "not-installed",
           "tool_output": "",
@@ -554,7 +558,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "18768",
+      "Content-Length": "18839",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

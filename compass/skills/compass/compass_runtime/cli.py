@@ -27,7 +27,6 @@ from compass_runtime import (
     notifications,
     observation,
     reading_policy,
-    reading_route,
     unasked,
 )
 from compass_runtime import annotations as annotation_store
@@ -226,7 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--observer-model",
         action="store_true",
-        help="offer model goal summaries; requires disclosure consent on refresh",
+        help="accepted for one release; does nothing and will be removed in a later release",
     )
     parser.add_argument(
         "--claude-reading-model",
@@ -249,9 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-tool-output",
         action="store_true",
         help=(
-            "grant, for the destination Compass names, sending a Claude Code reading's checks and "
-            "written paths, so the first press asks only for the words; "
-            f"{TOOL_OUTPUT_ENV}=1 does the same; --no-observer-model refuses it"
+            "accepted for one release; does nothing and will be removed in a later release; "
+            f"{TOOL_OUTPUT_ENV}=1 is also accepted and does nothing"
         ),
     )
     parser.add_argument("--json", action="store_true", help="machine-readable --diagnose output")
@@ -475,7 +473,7 @@ def build_runtime(
         spacedock_enabled=not args.no_spacedock,
         tripwires_enabled=not args.no_tripwires,
         usage_fetch_enabled=not args.no_usage,
-        observer_model_enabled=args.observer_model and not args.no_observer_model,
+        observer_model_enabled=not args.no_observer_model,
         model_calls_disabled=args.no_observer_model,
         claude_reading_model=args.claude_reading_model,
         git_probe_enabled=not args.no_git,
@@ -483,12 +481,7 @@ def build_runtime(
         irreversible_enabled=not args.no_irreversible and not args.no_events,
         dismissals_enabled=not args.no_dismiss,
         annotations_enabled=not args.no_annotations,
-        # The off switch refuses every model call, and an unasked reading is a
-        # codex subprocess (SECURITY.md, Light harness usage). Gated here rather
-        # than on `observer_model_enabled`, which is also False when nobody
-        # passed `--observer-model`, and the lane does not need that flag.
         unasked_enabled=args.unasked_readings and not args.no_observer_model,
-        tool_output_pre_grant=args.allow_tool_output or environ.get(TOOL_OUTPUT_ENV) == "1",
         ask_enabled=not args.no_ask,
         reach_enabled=not args.no_reach,
         reach_url=args.reach_url,
@@ -818,30 +811,6 @@ def run_one_shot(
     return None
 
 
-def grant_tool_output_at_launch(
-    config: RuntimeConfig, state: RuntimeState, application: aggregate.Application
-) -> RuntimeConfig:
-    """Write `--allow-tool-output`'s grant, and drop the flag from this run if the store refused.
-
-    The route words the card "allowed when this dashboard started" from the flag, so a grant
-    the store did not take must not leave it set: the card would claim tool output was allowed
-    while a press is refused `tool-output-consent-required`. The server was safe either way;
-    the page was not honest. Returns the config the run keeps holding.
-    """
-    if not config.tool_output_pre_grant:
-        return config
-    if reading_policy.grant_tool_output(config, reading_route.destinations()):
-        return config
-    config = dataclasses.replace(config, tool_output_pre_grant=False)
-    application.config = state.config = config
-    runtime_io.diag(
-        "Compass: --allow-tool-output was not recorded because the reading permission store is "
-        "unavailable, so the card asks for tool output as usual",
-        print,
-    )
-    return config
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse, assemble, and run. Returns an exit code.
 
@@ -935,10 +904,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError as exc:
         runtime_io.diag(http_api.bind_error_message(exc, args.port, args.host), print)
         return 1
-
-    # After the bind, so a refused start grants nothing, and before the fork, so the
-    # daemon's first press already finds it.
-    config = grant_tool_output_at_launch(config, state, application)
 
     announce_fd: int | None = None
     if args.daemon:

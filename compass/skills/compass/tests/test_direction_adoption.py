@@ -1906,7 +1906,7 @@ class APlainPressNamesItsRevisionTest(_ReadingRouteHandler):
         self.assertEqual((409, "revision-changed", False), (code, answer["reason"], answer["ok"]))
         self.assertEqual({}, runtime_reading.published_jobs(config))
         self.assertFalse(
-            reading_policy.status(config, now=NOW, provider="codex")["consent"],
+            reading_policy.status(config, now=NOW, provider="codex")["providers"]["codex"],
             "a refused press recorded the Allow it carried",
         )
 
@@ -1967,7 +1967,9 @@ class APlainPressNamesItsRevisionTest(_ReadingRouteHandler):
         self.assertEqual(409, self.replies[-1][1])
         self.assertEqual({}, runtime_reading.published_jobs(config))
         # Refused before the route, so the Allow it carried was not recorded either.
-        self.assertFalse(reading_policy.status(config, now=NOW, provider="codex")["consent"])
+        self.assertFalse(
+            reading_policy.status(config, now=NOW, provider="codex")["providers"]["codex"]
+        )
 
     def _between(self, handler: Any, act: Any) -> None:
         """Run `act` after the check and the route, before the entry is composed."""

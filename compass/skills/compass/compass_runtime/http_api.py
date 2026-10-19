@@ -1223,13 +1223,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
             now=application.clock(),
             refresh=refresh,
             focus=focus,
-            # As with usage=1, the page sends this only after disclosure consent.
-            # Quota consent does not authorize sending transcript content.
             model_consent=(
                 refresh
                 and parse_qs(url.query).get("observer_model") == ["1"]
                 and not self._is_document_navigation()
                 and self._loopback_resource_ok()
+                and reading_policy.status(application.config, now=application.clock())["consent"]
             ),
         )
         # Marked here and in `_session_context`, the two readers the page and the
@@ -2279,7 +2278,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             provider: route["words_destination"],
         }
         content = _press_content(route["harness"])
-        permission = (
+        return (
             reading_policy.set_consent(
                 config,
                 True,
@@ -2299,17 +2298,6 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 content=content,
             )
         )
-        if (
-            not permission["reason"]
-            and where
-            and not reading_policy.tool_output_allowed(permission, provider, where)
-        ):
-            # Allowed for the reader's words, and not for tool output to this
-            # destination: an answer given before tool output was named, or for
-            # an endpoint that has since moved. Asked again, and nothing read,
-            # item 7 of the ruling `reading.build_ledger` cites.
-            return {**permission, "consent": False, "reason": "tool-output-consent-required"}
-        return permission
 
     def _reading_route(
         self, harness: str, payload: dict[str, Any]
@@ -3001,12 +2989,38 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 409,
             )
             return
+        self._launch_reading(job, route, rows[0], entry)
+
+    def _launch_reading(
+        self,
+        job: runtime_reading.Job,
+        route: runtime_reading_route.Route,
+        row: dict[str, Any],
+        entry: annotation_store.Annotation,
+    ) -> None:
+        application = self.server.application
+        config = application.config
+        key = f"{job.harness}:{job.sid}"
+        try:
+            notice = reading_policy.note(
+                config,
+                kind="reading",
+                provider=route["provider"],
+                destination=route["words_destination"],
+                content=_press_content(job.harness),
+                tool_output=route["destination"],
+                now=application.clock(),
+            )
+        except reading_policy.RefusedError as exc:
+            runtime_reading.end_job(config, key)
+            self._reading_permission_reply(exc.answer, route=route)
+            return
+        job.notice = notice
         # Taken before the thread starts, which may finish before this reply.
         started = runtime_reading.published_jobs(config)[key]
-        row, found = rows[0], entry
         try:
             runtime_reading_jobs.launch(
-                application, job, lambda hooks: self._compose_reading(row, found, route, hooks)
+                application, job, lambda hooks: self._compose_reading(row, entry, route, hooks)
             )
         except RuntimeError:
             # No thread to run it on; `launch` has already freed the slot, so
@@ -3022,7 +3036,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 )
             return
         self._send(
-            self._reading_json({"ok": True, "job": started}),
+            self._reading_json(
+                {"ok": True, "job": started, **({"notice": notice} if notice else {})}
+            ),
             "application/json",
             202,
         )
@@ -3214,19 +3230,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # Nothing to grant: the reading runs on the reader's words and its
             # cutoff says the checks were not sent and why (owner, Q5).
             tool_output = runtime_reading.ToolOutput(destination="", label=route["label"])
-        elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES and (
-            reading_policy.tool_output_allowed(
-                reading_policy.status(
-                    application.config, now=application.clock(), provider=route["provider"]
-                ),
-                route["provider"],
-                where,
-            )
-        ):
-            # Re-read inside the press rather than taken from the payload: only
-            # a stored grant for exactly this provider and destination admits
-            # the checks, and their output tails are read here, at the press,
-            # never from the published record.
+        elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES and where:
             press = runtime_project_context.press_checks(
                 application.config, application.state, harness, sid
             )

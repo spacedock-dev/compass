@@ -759,8 +759,8 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
     def test_every_switch_that_closes_a_path_is_in_the_table(self) -> None:
         section = self.section()
         self.assertEqual([], [switch for switch in self.SWITCHES if f"`{switch}" not in section])
-        # The launch grant is cited by the class that holds its paths, as the ruling names it.
-        self.assertIn("ALaunchTimeToolOutputGrantTest", section)
+        # The launch grant is now an accepted no-op (DEC-28), cited by the test that holds it to one.
+        self.assertIn("test_compatibility_flags_and_environment_change_nothing", section)
 
     def test_every_runtime_module_that_launches_or_requests_has_a_row(self) -> None:
         found = {

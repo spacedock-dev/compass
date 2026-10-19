@@ -24,12 +24,12 @@
       "reason": "provider-changed",
       "route": {
         "destination": "Anthropic",
-        "disclosure": "This session's own harness reads it. Sent: your goal and a bounded set of the session's entries, with your messages and the agent's messages up to 1,000 characters each, and your expected outcome lines. The agent's newest final reply, as its transcript records one, goes whole instead where it fits 4,096 bytes. Tool output, only after you allow it: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote; agent messages may quote it. To: Anthropic, off this machine, with credential shapes redacted, through your Claude Code CLI and its sign-in using claude-sonnet-5-5, spending your capacity. That CLI also sends its working directory, platform, shell, OS version, date and device identifier, and under a Claude account sign-in your email address and account ID. A reading is a model's account of the evidence, never a verification that the work was done.",
+        "disclosure": "This session's own harness reads it. Sent: your goal and a bounded set of the session's entries, with your messages and the agent's messages up to 1,000 characters each, and your expected outcome lines. The agent's newest final reply, as its transcript records one, goes whole instead where it fits 4,096 bytes. Tool output is included by default: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote; agent messages may quote it. To: Anthropic, off this machine, with credential shapes redacted, through your Claude Code CLI and its sign-in using claude-sonnet-5-5, spending your capacity. That CLI also sends its working directory, platform, shell, OS version, date and device identifier, and under a Claude account sign-in your email address and account ID. A reading is a model's account of the evidence, never a verification that the work was done.",
         "disclosure_parts": [
           "This session's own harness reads it.",
           "Sent: your goal and a bounded set of the session's entries, with your messages and the agent's messages up to 1,000 characters each, and your expected outcome lines.",
           "The agent's newest final reply, as its transcript records one, goes whole instead where it fits 4,096 bytes.",
-          "Tool output, only after you allow it: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote; agent messages may quote it.",
+          "Tool output is included by default: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote; agent messages may quote it.",
           "To: Anthropic, off this machine, with credential shapes redacted, through your Claude Code CLI and its sign-in using claude-sonnet-5-5, spending your capacity.",
           "That CLI also sends its working directory, platform, shell, OS version, date and device identifier, and under a Claude account sign-in your email address and account ID.",
           "A reading is a model's account of the evidence, never a verification that the work was done."
@@ -41,14 +41,14 @@
         "note": "This session's own harness reads it.",
         "provider": "claude",
         "reason": "own-harness",
-        "tool_output": "Tool output, only after you allow it: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote; agent messages may quote it.",
+        "tool_output": "Tool output is included by default: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote; agent messages may quote it.",
         "vendor": "Anthropic",
         "words_destination": "Anthropic"
       }
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "2373",
+      "Content-Length": "2367",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

@@ -18,6 +18,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, ClassVar
 from unittest import mock
 
@@ -2168,7 +2169,7 @@ class ReviewFixTest(RuntimeTestCase):
             thread.join(timeout=2)
 
     def test_shutdown_still_runs_when_the_client_drops_during_the_reply(self) -> None:
-        handler = object.__new__(http_api._RequestHandler)
+        handler: Any = object.__new__(http_api._RequestHandler)
         handler.server = mock.Mock()
         handler.wfile = mock.Mock()
         stopped = threading.Event()
@@ -2976,7 +2977,39 @@ class ReadingRouteTest(unittest.TestCase):
         reading_policy.set_consent(config, True, now=1_700_000_100.0)
         return config, state
 
-    def test_default_run_requires_an_answer_then_checks_without_startup_opt_in(self) -> None:
+    def test_fresh_press_runs_with_notice_then_off_blocks_until_allow(self) -> None:
+        config, state = self._runtime()
+        reading_policy.store_path(config).unlink()
+        application = self._app(config, state)
+        with self._counting_model() as calls, self._serving(application) as port:
+            _, board = application.collect_json(show_all=False)
+            self.assertTrue(json.loads(board)["reading_routes"]["pi"]["notice_due"])
+            status, body = self._post(port, self._press())
+            self.assertEqual(202, status, body)
+            answer = json.loads(body)
+            self.assertEqual("reading", answer["notice"]["kind"])
+            self.assertEqual("codex", answer["notice"]["provider"])
+            self.assertEqual(answer["notice"], answer["job"]["notice"])
+            _, board = application.collect_json(show_all=False)
+            self.assertFalse(json.loads(board)["reading_routes"]["pi"]["notice_due"])
+            self.assertEqual(
+                answer["notice"], json.loads(board)["reading"]["notices"]["reading"]["codex"]
+            )
+            status, body = self._post(port, self._press())
+            self.assertEqual(202, status, body)
+            self.assertNotIn("notice", json.loads(body))
+            self._post(port, {"consent": "off", "press": True, "observer_model": 1})
+            status, body = self._post(port, self._press())
+            self.assertEqual(403, status, body)
+            self.assertEqual("readings-off", json.loads(body)["reading"]["reason"])
+            self.assertFalse(json.loads(body)["reading"]["consent"])
+            self.assertEqual(2, len(calls))
+            status, body = self._post(port, self._press(allow=True, words_destination=""))
+            self.assertEqual(202, status, body)
+            self.assertIn("notice", json.loads(body))
+            self.assertEqual(3, len(calls))
+
+    def test_stored_off_requires_allow_then_checks_without_startup_opt_in(self) -> None:
         config, state = self._runtime(observer_model_enabled=False)
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
         with self._counting_model() as calls, self._serving(self._app(config, state)) as port:
@@ -3765,7 +3798,7 @@ class ReadingRouteTest(unittest.TestCase):
         assert entry is not None
         return str(entry.get("assessment", {}).get("stamp", ""))
 
-    def test_a_non_claude_allow_cannot_authorize_a_claude_sessions_agent_words(self) -> None:
+    def test_a_claude_reading_notices_its_wider_content_without_renewing_allow(self) -> None:
         config, state = self._runtime()
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
         with self._counting_model(harness="pi") as calls:
@@ -3791,25 +3824,34 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude")) as port,
         ):
             status, body = self._post(port, self._claude_press())
-            self.assertEqual(403, status, body)
+            self.assertEqual(202, status, body)
             answer = json.loads(body)
-            self.assertEqual("consent-required", answer["reading"]["reason"])
-            self.assertEqual(reading_policy.CONTENT_CHANGED, answer["reading"]["rebind"]["codex"])
-            self.assertIn("the agent's messages", answer["route"]["disclosure"])
-            self.assertIn("newest final reply", answer["route"]["disclosure"])
-            self.assertEqual([], calls)
-            self.assertEqual(1, answer["reading"]["used"])
+            self.assertEqual(reading_policy.CONTENT_VERSION, answer["notice"]["content"])
+            self.assertEqual(
+                reading_policy.CONTENT_CHANGED,
+                reading_policy.status(config, now=1_700_000_100.0)["rebind"]["codex"],
+            )
+            self.assertIn(
+                "the agent's messages",
+                runtime_reading_route.resolve("claude", config=config)["disclosure"],
+            )
+            self.assertIn(
+                "newest final reply",
+                runtime_reading_route.resolve("claude", config=config)["disclosure"],
+            )
+            self.assertEqual(1, len(calls))
+            self.assertEqual(2, reading_policy.status(config, now=1_700_000_100.0)["used"])
             status, body = self._post(
                 port,
                 self._claude_press(allow=True, words_destination=""),
             )
             self.assertEqual(202, status, body)
-            self.assertEqual(1, len(calls))
+            self.assertEqual(2, len(calls))
             status, body = self._post(port, self._claude_press())
             self.assertEqual(202, status, body)
-            self.assertEqual(2, len(calls))
+            self.assertEqual(3, len(calls))
 
-    def test_prior_claude_content_versions_ask_again_without_charging(self) -> None:
+    def test_prior_claude_content_versions_run_with_a_notice(self) -> None:
         for version in (2, 3):
             with self.subTest(version=version):
                 config, state = self._runtime()
@@ -3832,13 +3874,18 @@ class ReadingRouteTest(unittest.TestCase):
                     self._serving(self._app(config, state, "claude")) as port,
                 ):
                     status, body = self._post(port, self._claude_press())
-                    self.assertEqual(403, status, body)
-                    answer = json.loads(body)
+                    self.assertEqual(202, status, body)
                     self.assertEqual(
-                        reading_policy.CONTENT_CHANGED, answer["reading"]["rebind"]["codex"]
+                        reading_policy.CONTENT_VERSION, json.loads(body)["notice"]["content"]
                     )
-                    self.assertEqual(0, answer["reading"]["used"])
-                    self.assertEqual([], calls)
+                    self.assertEqual(
+                        reading_policy.CONTENT_CHANGED,
+                        reading_policy.status(
+                            config, now=1_700_000_100.0, destinations={"codex": "OpenAI"}
+                        )["rebind"]["codex"],
+                    )
+                    self.assertEqual(1, reading_policy.status(config, now=1_700_000_100.0)["used"])
+                    self.assertEqual(1, len(calls))
                     status, body = self._post(
                         port,
                         self._claude_press(
@@ -3846,10 +3893,10 @@ class ReadingRouteTest(unittest.TestCase):
                         ),
                     )
                     self.assertEqual(202, status, body)
-                    self.assertEqual(1, len(calls))
+                    self.assertEqual(2, len(calls))
                     status, body = self._post(port, self._claude_press())
                     self.assertEqual(202, status, body)
-                    self.assertEqual(2, len(calls))
+                    self.assertEqual(3, len(calls))
 
     def test_a_claude_code_session_on_this_build_is_read_by_claude_code_when_it_is_installed(
         self,
@@ -4202,7 +4249,7 @@ class ReadingRouteTest(unittest.TestCase):
             annotation_store, "CLAUDE_ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_NOT_RUN
         )
 
-    def test_a_codex_answer_does_not_let_claude_code_read_a_session(self) -> None:
+    def test_claude_readings_need_no_second_provider_allow(self) -> None:
         config, state = self._runtime()
         self.assertEqual({"codex": True, "claude": False}, self._consents(config))
         with (
@@ -4211,14 +4258,14 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude")) as port,
         ):
             status, body = self._post(port, self._claude_press(provider="claude"))
-            self.assertEqual(403, status)
-            self.assertEqual("consent-required", json.loads(body)["reading"]["reason"])
-            self.assertEqual([], calls)
+            self.assertEqual(202, status, body)
+            self.assertEqual("claude", json.loads(body)["notice"]["provider"])
+            self.assertEqual(1, len(calls))
             status, _ = self._post(
                 port, self._claude_press(provider="claude", allow=True, words_destination="")
             )
         self.assertEqual(202, status)
-        self.assertEqual(["claude"], self.providers)
+        self.assertEqual(["claude", "claude"], self.providers)
         self.assertEqual({"codex": True, "claude": True}, self._consents(config))
         self.assertIn(runtime_observer.CLAUDE_READING_MODEL, self._stamp(config, "claude"))
 
@@ -4236,15 +4283,15 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state)) as port,
         ):
             status, body = self._post(port, self._press(provider="claude"))
-            self.assertEqual(403, status)
-            self.assertEqual("consent-required", json.loads(body)["reading"]["reason"])
-            self.assertEqual([], calls)
+            self.assertEqual(202, status, body)
+            self.assertEqual("claude", json.loads(body)["notice"]["provider"])
+            self.assertEqual(1, len(calls))
             reading_policy.set_consent(config, True, now=1_700_000_100.0, provider="claude")
             status, body = self._post(port, self._press(provider="claude"))
         self.assertEqual(202, status, body)
-        self.assertEqual(["claude"], self.providers)
+        self.assertEqual(["claude", "claude"], self.providers)
 
-    def test_an_anthropic_allow_does_not_cover_a_press_once_the_words_go_elsewhere(
+    def test_changed_claude_destination_runs_and_preserves_legacy_coverage(
         self,
     ) -> None:
         """Owner, 2026-10-02: the Allow for the words is bound to their destination.
@@ -4271,12 +4318,14 @@ class ReadingRouteTest(unittest.TestCase):
                 self._serving(self._app(config, state)) as port,
             ):
                 status, body = self._post(port, self._press(provider="claude"))
-                self.assertEqual(403, status)
-                answer = json.loads(body)["reading"]
-                self.assertEqual("consent-required", answer["reason"])
+                self.assertEqual(202, status, body)
+                answer = reading_policy.status(
+                    config, now=1_700_000_100.0, destinations={"claude": moved}
+                )
+                self.assertEqual(moved, json.loads(body)["notice"]["destination"])
                 self.assertFalse(answer["providers"]["claude"])
                 self.assertEqual(reading_policy.DESTINATION_CHANGED, answer["rebind"]["claude"])
-                self.assertEqual([], calls, "the words were sent before a fresh Allow")
+                self.assertEqual(1, len(calls))
 
     def test_a_destination_that_moves_after_the_press_refuses_the_job_unspent(self) -> None:
         """Consent F4 (ui5): the job re-resolves the destination at its
@@ -4511,19 +4560,16 @@ class ReadingRouteTest(unittest.TestCase):
     def _checks_sent(prompt: str) -> int:
         return prompt.count("python3 -m pytest tests/test_")
 
-    def test_a_reader_who_allowed_codex_before_tool_output_was_named_is_asked_again(
-        self,
-    ) -> None:
+    def test_a_fresh_claude_reading_includes_tool_output_without_a_grant(self) -> None:
         config, state = self._runtime()
-        # The words allowed for where they go, so tool output is all that is missing.
-        reading_policy.set_consent(
-            config, True, now=1_700_000_100.0, provider="codex", destination="OpenAI"
-        )
+        reading_policy.store_path(config).unlink()
         status, answer, calls = self._checks_press(config, state, self._claude_press())
-        self.assertEqual(403, status)
-        self.assertEqual("tool-output-consent-required", answer["reading"]["reason"])
-        self.assertEqual([], calls)
-        self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
+        self.assertEqual(202, status, answer)
+        self.assertEqual(2, self._checks_sent(calls[0]))
+        self.assertEqual("OpenAI", answer["notice"]["tool_output"])
+        self.assertEqual("OpenAI", answer["notice"]["destination"])
+        self.assertEqual({}, reading_policy.status(config, now=1_700_000_100.0)["tool_output"])
+        self.assertEqual(1, reading_policy.status(config, now=1_700_000_100.0)["used"])
 
     def test_an_allow_naming_where_the_checks_go_sends_them_to_codex(self) -> None:
         config, state = self._runtime()
@@ -4562,27 +4608,21 @@ class ReadingRouteTest(unittest.TestCase):
             before, reading_policy.status(config, now=1_700_000_100.0, provider="codex")
         )
 
-    def test_a_grant_for_one_destination_does_not_cover_another(self) -> None:
+    def test_a_changed_destination_runs_with_a_new_notice(self) -> None:
         config, state = self._runtime()
-        reading_policy.set_consent(
-            config,
-            True,
-            now=1_700_000_100.0,
-            provider="codex",
-            tool_output="OpenAI",
-            destination="OpenAI",
+        status, answer, calls = self._checks_press(
+            config, state, self._claude_press(), destination="OpenAI"
         )
-        # The words allowed again for where they go now, so only the
-        # tool-output grant, still keyed to OpenAI, can refuse.
-        reading_policy.set_consent(
-            config, True, now=1_700_000_100.0, provider="codex", destination="gw.corp.example"
-        )
+        self.assertEqual(202, status, answer)
+        self.assertEqual("OpenAI", answer["notice"]["destination"])
+        self.assertEqual(1, len(calls))
         status, answer, calls = self._checks_press(
             config, state, self._claude_press(), destination="gw.corp.example"
         )
-        self.assertEqual(403, status)
-        self.assertEqual("tool-output-consent-required", answer["reading"]["reason"])
-        self.assertEqual([], calls)
+        self.assertEqual(202, status, answer)
+        self.assertEqual("gw.corp.example", answer["notice"]["destination"])
+        self.assertEqual("gw.corp.example", answer["notice"]["tool_output"])
+        self.assertEqual(2, self._checks_sent(calls[0]))
 
     def test_where_the_destination_cannot_be_named_the_codex_prompt_holds_no_check(
         self,
@@ -4603,7 +4643,7 @@ class ReadingRouteTest(unittest.TestCase):
             entry["assessment"]["cutoff"],
         )
 
-    def test_turning_readings_off_withdraws_the_tool_output_grant(self) -> None:
+    def test_turning_readings_back_on_repeats_the_tool_output_notice(self) -> None:
         config, state = self._runtime()
         reading_policy.set_consent(
             config,
@@ -4618,11 +4658,11 @@ class ReadingRouteTest(unittest.TestCase):
             config, True, now=1_700_000_100.0, provider="codex", destination="OpenAI"
         )
         status, answer, calls = self._checks_press(config, state, self._claude_press())
-        self.assertEqual(403, status)
-        self.assertEqual("tool-output-consent-required", answer["reading"]["reason"])
-        self.assertEqual([], calls)
+        self.assertEqual(202, status, answer)
+        self.assertEqual("OpenAI", answer["notice"]["tool_output"])
+        self.assertEqual(2, self._checks_sent(calls[0]))
 
-    def test_a_grant_withdrawn_while_the_press_is_in_flight_sends_no_check(self) -> None:
+    def test_turning_readings_off_then_on_mid_press_still_includes_checks(self) -> None:
         config, state = self._runtime()
         reading_policy.set_consent(
             config,
@@ -4644,12 +4684,10 @@ class ReadingRouteTest(unittest.TestCase):
             config, state, self._claude_press(), on_collect=withdraw
         )
         self.assertEqual(202, status, answer)
-        self.assertEqual(0, self._checks_sent(calls[0]))
+        self.assertEqual(2, self._checks_sent(calls[0]))
         entry = annotation_store.find(annotation_store.load(config), "claude", "s1")
         assert entry is not None
-        self.assertIn(
-            "tool output was not allowed when the reading ran", entry["assessment"]["cutoff"]
-        )
+        self.assertNotIn("tool output was not allowed", entry["assessment"]["cutoff"])
 
     def test_the_press_hands_the_reading_the_passes_a_later_command_may_have_changed(
         self,
@@ -5765,3 +5803,79 @@ class ASaveDuringACollectionTest(RuntimeTestCase):
         after = answers["refresh"]["sessions"][0]
         self.assertEqual("Second words", after["annotation_goal"])
         self.assertEqual(saved["revision"], after["annotation_revision"])
+
+
+class ConsentNoticeHandlerTest(unittest.TestCase):
+    """Exercise real press admission and jobs without binding a listening socket."""
+
+    def _exercise(self, name: str) -> None:
+        fixture = ReadingRouteTest(name)
+        self.addCleanup(fixture.doCleanups)
+        application: Any = None
+
+        @contextlib.contextmanager
+        def serving(app: Any) -> Any:
+            nonlocal application
+            application = app
+            fixture.outcomes = []
+            record_reading = annotation_store.record_reading
+            record_withheld = annotation_store.record_withheld
+
+            def written(*args: Any, **kwargs: Any) -> Any:
+                fixture.outcomes.append({"produced": True, "reason": ""})
+                return record_reading(*args, **kwargs)
+
+            def withheld(*args: Any, **kwargs: Any) -> Any:
+                fixture.outcomes.append(
+                    {"produced": False, "reason": kwargs["reason"], "spent": kwargs["spent"]}
+                )
+                return record_withheld(*args, **kwargs)
+
+            with (
+                mock.patch.object(annotation_store, "record_reading", written),
+                mock.patch.object(annotation_store, "record_withheld", withheld),
+            ):
+                yield 4601
+                fixture._settle()
+
+        def post(
+            port: int, payload: Any, *, settle: bool = True, **kwargs: Any
+        ) -> tuple[int, bytes]:
+            handler: Any = object.__new__(http_api._RequestHandler)
+            handler.server = SimpleNamespace(application=application, server_port=port)
+            handler.client_address = ("127.0.0.1", port)
+            handler.headers = email.message.Message()
+            body = json.dumps(payload).encode()
+            handler.headers["Host"] = f"127.0.0.1:{port}"
+            handler.headers["Content-Length"] = str(len(body))
+            for key, value in kwargs.get("headers", {}).items():
+                handler.headers[key] = value
+            handler.rfile = io.BytesIO(body)
+            responses: list[tuple[int, bytes]] = []
+            with mock.patch.object(
+                handler,
+                "_send",
+                side_effect=lambda body, _type, code=200: responses.append((code, body)),
+            ):
+                handler._reading()
+            if settle and responses[0][0] == 202:
+                fixture._settle()
+            return responses[0]
+
+        with (
+            mock.patch.object(fixture, "_serving", serving),
+            mock.patch.object(fixture, "_post", post),
+        ):
+            getattr(fixture, name)()
+
+    def test_fresh_press_notice_off_and_turn_on(self) -> None:
+        self._exercise("test_fresh_press_runs_with_notice_then_off_blocks_until_allow")
+
+    def test_claude_tool_output_defaults_on(self) -> None:
+        self._exercise("test_a_fresh_claude_reading_includes_tool_output_without_a_grant")
+
+    def test_changed_destination_runs_with_new_notice(self) -> None:
+        self._exercise("test_a_changed_destination_runs_with_a_new_notice")
+
+    def test_content_tier_migration_runs_with_a_notice(self) -> None:
+        self._exercise("test_prior_claude_content_versions_run_with_a_notice")
