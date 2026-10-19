@@ -67,7 +67,7 @@ The posture rests on two invariants:
    no network on Compass's own account: the hand-off request in Hand-off requests below writes one
    line to a socket on this machine, and what travels afterwards travels on the receiving session's
    own connection, which is why it is named here rather than counted above.
-2. Read-only against harness stores. They are opened read-only and never written. Thirteen endpoints
+2. Read-only against harness stores. They are opened read-only and never written. Fourteen endpoints
    mutate, and seven of them only in memory: `POST /api/notify` updates needs-input state, and
    `POST /api/usage` stores a quota figure a harness published to its own status-line command.
    `POST /api/events/<harness>` also mutates in memory only, behind the capability described under
@@ -78,7 +78,7 @@ The posture rests on two invariants:
    timestamp for the whole board, never written to disk, and a body that names a session is refused
    rather than stripped. Delivery records below is where that refusal is stated. The long
    poll that delivers an answer, `GET /api/ask/<id>`, drops that question from memory once it has,
-   which is the delivery completing rather than a change a caller asked for. Six write to disk.
+   which is the delivery completing rather than a change a caller asked for. Seven write to disk.
    `POST /api/dismiss` writes the sessions you marked handled,
    `POST /api/annotate` writes the goal you typed or explicitly adopted and the expected outcome lines you typed against a session, including a line you added from a later direction you gave and the settlement of those directions, and
    `POST /api/reading` writes a model's reading of that session back into the same annotation
@@ -134,7 +134,7 @@ The posture rests on two invariants:
    process that can change both the store and the source.
 
    Two consequences of storing it here rather than in session history, both accepted rather than
-   discovered. `--forget` deletes the session-history and session-end stores and **deletes nothing
+   discovered. `--forget` deletes the session-history, session-end and summary stores and **deletes nothing
    a reader typed and no reading of it**, so a reader who wants a model-authored reading gone
    clears that session's annotation, which deletes the reading with the words that produced it.
    The one thing that command does take out of this file is the discard records described below,
@@ -148,13 +148,24 @@ The posture rests on two invariants:
    `POST /api/reading` writes. The sixth, `POST /api/correction/copied`, records the digest of a
    correction you copied, never its text, in `compass-copied-corrections.json`; [Analyze drift,
    Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections) owns its bounds.
-   Ruled 2026-10-19 and not yet built, so not in the counts above: a **summary store** under the
-   same home, holding a model-written summary of what a session did. It is a store of its own,
-   amending DEC-15b's "no new store" by name, keyed by harness and session with no saved intent
-   needed, and it is not removed by Discard everything. It is bounded by an aggregate byte limit
-   whose eviction can never push out a reader's saved words in this file, redacted on the way in
-   and out, removed per session by Delete summary, and deleted by `--forget`, unlike the words
-   and readings in this file. Its routes join the counts when they are built. [Session summary calls](#session-summary-calls) owns its bounds.
+   The seventh, `POST /api/summary/delete`, deletes one stored summary. The separate
+   **summary store**, `compass-summaries.json` under the same home, holds model-written
+   summaries keyed by harness and session, without a saved intent. Discard everything does not
+   remove it. Its versioned closed schema admits the producer's summary (lede, blocks, spans,
+   fingerprints, citations, withheld markers, cut counts, gaps, coverage and spend), made-at time,
+   model stamp, last access time and word-free source comparison metadata. Unknown schemas,
+   torn files and files above the 64 MiB aggregate read cap are unavailable, never partially read
+   or overwritten by a save. Every stored string is redacted before bounding on the way in and
+   again on the way out. Writers hold a process lock and the store filename plus `.lock` across
+   read, eviction and owner-only temp-file rename; unavailable filesystem locks refuse the write.
+   The bound allows 64 summaries at 512 KiB each (32 MiB), plus 32 MiB for comparison metadata
+   and envelopes. Eviction drops the least recently read or written summaries, never the summary
+   being saved, and cannot touch the annotation store. Delete summary removes one session;
+   `--forget` deletes the whole store, even when unreadable. `--no-annotations` does not govern it.
+   Deletion is loopback-only, same-origin and refused for document navigation before the body or
+   store is read. A local process with no fetch metadata can delete a summary; it cannot use this
+   route to remove saved intent. [Session summary calls](#session-summary-calls) owns model-call bounds;
+   the [store contract](docs/design-session-summary.md#store-contract) owns its schema and API.
    One forwarder writes too: `statusline_hook.py`'s deduplication memo under
    the same directory, which holds a normalized state name and a timestamp and nothing about the
    session's content.
@@ -2044,9 +2055,9 @@ the time is where the record is whole from. The keys, types and exposure are unc
 
 ### Session summary calls
 
-Ruled 2026-10-19 by the owner ([DEC-28](docs/design-session-summary.md)); not yet built. This is the
-entry the bounds above ask of a future harness caller, written before the caller so that the build
-is held to it. Where the ruling is silent, this entry says so rather than deciding.
+Ruled 2026-10-19 by the owner ([DEC-28](docs/design-session-summary.md)). The producer and store
+are built; automatic generation, model calls and the job remain to be wired. This entry holds
+that future caller to its bounds. Opening a stored summary makes no summary call or charge.
 
 - What it is. A model-written summary of what a session did: a lede and phases with titled bullets,
   each bullet citing at least one entry by fact id, in the
@@ -2090,8 +2101,9 @@ is held to it. Where the ruling is silent, this entry says so rather than decidi
   is named and admitted. Strings are redacted on the way in and again on the way out, because any
   local process can rewrite the file. It has an aggregate byte bound and an eviction that can never
   push out a reader's saved words. Delete summary removes one session's summary, and `--forget`
-  deletes the store. Its writer gets its own row in invariant 2 when it is built. The ruling does not
-  say whether `--no-annotations` governs this store; the build says which, here.
+  deletes the store. Invariant 2 names its separate file and 64 MiB aggregate bound.
+  `--no-annotations` does not govern this store: summaries need no saved intent. The model job
+  must honor `--no-observer-model`; this store only reads, writes and deletes local state.
 
 A violation is a security bug on the same terms as the bounds above, and also: a summary call made
 after Turn off summaries or under `--no-observer-model`, a part sent after consent or the
@@ -3564,8 +3576,9 @@ The `proto/operator-cockpit` branch adds project context and an optional read-on
 under the configured state directory, and can invoke the installed Codex CLI for a derived goal.
 `GET /api/session-record` uses the same loopback and bounded project/session guards, returns the same redacted message titles as project-context, and exposes no fields or content classes the page could not already read. Each message also carries its fixed number, read from an in-memory index of every message's time and fact id in the transcript (at most 16 transcripts, never written to disk, nothing a person wrote); the index adds no field the page could not derive from the record it already reads, and a read that cannot finish inside its allowance publishes no numbers.
 This is separate from quota fetching and from the session-history switch. The prototype retains
-its own semantic-history store; `--forget` deletes the session-history and session-end stores,
-removes the discard records in the annotation store, and reaches nothing else.
+its own semantic-history store. `--forget` deletes the session-history, session-end and summary
+stores, removes annotation discard records and copied-correction digests, and withdraws model
+permission; it does not reach this semantic-history store.
 
 That store carries session text in both directions, and this document did not say so until the
 annotation work re-counted which files hold what a person typed. A fact's `summary` is bounded at
@@ -3723,14 +3736,14 @@ that was.
 saying the machine's network may read the board, and there is no second gate behind it: everything
 the paragraph below grants another account on the machine, a non-default bind grants anything that
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
-project paths. Writing is the seventeen POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
+project paths. Writing is the eighteen POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Two of the seventeen store nothing of their own: `POST /api/direction` returns the whole text
+somebody other than you. Two of the eighteen store nothing of their own: `POST /api/direction` returns the whole text
 of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
 message's published title of at most 112 characters. Both answer only a loopback peer, so a non-default bind does not widen them; their
-bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on fifteen of them, for the reason the
+bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on sixteen of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client

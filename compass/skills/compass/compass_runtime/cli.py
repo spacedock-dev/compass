@@ -27,6 +27,7 @@ from compass_runtime import (
     notifications,
     observation,
     reading_policy,
+    summary_store,
     unasked,
 )
 from compass_runtime import annotations as annotation_store
@@ -401,7 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--forget",
         action="store_true",
         help=(
-            "delete the local history store, and exit. Refused while a "
+            "delete local observation stores and session summaries, and exit. Refused while a "
             "dashboard is running on --port, which would write it back"
         ),
     )
@@ -700,6 +701,7 @@ def run_one_shot(
         path = history.store_path(config)
         ends_path = ends.store_path(config)
         annotations_path = annotation_store.store_path(config)
+        summaries_path = summary_store.store_path(config)
         # Refused while an instance is up, because a running dashboard holds its
         # own baseline in memory and republishes it on the next transition: the
         # delete reported success and every record came back. The probe is the
@@ -725,7 +727,8 @@ def run_one_shot(
             runtime_io.diag(
                 f"Compass: a dashboard is running on port {args.port} and would "
                 f"write {path} back from memory and go on publishing the ends in "
-                f"{ends_path}; the discard records in {annotations_path} were not "
+                f"{ends_path}; the summaries in {summaries_path} and discard records "
+                f"in {annotations_path} were not "
                 "swept either, because the command refuses whole; stop it with "
                 "--stop first, then --forget",
                 print,
@@ -792,6 +795,11 @@ def run_one_shot(
             else f"Compass: no copied-correction store at {copies_path}",
             print,
         )
+        summary_outcome = summary_store.forget(config)
+        runtime_io.diag(
+            f"Compass: summary store {summaries_path}: {summary_outcome}",
+            print,
+        )
         permission_forgotten = reading_policy.forget(config)
         runtime_io.diag(
             "Compass: forgot reading permission; unexpired spend timestamps remain"
@@ -799,7 +807,7 @@ def run_one_shot(
             else "Compass: could not forget reading permission; the store is unavailable",
             print,
         )
-        return 0 if permission_forgotten else 1
+        return 0 if permission_forgotten and summary_outcome != "unwritable" else 1
     if args.stop:
         message, code = lifecycle.stop_instance(config, args.port)
         runtime_io.diag(message, print)

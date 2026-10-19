@@ -1048,6 +1048,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # collectors and whichever one is added next. `records` is a leaf, so
         # this stays inward.
         "compass_runtime.aggregate": {
+            # Each row's small summary state; no blocks and no transcript read.
+            "compass_runtime.summary_store",
             "compass_runtime.reading_policy",
             # The served page's build, so an open tab can tell it is stale
             # (regressions major 1, ui5).
@@ -1139,6 +1141,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # The CLI is the assembly point, so it may import any runtime module.
         "compass_runtime.cli": {
+            # `--forget` deletes the summary store.
+            "compass_runtime.summary_store",
             # Startup-only development admission and inert fixture notifiers.
             "compass_runtime.frontend_dev",
             "compass_runtime.deliveries",
@@ -1500,6 +1504,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.http_api": {
             # Deterministic grouping belongs only to the focused context answer.
             "compass_runtime.session_outline",
+            # Stored summaries on the focused answer, and `POST /api/summary/delete`.
+            "compass_runtime.summary_store",
             # Each message's fixed number on the record pages and the focused context (DRC-4897).
             "compass_runtime.entry_numbers",
             "compass_runtime.record_pages",
@@ -1615,6 +1621,17 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.project_context",
             "compass_runtime.record_pages",
             "compass_runtime.records",
+        },
+        # The summary store persists the producer's frozen result and compares it with a fresh
+        # source read; it resolves the focused transcript itself and holds no model seam.
+        "compass_runtime.summary_store": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.observer",
+            "compass_runtime.records",
+            "compass_runtime.session_source",
+            "compass_runtime.session_summary",
+            "compass_runtime.state",
         },
         # Grouping resolves one transcript and keeps only built outlines in the state leaf.
         "compass_runtime.session_outline": {

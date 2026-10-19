@@ -183,21 +183,21 @@
       "method": "GET",
       "name": "context-focused-facts",
       "route": "/api/project-context",
-      "sha256": "426e9911398168f0f55ed6718090bf5444a7656f9577b0ef594b29258062a191",
+      "sha256": "8020ff85c7db84465afaea3db829632e0300efbff30eafc3ffe41f72c1c7ea80",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-prompts",
       "route": "/api/project-context",
-      "sha256": "ccfdfa2a7a2e9ad6d60802ef8b405158e3ea0cec59c667430e862d85e0220c33",
+      "sha256": "f60c10b1d36f60f3ab209709e392f9bb08ecd0df2ccd934d02fcac41bdc6874b",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-session",
       "route": "/api/project-context",
-      "sha256": "c80694cca0ac29b56a1a4280b6a01e26c116fd34676be3d0dc8e2e87024cd5fc",
+      "sha256": "7e8093e3687804296d2ed82595b76b97d5259484bb444327e0e3b4f2dcfc4268",
       "status": 200
     },
     {
@@ -246,7 +246,7 @@
       "method": "GET",
       "name": "context-refresh-model-disabled",
       "route": "/api/project-context",
-      "sha256": "1decdd3e8763269394eda7816474e686baaf2ba9ec1d93698ecc81686e7fcdd3",
+      "sha256": "77cfa31f8f784e13786e00160631c652c19284e8dbe04b906d8aed481d11f521",
       "status": 200
     },
     {
@@ -302,28 +302,28 @@
       "method": "GET",
       "name": "data-healthy",
       "route": "/api/data",
-      "sha256": "99497d886ac3175696055d8f20e3d9310f2e15e0ae3284c8f3e5287675af618c",
+      "sha256": "fc029a66cc8e243da16c856e456331d327a956f40c3b778b7ad0f4722f75501a",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-identity-collisions",
       "route": "/api/data",
-      "sha256": "3ad7033f02e80c0e502f6950908bf45c55d971e7483e504de603890819b31dac",
+      "sha256": "a3ac93faa19743a63dfdee7019cca96f1a6ba2c2491c8c5bec72001a965ec4d0",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-restarted-build",
       "route": "/api/data",
-      "sha256": "f55ebb1e35a908c9b0c0be564555bfb18df226df2c612db1284a47a6c992c3d5",
+      "sha256": "056146038653e4b2aaec77eccc72bd8f036d91ab0c5692fad2c39f2d1a62da19",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
-      "sha256": "3190233ca706e80a6f6e13f2233815bd81f6aa1953697370d73fb9f40faaa8db",
+      "sha256": "92cfd66516a06c174e372788f02386169224462aa7ad4c7982953eb91097b043",
       "status": 200
     },
     {

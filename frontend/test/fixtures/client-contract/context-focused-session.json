@@ -97,6 +97,11 @@
             }
           ]
         },
+        "summary": {
+          "exists": false,
+          "job": null,
+          "state": "absent"
+        },
         "surrounding_active": 0,
         "work": {
           "analysis_levels": [],
@@ -130,7 +135,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "2061",
+      "Content-Length": "2116",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

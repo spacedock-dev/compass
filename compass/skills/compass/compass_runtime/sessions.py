@@ -598,6 +598,7 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         # the one place the two are read together. None means no such record
         # stands, never "did not finish".
         "turn_end_at": None,
+        "summary": None,
         "delegated_launches": None,
         "delegated_unpaired": None,
         "delegated_latest_launch_at": None,

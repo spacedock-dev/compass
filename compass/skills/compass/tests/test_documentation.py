@@ -1447,14 +1447,15 @@ class SemanticHistoryContractDocumentationTest(unittest.TestCase):
         # improvement that would silently contradict both paragraphs.
         section = _flat_section(self.SECURITY, "## Operator-cockpit prototype")
         self.assertIn(
-            "`--forget` deletes the session-history and session-end stores, removes the discard "
-            "records in the annotation store, and reaches nothing else",
+            "`--forget` deletes the session-history, session-end and summary stores, removes "
+            "annotation discard records and copied-correction digests, and withdraws model "
+            "permission; it does not reach this semantic-history store.",
             section,
         )
         # Every `forget` function the command reaches (DRC-4547 added the
         # second, DRC-4565 the third), so admitting this store through any one
         # of them turns this red.
-        for module in ("history.py", "ends.py", "annotations.py"):
+        for module in ("history.py", "ends.py", "annotations.py", "summary_store.py"):
             source = (SERVER_PATH.parent / "compass_runtime" / module).read_text(encoding="utf-8")
             forget = source[source.index("def forget(") :]
             forget = forget.split("\ndef ", 1)[0]
@@ -2205,18 +2206,18 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
             'path.startswith("/api/events/")' in do_post
         )
         gated = len(re.findall(r"\bcoordinator\.(?:focus_)?authorized\(", source))
-        self.assertEqual(17, routes)
+        self.assertEqual(18, routes)
         self.assertEqual(2, gated)
-        self.assertIn("Writing is the seventeen POST routes", self.FLAT)
-        self.assertIn("There is nothing to authenticate with on fifteen of them", self.FLAT)
+        self.assertIn("Writing is the eighteen POST routes", self.FLAT)
+        self.assertIn("There is nothing to authenticate with on sixteen of them", self.FLAT)
         self.assertIn("Two carry a capability and they are not worth the same.", self.FLAT)
 
     def test_the_copied_correction_route_is_named_counted_and_its_residual_stated(self) -> None:
         # DRC-4678: the thirteenth mutating endpoint and the sixth disk writer, the
         # local-process residual, where the digests live and what clears them, and the
         # exemption of a reader's edits inside a copied correction from the floor.
-        self.assertIn("Thirteen endpoints mutate", self.FLAT)
-        self.assertIn("Six write to disk.", self.FLAT)
+        self.assertIn("Fourteen endpoints mutate", self.FLAT)
+        self.assertIn("Seven write to disk.", self.FLAT)
         self.assertIn("`POST /api/correction/copied`", self.FLAT)
         self.assertIn("`compass-copied-corrections.json`", self.FLAT)
         self.assertIn(

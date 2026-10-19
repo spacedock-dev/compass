@@ -43,6 +43,7 @@ from .support import runtime as support_runtime
 DECLARED_SESSION_FIELDS = frozenset(
     {
         "session",
+        "summary",
         "sid",
         "harness",
         "project",

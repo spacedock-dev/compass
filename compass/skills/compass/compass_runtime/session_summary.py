@@ -905,31 +905,20 @@ def update(
     """Validate every old span from a full source read, then send only the appended entries."""
     if prior.harness != "claude":
         return Summary("unsupported", "harness_not_supported", prior.harness)
-    tail = _tail_result(prior, entries, change)
-    affected, late = _affected(prior, entries, open_tail=tail)
-    hard = change.kind in {"truncated", "replaced"} or (
-        change.kind == "changed_earlier" and not tail
-    )
-    if hard or affected:
+    report = change_report(prior, entries, change)
+    if report["action"] == "summarize_again":
         return replace(
             prior,
             state="source_changed",
-            reason=change.kind if hard else "late_evidence" if late else "span_mismatch",
+            reason=report["reason"],
             change=change.kind,
-            affected_blocks=affected,
+            affected_blocks=tuple(report["affected_blocks"]),
             spend=Spend(),
             coverage=coverage,
         )
     if change.kind == "unchanged":
         return prior
-    if change.kind not in {"appended", "changed_earlier"}:
-        return replace(
-            prior,
-            state="source_changed",
-            reason="unknown_change",
-            change=change.kind,
-            spend=Spend(),
-        )
+    tail = _tail_result(prior, entries, change)
     base = replace(prior, blocks=prior.blocks[:-1]) if tail else prior
     offset = next(
         (n + 1 for n, e in enumerate(entries) if base.blocks and e.fact_id == base.blocks[-1].last),
@@ -943,3 +932,45 @@ def update(
         base,
         offset,
     )
+
+
+def change_report(
+    prior: Summary, entries: Sequence[SourceEntry], change: SourceChange
+) -> dict[str, Any]:
+    """Check the same spans as update, without producing text or invoking a model."""
+    tail = _tail_result(prior, entries, change)
+    affected, late = _affected(prior, entries, open_tail=tail)
+    positions = {entry.fact_id: n for n, entry in enumerate(entries)}
+    changed_ids = {fact_id for fact_id, _reason in change.changed}
+    named = tuple(
+        n
+        for n, block in enumerate(prior.blocks)
+        if any(
+            positions.get(block.first, -1)
+            <= positions.get(fact_id, -2)
+            <= positions.get(block.last, -1)
+            for fact_id in changed_ids
+        )
+    )
+    hard = change.kind in {"truncated", "replaced"} or (
+        change.kind == "changed_earlier" and not tail
+    )
+    reason = (
+        change.kind
+        if hard
+        else "late_evidence"
+        if late
+        else "span_mismatch"
+        if affected
+        else None
+        if change.kind in {"unchanged", "appended", "changed_earlier"}
+        else "unknown_change"
+    )
+    return {
+        "kind": change.kind,
+        "reason": reason,
+        "affected_blocks": sorted(set(affected) | set(named)),
+        "new_entries": len(change.appended),
+        "appendable": reason is None and change.kind != "unchanged",
+        "action": "summarize_again" if reason else None if change.kind == "unchanged" else "update",
+    }

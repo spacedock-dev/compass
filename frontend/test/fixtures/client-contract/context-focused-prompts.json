@@ -324,6 +324,11 @@
           "omitted": [],
           "unavailable": []
         },
+        "summary": {
+          "exists": false,
+          "job": null,
+          "state": "absent"
+        },
         "surrounding_active": 0,
         "work": {
           "analysis_levels": [],
@@ -394,7 +399,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "7228",
+      "Content-Length": "7283",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },
