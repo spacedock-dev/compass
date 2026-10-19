@@ -29,9 +29,10 @@ function Banner({ held }: { readonly held: boolean }) {
         </RouteLink>
       </p>
       <p className="m-0 text-muted-foreground">
-        An anonymized Claude Code session with a real stored reading, so you can see what the
-        Session page and Intent and drift show. Nothing here is saved, sent or run. Hover or press
-        the numbered (i) marks for a short tour.
+        About ninety minutes of an anonymized Claude Code session, an agent burning down a
+        milestone, with its real stored summary and drift reading, so you can see what the Session
+        page and Intent and drift show. Nothing here is saved, sent or run. Hover or press the
+        numbered (i) marks for a short tour.
       </p>
       <details data-sample-tour>
         <summary className="cursor-pointer text-muted-foreground">Read the tour as text</summary>

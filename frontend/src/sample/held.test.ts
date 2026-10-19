@@ -33,6 +33,34 @@ describe('which controls the view-only sample holds', () => {
       'a turn off',
       '<div><button data-target data-next-cockpit-action="reading-off">Pause model calls</button></div>',
     ],
+    [
+      'Summarize',
+      '<div><button data-target data-next-cockpit-action="summary-start">Summarize</button></div>',
+    ],
+    [
+      'Update summary',
+      '<div><button data-target data-next-cockpit-action="summary-update">Update summary</button></div>',
+    ],
+    [
+      'Summarize again',
+      '<div><button data-target data-next-cockpit-action="summary-rerun">Summarize again</button></div>',
+    ],
+    [
+      'Cancel a summary',
+      '<div><button data-target data-next-cockpit-action="summary-cancel">Cancel</button></div>',
+    ],
+    [
+      'Delete summary',
+      '<div><button data-target data-next-cockpit-action="summary-delete">Delete summary</button></div>',
+    ],
+    [
+      'Turn off summaries',
+      '<div><button data-target data-next-cockpit-action="summary-off">Turn off summaries</button></div>',
+    ],
+    [
+      'Turn summaries on',
+      '<div><button data-target data-next-cockpit-action="summary-on">Turn summaries on</button></div>',
+    ],
     ['a text box', '<div><textarea data-target></textarea></div>'],
     ['an input', '<div><input data-target /></div>'],
     [

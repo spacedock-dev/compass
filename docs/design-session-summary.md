@@ -912,9 +912,9 @@ This table describes the implementation and does not amend the owner-ruled table
 - The card reads the focused context itself, once per board revision, with no gate on annotations:
   under `--no-annotations` the Intent card's read does not run and nothing else on the session page
   would start one.
-- The sample session's fixture carries no `sources.outline`: `scripts/build_sample_fixture.py`
-  captures the whole page from a server holding a stored reading, and recapturing it needs a model
-  reading and a rebuilt page. Until it is recaptured, the sample shows the card's no-outline line.
+- Resolved on 2026-10-19: the sample session's fixture now carries `sources.outline` and a stored
+  `sources.summary`, captured with its reading from one isolated server
+  ([the sample's README](../sample-session/README.md#what-is-real-and-what-is-not)).
 - Resolved on 2026-10-19: an absent summary's focused answer publishes
   [the focused plan](#the-focused-plan) from the outline's bounded source pass and cache, so the
   card says "in 4 parts, up to 10 minutes" before a start. Off a partial outline read the parts
@@ -938,9 +938,10 @@ This table describes the implementation and does not amend the owner-ruled table
   the page has not numbered cannot be placed, and the departure card says so.
 - Delete summary sits at the foot of a saved summary, beside What is sent. The ruling requires the
   control and names no place for it. Deleting does not summarize the session again on the same open.
-- The view-only sample never posts an open start, and its board publishes no `summaries` block, so
-  the sample draws a stored summary only when its fixture carries `sources.summary` and offers no
-  summary control. Every summary control a later fixture brings is held by the sample's guard.
+- The view-only sample never posts an open start: its fixture carries a stored summary. Its board
+  publishes the `summaries` block as a fresh store reads it
+  ([the timeline rewrites](../sample-session/README.md#what-is-real-and-what-is-not)), so the card
+  draws its controls, and the sample's guard holds every one of them ([View only](design-sample-session.md#view-only)).
 - Subagent messages remain excluded. The existing ruling admits their checks and writes, while
   the message builder admits top-level messages only.
 - A relative written path resolves against the directory at the transcript's head, read with the

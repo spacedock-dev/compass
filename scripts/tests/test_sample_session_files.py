@@ -21,11 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import sanitize_session as ss
 
 ROOT = Path(__file__).resolve().parents[2]
-SESSION = ROOT / "sample-session" / "example-session.jsonl"
-# The longer session the next sample is made from (sample-session/README.md). It is held to the same
-# checks from the day it is committed, before the page draws it.
+# The session the sample is made from (sample-session/README.md).
 MILESTONE = ROOT / "sample-session" / "milestone-session.jsonl"
-SESSIONS = (SESSION, MILESTONE)
+SESSIONS = (MILESTONE,)
 FIXTURE = ROOT / "frontend" / "src" / "sample" / "session.fixture.json"
 README = ROOT / "sample-session" / "README.md"
 
@@ -44,7 +42,7 @@ def git(*args: str) -> str | None:
 
 
 class SampleSessionFilesTest(unittest.TestCase):
-    def records(self, path: Path = SESSION) -> list[dict[str, Any]]:
+    def records(self, path: Path = MILESTONE) -> list[dict[str, Any]]:
         return [
             json.loads(line)
             for line in path.read_text(encoding="utf-8").splitlines()
@@ -106,6 +104,23 @@ class SampleSessionFilesTest(unittest.TestCase):
                 text = path.read_text(encoding="utf-8")
                 self.assertEqual({}, ss.resolving_commits(text, ROOT))
 
+    def test_no_quoted_pull_request_number_is_one_in_this_repository(self) -> None:
+        # The sanitizer keeps a number's length, which put the first regeneration on #321-#327:
+        # real, unrelated pull requests here, each a dated false lead. A squash-merge subject ends
+        # "(#N)", so the subjects are the repository's own list of numbers in use.
+        subjects = git("log", "--all", "--format=%s")
+        if subjects is None:
+            self.skipTest("no git history to compare pull request numbers against")
+        used = set(re.findall(r"\(#(\d+)\)", subjects))
+        for path in (*SESSIONS, FIXTURE):
+            with self.subTest(file=path.name):
+                text = path.read_text(encoding="utf-8")
+                # A short "#9" is an entry number and "PR 5" a count of the run's pull requests;
+                # every pull request number the session carries has three digits or more.
+                written = set(re.findall(r"(?:(?<![\w&])#|PRs? #?)(\d{3,})(?!\d)", text))
+                linked = set(re.findall(r"(?:pulls?/|prNumber\\*\":)(\d+)(?!\d)", text))
+                self.assertEqual(set(), (written | linked) & used)
+
     def test_the_milestone_names_no_branch_from_this_repository(self) -> None:
         branches = {str(r["gitBranch"]) for r in self.records(MILESTONE) if r.get("gitBranch")}
         self.assertEqual(
@@ -128,7 +143,7 @@ class SampleSessionFilesTest(unittest.TestCase):
         self.assertEqual(set(), keys - own)
 
     def test_the_only_identity_is_the_placeholder_one(self) -> None:
-        placeholders = {SESSION: {"dev@example.com"}, MILESTONE: {"user@example.com"}}
+        placeholders = {MILESTONE: {"user@example.com"}}
         for path, emails in placeholders.items():
             with self.subTest(file=path.name):
                 text = path.read_text(encoding="utf-8")
@@ -150,14 +165,34 @@ class SampleSessionFilesTest(unittest.TestCase):
             blob, r"\b17[89]\d{7}\.\d"
         )  # no wall-clock times from the day it was captured
         self.assertEqual(
-            "high", fixture["context"]["sources"]["work"]["analysis_levels"][0]["level"]
+            "medium", fixture["context"]["sources"]["work"]["analysis_levels"][0]["level"]
         )
-        self.assertEqual("high", fixture["context"]["sources"]["work"]["live_levels"][0]["level"])
         self.assertTrue(fixture["correction"]["ok"])
+        criteria = rows[0]["annotation_assessment"]["criteria"]
+        self.assertIn("departure", {row.get("result") for row in criteria.values()})
+
+    def test_the_fixture_carries_the_stored_summary_and_every_record_page(self) -> None:
+        fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        summary = fixture["context"]["sources"]["summary"]
+        self.assertTrue(summary["exists"])
+        self.assertTrue(fixture["board"]["sessions"][0]["summary"]["exists"])
+        phases = [phase for block in summary["blocks"] for phase in block.get("phases", [])]
+        self.assertGreaterEqual(len(phases), 4)
+        cited = {c for phase in phases for bullet in phase["bullets"] for c in bullet["cites"]}
+        departures = {
+            c
+            for row in fixture["board"]["sessions"][0]["annotation_assessment"]["criteria"].values()
+            if row.get("result") == "departure"
+            for c in row["cites"]
+        }
+        self.assertTrue(cited & departures, "no departure's evidence sits in a summary phase")
+        pages = [fixture["record"], *fixture.get("older", {}).values()]
+        self.assertTrue(pages[-1]["reached_start"])
+        self.assertTrue(all(page["state"] == "ok" for page in pages))
 
     def test_the_readme_says_what_was_changed_and_what_was_not(self) -> None:
         text = README.read_text(encoding="utf-8")
-        for required in ("anonymized", "illustration", "shaping.json", "not a byte-for-byte"):
+        for required in ("anonymized", "illustration", "not a byte-for-byte", "2026-10-19"):
             self.assertIn(required, text)
 
 

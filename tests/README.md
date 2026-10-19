@@ -16,11 +16,12 @@ tests/annotated_sessions/<session_id>/
 
 ## What is committed, and what is not
 
-Two sessions are the recorded exceptions: the anonymized example behind the Sample session (view
-only), committed in full with the owner's approval on 2026-10-14, and the longer session the next
-sample is made from, approved on 2026-10-19. The sample is only worth having if a reader can see the
-real record behind it. Both live in [sample-session/](../sample-session/README.md), not here, and the
-rule below still holds for everything under `tests/`.
+One session is the recorded exception: the anonymized session behind the Sample session (view
+only), committed in full with the owner's approval on 2026-10-19. It replaced the first sample, the
+exception the owner made on 2026-10-14, which was removed when this one replaced it. The sample is only
+worth having if a reader can see the real record behind it. It lives in
+[sample-session/](../sample-session/README.md), not here, and the rule below still holds for
+everything under `tests/`.
 
 The full session log stays on the machine that made it. Teammates are not comfortable having
 session transcripts in a public repository, even sanitized, so `.gitignore` excludes every

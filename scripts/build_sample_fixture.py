@@ -11,13 +11,17 @@ against an isolated home, so nothing about a real machine or session can reach t
     build_sample_fixture.py --base-url http://127.0.0.1:4712 --project acme/dashboard \
         --sid f7352072 --out frontend/src/sample/session.fixture.json
 
-Three rewrites make the capture a stable sample rather than a snapshot of one afternoon:
+Four rewrites make the capture a stable sample rather than a snapshot of one afternoon:
 
 - The session id becomes `sample`, the id the page reserves for it.
 - Every time within six hours of the capture moves to just after the session's last record, so "5m
-  ago" reads the same on any day and the stored reading sits where it was read.
-- The one-line sentence that counted entries "about 3718h ago" says "all within the last hour",
-  which is what the same words say when the reading is read on the day.
+  ago" reads the same on any day, and the stored summary and reading sit where they were made: the
+  summary first, as it is made when the finished session is opened, then the reading.
+- The one-line sentence that counted entries "about 3846h ago" counts them from the reading's own
+  moment on that timeline, which is what the same words say when the reading is read on the day.
+- The digests that bind the capture's stores (the board's intent revision, the summary's prompt
+  digest in its model stamp) are cut to 32 characters, so nothing in the file is a credential-length
+  value.
 """
 
 from __future__ import annotations
@@ -40,8 +44,10 @@ SIX_HOURS = 6 * 3600
 RECORD_PAGE_SIZE = 50
 RECORD_MAX_PAGES = 20
 OLDER_CURSOR = "older-{}"
+SUMMARIZED_AFTER_LAST_RECORD = 30
 READ_AFTER_LAST_RECORD = 45
 GENERATED_AFTER_LAST_RECORD = 95
+DIGEST_CHARS = 32
 
 
 def fetch(base: str, path: str, body: dict[str, Any] | None = None) -> Any:
@@ -97,6 +103,68 @@ def rename(node: Any, old: str, new: str) -> Any:
     if isinstance(node, dict):
         return {rename(key, old, new): rename(item, old, new) for key, item in node.items()}
     return node
+
+
+def cutoff_on_timeline(assessment: dict[str, Any]) -> str:
+    """The cutoff sentence's age, counted from the reading's place on the sample's timeline.
+
+    The server counts the oldest entry's age from the wall clock it read at
+    (`reading._cutoff_window`), which the capture put months after the session; from the reading's
+    own moment the same entries are an hour or two old.
+    """
+    oldest = assessment.get("window_start") or assessment["coverage"]["tail_start"]
+    hours = max(0, int((assessment["read_at"] - oldest) // 3600))
+
+    def age(match: re.Match[str]) -> str:
+        # `_cutoff_window` says "It is" for one entry and "The oldest is" / "All are" for several.
+        one = match.group(1) == "It is"
+        if hours:
+            return f"{match.group(1)} from about {hours}h ago"
+        return ("It is" if one else "All are") + " from within the last hour"
+
+    return re.sub(r"(The oldest is|It is) from about \d+h ago", age, assessment["cutoff"])
+
+
+def place_summary(fixture: dict[str, Any], made_at: float) -> None:
+    """Put the stored summary where it is made on the sample's timeline, and the summary grant as
+    this build reads a store with no stored off.
+
+    The summary was made when the finished session was opened, before the reading. Its job's start
+    is the same distance before it as the job's own spend says it took. The summary grant is shown
+    as a fresh store reads it: on, nothing refused and no notice recorded, with the calls the stored
+    summary spent and none from an earlier run the capture replaced.
+    """
+    summary = fixture["context"]["sources"].get("summary")
+    if not isinstance(summary, dict) or not summary.get("exists"):
+        return
+    seconds = float(summary["spend"]["seconds"])
+    # Both focused answers (the context and its prompts read) carry the same stored summary.
+    focused = [
+        answer["sources"]["summary"]
+        for answer in (fixture["context"], fixture["prompts"])
+        if isinstance(answer.get("sources", {}).get("summary"), dict)
+    ]
+    for state in focused:
+        stamp = str(state["model_stamp"]).rsplit(":", 1)
+        state["model_stamp"] = (
+            f"{stamp[0]}:{stamp[1][:DIGEST_CHARS]}" if len(stamp) == 2 else stamp[0]
+        )
+    for state in [*focused, fixture["board"]["sessions"][0]["summary"]]:
+        state["made_at"] = made_at
+        job = state.get("job")
+        if isinstance(job, dict):
+            job["started_at"] = made_at - seconds
+            job["notice"] = None
+    grant = fixture["board"].get("summaries")
+    if isinstance(grant, dict):
+        grant.update(
+            consent=True,
+            off=False,
+            reason="",
+            retry_at=None,
+            notices={},
+            used=int(summary["spend"]["calls"]),
+        )
 
 
 def capture_record(base: str, stem: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
@@ -168,19 +236,20 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
         f"{assessment['stamp'].split(' · ')[0]} · read at "
         f"{datetime.fromtimestamp(assessment['read_at'], UTC):%H:%M}"
     )
-    assessment["cutoff"] = re.sub(
-        r"the oldest about \d+h ago", "all within the last hour", assessment["cutoff"]
-    )
+    assessment["cutoff"] = cutoff_on_timeline(assessment)
     for level in fixture["context"]["sources"]["work"].get("analysis_levels", []):
         level["read_at"] = assessment["read_at"]
     # The server wrote the turn's elapsed time from the wall clock ("154d 22h"); it is the time from
     # the first prompt to the moment the sample is frozen at.
-    turn = row["turn"]
-    turn["elapsed_h"] = fmt_duration(fixture["board"]["generated"] - row["started_at"])
-    turn["long"] = False
+    # A finished session publishes no turn.
+    turn = row.get("turn")
+    if isinstance(turn, dict):
+        turn["elapsed_h"] = fmt_duration(fixture["board"]["generated"] - row["started_at"])
+        turn["long"] = False
+    place_summary(fixture, last + SUMMARIZED_AFTER_LAST_RECORD)
     # The board's digest of the isolated store the reading was saved in. Shortened so it is plainly
     # a label and not a credential-length value.
-    fixture["board"]["intent_revision"] = str(fixture["board"]["intent_revision"])[:32]
+    fixture["board"]["intent_revision"] = str(fixture["board"]["intent_revision"])[:DIGEST_CHARS]
     # One reading was read; a refused attempt on the way to it is not part of the story.
     fixture["board"]["reading"]["used"] = 1
     # The reading was captured under the old Allow step, so its server read consent as missing. The

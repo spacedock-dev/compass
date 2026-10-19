@@ -11,6 +11,7 @@ import { useDrift } from '../drift/context';
 import { ModelNotice } from '../drift/ModelNotice';
 import { Why } from '../drift/Why';
 import { ActionButton } from '../intent/ActionButton';
+import { SampleMark } from '../sample/SampleMark';
 import { useShell } from '../shell/context';
 import {
   FAILED_MARK,
@@ -427,7 +428,13 @@ function Bullet({
   );
 }
 
-function Mark({ marks }: { readonly marks: readonly DepartureMark[] }) {
+function Mark({
+  marks,
+  tour,
+}: {
+  readonly marks: readonly DepartureMark[];
+  readonly tour: boolean;
+}) {
   const { model } = useDrift();
   if (!marks.length) return null;
   return (
@@ -436,6 +443,7 @@ function Mark({ marks }: { readonly marks: readonly DepartureMark[] }) {
       data-next-summary-holds
     >
       <span>{SUMMARY_HOLDS}</span>
+      {tour ? <SampleMark id="phase" /> : null}
       {marks.map((mark) => (
         <JumpButton
           key={mark.key}
@@ -502,6 +510,14 @@ export function SummaryView({
   const running = jobActive(state.job);
   const lede = stored.lede;
   const control = `summary-delete:${state.key}`;
+  /* The sample's tour notes the first phase that holds a departure, once. */
+  const toured = stored.blocks.flatMap((block, b) =>
+    block.gap
+      ? []
+      : block.phases
+          .map((_phase, p) => `${String(b)}:${String(p)}`)
+          .filter((place) => (marks.phases.get(place) ?? []).length > 0),
+  )[0];
   return (
     <section className="flex flex-col gap-3" aria-label="Summary" data-next-summary>
       <p
@@ -576,7 +592,7 @@ export function SummaryView({
                       </span>
                     )}
                   </h3>
-                  <Mark marks={held} />
+                  <Mark marks={held} tour={place === toured} />
                   <ul className="m-0 flex flex-col gap-1.5 pl-5">
                     {phase.bullets.map((bullet, n) => (
                       <Bullet key={String(n)} bullet={bullet} chip={chip} />
