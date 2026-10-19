@@ -27,7 +27,8 @@ export function measureIntentChrome(native = false) {
     'steer-receipt',
     'work-panel',
   ];
-  const badges = ['drift-pill', 'work-flag', 'draft-source'];
+  // The draft-source badge is retired; the goal's source line is plain text beside the count.
+  const badges = ['drift-pill', 'work-flag'];
   const alerts = ['intent-note', 'drift-nudge'];
   const surfaces = native
     ? nativeSurfaces

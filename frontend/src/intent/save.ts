@@ -172,6 +172,9 @@ export async function adoptPrompt(
        saved goal beneath a newer edit that is still theirs. */
     forgetAdopted(ctx, row, candidate);
     forgetChosen(ctx, row, candidate);
+    // An earlier press's "changed" or "refused" no longer stands once this one landed.
+    const request = ctx.held.requests.get(compat(row));
+    if (request && !request.pending) request.message = '';
     await refresh(ctx);
     return true;
   } catch {
@@ -286,7 +289,9 @@ async function saveWork(
     const drafted = intentDraft(input);
     if (drafted && changes.typed === drafted.text) {
       const adopted = await adoptPrompt(ctx, identity, row, drafted.source, signal, null);
-      return adopted === 'unconfirmed' ? 'unconfirmed' : null;
+      // Marked as the chained adoption marks it, so an earlier "Not confirmed" does not outlive this save.
+      if (adopted === true) ctx.held.mark(key, 'saved');
+      return adopted === true ? 'saved' : adopted === 'unconfirmed' ? 'unconfirmed' : null;
     }
     return null;
   }

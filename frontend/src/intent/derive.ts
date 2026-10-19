@@ -21,6 +21,7 @@ import type { Held, PromptChoice } from './held';
 import {
   ADOPT_CHANGED,
   ADOPT_REFUSED,
+  ANALYZE_READS_PROMPT,
   DIRECTION_CLIPPED,
   EXCERPT_READ_WHOLE,
   INTENT_EDITED,
@@ -529,7 +530,9 @@ export function intentStatus(
     return 'Not saved';
   }
   const changes = intentChanges(input);
-  if (changes.any || changes.adoptable || changes.undoable) return 'Unsaved changes';
+  /* Only what Save intent would write. An undoable-only box (a draft emptied over a goal-less session, or the
+     stored goal typed back over a choice) writes nothing, and "Unsaved changes" beside an inert Save misled. */
+  if (changes.any || changes.adoptable) return 'Unsaved changes';
   const discarded = annotationDiscarded(input.annotation);
   const saved =
     !discarded &&
@@ -539,6 +542,18 @@ export function intentStatus(
       kind === 'saved' ||
       kind === 'unchanged');
   return saved ? 'Saved' : '';
+}
+
+/* Whether the box still reads as the prompt it started from: at least half of its words appear in that
+   prompt. Words of three letters or more, so "a" and "to" shared by any two sentences do not count. */
+function sharesWords(text: string, origin: string): boolean {
+  if (!origin.trim()) return false;
+  const words = (value: string): string[] => value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const long = (list: string[]): string[] => list.filter((word) => word.length >= 3);
+  const typed = long(words(text)).length ? long(words(text)) : words(text);
+  if (!typed.length) return false;
+  const from = new Set(words(origin));
+  return typed.filter((word) => from.has(word)).length * 2 >= typed.length;
 }
 
 /* Goal source line under the textarea: one honest state derived from the annotation and held draft. */
@@ -563,18 +578,18 @@ export function goalSourceLine(input: DraftInput): string {
             ? clockText(at)
             : 'chosen';
     const clipped = drafted.cut === true || drafted.text.endsWith('…');
-    return `From your prompt · ${which} · not saved. Analyze reads up to 1,000 characters.${clipped ? ` ${EXCERPT_READ_WHOLE}` : ''}`;
+    return `From your prompt · ${which} · not saved. ${ANALYZE_READS_PROMPT}${clipped ? ` ${EXCERPT_READ_WHOLE}` : ''}`;
   }
   const savedFromPrompt =
     !discarded && PROMPT_SOURCES.includes(String(annotation?.['goal_source'] || ''));
-  const startedFromPrompt =
-    !held.cleared.has(key) && (held.chosen.has(key) || Boolean(drafted) || savedFromPrompt);
+  const origin = held.chosen.get(key)?.text ?? drafted?.text ?? (savedFromPrompt ? stored : '');
+  /* By overlap and not by history alone: words typed over a selected-all prompt replace it in one change
+     event, never pass through an empty box, and are the reader's own. */
+  const startedFromPrompt = !held.cleared.has(key) && sharesWords(text, origin);
   if (held.goals.has(key) && text !== stored) {
     return startedFromPrompt ? 'From your prompt, edited · not saved' : 'Typed · not saved';
   }
   if (stored.trim()) {
-    const savedAt = nextNumber(annotation?.['goal_saved_at']) ?? nextNumber(annotation?.['at']);
-    const stamp = savedAt !== null && savedAt > 0 ? `saved ${clockText(savedAt)}` : 'saved';
     if (savedFromPrompt) {
       const source = annotation?.['goal_source'];
       const at = nextNumber(annotation?.['goal_source_at']);
@@ -586,10 +601,13 @@ export function goalSourceLine(input: DraftInput): string {
             : at !== null && at > 0
               ? clockText(at)
               : 'chosen';
-      const clipped = stored.endsWith('…') ? ` ${EXCERPT_READ_WHOLE}` : '';
-      return `From your prompt · ${which} · ${stamp}${clipped}`;
+      /* No time: the store publishes `goal_saved_at` only for typed words, and the revision's `at` moves on a
+         lines-only save, so it would restamp an adoption that did not change. */
+      const clipped = stored.endsWith('…') ? `. ${EXCERPT_READ_WHOLE}` : '';
+      return `From your prompt · ${which} · saved${clipped}`;
     }
-    return `Typed · ${stamp}`;
+    const savedAt = nextNumber(annotation?.['goal_saved_at']) ?? nextNumber(annotation?.['at']);
+    return `Typed · ${savedAt !== null && savedAt > 0 ? `saved ${clockText(savedAt)}` : 'saved'}`;
   }
   return '';
 }

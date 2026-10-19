@@ -167,7 +167,7 @@ describe('Save intent over an adopted prompt', () => {
     });
     expect(goalBox().value).toBe('Fix the login redirect');
     expect(text('.next-cockpit-held-field[data-next-cockpit-held-field="goal"] small')).toMatch(
-      /^From your prompt · \d\d:\d\d · saved \d\d:\d\d$/,
+      /^From your prompt · \d\d:\d\d · saved$/,
     );
   });
 

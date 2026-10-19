@@ -1,5 +1,6 @@
 import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { chooseSelect, openSelect } from '../../test/select';
 import { json } from './testing';
 import {
   board,
@@ -29,7 +30,7 @@ describe('a goal-less session arrives with its first prompt drafted and nothing 
     await settle(page);
     expect(goalBox().value).toBe('Ship the queue worker');
     expect(text('[data-next-cockpit-draft-marks]')).toBe(
-      'From your prompt · first · not saved. Analyze reads up to 1,000 characters.',
+      'From your prompt · first · not saved. Analyze reads at most the first 1,000 characters of any prompt.',
     );
     // The draft is adopted by Save intent, which is live over it; nothing else is.
     expect(inert(control('held-save'))).toBe(false);
@@ -410,9 +411,7 @@ describe('header status and goal source line', () => {
       },
     });
     await settle(page);
-    expect(text('[data-next-cockpit-goal-source]')).toMatch(
-      /^From your prompt · first · saved \d\d:\d\d$/,
-    );
+    expect(text('[data-next-cockpit-goal-source]')).toBe('From your prompt · first · saved');
     type(goalBox(), 'Ship the queue worker, carefully');
     expect(text('[data-next-cockpit-goal-source]')).toBe('From your prompt, edited · not saved');
     await act(async () => {
@@ -421,5 +420,126 @@ describe('header status and goal source line', () => {
     expect(text('[data-next-cockpit-goal-source]')).toBe('');
     type(goalBox(), 'Freshly typed goal');
     expect(text('[data-next-cockpit-goal-source]')).toBe('Typed · not saved');
+  });
+});
+
+describe('the header status and source line after a prompt adoption', () => {
+  const press = async (button: Element | null) => {
+    await act(async () => {
+      fireEvent.click(button as Element);
+    });
+  };
+  const adopted = (page: Awaited<ReturnType<typeof mountSession>>) => () => {
+    page.state.data = board(
+      {},
+      {
+        goal: 'Ship the queue worker',
+        revision: 1,
+        goal_source: 'first-prompt',
+        goal_source_at: 100,
+      },
+    );
+    return stored(1);
+  };
+
+  it('says Saved once a refused adoption is pressed again and lands', async () => {
+    const page = mountSession({
+      routes: { '/api/annotate': () => json({ ok: true, outcome: 'untrusted', persisted: false }) },
+    });
+    await settle(page);
+    await press(control('held-save'));
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Not saved');
+    page.state.routes['/api/annotate'] = adopted(page);
+    await press(control('held-save'));
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Saved');
+    expect(text('[data-next-cockpit-goal-source]')).toBe('From your prompt · first · saved');
+  });
+
+  it('says Saved once an unconfirmed adoption is pressed again and lands', async () => {
+    const page = mountSession({
+      routes: { '/api/annotate': () => new Response('<html>', { status: 200 }) },
+    });
+    await settle(page);
+    await press(control('held-save'));
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Not confirmed');
+    page.state.routes['/api/annotate'] = adopted(page);
+    await press(control('held-save'));
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Saved');
+  });
+
+  it('keeps an adopted goal’s stamp when a lines-only revision moves the annotation’s time', async () => {
+    const store = {
+      goal: 'Ship the queue worker',
+      revision: 1,
+      goal_source: 'first-prompt',
+      goal_source_at: 100,
+    };
+    const page = mountSession({ store });
+    await settle(page);
+    const before = text('[data-next-cockpit-goal-source]');
+    expect(before).toBe('From your prompt · first · saved');
+    await page.poll(
+      board({ annotation_at: 5000 }, { ...store, revision: 2, lines: ['Tests pass'] }),
+    );
+    await settle(page);
+    expect(text('[data-next-cockpit-goal-source]')).toBe(before);
+  });
+
+  it('ends the saved stamp with a sentence before an excerpt’s note', async () => {
+    const page = mountSession({
+      store: {
+        goal: 'Ship the queue worker behind…',
+        revision: 1,
+        goal_source: 'first-prompt',
+        goal_source_at: 100,
+      },
+    });
+    await settle(page);
+    expect(text('[data-next-cockpit-goal-source]')).toBe(
+      'From your prompt · first · saved. Excerpt. Analyze looks up the source when pressed.',
+    );
+  });
+
+  it('calls words typed over the whole drafted prompt in one change Typed, and a kept prompt edited', async () => {
+    const page = mountSession();
+    await settle(page);
+    type(goalBox(), 'Rewrite the billing export');
+    expect(text('[data-next-cockpit-goal-source]')).toBe('Typed · not saved');
+    type(goalBox(), 'Ship the queue worker, carefully');
+    expect(text('[data-next-cockpit-goal-source]')).toBe('From your prompt, edited · not saved');
+  });
+});
+
+describe('the header status over a change Save intent would not write', () => {
+  it('says nothing unsaved when a drafted prompt is emptied over a goal-less session', async () => {
+    const page = mountSession();
+    await settle(page);
+    type(goalBox(), '');
+    expect(inert(control('held-save'))).toBe(true);
+    expect(text('[data-next-intent-status]')).toBe('');
+  });
+
+  it('drops a chosen prompt when the stored goal is typed back over it', async () => {
+    const choices = [{ fact_id: 'p1', text: 'Fix the login redirect', at: 100, cut: false }];
+    const page = mountSession({
+      store: { goal: 'Saved goal', revision: 1 },
+      routes: { '/api/project-context': () => json({ prompt_choices: choices }) },
+    });
+    await settle(page);
+    const select = document.querySelector('[data-next-cockpit-prompt-select]') as HTMLButtonElement;
+    await openSelect(select);
+    await page.settle();
+    await chooseSelect(select, 'p1');
+    await page.settle();
+    expect(goalBox().value).toBe('Fix the login redirect');
+    type(goalBox(), 'Saved goal');
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Saved');
+    expect(inert(control('held-save'))).toBe(true);
+    expect(control('held-undo')).toBeNull();
   });
 });

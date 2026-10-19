@@ -94,6 +94,8 @@ export function GoalField() {
         }}
       />
       <div className="next-cockpit-held-under min-h-0 flex-wrap justify-between">
+        {/* The source stays beside the count: in the label row it moved the box 25px down and back up on
+            the first keystroke. */}
         {sourceLine ? (
           <small
             className="next-cockpit-held-source"

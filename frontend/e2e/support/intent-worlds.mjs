@@ -92,7 +92,7 @@ export async function visitIntentDisplayStates(browser, root, record) {
           if (state === 'log') await opened.page.locator('[data-next-view-body=intent]').waitFor();
           else await awaitRecordRead(opened.page);
           if (state === 'draft')
-            await opened.page.locator('[data-slot=badge][data-variant=draft-source]').waitFor();
+            await opened.page.locator('[data-next-cockpit-draft-marks]').waitFor();
           if (state === 'consent') {
             await opened.page.locator('[data-next-cockpit-action=reading-ask]').click();
             await opened.page.locator('[data-slot=card][data-variant=reading-consent]').waitFor();

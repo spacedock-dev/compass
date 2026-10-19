@@ -20,7 +20,7 @@ import { usePanel } from './useIntent';
    none were written. */
 const EMPTY_NONE = 'No usable prompts were found in the parts of this session Compass read.';
 const EMPTY_FAILED = 'Compass could not read your prompts from this session.';
-/* Enough of a prompt to tell two apart, as the designer's item shows it; the whole label stays in its title. */
+/* Enough of a prompt to tell two apart, as the designer's item shows it; the whole prompt stays in its title. */
 const PROMPT_SHOWN = 140;
 
 /* Open before the async read: a browser picker requested after that read loses the click's user
@@ -99,7 +99,9 @@ export function PromptSelect() {
                   <SelectItem
                     key={option.value}
                     value={option.value}
-                    title={option.label}
+                    title={
+                      whole !== undefined ? `${head ? `${head} — ` : ''}${whole}` : option.label
+                    }
                     className="[&>div]:line-clamp-none"
                   >
                     {head ? (

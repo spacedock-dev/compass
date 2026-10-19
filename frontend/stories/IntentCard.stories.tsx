@@ -246,7 +246,9 @@ export const FromPromptSource: Story = {
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await expect(goal).toHaveValue('Keep the parser small and pure');
     await expect(
-      view.getByText('From your prompt · first · not saved. Analyze reads up to 1,000 characters.'),
+      view.getByText(
+        'From your prompt · first · not saved. Analyze reads at most the first 1,000 characters of any prompt.',
+      ),
     ).toBeVisible();
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
       'Unsaved changes',
@@ -274,7 +276,7 @@ export const AdoptedThenEditedSource: Story = {
     const card = await page.findByRole('region', { name: 'Intent' });
     const view = within(card);
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
-    await expect(view.getByText(/^From your prompt · first · saved \d\d:\d\d$/)).toBeVisible();
+    await expect(view.getByText('From your prompt · first · saved')).toBeVisible();
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ', and fast');
     await expect(view.getByText('From your prompt, edited · not saved')).toBeVisible();
@@ -483,7 +485,7 @@ export const PromptMenuPick: Story = {
     );
     await expect(
       view.getByText(
-        /From your prompt · \d\d:\d\d · not saved\. Analyze reads up to 1,000 characters\./,
+        /From your prompt · \d\d:\d\d · not saved\. Analyze reads at most the first 1,000 characters of any prompt\./,
       ),
     ).toBeVisible();
   },
@@ -530,6 +532,31 @@ export const MovedControlsInQuietRow: Story = {
     await expect(
       await quiet.findByRole('button', { name: /^Later directions: settled/ }),
     ).toBeVisible();
+    // Every count reads "n / cap", the outcome lines' as the goal's.
+    await expect(within(card).getByText('26 / 240')).toBeVisible();
+    // The stamp opens its definition from the quiet row.
+    await userEvent.click(quiet.getByRole('button', { name: /^Saved · reads from/ }));
+    await waitFor(() => expect(quiet.getByText('Each save is a revision.')).toBeVisible());
+    // Discard everything arms from the quiet row, and Escape disarms it without a write.
+    await userEvent.click(
+      quiet.getAllByRole('button', { name: 'Discard everything' })[0] as HTMLElement,
+    );
+    await waitFor(() =>
+      expect(quiet.getAllByRole('button', { name: 'Discard everything' })).toHaveLength(2),
+    );
+    await userEvent.click(
+      quiet.getAllByRole('button', { name: 'Discard everything' })[1] as HTMLElement,
+    );
+    const confirm = await quiet.findByRole('button', { name: 'Confirm discard' });
+    await expect(confirm).toBeVisible();
+    confirm.focus();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(quiet.queryByRole('button', { name: 'Confirm discard' })).toBeNull(),
+    );
+    await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(
+      'Keep the parser small and pure',
+    );
     const clear = quiet.getByRole('button', { name: 'Clear' });
     await userEvent.click(clear);
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue('');

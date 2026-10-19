@@ -214,7 +214,7 @@ describe('Add it to my intent', () => {
     const line = document.querySelector('[data-next-cockpit-direction-key]') as HTMLTextAreaElement;
     expect(line.value).toHaveLength(300);
     expect(line.hasAttribute('maxlength')).toBe(false);
-    expect(text('[data-next-cockpit-direction-count]')).toBe('300/240');
+    expect(text('[data-next-cockpit-direction-count]')).toBe('300 / 240');
     expect(text('#next-cockpit-direction-why')).toBe(
       'A line holds 240 characters. Shorten this one to add it.',
     );

@@ -1,6 +1,6 @@
 import { compatSessKey } from '../api/identity';
 import { type Row } from '../observed';
-import { heldCap, scrub } from './annotation';
+import { annotationDiscarded, heldCap, scrub } from './annotation';
 import { pendingHas, type Ctx, announce } from './context';
 import {
   goalBaseline,
@@ -35,6 +35,12 @@ export function typeGoal(ctx: Ctx, input: DraftInput, raw: string): string {
   ctx.held.clearActionFeedback(compatSessKey(input.session));
   if (value === '') ctx.held.cleared.add(key);
   else if (value === goalBaseline(input)) ctx.held.cleared.delete(key);
+  /* The stored goal typed back over a choice is no change at all; a kept choice would leave Undo hidden and
+     Save inert beside a box that still read as edited. */
+  const stored = annotationDiscarded(input.annotation)
+    ? ''
+    : String(input.annotation?.['goal'] || '');
+  if (stored.trim() && value === stored) ctx.held.chosen.delete(key);
   ctx.held.goals.set(key, value);
   ctx.held.drop(key);
   ctx.held.drop(intentKey(input.session));

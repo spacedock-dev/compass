@@ -93,7 +93,7 @@ function DirectionLineView() {
           and Remove on the right. */}
       <div className="next-cockpit-held-under">
         <span className="next-cockpit-held-count" data-next-cockpit-direction-count>
-          {`${String(text.length)}/${String(cap)}`}
+          {`${String(text.length)} / ${String(cap)}`}
         </span>
         <Label className="next-cockpit-held-source" htmlFor={boxId}>
           {from}
@@ -208,7 +208,7 @@ function LineRow({
       />
       <div className="next-cockpit-held-under col-start-2 col-end-3">
         <span className="next-cockpit-held-count" data-next-cockpit-held-line-count={index}>
-          {`${String(text.length)}/${String(cap)}`}
+          {`${String(text.length)} / ${String(cap)}`}
         </span>
         {place && place.source === 'entry' ? (
           <span
