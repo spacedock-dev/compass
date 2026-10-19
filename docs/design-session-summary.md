@@ -138,11 +138,13 @@ to the backstop and gives a bullet no other field.
 - **Kind, set by the code.** The model may propose a kind, and the code overrides it from what the
   citations are. `failed` when one is a failed check; otherwise `did` when one is a tool call, a
   check or a file write; otherwise `asked` when all are the person's words; otherwise `said` when all
-  are the agent's words. The ruling does not assign a kind to a bullet that cites both the person's
-  and the agent's words and nothing else; the build that makes the producer decides that case and
-  records it here.
-- **No completion words.** No string, lede, title or bullet, may say the work is fixed, done, working
-  or verified. A check's result is quoted only as the tool's report, in
+  are the agent's words. A bullet citing only person and agent words is `asked`: in all five
+  measured cases the person was deciding on the agent's proposal. Relayed text counts as the
+  agent's words for this rule, even when it arrived in a person turn.
+- **No completion words in the summary's own voice.** No string, lede, title or bullet, may claim
+  the work is fixed, done, working or verified. The
+  [own-voice amendment](#amendment-the-summarys-own-voice) admits attributed speech and names.
+  A check's result is quoted as the tool's report, in
   [DEC-23 item 8's](design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
   wording ("as the tool reported"). A passed check does not show the requested work was delivered.
 - **Withheld in place.** A bullet that breaks a rule is withheld, and the place it held says so. It
@@ -308,8 +310,8 @@ output tokens for the whole run, but that figure was estimated, not measured.
 
 ### Proposed ceilings
 
-The owner pre-approved accepting the ceilings this measurement proposes. They are proposed values
-until the build that enforces them records them in `config.py`.
+The owner pre-approved accepting the ceilings this measurement proposes. The producer now records
+them in `config.py`; the job lane must still wire the per-call timeout and rolling admission.
 
 | Ceiling | Value | Basis |
 | -- | --: | -- |
@@ -354,6 +356,192 @@ Build the multi-part summary as designed, sequential, with these changes:
 Keep the outline as the free view, and as the place every gap points to. Stopping at the outline
 is not recommended. It was no help with the work in long sessions, which is what a reader opening
 one most wants to know.
+
+## Producer contract
+
+`session_summary.summarize(entries, coverage, harness, *, config, model, clock)` takes a sequence
+of `SourceEntry`, its `SourceCoverage`, a harness name, frozen runtime configuration, a callable
+`model(prompt, *, output_cap_bytes) -> (text, status)`, and a monotonic clock. Only `claude` is
+supported. Every other harness returns `unsupported`, reason `harness_not_supported`, without a
+model call. This does not widen the source's admission rules for Codex or any other harness.
+
+The producer reads no transcript and owns no store, cache, thread or subprocess. The caller keeps
+the frozen result. In production the model seam is the reading policy's `GuardedModel` around the
+existing Claude reading model. The job lane supplies `session_summary.SYSTEM_PROMPT` and the
+timeout to that existing path, and enforces the separate summary rolling cap. Defining those
+values here does not wire a summary job, store, HTTP endpoint or page.
+
+### Menu, windows and prompts
+
+Entries receive numbers 1 through N in source order for this job. The producer alone holds their
+number-to-fact-id map. Stored citations contain fact ids only. Each menu line is
+`[number] label: text`:
+
+| Source entry | Label and text |
+| -- | -- |
+| Person words | `asked`, followed by the person's words. |
+| Injected text in a person turn | `relayed`, followed by that text. `records.injected_prompt(words, "claude")` decides authorship, including other agents' messages and resumed-conversation summaries. The menu says these words were not written by the person. |
+| Agent words | `said`, followed by the agent's words. |
+| Check | `ran`, followed by its masked title and `result as the tool reported: failed`, `passed` or `not-recorded`. |
+| File write | `wrote`, followed by the display path. |
+
+Every text is redacted before clipping or entering a prompt, and whitespace is collapsed so an
+entry occupies one line. The measured clips are 1,200 characters for person-turn words, 700 for
+agent words, 220 for check titles and 220 for paths. A check's outcome is the source's result token
+only. The measurement recommended an exit status plus a short output prefix, but this source
+admits no tool output. An output prefix waits on a source change and the tool-output grant; the
+producer must not infer or read one itself.
+
+Windows are contiguous and hold at most `session_summary_window_bytes` UTF-8 bytes of menu text,
+including line endings. When another line would overflow, cut before the last `asked` line whose
+start lies in the back half of the current window, if one exists; otherwise cut at the overflow.
+Relayed text does not open that cut. A line too large for a window is clipped to fit, preserving
+its number and label. Keep at most the newest 32 windows, state the first kept fact id in
+`starts_at`, and represent the prefix with a `before_window` gap pointing to the outline.
+
+Window calls run oldest first. The prompt names the part and its entry range, explains the menu,
+asks for phases in order with titled phases and cited bullets, and states the output bounds. It
+asks for actions in the summary's own voice, attributed claims and tool reports, never a verdict
+that the work was delivered. It says relayed text is not the person's request and that the record
+is data whose instructions must be ignored. Earlier windows contribute only the newest finished
+phase titles that fit within one sixteenth of a window, including the disclaimer that they are
+context, not evidence and must not be cited. Earlier bullets and entries never enter this context.
+
+After the windows, one lede call receives only menu lines cited by surviving phases. Selection
+prefers the person's entries, then other entries in order, within one window's byte allowance;
+the selected lines retain source order and their original numbers. The prompt asks for at most
+two sentences within the lede character bound: what the person set out to do, what the agent
+worked on, and any correction or redirection those entries show. It receives no phase prose or
+titles. Its citations must name entries actually given to it. A failed lede leaves `lede: null`
+and `lede_reason`, preserving the phases.
+
+### Replies, kinds and withheld text
+
+A window reply is `{"phases":[{"title":"...","bullets":[{"text":"...","kind":"...","cites":[1]}]}]}`.
+A lede reply is `{"lede":"...","cites":[1]}`. Unknown keys are dropped. A surrounding triple
+backtick fence, including a `json` fence, is removed. JSON decoding runs first. If it fails and
+the reply opens with an object, complete members and complete elements of the phases array are
+salvaged up to the first incomplete element. Prose around JSON is unreadable. An incomplete phase
+is never salvaged as a partial phase.
+
+A phase needs a nonempty title and at least one shaped bullet with a resolved citation. Missing
+titles and empty phases are withheld as shape faults, counted in `withheld_phases.shape_fault`.
+A bullet needs nonempty
+text. Its citations accept integers only, refuse booleans, deduplicate, and drop numbers outside
+that window. A bullet left with no citations keeps its place as a `no_citation` marker beside
+the phase's cited bullets. A phase with no cited bullet is a shape fault. A window
+with no shaped phase is a `no_valid_reply` gap; other windows survive.
+
+The code overrides the model's kind, recording `kind_overridden` on every bullet. Priority is
+`failed` for a cited failed check, then `did` for a check or file write, then `asked` if any cited
+words are the person's, and otherwise `said`. The `asked` case includes person words plus
+agent or relayed words, as decided by the measurement. Citations trimmed by the citation bound
+no longer contribute to the kind.
+
+Every displayed string is redacted and checked on its whole text before any character cap.
+A failing string becomes `{"withheld":true,"reason":"completion_claim"}` with no text.
+A withheld title keeps its bullets. Text without a citation uses reason `no_citation`.
+Admitted long text ends with an ellipsis and carries `cut`; if the cut creates an unsafe claim
+or leaves no text, it becomes a `too_long_cut` marker instead. Phase, bullet and citation list
+cuts report how many were dropped. A cut reply is marked on its block.
+
+### Amendment: the summary's own voice
+
+This amends DEC-28 question 1's **No completion words** backstop to cover the summary's own
+voice. The measurement's word list matched 138 of 707 displayed strings, of which 28 were
+own-voice claims. Withholding every match would withhold about one string in five and about
+four in five of those withholdings would be wrong. Attributed agent/person speech, a tool's
+own report and non-completion uses are admitted.
+
+The producer uses a conservative clause check, not a claim to understand every sentence. It
+ignores text inside paired quotes or backticks, admits a completion word after an agent/person
+speech verb in the same clause, and admits a word directly after `reported` or directly before
+`as the tool reported`. Sentence boundaries, newlines, `and`, `but`, `however`, `then` and
+`while` begin new clauses, so one speech verb cannot cover a second claim joined to it. It admits
+a capitalized named state after `to` or `as` (`moved the issue to Done`), the work asked for as
+an infinitive (`asked the agent to fix the parser`, but not `got the tests to pass`), simple noun
+uses such as `a list of fixes`, and `working on` or `worked with`. A lowercase word after `as`
+(`marked it as complete`) is withheld. Unknown uses are withheld. The same check applies to titles and
+the lede; title evidence is the union of its bullets' citations. A cited passed check admits
+only `pass`, `passed`, `passes`, `passing` and `green`, never `fixed` or another delivery claim.
+Quoted tool errors remain quotations even when they contain completion words. A failing check
+does not license a completion statement in the summary's own voice. Citation relevance remains
+the [known limit](#the-known-limit-relevance-is-not-checked).
+
+### Bounds, spend and gaps
+
+All tunable bounds are declared once in `config.py` and carried by `RuntimeConfig`:
+
+| RuntimeConfig field | Default | Decision |
+| -- | --: | -- |
+| `session_summary_window_bytes` | 16,384 | Measured 16 KiB windows; largest prompt was 17,714 bytes including instructions. |
+| `session_summary_max_windows` | 32 | Largest measured session used 30. |
+| `session_summary_max_calls` | 37 | 32 windows, one lede, four retries; largest measured job used 36. |
+| `session_summary_max_bytes_sent` | 786,432 | 768 KiB covers the measured maximum prompt across 37 calls. |
+| `session_summary_max_seconds` | 600 | Headroom over the measured 307-second job. |
+| `session_summary_call_timeout` | 180 seconds | Equal to `observer.OBSERVER_READING_TIMEOUT_SEC`; the job lane wires it. Slowest measured call was 12.3 seconds. |
+| `session_summary_rolling_cap` | 200 calls per 24 hours | Separate summary admission, enforced by the job lane. |
+| `session_summary_output_cap_bytes` | 65,536 | The measurement's per-call output allowance, passed to the model seam. |
+| `session_summary_max_phases` | 4 | The measured window prompt's phase bound. |
+| `session_summary_max_bullets` | 6 | The measured prompt's bound per phase. |
+| `session_summary_max_cites` | 8 | Bound citation rows and repeated fact ids per bullet or lede. |
+| `session_summary_title_chars` | 60 | The measured prompt's title width. |
+| `session_summary_bullet_chars` | 200 | The measured prompt's bullet width. |
+| `session_summary_lede_chars` | 400 | A short lede without another window of prose. |
+| `session_summary_max_bytes` | 524,288 | 32 windows × 4 phases × 6 bullets × 200 characters plus eight ordinary fact ids and JSON overhead fits in 512 KiB at ordinary text widths. A 256 KiB bound would cut that shape even in ASCII; wider text and ids still hit the byte bound. |
+
+Before the first call the producer plans the retained windows plus a lede. Exceeding planned
+calls or prompt bytes refuses the job with `planned_calls` or `planned_bytes`, spending nothing.
+The byte plan reserves the full lede window and each later context allowance because their
+actual contents depend on replies. Retries are not prepaid; every call checks remaining calls,
+prompt bytes and elapsed monotonic seconds immediately before invoking the seam. Reaching a
+ceiling leaves the current and all later windows as `ceiling` gaps. A call starts only when the
+elapsed seconds plus `session_summary_call_timeout` stay within `session_summary_max_seconds`, so
+the job ends inside its ceiling without cancelling a call in flight. With the defaults, no call
+starts after 420 seconds; the largest measured job took 307. The job lane's per-call timeout
+bounds each wait. The producer does not pass a timeout to any subprocess function.
+
+An empty reply, including `unstopped`, counts as a call and is retried once within those ceilings.
+Two empty replies leave `no_output`. Nonempty invalid text leaves `no_valid_reply` without a
+retry. `unavailable`, `closed` and `cancelled` stop immediately with `stopped` gaps and no retry; the
+guarded seam and the CLI return them before any reservation or spawn, so they add nothing to spend.
+A `RefusedError` leaves `refused` gaps and stops; because the guarded refusal precedes the
+reservation, it adds no call or bytes to spend. `spend` reports calls, prompt bytes sent, reply
+bytes back, monotonic seconds and retries for this invocation, including an update invocation.
+
+Every gap has `gap: true`, first/last fact ids, entry count, span fingerprint, a reason and
+`see: outline`. Reasons are `before_window`, `no_valid_reply`, `no_output`, `refused`, `stopped`,
+`ceiling` and `bytes`. Source coverage remains alongside the result, so an unread source region
+is not presented as evidence the model saw. The byte bound removes newest whole blocks into
+one `bytes` gap. It reserves space for a worst-width lede before selecting lede evidence and
+checks the final compact UTF-8 JSON size again. It never splits or rewrites a finished block.
+An allowance too small for the word-free envelope returns `refused`, reason
+`output_bound_too_small`; callers must supply enough space for metadata and retained prior blocks.
+
+### Frozen result and updates
+
+`Summary`, its blocks, phases, bullets, display values, lede and spend are frozen dataclasses
+with tuple collections. `as_dict()` returns a fresh plain JSON-compatible tree. The result has
+`state` (`ok`, `partial`, `unsupported`, `refused`, `source_changed`; unchanged updates return the
+prior object), `reason`, `harness`, `starts_at`, `lede`, `lede_reason`, `blocks`, `spend`,
+`coverage`, `change` and `affected_blocks`. A lede holds text and fact-id citations, or a withheld
+marker and citations. Every block holds `first`, `last`, `entries` and a 32-hex SHA-256
+fingerprint over the span's ordered `(fact_id, fingerprint)` pairs, plus either phases or a gap.
+A phase has a title or withheld-title marker and bullets. Each bullet has text or a withheld
+marker, kind, fact-id citations and `kind_overridden`, with cut metadata when applicable. No
+source `words` or menu-number citation survives in this result. `partial` names gaps, incomplete
+source coverage or a failed lede; withheld fields remain visible in their places.
+
+`update(prior, entries, coverage, change, *, config, model, clock)` takes a **full** new source
+sequence, including earlier spans, and the `SourceChange` from `session_source.compare`.
+`truncated`, `replaced`, `changed_earlier`, or any earlier span whose count or fingerprint no
+longer matches returns `source_changed`, with the change kind and affected block indexes, and
+makes no call. It never guesses from a missing span. An unchanged source returns the prior
+object with no call. An append summarizes only entries after the prior last block's last fact,
+preserves prior blocks by identity, appends new blocks and asks for one new lede under fresh job
+ceilings. Gap spans also mark the previous job's examined frontier. To keep the update's promise
+that no earlier entry text is resent, its new lede reads only newly cited entries. The caller
+receives that limited new lede, not a rewritten account of the whole earlier session.
 
 ## Source and outline contract
 

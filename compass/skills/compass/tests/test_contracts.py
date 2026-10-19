@@ -1623,6 +1623,14 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.session_source",
             "compass_runtime.state",
         },
+        # The summary producer is a pure function of source facts and a model seam:
+        # no store, thread or subprocess. Policy is imported only for a guarded refusal.
+        "compass_runtime.session_summary": {
+            "compass_runtime.config",
+            "compass_runtime.records",
+            "compass_runtime.session_source",
+            "compass_runtime.reading_policy",
+        },
         # Semantic history is a pure reducer over bounded records and process
         # state. Project composition owns the higher-level joins.
         "compass_runtime.semantic_history": {

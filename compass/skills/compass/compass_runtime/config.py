@@ -47,6 +47,35 @@ SESSION_OUTLINE_HIGHLIGHTS = 3
 # Match the message-index cache's session count; only built, word-free outlines are retained.
 SESSION_OUTLINE_CACHE_LIMIT = 16
 
+# In docs/design-session-summary.md#proposed-ceilings, thirty windows covered
+# the 45 MiB session; 32 leaves room without turning one reader action into an unbounded job.
+SESSION_SUMMARY_WINDOW_BYTES = 16_384
+SESSION_SUMMARY_MAX_WINDOWS = 32
+# The same measurement used 36 calls and 541,407 input bytes; four retries fit beside 32
+# windows and a lede, with headroom above the measured maximum prompt and 307-second job.
+SESSION_SUMMARY_MAX_CALLS = 37
+SESSION_SUMMARY_MAX_BYTES_SENT = 786_432
+SESSION_SUMMARY_MAX_SECONDS = 600.0
+# Equal to observer.OBSERVER_READING_TIMEOUT_SEC. The job lane wires the timeout; this
+# producer passes none to the subprocess path. The slowest measured call took 12.3 seconds.
+SESSION_SUMMARY_CALL_TIMEOUT = 180.0
+# Separate from Analyze's budget; enforced by the job lane, not the pure producer.
+# The proposed ceilings allow about five summaries the size of the largest measured per day.
+SESSION_SUMMARY_ROLLING_CAP = 200
+# The measurement's output allowance, including complete-phase salvage at a cut reply.
+SESSION_SUMMARY_OUTPUT_CAP_BYTES = 64 * 1024
+# The measured prompt's closed shape; caps apply independently to each finished block.
+SESSION_SUMMARY_MAX_PHASES = 4
+SESSION_SUMMARY_MAX_BULLETS = 6
+SESSION_SUMMARY_MAX_CITES = 8
+SESSION_SUMMARY_TITLE_CHARS = 60
+SESSION_SUMMARY_BULLET_CHARS = 200
+SESSION_SUMMARY_LEDE_CHARS = 400
+# 32 windows x 4 phases x 6 bullets x (200 characters + 8 ordinary fact ids), including
+# JSON overhead, fits in 512 KiB at ordinary text widths. A 256 KiB ceiling would cut that
+# closed shape even in ASCII; wider text and ids still need whole-block byte gaps.
+SESSION_SUMMARY_MAX_BYTES = 512 * 1024
+
 STORE_ENV_VARS = (
     "CLAUDE_CONFIG_DIR",
     "CODEX_HOME",
@@ -224,6 +253,21 @@ class RuntimeConfig:
     session_outline_max_blocks: int
     session_outline_highlights: int
     session_outline_cache_limit: int
+    session_summary_window_bytes: int
+    session_summary_max_windows: int
+    session_summary_max_calls: int
+    session_summary_max_bytes_sent: int
+    session_summary_max_seconds: float
+    session_summary_call_timeout: float
+    session_summary_rolling_cap: int
+    session_summary_output_cap_bytes: int
+    session_summary_max_phases: int
+    session_summary_max_bullets: int
+    session_summary_max_cites: int
+    session_summary_title_chars: int
+    session_summary_bullet_chars: int
+    session_summary_lede_chars: int
+    session_summary_max_bytes: int
     popup_cooldown_sec: float
     global_popup_cooldown_sec: float
     popup_repeat_suppress_sec: float
@@ -803,6 +847,21 @@ def build_runtime_config(
         session_outline_max_blocks=SESSION_OUTLINE_MAX_BLOCKS,
         session_outline_highlights=SESSION_OUTLINE_HIGHLIGHTS,
         session_outline_cache_limit=SESSION_OUTLINE_CACHE_LIMIT,
+        session_summary_window_bytes=SESSION_SUMMARY_WINDOW_BYTES,
+        session_summary_max_windows=SESSION_SUMMARY_MAX_WINDOWS,
+        session_summary_max_calls=SESSION_SUMMARY_MAX_CALLS,
+        session_summary_max_bytes_sent=SESSION_SUMMARY_MAX_BYTES_SENT,
+        session_summary_max_seconds=SESSION_SUMMARY_MAX_SECONDS,
+        session_summary_call_timeout=SESSION_SUMMARY_CALL_TIMEOUT,
+        session_summary_rolling_cap=SESSION_SUMMARY_ROLLING_CAP,
+        session_summary_output_cap_bytes=SESSION_SUMMARY_OUTPUT_CAP_BYTES,
+        session_summary_max_phases=SESSION_SUMMARY_MAX_PHASES,
+        session_summary_max_bullets=SESSION_SUMMARY_MAX_BULLETS,
+        session_summary_max_cites=SESSION_SUMMARY_MAX_CITES,
+        session_summary_title_chars=SESSION_SUMMARY_TITLE_CHARS,
+        session_summary_bullet_chars=SESSION_SUMMARY_BULLET_CHARS,
+        session_summary_lede_chars=SESSION_SUMMARY_LEDE_CHARS,
+        session_summary_max_bytes=SESSION_SUMMARY_MAX_BYTES,
         popup_cooldown_sec=60,
         global_popup_cooldown_sec=15,
         popup_repeat_suppress_sec=600,
