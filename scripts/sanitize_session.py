@@ -68,13 +68,42 @@ SWEEPS = {
     "home directory": re.compile(
         r"/Users/(?!dev\b|u\b)[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|C:\\\\?Users"
     ),
+    # `sk-` only at the start of a token: "task-notification" is not an API key.
     "secret shape": re.compile(
-        r"sk-[A-Za-z0-9]|ghp_|gho_|github_pat_|AKIA|ASIA|xox[bpasr]-|eyJ[A-Za-z0-9_-]{6}|-----BEGIN"
+        r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]|ghp_|gho_|github_pat_|AKIA|ASIA|xox[bpasr]-|eyJ[A-Za-z0-9_-]{6}|-----BEGIN"
     ),
     # A 40-hex commit hash is regenerated, so only a longer run (a digest, a token) is a leak.
     "long hex run": re.compile(r"\b[0-9a-f]{41,}\b"),
     "long base64 run": re.compile(r"[A-Za-z0-9+/=]{120,}"),
+    # The sample ships inside the page, which carries no tracker brand, host or issue key.
+    "tracker reference": re.compile(r"\bLinear\b|linear\.app|\bDRC-\d+|claude_ai_"),
+    # A home directory as Claude Code encodes it in a project folder or scratch path.
+    "encoded home directory": re.compile(r"-Users-(?!dev\b)[A-Za-z0-9._]+"),
+    "machine temp directory": re.compile(r"/var/folders/"),
+    # A link to the person's own remote-controlled session; a placeholder starts `01Example`.
+    "remote session link": re.compile(r"claude\.ai/code/session_(?!01Example)"),
 }
+# Times written as text rather than as timestamps, shifted with the timestamps when the mapping asks
+# (`shift_bare_times`): a tool's output and a monitor's log carry the real time, often in the local
+# time zone, which the timestamps' shift would otherwise leave readable beside them.
+# A Unix time in seconds (2023 to 2033, optionally with a fraction) or in milliseconds.
+EPOCH = re.compile(r"(?<![\d.])(1[789]\d{8})(\.\d{1,6})?(?![\d])|(?<![\d.])(1[789]\d{11})(?![\d.])")
+# A time of day with seconds, outside an ISO timestamp (which DATE already moved). A `ps` duration
+# has the same shape and moves too; it said nothing private and still says nothing.
+CLOCK = re.compile(r"(?<![\dT:.])([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?!\d|:\d)")
+# A time of day without seconds only where the text says it is one, because the bare shape is also a
+# slice, a ratio or a `ps` duration: after "at" ("failed at 13:58", "Status at 13:13:"), and as the
+# clock that opens an `uptime` line ("12:47  up 16:10", whose "16:10" is a duration and stays).
+CLOCK_AT = re.compile(r"(?<=\bat )([01]\d|2[0-3]):([0-5]\d)(?!\d|:\d)")
+UPTIME = re.compile(r"(?<![\d:])([01]\d|2[0-3]):([0-5]\d)(?= +up\b)")
+# A `ls -l` style month and day, with its time of day when it has one.
+MONTH_DAY = re.compile(
+    r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}(\d{1,2})"
+    r"(?: ([01]\d|2[0-3]):([0-5]\d))?\b"
+)
+# Vitest's "Start at" line is UTC in this repository: its config sets TZ=UTC for the suite.
+UTC_CLOCK_PREFIXES = ("Start at  ",)
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 # Fields that name another record by uuid; one that names a record the cut removed becomes null.
 REFERENCE_KEYS = (
     "parentUuid",
@@ -100,6 +129,12 @@ class Mapping:
     hashes: list[str] = field(default_factory=list)
     numbers: list[str] = field(default_factory=list)
     drop_blocks: list[str] = field(default_factory=lambda: ["thinking", "redacted_thinking"])
+    # Off by default so the first sample regenerates byte for byte; its record holds no bare times.
+    shift_bare_times: bool = False
+    # How far the machine's local clock ran ahead of UTC. A bare time of day is local unless it
+    # says UTC, and the timestamps are UTC, so leaving the difference would let a reader subtract
+    # one from the other and recover the time zone. Removing it makes a local time read as UTC.
+    local_clock_offset_seconds: int = 0
 
     @classmethod
     def load(cls, path: Path) -> Mapping:
@@ -113,6 +148,8 @@ class Mapping:
             hashes=list(raw.get("hashes", [])),
             numbers=list(raw.get("numbers", [])),
             drop_blocks=list(raw.get("drop_blocks", ["thinking", "redacted_thinking"])),
+            shift_bare_times=bool(raw.get("shift_bare_times", False)),
+            local_clock_offset_seconds=int(raw.get("local_clock_offset_seconds", 0)),
         )
 
 
@@ -141,6 +178,25 @@ class Sanitizer:
             if mapping.numbers
             else None
         )
+        self.short_ids: dict[str, str] = {}
+        self.short_re: re.Pattern[str] | None = None
+
+    def learn_short_ids(self, raw: str) -> None:
+        """Map the eight-character short form of every session or record id in the source.
+
+        Compass and its URLs name a session by the first eight characters of its id, so the short
+        form appears on its own in commands and links. It must become the short form of the id's
+        replacement, or the replaced session would still be named by its original.
+        """
+        self.short_ids = {u[:8]: self._uuid_text(u)[:8] for u in set(UUID.findall(raw))}
+        if self.short_ids:
+            self.short_re = re.compile(
+                r"(?<![0-9A-Za-z])(?:" + "|".join(sorted(self.short_ids)) + r")(?![0-9A-Za-z])"
+            )
+
+    def _uuid_text(self, original: str) -> str:
+        h = self._digest(original)
+        return f"{h[:8]}-{h[8:12]}-4{h[13:16]}-{'89ab'[int(h[16], 16) % 4]}{h[17:20]}-{h[20:32]}"
 
     def _digest(self, original: str) -> str:
         return hashlib.sha256(f"{self.mapping.salt}|{original}".encode()).hexdigest()
@@ -153,9 +209,7 @@ class Sanitizer:
 
     def _uuid(self, match: re.Match[str]) -> str:
         original = match.group(0)
-        h = self._digest(original)
-        new = f"{h[:8]}-{h[8:12]}-4{h[13:16]}-{'89ab'[int(h[16], 16) % 4]}{h[17:20]}-{h[20:32]}"
-        return self._note(original, new, "id: uuid")
+        return self._note(original, self._uuid_text(original), "id: uuid")
 
     def _prefixed(self, match: re.Match[str]) -> str:
         original = match.group(0)
@@ -197,6 +251,43 @@ class Sanitizer:
         self.categories["timestamp (shifted)"] += 1
         return stamp.strftime("%Y-%m-%dT%H:%M:%S") + (match.group(7) or "") + "Z"
 
+    def _epoch(self, match: re.Match[str]) -> str:
+        shift = self.mapping.day_shift * 86400 + self.mapping.time_shift_seconds
+        self.categories["unix time (shifted)"] += 1
+        if match.group(3):
+            return str(int(match.group(3)) + shift * 1000)
+        return str(int(match.group(1)) + shift) + (match.group(2) or "")
+
+    def _clock_shift(self, match: re.Match[str]) -> int:
+        """The timestamps' shift, less the local offset for a time that is not already UTC."""
+        utc = match.string[match.end() : match.end() + 4] == " UTC" or match.string[
+            : match.start()
+        ].endswith(UTC_CLOCK_PREFIXES)
+        local = 0 if utc else self.mapping.local_clock_offset_seconds
+        return self.mapping.time_shift_seconds - local
+
+    def _clock(self, match: re.Match[str]) -> str:
+        seconds = int(match.group(1)) * 3600 + int(match.group(2)) * 60
+        has_seconds = match.re is CLOCK
+        if has_seconds:
+            seconds += int(match.group(3))
+        moved = (seconds + self._clock_shift(match)) % 86400
+        self.categories["clock time (shifted)"] += 1
+        text = f"{moved // 3600:02d}:{moved % 3600 // 60:02d}"
+        return f"{text}:{moved % 60:02d}" if has_seconds else text
+
+    def _month_day(self, match: re.Match[str]) -> str:
+        # The year is not written, so a fixed common year stands in: a shift across a leap day can
+        # land one day off, which moves an illustration's date and reveals nothing.
+        month = MONTHS.index(match.group(1)) + 1
+        stamp = datetime(2001, month, int(match.group(2)), int(match.group(3) or 0))
+        stamp += timedelta(days=self.mapping.day_shift, minutes=int(match.group(4) or 0))
+        if match.group(3) is not None:
+            stamp += timedelta(seconds=self._clock_shift(match))
+        self.categories["month and day (shifted)"] += 1
+        text = f"{MONTHS[stamp.month - 1]} {stamp.day:2d}"
+        return f"{text} {stamp:%H:%M}" if match.group(3) is not None else text
+
     def _literal(self, match: re.Match[str]) -> str:
         entry = self.by_text[match.group(0)]
         return self._note(entry["from"], entry["to"], entry.get("category", "literal"))
@@ -204,6 +295,11 @@ class Sanitizer:
     def text(self, value: str) -> str:
         value = self.literal.sub(self._literal, value)
         value = UUID.sub(self._uuid, value)
+        if self.short_re:
+            value = self.short_re.sub(
+                lambda m: self._note(m.group(0), self.short_ids[m.group(0)], "id: short form"),
+                value,
+            )
         value = PREFIXED.sub(self._prefixed, value)
         if self.hash_re:
             value = self.hash_re.sub(self._hash, value)
@@ -211,6 +307,12 @@ class Sanitizer:
         if self.number_re:
             value = self.number_re.sub(self._number, value)
         value = DATE.sub(self._date, value)
+        if self.mapping.shift_bare_times:
+            value = EPOCH.sub(self._epoch, value)
+            value = MONTH_DAY.sub(self._month_day, value)
+            value = CLOCK.sub(self._clock, value)
+            value = CLOCK_AT.sub(self._clock, value)
+            value = UPTIME.sub(self._clock, value)
         value = SECRET.sub(lambda m: self._note(m.group(0), PLACEHOLDER_TOKEN, "secret"), value)
         value = EMAIL.sub(
             lambda m: (
@@ -227,9 +329,24 @@ class Sanitizer:
     def value(self, node: Any) -> Any:
         if isinstance(node, str):
             return self.text(node)
+        # A pull-request link record carries its number as a JSON integer, beside the same number
+        # in its URL; left alone it would undo the URL's replacement. A token count that happens to
+        # equal a listed number moves too, which says nothing about the session.
+        if type(node) is int and self.number_re and (whole := self.number_re.fullmatch(str(node))):
+            return int(self._number(whole))
         if isinstance(node, list):
             return [self.value(item) for item in node]
         if isinstance(node, dict):
+            # A screenshot inside a tool's result, and its copy in `toolUseResult`, sit below the
+            # message's own blocks, so the top-level image rule in `record` never sees them.
+            source = node.get("source")
+            if (
+                node.get("type") == "image"
+                and isinstance(source, dict)
+                and source.get("type") != "text"
+            ):
+                self.categories["image replaced"] += 1
+                node = {**node, "source": {"type": "text", "data": "[image omitted]"}}
             return {self.text(key): self.value(item) for key, item in node.items()}
         return node
 
@@ -262,9 +379,9 @@ def _alternative(entry: dict[str, Any]) -> str:
 
 def sanitize(mapping: Mapping, source: Path, target: Path) -> tuple[Sanitizer, dict[str, int]]:
     cleaner = Sanitizer(mapping)
-    records = [
-        json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
+    raw = source.read_text(encoding="utf-8")
+    cleaner.learn_short_ids(raw)
+    records = [json.loads(line) for line in raw.splitlines() if line.strip()]
     out = [cleaner.record(record) for record in records]
     known = {record.get("uuid") for record in out if record.get("uuid")}
     orphans = 0
@@ -329,10 +446,37 @@ def _structure_problems(records: list[dict[str, Any]]) -> list[str]:
     return problems
 
 
+def _parsed(line: str) -> Any:
+    try:
+        return json.loads(line)
+    except ValueError:
+        return line  # an unparseable line is reported elsewhere; search it as text
+
+
+def _strings(node: Any) -> list[str]:
+    if isinstance(node, str):
+        return [node]
+    if isinstance(node, list):
+        return [text for item in node for text in _strings(item)]
+    if isinstance(node, dict):
+        return [text for key, item in node.items() for text in (key, *_strings(item))]
+    return []
+
+
 def _leak_problems(mapping: Mapping, source: Path, out_text: str) -> list[str]:
     problems: list[str] = []
     lowered = out_text.lower()
+    # A run or issue number is replaced only where it stands alone in text, so it is a leak only
+    # there: "4647" inside a token count of 146475, or a JSON number Claude Code wrote for a token
+    # count, is a different number.
+    texts = "\n".join(
+        text for line in out_text.splitlines() if line.strip() for text in _strings(_parsed(line))
+    )
     for original in sorted(originals(mapping, source)):
+        if original.isdigit():
+            if re.search(rf"(?<!\d){original}(?!\d)", texts):
+                problems.append(f"original still present: {original!r}")
+            continue
         for form in _forms(original):
             if form.lower() in lowered:
                 problems.append(f"original still present: {original!r} (as {form!r})")

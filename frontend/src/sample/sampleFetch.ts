@@ -25,11 +25,25 @@ export function createSampleFetch(fixture: SampleFixture): FetchLike {
       if (path === '/api/project-context')
         return Promise.resolve(json(query.has('prompts') ? fixture.prompts : fixture.context));
       if (path === '/api/session-record') {
-        // One page holds the whole record: an older page is the start of it, so there is none.
-        const older = query.has('before')
-          ? { ...fixture.record, entries: [], next: null, reached_start: true }
-          : fixture.record;
-        return Promise.resolve(json(older));
+        const before = query.get('before');
+        if (before === null) return Promise.resolve(json(fixture.record));
+        /* Every older page was captured to the record's start. A cursor the capture never named is answered
+           the way the server answers a cursor it cannot read, so the page starts again from the newest page;
+           answering it with an empty start would say entries do not exist when they were never asked for. */
+        const older = Object.hasOwn(fixture.older ?? {}, before) ? fixture.older?.[before] : null;
+        return Promise.resolve(
+          json(
+            older ?? {
+              ...fixture.record,
+              entries: [],
+              next: null,
+              reached_start: false,
+              bound: null,
+              scanned_bytes: 0,
+              state: 'stale',
+            },
+          ),
+        );
       }
       return Promise.resolve(json({}, 404));
     }

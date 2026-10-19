@@ -54,8 +54,11 @@ Rejected, with the reason:
 
 `frontend/src/sample/session.fixture.json` holds five answers, captured from a real Compass server
 run against an isolated home that held only the sample session: the board row, the project context,
-the prompts, the session record and the composed correction. `scripts/build_sample_fixture.py` takes
-the capture, so nothing in it was typed by hand except the authored intent (see the README).
+the prompts, the session record and the composed correction. The record is every page of it, back to
+the start: the newest page as `record`, and each older page under `older`, keyed `older-1`, `older-2`
+and so on. The first sample's record is one page, so it has no `older`.
+`scripts/build_sample_fixture.py` takes the capture, so nothing in it was typed by hand except the
+authored intent (see the README).
 
 Three rewrites make the capture a stable sample and not a snapshot of one afternoon:
 
@@ -67,7 +70,44 @@ Three rewrites make the capture a stable sample and not a snapshot of one aftern
   hour", which is what the same words said when the reading was read.
 
 The board's digest of the store the reading was saved in is cut to 32 characters, so nothing in the
-file is a credential-length value and the leak sweep stays strict.
+file is a credential-length value and the leak sweep stays strict. The server's record cursors are
+replaced by `older-<n>` for the same reason, and because each one binds the capture machine's file
+(its device, inode, size and time) and a key that died with that server.
+
+### Every page, not the first one
+
+A reading or a summary may cite any entry in the session, and a long session's board context holds
+only its tail, so the page finds an older entry by reading older record pages until it appears. The
+sample's server used to answer every older-page request with nothing and `reached_start: true`: with a
+one-page record that was true, but with a longer one it would say a cited entry does not exist when its
+page was simply never captured. The capture reads every page instead, and refuses a record longer than
+the page's own cap on pages read for a citation (20 pages of 50), since a citation past it could never
+be shown. The sample's server answers an older page by its cursor, and answers a cursor it never issued
+as the real server answers one it cannot read (`state: "stale"`), so the page starts again from the
+newest entries rather than concluding anything.
+
+The first sample is one page, so its stories split its record into three pages (`pagedSample` in
+`frontend/src/sample/paged.testing.ts`) and cite an entry on the newest, a middle and the oldest page.
+They hand the sample that fixture through `SampleFixtureContext`; the page itself never provides one.
+
+Rejected: capturing one flat list of entries and paging it in the sample's server. It would need the
+server's page boundaries reproduced in the page, which are byte-bounded scans rather than a count, and
+the captured pages already are those boundaries.
+
+## How big it may be
+
+The fixture ships inside `react.html`, and every install and every page load carries it, so its size is
+bounded before a sample is built, not measured after. The bounds were set on 2026-10-19, before the
+longer sample described in [the README](../sample-session/README.md#the-next-sample) was captured:
+
+- The page may be at most 1,884,747 bytes, the page as built that day, plus 400 KiB: 2,294,347 bytes.
+- The fixture may be at most 250,000 bytes of compact JSON. The page carries its script
+  base64-encoded, so a fixture byte costs about four thirds of a page byte, and the step from the first
+  sample's 75,130 bytes to the bound is at most about 233 KB of page, which leaves the rest of the
+  400 KiB to the code that ships beside it.
+
+`frontend/build/page-size.test.mjs` checks both, in `pnpm test`, which CI runs. Raising either is a
+decision to record here, with the measurement that justifies it.
 
 ## View only
 
@@ -109,4 +149,5 @@ was added.
   reader's own time zone.
 - The transcript is committed. That is an exception to the policy in
   [tests/README.md](../tests/README.md#what-is-committed-and-what-is-not), made by the owner on
-  2026-10-14 for this one session, with its mapping kept out of the repository.
+  2026-10-14 for this one session, with its mapping kept out of the repository. The owner made a
+  second exception on 2026-10-19 for the longer session the next sample is made from.
