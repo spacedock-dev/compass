@@ -1091,6 +1091,16 @@
       "disposition": "store-held"
     },
     {
+      "name": "An outline entry chip pressed in What the session has done",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionOutline.stories.tsx",
+        "frontend/src/sessions/outline.test.ts"
+      ],
+      "contract": "A chip press opens the Full activity disclosure and focuses the entry's row, reading older record pages for a prompt the page does not hold; only the latest press settles. The \"Full activity does not show\" sentence stays across board refreshes until the next press and goes with the session page. The outline is the focused context's, redrawn each board revision, and nothing is stored.",
+      "disposition": "stable-identity"
+    },
+    {
       "name": "A finding selected in the session result",
       "owner": "DRC-4825",
       "oracles": [
