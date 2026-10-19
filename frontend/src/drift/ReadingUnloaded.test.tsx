@@ -1,6 +1,6 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { check, driftBoard, fact, json, mountDrift, press, textOf } from './testing';
+import { check, driftBoard, fact, json, mountDrift, press, textOf, openActivity } from './testing';
 
 /* A press reads a session's messages back to its window start, which can be further than the board's own
    record reaches. A stored reading the reader merely opens loads no page, so one citing an entry the page
@@ -76,7 +76,9 @@ describe('a reading that cites an entry the page does not list', () => {
       },
     });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     expect(unloaded()?.textContent).toBe(
       'This reading cites an entry that is not listed. Show more, under the list, may load it.',
     );
@@ -97,7 +99,9 @@ describe('a reading that cites an entry the page does not list', () => {
       },
     });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     expect(unloaded()).toBeNull();
     expect(textOf('[data-next-result-goal]')).toContain('Nothing resolvable was cited');
   });
@@ -113,7 +117,9 @@ describe('a reading that cites an entry the page does not list', () => {
       routes: { [path]: () => json(recordBody()) },
     });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     expect(unloaded()?.textContent).toBe(
       'This reading cites 2 entries that are not listed. Show more, under the list, may load them.',
     );
@@ -134,7 +140,9 @@ describe('the adopted-source note', () => {
       facts: FACTS,
     });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     const text = document.body.textContent ?? '';
     expect(text).toContain(
       'The adopted source was found. Analyze reads at most the first 1,000 characters of any prompt.',
@@ -169,11 +177,15 @@ describe('a finished press that cites an entry the page does not list', () => {
       routes: { [path]: older },
     });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(1);
     await page.poll({ ...driftBoard({ session: stored }), generated: 1200 });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(2);
     expect(unloaded()).toBeNull();
     expect(textOf('[data-next-result-goal]')).not.toContain('Nothing resolvable was cited');
@@ -186,10 +198,14 @@ describe('a finished press that cites an entry the page does not list', () => {
       routes: { [path]: older },
     });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     await page.poll({ ...driftBoard({ session: stored }), generated: 1200 });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(1);
     expect(unloaded()).not.toBeNull();
   });
@@ -202,7 +218,9 @@ describe('a finished press that cites an entry the page does not list', () => {
       routes: { [path]: older },
     });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     await page.poll({
       ...driftBoard({
         session: { ...stored, annotation_reading_withheld: 'The analysis was cancelled.' },
@@ -210,7 +228,9 @@ describe('a finished press that cites an entry the page does not list', () => {
       generated: 1200,
     });
     await page.settle();
+    await openActivity();
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(1);
   });
 });

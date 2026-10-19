@@ -23,8 +23,8 @@ import { readingRoute } from './route';
 import { WORK_AS_REPORTED, WORK_READ_FROM, WORK_HARNESSES } from './sentences';
 import { readingAuthor, readingCopied } from './shape';
 
-/* The session's activity, numbered. It sits right after CURRENT ACTIVITY in the activity column, under the
-   column's own "Session activity" heading, and the numbers are the ones every "#<n>" on the page names: a
+/* The session's activity, numbered. It sits right after CURRENT ACTIVITY in Full activity, under that
+   section's own heading, and the numbers are the ones every "#<n>" on the page names: a
    reading cites an entry by this list's number, so a citation resolves against the same list the reader is
    looking at rather than against a second collection assembled from the same facts. `cited` is the set of
    fact ids the current reading's surviving departures rest on. The legacy cockpit's `nextCockpitWorkEvidence`

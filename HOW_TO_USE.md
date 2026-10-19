@@ -423,7 +423,7 @@ goal. An unavailable prompt time means you must type a goal instead. The notice 
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
-Use **Turn off readings** on a session page to revoke it. A Claude Code session is read by Claude
+Use **Turn off readings** on a session page, in the **What is sent** popover beside Analyze drift, to revoke it. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
 read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever
 reads. **What is sent**, under the button, opens a short list naming it, and with neither installed that reason takes

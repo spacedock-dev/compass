@@ -209,12 +209,12 @@ describe('a finding jump', () => {
     const jumps = [...document.querySelectorAll('[data-next-finding]')];
     expect(
       screen.queryByRole('button', {
-        name: 'Show cited entries in Session activity for Goal: Ship the queue',
+        name: 'Show cited entries in Full activity for Goal: Ship the queue',
       }),
     ).toBe(jumps[0]);
     expect(
       screen.queryByRole('button', {
-        name: 'Show cited entries in Session activity for Expected outcome line 1: Tests pass',
+        name: 'Show cited entries in Full activity for Expected outcome line 1: Tests pass',
       }),
     ).toBe(jumps[1]);
   });

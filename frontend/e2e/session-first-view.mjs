@@ -238,6 +238,8 @@ try {
       .getByRole('button', { name: 'Discard everything', exact: true })
       .last()
       .waitFor({ state: 'visible' });
+    /* Predates the one-column page (2026-10-19): the session More is gone, so this count fails when the proof
+       is run on demand until it is brought forward to the Intent and Drift cards that now hold those parts. */
     assert.equal(
       await page.locator('[data-next-session-more-items]').evaluate((node) => node.children.length),
       6,

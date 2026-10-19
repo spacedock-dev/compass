@@ -6,7 +6,7 @@ import { LIVE_HARNESSES, useLiveMonitor } from './liveMonitor';
 import { LIVE_MONITOR } from './sentences';
 import { usePanel } from './useIntent';
 
-/* More changes the switch's placement only: its value still decides whether the live level, nudge and
+/* Drawn in the Drift card's head; placement only: its value still decides whether the live level, nudge and
    header pill are drawn, never whether the server or a model runs. */
 export function LiveMonitorSwitch() {
   const shell = useShell();

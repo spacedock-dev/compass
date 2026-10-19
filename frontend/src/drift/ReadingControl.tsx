@@ -81,7 +81,11 @@ export function ReadingCount({ count }: { readonly count: number }) {
   );
 }
 
-/* Turn off readings, busy state and all, drawn only while some receiver's permission is on record. */
+/* Turn off readings, busy state and all, drawn only while some receiver's permission is on record. It sits in
+   the "What is sent" popover beside what it stops, and where no popover is drawn (a running job, no reader,
+   the consent step, a route with no disclosure) under the control instead, so the off switch is never only in
+   a part the page did not draw.
+   [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
 export function TurnOff() {
   const { ctx, model } = useDrift();
   if (!anyConsent(model.payload)) return null;
@@ -278,6 +282,7 @@ export function ReadingControl({
         <JobBox job={job} running={running} />
         {said(answered)}
         {counted}
+        <TurnOff />
       </>
     );
   }
@@ -304,6 +309,7 @@ export function ReadingControl({
         {said(answered === noReader ? '' : answered)}
         {counted}
         {aboutWhy}
+        <TurnOff />
       </>
     );
   }
@@ -414,6 +420,7 @@ export function ReadingControl({
         {accounts}
         {counted}
         {aboutWhy}
+        <TurnOff />
       </>
     );
   }
@@ -436,9 +443,13 @@ export function ReadingControl({
     >
       {partsList}
       {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
+      <TurnOff />
     </Why>
   ) : (
-    <>{aboutWhy}</>
+    <>
+      {aboutWhy}
+      <TurnOff />
+    </>
   );
   return (
     <>

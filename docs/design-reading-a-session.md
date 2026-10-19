@@ -5242,8 +5242,9 @@ bodies, has a 90-word ceiling. The opened how-to retains its separate 150-word c
 The fresh Claude Code fixture inventory below includes the session's project link and the Sessions
 breadcrumb. Before: 19 controls across the page, 13 in the 1280 by 800 viewport. After: 14 across
 the page, eight in that viewport. The activity disclosures remain below the first view in one column; none of
-their sentences or controls are removed. (Beside the panel from 1101px wide, three of them show in
-that viewport; see the 2026-10-12 amendment above.) The switch's accessible name is Live monitor.
+their sentences or controls are removed. (Beside the panel from 1101px wide, three of them showed in
+that viewport under the 2026-10-12 amendment above; the 2026-10-19 reversal to one column supersedes
+that, and Full activity is collapsed at the foot of the page.) The switch's accessible name is Live monitor.
 
 | Button, link or disclosure | Before | After |
 | -- | -- | -- |
@@ -5292,6 +5293,51 @@ Full activity section, at every width. The session page's More disclosure is ret
 control, sentence and limit in it gets a new home, so the principle above, that a privacy promise or
 an honest limit moves and is never deleted, still holds. The record is
 [DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept).
+
+The owner signed this reversal on 2026-10-19 in the milestone "Session page: what the session did,
+and where it left your intent"; that sign-off supersedes the 2026-10-12 layout amendment above.
+
+#### Where everything in More went
+
+The written inventory of the retired session More, by group in its order, with the new home of each
+part. Nothing in it was dropped. The stories under `Sessions/One-column page` assert each row by role,
+name or text in its new home, with three exceptions no fixture there reaches: What became of discarded
+words, the armed confirmation of Discard everything (its offer is asserted), and Turn off readings
+under the control where no popover is drawn (its place in the popover is asserted).
+
+| More held | Kind | New home |
+| -- | -- | -- |
+| Live monitor switch | Control | The Drift card's heading, on the right of the title |
+| "How far the session has moved from the goal" | Sentence | The Drift card's heading, under the title |
+| "Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header." (Claude Code, annotations on) | Limit | The Drift card's heading, under the switch |
+| About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | The Intent card, under the save |
+| What became of discarded words | Sentences | The Intent card, under the save |
+| Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
+| Delegated work, and the "still running?" check | Limit | The Drift card, under the reading and its control, where Analyze drift is (row 6e) |
+| Turn off readings | Control | The "What is sent" popover beside Analyze drift; under the control where no popover is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
+| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside Clear |
+| "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
+| Clear | Control | The Intent card, beside the saved stamp |
+| Later directions: unknown, none or settled, with "Nothing here decides…" | Disclosure and limit | The Intent card, last |
+
+The activity column becomes **Full activity**, collapsed at the foot of the page. It keeps CURRENT
+ACTIVITY, the numbered list newest first, subagents, session facts, the current task, health,
+tasks, command-shape reports, notifications and How it landed, in that order, and a blocked
+session's measured line. The header gains a status dot beside the state word, which now leads the
+measured line ("working · running Bash · turn started 3m ago"); the raise control, the drift pill
+and the reading cap banner stay where they were. A finding's citation, now "Show cited entries in
+Full activity", opens the section, reads older record pages until every cited entry is held, the
+record's start or the page cap, and moves focus to the first cited row. It is offered while any cited
+entry is unloaded and the record has older pages, whatever the intent's current window, so a retained
+reading that cites an entry from before that window keeps its way there. An entry no page returns is
+named in a status sentence, which takes focus instead. The sentence says the record does not list the
+entry only when the read reached the record's start; a read the page cap or a failed page ended says
+it stopped short and that Show more may load it. Where every cited entry is held but the reading's own
+window, request or limit sets them aside, the sentence says that. The sentence answers one press on one
+reading: a later press, a new reading or another session takes it down, and a read that ends after a
+later press began publishes nothing. Escape on the row, the sentence or "Back to the finding" returns
+focus to the citation without leaving the session page, and both moves scroll without animation when
+the reader prefers reduced motion.
 
 ## DEC-28: a model may summarize a session, and the summary is kept
 

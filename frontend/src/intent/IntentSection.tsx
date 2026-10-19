@@ -16,10 +16,11 @@ import {
   noDraftWhy,
 } from './derive';
 import { undoChanges } from './edit';
-import { GoalField } from './GoalField';
+import { Caveats, LaterDirections } from './Caveats';
+import { ClearGoal, GoalField } from './GoalField';
 import { OutcomeLines, AddOutcomeLine } from './OutcomeLines';
 import { saveIntent } from './save';
-import { ENDED_CAVEAT } from './sentences';
+import { ENDED_CAVEAT, INTENT_MEASURED } from './sentences';
 import { usePanel } from './useIntent';
 import { HowTo } from './HowTo';
 
@@ -112,6 +113,27 @@ export function SavedStamp() {
   );
 }
 
+/* What the retired session More held about the reader's words, under the save that makes them: the saved
+   stamp, the sentence saying drift is measured against these words, Clear, the caveats and Discard
+   everything, and the state of later directions. Each part draws nothing when it has nothing to say, so an
+   untouched intent adds only the one sentence.
+   [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
+function Kept() {
+  return (
+    <div className="flex flex-col gap-2 [&_.next-session-drift-caveats]:p-0" data-next-intent-kept>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <SavedStamp />
+        <ClearGoal />
+      </div>
+      <p className="next-cockpit-held-hint flex-none" data-next-intent-measured>
+        {INTENT_MEASURED}
+      </p>
+      <Caveats />
+      <LaterDirections />
+    </div>
+  );
+}
+
 export function IntentSection() {
   const { input, session, payload } = usePanel();
   const { ctx } = usePanel();
@@ -126,17 +148,25 @@ export function IntentSection() {
   const why = drafted ? '' : noDraftWhy(session, annotation, payload);
   const unreadable = storeUnreadable(payload);
   return (
-    <Card variant="intent-panel" as="section" className="next-cockpit-held">
+    <Card
+      variant="intent-panel"
+      as="section"
+      className="next-cockpit-held"
+      aria-labelledby="next-session-intent-heading"
+    >
       <header className="flex-wrap">
-        <h2
-          id="next-session-intent-heading"
-          ref={heading}
-          tabIndex={-1}
-          data-next-focus={`intent:${compatSessKey(session)}`}
-        >
-          Intent
-        </h2>
-        <SampleMark id="intent" />
+        {/* The mark beside the heading it notes, not spread to the middle of the row. */}
+        <span className="flex items-baseline">
+          <h2
+            id="next-session-intent-heading"
+            ref={heading}
+            tabIndex={-1}
+            data-next-focus={`intent:${compatSessKey(session)}`}
+          >
+            Intent
+          </h2>
+          <SampleMark id="intent" />
+        </span>
         <HowTo />
       </header>
       {/* Under the heading rather than in its header, so the revision line keeps the sentence tier. */}
@@ -156,6 +186,7 @@ export function IntentSection() {
         <OutcomeLines />
       </div>
       <Footer />
+      <Kept />
     </Card>
   );
 }

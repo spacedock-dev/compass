@@ -33,3 +33,32 @@ export function citationsHeld(
   const held = new Set((source.all ?? source.entries).map((entry) => entry.id));
   return scope.cited.every((id) => held.has(id));
 }
+
+/* The ids one stored criterion cites, loaded or not, in its order: what Show cited entries asks the record for.
+   The shape's own `citedIds` are only the ones the page holds. */
+export function citesOf(assessment: Row | null | undefined, key: string): string[] {
+  const criteria = isRecord(assessment?.['criteria']) ? assessment['criteria'] : {};
+  const row = criteria[key];
+  if (!isRecord(row) || !Array.isArray(row['cites'])) return [];
+  return [...new Set(row['cites'].map(String).filter(Boolean))];
+}
+
+/* Every entry id the page holds for a session: the record's pages and the board's context together. */
+export function heldIds(
+  snapshot: BoardSnapshot,
+  scope: { readonly projectKey: string; readonly session: Row },
+): Set<string> {
+  const record = snapshot.records.get(contextKey(scope.projectKey, scope.session as never));
+  const source = workSource(snapshot.contexts, scope.projectKey, scope.session, record);
+  return new Set((source.all ?? source.entries).map((entry) => entry.id));
+}
+
+/* Whether every id one finding cites is an entry the page holds, with no window shortcut: a press of Show
+   cited entries asks for these exact entries, and an entry from before the window still has a row to go to. */
+export function entriesHeld(
+  snapshot: BoardSnapshot,
+  scope: { readonly projectKey: string; readonly session: Row; readonly cited: readonly string[] },
+): boolean {
+  const held = heldIds(snapshot, scope);
+  return scope.cited.every((id) => held.has(id));
+}

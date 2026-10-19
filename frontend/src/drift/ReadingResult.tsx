@@ -126,6 +126,9 @@ function ResultItem({
   const full = resultStatus(row, numbers, byId);
   const unloaded =
     row.unloaded > 0 && olderEntriesRemain(record, entryWindow(model.session, model.payload));
+  /* The press reads by the record's cursor alone, with no window shortcut, so a retained reading that cites an
+     entry from before the current window keeps its way there. The sentence above stays window-bound. */
+  const loadable = row.unloaded > 0 && record?.status === 'loaded' && !record.reachedStart;
   const Tag = tag;
   return (
     <Tag
@@ -141,7 +144,7 @@ function ResultItem({
       <span className="next-cockpit-result-body">
         <ClauseCell row={row} />
         <em className="next-cockpit-reading-result">{status}</em>
-        <FindingJump row={row} />
+        <FindingJump row={row} loadable={loadable} />
         {row.key === CLAIMS && row.result === DEPARTURE ? (
           <Account row={row} showClause={false} />
         ) : null}
@@ -165,9 +168,12 @@ function ResultItem({
   );
 }
 
-function FindingJump({ row }: { readonly row: Criterion }) {
-  const { chooseFinding } = useDrift();
-  if (!row.citedIds.length) return null;
+/* Offered where the row's cited entries are drawn, and where some are not yet loaded and older pages remain to
+   read them from: the press reads those pages itself. */
+function FindingJump({ row, loadable }: { readonly row: Criterion; readonly loadable: boolean }) {
+  const { chooseFinding, jumpMissing } = useDrift();
+  // Kept while its "could not be loaded" sentence stands, so the way back from that sentence has a place to land.
+  if (!row.citedIds.length && !loadable && jumpMissing?.press.key !== row.key) return null;
   const constraint =
     row.key === 'goal'
       ? 'Goal'
@@ -181,8 +187,8 @@ function FindingJump({ row }: { readonly row: Criterion }) {
         variant="bare"
         data-next-cockpit-action="finding-jump"
         data-next-finding={row.key}
-        aria-label={`Show cited entries in Session activity for ${constraint}: ${row.clause}`}
-        onClick={() => chooseFinding(row.key)}
+        aria-label={`Show cited entries in Full activity for ${constraint}: ${row.clause}`}
+        onClick={(event) => chooseFinding(row.key, event.currentTarget)}
       >
         Show cited entries
       </Button>

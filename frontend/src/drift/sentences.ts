@@ -36,6 +36,20 @@ export function unloadedCites(count: number): string {
     ? 'This reading cites an entry that is not listed. Show more, under the list, may load it.'
     : `This reading cites ${String(count)} entries that are not listed. Show more, under the list, may load them.`;
 }
+/* What a press of Show cited entries found it could not list, once every page it may read has been read. Only a
+   read that reached the record's start may say the record does not list it; one that stopped short (the page
+   cap, a failed page) says Show more may still load it, as `unloadedCites` does. */
+export function missingCites(count: number, reason: 'start' | 'stopped' | 'unshown'): string {
+  if (reason === 'unshown')
+    return 'The entries this finding cites are loaded, but none is marked in the list: they fall outside what this reading read, or its stated limit sets them aside.';
+  if (reason === 'stopped')
+    return count === 1
+      ? 'An entry this finding cites could not be loaded: the read stopped before the start of the record. Show more, under the list, may load it.'
+      : `${String(count)} entries this finding cites could not be loaded: the read stopped before the start of the record. Show more, under the list, may load them.`;
+  return count === 1
+    ? 'An entry this finding cites could not be loaded: the record read for this session does not list it.'
+    : `${String(count)} entries this finding cites could not be loaded: the record read for this session does not list them.`;
+}
 export const BASELINE_OPEN =
   'You have given a later direction that is still unsettled, so this reads against a baseline that may not be the one you want.';
 export const CLAUSE_UNRETAINED = 'the words of the revision this reading read are not retained';

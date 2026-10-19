@@ -3,7 +3,7 @@ import { openDirection } from '../intent/directions';
 import { DirectionActionButton } from '../intent/DirectionActionButton';
 import { compatSessKey } from '../api/identity';
 import { useDrift } from './context';
-import { WORK_AS_REPORTED } from './sentences';
+import { missingCites, WORK_AS_REPORTED } from './sentences';
 import { foldRuns, workList, type CheckRunModel } from './workList';
 import { ActivityHead } from './ActivityHead';
 import { ActivityLegend } from './ActivityMarks';
@@ -12,7 +12,8 @@ import { TooltipProvider } from '../ui/tooltip';
 import { disclosureKey, useControls } from '../controls';
 import { useControlledDisclosureState } from '../controls/useDisclosureState';
 import { Why } from './Why';
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { Button } from '../ui/button';
 import { contextKey } from '../api/identity';
 import { activityStamp, entryWindow, recordPastWindow } from '../intent/work';
 import { useDisplayed, useShell } from '../shell/context';
@@ -48,8 +49,8 @@ function HeldCheckRun({
   );
 }
 
-/* The numbered activity list, drawn under CURRENT ACTIVITY. It sits in the activity column under that
-   column's own heading, so it has none of its own. The record's footer is tiered: where the harness's work
+/* The numbered activity list, drawn under CURRENT ACTIVITY. It sits in Full activity under that
+   section's own heading, so it has none of its own. The record's footer is tiered: where the harness's work
    results are read, one clause stays in view and the mix, the bounds, the scan and the full limit sit behind
    "About this record"; where none are read, the limit is the absence and stays in view. The route's
    tool-output sentence is not repeated here: "What is sent" beside the control owns it.
@@ -59,7 +60,7 @@ function HeldCheckRun({
    names, so the column reads #32 down to #1. "Add to my intent" is always drawn: a control shown only on
    hover is one a reader does not know is there. */
 export function WorkListView() {
-  const { ctx, model, finding, jump } = useDrift();
+  const { ctx, model, finding, jump, jumpMissing } = useDrift();
   const { runtime } = useShell();
   const record = useDisplayed((snapshot) =>
     snapshot.records.get(contextKey(model.projectKey, model.identity)),
@@ -84,6 +85,7 @@ export function WorkListView() {
   }, [runtime, model.projectKey, harness, sid, stamp, model.generated]);
   const panel = useRef<HTMLDivElement>(null);
   const jumped = useRef<object | null>(null);
+  const noted = useRef<object | null>(null);
   const pagingFocus = useRef<{ button: HTMLElement; before: ReadonlySet<string> } | null>(null);
   const opened = entryWindow(model.session, model.payload);
   const pastWindow = recordPastWindow(record, opened);
@@ -95,21 +97,71 @@ export function WorkListView() {
     // An appended older page stays below the existing rows. Focus must never scroll that page into view.
     void runtime.readMoreRecord({ projectKey: model.projectKey, focus: model.identity });
   };
-  useEffect(() => {
-    if (!finding || jumped.current === jump) return;
-    jumped.current = jump;
-    const target = [
-      ...(panel.current?.querySelectorAll<HTMLElement>('[data-next-entry-id]') ?? []),
-    ].find((node) => finding.citedIds.includes(node.dataset['nextEntryId'] ?? ''));
-    if (!target) return;
-    target.focus({ preventScroll: true });
-    target.scrollIntoView({
+  const land = (node: HTMLElement) => {
+    node.focus({ preventScroll: true });
+    node.scrollIntoView({
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
         ? 'instant'
         : 'smooth',
       block: 'center',
     });
-  }, [finding, jump]);
+  };
+  /* A press of Show cited entries lands once, on the first cited row drawn, as soon as one is: the rows may
+     arrive with an older page the press asked for. A press whose pages are read with none of its entries drawn
+     lands on the sentence saying so instead, so focus never stays on a control whose result is elsewhere. */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a newly read page is the retry trigger, not a value the body reads.
+  useEffect(() => {
+    if (finding && jump && jumped.current !== jump) {
+      const target = [
+        ...(panel.current?.querySelectorAll<HTMLElement>('[data-next-entry-id]') ?? []),
+      ].find((node) => finding.citedIds.includes(node.dataset['nextEntryId'] ?? ''));
+      if (target) {
+        jumped.current = jump;
+        land(target);
+        return;
+      }
+    }
+    if (!jumpMissing || noted.current === jumpMissing || jumped.current === jumpMissing.press)
+      return;
+    const note = panel.current?.querySelector<HTMLElement>('[data-next-jump-missing]');
+    if (!note) return;
+    noted.current = jumpMissing;
+    land(note);
+  }, [finding, jump, jumpMissing, record]);
+  /* Back to the control the jump was pressed on, or, when a redraw replaced it, the one that names the same
+     finding now. */
+  const press = jump ?? jumpMissing?.press ?? null;
+  const back = () => {
+    if (!press) return;
+    const origin = press.origin?.isConnected
+      ? press.origin
+      : document.querySelector<HTMLElement>(
+          `[data-next-cockpit-action="finding-jump"][data-next-finding="${CSS.escape(press.key)}"]`,
+        );
+    if (origin) land(origin);
+  };
+  const backOnEscape = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.target !== event.currentTarget) return;
+    event.preventDefault();
+    back();
+  };
+  const backButton = press ? (
+    <Button
+      type="button"
+      variant="bare"
+      className="inline underline"
+      data-next-jump-back
+      onClick={back}
+      onKeyDown={(event) => {
+        // Inside the row or the note, so the page's own Escape (back to the session's home) must not see it.
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        back();
+      }}
+    >
+      Back to the finding
+    </Button>
+  ) : null;
   const list = workList({
     session: model.session,
     payload: model.payload,
@@ -167,6 +219,17 @@ export function WorkListView() {
         data-next-cockpit-work
       >
         {list.anchor ? <p className="next-cockpit-work-anchor">{list.anchor}</p> : null}
+        {jumpMissing ? (
+          <p
+            className="next-cockpit-work-absent"
+            role="status"
+            tabIndex={-1}
+            data-next-jump-missing
+            onKeyDown={backOnEscape}
+          >
+            {missingCites(jumpMissing.count, jumpMissing.reason)} {backButton}
+          </p>
+        ) : null}
         {list.unnumbered ? <p className="next-cockpit-work-absent">{list.unnumbered}</p> : null}
         {list.rows.length ? (
           <div className="next-cockpit-work-rows" role="list">
@@ -194,6 +257,7 @@ export function WorkListView() {
                     }
                     data-next-entry-turn={row.turn ? 'true' : undefined}
                     tabIndex={-1}
+                    {...(finding?.citedIds.includes(entry.id) ? { onKeyDown: backOnEscape } : {})}
                   >
                     <span className="next-cockpit-work-n">
                       {row.n === null ? (
@@ -208,6 +272,9 @@ export function WorkListView() {
                         <p className="next-cockpit-reading-evidence" data-next-finding-entry>
                           {`Cited for “${finding.detail || finding.clause || finding.label}” · ${row.n === null ? 'Entry not numbered in this view' : `#${String(row.n)}`}`}
                         </p>
+                      ) : null}
+                      {finding?.citedIds.includes(entry.id) && backButton ? (
+                        <span className="self-start">{backButton}</span>
                       ) : null}
                       {/* A model's paraphrase takes the third treatment, not the mono of a string a source
                       published: the reader must be able to tell the record from an account of it. */}

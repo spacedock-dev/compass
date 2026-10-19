@@ -1,6 +1,6 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { check, fact, json, mountDrift, press } from './testing';
+import { check, fact, json, mountDrift, press, openActivity } from './testing';
 
 /* The server numbers a message by its rank in the session and a check or file by the message it follows
    and its place after it, so a number is the entry's, not the page's: it does not move when a check
@@ -43,6 +43,7 @@ describe('a reader whose entries carry the server numbers', () => {
       },
     });
     await mounted.settle();
+    await openActivity();
     const before = Object.fromEntries(
       rows().map((row) => [row.dataset['nextEntryId'], row.dataset['nextEntry']]),
     );
@@ -64,6 +65,7 @@ describe('a reader whose entries carry the server numbers', () => {
       facts: [message(5), fact('gate', 6, { type: 'gate_decision' })],
     });
     await mounted.settle();
+    await openActivity();
     expect(numberOf('m5')).toBe('5');
     expect(rows().some((row) => row.dataset['nextEntryId'] === 'gate')).toBe(true);
     expect(numberOf('gate')).toBeUndefined();
