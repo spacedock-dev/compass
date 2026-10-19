@@ -298,7 +298,7 @@ export function ReadingControl({
       onPress={() => {
         if (off) void readingOn(ctx, identity);
         else if (identity) {
-          void askForReading(ctx, identity, false, {
+          void askForReading(ctx, identity, {
             route,
             revision: nextNumber(annotation?.['revision']) || 0,
           });

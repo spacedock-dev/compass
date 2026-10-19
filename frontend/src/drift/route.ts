@@ -51,19 +51,6 @@ export function readingsOn(payload: Row): boolean {
   return isRecord(policy) && policy['consent'] === true && !readingsOff(payload);
 }
 
-export function turnOnPayload(payload: Row): Row {
-  const policy = isRecord(payload['reading']) ? payload['reading'] : {};
-  return {
-    ...payload,
-    reading: {
-      ...policy,
-      consent: true,
-      off: false,
-      reason: policy['reason'] === 'model-calls-paused' ? '' : policy['reason'],
-    },
-  };
-}
-
 /* Whether a press could read this row now, as the board published it, or as this tab's last press was
    answered when the board has not published it. Absent means not computed, and a press is then offered and
    the server decides. A settling row whose `until` has passed is read as eligible on the next render or

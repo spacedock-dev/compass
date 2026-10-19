@@ -3038,13 +3038,13 @@ class ReadingRouteTest(unittest.TestCase):
 
     def test_lured_requests_cannot_change_remembered_permission(self) -> None:
         config, state = self._runtime()
-        for granted in (False, True):
+        resume = {"consent": "on", "press": True, "observer_model": 1}
+        for granted, body in (
+            (False, self._press(allow=True, words_destination="")),
+            (False, resume),
+            (True, {"consent": "off", "press": True, "observer_model": 1}),
+        ):
             reading_policy.set_consent(config, granted, now=1_700_000_100.0)
-            body = (
-                {"consent": "off", "press": True, "observer_model": 1}
-                if granted
-                else self._press(allow=True, words_destination="")
-            )
             with self._counting_model() as calls, self._serving(self._app(config, state)) as port:
                 for headers in (
                     {"Sec-Fetch-Site": "same-site"},
@@ -3052,9 +3052,9 @@ class ReadingRouteTest(unittest.TestCase):
                 ):
                     status, _ = self._post(port, body, headers=headers)
                     self.assertEqual(403, status)
-                    self.assertEqual(
-                        granted, reading_policy.status(config, now=1_700_000_100.0)["consent"]
-                    )
+                    stored = reading_policy.status(config, now=1_700_000_100.0)
+                    self.assertEqual(granted, stored["consent"])
+                    self.assertEqual(not granted, stored["off"])
                 self.assertEqual([], calls)
 
     def test_daily_limit_refuses_before_call_and_reports_the_release_time(self) -> None:

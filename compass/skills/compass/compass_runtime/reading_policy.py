@@ -103,6 +103,9 @@ class Status(TypedDict):
     words: dict[str, bool]
 
 
+PERMISSION_TABLES = frozenset({"permission", "provider_permission"})
+
+
 def store_path(config: RuntimeConfig) -> Path:
     return config.state_dir / "compass-reading-permission.sqlite3"
 
@@ -125,11 +128,11 @@ def _answer(
         "used": len(dates),
         "limit": DAILY_CAP,
         "retry_at": min(dates) + DAY_SEC if full else None,
-        # The cap first: the budget is shared, so a spent day refuses every
-        # provider, and the page reads the Codex answer. Consent first told a
-        # reader with only Claude Code allowed that nothing stood in the way
-        # (DRC-4666). A pause still reads as one from `off`.
-        "reason": reason or ("daily-cap" if full else "model-calls-paused" if off else ""),
+        # The pause first: it is the reader's own answer and lasts until Resume,
+        # so a paused Analyze says model calls are paused even on a spent day
+        # (owner, 2026-10-19, DRC-4915). The cap still precedes any one
+        # provider's consent, which the page reads per provider (DRC-4666).
+        "reason": reason or ("model-calls-paused" if off else "daily-cap" if full else ""),
         "providers": dict(providers) if providers else dict.fromkeys(PROVIDERS, False),
         "tool_output": {name: list(where) for name, where in (tool_output or {}).items()},
         "rebind": dict(rebind or {}),
@@ -165,7 +168,7 @@ def _allowed(db: Any) -> dict[str, bool]:
     return allowed
 
 
-def _off(db: Any) -> bool:
+def _off(db: Any, tables: frozenset[str] = PERMISSION_TABLES) -> bool:
     """A stored refusal with no Allow beside it.
 
     This build's off writes 0 for every provider and its Turn on clears them
@@ -175,11 +178,8 @@ def _off(db: Any) -> bool:
     """
     values = {
         value
-        for query in (
-            "SELECT allowed FROM permission",
-            "SELECT allowed FROM provider_permission",
-        )
-        for (value,) in db.execute(query)
+        for table in sorted(tables & PERMISSION_TABLES)
+        for (value,) in db.execute(f"SELECT allowed FROM {table}")  # noqa: S608 - fixed table names
     }
     return 0 in values and 1 not in values
 
@@ -356,9 +356,9 @@ def _store_notice(db: Any, answer: Status, operation: str | Notice) -> Notice | 
     return operation
 
 
-def _clear_off(db: Any) -> None:
-    db.execute("DELETE FROM permission WHERE allowed = 0")
-    db.execute("DELETE FROM provider_permission WHERE allowed = 0")
+def _clear_off(db: Any, tables: frozenset[str] = PERMISSION_TABLES) -> None:
+    for table in sorted(tables & PERMISSION_TABLES):
+        db.execute(f"DELETE FROM {table} WHERE allowed = 0")  # noqa: S608 - fixed table names
 
 
 def _transaction(
@@ -611,14 +611,21 @@ def resume(config: RuntimeConfig, *, now: float) -> Status:
     """Resume model calls: clear the stored pause without writing an Allow.
 
     An Allow would also cover the unasked lane, which no reader press turns on
-    (owner, 2026-10-19, DRC-4915), so only the refusal rows go.
+    (owner, 2026-10-19, DRC-4915), so only the refusal rows go. A run started
+    with model calls disabled keeps the stored pause: the startup switch is not
+    the reader's answer, and clearing it would lose theirs.
     """
+    if config.model_calls_disabled:
+        return _answer(reason="run-disabled")
     if runtime_io.sqlite_module is not None and os.path.lexists(store_path(config)):
         try:
             with contextlib.closing(_connect(config, WRITE_WAIT_SEC)) as db:
                 db.execute("BEGIN IMMEDIATE")
-                if _readings_off(db):
-                    _clear_off(db)
+                # Whichever permission tables exist: an older store may hold its
+                # pause in one, and the read below creates the other.
+                tables = _permission_tables(db)
+                if tables and _off(db, tables):
+                    _clear_off(db, tables)
                 db.execute("COMMIT")
         except (OSError, ValueError, RuntimeError, _SQL_ERROR):
             return _answer(reason="store-unavailable")
@@ -840,7 +847,7 @@ def forget(config: RuntimeConfig, *, now: float | None = None) -> bool:
     # is retained here, only the timestamps protecting the spend bound.
     when = time.time() if now is None else now
     reading = set_consent(config, False, now=when)
-    summary = set_summary_consent(config, False, now=when)
+    summary = _summary_run(config, when, "forget")
     return reading["reason"] != "store-unavailable" and summary["reason"] != "store-unavailable"
 
 
@@ -898,9 +905,11 @@ def _summary_transaction(
         )
         db.execute("DELETE FROM summary_spends WHERE at <= ?", (now - JOB_LEDGER_SEC,))
         row = db.execute("SELECT allowed, generation FROM summary_permission WHERE id=1").fetchone()
-        if operation in ("on", "off") and not _readings_off(db):
+        # A press is refused while paused, but `--forget` is not a press: it
+        # stores summaries off whatever the pause says.
+        if operation == "forget" or (operation in ("on", "off") and not _readings_off(db)):
             was_off = row is not None and row[0] == 0
-            off = operation == "off"
+            off = operation != "on"
             generation = (row[1] if row else 0) + int(was_off != off)
             db.execute(
                 "INSERT OR REPLACE INTO summary_permission VALUES (1, ?, ?)",
@@ -946,13 +955,7 @@ def _summary_transaction(
             and db.execute("SELECT 1 FROM summary_spends WHERE receipt=?", (receipt,)).fetchone()
         ):
             # A retried receipt is already charged, including at the cap; no second spend.
-            answer["reason"] = (
-                "model-calls-paused"
-                if _readings_off(db)
-                else "summaries-off"
-                if answer["off"]
-                else ""
-            )
+            answer["reason"] = "summaries-off" if answer["off"] else ""
         db.execute("COMMIT")
         return answer, recorded
 
@@ -961,14 +964,18 @@ def _readings_off(db: Any) -> bool:
     # After Pause model calls no session summary call is made either
     # (docs/design-session-summary.md#job-and-grant-contract). The summary answer stays
     # its own, so `off` still reports only that.
-    tables = {
+    tables = _permission_tables(db)
+    return bool(tables) and _off(db, tables)
+
+
+def _permission_tables(db: Any) -> frozenset[str]:
+    return frozenset(
         name
         for (name,) in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name IN ('permission', 'provider_permission')"
         )
-    }
-    return tables == {"permission", "provider_permission"} and _off(db)
+    )
 
 
 def _summary_off(config: RuntimeConfig) -> bool:
@@ -984,7 +991,7 @@ def _summary_off(config: RuntimeConfig) -> bool:
 
 
 def _summary_run(config: RuntimeConfig, now: float, operation: str, receipt: str = "") -> Status:
-    if config.model_calls_disabled and operation not in {"off", "on"}:
+    if config.model_calls_disabled and operation not in {"off", "on", "forget"}:
         return _summary_answer(config, off=_summary_off(config), reason="run-disabled")
     try:
         return _summary_transaction(config, now, operation, receipt)[0]

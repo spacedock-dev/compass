@@ -106,6 +106,8 @@ The master pause still posts `{consent: "off", press: true, observer_model: 1}`.
 Resume posts the same guard fields with `consent: "on"`, without a session or provider.
 It clears the stored pause (`reading_policy.resume`) and writes no Allow, so it never covers
 the unasked lane, which still needs an explicit Allow and DEC-18's preconditions.
+Under the startup refusal Resume answers `run-disabled` and writes nothing, so the stored
+pause outlives a run started with `--no-observer-model`.
 The earlier explicit `allow: true` request remains accepted for older pages, including
 its destination checks. Summary presses keep `{consent: "off"}` and `{consent: "on"}`;
 while paused they answer 403 without changing the saved summary answer.
@@ -1184,9 +1186,10 @@ Turning summaries off, and Pause model calls, stop every job this process runs: 
 part already charged rechecks the grant after the board publish that follows its charge and before
 the model seam, so an off that lands in between sends nothing (the charge stays).
 The master pause outranks the cap and summary off in board status; neither turning on nor off resets spend. `--forget`
-stores summaries off and model calls paused: it forgets the answer as Turn off does, and the
-ruling is silent on whether forgetting should instead return to the default of on, so the
-conservative reading is kept. It never resets the summary ledger.
+stores summaries off and model calls paused, summaries first, so the summary off is written even
+when model calls were already paused and survives a later Resume model calls. It forgets the answer
+as Pause model calls does, and the ruling is silent on whether forgetting should instead return to
+the default of on, so the conservative reading is kept. It never resets the summary ledger.
 
 `POST /api/summary/cancel` accepts exactly `{"harness":"claude","sid":"session-id"}`.
 It answers 202 `{"ok":true,"cancelling":true}` when a job is running, otherwise 409
