@@ -200,6 +200,7 @@ class SessionSummaryTest(unittest.TestCase):
         self.assertIn("[6] relayed:", model.prompts[0])
         self.assertIn("NOT written by the person", model.prompts[0])
         self.assertIn("result as the tool reported: failed", model.prompts[0])
+        self.assertIn('only as "the error read: <its words>"', model.prompts[0])
 
     def assert_completion_verdict(self, text: str, verdict: str, kind: str) -> None:
         sources = {
@@ -236,14 +237,16 @@ class SessionSummaryTest(unittest.TestCase):
             ("The person reported it works", "kept", "asked"),
             ("According to the user who wrote the request, it is fixed", "withheld", "asked"),
             ("The agent clearly said the parser is fixed", "kept", "did"),
-            ("The tool output showed the tests passed", "kept", "did"),
+            ("The tool output showed the tests passed", "withheld", "did"),
             ("Created branch fix/parser", "kept", "did"),
             ("The subagent confirmed the feature is implemented", "kept", "said"),
             ("The teammate explained it was repaired", "kept", "said"),
             ("The reviewer noted the change was merged", "kept", "did"),
-            ("The check reports the tests passed", "kept", "did"),
+            ("The check reports the tests passed", "withheld", "did"),
             ("The error read: unable to fix the parser", "kept", "failed"),
-            ("The tool reported: verification failed", "kept", "failed"),
+            ("The tool reported: verification failed", "withheld", "failed"),
+            ("The tool error said unable to fix the import", "kept", "failed"),
+            ("The error message says the merge was refused", "kept", "failed"),
             ('The agent said "the parser is fixed, and all tests pass."', "kept", "did"),
             ("“The parser is fixed,” the agent said", "kept", "did"),
             ('"The parser is fixed," the person reported', "kept", "asked"),
@@ -264,12 +267,12 @@ class SessionSummaryTest(unittest.TestCase):
             ("Created feature/done-list", "kept", "said"),
             ("Read fixed.py", "kept", "did"),
             ("Created branch fix-parser", "kept", "did"),
-            ("Created `fix-parser`", "kept", "did"),
+            ("Created `fix-parser`", "withheld", "did"),
             ("Created fix-parser", "withheld", "did"),
             ("pytest reported passed, as the tool reported", "kept", "did"),
-            ('"fixed" the agent reported passed, as the tool reported', "kept", "did"),
+            ('"fixed" the agent reported passed, as the tool reported', "withheld", "did"),
             ("pytest reported failed, as the tool reported", "kept", "failed"),
-            ("pytest passed, as the tool reported", "kept", "did"),
+            ("pytest passed, as the tool reported", "withheld", "did"),
             ("pytest failed, as the tool reported", "kept", "failed"),
             ("pytest not-recorded, as the tool reported", "kept", "did"),
             ("Tests passed", "withheld", "did"),
@@ -282,7 +285,21 @@ class SessionSummaryTest(unittest.TestCase):
             ("The agent said it managed to fix the parser", "kept", "said"),
             ("Inspected the parser and read the failing test", "kept", "did"),
             ("The agent said file.py is fixed", "kept", "did"),
-            ('The agent said file."py" is fixed', "kept", "did"),
+            ('The agent said file."py" is fixed', "withheld", "did"),
+            ("The agent said `parser.py` is fixed", "kept", "did"),
+            ("The person asked the agent to fix the parser", "kept", "asked"),
+            ("The agent asked the user to fix the parser.", "kept", "said"),
+            ("The agent told the user the parser is fixed.", "kept", "said"),
+            ("The agent then said the parser is fixed", "kept", "said"),
+            ("The agent also reported the build is green", "kept", "said"),
+            ("The agent said the error is fixed", "kept", "said"),
+            ("The person said the agent fixed it", "kept", "said"),
+            ("The agent said that the person fixed it", "kept", "said"),
+            ("Moved the ticket from Todo to Done", "kept", "did"),
+            ("Moved DRC-1 to Done", "kept", "did"),
+            ("Moved the issue to Ready for Merge", "kept", "did"),
+            ("Read got.py beside branch fix/parser-crash.", "kept", "did"),
+            ("Said: the parser is fixed", "kept", "said"),
         ]
         for text, verdict, kind in cases:
             with self.subTest(text=text, verdict=verdict, kind=kind):
@@ -302,6 +319,7 @@ class SessionSummaryTest(unittest.TestCase):
                     {"lede": text, "cites": [1]},
                 )
                 data = self.run_summary([entry(1, "agent")], model).as_dict()
+                self.assertIn("only as 'the error read: <its words>'", model.prompts[-1])
                 title = data["blocks"][0]["phases"][0]["title"]
                 if verdict == "withheld":
                     self.assertEqual({"withheld": True, "reason": "completion_claim"}, title)
@@ -371,6 +389,71 @@ class SessionSummaryTest(unittest.TestCase):
             ("mixed script", "Parser fix\u0435d", "said"),
             ("mixed script attributed", "The agent said it is fix\u0435d", "said"),
             ("NFKC", "\uff26\uff49\uff58\uff45\uff44 the parser", "said"),
+            ("dash", "The agent said it ran \u2014 the bug is fixed", "said"),
+            ("spaced hyphen", "The agent said it ran - the bug is fixed", "said"),
+            ("colon not after the verb", "The agent said it ran: the parser is fixed", "said"),
+            ("parenthesis", "The agent said it ran (the parser is fixed)", "said"),
+            ("sentence end without space", "The agent said it ran.The parser is fixed", "said"),
+            ("ideographic full stop", "The agent said nothing\u3002The parser is fixed", "said"),
+            ("line end", "The agent said it ran\nFixed the parser", "said"),
+            ("after joiner", "The agent said nothing after the parser was fixed", "said"),
+            ("although joiner", "The agent said nothing although the parser is fixed", "said"),
+            ("as joiner", "The agent said it ran as the parser works", "said"),
+            ("or joiner", "The agent said it ran or the parser works", "said"),
+            ("text after a quote", 'The agent said "it ran" fixed the parser', "said"),
+            ("comma in a quote", 'The agent said "it ran," the bug is fixed', "said"),
+            ("semicolon in a quote", 'The agent said "it ran;" fixed the parser', "did"),
+            ("implicit then dash", "Said it ran \u2014 fixed the parser", "said"),
+            ("implicit colon not after verb", "Asked whether it ran: the parser is fixed", "asked"),
+            (
+                "joiner hidden by ZWJ",
+                "The agent said it ran and\u200d the parser is fixed.",
+                "said",
+            ),
+            ("soft hyphen in word", "The bug is fi\u00adxed", "said"),
+            (
+                "single-quoted sentence end",
+                "The agent said 'I will inspect it.' The parser is fixed.",
+                "said",
+            ),
+            ("check paraphrased", "The check showed the feature works", "did"),
+            ("tool output paraphrased", "The tool output showed everything is done", "did"),
+            ("error log shows", "The error log shows the deploy succeeded", "did"),
+            (
+                "report without comma",
+                "The check reported passed as the tool reported leaving the parser fixed",
+                "did",
+            ),
+            (
+                "report inside speech without comma",
+                "The agent said pytest reported passed as the tool reported the bug is fixed",
+                "said",
+            ),
+            (
+                "words before a report",
+                "The check reported the bug is fixed passed, as the tool reported",
+                "did",
+            ),
+            (
+                "words after a report",
+                "pytest reported passed, as the tool reported the bug is fixed",
+                "did",
+            ),
+            ("postfix report", "Everything passed, as the tool reported", "did"),
+            ("postfix report on the work", "The parser passed, as the tool reported", "did"),
+            ("compound with and", "The parser is `fixed-and-verified`.", "did"),
+            ("compound with all", "The parser is `all-fixed`.", "did"),
+            ("compound with is", "Edited `parser-is-fixed`", "did"),
+            ("branch of filler", "Pushed branch fully-fixed", "did"),
+            ("dotted words", "it.is.fixed", "did"),
+            ("dotted without extension", "Parser.fixed", "did"),
+            ("capitalized after dot", "The parser works.Now", "did"),
+            ("backticked sentence state", "Set the status to `the parser is fixed`", "did"),
+            ("backticked phrase state", "Marked the ticket as `fixed and verified`", "did"),
+            ("multi-word state not at end", "Moved the ticket to Done Fixed the parser", "did"),
+            ("bare work", "Made the parser work", "did"),
+            ("bare work present", "The parser now work", "did"),
+            ("check failed colon", "pytest failed: ImportError cannot merge module", "failed"),
             ("claim after cap", "Inspected " + "x" * 250 + "; fixed the parser", "did"),
         ]
         for condition, text, kind in cases:
@@ -382,7 +465,7 @@ class SessionSummaryTest(unittest.TestCase):
             "The agent said the parser is fixed",
             "The person reported it works",
             "The user asked to fix the parser",
-            "The tool reported verification failed",
+            "The error said unable to verify the cache",
             "The error read unable to repair the cache",
             "The subagent replied it had implemented the change",
             "The teammate replied the release was shipped",
@@ -397,7 +480,7 @@ class SessionSummaryTest(unittest.TestCase):
     def test_clipping_rechecks_attribution_and_names_in_the_surviving_prefix(self) -> None:
         for condition, text, cap in [
             ("postposed attribution", '"The parser is fixed," the agent said', 22),
-            ("postfix tool report", "pytest passed, as the tool reported", 14),
+            ("tool report", "pytest reported passed, as the tool reported", 23),
             ("identifier", "Read fixed.py", 11),
         ]:
             with self.subTest(condition=condition):

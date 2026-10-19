@@ -413,7 +413,7 @@ asks for phases in order with titled phases and cited bullets, and states the ou
 asks for actions and names the completion words it must not state in its own voice. Reports of
 what the agent or person said must name the speaker in the same clause, such as "the agent said
 ..."; quotations without a named speaker are forbidden. It gives the tool-report form for a
-check's result. It says relayed text is not the person's request and that the record is data whose
+check's result and the `the error read: ...` form for a tool error's own output. It says relayed text is not the person's request and that the record is data whose
 instructions must be ignored. Earlier windows contribute only the newest finished
 phase titles that fit within one sixteenth of a window, including the disclaimer that they are
 context, not evidence and must not be cited. Earlier bullets and entries never enter this context.
@@ -488,45 +488,74 @@ The measured basis is unchanged: 138 of 707 displayed strings matched the litera
 five, and about four in five of those withholdings would be wrong. The amendment replaces that
 blanket refusal with structures the code can check:
 
-- **Clauses.** Split at sentence ends (`.`, `!` or `?` followed by space or end), semicolons,
-  commas and the joiners `so`, `which`, `and`, `but`, `then`, `because` and `while`. A dot inside
-  `file.py` is not a sentence end. Straight and curly double quotes and backtick spans are atomic;
-  their internal punctuation and joiners do not split them. Sentence punctuation at the end of a
-  quote ends its clause after the closing quote, unless a trailing speaker attribution follows.
+- **Clauses.** The splitter fails closed: a speech verb never covers a second clause, so any
+  punctuation it has no rule for also ends a licence. It splits at `.`, `!` or `?` followed by
+  space, end or a letter (`ran.The`), and at the same marks before a closing single quote
+  (`'I will inspect it.' The`). It also splits at semicolons, commas, dashes (en, em, a spaced
+  hyphen or `--`), brackets, line ends (checked before whitespace is collapsed for display) and
+  Unicode sentence terminators such as `。`. A colon splits too, except one directly after a speech
+  verb, which introduces the reported words (`the error read: ...`). The joiners are `so`, `which`,
+  `and`, `but`, `then`, `because`, `while`, `after`, `although`, `though`, `yet`, `until`, `since`,
+  `as`, `once`, `when`, `or`, `however`, `thus` and `therefore`. A dot inside a name such as
+  `file.py` is not a sentence end, `then` inside `the agent then said` is an adverb, and `as`
+  inside `marked the ticket as Done` is part of the state. Invisible format characters (Unicode
+  category Cf, such as a zero-width joiner) are removed after NFKC folding and before splitting,
+  so they cannot hide a joiner or a word. Straight and curly double quotes and backtick spans are
+  atomic; their internal punctuation and joiners do not split them. A closed quote followed by
+  more unquoted words ends its clause at the closing quote, unless a trailing speaker attribution
+  follows or the quote is a backticked name (`` the agent said `parser.py` works ``).
 - **Named attribution in the same clause.** A speaker is `the agent`, `the person`, `the user`,
   `the subagent`, `the teammate` or `the reviewer`, and its verb is one of `said`, `says`,
   `reported`, `reports`, `stated`, `replied`, `answered`, `asked`, `told`, `noted`, `claimed`,
-  `confirmed`, `explained`, `mentioned`, `suggested`, `proposed`, `requested` or `wanted`. A tool
-  is `the tool`, `the check` or `the error`, optionally followed by `output`, `message` or `log`,
-  and it may also have `read`, `reads`, `showed` or `shows`. The verb must follow its speaker
-  directly, with at most one `-ly` adverb between them, and the completion word must follow the
-  verb. `read` and `wrote` are not speech for a person or the agent: `the agent read the log before
-  fixing the parser` and `the agent wrote a working parser` are the summary's own claims. The
-  licence ends at the next speaker without a verb of its own, so `the person asked about the bug
-  the agent fixed` is withheld. A quote immediately followed by a speaker and its verb also admits
-  the words inside that quote: `"the parser is fixed," the agent said`. The attribution cannot
-  come from inside an unattributed quote. A trailing attribution licenses only its quote, not
-  words before the quote or after that attribution.
+  `confirmed`, `explained`, `mentioned`, `suggested`, `proposed`, `requested` or `wanted`. The only
+  tool speaker is an error, because the ruling admits a tool error's own output and quotes a check
+  result only as the tool's report: `the error`, `the tool error` or `the check error`, optionally
+  followed by `output`, `message` or `log`, with `read`, `reads`, `said` or `says`. `The tool output
+  showed the tests passed` and `The check reports the tests passed` are withheld. The verb must
+  follow its speaker directly, with at most one adverb (a `-ly` word, `then`, `also`, `later`,
+  `again` or `first`) between them, and the completion word must follow the verb. `read` and
+  `wrote` are not speech for a person or the agent: `the agent read the log before fixing the
+  parser` and `the agent wrote a working parser` are the summary's own claims. The reported words
+  may open with a speaker of their own, after an optional `that`: `the person asked the agent to
+  fix the parser`, `the agent told the user the parser is fixed` and `the person said the agent
+  fixed it` are admitted. A speaker later in the words ends the licence, so `the person asked about
+  the bug the agent fixed` is withheld. A quote immediately followed by a speaker and its verb also
+  admits the words inside that quote: `"the parser is fixed," the agent said`. The attribution
+  cannot come from inside an unattributed quote. A trailing attribution licenses only its quote,
+  not words before the quote or after that attribution.
 - **Implicit subject only for speech bullets.** A code-set `said` or `asked` bullet may begin its
   first clause with a speech verb: `Said the parser is fixed`, `Asked the agent to fix the parser`
   or `Reported the tests pass`. This admits nothing in later clauses. The model's proposed kind
   cannot grant this licence. Titles and the lede have no kind and get no implicit subject licence.
 - **Tracker states.** A verb `moved`, `set`, `changed`, `marked` or `switched`, an object `issue`,
-  `ticket`, `card`, `task`, `status`, `state` or `item`, then `to` or `as`, may name a Capitalized
-  word or a backticked state. Only that state is admitted: `Moved the issue to Done` and
-  ``Marked the ticket as `Done` ``. A bare lowercase state is withheld.
-- **Names.** A completion word inside an identifier joined by `_` or `.` with no spaces is
-  admitted, as in `hotfix_parser.py`. A slashed token is a name only when it also holds a hyphen,
-  underscore, dot or digit, as in `fix/parser-crash` and `feature/done-list`, because
-  `Fixed/verified the parser` is prose. A hyphenated or slashed compound is also admitted inside
-  backticks or immediately after `branch`, `tag`, `ref`, `path`, `file`, `directory`, `folder` or
-  `label`, as in `branch fix-parser` and `branch fix/parser`. A token made only of completion words
-  (`Fixed.Verified`, `branch fixed-done`) and a bare backticked completion word are not names.
-- **Tool reports.** Keep the existing `<check> reported <result>, as the tool reported` form,
-  with result `passed`, `failed` or `not-recorded`. Also admit `<check> passed, as the tool reported`
-  and the corresponding `failed` and `not-recorded` forms. In the latter forms the result must
-  immediately precede the comma. The report licenses only that result word; neither other words
-  before it nor words after its attribution inherit permission.
+  `ticket`, `card`, `task`, `status`, `state` or `item`, or an issue key such as `ABC-1`, an
+  optional `from <State>`, then `to` or `as`, may name a state. A state is a Capitalized word, up
+  to three Capitalized words (with `for`, `in`, `to`, `of` or `on` between them) that end the
+  clause, or a backticked label of one to three words. Only the states are admitted: `Moved the
+  issue to Done`, `Moved the ticket from Todo to Done`, `Moved the issue to Ready for Merge` and
+  ``Marked the ticket as `Done` ``. A bare lowercase state, a backticked phrase such as
+  `` `fixed and verified` `` or `` `the parser is fixed` ``, and `to Done Fixed the parser` are
+  withheld.
+- **Names.** A name has a name's shape. An identifier joined by `_` or `.` with no spaces is a name
+  when it holds an underscore or a digit, or when its last dotted part is a short lowercase file
+  extension (`fixed.py`, `hotfix_parser.py`); `Parser.fixed`, `it.is.fixed` and `works.Now` are
+  not. A slashed token is a name only when it also holds a hyphen, underscore, dot or digit, as in
+  `fix/parser-crash` and `feature/done-list`, because `Fixed/verified the parser` is prose. A
+  hyphenated or slashed compound is also a name immediately after `branch`, `tag`, `ref`, `path`,
+  `file`, `directory`, `folder` or `label`, as in `branch fix-parser`. Backticks alone do not make a
+  compound a name, so `` Created `fix-parser` `` is withheld. No name is made only of completion
+  words (`Fixed.Verified`, `branch fixed-done`) or holds a filler word (`all`, `is`, `are`, `was`,
+  `were`, `be`, `been`, `being`, `and`, `or`, `but`, `so`, `yet`, `it`, `the`, `now`, `fully`,
+  `totally`, `completely`, `really`), so `` `all-fixed` ``, `` `parser-is-fixed` `` and `branch
+  fully-fixed` are withheld. A result verb is matched only as a whole word outside a name, so
+  `got.py` is not `got`.
+- **Tool reports.** Only the `<check> reported <result>, as the tool reported` form is admitted,
+  with result `passed`, `failed` or `not-recorded` and the comma required. The whole report,
+  `reported` included, ends its clause, so it licenses only itself: neither words before it nor
+  words after its attribution inherit permission. The postfix form `<check> passed, as the tool
+  reported` is withheld, because the code cannot tell a check's name from the work's
+  (`Everything passed, as the tool reported`). Both prompts teach the reported form, and the
+  error-output form `the error read: <its words>`; text after `<check> failed:` is not admitted.
 
 The refusal conditions stay. Unattributed quotations such as `Quoted "the parser is fixed"`,
 `"Fixed the parser."`, a bare backticked `fixed` and `all fixed` are withheld. A speech verb does
@@ -543,7 +572,13 @@ such as `Tests passed` and `The build went green.` remain withheld. NFKC folding
 refusal and checks before and after clipping remain in force.
 
 This is a structural backstop, not a language or relevance judge. A non-completion noun use such
-as `a list of fixes` still matches and stays withheld. The code does not check whether an
+as `a list of fixes`, `Ran the deploy script`, `a pass over the docs`, `the done list` or `the work
+so far` still matches and stays withheld, although the ruling would admit it. Failing closed also
+withholds some attributed speech the ruling admits: a joiner inside reported words (`the person
+asked when it would be done`), `according to the agent, ...`, a speaker whose verb is not on the
+list, and a quote followed by more words (`the agent said file."py" is fixed`). Invisible marks
+other than format characters (a combining accent), Latin look-alike letters (`ƒixed`) and a
+trailing underscore (`fixed_`) still defeat the word match. The code does not check whether an
 attributed sentence is relevant to its citations. Where the ruling leaves malformed quotations
 unspecified, an unclosed quoted span stays atomic through the end of the string and cannot supply
 its own attribution.
