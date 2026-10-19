@@ -1,18 +1,15 @@
 {
   "format": 1,
   "name": "reading-unknown-session",
-  "notes": "With the route's own disclosure echoed back, a session that is not published answers 200 produced:false, never a 404 that would reveal which sids exist.",
+  "notes": "With the route's provider and model echoed back, a session that is not published answers 200 produced:false, never a 404 that would reveal which sids exist.",
   "request": {
     "body": {
-      "allow": true,
       "harness": "claude",
       "model": "claude-sonnet-5-5",
       "observer_model": 1,
       "press": true,
       "provider": "claude",
-      "sid": "00000000",
-      "tool_output": "Anthropic",
-      "words_destination": "Anthropic"
+      "sid": "00000000"
     },
     "headers": {
       "Origin": "{origin}"

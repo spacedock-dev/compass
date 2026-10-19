@@ -1252,6 +1252,8 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             "names its route; nothing is read.",
         )
         route = off["body"].get("route", {})
+        # A press never lifts the pause it was refused under; Resume model calls does.
+        rig.send(post("/api/reading", {**press, "consent": "on"}))
         recorder.capture(
             rig,
             "reading-unknown-session",
@@ -1262,12 +1264,9 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
                     "sid": "00000000",
                     "provider": route.get("provider"),
                     "model": route.get("model"),
-                    "allow": True,
-                    "words_destination": route.get("words_destination"),
-                    "tool_output": route.get("destination"),
                 },
             ),
-            "With the route's own disclosure echoed back, a session that is not published "
+            "With the route's provider and model echoed back, a session that is not published "
             "answers 200 produced:false, never a 404 that would reveal which sids exist.",
         )
         recorder.capture(
