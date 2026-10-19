@@ -5354,16 +5354,21 @@ what it stores and the page's evidence rules are as before.
   "Departure · Expected outcome 2", numbered only where more than one line was read). Its headline is
   the constraint's own saved words, because no model writes one
   ([DEC-28](design-session-summary.md#the-ruling), answer 7). What is the cited entries, each as its
-  activity number and what the entry is in Compass's words. Why, under "Why Compass reads this as
+  activity number and the kind of entry Compass names ("failed check", "Agent message", "Your message"),
+  never the entry's own summary: for a message that is the agent's or the person's text, and an agent's
+  "Done" would then stand inside the result. Why, under "Why Compass reads this as
   drift", is the stored `detail`, the one string the model wrote. The ruled status ("Departs;
   evidence #n") follows, and the line's label, full status, limit and each entry's recorded time and
   source stay one press away under Evidence. "Model assessment" and "Read intent:" are gone; the
   headline carries the read words.
-- A departure whose entries none are held says how many are not loaded, or that they could not be
-  loaded, so no card stands on nothing a reader can reach.
+- The shape already guarantees that a departure holds at least one cited entry: a row with no resolved
+  citation is demoted to can't tell, so no card stands on nothing a reader can reach.
 - Every other line follows a divider as one quiet row, in the words `resultStatus` and `claimStatus`
   already used: not reached at this stop, consistent with a check, the agent or the session, can't
-  tell with its reason, nothing shown, and the claim states. A claims row the shape withdraws is not
+  tell, nothing shown, and the claim states. The reason for can't tell stays inside Evidence, as the
+  2026-10-14 ruling keeps it; this amendment does not supersede that. A contradicted claim keeps its
+  explanation in view, or "No explanation was retained for this assessment." where none was stored,
+  and its cited entries' records under Evidence. A claims row the shape withdraws is not
   drawn, as before, so a claim the page cannot place has no row of its own.
 - Each number replaces "Show cited entries". It opens Full activity at that entry, with every entry
   the finding cites marked, and "Back to the finding" returns to the number. Where no cited entry is

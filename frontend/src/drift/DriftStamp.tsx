@@ -4,11 +4,12 @@ import { lastRunLine } from './result';
 
 /* The Drift card header's model and "Analysis last run HH:MM", drawn only where a stored reading this build
    can read stands: a refused or malformed one says so in its own section, and a last run nothing shows would
-   point at nothing. */
+   point at nothing. Nothing while an analysis runs: the body hides the old result then, and a header still
+   naming its last run would disagree with it. */
 export function DriftStamp() {
   const { model } = useDrift();
   const { annotate, raw, shape } = model;
-  if (!annotate || !raw || !shape || shape.malformed) return null;
+  if (model.job || !annotate || !raw || !shape || shape.malformed) return null;
   const line = lastRunLine(shape.stamp, nextNumber(raw['read_at']));
   if (!line) return null;
   return (

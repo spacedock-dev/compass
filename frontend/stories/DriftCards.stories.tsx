@@ -110,8 +110,8 @@ const primaries = (root: HTMLElement) => [
 ];
 
 /* Each number on a finding is the activity list's own: a button named for the number, the constraint and the
-   reader's words, with what the entry is beside it in Compass's words, and a row in Full activity that carries
-   the same number. */
+   reader's words, with the kind of entry Compass names beside it and never the entry's own text, and a row in
+   Full activity that carries the same number. */
 async function citesResolvably(root: HTMLElement, constraint: string, clause: string) {
   const found = chips(root);
   await expect(found.length).toBeGreaterThan(0);
@@ -122,7 +122,7 @@ async function citesResolvably(root: HTMLElement, constraint: string, clause: st
       `Show ${number} in Full activity for ${clause ? `${constraint}: ${clause}` : constraint}`,
     );
     await expect(chip.nextElementSibling?.textContent).toMatch(
-      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry) · /,
+      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry)$/,
     );
     const row = document.querySelector<HTMLElement>(
       `[data-next-entry-id="${CSS.escape(chip.dataset['nextCite'] ?? '')}"]`,
@@ -164,6 +164,17 @@ async function stamp(root: HTMLElement) {
       /^claude-sonnet-5-5 · Analysis last run \d\d:\d\d$/,
     ),
   );
+}
+
+/* The reason for Can't tell stays inside Evidence (owner, 2026-10-14): hidden until the reader opens it. */
+async function reasonBehindEvidence(row: HTMLElement) {
+  const reason = [...row.querySelectorAll<HTMLElement>('.next-cockpit-reading-why')].find(
+    (node) => node.textContent === CHECK_DOES_NOT_SHOW_IT,
+  ) as HTMLElement;
+  await expect(reason).toBeDefined();
+  await expect(reason).not.toBeVisible();
+  await userEvent.click(within(row).getByRole('button', { name: 'Evidence' }));
+  await waitFor(() => expect(reason).toBeVisible());
 }
 
 async function noRetiredResultWords(root: HTMLElement) {
@@ -235,12 +246,12 @@ export const TwoDeparturesACantTellAndAClaim: Story = {
     const cantTell = quietRow(quiet, 'line_2');
     await expect(cantTell).toHaveAttribute('data-next-result-state', 'cant-tell');
     await expect(cantTell).toHaveTextContent(`${RESULT_CANT_TELL} · “The docs say how to run it”`);
-    await expect(cantTell).toHaveTextContent(CHECK_DOES_NOT_SHOW_IT);
+    await reasonBehindEvidence(cantTell);
     const claim = quietRow(quiet, 'claims');
     await expect(claim).toHaveAttribute('data-next-result-state', 'unshown');
     await expect(claim).toHaveTextContent(/What the agent said at #\d+ is not shown by the record/);
     await citesResolvably(claim, 'What the agent claimed', '');
-    await expect(claim.textContent).toContain('Agent message · All green locally');
+    await expect(claim.textContent).not.toContain('All green locally');
     // The quiet rows come after every card.
     await expect(
       (cards[1] as HTMLElement).compareDocumentPosition(quiet) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -347,7 +358,7 @@ export const ConsistentWithTheAgent: Story = {
     });
     await expect(goal).toHaveTextContent(/^Consistent with what the agent said at #\d+/);
     await citesResolvably(goal, 'Goal', 'Ship the queue');
-    await expect(goal.textContent).toContain('Agent message · All green locally');
+    await expect(goal.textContent).not.toContain('All green locally');
     await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
     await waitFor(() => expect(goal).toHaveTextContent('; not a check'));
     await neverDone(shown);
@@ -375,7 +386,7 @@ export const ConsistentWithTheSession: Story = {
     await expect(goal).toHaveTextContent(
       /^Consistent with what the session said at (#\d+(\.\d+)?|\d\d:\d\d)/,
     );
-    await expect(goal.textContent).toContain('Recorded entry · Queue worker started');
+    await expect(goal.textContent).not.toContain('Queue worker started');
     await neverDone(shown);
   },
 };
@@ -413,7 +424,7 @@ export const CantTellAndNothingShown: Story = {
     const cantTell = quietRow(shown, 'line_1');
     await expect(cantTell).toHaveAttribute('data-next-result-state', 'cant-tell');
     await expect(cantTell).toHaveTextContent(`${RESULT_CANT_TELL} · “Tests pass”`);
-    await expect(cantTell).toHaveTextContent(CHECK_DOES_NOT_SHOW_IT);
+    await reasonBehindEvidence(cantTell);
     const nothing = quietRow(shown, 'line_2');
     await expect(nothing).toHaveTextContent(
       `${RESULT_NOTHING_SHOWS} · “The docs say how to run it”`,
@@ -456,6 +467,118 @@ export const ClaimContradicted: Story = {
     await expect(chips(claim)).toHaveLength(2);
     // A claim never departs from the intent: no card for it.
     await expect(departures(shown)).toHaveLength(0);
+    await neverDone(shown);
+  },
+};
+
+/* A contradicted claim whose stored detail is empty or only whitespace still says no explanation was retained,
+   and still lists each cited entry's own record under Evidence, as the account did before the cards. */
+const unexplained = (detail: string): Pick<Story, 'args' | 'play'> => ({
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: LINE_CONSISTENT,
+        claims: { result: 'departure', cites: ['m1', 'c1'], detail, clause: '' },
+      }),
+    ),
+    facts: [PERSON, PASSED, CLAIM, failedCheck('c1', 700)],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const claim = await waitFor(() => {
+      const node = quietRow(shown, 'claims');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await expect(claim).toHaveAttribute('data-next-result-state', 'departs');
+    await expect(claim.querySelector('.next-cockpit-reading-detail')).toHaveTextContent(
+      /^No explanation was retained for this assessment\.$/,
+    );
+    await userEvent.click(within(claim).getByRole('button', { name: 'Evidence' }));
+    const entries = await waitFor(() => {
+      const found = [...claim.querySelectorAll<HTMLElement>('.next-cockpit-assessment-entry')];
+      expect(found).toHaveLength(2);
+      return found;
+    });
+    for (const entry of entries) {
+      await waitFor(() => expect(entry).toBeVisible());
+      await expect(entry).toHaveTextContent(/^#\d+(\.\d+)? · /);
+    }
+    await neverDone(shown);
+  },
+});
+export const ClaimContradictedWithNoDetail: Story = unexplained('');
+export const ClaimContradictedWithBlankDetail: Story = unexplained('   ');
+
+/* An agent message that says "Done" with a check mark, cited by a consistent line: the number names the entry by
+   kind only, so the agent's words and mark never stand inside the result. The reading cites it twice, and it
+   draws one number. */
+export const AgentDoneIsNeverDrawnInTheResult: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: { ...GOAL_CONSISTENT, cites: ['m2', 'm2'] },
+        line_1: LINE_CONSISTENT,
+      }),
+    ),
+    facts: [
+      PERSON,
+      PASSED,
+      fact('m2', 650, { type: 'agent_message', by: 'agent', summary: 'Done ✓ the queue ships.' }),
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const goal = await waitFor(() => {
+      const node = quietRow(shown, 'goal');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await citesResolvably(goal, 'Goal', 'Ship the queue');
+    await expect(chips(goal)).toHaveLength(1);
+    await expect(chips(goal)[0]?.nextElementSibling).toHaveTextContent(/^Agent message$/);
+    // The entry is in the record: Full activity, outside the result, still carries the agent's words.
+    await expect(document.querySelector('[data-next-entry-id="m2"]')?.textContent ?? '').toContain(
+      'the queue ships',
+    );
+    await neverDone(shown);
+  },
+};
+
+/* One outcome line read: its card is labelled without a number. */
+export const OneOutcomeLineDeparts: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: {
+          result: 'departure',
+          cites: ['c1'],
+          detail: 'pytest failed after your words.',
+          clause: 'Tests pass',
+        },
+      }),
+    ),
+    facts: [PERSON, FAILED],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const cards = await waitFor(() => {
+      const found = departures(shown);
+      expect(found).toHaveLength(1);
+      return found;
+    });
+    await departureCard(
+      cards[0] as HTMLElement,
+      'Expected outcome',
+      'Tests pass',
+      'pytest failed after your words.',
+      'Expected outcome line 1',
+    );
+    await expect(cards[0]?.querySelector('[data-next-departure-label]')).toHaveTextContent(
+      /^Departure · Expected outcome$/,
+    );
     await neverDone(shown);
   },
 };

@@ -34,8 +34,8 @@ export function citationsHeld(
   return scope.cited.every((id) => held.has(id));
 }
 
-/* The ids one stored criterion cites, loaded or not, in its order: what Show cited entries asks the record for.
-   The shape's own `citedIds` are only the ones the page holds. */
+/* The ids one stored criterion cites, loaded or not, in its order: what a cited number or Load the cited
+   entries asks the record for. The shape's own `citedIds` are only the ones the page holds. */
 export function citesOf(assessment: Row | null | undefined, key: string): string[] {
   const criteria = isRecord(assessment?.['criteria']) ? assessment['criteria'] : {};
   const row = criteria[key];

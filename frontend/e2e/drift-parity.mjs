@@ -678,8 +678,8 @@ try {
         .locator('[data-next-finding]')
         .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label')));
       assert.deepEqual(names, [
-        'Show cited entries in Full activity for Goal: Ship the queue worker',
-        'Show cited entries in Full activity for Expected outcome line 1: Tests pass',
+        'Show #1 in Full activity for Goal: Ship the queue worker',
+        'Show #2 in Full activity for Expected outcome line 1: Tests pass',
       ]);
       assert.equal(new Set(names).size, names.length);
       for (const name of names)

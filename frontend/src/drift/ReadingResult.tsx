@@ -31,7 +31,6 @@ import {
   CLAIMS,
   CLAUSE_UNRETAINED,
   DEPARTURE,
-  missingCites,
   NOT_REACHED,
   READ_INTENT,
   READ_MODEL,
@@ -69,16 +68,19 @@ function jumpName(key: string): string {
   return `Expected outcome line ${key === 'output' ? '1' : key.slice(5)}`;
 }
 
-/* The cited entries of one finding, each as its number in the activity list and what the entry is in
-   Compass's own words, never a model's account of it. A number opens Full activity at that entry; an entry the
-   page does not hold yet keeps the press that reads older pages for it, and a departure whose entries none of
-   it holds says so, so no departure stands on nothing a reader can reach. */
+/* The cited entries of one finding, each as its number in the activity list and the kind of entry Compass
+   names. Never the entry's own summary: for a message that is the agent's or the person's text, and an agent's
+   "Done" drawn here would stand inside the result. A number opens Full activity at that entry; an entry the
+   page does not hold yet keeps the press that reads older pages for it. The shape demotes a departure with no
+   held citation, so a departure always reaches at least one number. */
 function CitedEntries({ row }: { readonly row: Criterion }) {
   const { model, chooseFinding, jumpMissing } = useDrift();
   const record = useDisplayed((snapshot) =>
     snapshot.records.get(contextKey(model.projectKey, model.identity)),
   );
-  const held = row.citedIds
+  /* One number per entry: the shape keeps a repeated cite, as the legacy producer it is held to did, and the
+     evidence rows and the unloaded count already read a repeat as one citation. */
+  const held = [...new Set(row.citedIds)]
     .map((id) => model.byId.get(id))
     .filter((entry): entry is WorkEntry => Boolean(entry));
   const older =
@@ -109,7 +111,7 @@ function CitedEntries({ row }: { readonly row: Criterion }) {
               {where}
             </Button>
             <span className="min-w-0 text-body leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
-              {`${citedKind(entry)} · ${String(entry.summary || 'Recorded entry')}`}
+              {citedKind(entry)}
             </span>
           </li>
         );
@@ -132,7 +134,6 @@ function CitedEntries({ row }: { readonly row: Criterion }) {
         Load the cited entries
       </Button>
     ) : null;
-  const departs = row.result === DEPARTURE;
   return (
     <>
       {chips ? <SampleBeside id={row.key === 'goal' ? 'cited' : ''}>{chips}</SampleBeside> : null}
@@ -140,10 +141,6 @@ function CitedEntries({ row }: { readonly row: Criterion }) {
       {older ? (
         <p className={QUIET} data-next-unloaded>
           {unloadedCites(row.unloaded)}
-        </p>
-      ) : departs && !held.length ? (
-        <p className={QUIET} data-next-unloaded>
-          {missingCites(row.unloaded || 1, record?.reachedStart ? 'start' : 'stopped')}
         </p>
       ) : null}
     </>
@@ -164,8 +161,9 @@ function Tail({ row }: { readonly row: Criterion }) {
   );
 }
 
-/* The line's label, its full status, the source tag, the limit and each cited entry's own record, one click
-   away under "Evidence", as before the cards: moved, never dropped. Its why is drawn in view instead. */
+/* The line's label, its full status, its why, the source tag, the limit and each cited entry's own record, one
+   click away under "Evidence", as before the cards: moved, never dropped. The why stays here because the reason
+   for Can't tell stays inside Evidence (owner, 2026-10-14). */
 function EvidenceMore({
   row,
   status,
@@ -181,6 +179,7 @@ function EvidenceMore({
     <Why name={`result-evidence:${row.key}`} summary="Evidence">
       <span className="next-cockpit-reading-name">{row.label}</span>
       {full === status ? null : <span className="next-cockpit-reading-evidence">{full}</span>}
+      {row.why ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
       {row.result === NOT_REACHED && row.detail ? (
         <p className="next-cockpit-reading-detail">{row.detail}</p>
       ) : null}
@@ -239,7 +238,6 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
           {status}
         </p>
         {row.coverage ? <p className={QUIET}>{row.coverage}</p> : null}
-        {row.why ? <p className="next-cockpit-reading-why m-0">{row.why}</p> : null}
         <EvidenceMore row={row} status={status} rows />
       </div>
     </article>
@@ -248,7 +246,8 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
 
 /* One remaining line, quiet: a glyph by state (a cross for departs, a neutral filled dot for consistent, never
    a check and never green, a dashed circle for can't tell), the ruled status in the words `resultStatus` and
-   `claimStatus` use, the line's own words, why it reads so, and its cited entries. */
+   `claimStatus` use, the line's own words and its cited entries. A contradicted claim keeps its explanation, or
+   the sentence saying none was retained, and each cited entry's record under Evidence, as before the cards. */
 function QuietRow({
   row,
   outcomes,
@@ -261,7 +260,8 @@ function QuietRow({
   const { model } = useDrift();
   const status = resultStatus(row, model.numbers, model.byId, true);
   const claims = row.key === CLAIMS;
-  const detail = claims && row.result === DEPARTURE ? String(row.detail || '').trim() : '';
+  const claimDeparts = claims && row.result === DEPARTURE;
+  const detail = claimDeparts ? String(row.detail || '').trim() : '';
   const Tag = tag;
   return (
     <Tag
@@ -291,11 +291,12 @@ function QuietRow({
             </>
           )}
         </span>
-        {row.why ? <span className="next-cockpit-reading-why">{row.why}</span> : null}
-        {detail ? <span className="next-cockpit-reading-detail">{detail}</span> : null}
+        {claimDeparts ? (
+          <span className="next-cockpit-reading-detail">{detail || NO_DETAIL}</span>
+        ) : null}
         {row.coverage ? <span className="next-cockpit-reading-why">{row.coverage}</span> : null}
         <CitedEntries row={row} />
-        <EvidenceMore row={row} status={status} rows={Boolean(detail)} />
+        <EvidenceMore row={row} status={status} rows={claimDeparts} />
       </span>
     </Tag>
   );

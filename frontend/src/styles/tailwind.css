@@ -20,7 +20,7 @@
 @source '../steering/StageConditions.tsx';
 @source '../intent/PromptSelect.tsx';
 @source '../sample/**/*.{ts,tsx}';
-@source '../drift/{ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore}.tsx';
+@source '../drift/{DriftStamp,ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore}.tsx';
 @source not '../**/*.test.*';
 @source not '../controls/{gallery,GalleryBoard,galleryWorld}.*';
 @source not '../**/*.css';
