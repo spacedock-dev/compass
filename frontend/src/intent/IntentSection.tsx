@@ -13,6 +13,7 @@ import {
   intentChanges,
   intentDrafted,
   intentKey,
+  intentStatus,
   noDraftWhy,
 } from './derive';
 import { undoChanges } from './edit';
@@ -20,7 +21,7 @@ import { Caveats, LaterDirections } from './Caveats';
 import { ClearGoal, GoalField } from './GoalField';
 import { OutcomeLines, AddOutcomeLine } from './OutcomeLines';
 import { saveIntent } from './save';
-import { ENDED_CAVEAT, INTENT_MEASURED } from './sentences';
+import { ENDED_CAVEAT, INTENT_LEDE, INTENT_MEASURED } from './sentences';
 import { usePanel } from './useIntent';
 import { HowTo } from './HowTo';
 
@@ -57,16 +58,6 @@ function Footer() {
     <div className="next-cockpit-held-footer">
       <AddOutcomeLine />
       <span className="next-cockpit-held-tools">
-        {changes.goal || changes.pending ? (
-          <ActionButton
-            label="Undo changes"
-            action="held-undo"
-            arg="intent"
-            inert={!(changes.undoable && !saving)}
-            focusKey={`${key}:undo`}
-            onPress={() => undoChanges(ctx, input)}
-          />
-        ) : null}
         <ActionButton
           label="Save intent"
           busyLabel="Saving…"
@@ -78,6 +69,16 @@ function Footer() {
           focusKey={`${key}:save`}
           onPress={() => void saveIntent(ctx, session)}
         />
+        {changes.goal || changes.pending ? (
+          <ActionButton
+            label="Undo changes"
+            action="held-undo"
+            arg="intent"
+            inert={!(changes.undoable && !saving)}
+            focusKey={`${key}:undo`}
+            onPress={() => undoChanges(ctx, input)}
+          />
+        ) : null}
       </span>
       {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
     </div>
@@ -120,12 +121,13 @@ export function SavedStamp() {
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
 function Kept() {
   return (
-    <div className="flex flex-col gap-2 [&_.next-session-drift-caveats]:p-0" data-next-intent-kept>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <SavedStamp />
-        <ClearGoal />
-      </div>
-      <p className="next-cockpit-held-hint flex-none" data-next-intent-measured>
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 border-t border-[var(--rule)] text-label text-muted-foreground [&_.next-session-drift-caveats]:contents [&_.next-cockpit-held-discard]:mt-0 [&_.next-cockpit-held-hint]:flex-initial [&_.next-cockpit-held-hint]:text-label"
+      data-next-intent-kept
+    >
+      <SavedStamp />
+      <ClearGoal />
+      <p className="next-cockpit-held-hint" data-next-intent-measured>
         {INTENT_MEASURED}
       </p>
       <Caveats />
@@ -141,6 +143,7 @@ export function IntentSection() {
     ctx.shell.controls.focusLane,
     `intent:${compatSessKey(session)}`,
   );
+  const status = useDisplayed((snapshot) => intentStatus(input, snapshot.pending));
   const annotation = input.annotation;
   const generated = nextNumber(payload['generated']);
   const stamp = discardStamp(annotation, generated);
@@ -167,8 +170,21 @@ export function IntentSection() {
           </h2>
           <SampleMark id="intent" />
         </span>
-        <HowTo />
+        <span className="ms-auto flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          {status ? (
+            <span
+              className={`[font-family:var(--mono)] text-label ${status === 'Saved' ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
+              data-next-intent-status
+            >
+              {status}
+            </span>
+          ) : null}
+          <HowTo />
+        </span>
       </header>
+      <p className="next-cockpit-held-lede text-muted-foreground" data-next-intent-lede>
+        {INTENT_LEDE}
+      </p>
       {/* Under the heading rather than in its header, so the revision line keeps the sentence tier. */}
       {why ? (
         <p className="next-cockpit-held-lede" data-next-intent-no-draft>

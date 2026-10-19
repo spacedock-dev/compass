@@ -1,8 +1,16 @@
 import { compatSessKey } from '../api/identity';
 import { type Row } from '../observed';
-import { heldCap, scrub } from './annotation';
+import { annotationDiscarded, heldCap, scrub } from './annotation';
 import { pendingHas, type Ctx, announce } from './context';
-import { goalKey, intentKey, linesDraft, linesKey, linesOrigins, type DraftInput } from './derive';
+import {
+  goalBaseline,
+  goalKey,
+  intentKey,
+  linesDraft,
+  linesKey,
+  linesOrigins,
+  type DraftInput,
+} from './derive';
 import { INTENT_CHOSEN_SAID, LINES_FULL } from './sentences';
 import { OUTCOME_LINES_MAX } from './annotation';
 
@@ -25,6 +33,14 @@ export function typeGoal(ctx: Ctx, input: DraftInput, raw: string): string {
   const key = goalKey(input.session);
   const value = bounded(raw, input);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
+  if (value === '') ctx.held.cleared.add(key);
+  else if (value === goalBaseline(input)) ctx.held.cleared.delete(key);
+  /* The stored goal typed back over a choice is no change at all; a kept choice would leave Undo hidden and
+     Save inert beside a box that still read as edited. */
+  const stored = annotationDiscarded(input.annotation)
+    ? ''
+    : String(input.annotation?.['goal'] || '');
+  if (stored.trim() && value === stored) ctx.held.chosen.delete(key);
   ctx.held.goals.set(key, value);
   ctx.held.drop(key);
   ctx.held.drop(intentKey(input.session));
@@ -59,9 +75,11 @@ export function typeLine(input: DraftInput, index: number, raw: string): string 
 export function clearGoal(ctx: Ctx, input: DraftInput): void {
   const key = goalKey(input.session);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
+  ctx.held.cleared.add(key);
   ctx.held.goals.set(key, '');
   ctx.held.chosen.delete(key);
   ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
   ctx.held.requestFocus(key);
 }
 
@@ -72,9 +90,11 @@ export function escapeGoal(ctx: Ctx, input: DraftInput): boolean {
   if (pendingHas(ctx, `${intentKey(input.session)}:save`)) return false;
   const key = goalKey(input.session);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
+  ctx.held.cleared.delete(key);
   ctx.held.goals.delete(key);
   ctx.held.chosen.delete(key);
   ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
   ctx.held.requestFocus(key);
   return true;
 }
@@ -88,6 +108,7 @@ export function escapeLines(ctx: Ctx, input: DraftInput): boolean {
   ctx.held.lines.delete(key);
   ctx.held.origins.delete(key);
   ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
   ctx.held.requestFocus(`${key}:0`);
   return true;
 }
@@ -115,6 +136,7 @@ export function addLine(ctx: Ctx, input: DraftInput): void {
   held.lines.set(key, draft);
   held.origins.set(key, origins);
   held.drop(key);
+  held.drop(intentKey(session));
   held.requestFocus(`${key}:${String(Math.max(0, draft.length - 1))}`);
 }
 
@@ -129,6 +151,7 @@ export function removeLine(input: DraftInput, index: number): void {
   held.lines.set(key, draft);
   held.origins.set(key, origins);
   held.drop(key);
+  held.drop(intentKey(session));
   held.requestFocus(`${key}:${String(Math.max(0, draft.length - 1))}`);
 }
 
@@ -138,6 +161,7 @@ export function undoChanges(ctx: Ctx, input: DraftInput): void {
   const { held, session } = input;
   held.clearActionFeedback(compatSessKey(session));
   if (pendingHas(ctx, `${intentKey(session)}:save`)) return;
+  held.cleared.delete(goalKey(session));
   held.chosen.delete(goalKey(session));
   held.goals.delete(goalKey(session));
   held.drop(goalKey(session));
@@ -165,9 +189,11 @@ export function choosePrompt(
   if (!found) return;
   const key = goalKey(input.session);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
+  ctx.held.cleared.delete(key);
   ctx.held.chosen.set(key, { factId: found.factId, text: found.text, at: found.at });
   ctx.held.goals.delete(key);
   ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
   announce(ctx, `${key}:chosen`, INTENT_CHOSEN_SAID);
   ctx.held.requestFocus(`${key}:prompt`);
 }

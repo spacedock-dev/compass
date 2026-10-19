@@ -351,6 +351,13 @@ class TheReadersWordsNeverCostAVerdictItsEvidenceTest(unittest.TestCase):
                 # it sends less, and a reader deciding needs the cap, not the mechanism.
                 self.assertIn(f"your messages up to {cap} each", text)
 
+    def test_the_intent_cards_cap_sentence_names_the_ledger_cap(self) -> None:
+        # The page copies the number into `ANALYZE_PROMPT_CAP_CHARS` rather than fetching it.
+        root = Path(reading.__file__).resolve().parents[4]
+        sentences = (root / "frontend/src/intent/sentences.ts").read_text(encoding="utf-8")
+        cap = f"{reading.LEDGER_WORDS_CAP_CHARS:_}"
+        self.assertIn(f"export const ANALYZE_PROMPT_CAP_CHARS = {cap};", sentences)
+
     def test_a_short_session_sends_every_message_whole(self) -> None:
         prompt, _ = self.prompt([_fact(), _check(), _write()])
         self.assertIn(POINT, prompt)

@@ -93,7 +93,7 @@ function DirectionLineView() {
           and Remove on the right. */}
       <div className="next-cockpit-held-under">
         <span className="next-cockpit-held-count" data-next-cockpit-direction-count>
-          {`${String(text.length)}/${String(cap)}`}
+          {`${String(text.length)} / ${String(cap)}`}
         </span>
         <Label className="next-cockpit-held-source" htmlFor={boxId}>
           {from}
@@ -174,19 +174,26 @@ function LineRow({
   const line = place && place.text === text ? place : null;
   return (
     <li
-      className={`next-cockpit-held-line${used ? ' grid-cols-[minmax(0,1fr)_auto]' : ''}`}
+      className={`next-cockpit-held-line ${used ? 'grid-cols-[auto_minmax(0,1fr)_auto]' : 'grid-cols-[auto_minmax(0,1fr)]'}`}
       data-next-cockpit-held-line={index}
     >
+      <span
+        aria-hidden="true"
+        className="col-start-1 col-end-2 self-center min-w-[18px] [font-family:var(--mono)] text-label text-muted-foreground"
+        data-next-cockpit-held-line-number={index}
+      >
+        {String(index + 1)}
+      </span>
       <HeldTextarea
         id={boxId}
-        className={`${used ? 'col-start-1 col-end-2 ' : ''}max-[760px]:h-[44px]`}
+        className="col-start-2 col-end-3 max-[760px]:h-[44px]"
         aria-label={`Expected outcome line ${String(index + 1)}`}
         rows={3}
         maxLength={cap}
         memoryKey={`${key}:${String(index)}`}
         focusKey={`${key}:${String(index)}`}
         text={text}
-        placeholder="one thing that should exist when it is done"
+        placeholder="One thing that should be true when it's done"
         data-next-cockpit-held-line-index={index}
         data-next-cockpit-held-lines-key={key}
         data-next-cockpit-held-saved={place ? place.text : ''}
@@ -199,9 +206,9 @@ function LineRow({
           escapeLines(ctx, input);
         }}
       />
-      <div className="next-cockpit-held-under">
+      <div className="next-cockpit-held-under col-start-2 col-end-3">
         <span className="next-cockpit-held-count" data-next-cockpit-held-line-count={index}>
-          {`${String(text.length)}/${String(cap)}`}
+          {`${String(text.length)} / ${String(cap)}`}
         </span>
         {place && place.source === 'entry' ? (
           <span
@@ -216,7 +223,7 @@ function LineRow({
       {used ? (
         <ActionButton
           weight="secondary"
-          className="next-cockpit-held-remove col-start-2 row-start-1 row-span-2 self-start"
+          className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start"
           label="Remove"
           action="held-line-remove"
           arg={String(index)}
@@ -261,7 +268,8 @@ export function OutcomeLines() {
     >
       <div className="next-cockpit-held-heading">
         <Label className="next-cockpit-held-label" htmlFor={firstBoxId}>
-          Expected outcome (optional)
+          Expected outcome{' '}
+          <span className="ms-1 font-normal text-[var(--ink3)]">{`· up to ${String(OUTCOME_LINES_MAX)} lines`}</span>
         </Label>
       </div>
       <ol className="next-cockpit-held-list">

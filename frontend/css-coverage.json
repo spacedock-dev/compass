@@ -1619,7 +1619,6 @@
     "frontend/src/drift/drift.css||[data-next-result-state=\"unshown\"]>.next-cockpit-result-glyph::before": "ResultState retains the unshown result glyph when a retained result cannot be shown; current fixtures show results or an absence.",
     "frontend/src/drift/drift.css||.next-cockpit-content .next-course-evidence .next-cockpit-source": "CoursePanel retains expanded source, confidence and fact details; no reached proof opens a course fact with these details.",
     "frontend/src/intent/intent.css||.next-cockpit-held-source[data-next-cockpit-held-line-source-stale]": "OutcomeLines retains the invisible source cell for an empty editable held line, so its grid does not move.",
-    "frontend/src/intent/intent.css||.next-intent-draft-marks>.next-cockpit-held-cue": "GoalField DraftMarks retains the clipped prompt cue beside its source badge; reached draft prompts are complete.",
     "frontend/src/intent/intent.css||.next-cockpit-direction-replace": "OutcomeLines retains the replace-line chooser and its pressed cue when all direction slots are full.",
     "frontend/src/intent/intent.css||.next-cockpit-direction-replace button[aria-pressed=\"true\"]": "OutcomeLines retains the replace-line chooser and its pressed cue when all direction slots are full.",
     "frontend/src/intent/intent.css||.next-cockpit-reading-why[data-absence=\"waiting-on-you\"]": "DriftBody retains the waiting-on-you refusal border returned by absenceAttr; reached refusals use other absence reasons.",

@@ -15,8 +15,6 @@ const badgeVariants = cva('', {
         'inline-block m-0 px-[8px] py-[2px] border border-solid border-border rounded-pill text-muted-foreground [font-family:var(--mono)] text-label font-normal leading-[normal]',
       'drift-pill':
         'inline-flex items-center gap-[8px] max-w-full px-[10px] py-[3px] border border-solid border-border rounded-pill text-foreground text-label',
-      'draft-source':
-        'px-[8px] py-px border border-dashed border-border rounded-pill text-muted-foreground text-label',
       'course-tag':
         'text-[var(--ink-label)] [font-family:var(--mono)] text-label font-semibold leading-[normal] tracking-[.07em]',
       'notify-blocked': 'text-foreground',

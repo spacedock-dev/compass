@@ -252,9 +252,7 @@ try {
       const action = (name) => page.getByRole('button', { name, exact: true });
       if (fixture.chosen) {
         const before = await page.evaluate(() => globalThis.__journey.clicks.length);
-        await page
-          .getByRole('combobox', { name: 'Fill the goal from one of your prompts' })
-          .click();
+        await page.getByRole('combobox', { name: 'Use your prompt' }).click();
         await page.getByRole('option').first().click();
         assert.equal(
           await page.evaluate(() => globalThis.__journey.clicks.length),

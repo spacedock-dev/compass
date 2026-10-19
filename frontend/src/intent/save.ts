@@ -78,6 +78,7 @@ export function freezeLines(input: DraftInput): FrozenLines {
 export function forgetAdopted(ctx: Ctx, session: Row, draft: Draft | null): void {
   const key = goalKey(session);
   if (draft && ctx.held.goals.get(key) === draft.text) {
+    ctx.held.cleared.delete(key);
     ctx.held.goals.delete(key);
     ctx.held.notify();
   }
@@ -97,6 +98,7 @@ export function forgetChosen(ctx: Ctx, session: Row, adopted: Draft | null): voi
     held.text === adopted.text &&
     held.at === adopted.at
   ) {
+    ctx.held.cleared.delete(key);
     ctx.held.chosen.delete(key);
     ctx.held.notify();
   }
@@ -173,6 +175,9 @@ export async function adoptPrompt(
        saved goal beneath a newer edit that is still theirs. */
     forgetAdopted(ctx, row, candidate);
     forgetChosen(ctx, row, candidate);
+    // An earlier press's "changed" or "refused" no longer stands once this one landed.
+    const request = ctx.held.requests.get(compat(row));
+    if (request && !request.pending) request.message = '';
     await refresh(ctx);
     return true;
   } catch {
@@ -219,7 +224,10 @@ function forgetSent(
   const lines = linesKey(row);
   if (changes.goal && ctx.held.goals.get(goal) === body['goal']) ctx.held.goals.delete(goal);
   // Typed words replaced the choice in the store, so it no longer stands in the box.
-  if (changes.goal) ctx.held.chosen.delete(goal);
+  if (changes.goal) {
+    ctx.held.cleared.delete(goal);
+    ctx.held.chosen.delete(goal);
+  }
   const held = ctx.held.lines.get(lines);
   if (sent && held && JSON.stringify(linesToSend(held)) === JSON.stringify(sent)) {
     ctx.held.lines.delete(lines);
@@ -287,7 +295,9 @@ async function saveWork(
     const drafted = intentDraft(input);
     if (drafted && changes.typed === drafted.text) {
       const adopted = await adoptPrompt(ctx, identity, row, drafted.source, signal, null);
-      return adopted === 'unconfirmed' ? 'unconfirmed' : null;
+      // Marked as the chained adoption marks it, so an earlier "Not confirmed" does not outlive this save.
+      if (adopted === true) ctx.held.mark(key, 'saved');
+      return adopted === true ? 'saved' : adopted === 'unconfirmed' ? 'unconfirmed' : null;
     }
     return null;
   }
@@ -443,6 +453,7 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
       /* The drafts go with the annotation. They are an independent lane, so a half-typed box would otherwise
          sit over an empty store and the next save would mint revision 1 of what the reader just
          discarded. */
+      ctx.held.cleared.delete(goalKey(row));
       ctx.held.goals.delete(goalKey(row));
       ctx.held.lines.delete(linesKey(row));
       ctx.held.origins.delete(linesKey(row));

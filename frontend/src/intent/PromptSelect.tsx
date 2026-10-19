@@ -1,8 +1,16 @@
 import { useState } from 'react';
 import { compatSessKey } from '../api/identity';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectLabel,
+  SelectItem,
+} from '../ui/select';
 import { useFocusKey } from '../controls';
-import { goalKey, promptMenu, promptChoices } from './derive';
+import { goalKey, promptClip, promptMenu, promptChoices } from './derive';
 import { choosePrompt } from './edit';
 import { closePromptMenu, loadPromptChoices } from './prompts';
 import { usePanel } from './useIntent';
@@ -12,6 +20,8 @@ import { usePanel } from './useIntent';
    none were written. */
 const EMPTY_NONE = 'No usable prompts were found in the parts of this session Compass read.';
 const EMPTY_FAILED = 'Compass could not read your prompts from this session.';
+/* Enough of a prompt to tell two apart, as the designer's item shows it; the whole prompt stays in its title. */
+const PROMPT_SHOWN = 140;
 
 /* Open before the async read: a browser picker requested after that read loses the click's user
    activation. Base UI keeps the same popup while loading and across board revisions.
@@ -19,6 +29,9 @@ const EMPTY_FAILED = 'Compass could not read your prompts from this session.';
 export function PromptSelect() {
   const { ctx, input, session, projectKey } = usePanel();
   const menu = promptMenu(input);
+  const texts = new Map(
+    promptChoices(ctx.held, input.contexts, session).map((choice) => [choice.factId, choice.text]),
+  );
   const bounded = ctx.held.prompts.get(compatSessKey(session))?.bounded;
   const [open, setOpen] = useState(false);
   const focusKey = `${goalKey(session)}:prompt`;
@@ -46,7 +59,7 @@ export function PromptSelect() {
           className="next-intent-prompt-select ps-[12px] font-medium"
           data-next-cockpit-prompt-select
           data-next-focus={focusKey}
-          aria-label="Fill the goal from one of your prompts"
+          aria-label="Use your prompt"
           aria-busy={menu.pending}
           title={
             menu.options.find((option) => option.value === menu.value)?.label ?? 'Use your prompt'
@@ -55,26 +68,59 @@ export function PromptSelect() {
           <SelectValue placeholder="Use your prompt" />
         </SelectTrigger>
         <SelectContent>
-          {!menu.pending && bounded ? (
-            <SelectItem value="__bound" disabled>
-              The prompt search reached its limit. Older prompts may be outside this read.
-            </SelectItem>
-          ) : null}
-          {menu.pending ? (
-            <SelectItem value="__loading" disabled>
-              Loading your prompts
-            </SelectItem>
-          ) : menu.options.length ? (
-            menu.options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
+          <SelectGroup className="p-0">
+            <SelectLabel className="px-3.5 pt-2.5 pb-1 [font-family:var(--mono)] text-label text-muted-foreground">
+              Your prompts in this session
+            </SelectLabel>
+            {!menu.pending && bounded ? (
+              <SelectItem value="__bound" disabled>
+                The prompt search reached its limit. Older prompts may be outside this read.
               </SelectItem>
-            ))
-          ) : (
-            <SelectItem value="__empty" disabled>
-              {menu.failed ? EMPTY_FAILED : EMPTY_NONE}
-            </SelectItem>
-          )}
+            ) : null}
+            {menu.pending ? (
+              <SelectItem value="__loading" disabled>
+                Loading your prompts
+              </SelectItem>
+            ) : menu.options.length ? (
+              menu.options.map((option) => {
+                /* The option's `label` is pinned by the recorded answers, so the menu splits its name and
+                   time off it and takes the longer text from the choice it names, rather than widening the
+                   option shape those answers compare. */
+                const sep = option.label.indexOf(' — ');
+                const head = sep >= 0 ? option.label.slice(0, sep) : '';
+                const whole = texts.get(option.value);
+                const body =
+                  whole !== undefined
+                    ? promptClip(whole, PROMPT_SHOWN)
+                    : sep >= 0
+                      ? option.label.slice(sep + 3)
+                      : option.label;
+                return (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    title={
+                      whole !== undefined ? `${head ? `${head} — ` : ''}${whole}` : option.label
+                    }
+                    className="[&>div]:line-clamp-none"
+                  >
+                    {head ? (
+                      <>
+                        <span className="block [font-family:var(--mono)] text-label text-muted-foreground">
+                          {head}
+                        </span>{' '}
+                      </>
+                    ) : null}
+                    <span className="line-clamp-3 [overflow-wrap:anywhere]">{body}</span>
+                  </SelectItem>
+                );
+              })
+            ) : (
+              <SelectItem value="__empty" disabled>
+                {menu.failed ? EMPTY_FAILED : EMPTY_NONE}
+              </SelectItem>
+            )}
+          </SelectGroup>
         </SelectContent>
       </Select>
     </div>

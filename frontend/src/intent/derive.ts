@@ -11,6 +11,7 @@ import {
 import type { ContextEntry } from '../store/board';
 import {
   annotateOn,
+  annotationDiscarded,
   annotationLines,
   storeUnreadable,
   OUTCOME_LINES_MAX,
@@ -18,7 +19,11 @@ import {
 } from './annotation';
 import type { Held, PromptChoice } from './held';
 import {
+  ADOPT_CHANGED,
+  ADOPT_REFUSED,
+  ANALYZE_READS_PROMPT,
   DIRECTION_CLIPPED,
+  EXCERPT_READ_WHOLE,
   INTENT_EDITED,
   INTENT_EDITED_ADD,
   INTENT_SAVING,
@@ -497,4 +502,112 @@ export function promptMenu(input: DraftInput): PromptMenu {
     options,
     value: options.find((option) => option.selected)?.value ?? '',
   };
+}
+
+export type IntentStatus =
+  | 'Saving…'
+  | 'Not confirmed'
+  | 'Not saved'
+  | 'Unsaved changes'
+  | 'Saved'
+  | '';
+
+/* Header status: derived purely from the session's annotation and held state, ranked so a pending save
+   never flashes "Saved" and an edit held over a newer board revision still says "Unsaved changes". */
+export function intentStatus(
+  input: DraftInput,
+  pending: readonly string[] | boolean = [],
+): IntentStatus {
+  if (storeUnreadable(input.payload)) return '';
+  const key = intentKey(input.session);
+  const saving = typeof pending === 'boolean' ? pending : pending.includes(`${key}:save`);
+  if (saving) return 'Saving…';
+  const kind = input.held.kind(key);
+  if (kind === 'unconfirmed') return 'Not confirmed';
+  if (['error', 'unpersisted', 'untrusted', 'unreadable'].includes(kind)) return 'Not saved';
+  const requestMessage = input.held.requests.get(compatSessKey(input.session))?.message ?? '';
+  if (requestMessage === ADOPT_CHANGED || Object.values(ADOPT_REFUSED).includes(requestMessage)) {
+    return 'Not saved';
+  }
+  const changes = intentChanges(input);
+  /* Only what Save intent would write. An undoable-only box (a draft emptied over a goal-less session, or the
+     stored goal typed back over a choice) writes nothing, and "Unsaved changes" beside an inert Save misled. */
+  if (changes.any || changes.adoptable) return 'Unsaved changes';
+  const discarded = annotationDiscarded(input.annotation);
+  const saved =
+    !discarded &&
+    ((nextNumber(input.annotation?.['revision']) ?? 0) > 0 ||
+      Boolean(String(input.annotation?.['goal'] || '').trim()) ||
+      annotationLines(input.annotation).length > 0 ||
+      kind === 'saved' ||
+      kind === 'unchanged');
+  return saved ? 'Saved' : '';
+}
+
+/* Whether the box still reads as the prompt it started from: at least half of its words appear in that
+   prompt. Words of three letters or more, so "a" and "to" shared by any two sentences do not count. */
+function sharesWords(text: string, origin: string): boolean {
+  if (!origin.trim()) return false;
+  const words = (value: string): string[] => value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const long = (list: string[]): string[] => list.filter((word) => word.length >= 3);
+  const typed = long(words(text)).length ? long(words(text)) : words(text);
+  if (!typed.length) return false;
+  const from = new Set(words(origin));
+  return typed.filter((word) => from.has(word)).length * 2 >= typed.length;
+}
+
+/* Goal source line under the textarea: one honest state derived from the annotation and held draft. */
+export function goalSourceLine(input: DraftInput): string {
+  if (storeUnreadable(input.payload)) return '';
+  const { held, session, annotation } = input;
+  const key = goalKey(session);
+  const drafted = intentDraft(input);
+  const baseline = goalBaseline(input);
+  const discarded = annotationDiscarded(annotation);
+  const stored = discarded ? '' : String(annotation?.['goal'] || '');
+  const text = held.goals.has(key) ? (held.goals.get(key) ?? baseline) : baseline;
+  if (!text.trim()) return '';
+  if (drafted && text === drafted.text) {
+    const at = nextNumber(drafted.at);
+    const which =
+      drafted.source === 'first-prompt'
+        ? 'first'
+        : drafted.source === 'latest-prompt'
+          ? 'latest'
+          : at !== null && at > 0
+            ? clockText(at)
+            : 'chosen';
+    const clipped = drafted.cut === true || drafted.text.endsWith('…');
+    return `From your prompt · ${which} · not saved. ${ANALYZE_READS_PROMPT}${clipped ? ` ${EXCERPT_READ_WHOLE}` : ''}`;
+  }
+  const savedFromPrompt =
+    !discarded && PROMPT_SOURCES.includes(String(annotation?.['goal_source'] || ''));
+  const origin = held.chosen.get(key)?.text ?? drafted?.text ?? (savedFromPrompt ? stored : '');
+  /* By overlap and not by history alone: words typed over a selected-all prompt replace it in one change
+     event, never pass through an empty box, and are the reader's own. */
+  const startedFromPrompt = !held.cleared.has(key) && sharesWords(text, origin);
+  if (held.goals.has(key) && text !== stored) {
+    return startedFromPrompt ? 'From your prompt, edited · not saved' : 'Typed · not saved';
+  }
+  if (stored.trim()) {
+    if (savedFromPrompt) {
+      const source = annotation?.['goal_source'];
+      const at = nextNumber(annotation?.['goal_source_at']);
+      const which =
+        source === 'first-prompt'
+          ? 'first'
+          : source === 'latest-prompt'
+            ? 'latest'
+            : at !== null && at > 0
+              ? clockText(at)
+              : 'chosen';
+      /* No time: the store publishes `goal_saved_at` only for typed words, and the revision's `at` moves on a
+         lines-only save, so it would restamp an adoption that did not change. */
+      const clipped = stored.endsWith('…') ? `. ${EXCERPT_READ_WHOLE}` : '';
+      return `From your prompt · ${which} · saved${clipped}`;
+    }
+    const savedAt = nextNumber(annotation?.['goal_saved_at']) ?? nextNumber(annotation?.['at']);
+    return `Typed · ${savedAt !== null && savedAt > 0 ? `saved ${clockText(savedAt)}` : 'saved'}`;
+  }
+  return '';
 }

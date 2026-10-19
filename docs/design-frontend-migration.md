@@ -186,6 +186,16 @@ first back for the shape and result differentials, `recordedNumbering` in
 the drift browser proof restates the second and the third in the recorded steer box and live estimate.
 Every other word, the placeholders dropped and their order stay held to the recording.
 
+The Intent card's redesign of 2026-10-19 departs from the recorded editor in four places, and nothing is
+re-recorded. The draft marks' dashed "from your prompt" badge and its excerpt cue became one plain source line
+beside the count, "From your prompt · first|latest|HH:MM · not saved." with the cap sentence the 2026-10-13
+departure ruled ("Analyze reads at most the first 1,000 characters of any prompt.") and, for an excerpt, the
+excerpt cue. The checklist's label reads "Expected outcome · up to 6 lines" where it read "Expected outcome
+(optional)". Every character count reads "n / cap" where it read "n/cap". And the prompt menu's trigger is named
+"Use your prompt". `intentEditorDeviations` in `frontend/e2e/support/intent-editor-deviations.mjs` projects the
+first three onto the recorded editor; the browser proofs that read the retired badge or the old menu name now
+read the source line and the new name.
+
 ## The ownership map
 
 [The machine-readable inventory](../scripts/frontend-migration.json) maps each legacy script

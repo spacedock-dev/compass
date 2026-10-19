@@ -65,9 +65,6 @@
 .next-cockpit-held-source[data-next-cockpit-held-line-source-stale]{visibility:hidden}
 .next-cockpit-held-field[data-next-cockpit-held-field="goal"]>.next-cockpit-held-under{flex-wrap:nowrap;justify-content:flex-start;min-block-size:44px}
 .next-cockpit-held-field[data-next-cockpit-held-field="goal"]>.next-cockpit-held-under>[data-slot="button"]{flex:none;margin-inline-start:auto}
-.next-intent-draft-marks{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
-
-.next-intent-draft-marks>.next-cockpit-held-cue{grid-column:auto}
 .next-cockpit-direction-tools,.next-cockpit-direction-replace{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
 .next-cockpit-direction-replace{grid-column:1/-1;color:var(--ink2);font-size:var(--fs-label)}
 .next-cockpit-direction-replace button[aria-pressed="true"]{color:var(--ink);font-weight:700;text-decoration:underline}
