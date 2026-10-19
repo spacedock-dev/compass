@@ -1515,11 +1515,15 @@ class LightHarnessUsageContractDocumentationTest(unittest.TestCase):
             "the one pathway by which the operator's own words may leave this machine", self.FLAT
         )
 
-    def test_the_consent_is_opt_in_where_the_quota_fetch_is_opt_out(self) -> None:
+    def test_the_consent_is_announced_where_the_quota_fetch_is_not(self) -> None:
         # The asymmetry is the point: reading a number is not spending capacity,
-        # and the section has to say which one it is.
+        # and the section has to say which one it is. DEC-28 (owner, 2026-10-19)
+        # made a reader-started call opt-out with a notice; the opt-in bound it
+        # replaces is still named, because it governs until that change ships.
+        self.assertIn("Opt-out, with a notice, for a call a reader's action starts", self.FLAT)
         self.assertIn("Opt-in, and off until answered", self.FLAT)
         self.assertIn("spends their capacity rather than reading a number", self.FLAT)
+        self.assertIn("unasked drift checks", self.SECTION)
 
     def test_the_pathway_adds_no_credential_and_no_endpoint(self) -> None:
         # The quota section owns the endpoint list and the token rules, and this

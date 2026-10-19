@@ -184,6 +184,17 @@ session publishes `annotation_window_start`, a scalar time, and it is not admitt
 `history.OBSERVATION_FIELDS`: nothing in history reads it yet, so it stays out, as `settled_at`
 does.
 
+### Amended 2026-10-19 (owner): summaries get a store of their own
+
+[DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) amends this section's "No
+new store", by name and for summaries only. A model-written summary of a session must exist without
+a saved intent and must not go with Discard everything, so it cannot live in the annotation store.
+It gets a store of its own under the Compass home, with its own SECURITY.md invariant 2 row, its own
+aggregate byte bound and an eviction that cannot push out a reader's saved words, redaction on the
+way in and out, a Delete summary control and a place in `--forget`. Every field in it is still named
+and admitted; "no field admitted by implication" stands. Readings stay in the annotation store as
+the 2026-09-10 amendment above says.
+
 ## DEC-16: Compass does not write into a session
 
 A departure is raised to the reader and nowhere else. Compass does not write into an agent, and
@@ -1488,8 +1499,9 @@ allowed only with something that does that job instead.
 5. The unasked check stays off by default for this milestone.
 
 This amends DEC-17's 2026-09-14 amendment, which keeps the `--observer-model` opt-in on each
-request. The press, remembered answer and daily cap now supply that opt-in. The cap is twelve
-actual or reserved attempts per rolling twenty-four hours, admitted atomically before launch.
+request. The press, remembered answer and daily cap now supply that opt-in. The cap was twelve
+actual or reserved attempts per rolling twenty-four hours, admitted atomically before launch; it is
+100 since [the 2026-10-16 amendment](#amended-2026-10-16-owner-the-budget-the-mark-and-what-it-read).
 Off/on and `--forget` revoke consent without erasing unexpired spend; otherwise either would be
 a way to refill the budget. A known missing Codex CLI is refused before admission.
 
@@ -1520,8 +1532,8 @@ harness. The reading route resolves the route again from the payload's harness a
 press that named a different provider, before it writes consent or reserves an attempt.
 Permission is kept per provider, because allowing Codex to send a reader's words to OpenAI is not
 allowing Claude Code to send them to Anthropic. An answer saved before the split reads as Codex's.
-Turning readings off and `--forget` revoke every provider, and the twelve-attempt rolling cap is
-shared, so a second provider cannot double it. If the CLI is missing at launch, or a call fails,
+Turning readings off and `--forget` revoke every provider, and the rolling cap (twelve attempts
+then, 100 since 2026-10-16) is shared, so a second provider cannot double it. If the CLI is missing at launch, or a call fails,
 nothing else is tried: a fresh press is the only retry. The flags the Claude Code call runs with,
 and the fact that they are CLI restrictions rather than an OS sandbox, are in
 [the light harness usage bounds](../SECURITY.md#claude-code-reading-calls).
@@ -1571,7 +1583,8 @@ item 1 of the 2026-09-23 amendment and leaves items 2 and 3 as they apply once t
    Allowing Codex does not allow Claude Code, so the first press routed to a provider with no
    Allow opens that provider's consent step.
 4. The unasked lane and goal summaries stay on Codex, as item 3 of the 2026-09-23 amendment
-   ruled, and the twelve-attempt rolling cap stays shared between providers.
+   ruled, and the rolling cap (twelve attempts then, 100 since 2026-10-16) stays shared between
+   providers.
 
 `resolve` still reads each gate before it looks for that provider's CLI, so setting the constant
 back to `not-run` closes the producer with no other change, and the "not qualified on this build"
@@ -1648,6 +1661,16 @@ The binding catches that move only where the destination was named, as item 5 sa
 
 This stays per provider, as item 3 of the acceptance above says: an Allow given for a provider
 covers every session routed to that provider, at the destination it was given for.
+
+#### Amended 2026-10-19 (owner): a changed destination shows the notice again
+
+[DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) supersedes this amendment
+as a blocking step. A reading the reader starts no longer waits on an Allow, so a destination that is
+no longer the one recorded shows the notice again, naming the new destination, before or beside the
+result, rather than opening a consent step. What the binding detects and cannot detect, in item 5,
+is unchanged, and so is the rule that a refusal holds whatever the destination: an answer of off
+already stored is kept. The unasked lane, item 6, is not a call a reader starts and is not covered.
+This is in force once the consent change ships.
 
 ### Where the unasked default stands
 
@@ -3279,6 +3302,14 @@ read it as a press that did nothing.
   or, since the owner's binding of 2026-10-02, a new destination for the words, when it opens
   with the server's line saying so
   ([the binding](#amended-2026-10-02-owner-the-allow-is-bound-to-where-the-words-go)).
+
+##### Amended 2026-10-19 (owner): the first press runs and shows a notice
+
+[DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) supersedes this amendment.
+The first press of Analyze drift runs the reading without a consent step and shows, once per kind of
+call on this machine, a non-blocking notice naming what is sent and to which provider, with Turn off
+readings beside it. "Turn off readings" stays the off switch, and a reader who turned readings off is
+not opted back in. This is in force once the consent change ships.
 
 #### Amended 2026-10-01: idle, the disclosure is one worded click away
 
@@ -5239,3 +5270,44 @@ is not a new measurement of this addition.
 The first-view proof covers stored results, one and four
 unsettled directions, short and wrapped blocked headers, and touch activity actions at desktop
 and phone sizes; each placement and the touch fallback have a rejecting mutation.
+
+### Amended 2026-10-19 (owner): one column again
+
+The owner reversed the 2026-10-12 layout amendment above for the session page in the milestone that
+adds a session summary. From top to bottom the page is the header, the answer block when the session
+needs input, the Intent card, the What the session has done card, the Drift card, and a collapsed
+Full activity section, at every width. The session page's More disclosure is retired, and every
+control, sentence and limit in it gets a new home, so the principle above, that a privacy promise or
+an honest limit moves and is never deleted, still holds. The record is
+[DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept).
+
+## DEC-28: a model may summarize a session, and the summary is kept
+
+Decided by the owner on 2026-10-19. The ruling, what it amends, the alternatives it rejected, the
+closed summary shape and the harness table are in
+[the session summary record](design-session-summary.md). In short:
+
+1. A model may author stored text that describes a session, in a closed shape: a lede and phases with
+   titled bullets, each bullet citing at least one entry by fact id. The code sets each bullet's kind
+   (`did`, `said`, `asked`, `failed`) from its citations. No string may state completion, a check's
+   result is quoted only as the tool's report, a bullet that breaks a rule is withheld in place, and a
+   part that could not be summarized shows as a gap. The code cannot check that a citation is relevant
+   to its sentence, and the record says so.
+2. A summary needs no saved intent.
+3. Summaries get a new store, which amends
+   [DEC-15b](#dec-15b-an-assessment-may-be-stored)'s "No new store" by name.
+4. Consent is opt-out with a notice, for every model call a reader's action starts: summaries,
+   Analyze drift, Claude Code tool output and Codex goal summaries. Unasked drift checks are not
+   covered and stay off by default behind `--unasked-readings` and
+   [DEC-18](#dec-18-an-unasked-reading-is-permitted-and-gated-on-delivery-first).
+   `--no-observer-model` still refuses every call, and a stored off is kept. This supersedes
+   [the consent step](#amended-2026-10-01-the-first-press-is-a-consent-step) and
+   [the destination binding](#amended-2026-10-02-owner-the-allow-is-bound-to-where-the-words-go) as
+   blocking steps.
+5. A finished session is summarized when the reader opens it, unless summaries are off; a running
+   session updates only on Update summary. This is reader-requested, so DEC-18 is not engaged.
+6. Each summary has whole-job ceilings and summaries have their own rolling cap, set by measurement.
+7. No model-written departure headline in this milestone.
+
+The owner also reversed [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)'s
+two-column layout for this milestone; see the amendment directly above.

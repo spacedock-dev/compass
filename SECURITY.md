@@ -8,9 +8,13 @@ reads local coding-agent session stores (transcripts, task
 files, SQLite databases) and serves them over HTTP. When the usage feature is on, the server also
 makes the quota poll described in Usage quota reads (the quota fetcher); it carries no session
 data. The model lane is the one path that can send session content off this machine. It is
-off unless explicitly enabled, and a call needs disclosure consent on the request that triggers it:
-a focused refresh for a goal line, or a reader's press for a reading.
-[Observer model calls](#observer-model-calls) states its bounds. The opt-in UI's Space fonts are
+off unless explicitly enabled, and, until the consent change below ships, a call needs disclosure
+consent on the request that triggers it: a focused refresh for a goal line, or a reader's press for
+a reading.
+[Observer model calls](#observer-model-calls) states its bounds. The owner ruled on 2026-10-19 that
+a call a reader's action starts becomes opt-out with a notice;
+[Light harness usage](#light-harness-usage-asking-a-harness-a-bounded-question) states that rule and
+when it takes effect. The opt-in UI's Space fonts are
 packaged into its page, so
 loading either interface makes no request to a font provider. Four small forwarders ship beside it,
 each wired into a harness's own configuration by the user or by the plugin: `notify_hook.py` POSTs
@@ -144,6 +148,13 @@ The posture rests on two invariants:
    `POST /api/reading` writes. The sixth, `POST /api/correction/copied`, records the digest of a
    correction you copied, never its text, in `compass-copied-corrections.json`; [Analyze drift,
    Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections) owns its bounds.
+   Ruled 2026-10-19 and not yet built, so not in the counts above: a **summary store** under the
+   same home, holding a model-written summary of what a session did. It is a store of its own,
+   amending DEC-15b's "no new store" by name, keyed by harness and session with no saved intent
+   needed, and it is not removed by Discard everything. It is bounded by an aggregate byte limit
+   whose eviction can never push out a reader's saved words in this file, redacted on the way in
+   and out, removed per session by Delete summary, and deleted by `--forget`, unlike the words
+   and readings in this file. Its routes join the counts when they are built. [Session summary calls](#session-summary-calls) owns its bounds.
    One forwarder writes too: `statusline_hook.py`'s deduplication memo under
    the same directory, which holds a normalized state name and a timestamp and nothing about the
    session's content.
@@ -1077,15 +1088,37 @@ callers need their own entry.
 What makes this different from every other boundary in this document: it is the only one that sends
 the operator's own words off this machine. The quota poll carries a token and numbers. A harness
 invocation carries session-derived text, which is why invariant 1 names it separately rather than
-widening the quota exception to cover it, and why the consent below is opt-in where `--no-usage` is
-opt-out.
+widening the quota exception to cover it. The consent below is not the quota fetch's: a call a
+reader's action starts runs only on that action, and an unasked check runs only under
+`--unasked-readings` and DEC-18's preconditions. Every kind of call announces itself the first time
+it runs, and each kind has its own off switch beside that notice, where `--no-usage` is a startup
+flag alone.
 
 The bounds, all of which hold together:
 
-- Opt-in, and off until answered. The feature does nothing until the operator turns it on. It
-  is disclosed the way the quota fetch is disclosed, and for a stronger reason: this one spends
-  their capacity rather than reading a number. A run with the setting unanswered makes no
-  invocation.
+- Opt-out, with a notice, for a call a reader's action starts. Ruled 2026-10-19 by the owner
+  ([DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts));
+  in force when the consent change ships in this branch. Until then the bound it replaces,
+  "Opt-in, and off until answered" (the feature does nothing until the operator turns it on, and a
+  run with the setting unanswered makes no invocation), still governs, and the subsections below
+  describe that shipped behaviour.
+  - What it covers: every model call a reader's action starts, and nothing else. That is a session
+    summary (made when a finished session is opened, or on Update summary), a reader-requested
+    Analyze drift (its consent step goes), Claude Code tool output on such a reading (included by
+    default), and a Codex goal summary (on by default). Such a call runs without a prior question.
+  - What it does not cover: unasked drift checks. No reader action starts them, so they stay off by
+    default behind `--unasked-readings` and DEC-18's preconditions, and with the setting unanswered
+    they make no invocation.
+  - The notice. The first call of each kind on this machine shows a non-blocking notice naming
+    what is sent (the words, and tool output where it is included) and to which provider and
+    destination, with a one-press off switch beside it. A changed destination shows the notice
+    again, naming the new destination, rather than a blocking Allow. It is disclosed this way, and
+    not left silent like the quota fetch, for a stronger reason: this one spends their capacity
+    rather than reading a number.
+  - The off switches. Turn off readings and Turn off summaries each stop their kind of call until
+    turned back on, and an answer of off already stored is kept across the upgrade.
+    `--no-observer-model` still refuses every model call. `--allow-tool-output` and
+    `--observer-model` become accepted no-ops for one release.
 - The observer uses the quota disclosure pattern: the browser supplies consent on the focused
   refresh request, and a document navigation never authorizes a call. Quota consent alone is not
   consent to send transcripts. This request parameter is not per-user authentication; a local
@@ -1119,8 +1152,10 @@ The bounds, all of which hold together:
   The off switch refuses the unasked lane as well: with it set,
   `--unasked-readings` attaches no lane, starts no Codex reading, and the page reports the lane off.
 
-A violation of any of those is a security bug: an invocation with the setting off or unanswered, an
-invocation carrying unredacted text, a credential read that this section does not name, tool access
+A violation of any of those is a security bug: an invocation with the setting off, an invocation
+with the setting unanswered that the bound above does not allow (any unasked check, and until the
+consent change ships any call at all), a reader-started call whose first run of its kind shows no
+notice, an invocation carrying unredacted text, a credential read that this section does not name, tool access
 beyond the documented CLI boundary, or an unbounded or untimed call.
 
 What is accepted rather than solved: the invoked harness is another program with its own logging and
@@ -1129,6 +1164,11 @@ trust the operator already extends to that harness by running it, but it is a re
 stated here rather than implied.
 
 ### Reader-requested permission and rolling budget
+
+Ruled 2026-10-19: once the consent change ships, the first press runs and shows the notice above
+rather than a consent step, and a changed destination shows the notice again rather than asking for
+an Allow. The rolling budget, the per-provider record, the destination check and the off switches
+below are unchanged by that ruling.
 
 [DEC-21](docs/design-reading-a-session.md#dec-21-a-reading-works-the-first-time-you-ask) replaces
 the startup flag for reader-requested readings. The first "Analyze drift" presents the
@@ -2031,6 +2071,60 @@ For a Claude Code press that read back (2026-10-13), the two message measurement
 project cap kept rather than the 400,000-byte tail: the boolean is true when the read stopped before the
 window start, left an unread region inside it, or the read or the cap dropped an in-window message of the session, and
 the time is where the record is whole from. The keys, types and exposure are unchanged.
+
+### Session summary calls
+
+Ruled 2026-10-19 by the owner ([DEC-28](docs/design-session-summary.md)); not yet built. This is the
+entry the bounds above ask of a future harness caller, written before the caller so that the build
+is held to it. Where the ruling is silent, this entry says so rather than deciding.
+
+- What it is. A model-written summary of what a session did: a lede and phases with titled bullets,
+  each bullet citing at least one entry by fact id, in the
+  [closed shape](docs/design-session-summary.md#the-closed-summary-shape). Unlike a reading, which
+  stores one bounded model sentence per constraint, a summary stores model prose throughout: the
+  lede, phase titles and bullets. Every one is held to the shape's backstop at production, and a
+  string that fails it is withheld in place.
+- What is sent. Entries from the session's own record, read in order and bounded in bytes and time:
+  the person's words, the agent's words where the harness record admits them (Claude Code only
+  today), the checks and files the record shows, and, on Claude Code, tool output under the
+  opt-out rule above. Everything goes through `records.redact_secrets` first and the byte bound
+  second, as every harness invocation does. No saved intent is needed or sent. The exact carrier
+  inventory is the producer's to name here before it ships.
+- To whom. The provider and destination the notice names, invoked as the operator's own harness,
+  under the bounds above. Summaries have a grant of their own, bound to provider, destination and
+  content tier, separate from Analyze's; turning one off leaves the other as it was. Consent,
+  destination and the tool-output grant are checked again before every part of a multi-part
+  summary, so a revoke stops the job at the next part.
+- When. A finished session is summarized when the reader opens it, unless summaries are turned
+  off, and later opens read the store without a call. A running session updates only on Update
+  summary, reading only new entries. There is no interval. These are reader-requested calls, not
+  unasked ones.
+- Ceilings. Each summary has whole-job ceilings on calls, bytes sent and seconds, and summaries have
+  a rolling cap of their own, so a summary cannot spend Analyze's 100 attempts in 24 hours. The
+  numbers are set by measurement and accepted by the owner; the job does not ship without them.
+- Timeout. Every call is a bounded question under a subprocess timeout, as the bounds above require.
+  The ruling does not set a per-call value; the whole-job seconds ceiling bounds the job as a whole.
+- Off switch. Turn off summaries, one press from the notice and the card, stops every summary call
+  until it is turned back on, and an answer of off already stored is kept. `--no-observer-model`
+  refuses every summary call at startup.
+- Storage. A store of its own under `COMPASS_HOME` (by default `~/.compass`), keyed by harness and
+  session and independent of any saved intent, so Discard everything does not remove it. Each field
+  is named and admitted. Strings are redacted on the way in and again on the way out, because any
+  local process can rewrite the file. It has an aggregate byte bound and an eviction that can never
+  push out a reader's saved words. Delete summary removes one session's summary, and `--forget`
+  deletes the store. Its writer gets its own row in invariant 2 when it is built. The ruling does not
+  say whether `--no-annotations` governs this store; the build says which, here.
+
+A violation is a security bug on the same terms as the bounds above, and also: a summary call made
+after Turn off summaries or under `--no-observer-model`, a part sent after consent or the
+destination changed, a job that passes its ceilings or charges Analyze's cap, a stored string that
+leaves the store unredacted, or an eviction that removes a reader's saved words.
+
+What is accepted rather than solved: the code checks that a citation names a real entry and sets a
+bullet's kind from it, but it cannot check that the cited entry is relevant to the sentence. A local
+rewrite of the store faces the limit the 2026-10-05 delegated acceptance records for a reading's
+`detail`: redaction and escaping apply, and nothing authenticates model output against a local
+process that can rewrite the file.
 
 ### The abstention check
 
