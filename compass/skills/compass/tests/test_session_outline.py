@@ -6,6 +6,7 @@ import dataclasses
 import http.client
 import importlib
 import json
+import math
 import tempfile
 import threading
 import unittest
@@ -14,7 +15,7 @@ from typing import Any
 from unittest import mock
 from urllib.parse import urlparse
 
-from compass_runtime import http_api, observer
+from compass_runtime import http_api, observer, summary_store
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -109,6 +110,63 @@ class SessionOutlineTest(unittest.TestCase):
         self.assertIsNot(first, later)
         self.assertEqual(2, len(later["blocks"]))
 
+    def test_plan_shares_outline_read_cache_and_config_invalidation(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Read the synthetic record.")
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config,
+            session_summary_max_seconds=601,
+            session_summary_max_calls=3,
+            session_summary_call_timeout=61,
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            with mock.patch.object(self.source, "read", wraps=self.source.read) as read:
+                outline, plan = self.outline.for_session_with_plan(
+                    config, self.state, "claude", "root"
+                )
+                again, cached = self.outline.for_session_with_plan(
+                    config, self.state, "claude", "root"
+                )
+                self.assertEqual(1, read.call_count)
+                self.assertIs(outline, again)
+                self.assertIs(plan, cached)
+            assert plan is not None
+            self.assertEqual(
+                {"reason": None, "complete": True, "parts": 2, "windows": 1, "calls": 3},
+                {key: plan[key] for key in ("reason", "complete", "parts", "windows", "calls")},
+            )
+            self.assertEqual(4, plan["minutes"])
+            self.assertEqual(3, plan["largest_read"]["calls"])
+            self.assertEqual(61, plan["largest_read"]["call_timeout"])
+            changed = dataclasses.replace(config, session_summary_max_seconds=60)
+            _, plan = self.outline.for_session_with_plan(changed, self.state, "claude", "root")
+            self.assertEqual(1, plan["minutes"])
+            self.assertNotIn('"words":', json.dumps(self.state.session_outlines))
+
+    def test_plan_off_a_partial_read_counts_the_whole_job_call_ceiling(self) -> None:
+        transcript = Transcript(self.root)
+        for n in range(20):
+            transcript.prompt(f"Read synthetic record number {n} with some padding words.")
+        transcript.save(self.path)
+        config = dataclasses.replace(self.config, session_outline_max_bytes=600)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            outline, plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        self.assertFalse(outline["coverage"]["complete"])
+        assert plan is not None
+        self.assertFalse(plan["complete"])
+        self.assertEqual(config.session_summary_max_calls, plan["calls"])
+        self.assertEqual(
+            math.ceil(
+                min(
+                    config.session_summary_max_calls * config.session_summary_call_timeout,
+                    config.session_summary_max_seconds,
+                )
+                / 60
+            ),
+            plan["minutes"],
+        )
+
     def test_time_clipped_outline_is_not_cached(self) -> None:
         transcript = Transcript(self.root)
         transcript.prompt("Read the synthetic record.")
@@ -189,10 +247,30 @@ class SessionOutlineTest(unittest.TestCase):
                     observer, "codex_exec", side_effect=AssertionError("no model")
                 ) as codex,
             ):
-                result = self.request(
-                    handler, f"/api/project-context?project=synthetic&session={harness}:root"
-                )
+                with mock.patch.object(self.source, "read", wraps=self.source.read) as source_read:
+                    result = self.request(
+                        handler, f"/api/project-context?project=synthetic&session={harness}:root"
+                    )
+                self.assertEqual(0 if harness == "pi" else 1, source_read.call_count)
             self.assertEqual(0, claude.call_count + codex.call_count)
+            summary = result["sources"]["summary"]
+            if harness == "claude":
+                plan = summary["plan"]
+                # Two parts, two attempts each, at the default 180 s timeout; the 600 s job
+                # ceiling caps the 720 s that would give.
+                self.assertEqual(
+                    {"complete": True, "parts": 2, "windows": 1, "calls": 4, "minutes": 10},
+                    {
+                        key: plan[key]
+                        for key in ("complete", "parts", "windows", "calls", "minutes")
+                    },
+                )
+                self.assertEqual(
+                    self.config.session_summary_window_bytes,
+                    plan["largest_read"]["window_bytes"],
+                )
+            else:
+                self.assertIsNone(summary["plan"])
             outline = result["sources"]["outline"]
             self.assertEqual("unsupported" if harness == "pi" else "ok", outline["state"])
             if harness == "pi":
@@ -207,6 +285,43 @@ class SessionOutlineTest(unittest.TestCase):
         self.assertNotIn(
             "outline", self.request(handler, "/api/project-context?project=synthetic")["sources"]
         )
+
+    def test_focused_http_plan_is_null_for_existing_or_unavailable_summary(self) -> None:
+        handler: Any = object.__new__(http_api._RequestHandler)
+        handler.server = mock.Mock(application=mock.Mock())
+        application = handler.server.application
+        application.config = self.config
+        application.state = self.state
+        application.clock.return_value = 1_790_000_000.0
+        row = {"harness": "claude", "sid": "root", "project": "synthetic"}
+        application.collect_json = lambda **_: (1, json.dumps({"sessions": [row]}).encode())
+        handler._local_ok = lambda: True
+        handler._send = mock.Mock()
+        transcript = Transcript(self.root)
+        transcript.prompt("Inspect")
+        transcript.save(self.path)
+        for state, exists in (("ok", True), ("unavailable", False)):
+            with (
+                self.subTest(state=state),
+                mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+                mock.patch.object(
+                    summary_store,
+                    "for_session",
+                    return_value={
+                        "state": state,
+                        "exists": exists,
+                        "job": None,
+                    },
+                ),
+            ):
+                result = self.request(
+                    handler, "/api/project-context?project=synthetic&session=claude:root"
+                )
+                self.assertIsNone(result["sources"]["summary"]["plan"])
+        result = self.request(
+            handler, "/api/project-context?project=synthetic&session=claude:missing"
+        )
+        self.assertIsNone(result["sources"]["summary"]["plan"])
 
     def request(self, handler: Any, path: str) -> Any:
         handler._project_context(urlparse(path))

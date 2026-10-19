@@ -6149,6 +6149,7 @@ class SummaryStoreHTTPTest(unittest.TestCase):
                 answer = json.loads(handler._send.call_args.args[0])
                 self.assertEqual("unchanged", answer["sources"]["summary"]["out_of_date"]["kind"])
                 self.assertEqual("synthetic-model", answer["sources"]["summary"]["model_stamp"])
+                self.assertIsNone(answer["sources"]["summary"]["plan"])
             self.assertEqual(0, claude.call_count + codex.call_count + model_seam.call_count)
         self.assertEqual(0, reading_policy.status(self.config, now=time.time())["used"])
 

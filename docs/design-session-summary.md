@@ -504,9 +504,14 @@ ship, merge, green, finish, solve, repair, implement, deliver, deploy and accomp
 existing inflected forms. Text is NFKC-folded before matching, and a word that mixes Latin letters
 with letters of another script (`fix` followed by a Cyrillic `е`) is withheld, because folding does
 not map look-alike letters. A string holding a check or tick glyph (U+2713, U+2714, U+2705,
-U+2611, U+221A, U+1F5F8 or U+1F5F9) is withheld wherever the glyph stands, quoted or attributed,
-because a result is never a check mark. These checks run on the whole string before any character cap and on
-the clipped string after it. A cap must not hide an unsafe suffix or strip the attribution from a
+U+2611, U+221A, U+10102, U+1F5F8, U+1F5F9 or U+1FBB1) is withheld wherever the glyph stands, quoted or attributed,
+because a result is never a check mark. That is the exact set, matched after NFKC folding: every character
+Unicode names a check mark, plus U+221A as a tick look-alike; U+237B (not check mark) and U+2612
+(ballot box with X) are excluded. The page withholds the same set again, from a stored or
+hand-edited summary the producer never checked, and a page test lists all nine so the two copies
+cannot drift apart unnoticed. The same refusal applies
+to titles, bullets and the lede, including a glyph inside a named speaker's quotation. These
+checks run on the whole string before any character cap and on the clipped string after it. A cap must not hide an unsafe suffix or strip the attribution from a
 surviving claim. Citation relevance remains the
 [known limit](#the-known-limit-relevance-is-not-checked).
 
@@ -742,10 +747,28 @@ calls. Its frozen dataclasses are the contract for the later summary producer:
 | `SourceChange` | `kind`, tuple `changed` of `(fact_id, reason)`, tuple `appended` of new fact ids. |
 
 Message ids come from `record_pages._fact`, including its title normalization and redaction.
-Tool ids hash the harness, session, stream, kind and tool call id, with the check identity and shell
-segment for a check, or the original path for a write. A compound call can therefore contain two
-runs of the same check without giving them one id. A fingerprint is 32 hexadecimal SHA-256
-characters over masked content: title and whole words for a message; title, tool-reported result
+Check and file ids use `project_context._semantic_fact_from_event` on the same tally events the
+project context publishes for Full activity: `_check_entry` for a run and `_write_entry` for a
+path. There is no separate tool-id hash in the source, so the two cannot drift. Result changes
+move fingerprints, not ids. The published report lists one entry per check, its newest run, and
+one per written path, its newest write; the source keeps every run and every write. The newest
+run or write therefore carries the published id, and an earlier one, in an earlier call, carries
+the id the same derivation gives its own call and time, which no published entry holds. Within
+one compound call the published report puts every check's entry on the call's own id, so two
+foreground runs there that share a title (the same check twice, or one check in two directories,
+`cd a && pytest tests; cd ../b && pytest tests`) derive one published fact id, a collision the
+published side carries and the source does not repeat. The source keeps one run per title in the
+call on the call id, the one the published `_latest` would choose among that call's foreground
+runs, and every other run supplies `<call id>:segment:<shell segment>` as the event's `record_id`.
+A background run in the call is no candidate, so `pytest tests; pytest tests &` keeps the
+foreground run on the published id. Two paths written in one call whose clipped titles match
+likewise derive one published id; the first keeps it and each later one supplies
+`<call id>:write:<n>`. Two source entries therefore never share an id, and the run or write left
+on a segment or write id has no published entry. A citation to an earlier run or write is counted as one Full
+activity cannot open rather than pointed at the newer entry, because a `failed` line citing a run
+that later passed must not open the pass.
+
+A fingerprint is 32 hexadecimal SHA-256 characters over masked content: title and whole words for a message; title, tool-reported result
 and result source and recorded-result presence for a check; display path and call id for a file. Fact ids are keys. Displayed
 `#n` labels remain derived at render time by the
 [fixed-position index](design-session-record-pages.md#fixed-positions); neither an ordinal nor a
@@ -850,9 +873,10 @@ paths. Extra blocks are dropped from the front and counted in `more_blocks`.
 This is Compass's grouping, never a summary or a completion verdict. Its titles quote the
 existing masked evidence; its result tokens are as the tool reported. It authors no prose about
 whether the requested work was delivered. It requires no model grant and makes no model call.
-`for_session` resolves one transcript and caches only the built, word-free answer, under a lock.
-The cache key includes bounds and parent and admitted child stamps; a child-only append rebuilds
-the outline. An outline whose coverage names a `time` region is returned but not cached: the window
+`for_session` resolves one transcript and caches only the built, word-free answer and summary plan,
+under a lock. `for_session_with_plan` returns both from that same pass; no source words are cached.
+The cache key includes outline and summary-plan bounds and parent and admitted child stamps; a
+child-only append rebuilds the outline. An outline whose coverage names a `time` region is returned but not cached: the window
 reads forward from its start, so a time-clipped outline lacks the newest turns, and caching it
 would serve that until the transcript changed, for a finished session the life of the process. An unchanged transcript costs a stat, with admission discovery and a stat for each
 owned child when present. Only a focused project/session answer gains `sources.outline`, before
@@ -877,13 +901,11 @@ This table describes the implementation and does not amend the owner-ruled table
   person words, checks and files, so this build does not meet the Codex scope until the owner
   acknowledges the deferral. The follow-up the source issue requires, covering Codex checks and
   files, Codex agent words, and Pi and the other harnesses, is not yet filed or linked here.
-- A check or file entry's fact id here is not the id the record pages and the context publish for
-  the same tool call. Measured on 2026-10-19 against the sample session through the development
-  server: the outline's two failed checks were `fact:1b41…` and `fact:a84c…`, while the record and
-  context named them `fact:3d5b…` and `fact:f4cc…`; the message ids matched. Until they agree, the
-  What the session has done card draws a `#n` chip for a check or file only when the page holds an
-  entry under that id, and never reads record pages to look for one. A summary bullet citing a
-  check has the same gap.
+- Resolved on 2026-10-19: a check or file entry's id is the id the context publishes for the same
+  newest run or write. Measured before on the sample session through the development server, the
+  outline's two failed checks were `fact:1b41…` and `fact:a84c…` while the context named them
+  `fact:3d5b…` and `fact:f4cc…`. An earlier run of a check or an earlier write of a path still has
+  no published entry, as the paragraph above records.
 - The card says its outline starts partway only when `start_offset` is above zero or an unread
   region is `before_window`. `starts_at` is not that signal: it is set for any partial coverage, so
   a read from the start that stopped at its time or byte limit carries it too.
@@ -893,18 +915,16 @@ This table describes the implementation and does not amend the owner-ruled table
 - The sample session's fixture carries no `sources.outline`: `scripts/build_sample_fixture.py`
   captures the whole page from a server holding a stored reading, and recapturing it needs a model
   reading and a rebuilt page. Until it is recaptured, the sample shows the card's no-outline line.
-- Before a summary runs, nothing publishes its plan: the focused answer for an absent summary carries
-  no `parts` or `largest_read`, and the 422 refusal is the only reply that does. The card therefore
-  says how large the read is from the outline's own entry count ("About 6 entries to read", "More
-  than" when the outline's read was partial), names the parts once the job publishes them ("part 3
-  of 12"), and gives the largest read allowed only after a refusal. Publishing the plan on the
-  focused answer would let the card say "in 4 parts, up to N minutes" up front; it needs a source
-  read on the focused poll, which this build does not add.
+- Resolved on 2026-10-19: an absent summary's focused answer publishes
+  [the focused plan](#the-focused-plan) from the outline's bounded source pass and cache, so the
+  card says "in 4 parts, up to 10 minutes" before a start. Off a partial outline read the parts
+  are a floor ("in at least"), and the minutes fall back to the whole-job ceiling.
 - A summary citation's chip on a `said` or `asked` line reads older record pages for its fact id,
   because a message id is the record's own, so it either lands or says it could not be loaded.
-  Until a check or file fact id here matches the record's (the gap above), a `did` or `failed`
-  line and the lede get a chip only for an entry the page holds, as the outline's chips do, read no
-  pages, and say how many cited entries Full activity cannot open from here. The departure mark
+  Record pages hold messages only, so a `did` or `failed` line and the lede get a chip for an
+  entry the page holds, as the outline's chips do, read no pages, and say how many cited entries
+  Full activity cannot open from here. With the ids aligned, a cited newest check run or write
+  now lands on the context's entry on a cold reopen; only an earlier run or write is counted. The departure mark
   says only what a narrowed span still supports: with any summary id the page has not numbered, a
   departure is placed in a phase or a gap, or before a numbered start, and is otherwise unplaced.
 - A summary left partway by Cancel, a revoke or a restart compares as unchanged, so the card offers
@@ -1035,8 +1055,11 @@ must check its own grant and source stability before publishing a result. The st
 serialize a resumable cursor. `get().snapshot` is for `session_source.compare`, not continuation
 reads. The job re-reads the full source before calling `session_summary.update`.
 
-The on-disk envelope is exactly `{"v": 1, "entries": [...]}`. Each entry admits exactly `harness`,
-`sid`, `summary`, `source`, `made_at`, `model_stamp`, `accessed_at`. `summary` is the closed
+The on-disk envelope is exactly `{"v": 2, "entries": [...]}`. Version 2 changes check/file
+citation ids to the published derivation. This store is unreleased: version 1 is unavailable as a
+whole, with no migration and no trusted stale citations. Loading never deletes it, and normal
+save/delete refuses to overwrite it; an explicit `--forget` still removes it. Each entry admits
+exactly `harness`, `sid`, `summary`, `source`, `made_at`, `model_stamp`, `accessed_at`. `summary` is the closed
 `Summary.as_dict()` shape described above, including its lede, coverage, gaps and spend. Its
 redacted UTF-8 encoding must fit `session_summary_max_bytes` (512 KiB). `source` admits only:
 
@@ -1286,6 +1309,37 @@ and the independent byte/time bounds, not a promise that arbitrary entries fit a
 The byte plan includes instructions, earlier-title allowance and a whole lede window. Preflight
 refuses without charging if any planned bound fails. The producer rechecks whole-job ceilings at
 every attempt; no call starts unless its entire timeout fits within the remaining 600 seconds.
+
+### The focused plan
+
+For a matched focused session with no summary and a readable store, `sources.summary.plan` is:
+
+```json
+{"reason":null,"complete":true,"parts":4,"windows":3,"calls":8,"minutes":10,"largest_read":{"windows":32,"window_bytes":16384,"calls":37,"bytes_sent":786432,"seconds":600,"call_timeout":180}}
+```
+
+It is `session_summary.plan` run on the entries of the outline's own source pass, so it costs no
+second transcript read, no grant and no model call, and it is cached with the outline under the
+same stamps, bounds (the summary ceilings included), eviction and refusal to cache a time-clipped
+read. `parts` is the retained windows plus one lede (zero for no entries) and `windows` is
+`parts - 1`. `reason` is the token the 422 preflight would give for these entries
+(`planned_calls`, `planned_bytes`, ...) or null. `largest_read` is exactly the 422 refusal's
+object, so the largest read allowed has one shape wherever it appears, rather than a second
+bytes-only field under the same name.
+
+`complete` is the outline read's own coverage. The outline reads a newest window of at most
+`session_outline_max_bytes`, while a start reads the whole source, so off a partial read `parts`
+is a floor. `calls` is an upper bound on charged attempts: with a complete read it is
+`min(parts x ATTEMPTS_PER_PART, session_summary_max_calls)`, because a part makes one retry
+after an empty reply and no more; with a partial read it is the whole-job call ceiling. `minutes`
+is `ceil(min(calls x session_summary_call_timeout, session_summary_max_seconds) / 60)`, an upper
+bound from configured ceilings, never a timing measurement.
+
+The card says "About N entries to read in N parts, up to N minutes", "More than ... in at least N
+parts" for a partial read, with singular forms as needed. Without a plan, with no parts, or with a
+plan the preflight would refuse, it keeps its previous entry-count sentence. The plan is null when
+a summary exists, the store or source is unavailable, the focus is unmatched, or the harness is not
+Claude Code. It is focused metadata only, never a session-row field.
 
 ### Markers, charges and publication
 

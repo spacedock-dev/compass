@@ -7,6 +7,7 @@ import {
   type StoredSummary,
   type SummaryGrant,
   type SummaryJob,
+  type SummaryPlan,
 } from '../api/summary';
 import type { SessionIdentity } from '../api/types';
 import { useDrift } from '../drift/context';
@@ -31,6 +32,7 @@ export interface SummaryState {
   readonly grant: SummaryGrant | null;
   readonly focused: FocusedSummary | null;
   readonly stored: StoredSummary | null;
+  readonly plan: SummaryPlan | null;
   readonly job: SummaryJob | null;
   readonly held: SessionSummaryHeld;
   readonly reasons: ReasonContext;
@@ -73,6 +75,7 @@ export function useSummaryState(
     grant,
     focused,
     stored: focused?.summary ?? null,
+    plan: focused?.plan ?? null,
     job,
     held,
     reasons: {

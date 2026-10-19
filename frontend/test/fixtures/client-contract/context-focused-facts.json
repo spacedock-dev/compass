@@ -309,6 +309,22 @@
         "summary": {
           "exists": false,
           "job": null,
+          "plan": {
+            "calls": 4,
+            "complete": true,
+            "largest_read": {
+              "bytes_sent": 786432,
+              "call_timeout": 180.0,
+              "calls": 37,
+              "seconds": 600.0,
+              "window_bytes": 16384,
+              "windows": 32
+            },
+            "minutes": 10,
+            "parts": 2,
+            "reason": null,
+            "windows": 1
+          },
           "state": "absent"
         },
         "surrounding_active": 0,
@@ -381,7 +397,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "6978",
+      "Content-Length": "7181",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

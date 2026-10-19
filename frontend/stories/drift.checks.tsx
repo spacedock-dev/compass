@@ -16,7 +16,7 @@ import { expect } from 'storybook/test';
 /* A result's account of the work is never "done": no word for it and no mark. The mark is drawn by CSS on an
    empty span, so the words alone cannot show it: every pseudo-element's generated content is read, and no
    icon of the page's check family may sit in the result. */
-const CHECK_GLYPHS = /[✓✔☑✅]/;
+const CHECK_GLYPHS = /[\u221a\u2611\u2705\u2713\u2714\u{10102}\u{1f5f8}\u{1f5f9}\u{1fbb1}]/u;
 
 function checkIconPaths(): Set<string> {
   const host = document.createElement('div');

@@ -100,6 +100,7 @@
         "summary": {
           "exists": false,
           "job": null,
+          "plan": null,
           "state": "absent"
         },
         "surrounding_active": 0,
@@ -135,7 +136,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "2116",
+      "Content-Length": "2128",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

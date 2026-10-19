@@ -324,6 +324,28 @@ class SessionSummaryTest(unittest.TestCase):
                 self.assert_completion_verdict(text, "withheld", kind)
         self.assert_completion_verdict("Added the retry handler", "kept", "did")
 
+    def test_every_tick_glyph_is_withheld_in_recorded_replies_and_ballot_x_is_kept(self) -> None:
+        for glyph in "✓✔✅☑√🗸🗹\U00010102\U0001fbb1☒":
+            for text in (f"Inspected the parser {glyph}", f'The agent said "{glyph}"'):
+                with self.subTest(text=text):
+                    model = Replies(
+                        {"phases": [phase([1], title=text, text=text)]},
+                        {"lede": text, "cites": [1]},
+                    )
+                    data = self.run_summary([entry(1, "agent")], model).as_dict()
+                    values = [
+                        data["blocks"][0]["phases"][0]["title"],
+                        data["blocks"][0]["phases"][0]["bullets"][0]["text"],
+                        data["lede"],
+                    ]
+                    for value in values:
+                        if glyph == "☒":
+                            self.assertEqual(
+                                text, value["text"] if isinstance(value, dict) else value
+                            )
+                        else:
+                            self.assertEqual("completion_claim", value["reason"])
+
     def test_titles_and_lede_have_no_implicit_subject_licence(self) -> None:
         for text, verdict in [
             ("Said the parser is fixed", "withheld"),

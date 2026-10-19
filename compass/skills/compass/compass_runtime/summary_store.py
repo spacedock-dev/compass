@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from .config import RuntimeConfig
     from .state import RuntimeState
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _DISPLAY = (str, {"withheld": {True}, "reason": str})
 _COVERAGE = {
     "complete": bool,

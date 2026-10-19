@@ -24,7 +24,7 @@ import {
   WITHHELD_LINES,
 } from '../src/sessions/summary';
 import { neverDone, noCheckMark } from './drift.checks';
-import { claudeOutline } from './outline.scenario';
+import { COVERAGE, claudeOutline } from './outline.scenario';
 import {
   ABSENT,
   FIRST_PHASE,
@@ -209,6 +209,57 @@ export const NoSummary: Story = {
           body: { harness: 'claude', sid: 's1', action: 'start', origin: 'press' },
         },
       ]),
+    );
+  },
+};
+
+const PLAN = {
+  reason: null,
+  complete: true,
+  parts: 4,
+  windows: 3,
+  calls: 8,
+  minutes: 10,
+  largest_read: {
+    windows: 32,
+    window_bytes: 16384,
+    calls: 37,
+    bytes_sent: 786432,
+    seconds: 600,
+    call_timeout: 180,
+  },
+};
+
+/* With the server's plan the card says the parts and an upper bound on the minutes before anything runs. */
+export const NoSummaryPlanned: Story = {
+  render: () => <SummaryPage summary={{ ...ABSENT, plan: PLAN }} ended={false} />,
+  play: async ({ canvasElement }) => {
+    const none = await stateOf(await card(canvasElement), 'none');
+    await expect(none.querySelector('[data-next-summary-size]')).toHaveTextContent(
+      /^About 6 entries to read in 4 parts, up to 10 minutes\.$/,
+    );
+    await poll();
+    await expect(summaryPosts()).toHaveLength(0);
+  },
+};
+
+/* A plan off a partial outline read, one that starts past the transcript's first byte, is a floor on the entries
+   and on the parts; one the preflight would refuse is not quoted. */
+export const NoSummaryPlannedPartly: Story = {
+  render: () => (
+    <SummaryPage
+      summary={{ ...ABSENT, plan: { ...PLAN, complete: false, parts: 1, windows: 0, minutes: 1 } }}
+      outline={claudeOutline(
+        { coverage: { ...COVERAGE, complete: false, start_offset: 2048 } },
+        true,
+      )}
+      ended={false}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const none = await stateOf(await card(canvasElement), 'none');
+    await expect(none.querySelector('[data-next-summary-size]')).toHaveTextContent(
+      /^More than 6 entries to read in at least 1 part, up to 1 minute\.$/,
     );
   },
 };

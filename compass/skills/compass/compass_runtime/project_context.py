@@ -3996,6 +3996,21 @@ class _ToolReportTally:
             for row in listed
         ]
 
+    @staticmethod
+    def _write_entry(path: str, write: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "kind": "path_written",
+            "subject": "write",
+            "at": write["at"],
+            "record_id": write["record_id"],
+            "title": records.safe_text(path, TOOL_REPORT_PATH_CHARS),
+            "source": f"Claude {'subagent ' if write['worker'] else ''}{write['tool']} call",
+            "rank": _WRITE_RANK,
+            "_key": f"write:{path}",
+            "_first_at": write["first_at"],
+            **({"worker_kind": write["worker"]} if write["worker"] else {}),
+        }
+
     def _ranked(self, histories: list[tuple[str, list[dict[str, Any]]]]) -> list[dict[str, Any]]:
         """Every check's entry and every written path, in the order item 4 keeps them."""
         candidates: list[dict[str, Any]] = []
@@ -4014,21 +4029,7 @@ class _ToolReportTally:
                     "_first_at": min(run["at"] for run in self.runs[identity]),
                 }
             )
-        candidates.extend(
-            {
-                "kind": "path_written",
-                "subject": "write",
-                "at": write["at"],
-                "record_id": write["record_id"],
-                "title": records.safe_text(path, TOOL_REPORT_PATH_CHARS),
-                "source": f"Claude {'subagent ' if write['worker'] else ''}{write['tool']} call",
-                "rank": _WRITE_RANK,
-                "_key": f"write:{path}",
-                "_first_at": write["first_at"],
-                **({"worker_kind": write["worker"]} if write["worker"] else {}),
-            }
-            for path, write in self.writes.items()
-        )
+        candidates.extend(self._write_entry(path, write) for path, write in self.writes.items())
         candidates.extend(
             {**launch, "rank": 4, "_key": f"launch:{call_id}", "_first_at": launch["at"]}
             for call_id, launch in self.launches.items()

@@ -17,7 +17,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
-from . import observer, record_pages, records
+from . import observer, record_pages
 from . import project_context as context
 
 if TYPE_CHECKING:
@@ -495,40 +495,67 @@ def _classify(
     )
     actor = "parent" if stream == "parent" else "subagent"
     entries: list[SourceEntry] = []
-    for identity, runs in tally.runs.items():
-        for run in runs:
-            if run["background"]:
-                # The published report drops background runs and names a launch with no command
-                # text; a background run is counts and times only, so it is no check here.
-                continue
-            entry = tally._check_entry([run])  # noqa: SLF001
-            fact_id = context._semantic_id(  # noqa: SLF001
-                "fact", "claude", sid, stream, "check", call.call_id, identity, run["segment"]
-            )
-            read.tool_order[fact_id] = position
-            entries.append(
-                SourceEntry(
-                    fact_id,
-                    _digest(
-                        entry["title"],
-                        entry["result"],
-                        entry.get("result_source"),
-                        run["recorded"],
-                    ),
-                    "check",
-                    actor,
-                    stream,
-                    call.at,
-                    str(entry["title"]),
-                    result=str(entry["result"]),
-                    subject=context._semantic_id("check", identity),  # noqa: SLF001
-                )
-            )
-    for path in tally.writes:
-        display = records.safe_text(path, context.TOOL_REPORT_PATH_CHARS)
-        fact_id = context._semantic_id(  # noqa: SLF001
-            "fact", "claude", sid, stream, "file", call.call_id, path
+    # The published report keeps one entry per check, its newest foreground run, under the call's
+    # own id, and two checks in one call that share a title (`cd a && pytest; cd b && pytest`)
+    # derive the same published fact id. The source keeps one run per title in the call on the
+    # call id, chosen as the published `_latest` chooses, and gives every other run a segment id,
+    # so no two source entries share an id; the run left on a segment id has no published entry.
+    foreground = sorted(
+        (
+            (run["segment"], identity, run)
+            for identity, runs in tally.runs.items()
+            for run in runs
+            if not run["background"]
+        ),
+        key=lambda item: item[0],
+    )
+    by_title: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for segment, _identity, run in foreground:
+        by_title.setdefault(run["title"], []).append((segment, run))
+    kept = {
+        history[tally._latest([run for _segment, run in history])][0]  # noqa: SLF001
+        for history in by_title.values()
+    }
+    for segment, identity, run in foreground:
+        entry = tally._check_entry([run])  # noqa: SLF001
+        if segment not in kept:
+            entry["record_id"] = f"{call.call_id}:segment:{segment}"
+        fact = context._semantic_fact_from_event(  # noqa: SLF001
+            {**entry, "harness": "claude", "sid": sid}, "check_run", "tool_report", ""
         )
+        fact_id = str(fact["fact_id"])
+        read.tool_order[fact_id] = position
+        entries.append(
+            SourceEntry(
+                fact_id,
+                _digest(
+                    entry["title"],
+                    entry["result"],
+                    entry.get("result_source"),
+                    run["recorded"],
+                ),
+                "check",
+                actor,
+                stream,
+                call.at,
+                str(entry["title"]),
+                result=str(entry["result"]),
+                subject=context._semantic_id("check", identity),  # noqa: SLF001
+            )
+        )
+    # Two paths written in one call whose clipped titles match derive one published fact id; the
+    # first keeps the call id and each later one takes a write id, so source ids stay unique.
+    titles: set[str] = set()
+    for number, (path, write) in enumerate(tally.writes.items()):
+        event = tally._write_entry(path, write)  # noqa: SLF001
+        display = str(event["title"])
+        if display in titles:
+            event["record_id"] = f"{call.call_id}:write:{number}"
+        titles.add(display)
+        fact = context._semantic_fact_from_event(  # noqa: SLF001
+            {**event, "harness": "claude", "sid": sid}, "path_written", "tool_report", ""
+        )
+        fact_id = str(fact["fact_id"])
         read.tool_order[fact_id] = position
         entries.append(
             SourceEntry(
