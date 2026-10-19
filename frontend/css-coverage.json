@@ -749,7 +749,7 @@
     "|.next-cockpit-result-claims h3|margin:0;color:var(--ink);font:600var(--fs-body)/1.45var(--sans)",
     "|.next-cockpit-result-claims|display:flex;flex-direction:column;gap:8px",
     "|.next-cockpit-result-count|color:var(--ink2);font:500var(--fs-body)/1.45var(--sans)",
-    "|.next-cockpit-result-foot|display:flex;flex-wrap:wrap;align-items:center;gap:4px12px;padding-top:10px;border-top:1pxsolidvar(--rule)",
+    "|.next-cockpit-result-foot|display:flex;flex-wrap:wrap;align-items:center;gap:4px12px",
     "|.next-cockpit-result-glyph|position:relative;flex:00auto;width:14px;height:14px;margin-top:3px;border:1.5pxsolidvar(--ink2);border-radius:50%;box-sizing:border-box",
     "|.next-cockpit-result-headline|display:flex;flex-wrap:wrap;align-items:baseline;gap:4px10px;margin:0;color:var(--ink);font:600var(--fs-body)/1.45var(--sans)",
     "|.next-cockpit-result-lines|list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px",

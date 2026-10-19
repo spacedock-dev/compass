@@ -365,12 +365,12 @@ recent entries in the window, the ten most recent messages the agent wrote, ever
 the window and every later direction still to settle, each at its own number, and says how many it
 counted and did not list. An entry a departure cites is flagged "Cited" and always listed, and a direction you
 gave after saving is flagged "A later direction you gave", which records no finding. Numbers are
-worked out again on every render. A finding's "Show cited entries in Full activity" button
-opens Full activity, scrolls to and marks its entries with its saved words and their current
+worked out again on every render. Each cited entry's number on a finding opens Full activity,
+scrolls to that entry and marks every entry the finding cites with its saved words and their current
 numbers, and tints each of those rows so it stands apart from the list, without requesting another
 analysis. An entry it cites that is not loaded yet is read from older record pages first; one no
 page returns is named as not loaded, and focus goes there instead. Escape or "Back to the finding"
-returns focus to the button. A finding that cites nothing resolvable says so and marks nothing.
+returns focus to the number. A finding that cites nothing resolvable says so and marks nothing.
 On a harness without fixed numbers, a check that re-runs or a file written again moves the entries
 after it. Each entry shows who wrote it, its own type and the source that published it, and the
 list states the limit under it: demonstrated work results are read on Pi, and on

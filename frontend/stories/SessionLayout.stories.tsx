@@ -419,7 +419,7 @@ export const CitationLoadsAnOlderEntry: Story = {
     try {
       const jump = () =>
         canvas.getByRole('button', {
-          name: 'Show cited entries in Full activity for Goal: Synthetic goal',
+          name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
         });
       await waitFor(() => expect(jump()).toBeVisible());
       await waitFor(() =>
@@ -444,14 +444,20 @@ export const CitationLoadsAnOlderEntry: Story = {
       await expect(box.bottom).toBeGreaterThan(0);
       await expect(box.top).toBeLessThan(window.innerHeight);
       await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
+      /* Once the entry is held, the finding names it by its number instead of offering to load it, and the
+         way back lands on that number. */
+      const cited = () =>
+        canvas.getByRole('button', {
+          name: /^Show #\d+(\.\d+)? in Full activity for Goal: Synthetic goal$/,
+        });
       await userEvent.keyboard('{Escape}');
-      await expect(document.activeElement).toBe(jump());
+      await expect(document.activeElement).toBe(cited());
       await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
       // The visible way back does the same.
-      await userEvent.click(jump());
+      await userEvent.click(cited());
       await waitFor(() => expect(document.activeElement).toBe(row));
       await userEvent.click(within(row).getByRole('button', { name: 'Back to the finding' }));
-      await expect(document.activeElement).toBe(jump());
+      await expect(document.activeElement).toBe(cited());
     } finally {
       scroll.restore();
     }
@@ -466,7 +472,7 @@ export const CitationThatCannotLoadSaysSo: Story = {
     const canvas = within(canvasElement);
     const jump = () =>
       canvas.getByRole('button', {
-        name: 'Show cited entries in Full activity for Goal: Synthetic goal',
+        name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
       });
     await waitFor(() => expect(jump()).toBeVisible());
     await userEvent.click(jump());
@@ -511,7 +517,7 @@ export const RetainedReadingCitesBeforeTheWindow: Story = {
       expect(canvasElement.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThan(0),
     );
     const jump = await canvas.findByRole('button', {
-      name: 'Show cited entries in Full activity for Goal: Synthetic goal',
+      name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
     });
     await expect(canvasElement.querySelector('[data-next-unloaded]')).toBeNull();
     await expect(canvasElement.querySelector('[data-next-entry-id="e5"]')).toBeNull();
@@ -534,7 +540,7 @@ export const CitationSetAsideByTheReadingSaysSo: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(
       await canvas.findByRole('button', {
-        name: 'Show cited entries in Full activity for Goal: Synthetic goal',
+        name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
       }),
     );
     const note = await waitFor(() => {
@@ -565,7 +571,7 @@ export const SlowReadEndsAfterANewReading: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const jump = await canvas.findByRole('button', {
-      name: 'Show cited entries in Full activity for Goal: Synthetic goal',
+      name: 'Load the cited entries in Full activity for Goal: Synthetic goal',
     });
     await userEvent.click(jump);
     await waitFor(() => expect(log.releaseOlder).not.toBeNull());
@@ -586,7 +592,7 @@ export const NoteLeavesWithItsReading: Story = {
   render: () => <PageExample cites={['ghost']} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const name = 'Show cited entries in Full activity for Goal: Synthetic goal';
+    const name = 'Load the cited entries in Full activity for Goal: Synthetic goal';
     await userEvent.click(await canvas.findByRole('button', { name }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-jump-missing]')).not.toBeNull(),

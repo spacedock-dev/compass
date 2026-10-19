@@ -1,15 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { flushSync } from 'react-dom';
-import { createRoot } from 'react-dom/client';
-import {
-  PiCheck,
-  PiCheckBold,
-  PiCheckCircle,
-  PiCheckFat,
-  PiChecks,
-  PiCheckSquare,
-} from 'react-icons/pi';
 import {
   HARNESS_LIMIT,
   JOB_NOTE_SO_FAR,
@@ -35,6 +25,7 @@ import {
   type Scenario,
 } from './drift.scenario';
 import { REASON_CASES, routeFor } from './drift.reasons';
+import { neverDone, noCheckMark } from './drift.checks';
 
 /* The Intent and drift card, held by stage, by harness and by route. Each story mounts the real page over a
    scripted backend and asserts what a reader sees: the words the card prints and the controls it draws. The
@@ -75,51 +66,6 @@ async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
 /* The controls load with the facts, after the card itself: a story waits for the one it asserts. */
 const analyzeButton = (card: HTMLElement) => findButton(card, /^Analyze drift$/);
 const steerBack = (card: HTMLElement) => findButton(card, 'Steer back');
-
-/* A result's account of the work is never "done": no word for it and no mark. The mark is drawn by CSS on an
-   empty span, so the words alone cannot show it: every pseudo-element's generated content is read, and no
-   icon of the page's check family may sit in the result. */
-const CHECK_GLYPHS = /[✓✔☑✅]/;
-
-function checkIconPaths(): Set<string> {
-  const host = document.createElement('div');
-  const root = createRoot(host);
-  const icons = [PiCheck, PiCheckBold, PiCheckCircle, PiCheckFat, PiChecks, PiCheckSquare];
-  flushSync(() =>
-    root.render(
-      <>
-        {icons.map((Glyph, index) => (
-          <Glyph key={index} />
-        ))}
-      </>,
-    ),
-  );
-  const paths = new Set(
-    [...host.querySelectorAll('path')].map((path) => path.getAttribute('d') ?? ''),
-  );
-  root.unmount();
-  paths.delete('');
-  return paths;
-}
-
-async function noCheckMark(root: HTMLElement) {
-  await expect(root.textContent).not.toMatch(CHECK_GLYPHS);
-  const generated = [root, ...root.querySelectorAll<HTMLElement>('*')].flatMap((node) =>
-    (['::before', '::after'] as const).map((pseudo) => getComputedStyle(node, pseudo).content),
-  );
-  await expect(generated.filter((content) => CHECK_GLYPHS.test(content))).toEqual([]);
-  const checks = checkIconPaths();
-  await expect(checks.size).toBeGreaterThan(0);
-  const drawnChecks = [...root.querySelectorAll('svg path')].filter((path) =>
-    checks.has(path.getAttribute('d') ?? ''),
-  );
-  await expect(drawnChecks).toEqual([]);
-}
-
-async function neverDone(root: HTMLElement) {
-  await expect(root.textContent).not.toMatch(/\bDone\b/);
-  await noCheckMark(root);
-}
 
 async function neverRetired(root: HTMLElement) {
   await expect(root.textContent).not.toContain('Looks right');
@@ -278,7 +224,7 @@ export const ResultUnderADeparture: Story = {
     });
     await expect(level).toHaveTextContent(new RegExp(`^${LIVE_LEVEL_NAMES['high']}Analysis`));
     await expect(level).toHaveTextContent(
-      /Analysis at \d\d:\d\d · intent against cited checks and messages\./,
+      /Analysis last run \d\d:\d\d · intent against cited checks and messages\./,
     );
     await expect(level).toHaveTextContent(/pytest -q failed .* at #\d+/);
     await expect(level).not.toHaveTextContent('Live estimate');

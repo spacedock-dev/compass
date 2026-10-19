@@ -406,13 +406,13 @@ try {
           assert.equal(await evidence.isVisible(), true, 'cited record requires another press');
           assert.equal(await page.locator('[data-next-result-state="departure"]').count(), 0);
         } else {
-          const account = page.locator('[data-next-result] .next-cockpit-assessment-account');
+          const account = page.locator('[data-next-result] [data-next-departure="goal"]');
           assert.equal(await account.isVisible(), true, 'finding requires another press');
           assert.match(await account.innerText(), /It stopped running the tests/);
-          const evidence = account.locator('.next-cockpit-assessment-evidence');
+          // What: the cited entries by number and kind; each one's recorded time is under Evidence.
+          const evidence = account.locator('[data-next-departure-what]');
           assert.equal(await evidence.isVisible(), true, 'evidence requires another press');
-          assert.match(await evidence.innerText(), /pytest -q/);
-          assert.match(await evidence.innerText(), /\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC/);
+          assert.match(await evidence.innerText(), /#\d+\s+failed check · pytest -q/);
         }
         assert.equal(postsTo(script, '/api/reading').length, 1);
         assert.ok(readingBody);

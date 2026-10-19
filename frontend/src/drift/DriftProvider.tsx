@@ -112,12 +112,16 @@ export function DriftProvider({
   // The note answers one press on one reading; a new reading or another session takes it down, as it does `chosen`.
   if (missing && (missing.press.session !== key || missing.press.readAt !== readAt))
     setMissing(null);
-  /* A press of Show cited entries opens Full activity and, where an entry it cites is not one the page holds,
+  /* A press of a cited entry opens Full activity and, where an entry it cites is not one the page holds,
      reads older record pages until it is, the record's start, or the page cap. The reader asked for these
      entries, so this is their read, as Show more is; docs/design-reader-state.md#the-inventory owns it.
      Whatever is still not held when the read ends is counted, and the list says so. */
-  const chooseFinding = (findingKey: string, origin: HTMLElement | null = null) => {
-    const next: Jump = { session: key, readAt, key: findingKey, origin };
+  const chooseFinding = (
+    findingKey: string,
+    origin: HTMLElement | null = null,
+    entry: string | null = null,
+  ) => {
+    const next: Jump = { session: key, readAt, key: findingKey, origin, entry };
     latestPress.current = next;
     setChosen(next);
     setSettled(null);

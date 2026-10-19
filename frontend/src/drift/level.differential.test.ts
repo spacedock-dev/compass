@@ -372,7 +372,9 @@ describe('the live estimate and the analysis level read as the legacy page reads
             level: analysisB.level,
             label: analysisB.label,
             source: analysisB.source,
-            line: analysisB.line,
+            /* A named departure: the page says "Analysis last run", the recording "Analysis at".
+               docs/design-frontend-migration.md#held-to-recorded-answers */
+            line: analysisB.line.replace(/^Analysis last run /, 'Analysis at '),
             analysis: true,
             rose: '',
             range: analysisB.range,

@@ -1,6 +1,6 @@
 {
   "rule": "UTF-8 bytes after CRLF to LF normalization, including comments, of all CSS under frontend except the directive-only Tailwind entry. Strip only an outer @layer legacy wrapper. Inventory every path; added paths need prior base approval.",
-  "bytes": 122257,
+  "bytes": 121870,
   "files": [
     "frontend/src/attention/attention.css",
     "frontend/src/capacity/capacity.css",

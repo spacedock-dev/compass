@@ -7,14 +7,16 @@ import { contextKey } from '../api/identity';
 import { useDisplayed } from '../shell/context';
 import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
-import { entryWindow, olderEntriesRemain } from '../intent/work';
+import { entryWindow, olderEntriesRemain, type WorkEntry } from '../intent/work';
 import { markNotAccurate } from './actions';
 import { useDrift } from './context';
 import { EvidenceList } from './Evidence';
 import { evidenceRows } from './level';
 import {
   arrivedLine,
+  citedKind,
   claimsDrawn,
+  constraintName,
   coverageLine,
   driftAnswer,
   resultStale,
@@ -23,8 +25,6 @@ import {
   resultWhere,
   resultWork,
   type Answer,
-  type EntryIndex,
-  type Numbers,
 } from './result';
 import { fmtDur } from './route';
 import {
@@ -53,39 +53,97 @@ import type { SteerSlot } from './ReadingControl';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
 import { Why } from './Why';
 
-/* Accent on a reading would read as "met", a claim about intent from partial evidence.
-   The result keeps secondary ink and no colour under any verdict. */
+/* Accent on a reading would read as "met", a claim about intent from partial evidence. The result keeps
+   secondary ink and no colour under any verdict; clay marks a departure and nothing else. */
 
-function ClauseCell({ row }: { readonly row: Criterion }) {
-  if (row.key === CLAIMS) return null;
-  return (
-    <span className={`next-cockpit-reading-clause${row.clauseKnown ? '' : '-absent'}`}>
-      {row.clause}
-    </span>
-  );
+const LABEL =
+  'm-0 text-label font-semibold uppercase tracking-[.07em] text-[var(--ink-label)] [font-family:var(--mono)]';
+const QUIET = 'm-0 max-w-[var(--measure)] text-body leading-[1.5] text-muted-foreground';
+const NO_DETAIL = 'No explanation was retained for this assessment.';
+
+/* The constraint as a cited entry's accessible name says it, every outcome line numbered: the name has to tell
+   two chips with the same number apart. */
+function jumpName(key: string): string {
+  if (key === 'goal' || key === CLAIMS) return constraintName(key, 1);
+  return `Expected outcome line ${key === 'output' ? '1' : key.slice(5)}`;
 }
 
-/* Only the post-rule row supplies prose and citations. A withdrawn verdict has already lost both; raw model
-   text is never used as a fallback. */
-function Account({
-  row,
-  showClause = true,
-}: {
-  readonly row: Criterion;
-  readonly showClause?: boolean;
-}) {
-  const { model } = useDrift();
-  const clause = showClause && String(row.clause || '').trim();
-  const detail = String(row.detail || '').trim();
+/* The cited entries of one finding, each as its number in the activity list and the kind of entry Compass
+   names. Never the entry's own summary: for a message that is the agent's or the person's text, and an agent's
+   "Done" drawn here would stand inside the result. A number opens Full activity at that entry; an entry the
+   page does not hold yet keeps the press that reads older pages for it. The shape demotes a departure with no
+   held citation, so a departure always reaches at least one number. */
+function CitedEntries({ row }: { readonly row: Criterion }) {
+  const { model, chooseFinding, jumpMissing } = useDrift();
+  const record = useDisplayed((snapshot) =>
+    snapshot.records.get(contextKey(model.projectKey, model.identity)),
+  );
+  /* One number per entry: the shape keeps a repeated cite, as the legacy producer it is held to did, and the
+     evidence rows and the unloaded count already read a repeat as one citation. */
+  const held = [...new Set(row.citedIds)]
+    .map((id) => model.byId.get(id))
+    .filter((entry): entry is WorkEntry => Boolean(entry));
+  const older =
+    row.unloaded > 0 && olderEntriesRemain(record, entryWindow(model.session, model.payload));
+  /* The press reads by the record's cursor alone, with no window shortcut, so a retained reading that cites an
+     entry from before the current window keeps its way there. The sentence above stays window-bound. */
+  const loadable = row.unloaded > 0 && record?.status === 'loaded' && !record.reachedStart;
+  const named = row.clause ? `${jumpName(row.key)}: ${row.clause}` : jumpName(row.key);
+  const chips = held.length ? (
+    <ul className="m-0 flex list-none flex-col gap-1 p-0" data-next-cited-entries={row.key}>
+      {held.map((entry) => {
+        const id = String(entry.id || '');
+        const where = resultWhere(entry, model.numbers) || 'Entry';
+        return (
+          <li
+            key={id}
+            className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5"
+          >
+            <Button
+              type="button"
+              className="min-h-[44px] px-2.5 py-1 font-[family-name:var(--mono)] text-label"
+              data-next-cockpit-action="finding-jump"
+              data-next-finding={row.key}
+              data-next-cite={id}
+              aria-label={`Show ${where} in Full activity for ${named}`}
+              onClick={(event) => chooseFinding(row.key, event.currentTarget, id)}
+            >
+              {where}
+            </Button>
+            <span className="min-w-0 text-body leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+              {citedKind(entry)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  ) : null;
+  /* Kept while its "could not be loaded" sentence stands, so the way back from that sentence has a place to
+     land. */
+  const load =
+    !held.length && (loadable || jumpMissing?.press.key === row.key) ? (
+      <Button
+        type="button"
+        variant="bare"
+        data-next-cockpit-action="finding-jump"
+        data-next-finding={row.key}
+        data-next-cite=""
+        aria-label={`Load the cited entries in Full activity for ${named}`}
+        onClick={(event) => chooseFinding(row.key, event.currentTarget)}
+      >
+        Load the cited entries
+      </Button>
+    ) : null;
   return (
-    <div className="next-cockpit-assessment-account">
-      <h3>Model assessment</h3>
-      {clause ? <p className="next-cockpit-assessment-clause">{`Read intent: ${clause}`}</p> : null}
-      <p className="next-cockpit-reading-detail">
-        {detail || 'No explanation was retained for this assessment.'}
-      </p>
-      <EvidenceList rows={evidenceRows(row.citedIds, model.numbers, model.byId)} scope={row.key} />
-    </div>
+    <>
+      {chips ? <SampleBeside id={row.key === 'goal' ? 'cited' : ''}>{chips}</SampleBeside> : null}
+      {load}
+      {older ? (
+        <p className={QUIET} data-next-unloaded>
+          {unloadedCites(row.unloaded)}
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -103,112 +161,157 @@ function Tail({ row }: { readonly row: Criterion }) {
   );
 }
 
-/* One line of the result's checklist: a glyph by state, the line's own words as its title, the ruled status
-   beneath, and the source tag, why and limit one click away under "Evidence". The glyph is shape first: a
-   cross for departs, a neutral filled dot for consistent (never a check, never green), a dashed circle for
-   can't tell; the clay on the cross is the one colour. */
-function ResultItem({
+/* The line's label, its full status, its why, the source tag, the limit and each cited entry's own record, one
+   click away under "Evidence", as before the cards: moved, never dropped. The why stays here because the reason
+   for Can't tell stays inside Evidence (owner, 2026-10-14). */
+function EvidenceMore({
   row,
-  numbers,
-  byId,
+  status,
+  rows,
+}: {
+  readonly row: Criterion;
+  readonly status: string;
+  readonly rows: boolean;
+}) {
+  const { model } = useDrift();
+  const full = resultStatus(row, model.numbers, model.byId);
+  return (
+    <Why name={`result-evidence:${row.key}`} summary="Evidence">
+      <span className="next-cockpit-reading-name">{row.label}</span>
+      {full === status ? null : <span className="next-cockpit-reading-evidence">{full}</span>}
+      {row.why ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
+      {row.result === NOT_REACHED && row.detail ? (
+        <p className="next-cockpit-reading-detail">{row.detail}</p>
+      ) : null}
+      <Tail row={row} />
+      {rows ? (
+        <EvidenceList
+          rows={evidenceRows(row.citedIds, model.numbers, model.byId)}
+          scope={row.key}
+        />
+      ) : null}
+    </Why>
+  );
+}
+
+/* One departure from the reader's intent, as its own card: which constraint, the constraint's own words as the
+   headline (no model writes one: [DEC-28](../../../docs/design-session-summary.md#the-ruling) answer 7), What
+   as the cited entries, and Why as the reading's stored `detail`, the one string a model wrote. */
+function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly outcomes: number }) {
+  const { model } = useDrift();
+  const status = resultStatus(row, model.numbers, model.byId, true);
+  const detail = String(row.detail || '').trim();
+  const head = `departure-head:${model.key}:${row.key}`;
+  return (
+    <article
+      className="flex items-start gap-3 rounded-[10px] bg-[var(--raise)] px-[18px] py-4 max-[480px]:gap-2 max-[480px]:px-3"
+      aria-labelledby={head}
+      data-next-departure={row.key}
+      data-next-result-state={resultState(row)}
+      {...(row.key === 'goal' ? { 'data-next-result-goal': '' } : {})}
+    >
+      <span className="next-cockpit-result-glyph" aria-hidden="true" />
+      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+        <div className="flex flex-col gap-0.5">
+          <p className={`${LABEL} text-[var(--clay)]`} data-next-departure-label>
+            {`Departure · ${constraintName(row.key, outcomes)}`}
+          </p>
+          <h4
+            id={head}
+            className={`m-0 text-body font-semibold leading-[1.45] [overflow-wrap:anywhere] ${row.clauseKnown ? 'text-foreground' : 'text-muted-foreground'}`}
+          >
+            {row.clauseKnown && row.clause ? row.clause : CLAUSE_UNRETAINED}
+          </h4>
+        </div>
+        <div className="flex max-w-[45rem] flex-col gap-1" data-next-departure-what>
+          <p className={LABEL}>What</p>
+          <CitedEntries row={row} />
+        </div>
+        <div className="flex max-w-[45rem] flex-col gap-0.5" data-next-departure-why>
+          <p className={LABEL}>Why Compass reads this as drift</p>
+          <p className="next-cockpit-reading-detail m-0">{detail || NO_DETAIL}</p>
+        </div>
+        <p
+          className="m-0 text-label text-[var(--ink-label)] [font-family:var(--mono)]"
+          data-next-departure-status
+        >
+          {status}
+        </p>
+        {row.coverage ? <p className={QUIET}>{row.coverage}</p> : null}
+        <EvidenceMore row={row} status={status} rows />
+      </div>
+    </article>
+  );
+}
+
+/* One remaining line, quiet: a glyph by state (a cross for departs, a neutral filled dot for consistent, never
+   a check and never green, a dashed circle for can't tell), the ruled status in the words `resultStatus` and
+   `claimStatus` use, the line's own words and its cited entries. A contradicted claim keeps its explanation, or
+   the sentence saying none was retained, and each cited entry's record under Evidence, as before the cards. */
+function QuietRow({
+  row,
+  outcomes,
   tag,
 }: {
   readonly row: Criterion;
-  readonly numbers: Numbers;
-  readonly byId: EntryIndex;
+  readonly outcomes: number;
   readonly tag: 'li' | 'div';
 }) {
   const { model } = useDrift();
-  const record = useDisplayed((snapshot) =>
-    snapshot.records.get(contextKey(model.projectKey, model.identity)),
-  );
-  const status = resultStatus(row, numbers, byId, true);
-  const full = resultStatus(row, numbers, byId);
-  const unloaded =
-    row.unloaded > 0 && olderEntriesRemain(record, entryWindow(model.session, model.payload));
-  /* The press reads by the record's cursor alone, with no window shortcut, so a retained reading that cites an
-     entry from before the current window keeps its way there. The sentence above stays window-bound. */
-  const loadable = row.unloaded > 0 && record?.status === 'loaded' && !record.reachedStart;
+  const status = resultStatus(row, model.numbers, model.byId, true);
+  const claims = row.key === CLAIMS;
+  const claimDeparts = claims && row.result === DEPARTURE;
+  const detail = claimDeparts ? String(row.detail || '').trim() : '';
   const Tag = tag;
   return (
     <Tag
       className="next-cockpit-reading-row"
       data-next-result-state={resultState(row)}
+      data-next-result-row={row.key}
       {...(tag === 'li'
         ? {}
-        : row.key === CLAIMS
+        : claims
           ? { 'data-next-result-claims': '' }
           : { 'data-next-result-goal': '' })}
     >
       <span className="next-cockpit-result-glyph" aria-hidden="true" />
       <span className="next-cockpit-result-body">
-        <ClauseCell row={row} />
-        <em className="next-cockpit-reading-result">{status}</em>
-        <FindingJump row={row} loadable={loadable} />
-        {row.key === CLAIMS && row.result === DEPARTURE ? (
-          <Account row={row} showClause={false} />
+        <span className="m-0 text-body font-semibold leading-[1.45] text-foreground [overflow-wrap:anywhere]">
+          <em className="next-cockpit-reading-result">{status}</em>
+          {claims ? null : (
+            <>
+              {' · '}
+              <span
+                className={`next-cockpit-reading-clause${row.clauseKnown ? '' : '-absent'} font-normal`}
+              >
+                {row.clauseKnown && row.clause
+                  ? `“${row.clause}”`
+                  : `${constraintName(row.key, outcomes)}: ${CLAUSE_UNRETAINED}`}
+              </span>
+            </>
+          )}
+        </span>
+        {claimDeparts ? (
+          <span className="next-cockpit-reading-detail">{detail || NO_DETAIL}</span>
         ) : null}
         {row.coverage ? <span className="next-cockpit-reading-why">{row.coverage}</span> : null}
-        {unloaded ? (
-          <span className="next-cockpit-reading-why" data-next-unloaded>
-            {unloadedCites(row.unloaded)}
-          </span>
-        ) : null}
-        <Why name={`result-evidence:${row.key}`} summary="Evidence">
-          <span className="next-cockpit-reading-name">{row.label}</span>
-          {full === status ? null : <span className="next-cockpit-reading-evidence">{full}</span>}
-          {row.why ? <span className="next-cockpit-reading-why">{row.why}</span> : null}
-          {row.result === NOT_REACHED && row.detail ? (
-            <p className="next-cockpit-reading-detail">{row.detail}</p>
-          ) : null}
-          <Tail row={row} />
-        </Why>
+        <CitedEntries row={row} />
+        <EvidenceMore row={row} status={status} rows={claimDeparts} />
       </span>
     </Tag>
   );
 }
 
-/* Offered where the row's cited entries are drawn, and where some are not yet loaded and older pages remain to
-   read them from: the press reads those pages itself. */
-function FindingJump({ row, loadable }: { readonly row: Criterion; readonly loadable: boolean }) {
-  const { chooseFinding, jumpMissing } = useDrift();
-  // Kept while its "could not be loaded" sentence stands, so the way back from that sentence has a place to land.
-  if (!row.citedIds.length && !loadable && jumpMissing?.press.key !== row.key) return null;
-  const constraint =
-    row.key === 'goal'
-      ? 'Goal'
-      : isOutcomeLine(row.key)
-        ? `Expected outcome line ${row.key === 'output' ? '1' : row.key.slice(5)}`
-        : 'What the agent claimed';
-  return (
-    <SampleBeside id={row.key === 'goal' ? 'cited' : ''}>
-      <Button
-        type="button"
-        variant="bare"
-        data-next-cockpit-action="finding-jump"
-        data-next-finding={row.key}
-        aria-label={`Show cited entries in Full activity for ${constraint}: ${row.clause}`}
-        onClick={(event) => chooseFinding(row.key, event.currentTarget)}
-      >
-        Show cited entries
-      </Button>
-    </SampleBeside>
-  );
-}
-
-/* The answer, and under a departure the headline with its count and a short account built from each
-   departure's detail and its citation, never a model's narrative. The count renders only here. `midFlight`
-   leads the answer with "So far:", so a reading of a running session never looks like a reading of how it
-   ended. */
+/* The answer. Under a departure it is "Departs from your intent" with the count of departures, which renders
+   only here; the cards below carry each one. `midFlight` leads the answer with "So far:", so a reading of a
+   running session never looks like a reading of how it ended. */
 function ResultAnswer({
   answer,
   midFlight,
-  primary,
   focusKey,
 }: {
   readonly answer: Answer;
   readonly midFlight: boolean;
-  readonly primary?: ReactNode;
   readonly focusKey: string | null;
 }) {
   const { ctx, model } = useDrift();
@@ -231,18 +334,14 @@ function ResultAnswer({
   if (answer.kind === 'departs') {
     const count = `${String(answer.count)} departure${answer.count === 1 ? '' : 's'}`;
     body = (
-      <>
-        <h3 {...headingProps} className={`next-cockpit-result-headline ${ring}`}>
-          {lead}
-          <span>{RESULT_DEPARTS}</span>
-          <span className="next-cockpit-result-count">{count}</span>
-          <SampleMark id="analysis" />
-        </h3>
-        {primary}
-        {answer.departures.map((row) => (
-          <Account key={row.key} row={row} />
-        ))}
-      </>
+      <h3 {...headingProps} className={`next-cockpit-result-headline ${ring} text-value`}>
+        {lead}
+        <span>{RESULT_DEPARTS}</span>
+        <span className="next-cockpit-result-count rounded-full bg-[var(--clay)] px-2.5 py-px text-label font-semibold text-[color:var(--bg)] [font-family:var(--mono)]">
+          {count}
+        </span>
+        <SampleMark id="analysis" />
+      </h3>
     );
   } else if (answer.kind === 'failed-check') {
     const where = resultWhere(answer.failed, model.numbers, true);
@@ -517,7 +616,7 @@ export function ReadingResult({
   readonly again: (steer: SteerSlot | null, showRun?: boolean) => ReactNode;
 }) {
   const { model } = useDrift();
-  const { shape, raw, annotation, entries, numbers, byId, source } = model;
+  const { shape, raw, annotation, entries, source } = model;
   if (!shape || !raw || !annotation) return null;
   const stale = resultStale(shape, raw, annotation, entries);
   const staleState = Boolean(stale);
@@ -528,10 +627,16 @@ export function ReadingResult({
   const coverage = coverageLine(shape);
   /* From the reading rather than from the live row. A reading describes the moment it was taken. */
   const arrived = arrivedLine(annotation, entries);
-  const goal = shape.criteria.filter((row) => row.key === 'goal');
-  const lines = shape.criteria.filter((row) => isOutcomeLine(row.key));
-  /* What the agent claimed, after the intent it is independent of, under its own heading. */
+  const intent = shape.criteria.filter((row) => row.key !== CLAIMS);
+  const outcomes = intent.filter((row) => isOutcomeLine(row.key)).length;
+  /* The answer's own departures, in the reading's order: the goal, then each outcome line. */
+  const departures = answer?.kind === 'departs' ? answer.departures : [];
+  const departed = new Set(departures.map((row) => row.key));
+  const goal = intent.filter((row) => row.key === 'goal' && !departed.has(row.key));
+  const lines = intent.filter((row) => isOutcomeLine(row.key) && !departed.has(row.key));
+  /* What the agent claimed, after the intent it is independent of. */
   const claimed = claimsDrawn(shape);
+  const quiet = goal.length + lines.length + claimed.length > 0;
   /* A current result keeps the disclosure and accounting without a second run control.
      [DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)
      A direction question owns the sole run path while it stands. */
@@ -570,13 +675,6 @@ export function ReadingResult({
           answer={answer}
           midFlight={shape.scope === 'mid-flight'}
           focusKey={staleState || question ? null : `reading:${model.key}`}
-          primary={
-            leadSteer ? (
-              <div className="next-cockpit-reading-ask" data-next-result-primary>
-                {leadSteer.button}
-              </div>
-            ) : null
-          }
         />
       ) : null}
       {coverage ? (
@@ -584,31 +682,49 @@ export function ReadingResult({
           {coverage}
         </p>
       ) : null}
-      {goal.map((row) => (
-        <ResultItem key={row.key} row={row} numbers={numbers} byId={byId} tag="div" />
-      ))}
-      {lines.length ? (
-        <div className="next-cockpit-result-checklist">
-          <h3>Against expected outcome</h3>
-          <ol className="next-cockpit-result-lines">
-            {lines.map((row) => (
-              <ResultItem key={row.key} row={row} numbers={numbers} byId={byId} tag="li" />
-            ))}
-          </ol>
+      {departures.length ? (
+        <div className="flex flex-col gap-3.5" data-next-departures>
+          {departures.map((row) => (
+            <DepartureCard key={row.key} row={row} outcomes={outcomes} />
+          ))}
         </div>
       ) : null}
-      {claimed.length ? (
-        <div className="next-cockpit-result-claims">
-          <h3>What the agent claimed</h3>
+      {quiet ? (
+        <div
+          className={`flex flex-col gap-3 ${departures.length ? 'border-t border-[var(--rule)] pt-3' : ''}`}
+          data-next-result-quiet
+        >
+          {goal.map((row) => (
+            <QuietRow key={row.key} row={row} outcomes={outcomes} tag="div" />
+          ))}
+          {lines.length ? (
+            <ol className="next-cockpit-result-lines">
+              {lines.map((row) => (
+                <QuietRow key={row.key} row={row} outcomes={outcomes} tag="li" />
+              ))}
+            </ol>
+          ) : null}
           {claimed.map((row) => (
-            <ResultItem key={row.key} row={row} numbers={numbers} byId={byId} tag="div" />
+            <QuietRow key={row.key} row={row} outcomes={outcomes} tag="div" />
           ))}
         </div>
       ) : null}
       <ResultWorkView />
+      {/* Steer back after what it steers back from, as the design draws it. Its primary state is the card's
+          own rule (`steerPrimary`), unchanged here. */}
+      {leadSteer ? (
+        <div className="next-cockpit-reading-ask" data-next-result-primary>
+          {leadSteer.button}
+        </div>
+      ) : null}
       {foot ? <div className="next-cockpit-result-press">{foot}</div> : null}
-      <ResultFoot />
-      <Baseline shape={shape} arrived={arrived} />
+      <div
+        className="flex flex-wrap items-start gap-x-4 gap-y-2 border-t border-[var(--rule)] pt-2.5"
+        data-next-result-footer
+      >
+        <ResultFoot />
+        <Baseline shape={shape} arrived={arrived} />
+      </div>
     </div>
   );
 }

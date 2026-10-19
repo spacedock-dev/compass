@@ -217,19 +217,19 @@ describe('a current result while readings are off', () => {
 });
 
 describe('a finding jump', () => {
-  it('names the goal and each outcome separately, including the stored clause', async () => {
+  it('names each cited entry by its number, its constraint and the stored clause', async () => {
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
     await page.settle();
     const jumps = [...document.querySelectorAll('[data-next-finding]')];
     expect(
       screen.queryByRole('button', {
-        name: 'Show cited entries in Full activity for Goal: Ship the queue',
+        name: 'Show #1 in Full activity for Goal: Ship the queue',
       }),
     ).toBe(jumps[0]);
     expect(
       screen.queryByRole('button', {
-        name: 'Show cited entries in Full activity for Expected outcome line 1: Tests pass',
+        name: 'Show #2 in Full activity for Expected outcome line 1: Tests pass',
       }),
     ).toBe(jumps[1]);
   });

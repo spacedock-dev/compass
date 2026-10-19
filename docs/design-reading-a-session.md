@@ -5339,6 +5339,50 @@ later press began publishes nothing. Escape on the row, the sentence or "Back to
 focus to the citation without leaving the session page, and both moves scroll without animation when
 the reader prefers reduced motion.
 
+### Amended 2026-10-19 (owner): each departure is a card
+
+The 2026-10-15 feedback read "2 departures" above two "Model assessment" blocks as something it did
+not know how to read, and read "Analysis at 22:27" as a time inside the session. The Drift card's
+result is now drawn as the design file draws it. Nothing about the reading changes: the producer,
+what it stores and the page's evidence rules are as before.
+
+- The card header names the model, from the stored stamp's `<model> · read at` shape and nothing
+  else, and "Analysis last run HH:MM" from `read_at`. The level's analysis line says "Analysis last
+  run" too. A refused or malformed reading draws no header line.
+- Under a departure the answer reads "Departs from your intent" with its count, then one card per
+  departure in the reading's order. A card's label names the constraint ("Departure · Goal",
+  "Departure · Expected outcome 2", numbered only where more than one line was read). Its headline is
+  the constraint's own saved words, because no model writes one
+  ([DEC-28](design-session-summary.md#the-ruling), answer 7). What is the cited entries, each as its
+  activity number and the kind of entry Compass names ("failed check", "Agent message", "Your message"),
+  never the entry's own summary: for a message that is the agent's or the person's text, and an agent's
+  "Done" would then stand inside the result. Why, under "Why Compass reads this as
+  drift", is the stored `detail`, the one string the model wrote. The ruled status ("Departs;
+  evidence #n") follows, and the line's label, full status, limit and each entry's recorded time and
+  source stay one press away under Evidence. "Model assessment" and "Read intent:" are gone; the
+  headline carries the read words.
+- The shape already guarantees that a departure holds at least one cited entry: a row with no resolved
+  citation is demoted to can't tell, so no card stands on nothing a reader can reach.
+- Every other line follows a divider as one quiet row, in the words `resultStatus` and `claimStatus`
+  already used: not reached at this stop, consistent with a check, the agent or the session, can't
+  tell, nothing shown, and the claim states. The reason for can't tell stays inside Evidence, as the
+  2026-10-14 ruling keeps it; this amendment does not supersede that. A contradicted claim keeps its
+  explanation in view, or "No explanation was retained for this assessment." where none was stored,
+  and its cited entries' records under Evidence. A claims row the shape withdraws is not
+  drawn, as before, so a claim the page cannot place has no row of its own.
+- Each number replaces "Show cited entries". It opens Full activity at that entry, with every entry
+  the finding cites marked, and "Back to the finding" returns to the number. Where no cited entry is
+  held yet, "Load the cited entries" keeps the press that reads older pages.
+- Steer back follows the rows, and its weight is unchanged: primary under a departure, or under a
+  failed check with no reader, never for a claim alone, and not while the session waits on the
+  reader. Update intent instead stays beside it, and the correction still opens in place.
+- Mark as inaccurate and What the analysis read share one footer row, with their effects and Undo.
+- The question before a later direction, a missing reader, a refused or malformed reading and the
+  departures raised while you were away keep their behavior and their place.
+
+This supersedes the layout of [the 2026-10-06 amendment](#amended-2026-10-06-owner-assessment-explanations-and-recorded-signals)
+for a departure's explanation and citations, not what it shows.
+
 ## DEC-28: a model may summarize a session, and the summary is kept
 
 Decided by the owner on 2026-10-19. The ruling, what it amends, the alternatives it rejected, the

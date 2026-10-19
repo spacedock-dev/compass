@@ -10,8 +10,9 @@ const LIVE_ACTIONS = new Set([
 /* A trigger that only opens or closes a panel is live; what is inside the panel is judged like any other
    control, so "Clear" in the Intent popover is held. Whole popovers and disclosures were once exempt, and
    that let a press on Clear empty the sample's goal. */
+/* Back to the finding only moves focus back to the cited entry a reader pressed, so it is as live as that press. */
 const LIVE_REGIONS =
-  '[data-sample-tour], a[href], [data-slot="popover-trigger"], [data-slot="accordion-trigger"], [data-slot="collapsible-trigger"], [role="combobox"], [role="listbox"], [role="option"]';
+  '[data-sample-tour], [data-next-jump-back], a[href], [data-slot="popover-trigger"], [data-slot="accordion-trigger"], [data-slot="collapsible-trigger"], [role="combobox"], [role="listbox"], [role="option"]';
 const CONTROL =
   'button, input, textarea, select, [role="button"], [role="switch"], [role="checkbox"]';
 
