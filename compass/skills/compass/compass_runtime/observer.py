@@ -429,7 +429,9 @@ def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and ti
     binary_resolver: Any = shutil.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
     system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
-    timeout: float = OBSERVER_READING_TIMEOUT_SEC,
+    # None, resolved at the call: a default bound to the constant at import
+    # would stop the 180 s limit following the module value.
+    timeout: float | None = None,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[str, str]:
     """One bounded, non-persistent Claude Code call. Returns the output and a status.
@@ -495,7 +497,7 @@ class PreparedClaude:
         model: str,
         *,
         system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
-        timeout: float = OBSERVER_READING_TIMEOUT_SEC,
+        timeout: float | None = None,
         error_path: str = "",
         error_output: Any = subprocess.DEVNULL,
         on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
@@ -532,7 +534,7 @@ class PreparedClaude:
                 env=claude_environment(os.environ),
                 text=True,
                 encoding="utf-8",
-                timeout=self.timeout,
+                timeout=OBSERVER_READING_TIMEOUT_SEC if self.timeout is None else self.timeout,
                 check=False,
                 **options,
             )
@@ -671,7 +673,7 @@ def prepare_claude_exec(
     binary_resolver: Any = shutil.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
     system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
-    timeout: float = OBSERVER_READING_TIMEOUT_SEC,
+    timeout: float | None = None,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
 ) -> Iterator[PreparedClaude]:
     """Prepare the private cwd and output before qualification spends a call.

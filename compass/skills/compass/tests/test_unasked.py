@@ -1384,6 +1384,9 @@ class OnlyTheReaderRequestedRouteKnowsTheClaudeCodeProducerTest(unittest.TestCas
             {
                 "compass/skills/compass/compass_runtime/observer.py",
                 "compass/skills/compass/compass_runtime/reading.py",
+                # A reader-requested session summary job runs its own multi-part
+                # calls through the same exec under its own grant and ledger.
+                "compass/skills/compass/compass_runtime/summary_jobs.py",
                 # `argv_digest` only: it hands the exec a runner that raises
                 # before any process starts.
                 self.SCORER,

@@ -957,9 +957,11 @@ class ForgetIsACommandAndNotARouteTest(HistoryStoreTestCase):
     def test_the_post_surface_did_not_grow(self) -> None:
         # The contract lists "a history file reachable over the port" as a
         # security bug, so the count is asserted rather than trusted: the
-        # seventeen-entry exact-match table plus the two prefix matches ahead of
+        # nineteen-entry exact-match table plus the two prefix matches ahead of
         # it, and no path naming history among them. DRC-4681 added
-        # `/api/correction`, which reads and writes nothing but its reply.
+        # `/api/correction`, which reads and writes nothing but its reply. The
+        # session summary added `/api/summary` and `/api/summary/cancel`; neither
+        # reads or writes session history.
         import ast  # noqa: PLC0415
         from pathlib import Path  # noqa: PLC0415
 
@@ -979,7 +981,7 @@ class ForgetIsACommandAndNotARouteTest(HistoryStoreTestCase):
             for key in tables[0].keys
             if isinstance(key, ast.Constant) and isinstance(key.value, str)
         ]
-        self.assertEqual(17, len(routes))
+        self.assertEqual(19, len(routes))
         prefixes = [
             node
             for node in ast.walk(post)
