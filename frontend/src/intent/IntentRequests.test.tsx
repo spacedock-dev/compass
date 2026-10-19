@@ -78,7 +78,12 @@ describe('the Intent surfaces start nothing on their own', () => {
     await page.poll({ ...(page.state.data as object), annotate: false, generated: 1100 });
     await page.settle();
     expect(goalBox()).toBeNull();
-    expect(page.state.requests.filter((r) => r.path === '/api/project-context')).toEqual([]);
+    /* The one read left is What the session has done reading its outline: that card is not an annotation and
+       reads the focused context once per board revision whatever annotations say. The Intent card adds none,
+       so nothing reads the project scope and the focused session is read once. */
+    const reads = page.state.requests.filter((r) => r.path === '/api/project-context');
+    expect(reads.filter((r) => !r.url.includes('session='))).toEqual([]);
+    expect(reads).toHaveLength(1);
     expect(page.state.requests.filter((r) => r.method !== 'GET')).toEqual([]);
   });
 
