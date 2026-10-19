@@ -511,9 +511,14 @@ def delete(application: reading_jobs.Application, harness: str, sid: str) -> str
 
 
 def recover(application: reading_jobs.Application, *, alive: Callable[[int], bool]) -> int:
+    # Without markers there is nothing to recover, and taking the lock would
+    # create `summary-jobs.lock` in a state directory nothing else has written.
+    markers = application.config.state_dir / MARKER_DIR
+    if not any(markers.glob("*.json")):
+        return 0
     count = 0
     with _locked(application):
-        for path in (application.config.state_dir / MARKER_DIR).glob("*.json"):
+        for path in markers.glob("*.json"):
             try:
                 marker = json.loads(path.read_text(encoding="utf-8"))
                 current = application.state.summary_jobs.get(_key(marker["harness"], marker["sid"]))
