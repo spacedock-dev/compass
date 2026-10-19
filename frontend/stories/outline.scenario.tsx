@@ -7,8 +7,10 @@ import { createFakeClock, createFakeEnvironment } from '../src/transport/testing
 import { fakeBackend } from '../test/storage_backends';
 
 /* One session page over a scripted backend for the What the session has done stories: the board, a focused
-   context carrying `sources.outline` as `session_outline.build` shapes it, and one record page whose fact ids
-   the outline's spans name. Not a story file, so Storybook lists nothing from it. */
+   context carrying `sources.outline` as `session_outline.build` shapes it, and the record pages. The outline's
+   message ids are the record's; its check ids are not, as measured on real data
+   (docs/design-session-summary.md#open-questions), unless a story asks for the matched case that will hold
+   once they agree. Not a story file, so Storybook lists nothing from it. */
 
 export const G = 1900000000;
 
@@ -86,7 +88,12 @@ const counts = (over: Record<string, number> = {}) => ({
   ...over,
 });
 
-export function claudeOutline(over: Record<string, unknown> = {}) {
+/* The outline's own id for a check the record names `id`. Matched only for the future case. */
+const checkId = (id: string, matched: boolean) => (matched ? id : `fact:outline-${id}`);
+
+export function claudeOutline(over: Record<string, unknown> = {}, matched = false) {
+  const c1 = checkId('c1', matched);
+  const c2 = checkId('c2', matched);
   return {
     state: 'ok',
     made_by: 'compass',
@@ -102,12 +109,12 @@ export function claudeOutline(over: Record<string, unknown> = {}) {
           title: 'Add retry with backoff to the webhook handler.',
           at: G - 600,
         },
-        span: { first: 'p1', last: 'c2', entries: 4, from_at: G - 600, to_at: G - 498 },
+        span: { first: 'p1', last: c2, entries: 4, from_at: G - 600, to_at: G - 498 },
         counts: counts({ checks: 2, checks_failed: 1, files: 3, agent_messages: 1 }),
-        failures: [{ fact_id: 'c1', title: 'pytest tests/test_webhook.py', result: 'failed' }],
+        failures: [{ fact_id: c1, title: 'pytest tests/test_webhook.py', result: 'failed' }],
         checks: [
-          { fact_id: 'c1', title: 'pytest tests/test_webhook.py', result: 'failed' },
-          { fact_id: 'c2', title: 'ruff check src', result: 'passed' },
+          { fact_id: c1, title: 'pytest tests/test_webhook.py', result: 'failed' },
+          { fact_id: c2, title: 'ruff check src', result: 'passed' },
         ],
         folders: [
           { folder: 'src/webhook', files: 2 },
@@ -182,28 +189,44 @@ export const unsupportedOutline = (harness: string) => ({
 });
 
 /* `outline` is what the focused context answers with: a payload, `'stall'` to hold the answer, `'error'` to
-   fail it, or `null` to answer without one. */
+   fail it, or `null` to answer without one. `holdOlder` holds the older record page until `releaseOlder`. */
 export interface OutlineScript {
   outline: unknown;
   served: number;
   release: (() => void) | null;
+  holdOlder: boolean;
+  releaseOlder: (() => void) | null;
 }
 
-export const script: OutlineScript = { outline: null, served: 0, release: null };
+export const script: OutlineScript = {
+  outline: null,
+  served: 0,
+  release: null,
+  holdOlder: false,
+  releaseOlder: null,
+};
 
+/* `paged` serves the record as two pages, the newest holding only the second prompt's part, so an entry of the
+   first part is read for through the older page. */
 export function OutlinePage({
   harness = 'claude',
   outline,
   ended = false,
+  annotate = true,
+  paged = false,
 }: {
   readonly harness?: string;
   readonly outline: unknown;
   readonly ended?: boolean;
+  readonly annotate?: boolean;
+  readonly paged?: boolean;
 }) {
   const [shell] = useState(() => {
     script.outline = outline;
     script.served = 0;
     script.release = null;
+    script.holdOlder = false;
+    script.releaseOlder = null;
     const history = fakeRouterEnvironment(`#n=session:demo:${harness}:s1`);
     let generation = G;
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -221,7 +244,7 @@ export function OutlinePage({
           script.served += 1;
           return json({
             generated: generation++,
-            annotate: true,
+            annotate,
             harnesses: [
               { key: 'claude', label: 'Claude Code' },
               { key: 'codex', label: 'Codex' },
@@ -271,12 +294,20 @@ export function OutlinePage({
               scanned_bytes: 0,
               kinds: [],
             });
+          const older = url.includes('before=');
+          if (older && script.holdOlder)
+            await new Promise<void>((resolve) => {
+              script.releaseOlder = resolve;
+            });
+          const page = !paged
+            ? record
+            : record.filter((row) => (older ? row.ordinal < 3 : row.ordinal >= 3));
           return json({
             state: 'ok',
             session: { harness, sid: 's1' },
-            entries: [...record].reverse(),
-            next: null,
-            reached_start: true,
+            entries: [...page].reverse(),
+            next: paged && !older ? 'older' : null,
+            reached_start: !paged || older,
             bound: null,
             scanned_bytes: 4096,
             kinds: ['user_message', 'agent_message', 'tool_report'],

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Outline, OutlineBlock, OutlineCoverage } from '../api/outline';
 import {
   PROMPT_CHARS,
+  STAMP_FAILED,
   blockCounts,
   coverageNotes,
   noOutline,
@@ -12,8 +13,7 @@ import {
 } from './outline';
 
 const CLAUDE: OutlineCoverage = {
-  complete: true,
-  startsAt: null,
+  startOffset: 0,
   agentReplies: 'read',
   checksAndFiles: 'read',
   unread: [],
@@ -26,10 +26,9 @@ const CODEX: OutlineCoverage = {
 
 const block = (over: Partial<OutlineBlock> = {}): OutlineBlock => ({
   prompt: { factId: 'p1', title: 'Add retry with backoff.', at: 1900000000 },
-  span: { first: 'p1', last: 'c2', entries: 9, fromAt: 1900000000, toAt: 1900000300 },
+  span: { first: 'p1', last: 'c2', entries: 9, fromAt: 1900000000 },
   counts: { checks: 3, checksFailed: 1, files: 4, agentMessages: 2, subagentEntries: 0 },
-  failures: [{ factId: 'c1', title: 'pytest tests/test_webhook.py', result: 'failed' }],
-  checks: [],
+  failures: [{ factId: 'c1', title: 'pytest tests/test_webhook.py' }],
   folders: [
     { folder: 'src/webhook', files: 3 },
     { folder: '', files: 1 },
@@ -40,7 +39,6 @@ const block = (over: Partial<OutlineBlock> = {}): OutlineBlock => ({
 const outline = (over: Partial<Outline> = {}): Outline => ({
   state: 'ok',
   reason: null,
-  harness: 'claude',
   coverage: CLAUDE,
   blocks: [block()],
   moreBlocks: 0,
@@ -71,23 +69,27 @@ describe('the outline card model', () => {
     ]);
   });
 
-  it('says where the read stopped short, and how many earlier prompts are not shown', () => {
+  it('says where the read stopped short, and how many earlier parts are not shown', () => {
     const partial: OutlineCoverage = {
       ...CLAUDE,
-      complete: false,
-      startsAt: 'p1',
-      unread: [
-        { reason: 'before_window', stream: 'parent' },
-        { reason: 'time', stream: 'parent' },
-      ],
+      startOffset: 900,
+      unread: [{ reason: 'before_window' }, { reason: 'time' }],
     };
     const notes = coverageNotes(partial, 3);
     expect(notes).toHaveLength(3);
     expect(notes[0]).toMatch(/starts partway/);
     expect(notes[1]).toMatch(/newest entries may be missing/);
     expect(notes[2]).toBe(
-      '3 earlier messages of yours are not shown here. Full activity lists every entry.',
+      '3 earlier parts of this session are not shown here. Full activity lists every entry.',
     );
+  });
+
+  it('does not say the outline starts partway for a read from the start that stopped at its limit', () => {
+    const stopped: OutlineCoverage = { ...CLAUDE, unread: [{ reason: 'time' }] };
+    expect(coverageNotes(stopped, 0)).toEqual([
+      'Compass stopped reading at its limit, so the newest entries may be missing. It reads again on the next update.',
+    ]);
+    expect(coverageNotes({ ...CLAUDE, startOffset: 512 }, 0)[0]).toMatch(/starts partway/);
   });
 
   it('says why there is no outline in the reader’s words', () => {
@@ -125,5 +127,7 @@ describe('the outline card model', () => {
     expect(outlineStamp(null, true)).toBe('still running');
     expect(outlineStamp(null, false)).toBe('');
     expect(outlineStamp(1900000000, true)).toMatch(/^updated \d\d:\d\d · still running$/);
+    // A failed refresh is not dated as an update.
+    expect(outlineStamp(1900000000, false, true)).toBe(STAMP_FAILED);
   });
 });

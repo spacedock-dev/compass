@@ -1,6 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { OUTLINE_FAILED, OUTLINE_LABEL, OUTLINE_LOADING } from '../src/sessions/outline';
+import {
+  OUTLINE_FAILED,
+  OUTLINE_LABEL,
+  OUTLINE_LOADING,
+  STAMP_FAILED,
+} from '../src/sessions/outline';
 import {
   G,
   OutlinePage,
@@ -34,6 +39,8 @@ async function atWidth(width: number, check: () => Promise<void>) {
   }
 }
 
+/* Real data: the outline's check ids are not the record's, so a failure has no chip and a part that ends on a
+   check is drawn from where it starts. */
 export const Outline: Story = {
   render: () => <OutlinePage outline={claudeOutline()} />,
   play: async ({ canvasElement }) => {
@@ -51,16 +58,16 @@ export const Outline: Story = {
     await expect(first.querySelector('[data-next-outline-counts]')).toHaveTextContent(
       '4 entries · 1 agent reply · 2 checks run, 1 failed as the tool reported · 3 files written in src/webhook (2), tests (1)',
     );
-    // The failure in the failure colour.
-    const failure = first.querySelector('[data-next-outline-failure="c1"]') as HTMLElement;
+    // The failure in the failure colour, and no chip: no record page carries the outline's id for it.
+    const failure = first.querySelector('[data-next-outline-failure]') as HTMLElement;
     await expect(failure).toHaveTextContent(
       'Failed as the tool reported: pytest tests/test_webhook.py',
     );
     await expect(getComputedStyle(failure).color).toBe('rgb(228, 136, 106)');
-    // The span as #n chips, numbered as Full activity numbers them.
     await waitFor(() =>
-      expect(first.querySelector('[data-next-outline-span]')).toHaveTextContent('Entries#1to#2.2'),
+      expect(first.querySelector('[data-next-outline-span]')).toHaveTextContent('Starts at#1'),
     );
+    await expect(within(failure).queryByRole('button')).toBeNull();
     await expect(second.querySelector('[data-next-outline-span]')).toHaveTextContent(
       'Entries#3to#4',
     );
@@ -78,15 +85,20 @@ export const Outline: Story = {
   },
 };
 
-/* A chip opens Full activity and lands on the entry it names. */
-export const ChipOpensFullActivity: Story = {
-  render: () => <OutlinePage outline={claudeOutline()} />,
+/* The future case, once the outline's check ids are the record's: the failure and the span's end get chips,
+   and the failure's chip opens Full activity on the check. */
+export const MatchedIdsFutureCase: Story = {
+  render: () => <OutlinePage outline={claudeOutline({}, true)} />,
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole('button', { name: 'Full activity' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
+    const first = (await waitFor(() => {
+      const node = region.querySelector('[data-next-outline-block]');
+      if (!node) throw new Error('no block yet');
+      return node;
+    })) as HTMLElement;
+    await waitFor(() =>
+      expect(first.querySelector('[data-next-outline-span]')).toHaveTextContent('Entries#1to#2.2'),
     );
     const chip = await within(region).findByRole('button', {
       name: 'Open entry #2.1, the failed check, in Full activity',
@@ -103,6 +115,148 @@ export const ChipOpensFullActivity: Story = {
         canvasElement.querySelector('[data-next-cockpit-work] [data-next-entry-id="c1"]'),
       ),
     );
+  },
+};
+
+/* A chip opens Full activity and lands on the entry it names. */
+export const ChipOpensFullActivity: Story = {
+  render: () => <OutlinePage outline={claudeOutline()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('button', { name: 'Full activity' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    const chip = await within(region).findByRole('button', {
+      name: 'Open entry #3, where this part starts, in Full activity',
+    });
+    await userEvent.click(chip);
+    await waitFor(() =>
+      expect(canvas.getByRole('button', { name: 'Full activity' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      ),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        canvasElement.querySelector('[data-next-cockpit-work] [data-next-entry-id="p2"]'),
+      ),
+    );
+  },
+};
+
+const entryRow = (root: HTMLElement, id: string) =>
+  root.querySelector(`[data-next-cockpit-work] [data-next-entry-id="${id}"]`);
+
+/* A prompt the page does not hold yet: its chip reads older record pages for it, then lands on it. */
+export const ColdPromptChipReadsOlderPages: Story = {
+  render: () => <OutlinePage outline={claudeOutline()} paged />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const chip = await waitFor(() => {
+      const node = region.querySelector<HTMLElement>('[data-next-outline-entry="p1"]');
+      if (!node) throw new Error('no chip yet');
+      return node;
+    });
+    await expect(chip).toHaveAccessibleName(
+      'Open the entry, where this part starts, in Full activity',
+    );
+    await expect(entryRow(canvasElement, 'p1')).toBeNull();
+    await userEvent.click(chip);
+    await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'p1')));
+    await expect(region.querySelector('[data-next-outline-missing]')).toBeNull();
+  },
+};
+
+/* A slow press that settles after a later press leaves focus where the later press put it. */
+export const LaterPressWins: Story = {
+  render: () => <OutlinePage outline={claudeOutline()} paged />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    script.holdOlder = true;
+    const cold = await waitFor(() => {
+      const node = region.querySelector<HTMLElement>('[data-next-outline-entry="p1"]');
+      if (!node) throw new Error('no chip yet');
+      return node;
+    });
+    await userEvent.click(cold);
+    await waitFor(() => expect(script.releaseOlder).not.toBeNull());
+    const fast = region.querySelector<HTMLElement>('[data-next-outline-entry="p2"]') as HTMLElement;
+    await userEvent.click(fast);
+    await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'p2')));
+    script.releaseOlder?.();
+    await waitFor(() => expect(entryRow(canvasElement, 'p1')).not.toBeNull());
+    // Two frames: the slow press's settle runs in one.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await expect(document.activeElement).toBe(entryRow(canvasElement, 'p2'));
+    await expect(region.querySelector('[data-next-outline-missing]')).toBeNull();
+  },
+};
+
+/* A prompt no record page holds: the press opens Full activity and says plainly that it does not show it. */
+export const EntryNotInFullActivity: Story = {
+  render: () => {
+    const base = claudeOutline();
+    const [first, second] = base.blocks;
+    return (
+      <OutlinePage
+        outline={{
+          ...base,
+          blocks: [
+            {
+              ...second,
+              prompt: { fact_id: 'p0', title: 'An earlier message.', at: G - 900 },
+              span: { first: 'p0', last: 'p0', entries: 1, from_at: G - 900, to_at: G - 900 },
+            },
+            first,
+          ],
+        }}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const chip = await waitFor(() => {
+      const node = region.querySelector<HTMLElement>('[data-next-outline-entry="p0"]');
+      if (!node) throw new Error('no chip yet');
+      return node;
+    });
+    await userEvent.click(chip);
+    const note = await within(region).findByRole('status');
+    await expect(note).toHaveTextContent(
+      'Full activity does not show that entry: it could not be loaded, or it sits in a folded run of checks.',
+    );
+  },
+};
+
+/* With annotations off nothing else on the page reads the focused context; the card reads it itself. */
+export const AnnotationsOff: Story = {
+  render: () => <OutlinePage outline={claudeOutline()} annotate={false} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await within(region).findByText(OUTLINE_LABEL);
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
+  },
+};
+
+/* A refresh that fails keeps the outline drawn, and the stamp says the update could not be read rather than
+   dating the outline to the failed read. */
+export const RefreshFailed: Story = {
+  render: () => <OutlinePage outline={claudeOutline()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await within(region).findByText(OUTLINE_LABEL);
+    script.outline = 'error';
+    await userEvent.click(
+      within(canvasElement).getByRole('button', { name: 'Simulate board poll' }),
+    );
+    await waitFor(() =>
+      expect(region.querySelector('[data-next-outline-stamp]')).toHaveTextContent(
+        `${STAMP_FAILED} · still running`,
+      ),
+    );
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
   },
 };
 
@@ -209,6 +363,7 @@ export const StartsPartway: Story = {
             ...base.coverage,
             complete: false,
             starts_at: 'a1',
+            start_offset: 900,
             unread: [
               { start_offset: 0, end_offset: 900, reason: 'before_window', stream: 'parent' },
             ],
@@ -231,7 +386,7 @@ export const StartsPartway: Story = {
       "Compass read only the newest part of this session's record, so the outline starts partway.",
     );
     await box.findByText(
-      '2 earlier messages of yours are not shown here. Full activity lists every entry.',
+      '2 earlier parts of this session are not shown here. Full activity lists every entry.',
     );
     await expect(region.querySelector('[data-next-outline-prompt="none"]')).toHaveTextContent(
       'Before the first message of yours this outline read',

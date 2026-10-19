@@ -22,7 +22,7 @@ describe('parseOutline', () => {
     expect(first?.span).toMatchObject({ entries: 2, first: 'fact:1b3f7a63986acb47' });
     expect(first?.counts).toMatchObject({ agentMessages: 1, checks: 0, files: 0 });
     expect(outline?.coverage).toMatchObject({
-      complete: true,
+      startOffset: 0,
       agentReplies: 'read',
       checksAndFiles: 'read',
     });

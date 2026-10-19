@@ -74,7 +74,7 @@ export function coverageNotes(coverage: OutlineCoverage | null, more: number): s
     else if (work)
       notes.push('The outline has no checks or files: they are not read for this harness.');
     const reasons = new Set(coverage.unread.map((region) => region.reason));
-    if (coverage.startsAt !== null || reasons.has('before_window'))
+    if (coverage.startOffset > 0 || reasons.has('before_window'))
       notes.push(
         "Compass read only the newest part of this session's record, so the outline starts partway.",
       );
@@ -86,9 +86,11 @@ export function coverageNotes(coverage: OutlineCoverage | null, more: number): s
     if (reasons.has('unreadable_subagent'))
       notes.push("A subagent's record could not be read, so its checks and files are not counted.");
   }
+  /* "Parts", not "messages of yours": the server opens a group for work before the first prompt it reads, and
+     counts that group among those it drops. */
   if (more > 0)
     notes.push(
-      `${plural(more, 'earlier message of yours is', 'earlier messages of yours are')} not shown here. Full activity lists every entry.`,
+      `${plural(more, 'earlier part of this session is', 'earlier parts of this session are')} not shown here. Full activity lists every entry.`,
     );
   return notes;
 }
@@ -157,7 +159,15 @@ export function outlineView(
 
 /* The card's right-hand header: when the board this outline came with was read, and whether the session is
    still going, so a reader knows the outline can grow. */
-export function outlineStamp(revision: number | null, running: boolean): string {
-  const at = revision !== null && revision > 0 ? `updated ${clock(revision)}` : '';
+export const STAMP_FAILED = 'the latest update could not be read';
+
+/* `failed` is a refresh that failed while an earlier outline is still drawn. The entry's revision is then the
+   failed read's, so it is not stamped as an update. */
+export function outlineStamp(revision: number | null, running: boolean, failed = false): string {
+  const at = failed
+    ? STAMP_FAILED
+    : revision !== null && revision > 0
+      ? `updated ${clock(revision)}`
+      : '';
   return [at, running ? 'still running' : ''].filter(Boolean).join(' · ');
 }

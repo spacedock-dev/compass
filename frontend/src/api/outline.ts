@@ -11,8 +11,6 @@ export type OutlineState = 'ok' | 'unsupported' | 'unavailable' | 'stale';
 export interface OutlineCheck {
   readonly factId: string;
   readonly title: string;
-  /** The result token as the tool reported it, never Compass's verdict. */
-  readonly result: string;
 }
 
 export interface OutlineBlock {
@@ -27,7 +25,6 @@ export interface OutlineBlock {
     readonly last: string;
     readonly entries: number;
     readonly fromAt: number | null;
-    readonly toAt: number | null;
   };
   readonly counts: {
     readonly checks: number;
@@ -37,24 +34,23 @@ export interface OutlineBlock {
     readonly subagentEntries: number;
   };
   readonly failures: readonly OutlineCheck[];
-  readonly checks: readonly OutlineCheck[];
   readonly folders: readonly { readonly folder: string; readonly files: number }[];
 }
 
 export interface OutlineCoverage {
-  readonly complete: boolean;
-  readonly startsAt: string | null;
+  /* Where in the parent record the read began. Above zero means an older prefix was skipped; `starts_at` is
+     not that signal, because the server sets it for any unread region, a time or byte stop included. */
+  readonly startOffset: number;
   /** `read`, or `not_read` where the harness's agent words are not admitted. */
   readonly agentReplies: string;
   /** `read`, or `not_admitted` where the harness's checks and files are not admitted. */
   readonly checksAndFiles: string;
-  readonly unread: readonly { readonly reason: string; readonly stream: string }[];
+  readonly unread: readonly { readonly reason: string }[];
 }
 
 export interface Outline {
   readonly state: OutlineState;
   readonly reason: string | null;
-  readonly harness: string;
   readonly coverage: OutlineCoverage | null;
   readonly blocks: readonly OutlineBlock[];
   readonly moreBlocks: number;
@@ -75,7 +71,7 @@ const list = (value: unknown): readonly Raw[] =>
 
 function check(row: Raw): OutlineCheck | null {
   const factId = text(row['fact_id']);
-  return factId ? { factId, title: text(row['title']), result: text(row['result']) } : null;
+  return factId ? { factId, title: text(row['title']) } : null;
 }
 
 function block(row: Raw): OutlineBlock | null {
@@ -95,7 +91,6 @@ function block(row: Raw): OutlineBlock | null {
       last,
       entries: count(span['entries']),
       fromAt: time(span['from_at']),
-      toAt: time(span['to_at']),
     },
     counts: {
       checks: count(counts['checks']),
@@ -105,9 +100,6 @@ function block(row: Raw): OutlineBlock | null {
       subagentEntries: count(counts['subagent_entries']),
     },
     failures: list(row['failures'])
-      .map(check)
-      .filter((row): row is OutlineCheck => row !== null),
-    checks: list(row['checks'])
       .map(check)
       .filter((row): row is OutlineCheck => row !== null),
     folders: list(row['folders']).map((row) => ({
@@ -121,14 +113,10 @@ function coverage(value: unknown): OutlineCoverage | null {
   const row = record(value);
   if (!row) return null;
   return {
-    complete: row['complete'] === true,
-    startsAt: text(row['starts_at']) || null,
+    startOffset: count(row['start_offset']),
     agentReplies: text(row['agent_replies']),
     checksAndFiles: text(row['checks_and_files']),
-    unread: list(row['unread']).map((region) => ({
-      reason: text(region['reason']),
-      stream: text(region['stream']),
-    })),
+    unread: list(row['unread']).map((region) => ({ reason: text(region['reason']) })),
   };
 }
 
@@ -142,7 +130,6 @@ export function parseOutline(context: unknown): Outline | null {
   return {
     state: state as OutlineState,
     reason: text(raw['reason']) || null,
-    harness: text(raw['harness']),
     coverage: coverage(raw['coverage']),
     // Non-ok answers hold no entries, whatever a malformed body says.
     blocks:

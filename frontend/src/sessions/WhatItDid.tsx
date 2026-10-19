@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { contextKey } from '../api/identity';
 import { parseOutline } from '../api/outline';
 import { useControls } from '../controls';
@@ -171,6 +171,19 @@ export function WhatItDid({
   const entry = useDisplayed((snapshot) =>
     snapshot.contexts.get(contextKey(model.projectKey, model.session as never)),
   );
+  const generated = useDisplayed((snapshot) => snapshot.data?.generated);
+  const identity = model.identity;
+  /* The card's own passive read of the focused context, once per board revision. It is not gated on
+     annotations as the Intent card's is: the outline is not an annotation, and with them off nothing else on
+     this page reads the context. A repeat for a revision the runtime has settled is a no-op. */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the revision is the refetch trigger, not a value the body reads.
+  useEffect(() => {
+    if (!identity) return;
+    runtime.loadContext({
+      projectKey: model.projectKey,
+      focus: { harness: identity.harness, sid: identity.sid },
+    });
+  }, [runtime, model.projectKey, identity?.harness, identity?.sid, generated]);
   const outline = parseOutline(entry?.data);
   const view = outlineView(
     outline,
@@ -178,7 +191,12 @@ export function WhatItDid({
     harness,
   );
   const [missing, setMissing] = useState<string | null>(null);
-  const stamp = outline?.state === 'ok' ? outlineStamp(entry?.revision ?? null, running) : '';
+  // The latest press: a read that ends after another press began says nothing about the one now standing.
+  const latestPress = useRef<object | null>(null);
+  const stamp =
+    outline?.state === 'ok'
+      ? outlineStamp(entry?.revision ?? null, running, Boolean(entry?.error))
+      : '';
 
   const land = (id: string): boolean => {
     const node = document.querySelector<HTMLElement>(
@@ -195,13 +213,15 @@ export function WhatItDid({
     return true;
   };
   const open = (id: string, n: string | null) => {
+    const press = {};
+    latestPress.current = press;
     setMissing(null);
     controls.disclosures.set(fullActivityKey(model.project, model.session), true);
     const settle = () =>
       requestAnimationFrame(() => {
+        if (latestPress.current !== press) return;
         if (!land(id)) setMissing(n ? `entry #${n}` : 'that entry');
       });
-    const identity = model.identity;
     if (model.byId.has(id) || !identity) {
       settle();
       return;

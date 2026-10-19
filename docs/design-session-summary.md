@@ -516,6 +516,12 @@ This table describes the implementation and does not amend the owner-ruled table
   What the session has done card draws a `#n` chip for a check or file only when the page holds an
   entry under that id, and never reads record pages to look for one. A summary bullet citing a
   check has the same gap.
+- The card says its outline starts partway only when `start_offset` is above zero or an unread
+  region is `before_window`. `starts_at` is not that signal: it is set for any partial coverage, so
+  a read from the start that stopped at its time or byte limit carries it too.
+- The card reads the focused context itself, once per board revision, with no gate on annotations:
+  under `--no-annotations` the Intent card's read does not run and nothing else on the session page
+  would start one.
 - The sample session's fixture carries no `sources.outline`: `scripts/build_sample_fixture.py`
   captures the whole page from a server holding a stored reading, and recapturing it needs a model
   reading and a rebuilt page. Until it is recaptured, the sample shows the card's no-outline line.
