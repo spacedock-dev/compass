@@ -82,6 +82,9 @@ const SESSION_TABLE = JSON.parse(
 );
 import { measureFieldChrome } from './support/field-chrome.mjs';
 import { visitFieldStates } from './support/field-worlds.mjs';
+/* Predates the one-column page (2026-10-19): this reference and the button and disclosure references beside
+   it record next-session-columns paths that are gone, so this fails when the proof is run on demand until it
+   is brought forward to the one-column page's paths. */
 const FIELD_TABLE = JSON.parse(
   await readFile(new URL('./field-chrome-reference.json', import.meta.url), 'utf8'),
 );
@@ -1383,6 +1386,9 @@ const key = (row) =>
     .join(' > ')
     .replace(/\.[\w-]*--[\w-]+/g, '')
     // Blocked-session counts retain the measured metadata identity after moving to activity.
+    /* Predates the one-column page (2026-10-19): the next-session-columns and next-session-activity paths
+       are gone, so this fails when the proof is run on demand until it is brought forward to the one-column
+       page's own paths. */
     .replace(
       'div.next-session-columns > div.next-session-activity > p.next-session-detail-meta',
       'header.next-session-detail-header > div.next-session-detail-bar > p.next-session-detail-meta',

@@ -39,20 +39,18 @@ export function ModelNotice({
   provider,
   parts,
   children,
+  name = 'Model request notice',
 }: {
   readonly notice: Row;
   readonly provider: string;
   readonly parts: readonly string[];
   readonly children: ReactNode;
+  /** The region's name; two notices on one page must not share one. */
+  readonly name?: string;
 }) {
   const output = String(notice['tool_output'] || '');
   return (
-    <Card
-      as="section"
-      variant="reading-notice"
-      data-next-reading-notice=""
-      aria-label="Model request notice"
-    >
+    <Card as="section" variant="reading-notice" data-next-reading-notice="" aria-label={name}>
       <p className="next-cockpit-reading-why">{NOTICE_SENT}</p>
       <DisclosureParts parts={parts} />
       <div>

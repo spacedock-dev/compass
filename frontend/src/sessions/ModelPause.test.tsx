@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  NOTICE,
   SummaryPage,
+  defaultAnswer,
   grant,
   job,
   poll,
@@ -94,5 +96,48 @@ describe('the summaries switch is nested under Pause model calls', () => {
     );
     expect(within(region).getByText('Model calls are paused')).toBeVisible();
     expect(script.posts).toHaveLength(0);
+  });
+
+  it('drops a held summary notice when model calls are paused', async () => {
+    render(
+      <SummaryPage
+        ended={false}
+        summary={storedSummary({
+          out_of_date: {
+            kind: 'appended',
+            reason: null,
+            affected_blocks: [],
+            new_entries: 2,
+            appendable: true,
+            action: 'update',
+          },
+        })}
+        answer={(path, body) =>
+          path !== '/api/summary' || 'consent' in body
+            ? defaultAnswer(path, body)
+            : {
+                status: 202,
+                body: { ok: true, job: job({ state: 'complete', notice: NOTICE }), notice: NOTICE },
+              }
+        }
+      />,
+    );
+    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    await act(async () => {
+      fireEvent.click(await within(region).findByRole('button', { name: 'Update summary' }));
+    });
+    await waitFor(() => expect(region.querySelector('[data-next-summary-notice]')).not.toBeNull());
+    /* Its own region name, so it is not a second "Model request notice" beside the drift card's. */
+    expect(within(region).getByRole('region', { name: 'Summary request notice' })).toBeVisible();
+    const drift = await screen.findByRole('region', { name: 'Drift' });
+    await act(async () => {
+      fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Pause model calls' }));
+    });
+    await waitFor(() => expect(within(region).getByText('Model calls are paused')).toBeVisible());
+    /* The server cleared every notice with the pause; the tab does not keep drawing one. */
+    expect(region.querySelector('[data-next-summary-notice]')).toBeNull();
   });
 });

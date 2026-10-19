@@ -173,7 +173,7 @@ export const SummaryHoldsADeparture: Story = {
     ).toBeGreaterThanOrEqual(4);
     await expect(summary.querySelector('[data-next-summary-withheld]')).not.toBeNull();
     const marked = summary.querySelector('[data-next-summary-marked]') as HTMLElement;
-    const jump = within(marked).getByRole('button', { name: 'Go to the departure card: Goal' });
+    const jump = within(marked).getByRole('button', { name: 'Departure · Goal, go to the card' });
     await userEvent.click(jump);
     await waitFor(() =>
       expect(document.activeElement?.closest('[data-next-departure="goal"]')).not.toBeNull(),

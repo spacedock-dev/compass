@@ -776,6 +776,9 @@ export const NoticeOnceThenAgainOnChange: Story = {
       return node;
     });
     await expect(first).toHaveTextContent('Anthropic');
+    await expect(
+      within(first).getByRole('region', { name: 'Summary request notice' }),
+    ).toBeVisible();
     await expect(within(first).getByRole('button', { name: 'Turn off summaries' })).toBeVisible();
     await press();
     await waitFor(() => expect(region.querySelector('[data-next-summary-notice]')).toBeNull());
@@ -820,7 +823,7 @@ export const DepartureMarked: Story = {
       `${SUMMARY_HOLDS}Departure · Goal`,
     );
     await userEvent.click(
-      within(marked).getByRole('button', { name: 'Go to the departure card: Goal' }),
+      within(marked).getByRole('button', { name: 'Departure · Goal, go to the card' }),
     );
     const departure = canvasElement.querySelector<HTMLElement>('[data-next-departure="goal"]');
     await waitFor(() => expect(departure?.contains(document.activeElement)).toBe(true));

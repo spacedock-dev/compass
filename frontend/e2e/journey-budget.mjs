@@ -21,6 +21,9 @@ import { copyProofPath } from './support/proof-copy.mjs';
 import { awaitRecordRead } from './support/record.mjs';
 
 const mutation = process.env.JOURNEY_MUTATION || '';
+/* Predates the one-column page (2026-10-19): the confirm-step mutation targets the retired Allow and analyze
+   label, so this fails when the proof is run on demand until it is brought forward to the Analyze drift
+   label. */
 const MUTATIONS = {
   'confirm-step': [
     'drift/ReadingControl.tsx',
@@ -339,6 +342,9 @@ try {
         assert.equal(postsTo(script, '/api/reading').length, 0, 'consent was skipped');
         // Follow an inserted confirmation so the regression fails on its measured cost, not a missing label.
         if (await action('Confirm analysis').count()) await action('Confirm analysis').click();
+        /* Predates the one-column page (2026-10-19): the Allow and analyze step is retired, so this fails
+           when the proof is run on demand until it is brought forward to the first Analyze drift press and
+           its notice. */
         await action('Allow and analyze').press('Enter');
         await page.locator('[data-next-analyzing="journey-job"]').waitFor();
         const readAt = Math.max(Date.now() / 1000, saved.annotation_goal_saved_at || 0);

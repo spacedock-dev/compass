@@ -87,6 +87,25 @@ export const UnderTheLimitSaysNothingAboutIt: Story = {
   },
 };
 
+/* Paused with a current result: no second Analyze of unchanged words, but Resume model calls stays drawn on
+   the card, outside any popover, because it changes permission and starts nothing. */
+export const PausedResultStillOffersResume: Story = {
+  ...scenario({
+    ...RESULT,
+    payload: { reading: { consent: false, off: true, reason: 'model-calls-paused' } },
+  }),
+  play: async ({ canvasElement }) => {
+    const root = await card(canvasElement);
+    await foot(root);
+    const resume = await within(root).findByRole('button', { name: 'Resume model calls' });
+    await expect(resume).toBeVisible();
+    await expect(within(root).getAllByRole('button', { name: 'Resume model calls' })).toHaveLength(
+      1,
+    );
+    await expect(within(root).queryByRole('button', { name: /^Analyze/ })).toBeNull();
+  },
+};
+
 export const LimitReachedHoldsTheTopOfThePage: Story = {
   ...scenario({
     ...RESULT,

@@ -22,6 +22,7 @@ import {
   outlineView,
   type BlockView,
 } from './outline';
+import { useSteadyOutline } from './steadyOutline';
 
 export const WHAT_IT_DID_PLACEHOLDER =
   'An outline of what this session did is not drawn here yet. Every entry it recorded is under Full activity below.';
@@ -174,9 +175,10 @@ export function WhatItDid({
   const { model } = useDrift();
   const { runtime } = useShell();
   const controls = useControls();
-  const entry = useDisplayed((snapshot) =>
+  const read = useDisplayed((snapshot) =>
     snapshot.contexts.get(contextKey(model.projectKey, model.session as never)),
   );
+  const entry = useSteadyOutline(read, contextKey(model.projectKey, model.session as never));
   const generated = useDisplayed((snapshot) => snapshot.data?.generated);
   const identity = model.identity;
   /* The card's own passive read of the focused context, once per board revision. It is not gated on

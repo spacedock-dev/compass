@@ -12,6 +12,7 @@ import {
   claudeOutline,
   codexOutline,
   script,
+  staleOutline,
   unsupportedOutline,
 } from './outline.scenario';
 
@@ -327,6 +328,29 @@ export const Ended: Story = {
 
 /* A running session's outline grows with the board: a new message of the reader's becomes a new block on
    the next poll. */
+/* A running session's read that overlapped an append answers stale. The last good outline stays drawn rather
+   than flickering to the stale sentence until the next revision. */
+export const StaleReadKeepsTheLastOutline: Story = {
+  render: () => <OutlinePage outline={claudeOutline()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await within(region).findByText(OUTLINE_LABEL);
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
+    const before = script.focused;
+    script.outline = staleOutline();
+    await userEvent.click(
+      within(canvasElement).getByRole('button', { name: 'Simulate board poll' }),
+    );
+    await waitFor(() => expect(script.focused).toBeGreaterThan(before));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
+    await expect(region).not.toHaveTextContent(/changed while Compass was reading/);
+    await expect(
+      within(region).getByText('Keep the diff small and leave the tests alone.'),
+    ).toBeVisible();
+  },
+};
+
 export const RunningUpdatesWithTheBoard: Story = {
   render: () => {
     const base = claudeOutline();

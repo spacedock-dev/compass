@@ -177,6 +177,18 @@ export function codexOutline() {
   };
 }
 
+/* What `session_outline.build` answers when a read overlapped an append: no blocks, and no plan beside it. */
+export const staleOutline = () => ({
+  state: 'stale',
+  made_by: 'compass',
+  basis: 'grouping',
+  reason: 'stale',
+  harness: 'claude',
+  coverage: null,
+  blocks: [],
+  more_blocks: 0,
+});
+
 export const unsupportedOutline = (harness: string) => ({
   state: 'unsupported',
   made_by: 'compass',
@@ -193,6 +205,8 @@ export const unsupportedOutline = (harness: string) => ({
 export interface OutlineScript {
   outline: unknown;
   served: number;
+  /** Focused context answers served, so a story can wait for the one it changed. */
+  focused: number;
   release: (() => void) | null;
   holdOlder: boolean;
   releaseOlder: (() => void) | null;
@@ -201,6 +215,7 @@ export interface OutlineScript {
 export const script: OutlineScript = {
   outline: null,
   served: 0,
+  focused: 0,
   release: null,
   holdOlder: false,
   releaseOlder: null,
@@ -224,6 +239,7 @@ export function OutlinePage({
   const [shell] = useState(() => {
     script.outline = outline;
     script.served = 0;
+    script.focused = 0;
     script.release = null;
     script.holdOlder = false;
     script.releaseOlder = null;
@@ -272,6 +288,7 @@ export function OutlinePage({
               script.release = resolve;
             });
           if (script.outline === 'error') return json({ error: 'unreadable' }, 500);
+          script.focused += 1;
           return json({
             semantic: { facts: [] },
             sources: {

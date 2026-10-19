@@ -851,6 +851,9 @@ try {
       const mine = norm(await read(react));
       assert.deepEqual(mine, old, 'the consent step differs from the recorded step');
       assert.match(old.text, /Send this session to Claude Code for analysis\?/);
+      /* Predates the one-column page (2026-10-19): the Allow and analyze step is retired and a press writes
+         no Allow, so this fails when the proof is run on demand until it is brought forward to the notice a
+         first Analyze drift shows. */
       assert.deepEqual(
         old.buttons.filter(([label]) => ['Allow and analyze', 'Not now'].includes(label)).length,
         2,
@@ -1272,6 +1275,9 @@ try {
       await react.page.keyboard.press('Enter');
       await sleep(patience(200));
       assert.equal(postsTo(react.script, '/api/reading').length, 0);
+      /* Predates the one-column page (2026-10-19): the reading-allow action is retired and a press writes no
+         Allow, so this fails when the proof is run on demand until it is brought forward to the notice a
+         first Analyze drift shows. */
       await react.page.locator('[data-next-cockpit-action="reading-allow"]').click();
       await sleep(patience(400));
       const sent = postsTo(react.script, '/api/reading');
@@ -1565,6 +1571,8 @@ try {
       await react.page.waitForSelector('.next-cockpit-reading-consent');
       assert.equal(postsTo(react.script, '/api/reading').length, 0);
       // The question holds focus, and Tab reaches Allow and then Not now, in that order.
+      /* Predates the one-column page (2026-10-19): the reading-allow action is retired, so this fails when
+         the proof is run on demand until it is brought forward to the Drift card's own focus order. */
       await react.page.keyboard.press('Tab');
       assert.equal(
         await react.page.evaluate(() =>

@@ -283,29 +283,31 @@ export function ReadingControl({
   }
   const described = off ? REFUSED_ID : reason ? REFUSED_ID : disclosure ? DISCLOSURE_ID : '';
   const label = off ? 'Resume model calls' : again ? 'Analyze again' : 'Analyze drift';
-  /* A current result keeps its one Analyze; resuming permission does not start another analysis. */
-  const press = showRun ? (
-    <ActionButton
-      weight={primary && provider && !inert ? 'primary' : 'secondary'}
-      label={label}
-      busyLabel={off ? 'Resuming…' : 'Starting…'}
-      pendingKey={off ? `reading-on:${key}` : busyKey}
-      inert={!enabled}
-      describes={described}
-      action={off ? 'reading-on' : 'reading-ask'}
-      focusKey={off ? `reading-on:${key}` : `reading:${key}`}
-      fallbackKey={`reading:${key}`}
-      onPress={() => {
-        if (off) void readingOn(ctx, identity);
-        else if (identity) {
-          void askForReading(ctx, identity, {
-            route,
-            revision: nextNumber(annotation?.['revision']) || 0,
-          });
-        }
-      }}
-    />
-  ) : null;
+  /* A current result keeps its one Analyze; resuming permission does not start another analysis, so Resume
+     model calls is drawn whenever calls are paused, even where Analyze is not offered. */
+  const press =
+    showRun || off ? (
+      <ActionButton
+        weight={primary && provider && !inert ? 'primary' : 'secondary'}
+        label={label}
+        busyLabel={off ? 'Resuming…' : 'Starting…'}
+        pendingKey={off ? `reading-on:${key}` : busyKey}
+        inert={!enabled}
+        describes={described}
+        action={off ? 'reading-on' : 'reading-ask'}
+        focusKey={off ? `reading-on:${key}` : `reading:${key}`}
+        fallbackKey={`reading:${key}`}
+        onPress={() => {
+          if (off) void readingOn(ctx, identity);
+          else if (identity) {
+            void askForReading(ctx, identity, {
+              route,
+              revision: nextNumber(annotation?.['revision']) || 0,
+            });
+          }
+        }}
+      />
+    ) : null;
   /* The announcement and the description are one node while a refusal stands. Printing the stored message and
      the reason separately rendered the same sentence twice, adjacent and identical, where the contract is that
      it renders exactly once. The press is still announced, because this node carries `role="status"` when it
@@ -375,12 +377,12 @@ export function ReadingControl({
     >
       {partsList}
       {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
-      {off && showRun ? null : <TurnOff />}
+      {off ? null : <TurnOff />}
     </Why>
   ) : (
     <>
       {aboutWhy}
-      {hasNotice || (off && showRun) ? null : <TurnOff />}
+      {hasNotice || off ? null : <TurnOff />}
     </>
   );
   return (
@@ -398,9 +400,7 @@ export function ReadingControl({
           </>
         )}
       </div>
-      {off && showRun ? (
-        <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p>
-      ) : null}
+      {off ? <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p> : null}
       {changeLine}
       {inert ? null : counted}
       {accounts}

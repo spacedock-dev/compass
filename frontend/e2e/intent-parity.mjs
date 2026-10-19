@@ -411,6 +411,8 @@ try {
         'the editor differs from the recorded editor over a pending line',
       );
       // An armed discard.
+      /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+         proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       await react.page.getByRole('button', { name: 'More', exact: true }).click();
       await react.page
         .locator(
@@ -895,6 +897,8 @@ try {
       const discard = react.page.locator('[data-next-cockpit-action="held-discard"]');
       react.reset();
       // Behind its own summary, as a reader finds it.
+      /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+         proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       const more = react.page.getByRole('button', { name: 'More', exact: true });
       if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
       await react.page
@@ -930,6 +934,8 @@ try {
     await load(react, fragmentOf('intent-2'));
     await readEditor(react);
     const discard = react.page.locator('[data-next-cockpit-action="held-discard"]');
+    /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+       proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
     const more = react.page.getByRole('button', { name: 'More', exact: true });
     if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
     await react.page
@@ -1009,6 +1015,8 @@ try {
     async () => {
       await load(react, fragmentOf('intent-2'));
       await readEditor(react);
+      /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+         proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       const more = react.page.getByRole('button', { name: 'More', exact: true });
       if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
       const key = 'compass.next.live-estimate:claude:intent-2';
@@ -1019,6 +1027,8 @@ try {
       assert.equal(await sw.getAttribute('aria-checked'), 'true');
       assert.equal(await react.page.evaluate((k) => globalThis.localStorage.getItem(k), key), '1');
       await react.page.reload();
+      /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+         proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       await react.page.getByRole('button', { name: 'More', exact: true }).click();
       await react.page.waitForSelector('.next-session-drift-switch');
       assert.equal(

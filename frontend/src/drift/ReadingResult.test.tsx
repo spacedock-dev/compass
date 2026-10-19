@@ -211,7 +211,11 @@ describe('a current result while model calls are paused', () => {
     await page.settle();
     await page.settle();
     expect(document.querySelector('[data-next-result]')).not.toBeNull();
-    expect(byAction('reading-on')?.textContent).toBe('Resume model calls');
+    /* By role, so a hidden popover node cannot stand in for the visible control. */
+    const resume = screen.getByRole('button', { name: 'Resume model calls' });
+    expect(resume.closest('[hidden]')).toBeNull();
+    expect(resume.closest('[data-closed]')).toBeNull();
+    expect(screen.queryAllByRole('button', { name: 'Resume model calls' })).toHaveLength(1);
     expect(byAction('reading-ask')).toBeNull();
   });
 });

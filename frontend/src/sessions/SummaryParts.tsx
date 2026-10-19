@@ -135,9 +135,16 @@ function Sent({ state }: { readonly state: SummaryState }) {
   );
 }
 
+/* Pause model calls clears every notice on the server, the summary's included, so a notice this tab still
+   holds is stale while paused and is not drawn beside an inert Turn off summaries. */
 function noticeOf(state: SummaryState): Readonly<Record<string, unknown>> | null {
   const notice = state.held.notice ?? (jobActive(state.job) ? state.job?.notice : null) ?? null;
-  return notice && state.grant && !summariesOff(state.grant) ? notice : null;
+  return notice &&
+    state.grant &&
+    !summariesOff(state.grant) &&
+    state.grant.reason !== 'model-calls-paused'
+    ? notice
+    : null;
 }
 
 /* The off switch one press from the card wherever the notice, which carries its own, is not drawn. */
@@ -155,6 +162,7 @@ function Notice({ state }: { readonly state: SummaryState }) {
     <div data-next-summary-notice>
       <ModelNotice
         notice={notice}
+        name="Summary request notice"
         provider="Claude Code"
         parts={state.grant.disclosure ? [state.grant.disclosure] : []}
       >
@@ -367,11 +375,15 @@ function Cites({
   readonly cites: readonly string[];
   readonly cut?: number;
   readonly purpose: string;
-  readonly reads: boolean;
+  /** True when every id is a message id; a set names the ids known to be messages. */
+  readonly reads: boolean | ReadonlySet<string>;
   readonly chip: (id: string, purpose: string) => ReactNode;
 }) {
   const { model } = useDrift();
-  const linked = reads ? cites : cites.filter((id) => model.byId.has(id));
+  const linked =
+    reads === true
+      ? cites
+      : cites.filter((id) => model.byId.has(id) || (reads instanceof Set && reads.has(id)));
   const unlinked = cites.length - linked.length;
   if (!cites.length && !cut) return null;
   return (
@@ -449,7 +461,8 @@ function Mark({
           key={mark.key}
           target={`departure-head:${model.key}:${mark.key}`}
           label={`Departure · ${mark.name}`}
-          name={`Go to the departure card: ${mark.name}`}
+          /* WCAG 2.5.3: the accessible name begins with the visible label. */
+          name={`Departure · ${mark.name}, go to the card`}
         />
       ))}
     </p>
@@ -509,6 +522,17 @@ export function SummaryView({
   if (!stored) return null;
   const running = jobActive(state.job);
   const lede = stored.lede;
+  /* The lede may cite a check or a file, which no record page holds, so it reads older pages only for ids a
+     `said` or `asked` bullet also cites: those are message ids, as the bullets' own chips already treat them. */
+  const messageIds = new Set(
+    stored.blocks.flatMap((block) =>
+      block.phases.flatMap((phase) =>
+        phase.bullets.flatMap((bullet) =>
+          bullet.kind === 'said' || bullet.kind === 'asked' ? bullet.cites : [],
+        ),
+      ),
+    ),
+  );
   const control = `summary-delete:${state.key}`;
   /* The sample's tour notes the first phase that holds a departure, once. */
   const toured = stored.blocks.flatMap((block, b) =>
@@ -537,7 +561,7 @@ export function SummaryView({
           <Cites
             cites={stored.ledeCites}
             purpose={`cited for the opening summary${'text' in lede ? ` “${lede.text}”` : ''}`}
-            reads={false}
+            reads={messageIds}
             chip={chip}
           />
         </p>
