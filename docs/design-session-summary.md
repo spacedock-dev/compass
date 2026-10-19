@@ -475,7 +475,9 @@ not map look-alike letters. A string holding a check or tick glyph (U+2713, U+27
 U+2611, U+221A, U+10102, U+1F5F8, U+1F5F9 or U+1FBB1) is withheld wherever the glyph stands, quoted or attributed,
 because a result is never a check mark. That is the exact set, matched after NFKC folding: every character
 Unicode names a check mark, plus U+221A as a tick look-alike; U+237B (not check mark) and U+2612
-(ballot box with X) are excluded. The same refusal applies
+(ballot box with X) are excluded. The page withholds the same set again, from a stored or
+hand-edited summary the producer never checked, and a page test lists all nine so the two copies
+cannot drift apart unnoticed. The same refusal applies
 to titles, bullets and the lede, including a glyph inside a named speaker's quotation. These
 checks run on the whole string before any character cap and on the clipped string after it. A cap must not hide an unsafe suffix or strip the attribution from a
 surviving claim. Citation relevance remains the
@@ -720,9 +722,17 @@ move fingerprints, not ids. The published report lists one entry per check, its 
 one per written path, its newest write; the source keeps every run and every write. The newest
 run or write therefore carries the published id, and an earlier one, in an earlier call, carries
 the id the same derivation gives its own call and time, which no published entry holds. Within
-one compound call the record collapses repeated runs of a check into its last one; an earlier
-run there supplies `<call id>:segment:<shell segment>` as the event's `record_id`, so two runs in
-one call still never share an id. A citation to an earlier run or write is counted as one Full
+one compound call the published report puts every check's entry on the call's own id, so two
+foreground runs there that share a title (the same check twice, or one check in two directories,
+`cd a && pytest tests; cd ../b && pytest tests`) derive one published fact id, a collision the
+published side carries and the source does not repeat. The source keeps one run per title in the
+call on the call id, the one the published `_latest` would choose among that call's foreground
+runs, and every other run supplies `<call id>:segment:<shell segment>` as the event's `record_id`.
+A background run in the call is no candidate, so `pytest tests; pytest tests &` keeps the
+foreground run on the published id. Two paths written in one call whose clipped titles match
+likewise derive one published id; the first keeps it and each later one supplies
+`<call id>:write:<n>`. Two source entries therefore never share an id, and the run or write left
+on a segment or write id has no published entry. A citation to an earlier run or write is counted as one Full
 activity cannot open rather than pointed at the newer entry, because a `failed` line citing a run
 that later passed must not open the pass.
 

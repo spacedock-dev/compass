@@ -78,9 +78,12 @@ class SessionSourceTest(unittest.TestCase):
             project_context._semantic_fact_from_event(event, event["kind"], "tool_report", "")
             for event in events
         ]
+        entries = self.read().entries
+        # The dict comparison would hide two entries under one id; uniqueness is asserted apart.
+        self.assertEqual(len(entries), len({entry.fact_id for entry in entries}))
         self.assertEqual(
             {fact["summary"]: fact["fact_id"] for fact in facts},
-            {entry.title: entry.fact_id for entry in self.read().entries},
+            {entry.title: entry.fact_id for entry in entries},
         )
 
     def test_repeated_check_in_one_call_keeps_distinct_ids_and_latest_record_id(self) -> None:
@@ -92,6 +95,54 @@ class SessionSourceTest(unittest.TestCase):
         events, _ = project_context.claude_tool_reports(self.config, str(self.path), "root")
         fact = project_context._semantic_fact_from_event(events[0], "check_run", "tool_report", "")
         self.assertEqual(fact["fact_id"], entries[-1].fact_id)
+
+    def published_ids(self, kind: str) -> list[str]:
+        events, _ = project_context.claude_tool_reports(self.config, str(self.path), "root")
+        return [
+            project_context._semantic_fact_from_event(event, event["kind"], "tool_report", "")[
+                "fact_id"
+            ]
+            for event in events
+            if event["kind"] == kind
+        ]
+
+    def test_same_titled_checks_in_two_directories_of_one_call_keep_unique_ids(self) -> None:
+        (self.root / "a").mkdir()
+        (self.root / "b").mkdir()
+        self.session.bash("cd a && pytest tests; cd ../b && pytest tests", "1 passed")
+        self.save()
+        first = self.read()
+        ids = [entry.fact_id for entry in first.entries]
+        self.assertEqual(2, len(ids))
+        self.assertEqual(2, len(set(ids)))
+        # The published report keeps both checks under the call id, so both derive one fact id;
+        # the newest run carries it here and the earlier one is no published entry.
+        self.assertEqual({ids[-1]}, set(self.published_ids("check_run")))
+        self.assertEqual("unchanged", self.source.compare(first.snapshot, self.read()).kind)
+
+    def test_foreground_check_followed_by_its_background_run_keeps_the_published_id(
+        self,
+    ) -> None:
+        self.session.bash("pytest tests; pytest tests &", "1 passed")
+        self.save()
+        entries = self.read().entries
+        self.assertEqual(1, len(entries))
+        self.assertEqual([entries[0].fact_id], self.published_ids("check_run"))
+
+    def test_redirects_whose_clipped_titles_match_keep_unique_ids(self) -> None:
+        folder = "d" * (project_context.TOOL_REPORT_PATH_CHARS + 10)
+        (self.root / folder).mkdir()
+        # Only a check segment's redirect is a recorded write.
+        self.session.bash(
+            f"pytest tests > {folder}/one.txt; pytest tests/x > {folder}/two.txt", "1 passed"
+        )
+        self.save()
+        entries = [entry for entry in self.read().entries if entry.kind == "file"]
+        self.assertEqual(2, len(entries))
+        self.assertEqual(entries[0].title, entries[1].title)
+        self.assertNotEqual(entries[0].fact_id, entries[1].fact_id)
+        # Published, both writes derive one id (the accepted collision); the first write holds it.
+        self.assertEqual({entries[0].fact_id}, set(self.published_ids("path_written")))
 
     def test_newest_window_names_the_unread_prefix(self) -> None:
         self.path.write_text(

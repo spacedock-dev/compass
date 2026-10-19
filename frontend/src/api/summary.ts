@@ -111,7 +111,7 @@ export type Shown =
 /* The producer withholds a string holding a tick; one that reaches the page anyway is withheld here too,
    because a result is never a check mark
    ([No completion words](../../../docs/design-session-summary.md#no-completion-words)). */
-const CHECK_GLYPH = /[\u221a\u2611\u2705\u2713\u2714\u{1f5f8}\u{1f5f9}]/u;
+const CHECK_GLYPH = /[\u221a\u2611\u2705\u2713\u2714\u{10102}\u{1f5f8}\u{1f5f9}\u{1fbb1}]/u;
 
 function shown(value: unknown, cut = false): Shown {
   const raw = record(value);

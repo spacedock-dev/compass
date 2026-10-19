@@ -172,6 +172,32 @@ describe('the parsers', () => {
     expect(phase?.title).toEqual({ withheld: 'completion_claim' });
     expect(phase?.bullets[0]?.text).toEqual({ withheld: 'completion_claim' });
   });
+  it('withholds every tick the server withholds', () => {
+    // The server's set, session_summary._CHECK_GLYPH; a copy here that drifts lets a stored tick through.
+    const ticks = [
+      '\u221a',
+      '\u2611',
+      '\u2705',
+      '\u2713',
+      '\u2714',
+      '\u{10102}',
+      '\u{1f5f8}',
+      '\u{1f5f9}',
+      '\u{1fbb1}',
+    ];
+    for (const tick of ticks) {
+      const focused = parseFocusedSummary({
+        sources: {
+          summary: {
+            exists: true,
+            lede: { text: `Retry handler ${tick}`, cites: ['a'] },
+            blocks: [],
+          },
+        },
+      });
+      expect(focused?.summary?.lede).toEqual({ withheld: 'completion_claim' });
+    }
+  });
   it('reads an absent and an unavailable answer, and none', () => {
     expect(
       parseFocusedSummary({ sources: { summary: { state: 'absent', exists: false } } })?.state,

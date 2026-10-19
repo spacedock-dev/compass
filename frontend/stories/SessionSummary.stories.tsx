@@ -24,7 +24,7 @@ import {
   WITHHELD_LINES,
 } from '../src/sessions/summary';
 import { neverDone, noCheckMark } from './drift.checks';
-import { claudeOutline } from './outline.scenario';
+import { COVERAGE, claudeOutline } from './outline.scenario';
 import {
   ABSENT,
   FIRST_PHASE,
@@ -243,18 +243,23 @@ export const NoSummaryPlanned: Story = {
   },
 };
 
-/* A plan off a partial outline read is a floor on the parts; one the preflight would refuse is not quoted. */
+/* A plan off a partial outline read, one that starts past the transcript's first byte, is a floor on the entries
+   and on the parts; one the preflight would refuse is not quoted. */
 export const NoSummaryPlannedPartly: Story = {
   render: () => (
     <SummaryPage
       summary={{ ...ABSENT, plan: { ...PLAN, complete: false, parts: 1, windows: 0, minutes: 1 } }}
+      outline={claudeOutline(
+        { coverage: { ...COVERAGE, complete: false, start_offset: 2048 } },
+        true,
+      )}
       ended={false}
     />
   ),
   play: async ({ canvasElement }) => {
     const none = await stateOf(await card(canvasElement), 'none');
     await expect(none.querySelector('[data-next-summary-size]')).toHaveTextContent(
-      /^About 6 entries to read in at least 1 part, up to 1 minute\.$/,
+      /^More than 6 entries to read in at least 1 part, up to 1 minute\.$/,
     );
   },
 };
