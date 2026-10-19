@@ -8,9 +8,10 @@ reads local coding-agent session stores (transcripts, task
 files, SQLite databases) and serves them over HTTP. When the usage feature is on, the server also
 makes the quota poll described in Usage quota reads (the quota fetcher); it carries no session
 data. The model lane is the one path that can send session content off this machine. A call a
-reader's action starts (a focused refresh for a goal line, or a press for a reading) runs without a
-prior question and shows a one-time, non-blocking notice naming what is sent and where, with Turn
-off readings beside it. Unasked drift checks stay off by default, and `--no-observer-model` refuses
+reader's action starts (a focused refresh for a goal line, a press for a reading, or the open of a
+finished session or a press for a session summary) runs without a prior question and shows a
+one-time, non-blocking notice naming what is sent and where, with its off switch beside it: Pause
+model calls for a reading or a goal line, Turn off summaries for a summary. Unasked drift checks stay off by default, and `--no-observer-model` refuses
 every model call.
 [Observer model calls](#observer-model-calls) states its bounds;
 [Light harness usage](#light-harness-usage-asking-a-harness-a-bounded-question) states the notice rule.
@@ -300,8 +301,9 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 |---|---|---|---|
 | Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. Off until the disclosure is answered. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
 | Reach nudge | Two counts, to an endpoint you configure. Nothing is sent without one. | `--no-reach` | `test_reach.ReachNudgeTest.test_no_reach_flag_never_attempts_post`, `test_reach.ReachNudgeTest.test_no_reach_switch_disables_url_resolution` |
-| A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. This is the one path that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--observer-model` and `--unasked-readings` | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
+| A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. With a session summary, one of the two paths that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--unasked-readings` | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
 | An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
+| A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
 | The live drift estimate | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
@@ -1182,7 +1184,7 @@ The bounds, all of which hold together:
 - Visible spend. Model metadata records whether a call ran or was refused. Provider token usage
   is not measured by this prototype; it must not present a zero cost as if it had measured one.
 - Off switch. `--no-observer-model` disables calls for a run regardless of consent and overrides
-  the default-on goal summaries. `--observer-model` is an accepted no-op for one release.
+  the default-on goal summaries and session summaries. `--observer-model` is an accepted no-op for one release.
   `--no-harness-usage` is an alias for that rollback. The explicit off state
   survives daemon respawn.
   The off switch refuses the unasked lane as well: with it set,
@@ -1209,7 +1211,7 @@ notice mechanism and are on by default on a focused refresh carrying `observer_m
 
 The answer and notices live under `COMPASS_HOME` (by default `~/.compass`) in
 `compass-reading-permission.sqlite3`, shared by tabs and respawned daemons. Pause model calls and
-`--forget` store an explicit off, block readings and goal summaries, and clear their notices, so after
+`--forget` store an explicit off, block readings, goal summaries and session summaries, and clear their notices, so after
 `--forget` they stay paused until Resume model calls. Resuming shows the notice again on the next call. An off
 saved by an older build stays off after upgrade; an old Allow reads as on, including an older
 build's Allow given after its own off, which left that off's other rows in place. `--no-observer-model` refuses every model call for the run.

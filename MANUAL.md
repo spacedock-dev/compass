@@ -69,19 +69,20 @@ then `--forget`, then `--stop`, then `--status`; it does not execute a sequence 
 
 ### Model use and quota
 
-Analyze drift runs on your press and Codex goal summaries run on a focused refresh. Each tells you
-once what is sent and where, again if the destination or content tier changes. Pause model calls stops every model call until Resume model calls;
+Analyze drift runs on your press, Codex goal summaries on Summarize this session in Console, and a
+Claude Code session summary when you open a finished session or press Summarize or Update summary.
+Each tells you once what is sent and where, again if the destination or content tier changes. Pause model calls stops every model call until Resume model calls;
 `--no-observer-model` refuses them at startup. Turn off summaries affects session summaries only,
 is disabled while paused, and keeps its saved answer through pause and resume. Unattended checks remain a separate opt-in. A model ID selects a
 reader, not proof of accuracy.
 
 | Option | Behavior and default |
 |---|---|
-| `--observer-model` | Accepted and does nothing in this release; will be removed in a later release. Goal summaries are on by default on a focused refresh. |
+| `--observer-model` | Accepted and does nothing in this release; will be removed in a later release. Goal summaries need no flag and run on Summarize this session in Console. |
 | `--claude-reading-model MODEL` | Explicit Claude model ID for Claude readings. Default: `claude-sonnet-5-5` (Sonnet 5.5). The admission floor is Sonnet 5: explicit Sonnet or Opus generation 5 or later IDs are accepted, such as `claude-sonnet-5`. Floating aliases, Haiku and older generations are rejected. An admitted ID must still be available through your Claude Code installation. |
 | `--unasked-readings` | Enable bounded Codex checks of annotated sessions without a fresh press; only departures are raised. Off by default. Spends model capacity and requires remembered Codex permission covering the current destination. Quiet hours can suppress checks. |
 | `--allow-tool-output` | Accepted and does nothing in this release; will be removed in a later release. Claude Code readings include tool output by default where the destination is named, and disclose it in the notice. |
-| `--no-observer-model`, `--no-harness-usage` | Equivalent names for refusing every model call for this run, including goal summaries, reader-requested analyses and unasked checks. Overrides default-on goal summaries and the unasked opt-in. |
+| `--no-observer-model`, `--no-harness-usage` | Equivalent names for refusing every model call for this run, including goal summaries, reader-requested analyses and unasked checks. Includes session summaries. Overrides the unasked opt-in. |
 | `--no-usage` | Refuse vendor quota network fetches and quota pushed into Compass for this run, regardless of the stored dashboard setting. Quota recorded in harness-owned stores, such as Codex or Copilot, still appears. Does not disable model calls or reach nudges. |
 
 ### History and annotations
@@ -188,7 +189,7 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-dismissals.json` | Sessions marked handled. |
 | `compass-tripwires.json` | Saved workflow stage conditions. |
 | `compass-copied-corrections.json` | Digests recording copied corrections, without their text. |
-| `compass-reading-permission.sqlite3` | Reading permissions and model-spend admission timestamps. |
+| `compass-reading-permission.sqlite3` | Reading permissions, the model-call pause, the session-summary switch, the one-time notices shown, and the spend admission timestamps for readings and for session summaries, kept apart. |
 | `reach_url`, `quiet_hours` | Optional plain-text defaults for reach and quiet hours. |
 
 See [local-store security](SECURITY.md#scope) for retention, permissions and other persistent data.
@@ -210,7 +211,7 @@ hours are forwarded.
 
 | Code | Meaning |
 |---|---|
-| `0` | Help or diagnosis completed; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget completed its reading-permission cleanup. `--stop` can succeed when no instance is running. |
+| `0` | Help or diagnosis completed; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
 | `1` | Status found no running Compass, or startup/stop/forget failed or was refused. A foreign process is not stopped. |
 | `2` | Invalid command-line syntax or rejected values/combinations, reported by the argument parser. |
 

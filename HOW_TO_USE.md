@@ -433,8 +433,9 @@ to Claude Code or Codex, so it uses none of your tokens, and stays paused until 
 An off saved before an upgrade stays paused. **Turn off summaries** stops session summaries alone;
 while paused, that control stays disabled with "Model calls are paused" beside it. Pause and Resume
 keep its saved answer, so summaries resume exactly as you left them. Analyze allows 100 attempts in a rolling
-twenty-four hours and says when capacity becomes available again. Codex goal summaries are on by
-default on a focused refresh, with their own one-time notice.
+twenty-four hours and says when capacity becomes available again. Codex goal summaries need no
+startup flag: press **Summarize this session** in Console, and the first one shows its own one-time
+notice.
 
 A Claude Code reading includes its checks by default where Compass can name the destination: the
 command, result, last 180 characters of output and written paths. The notice names tool output too.
@@ -442,8 +443,10 @@ command, result, last 180 characters of output and written paths. The notice nam
 nothing in this release; they will be removed in a later release. Pause model calls or
 `--no-observer-model` stops these calls.
 
-`--forget` also clears reading permission without resetting its rolling spend budget. It deletes the local history store and the session-end store, removes the records of any
-session you discarded everything for, and exits. It belongs with `--status` and `--stop` rather
+`--forget` also stores model calls as paused and session summaries as off, without resetting
+either rolling spend budget. Readings and goal summaries wait for **Resume model calls**, and
+session summaries also wait for **Turn summaries on**. It deletes the local history store, the session-end store and the stored
+session summaries, removes the records of any session you discarded everything for, and exits. It belongs with `--status` and `--stop` rather
 than in the table below, because what it does is not undone by running the next command without it:
 
 ```bash
@@ -466,7 +469,8 @@ Stop the dashboard first if one is running. `--forget` refuses while an instance
 it names, because a running server keeps its own copy of the history in memory and writes the
 deleted records back on its next observation, so the delete would report success and be undone a
 few seconds later. The refusal is for the whole command rather than for that one store, so the
-discard records are still there afterwards too, and the message names all three files. It finds the
+discard records and stored summaries are still there afterwards too, and the message names all four
+files. It finds the
 instance with the same probe `--status` and `--stop` use, so `--stop` and then `--forget` is the
 whole procedure.
 
@@ -498,7 +502,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
 | `--no-annotations` | The goal and expected outcome lines you typed against a session. Nothing is shown or saved, and the page offers no field |
 | `--no-focus` | Raising a session's terminal. No focus command runs, no terminal identity is recorded, and the page is offered no raise control. `--no-events` turns it off as well |
-| `--no-observer-model` | Every model call, including goal summaries, reader-requested analyses and unasked checks. It overrides `--observer-model` and `--unasked-readings` for both Claude Code and Codex |
+| `--no-observer-model` | Every model call, including goal summaries, session summaries, reader-requested analyses and unasked checks. It overrides `--unasked-readings` for both Claude Code and Codex |
 | `--no-reach` | Off-machine reach nudges. Outbound webhook nudges are disabled for this run |
 
 [SKILL.md](compass/skills/compass/SKILL.md#options) owns the full option reference.

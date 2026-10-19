@@ -161,8 +161,9 @@ self-refreshing dashboard at `http://127.0.0.1:4553/`. The server binds to 127.0
 for another address with `--host`, which has no authentication behind it. Session content stays on
 the machine by default. The quota poll requires disclosure consent, carries a vendor token and no
 session content, and can be disabled with `--no-usage`. Model calls can send session content
-through an installed Claude Code or Codex CLI. Analyze drift runs on your press; Codex goal
-summaries run on a focused refresh by default. Each tells you once what is sent and where, and
+through an installed Claude Code or Codex CLI. Analyze drift runs on your press, Codex goal
+summaries when you press Summarize this session in Console, and a Claude Code session summary when you
+open a finished session or press Summarize or Update summary. Each tells you once what is sent and where, and
 tells you again if the destination or content tier changes. Pause model calls stops every model call until Resume model calls;
 `--no-observer-model` refuses them at startup. Turn off summaries affects session summaries only,
 is disabled while paused, and keeps its saved answer through pause and resume. Unasked drift checks remain a separate opt-in.
@@ -175,9 +176,12 @@ owns the disclosures and bounds.
 The dashboard opens on Sessions. The tabs run Sessions, Projects, Attention and Intent log.
 Projects groups sessions by the label their harness publishes, and each project opens a cockpit
 with a Scope rail and a persistent Where this project stands briefing,
-and Now, Course, Decisions and Console tabs. Each session's own page leads with drift: there you
-type the goal you are holding that session to, optionally add an expected outcome, and check it for drift with one
-press, and read back what has been raised about that session and what became of the raise.
+and Now, Course, Decisions and Console tabs. Each session's own page is one column: an Intent card where you
+type the goal you are holding that session to and optionally an expected outcome, a What the session
+has done card, and a Drift card where you check it for drift with one press and read back what has
+been raised about that session and what became of the raise. What the session has done shows
+Compass's own outline of a Claude Code or Codex record, made with no model call, and on Claude Code a
+model-written summary in phases whose every line cites the entries it rests on.
 Sessions keeps an orientation paragraph and how-to visible after a session has been checked.
 The paragraph explains analysis when annotations are on, the store is readable and a reading
 route names a provider; otherwise it explains how to inspect a session. Every goal
@@ -198,8 +202,8 @@ under Sessions. Every other view's `Escape` returns to Sessions. The route lives
 so a reload or a pasted link comes back to the same view.
 
 New to Intent and drift? Open "See a sample session (view only)" above the Sessions list: an
-anonymized session that drifted, with its stored reading, the correction Compass composed and numbered
-(i) marks that explain each part. Nothing in it is saved, sent or run.
+anonymized session that drifted, with a stored summary of what it did, its stored reading, the
+correction Compass composed and numbered (i) marks that explain each part. Nothing in it is saved, sent or run.
 [The design record](docs/design-sample-session.md) says how it works.
 
 See [compass/skills/compass/SKILL.md](compass/skills/compass/SKILL.md) for data sources, session states, options, and troubleshooting.

@@ -17,14 +17,14 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
-2026-10-19 — The owner renamed the master switch to Pause model calls / Resume model calls.
+2026-10-19: the owner renamed the master switch to Pause model calls / Resume model calls.
 The pause reason is `model-calls-paused`. Resume changes permission without starting Analyze.
 The summary switch stays visible and disabled while paused and keeps its saved answer through resume.
 `intent-parity.mjs` filters the renamed master switch from the same moved-control comparison as before;
 its recorded oracle is unchanged. Tests and stories assert the new words and behavior.
 
 
-2026-10-19 — Owner ruling, DEC-28: reader-started calls run opt-out with a notice, as
+2026-10-19, owner ruling DEC-28: reader-started calls run opt-out with a notice, as
 [the widening](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
 requires. The recorded `nextReadingConsent`, `nextReadingToolOutputGranted`,
 `nextReadingNeedsAllow` and `nextReadingAnyConsent` admission answers in

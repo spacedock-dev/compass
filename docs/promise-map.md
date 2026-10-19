@@ -141,8 +141,8 @@ boundary in part on 2026-09-02 rather than confirming it, and SECURITY.md is whe
 is drawn.
 An ETA is an estimate, and it says so.
 
-Your words are yours. You can ask for a model reading against them after you allow it on the
-session page, unless model calls are off for this run. Claude Code reads a Claude Code session when
+Your words are yours. You can ask for a model reading against them from the session page, unless
+model calls are paused or off for this run; the first press says what is sent and where. Claude Code reads a Claude Code session when
 it is installed, and Codex reads it when not; both are enabled by an acceptance, not by a passed
 check: the captain's of Codex on 2026-09-14 and the owner's of Claude Code on 2026-10-02. The reading
 states the evidence it read and its limits;
@@ -162,6 +162,9 @@ first press shows; Pause model calls or `--no-observer-model` stops them. Where 
 that destination it sends none and says so. A recorded pass is what the
 tool reported, never an inspection of the work, and a reading labels it that way; a result the
 record does not carry reads as not recorded rather than as a pass.
+Session summaries are Claude Code only, and the outline beside them covers Claude Code and Codex.
+A summary has its own cap of 200 model calls in a rolling twenty-four hours, so it never spends
+Analyze's 100, and each one stops at 37 calls, 768 KiB sent and ten minutes.
 
 ### P3. Is anything waiting on me?
 
@@ -295,8 +298,8 @@ and why the board can tell a session you discarded from one nobody ever typed ag
 
 Where it stops: nothing reads your words for you at the end. The two axes say what ended and who
 claims it finished, drawn separately because neither implies the other, and the comparison against
-what you asked for is yours to make. You can allow a model reading from the session page unless
-model calls are off for this run;
+what you asked for is yours to make. You can ask for a model reading from the session page unless
+model calls are paused or off for this run;
 an acceptance of each provider's checks enables that control (the captain's of Codex, the owner's of
 Claude Code). A reading is an account of the evidence, never
 verification that the work was done. The words are kept under a
