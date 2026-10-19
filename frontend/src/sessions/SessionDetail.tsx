@@ -355,7 +355,12 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             session={session}
             payload={payload}
             project={route.project}
-            summary={<WhatItDid />}
+            summary={
+              <WhatItDid
+                running={!observed.isEnded}
+                harness={labels.get(observed.harness) ?? observed.harness}
+              />
+            }
             drift={<DriftBody primary={!(observed.isNeeds || observed.askKnown)} />}
           >
             <DelegatedWork session={session} generated={generated} />

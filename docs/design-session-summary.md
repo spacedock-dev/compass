@@ -181,6 +181,7 @@ until a later change adds their record they say they cannot be summarized.
 | The notice, the default-on grants and the off switches for every reader-started call | `reading_policy.py`, `reading_route.py` and the session page's "What is sent" popover |
 | The in-order, paged read with fact ids and fingerprints | `session_source.py`, reusing `record_pages.py` message facts and `project_context.py` tool classification |
 | The deterministic outline | `session_outline.py`, served on `/api/project-context` as `sources.outline` for a focused session only |
+| The What the session has done card and the outline drawn in it | `frontend/src/sessions/WhatItDid.tsx` and `outline.ts`, parsing `sources.outline` in `frontend/src/api/outline.ts` |
 | The summary producer and its closed-shape parser | A new producer module beside `reading.py` |
 | The multi-part job, its ceilings and its own rolling cap | `reading_jobs.py`, `reading_policy.py` and `config.py` |
 | The summary store, Delete summary and `--forget` | A new store module under the Compass home, and `cli.py` |
@@ -508,6 +509,16 @@ This table describes the implementation and does not amend the owner-ruled table
   person words, checks and files, so this build does not meet the Codex scope until the owner
   acknowledges the deferral. The follow-up the source issue requires, covering Codex checks and
   files, Codex agent words, and Pi and the other harnesses, is not yet filed or linked here.
+- A check or file entry's fact id here is not the id the record pages and the context publish for
+  the same tool call. Measured on 2026-10-19 against the sample session through the development
+  server: the outline's two failed checks were `fact:1b41…` and `fact:a84c…`, while the record and
+  context named them `fact:3d5b…` and `fact:f4cc…`; the message ids matched. Until they agree, the
+  What the session has done card draws a `#n` chip for a check or file only when the page holds an
+  entry under that id, and never reads record pages to look for one. A summary bullet citing a
+  check has the same gap.
+- The sample session's fixture carries no `sources.outline`: `scripts/build_sample_fixture.py`
+  captures the whole page from a server holding a stored reading, and recapturing it needs a model
+  reading and a rebuilt page. Until it is recaptured, the sample shows the card's no-outline line.
 - Subagent messages remain excluded. The existing ruling admits their checks and writes, while
   the message builder admits top-level messages only.
 - A relative written path resolves against the directory at the transcript's head, read with the
