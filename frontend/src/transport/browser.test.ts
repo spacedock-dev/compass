@@ -147,7 +147,7 @@ describe('the browser runtime shares one storage instance', () => {
     runtime.dispose();
   });
 
-  it('lets an observer grant made through the runtime’s storage ungate the explicit summary', async () => {
+  it('runs the explicit summary without consulting the retired browser answer', async () => {
     const { runtime, urls } = blockedRuntime();
     runtime.start();
     await flush();
@@ -155,10 +155,10 @@ describe('the browser runtime shares one storage instance', () => {
     runtime.loadContext(scope);
     await flush();
     await runtime.requestObserverSummary(scope);
-    expect(urls.filter((url) => url.includes('observer_model=1'))).toHaveLength(0);
-    runtime.storage.observerConsent.set('granted');
+    expect(urls.filter((url) => url.includes('observer_model=1'))).toHaveLength(1);
+    runtime.storage.observerConsent.set('declined');
     await runtime.requestObserverSummary(scope);
-    expect(urls.filter((url) => url.includes('refresh=1&observer_model=1'))).toHaveLength(1);
+    expect(urls.filter((url) => url.includes('refresh=1&observer_model=1'))).toHaveLength(2);
     runtime.dispose();
   });
 });

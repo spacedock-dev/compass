@@ -103,7 +103,7 @@ describe('the list of what is sent', () => {
   const parts = [
     "This session's own harness reads it.",
     'Sent: your goal and a bounded set of the includes entries.',
-    'Tool output, only after you allow it: a check’s command.',
+    'Tool output included: a check’s command.',
     'To: Anthropic, off this machine, with credential shapes redacted.',
   ];
 
@@ -114,7 +114,7 @@ describe('the list of what is sent', () => {
     expect(items.map((li) => li.querySelector('strong')?.textContent ?? null)).toEqual([
       null,
       'Sent:',
-      'Tool output, only after you allow it:',
+      'Tool output included:',
       'To:',
     ]);
   });

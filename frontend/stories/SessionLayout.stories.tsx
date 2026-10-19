@@ -139,6 +139,8 @@ function PageExample({
             annotate_cap: 240,
             reading_check: 'passed',
             reading: {
+              consent: true,
+              off: false,
               providers: { claude: true },
               words: { claude: true },
               tool_output: { claude: ['api'] },

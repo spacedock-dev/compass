@@ -17,6 +17,21 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-19 — Owner ruling, DEC-28: reader-started calls run opt-out with a notice, as
+[the widening](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+requires. The recorded `nextReadingConsent`, `nextReadingToolOutputGranted`,
+`nextReadingNeedsAllow` and `nextReadingAnyConsent` admission answers in
+`route.differential.test.ts` no longer apply: their oracle calls remain in sequence but those
+four comparisons are withdrawn by name. Other route and refusal comparisons remain.
+`ReadingCapBanner.test.tsx` uses `readings-off` for its under-cap policy case in place of the
+retired `consent-required` case; the budget and reset comparisons are unchanged. Analyze and
+Keep run directly, notices accompany due calls, and a stored off requires Turn on readings and
+analyze. Goal summaries also run on the explicit focused refresh without a browser consent card.
+Golden files remain unchanged; the new behavior is asserted in component tests and Drift stories.
+The CSS display census visits a running notice instead of the removed consent card. Its chrome
+comparison maps only `reading-notice` to the recorded `reading-consent` recipe and
+`observer-controls` to `observer-consent`; these preserve the same card styling, not the old admission behavior.
+
 The rename kept saved browser choices readable until 1.0.0: a missing Compass key read the matching
 Cargento key through the shared storage adapter. 1.0.0 removed that fallback with the adapter code
 and its test, so a saved choice made under a `cargento.` key is not carried over.

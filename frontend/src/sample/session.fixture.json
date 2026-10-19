@@ -267,13 +267,13 @@
   "native_notify": "osascript",
   "rate_window_sec": 600,
   "reading": {
-   "consent": false,
+   "consent": true,
    "limit": 12,
    "providers": {
     "claude": true,
     "codex": false
    },
-   "reason": "consent-required",
+   "reason": "",
    "rebind": {},
    "retry_at": null,
    "tool_output": {

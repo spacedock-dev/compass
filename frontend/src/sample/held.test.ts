@@ -14,8 +14,8 @@ describe('which controls the view-only sample holds', () => {
       '<div><button data-target data-next-cockpit-action="save">Save intent</button></div>',
     ],
     [
-      'an allow',
-      '<div><button data-target data-next-cockpit-action="reading-ask">Allow</button></div>',
+      'a turn on',
+      '<div><button data-target data-next-cockpit-action="reading-on">Turn on readings and analyze</button></div>',
     ],
     [
       'a keep',
@@ -28,6 +28,10 @@ describe('which controls the view-only sample holds', () => {
     [
       'a control inside a disclosure panel',
       '<div class="ctl-disclosure"><div data-slot="accordion-content"><button data-target>Turn off readings</button></div></div>',
+    ],
+    [
+      'a turn off',
+      '<div><button data-target data-next-cockpit-action="reading-off">Turn off readings</button></div>',
     ],
     ['a text box', '<div><textarea data-target></textarea></div>'],
     ['an input', '<div><input data-target /></div>'],

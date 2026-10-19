@@ -14,6 +14,7 @@ import { openedWithControl, promptCandidate } from '../sessions/intent';
 import {
   ANNOTATIONS_OFF,
   MODEL_OFF,
+  READINGS_OFF,
   MODEL_UNREAD,
   NO_WORDS,
   PRESS_CLAUDE,
@@ -25,7 +26,7 @@ import {
   UNAUTHORIZED,
 } from './sentences';
 
-/* Who would read a session, whether they were allowed to, and what refuses a press before it is made. Every
+/* Who would read a session, whether readings are on, and what refuses a press before it is made. Every
    function reads the payload it is given and nothing else, so the refusal the control draws and the one the
    handler enforces come from one derivation: a handler with a second opinion can refuse a press the button
    offered, or take one it refused. The legacy cockpit's `nextReading*` functions are the oracle. */
@@ -40,41 +41,27 @@ export function readingRoute(payload: Row, session: Row | null | undefined): Row
   return isRecord(route) ? route : null;
 }
 
-/* The harnesses a press carries the agent's own messages from (`reading_route.AGENT_MESSAGE_HARNESSES`).
-   Elsewhere a press sends none of them, so an Allow given before the disclosure named them still covers it:
-   the server publishes that answer as `words`. */
-const AGENT_WORDS_HARNESSES: readonly string[] = ['claude'];
-
-/* Permission is per receiver: a Codex answer never stands in for Claude Code's. A payload without the
-   per-provider map predates the second provider, and its one answer was Codex's. */
-export function readingConsent(payload: Row, provider: string, harness = ''): boolean {
+export function readingsOff(payload: Row): boolean {
   const policy = payload['reading'];
-  if (!isRecord(policy) || !provider) return false;
-  const words = policy['words'];
-  const map =
-    !AGENT_WORDS_HARNESSES.includes(String(harness || '')) && words && typeof words === 'object'
-      ? words
-      : policy['providers'];
-  return map && typeof map === 'object'
-    ? (map as Row)[provider] === true
-    : provider === 'codex' && policy['consent'] === true;
+  return isRecord(policy) && (policy['off'] === true || policy['reason'] === 'readings-off');
 }
 
-/* Tool output is its own answer, keyed by where it goes: a words-only Allow, or one given for another
-   destination, never covers it. */
-export function toolOutputGranted(payload: Row, route: Row | null): boolean {
+export function readingsOn(payload: Row): boolean {
   const policy = payload['reading'];
-  const map = isRecord(policy) ? policy['tool_output'] : null;
-  const granted = isRecord(map) && route ? map[String(route['provider'])] : null;
-  return Array.isArray(granted) && granted.includes(String(route?.['destination']));
+  return isRecord(policy) && policy['consent'] === true && !readingsOff(payload);
 }
 
-export function needsAllow(payload: Row, route: Row | null): boolean {
-  if (!route || !route['provider']) return false;
-  return (
-    !readingConsent(payload, String(route['provider']), String(route['harness'] || '')) ||
-    Boolean(route['destination'] && !toolOutputGranted(payload, route))
-  );
+export function turnOnPayload(payload: Row): Row {
+  const policy = isRecord(payload['reading']) ? payload['reading'] : {};
+  return {
+    ...payload,
+    reading: {
+      ...policy,
+      consent: true,
+      off: false,
+      reason: policy['reason'] === 'readings-off' ? '' : policy['reason'],
+    },
+  };
 }
 
 /* Whether a press could read this row now, as the board published it, or as this tab's last press was
@@ -128,14 +115,6 @@ export function withheldAge(annotation: Annotation | null | undefined, generated
   return age < 60 ? 'just now' : `${fmtDur(age)} ago`;
 }
 
-export function anyConsent(payload: Row): boolean {
-  const policy = payload['reading'];
-  const map = isRecord(policy) ? policy['providers'] : null;
-  return map && typeof map === 'object'
-    ? Object.values(map).some((value) => value === true)
-    : Boolean(isRecord(policy) && policy['consent']);
-}
-
 export function routeRefusal(payload: Row, session: Row): string {
   const route = readingRoute(payload, session);
   if (!route) return ROUTE_UNREAD;
@@ -144,6 +123,7 @@ export function routeRefusal(payload: Row, session: Row): string {
 
 export function policyReason(policy: unknown, nowMs: number = Date.now()): string {
   if (!isRecord(policy)) return MODEL_UNREAD;
+  if (policy['off'] === true || policy['reason'] === 'readings-off') return READINGS_OFF;
   if (policy['reason'] === 'run-disabled') return MODEL_OFF;
   if (policy['reason'] === 'store-unavailable') {
     return 'Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before analyzing drift.';
@@ -274,8 +254,7 @@ export function promptReadingRefusal(
   return readingRefusal(payload, annotation) || routeRefusal(payload, session);
 }
 
-/* The server's own parts, a short list in its order and unreworded: in the consent step, and idle in the
-   "What is sent" popover, so the two cannot differ. A route from before the parts were published shows its
+/* The server's own parts, unreworded in the notice and the "What is sent" popover. A route from before the parts were published shows its
    whole disclosure as one item. */
 export function disclosureParts(
   route: Row | null | undefined,

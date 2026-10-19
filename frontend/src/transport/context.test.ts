@@ -34,7 +34,7 @@ const FOCUS = { harness: 'claude', sid: 's:1' };
 const PROJECT = { projectKey: '/repo/a', focus: null };
 const FOCUSED = { projectKey: '/repo/a', focus: FOCUS };
 
-function setup(consent: Consent = null) {
+function setup(_consent: Consent = null) {
   const board = createBoardStore({ now: () => 1 });
   const calls: {
     query: Parameters<ReturnType<typeof clientStub>['getProjectContext']>[0];
@@ -56,7 +56,6 @@ function setup(consent: Consent = null) {
   const loader = createContextLoader({
     client: clientStub(),
     store: board,
-    storage: { observerConsent: () => consent },
   });
   return { board, calls, loader };
 }
@@ -182,10 +181,8 @@ describe('explicit observer summary', () => {
     return s;
   }
 
-  it('sends nothing without granted consent, an enabled offer, a disclosure and a focused session', async () => {
+  it('sends nothing without an enabled offer, a disclosure and a focused session', async () => {
     for (const [consent, model, scope] of [
-      [null, offer(), FOCUSED],
-      ['declined', offer(), FOCUSED],
       ['granted', offer(false), FOCUSED],
       ['granted', offer(true, ''), FOCUSED],
       ['granted', {}, FOCUSED],
@@ -196,6 +193,17 @@ describe('explicit observer summary', () => {
       expect(s.calls, `${String(consent)} ${JSON.stringify(model)}`).toHaveLength(1);
     }
   });
+
+  it.each([null, 'declined'] as const)(
+    'requests a summary without using the retired browser answer (%s)',
+    async (answer) => {
+      const s = await withOffer(answer);
+      const pending = s.loader.requestObserverSummary(FOCUSED);
+      expect(s.calls).toHaveLength(2);
+      s.calls[1]?.answer.resolve(okContext(offer()));
+      await pending;
+    },
+  );
 
   it('reads the focused session with refresh and observer_model, and records ready', async () => {
     const s = await withOffer('granted');

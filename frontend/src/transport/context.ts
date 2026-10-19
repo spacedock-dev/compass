@@ -3,7 +3,7 @@ import type { ApiClient } from '../api/client';
 import { compatSessKey, contextKey } from '../api/identity';
 import type { ApiFailure, SessionIdentity } from '../api/types';
 import type { BoardStore, DataFailure } from '../store/board';
-import type { TransportStorage } from './ports';
+import { selectObserverOff } from '../store/selectors';
 
 export interface ContextScope {
   /** The stable project key, never a label assumed unique. */
@@ -15,7 +15,6 @@ export interface ContextScope {
 export interface ContextLoaderDeps {
   readonly client: Pick<ApiClient, 'getProjectContext'>;
   readonly store: BoardStore;
-  readonly storage: Pick<TransportStorage, 'observerConsent'>;
 }
 
 function failureOf(result: ApiFailure): DataFailure | null {
@@ -32,12 +31,12 @@ function failureOf(result: ApiFailure): DataFailure | null {
 }
 
 /* Passive reads are source reading and spend nothing. The summary request is
-   the one explicit action here: it needs separate consent, an enabled offer and
+   the one explicit action here: it needs an enabled offer and
    a published disclosure, and it never runs from a load, a reconnect or a
    disposal. A failed read keeps the previous data beside the new error rather
    than replacing it, which is why an entry carries both. */
 export function createContextLoader(deps: ContextLoaderDeps) {
-  const { client, store, storage } = deps;
+  const { client, store } = deps;
   const passive = new Map<string, object>();
   const observerRequests = new Set<string>();
   const controllers = new Set<AbortController>();
@@ -87,7 +86,7 @@ export function createContextLoader(deps: ContextLoaderDeps) {
       if (
         disposed ||
         !focus ||
-        storage.observerConsent() !== 'granted' ||
+        selectObserverOff(store.getSnapshot(), key, focus) ||
         model?.enabled !== true ||
         !model.disclosure ||
         observerRequests.has(key)
@@ -100,7 +99,6 @@ export function createContextLoader(deps: ContextLoaderDeps) {
       passive.delete(key);
       const owned = controller();
       try {
-        // Consent is scoped to this explicit focused refresh, never a passive poll.
         const result = await client.getProjectContext({
           project: scope.projectKey,
           session: compatSessKey(focus),

@@ -4,10 +4,7 @@ import { ProjectConsole } from '../delegation';
 import { json, mountPanels, type Handler, type MountOptions } from '../steering/testing';
 import { ObserverControls } from './ObserverControls';
 
-/* The observer-model controls: what they say for a capability nothing has read, one the server switched off,
-   one that is on but unanswered, one allowed and one declined; that allowing sends nothing; and that the only
-   thing that starts a model request is the press of "Summarize this session", once, for the exact session on
-   screen. Every request is counted at the fetch: the backend is a script, so no model is called here. */
+/* Every fetch is counted: the backend is scripted and cannot reach a model. */
 const CONSENT = 'compass.observer-model-consent.v1';
 const DISCLOSURE = 'Send redacted transcript excerpts for a goal summary? Each prompt is capped.';
 const focus = { harness: 'claude', sid: 's1' };
@@ -49,7 +46,7 @@ const mount = (
   );
 };
 const text = (): string =>
-  document.querySelector('[data-next-observer-consent]')?.textContent ??
+  document.querySelector('[data-next-observer-controls]')?.textContent ??
   document.querySelector('.next-cockpit-console-setup .next-cockpit-empty')?.textContent ??
   '';
 const modelRequests = (page: ReturnType<typeof mount>) =>
@@ -73,7 +70,7 @@ describe('an offer nothing has read is not an offer that is off', () => {
       json({ semantic: {}, observer_model: { enabled: false } }),
     );
     expect(document.body.textContent).toContain('Observer model is disabled for this run.');
-    expect(document.body.textContent).toContain('--no-observer-model refuses them');
+    expect(document.body.textContent).toContain('Restart without --no-observer-model');
     expect(document.body.textContent).not.toContain('availability has not been read');
     expect(action('allow')).toBeNull();
     expect(action('request')).toBeNull();
@@ -110,64 +107,65 @@ describe('an offer nothing has read is not an offer that is off', () => {
   });
 });
 
-describe('allowing summaries sends nothing', () => {
-  it('shows the disclosure and sends no model request through mount, polls, a remount and StrictMode', async () => {
-    const page = mount(offer());
-    await page.settle();
-    expect(text()).toContain(DISCLOSURE);
-    expect(text()).toContain('Credential redaction does not remove private prose.');
-    expect(text()).toContain('Quota consent does not authorize this request.');
-    expect(text()).toContain('Allowing summaries does not send a request.');
-    expect(action('allow')?.textContent).toBe('Allow model summaries');
-    expect(action('decline')?.textContent).toBe('No thanks');
-    expect(action('request')).toBeNull();
-    await page.poll({ ...board, generated: 1001 });
-    await page.advance(120_000);
-    page.show(<p>Elsewhere</p>);
-    await page.settle();
-    page.show(
-      <ProjectConsole
-        project="alpha"
-        projectKey="alpha"
-        focus={focus}
-        observer={<ObserverControls projectKey="alpha" focus={focus} />}
-      />,
-    );
-    await page.settle();
-    expect(modelRequests(page)).toEqual([]);
-    expect(page.posts()).toBe(0);
-  });
+describe('reader-started goal summaries', () => {
+  it.each([undefined, 'declined', 'granted'])(
+    'offers a direct request regardless of the retired browser answer (%s)',
+    async (answer) => {
+      const page = mount(offer(), answer ? { storage: { [CONSENT]: answer } } : {});
+      await page.settle();
+      expect(text()).toContain(DISCLOSURE);
+      expect(action('request')?.textContent).toBe('Summarize this session');
+      expect(action('allow')).toBeNull();
+      expect(action('decline')).toBeNull();
+      await page.poll({ ...board, generated: 1002 });
+      expect(modelRequests(page)).toEqual([]);
+    },
+  );
 
-  it('Allow records the answer and still sends nothing; Summarize then appears', async () => {
-    const page = mount(offer());
-    await page.settle();
-    press('allow');
-    await page.settle();
-    expect(page.backend.data.get(CONSENT)).toBe('granted');
-    expect(modelRequests(page)).toEqual([]);
-    expect(action('request')?.textContent).toBe('Summarize this session');
-    expect(action('decline')?.textContent).toBe('Turn off model summaries');
-    expect(action('allow')).toBeNull();
-    await page.poll({ ...board, generated: 1002 });
-    expect(modelRequests(page)).toEqual([]);
-  });
-
-  it('declining says so and offers only Allow; quota consent authorizes nothing here', async () => {
+  it('shows the goal notice and turns readings off with one press', async () => {
+    const notice = {
+      kind: 'goal',
+      provider: 'codex',
+      destination: 'goal.example',
+      content: 4,
+      tool_output: '',
+      at: 1000,
+    };
     const page = mount(offer(), {
-      storage: { [CONSENT]: 'declined', 'compass.next.usage.consent': 'granted' },
+      routes: {
+        '/api/project-context': (request) =>
+          json({ observer_model: offer(/observer_model=1/.test(request.url) ? { notice } : {}) }),
+        '/api/reading': () =>
+          json({ ok: true, reading: { consent: false, off: true, reason: 'readings-off' } }),
+      },
     });
     await page.settle();
-    expect(text()).toContain('Model summaries are off in this browser.');
+    press('request');
+    await page.settle();
+    expect(text()).toContain('goal.example');
+    const off = document.querySelector<HTMLButtonElement>('[data-next-observer-action="off"]');
+    expect(off?.textContent).toBe('Turn off readings');
+    fireEvent.click(off as HTMLElement);
+    await page.settle();
+    expect(
+      page.state.requests.filter((r) => r.method === 'POST' && r.path === '/api/reading')[0]?.body,
+    ).toEqual({ consent: 'off', press: true, observer_model: 1 });
+    expect(text()).toContain('Readings are off.');
     expect(action('request')).toBeNull();
-    expect(action('allow')).not.toBeNull();
+  });
+
+  it('reads a readings-off goal status as off and sends nothing on render', async () => {
+    const page = mount(offer(), {
+      routes: {
+        '/api/project-context': context(offer(), {
+          observers: [{ ...focus, model: { status: 'readings-off' } }],
+        }),
+      },
+    });
+    await page.settle();
+    expect(text()).toContain('Readings are off.');
+    expect(action('request')).toBeNull();
     expect(modelRequests(page)).toEqual([]);
-    page.unmount();
-    // Quota granted, observer unanswered: still only the question.
-    const other = mount(offer(), { storage: { 'compass.next.usage.consent': 'granted' } });
-    await other.settle();
-    expect(action('allow')).not.toBeNull();
-    expect(action('request')).toBeNull();
-    expect(modelRequests(other)).toEqual([]);
   });
 });
 
@@ -251,19 +249,6 @@ describe('the one press that starts a model request', () => {
     press('request');
     await page.settle();
     expect(text()).toContain('No goal summary was published by this refresh.');
-  });
-
-  it('refuses, and says so, when the consent was withdrawn since the page was drawn', async () => {
-    const page = mount(offer(), { storage: allowed });
-    await page.settle();
-    // Another tab turned it off: storage changed, this tab has not redrawn yet.
-    page.backend.data.set(CONSENT, 'declined');
-    press('request');
-    await page.settle();
-    expect(modelRequests(page)).toEqual([]);
-    expect(document.querySelector('[data-next-observer-refused]')?.textContent).toContain(
-      'turned off in another tab',
-    );
   });
 
   it('refuses, and says so, when the offer the board holds is not the one on screen', async () => {

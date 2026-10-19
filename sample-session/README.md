@@ -34,7 +34,9 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
 - **The reading and the correction are real.** One reading was run on the anonymized session through
   Claude Code, and the Steer back correction was composed by Compass from it. Both are stored in the
   fixture as they came back, apart from two rewrites that put them on the sample's own timeline (the
-  reading's time, and one sentence that counted entries "about 3718h ago").
+  reading's time, and one sentence that counted entries "about 3718h ago"). The board's reading
+  permission was recorded before readings ran without asking first, and is set to the current
+  shape: readings on, with nothing refused.
 
 ## Why a transcript is in the repository
 
@@ -69,7 +71,7 @@ The mapping file (`mapping.json`) holds the originals and lives outside the repo
 3. Start an isolated Compass: an empty home, an empty `CLAUDE_CONFIG_DIR` holding only
    `projects/<encoded project folder>/<session id>.jsonl`, a temporary `COMPASS_HOME`, and `TZ=UTC`. Seed
    the intent above into that home's annotation store, with its window opening at the first message.
-4. Allow and run one reading through that server, then compose the correction.
+4. Run one reading through that server, then compose the correction.
 5. `python3 scripts/build_sample_fixture.py --base-url <that server> --project acme/dashboard --sid
    <the first eight characters of the session id> --out frontend/src/sample/session.fixture.json`, then
    `pnpm build`.

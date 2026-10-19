@@ -3,14 +3,8 @@ import { STORAGE_KEYS, type ConsentAnswer, type ConsentStore } from '../storage'
 import { useDisplayed, useShell } from '../shell/context';
 import type { BrowserRuntime } from '../transport/browser';
 
-/* What this step keeps across a redraw, held outside the rendered tree and per runtime for the reason every
-   lane in docs/design-reader-state.md is: a view that unmounts and remounts (a route change, StrictMode's
-   second effect) must find the reader's answer and the selected window where it left them, and a second
-   runtime (a test) must not see this one's.
-
-   The two consents are the legacy page's own, in the legacy page's own keys, so an answer given in either
-   page is read by the other. `ConsentStore` consults storage first, so an answer given in another tab wins,
-   and keeps the tab's own answer when storage refuses the write. */
+/* Quota consent remains browser-owned. Reader-started goal summaries use the server's durable off switch.
+   [The widening](../../../docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts) */
 
 export type Consent = ConsentAnswer | null;
 
@@ -75,7 +69,6 @@ export type SelectionLane = ReturnType<typeof selectionLane>;
 
 export interface Held {
   readonly usage: ConsentLane;
-  readonly observer: ConsentLane;
   readonly selection: SelectionLane;
 }
 
@@ -86,7 +79,6 @@ export function heldFor(runtime: BrowserRuntime): Held {
   if (!lane) {
     lane = {
       usage: consentLane(runtime.storage.usageConsent, STORAGE_KEYS.usageConsent),
-      observer: consentLane(runtime.storage.observerConsent, STORAGE_KEYS.observerConsent),
       selection: selectionLane(),
     };
     held.set(runtime, lane);
@@ -95,7 +87,7 @@ export function heldFor(runtime: BrowserRuntime): Held {
 }
 
 /** The consent this origin has recorded: `null` is unanswered, and unanswered is never granted. */
-export function useConsent(kind: 'usage' | 'observer'): Consent {
+export function useConsent(kind: 'usage'): Consent {
   const lane = heldFor(useShell().runtime)[kind];
   return useSyncExternalStore(lane.subscribe, lane.read);
 }

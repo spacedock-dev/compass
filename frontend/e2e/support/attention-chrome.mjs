@@ -6,8 +6,8 @@ export function measureAttentionChrome(native = false) {
     'capacity-band': '[data-next-capacity-row]',
     'capacity-prospect': '.next-capacity-prospect',
     'quota-consent': '[data-next-usage-consent]',
-    'observer-consent': '[data-next-observer-consent]',
-    'observer-status': '[data-next-observer-consent] p[role=status]',
+    'observer-controls': '[data-next-observer-controls]',
+    'observer-status': '[data-next-observer-controls] p[role=status]',
     'notify-blocked': '.next-notify-note',
   };
   const cards = [
@@ -16,7 +16,7 @@ export function measureAttentionChrome(native = false) {
     'capacity-band',
     'capacity-prospect',
     'quota-consent',
-    'observer-consent',
+    'observer-controls',
   ];
   const badges = ['notify-blocked'];
   const alerts = ['observer-status'];
@@ -113,7 +113,8 @@ export function measureAttentionChrome(native = false) {
 export function attentionChromeDifferences(rows, instances) {
   return rows
     .filter((row) => {
-      const expected = instances[row.key];
+      // The direct request keeps the recorded disclosure card recipe.
+      const expected = instances[row.key.replace(/^observer-controls\|/, 'observer-consent|')];
       return (
         !expected ||
         expected.role !== row.role ||

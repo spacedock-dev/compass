@@ -83,7 +83,7 @@ export interface RequestNote {
   message?: string;
   refusal?: boolean;
   announced?: boolean;
-  consent?: boolean;
+  notice?: Readonly<Record<string, unknown>> | null;
   [field: string]: unknown;
 }
 

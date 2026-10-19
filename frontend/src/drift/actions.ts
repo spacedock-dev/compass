@@ -1,3 +1,4 @@
+import { turnOffReadings } from '../api/readings';
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
 import type { ReadingRequest, SessionIdentity } from '../api/types';
@@ -13,7 +14,7 @@ import {
   readInput,
   refresh,
 } from '../intent/context';
-import { goalKey, intentKey } from '../intent/derive';
+import { intentKey } from '../intent/derive';
 import type { KeepAnalyzeOutcome, KeepAnalyzeRequest } from '../intent/directions';
 import { intentForReading } from '../intent/api';
 import { KEEP_REFUSED } from '../intent/sentences';
@@ -22,7 +23,7 @@ import { acknowledgeFlip } from './flip';
 import { requestFocus } from './focus';
 import { currentPayload, showJob, showReading, showRoute } from './overlay';
 import {
-  needsAllow,
+  turnOnPayload,
   policyReason,
   pressRefusal,
   promptReadingRefusal,
@@ -35,6 +36,7 @@ import {
   DESTINATION_CHANGED,
   PROVIDER_CHANGED,
   RESULT_MARK_UNSAVED,
+  PAGE_OUTDATED,
 } from './sentences';
 import type { DriftCtx } from './state';
 import { pressLine } from './route';
@@ -46,7 +48,7 @@ import { pressLine } from './route';
    `press: true` is the shape contract's "asserted rather than assumed" made mechanical: the literal appears
    in this one place, inside a handler a click reaches, and the route refuses a body without it.
    `observer_model: 1` preserves the route's explicit-request guard; the separate allow field records a
-   first-press answer, and the server checks its durable permission and budget again at the model seam. */
+   turn-on after an explicit off, and the server checks its durable off switch and budget again at the model seam. */
 
 function pressDetails(ctx: DriftCtx, identity: SessionIdentity) {
   const session = liveRow(ctx.intent, identity);
@@ -67,12 +69,13 @@ export interface Drawn {
 /* The sentence for a receiver that moved between the draw and the press, or nothing where it did not. The
    provider and the model say who reads it; the two destinations say where it goes, and an Allow is bound to
    both. */
-function movedSince(drawn: Row | null, live: Row | null): string {
+function movedSince(drawn: Row | null, live: Row | null, turnOn: boolean): string {
   if (!drawn || !live) return drawn === live ? '' : PROVIDER_CHANGED;
   const differs = (field: string): boolean =>
     String(drawn[field] || '') !== String(live[field] || '');
   if (differs('provider') || differs('model') || differs('harness')) return PROVIDER_CHANGED;
-  if (differs('destination') || differs('words_destination')) return DESTINATION_CHANGED;
+  if (turnOn && (differs('destination') || differs('words_destination')))
+    return DESTINATION_CHANGED;
   return '';
 }
 
@@ -80,7 +83,7 @@ function movedSince(drawn: Row | null, live: Row | null): string {
 export async function askForReading(
   ctx: DriftCtx,
   identity: SessionIdentity,
-  allow: boolean,
+  turnOn: boolean,
   drawn: Drawn,
 ): Promise<void> {
   const { intent, shell } = ctx;
@@ -92,13 +95,11 @@ export async function askForReading(
   /* A press in flight, or a running job, is the answer to a second press: nothing is sent. */
   if (
     pendingHas(intent, `reading:${key}`) ||
-    pendingHas(intent, `reading-allow:${key}`) ||
     held.requests.get(key)?.pending ||
     readingJob(payload, session)
   ) {
     return;
   }
-  /* Keep's "Press Allow and analyze" is answered by this press, so the region stops holding it. */
   shell.announcer.forget(`keep:${key}`);
   /* This press arrives from states the browser used to swallow, and an ungated one spends the reader's own
      model capacity from a state the page calls unavailable. Answered rather than dropped, because a
@@ -106,7 +107,7 @@ export async function askForReading(
   const request = held.requests.get(key);
   const now = shell.clock.now();
   const refusal = promptReadingRefusal({
-    input,
+    input: turnOn ? { ...input, payload: turnOnPayload(payload) } : input,
     saving: pendingHas(intent, `${intentKey(session)}:save`),
     answered: request,
     nowMs: now,
@@ -114,7 +115,7 @@ export async function askForReading(
   if (refusal) {
     // A press during a held close learns the board's state; the card shows it now.
     if (refusal === pressRefusal(session, request, now)) acknowledgeFlip(ctx, session, false);
-    held.requests.set(key, { pending: false, message: refusal, refusal: true });
+    held.requests.set(key, { ...request, pending: false, message: refusal, refusal: true });
     held.notify();
     return;
   }
@@ -125,12 +126,13 @@ export async function askForReading(
   const route = drawn.route;
   if (!route || !live) return;
   const liveRevision = nextNumber(annotationOf(session)?.['revision']) || 0;
-  const moved = movedSince(route, live) || (liveRevision !== drawn.revision ? KEEP_REFUSED : '');
+  const moved =
+    movedSince(route, live, turnOn) || (liveRevision !== drawn.revision ? KEEP_REFUSED : '');
   if (moved) {
-    held.requests.set(key, { pending: false, message: moved, consent: false });
+    held.requests.set(key, { ...request, pending: false, message: moved });
     if (moved === KEEP_REFUSED) {
       /* Said once, by the persistent region, as the server's own revision refusal is. */
-      held.requests.set(key, { pending: false, message: moved, consent: false, announced: true });
+      held.requests.set(key, { ...request, pending: false, message: moved, announced: true });
       announce(intent, `keep:${key}`, moved);
     }
     held.notify();
@@ -143,42 +145,21 @@ export async function askForReading(
   const destination = String(route['destination'] || '');
   const wordsTo = String(route['words_destination'] || '');
   const reading = intentForReading(shell, identity);
-  const chosenNow = held.chosen.get(goalKey(session)) ?? null;
-  if (needsAllow(payload, route) && !allow) {
-    held.requests.set(key, {
-      consent: true,
-      adoption: reading?.adoption ?? {},
-      chosen: chosenNow,
-    });
-    held.notify();
-    return;
-  }
-  /* Allow sends the prompt the card was opened over, so a record that moved underneath is refused by the
-     server rather than read unseen. A choice the reader made or undid while the card was up is theirs, so it
-     is what the box holds now that Allow sends. */
-  const confirmation = held.requests.get(key);
-  const adoption =
-    allow &&
-    confirmation?.consent &&
-    isRecord(confirmation['adoption']) &&
-    confirmation['chosen'] === chosenNow
-      ? confirmation['adoption']
-      : (reading?.adoption ?? {});
+  const adoption = reading?.adoption ?? {};
   /* The revision this panel drew, so a press from a page another tab has since moved on is refused before
      anything starts: the model would otherwise read words this reader never saw. */
   const expected = drawn.revision;
-  const control = allow ? `reading-allow:${key}` : `reading:${key}`;
+  const control = `reading:${key}`;
   const press = pendingStart(intent, control, 'Starting…', 'Starting the analysis.');
   if (!press) return;
   const note: Record<string, unknown> & { pending: boolean; message: string } = {
+    ...(request?.notice !== undefined ? { notice: request.notice } : {}),
     pending: true,
     message: '',
     adoption,
-    chosen: chosenNow,
   };
   held.requests.set(key, note);
   held.notify();
-  let settled = false;
   try {
     const body: Record<string, unknown> = {
       harness: identity.harness,
@@ -189,7 +170,7 @@ export async function askForReading(
       ...adoption,
       expected_revision: expected,
       ...(provider === 'claude' ? { model: String(route['model'] || '') } : {}),
-      ...(allow
+      ...(turnOn
         ? {
             allow: true,
             words_destination: wordsTo,
@@ -218,10 +199,7 @@ export async function askForReading(
       return;
     }
     if (status === 409 && answer?.['reason'] === 'provider-changed') {
-      /* Nothing was sent or saved. The next press starts again, and asks for the new receiver's own Allow if
-         it has none. */
       note.message = PROVIDER_CHANGED;
-      note['consent'] = false;
       await refresh(intent);
       return;
     }
@@ -229,7 +207,6 @@ export async function askForReading(
       /* Nothing was started, adopted or allowed. The owner's stale sentence, shared with Keep: the next press
          is the reader's, against the words the refresh now draws. */
       note.message = KEEP_REFUSED;
-      note['consent'] = false;
       /* Said once, by the persistent region, as Keep's is and under Keep's key, which the next press
          empties: a status paragraph inside the page was re-inserted and re-read on every render. */
       note['announced'] = true;
@@ -237,9 +214,12 @@ export async function askForReading(
       await refresh(intent);
       return;
     }
+    if (status === 400 && answer?.['reason'] === 'page-outdated') {
+      note.message = PAGE_OUTDATED;
+      return;
+    }
     if (status === 409 && answer?.['reason'] === 'destination-changed') {
       note.message = DESTINATION_CHANGED;
-      note['consent'] = false;
       await refresh(intent);
       return;
     }
@@ -268,7 +248,6 @@ export async function askForReading(
       note.message = pressLine(session, eligibility);
       acknowledgeFlip(ctx, session, false);
       note['refusal'] = true;
-      note['consent'] = false;
       await refresh(intent);
       return;
     }
@@ -282,9 +261,6 @@ export async function askForReading(
       showReading(ctx, answer['reading']);
       note.message = policyReason(answer['reading']);
       note['refusal'] = Boolean(note.message);
-      note['consent'] = ['consent-required', 'tool-output-consent-required'].includes(
-        String(answer['reading']['reason']),
-      );
       return;
     }
     if (!reply.ok) throw new Error(`HTTP ${String(status)}`);
@@ -292,31 +268,10 @@ export async function askForReading(
     if (!started && (answer?.['ok'] !== true || typeof answer['produced'] !== 'boolean')) {
       throw new Error('reading not confirmed');
     }
-    if (allow) {
+    note['notice'] = isRecord(answer?.['notice']) ? answer['notice'] : null;
+    if (turnOn) {
       const policy = (currentPayload(ctx) ?? payload)['reading'];
-      if (isRecord(policy)) {
-        const providers = isRecord(policy['providers']) ? policy['providers'] : {};
-        const words = isRecord(policy['words']) ? policy['words'] : {};
-        const rebind = { ...(isRecord(policy['rebind']) ? policy['rebind'] : {}) };
-        delete rebind[provider];
-        const output = isRecord(policy['tool_output']) ? policy['tool_output'] : {};
-        const granted = Array.isArray(output[provider]) ? (output[provider] as unknown[]) : [];
-        showReading(ctx, {
-          ...policy,
-          consent: true,
-          providers: { ...providers, [provider]: true },
-          words: { ...words, [provider]: true },
-          rebind,
-          ...(destination
-            ? {
-                tool_output: {
-                  ...output,
-                  [provider]: granted.includes(destination) ? granted : [...granted, destination],
-                },
-              }
-            : {}),
-        });
-      }
+      if (isRecord(policy)) showReading(ctx, { ...policy, consent: true, off: false, reason: '' });
     }
     if (started && answer && isRecord(answer['job'])) {
       /* Drawn now from the reply, then replaced by the board: a job can end before its own reply arrives,
@@ -336,28 +291,11 @@ export async function askForReading(
     /* A lost response does not establish that the model never ran. */
     note.message =
       'Could not confirm the reading. The request has not been retried. Refresh to check for a result before asking again.';
-    note['consent'] = false;
   } finally {
     note.pending = false;
     pendingEnd(intent, control, press);
     requestFocus(ctx, `reading:${key}`);
-    settled = true;
   }
-  void settled;
-}
-
-/* "Not now" on the consent step: nothing is sent, allowed or recorded, and the idle button comes back. The
-   adoption the step held goes with it. */
-export function readingNotNow(ctx: DriftCtx, identity: SessionIdentity): void {
-  const { intent } = ctx;
-  const session = liveRow(intent, identity);
-  if (!session) return;
-  const key = compatSessKey(session);
-  const request = intent.held.requests.get(key);
-  // Not while Allow is being answered: that press is already the consent.
-  if (pendingHas(intent, `reading-allow:${key}`)) return;
-  if (request?.consent && !request.pending) intent.held.requests.delete(key);
-  intent.held.notify();
 }
 
 /* What Keep's analysis asks of Analyze: one request, sent once, with the adoption and settlement a Keep
@@ -430,6 +368,8 @@ export async function keepReading(
   if (isRecord(answer['route'])) showRoute(ctx, String(session['harness'] || ''), answer['route']);
   if (isRecord(answer['reading'])) showReading(ctx, answer['reading']);
   if (reply.ok && answer['ok'] === true && isRecord(answer['job'])) {
+    const note = intent.held.requests.get(key);
+    if (note) note.notice = isRecord(answer['notice']) ? answer['notice'] : null;
     showJob(ctx, key, answer['job']);
     return { kind: 'started' };
   }
@@ -511,12 +451,7 @@ export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null
   if (!press) return;
   intent.held.notify();
   try {
-    const reply = answered(
-      await shell.runtime.client.postReading(
-        { consent: 'off', press: true, observer_model: 1 } as unknown as ReadingRequest,
-        press.signal,
-      ),
-    );
+    const reply = answered(await turnOffReadings(shell.runtime.client, press.signal));
     const answer = reply.kind === 'answered' && reply.ok ? (reply.body as Row | null) : null;
     if (!answer || answer['ok'] !== true || !isRecord(answer['reading'])) {
       throw new Error('permission not saved');
@@ -529,6 +464,7 @@ export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null
   } catch {
     if (key) {
       intent.held.requests.set(key, {
+        ...intent.held.requests.get(key),
         message: 'Could not confirm readings are off. Try turning them off again.',
       });
     }

@@ -529,8 +529,6 @@ export interface DirectionReading {
   readonly reason: string;
   /** An analysis is already running for this session. */
   readonly job: boolean;
-  /** A consent is still owed, so Keep settles only and the Allow beside its disclosure does the sending. */
-  readonly owed: boolean;
   /** The element that discloses the receiver, which describes Keep while an analysis may start. */
   readonly disclosureId?: string;
   /** One request, sent once, with the adoption and settlement a Keep names. */
@@ -546,7 +544,7 @@ function keepUnsay(ctx: Ctx, key: string): void {
 
 /* Keep my intent: settle every later direction the reader was shown, adopting the draft in the same write,
    and start the analysis where the Analyze step says one can start. Every Keep names the revision it was
-   drawn against. Where no analysis can start, or an Allow is still owed, it goes to `/api/annotate`, which
+   drawn against. Where no analysis can start, it goes to `/api/annotate`, which
    settles and reads nothing: Keep never carries Allow. */
 export async function keepIntent(
   ctx: Ctx,
@@ -567,14 +565,19 @@ export async function keepIntent(
   startFeedback(ctx, control);
   if (intentUnsaved(input)) {
     const edited = editedRefusal(pendingHas(ctx, `${intentKey(row)}:save`));
-    ctx.held.requests.set(key, { pending: false, message: edited, refusal: true, announced: true });
+    ctx.held.requests.set(key, {
+      ...ctx.held.requests.get(key),
+      pending: false,
+      message: edited,
+      refusal: true,
+      announced: true,
+    });
     announce(ctx, `keep:${key}`, edited);
     ctx.held.notify();
     return;
   }
   const draft = intentDraft(input);
-  const owed = Boolean(reading) && !reading?.reason && !reading?.job && Boolean(reading?.owed);
-  const analyze = Boolean(reading) && !reading?.reason && !reading?.job && !reading?.owed;
+  const analyze = Boolean(reading) && !reading?.reason && !reading?.job;
   const last = pending[pending.length - 1];
   const through = nextNumber(last?.at);
   const adopt = adoption(draft);
@@ -582,12 +585,19 @@ export async function keepIntent(
   const drawnAt = nextNumber(annotation?.['revision']) || 0;
   const press = pendingStart(ctx, control, 'Keeping…', 'Keeping your intent.');
   if (!press) return;
-  const request = { pending: true, message: '', adoption: adopt, announced: true } as {
+  const previousNotice = ctx.held.requests.get(key)?.notice;
+  const request = {
+    ...(previousNotice !== undefined ? { notice: previousNotice } : {}),
+    pending: true,
+    message: '',
+    adoption: adopt,
+    announced: true,
+  } as {
     pending: boolean;
     message: string;
     adoption: Record<string, unknown>;
     announced: boolean;
-    consent?: boolean;
+    notice?: Readonly<Record<string, unknown>> | null;
   };
   ctx.held.requests.set(key, request);
   ctx.held.notify();
@@ -614,7 +624,7 @@ export async function keepIntent(
       const outcome = String(body.outcome || '');
       const settled = ['stored', 'unchanged'].includes(outcome) && body.persisted !== false;
       request.message = settled
-        ? keptDirections(pending.length, owed)
+        ? keptDirections(pending.length)
         : outcome === 'untrusted'
           ? (HELD_CUES['settle-untrusted'] ?? KEEP_REFUSED)
           : KEEP_REFUSED;
@@ -623,9 +633,6 @@ export async function keepIntent(
       if (!settled) ctx.held.wholes.delete(key);
       if (settled) {
         forgetAdopted(ctx, row, draft);
-        /* The confirming step the idle control draws: its Allow, beside the disclosure naming the receiver,
-           is the press that sends. The draft is saved now, so that press finds nothing to adopt. */
-        if (owed) request.consent = true;
       }
       await refresh(ctx);
       return;

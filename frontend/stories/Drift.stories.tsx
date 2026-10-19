@@ -24,6 +24,7 @@ import {
   analysisRow,
   DEPARTURE_READING,
   DriftScenario,
+  readingScenario,
   failedCheck,
   fact,
   JOB,
@@ -457,3 +458,78 @@ const limited = (harness: 'codex' | 'antigravity'): Story => ({
 
 export const CodexSaysItCannotReadWork: Story = limited('codex');
 export const AntigravitySaysItCannotReadWork: Story = limited('antigravity');
+
+const firstNotice = {
+  kind: 'reading',
+  provider: 'claude',
+  destination: 'first.example',
+  content: 4,
+  tool_output: 'tools.example',
+  at: 1000,
+};
+
+const noticeSequence = readingScenario([
+  firstNotice,
+  null,
+  { ...firstNotice, destination: 'changed.example', at: 1100 },
+]);
+export const FirstPressRunsAndNoticesRepeatOnlyWhenChanged: Story = {
+  ...scenario({ reading: noticeSequence }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await userEvent.click(await analyzeButton(card));
+    await within(card).findByText(JOB_TITLE);
+    const notice = card.querySelector<HTMLElement>('[data-next-reading-notice]') as HTMLElement;
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveTextContent('Words go to: first.example');
+    await expect(notice).toHaveTextContent('Provider: Claude Code');
+    await expect(notice).toHaveTextContent('The agent messages and tool output are included.');
+    await expect(notice).toHaveTextContent('Tool output goes to: tools.example');
+    await expect(within(notice).getByRole('button', { name: 'Turn off readings' })).toBeVisible();
+    await expect(noticeSequence.posts).toHaveLength(1);
+    await expect(noticeSequence.posts[0]).not.toHaveProperty('allow');
+    await expect(notice.contains(document.activeElement)).toBe(false);
+    await noticeSequence.finish?.();
+    await userEvent.click(await analyzeButton(card));
+    await within(card).findByText(JOB_TITLE);
+    await expect(noticeSequence.posts).toHaveLength(2);
+    await expect(card.querySelector('[data-next-reading-notice]')).toBeNull();
+    await noticeSequence.finish?.();
+    await userEvent.click(await analyzeButton(card));
+    await within(card).findByText(JOB_TITLE);
+    const changed = card.querySelector<HTMLElement>('[data-next-reading-notice]') as HTMLElement;
+    await expect(changed).toBeVisible();
+    await expect(changed).toHaveTextContent('Words go to: changed.example');
+    await expect(changed).not.toHaveTextContent('first.example');
+    await expect(noticeSequence.posts).toHaveLength(3);
+  },
+};
+
+const offReading = readingScenario([firstNotice]);
+export const ReadingsOffWaitsForAnExplicitTurnOn: Story = {
+  ...scenario({
+    reading: offReading,
+    payload: { reading: { consent: false, off: true, reason: 'readings-off' } },
+  }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await expect(
+      await within(card).findByText(
+        'Readings are off. Nothing is sent to a model until you turn them back on.',
+      ),
+    ).toBeVisible();
+    await expect(within(card).queryByRole('button', { name: /^Analyze/ })).toBeNull();
+    const on = within(card).getByRole('button', { name: 'Turn on readings and analyze' });
+    await expect(on).toBeVisible();
+    await expect(offReading.posts).toHaveLength(0);
+    await userEvent.click(on);
+    await within(card).findByText(JOB_TITLE);
+    await expect(offReading.posts).toHaveLength(1);
+    await expect(offReading.posts[0]).toMatchObject({
+      allow: true,
+      words_destination: 'api',
+      tool_output: 'api',
+      provider: 'claude',
+    });
+  },
+};
