@@ -201,16 +201,18 @@ def _byte_clip(text: str, cap: int) -> str:
 
 def _line(entry: SourceEntry, number: int, config: RuntimeConfig) -> _Line:
     cap = config.session_summary_window_bytes
-    if entry.kind in {"person", "agent"}:
+    if entry.kind in {"person", "agent", "relayed"}:
         words = entry.words or ""
         label = "said"
-        if entry.kind == "person":
+        if entry.kind == "relayed":
+            label = "relayed"
+        elif entry.kind == "person":
             label = "relayed" if records.injected_prompt(words, "claude") else "asked"
         text = _clip(
             _clean(words),
-            config.session_summary_person_chars
-            if entry.kind == "person"
-            else config.session_summary_agent_chars,
+            config.session_summary_agent_chars
+            if entry.kind == "agent"
+            else config.session_summary_person_chars,
         )
     elif entry.kind == "check":
         label = "ran"
@@ -664,6 +666,20 @@ def _clause_claim(text: str, *, implicit: bool) -> bool:
     )
 
 
+# Latin letters NFKC leaves alone that read as plain ones: the hooked f, the dotless i and j, the
+# script a and g, and the small capitals. `_mixed_script` passes them because Unicode names them
+# Latin, so "\u0192ixed the parser" read as no claim.
+_LATIN_LOOKALIKES = str.maketrans(
+    "\u0192\u0131\u0237\u0251\u0261"
+    "\u1d00\u0299\u1d04\u1d05\u1d07\ua730\u0262\u029c\u026a\u1d0a\u1d0b\u029f\u1d0d"
+    "\u0274\u1d0f\u1d18\u01eb\u0280\ua731\u1d1b\u1d1c\u1d20\u1d21\u028f\u1d22",
+    "fijagabcdefghijklmnopqrstuvwyz",
+)
+# An underscore not joining two letters or digits ("Fixed_ the parser") is a separator; one
+# inside a name ("test_passes_when_ok") still makes an identifier.
+_LOOSE_UNDERSCORE = re.compile(r"(?<![^\W_])_|_(?![^\W_])")
+
+
 def completion_claim(text: str, *, kind: str | None = None) -> bool:
     """Withhold unlicensed completion words in the summary's own voice."""
     # Invisible format characters (a joiner inside "and", a soft hyphen inside "fixed") would
@@ -671,6 +687,7 @@ def completion_claim(text: str, *, kind: str | None = None) -> bool:
     folded = "".join(
         c for c in unicodedata.normalize("NFKC", text) if unicodedata.category(c) != "Cf"
     )
+    folded = _LOOSE_UNDERSCORE.sub(" ", folded.translate(_LATIN_LOOKALIKES))
     if _mixed_script(folded) or _CHECK_GLYPH.search(folded):
         return True
     return any(
@@ -702,12 +719,20 @@ def _citations(raw: Any, lines: Sequence[_Line], cap: int) -> tuple[tuple[_Line,
     return selected[: max(0, cap)], max(0, len(selected) - max(0, cap))
 
 
-def _kind(cites: Sequence[_Line]) -> str:
+def _kind(cites: Sequence[_Line]) -> str | None:
+    """The bullet's kind from its citations, or None when no kind may be claimed.
+
+    `said` only when every citation is the agent's own words: relayed text is neither the
+    person's nor the agent's, so a bullet that cites it without a person entry has no author
+    and is withheld rather than given the speech licence (ruling 1, as the design records it).
+    """
     if any(c.entry.kind == "check" and c.entry.result == "failed" for c in cites):
         return "failed"
     if any(c.entry.kind in {"check", "file"} for c in cites):
         return "did"
-    return "asked" if any(c.label == "asked" for c in cites) else "said"
+    if any(c.label == "asked" for c in cites):
+        return "asked"
+    return "said" if all(c.label == "said" for c in cites) else None
 
 
 def _bullet(raw: Any, lines: Sequence[_Line], config: RuntimeConfig) -> Bullet | None:
@@ -715,6 +740,8 @@ def _bullet(raw: Any, lines: Sequence[_Line], config: RuntimeConfig) -> Bullet |
         return None
     cites, cut = _citations(raw.get("cites"), lines, config.session_summary_max_cites)
     kind = _kind(cites)
+    if kind is None:
+        return _SHAPE_FAULT
     text = (
         _display(raw["text"], config.session_summary_bullet_chars, kind=kind)
         if cites

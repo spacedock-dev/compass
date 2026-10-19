@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import json
 import re
+import tempfile
 import unittest
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -180,7 +181,9 @@ class SessionSummaryTest(unittest.TestCase):
             ([1], "asked"),
             ([1, 2], "asked"),
             ([2], "said"),
-            ([6], "said"),
+            # Relayed text is not the agent's words: without a person entry there is no author.
+            ([6], None),
+            ([2, 6], None),
             ([1, 6], "asked"),
         ]
         model = Replies(
@@ -195,8 +198,14 @@ class SessionSummaryTest(unittest.TestCase):
         )
         data = self.run_summary(entries, model, session_summary_max_bullets=10).as_dict()
         bullets = data["blocks"][0]["phases"][0]["bullets"]
-        self.assertEqual([kind for _, kind in cases], [b["kind"] for b in bullets])
-        self.assertTrue(all(b["kind_overridden"] for b in bullets))
+        for (cites, kind), bullet in zip(cases, bullets, strict=True):
+            with self.subTest(cites=cites):
+                if kind is None:
+                    self.assertEqual({"withheld": True, "reason": "shape_fault"}, bullet["text"])
+                    self.assertEqual([], bullet["cites"])
+                else:
+                    self.assertEqual(kind, bullet["kind"])
+                    self.assertTrue(bullet["kind_overridden"])
         self.assertIn("[6] relayed:", model.prompts[0])
         self.assertIn("NOT written by the person", model.prompts[0])
         self.assertIn("result as the tool reported: failed", model.prompts[0])
@@ -428,6 +437,11 @@ class SessionSummaryTest(unittest.TestCase):
                 "did",
             ),
             ("mixed script", "Parser fix\u0435d", "said"),
+            ("trailing underscore", "Fixed_ the parser", "did"),
+            ("doubled underscore", "Fixed__parser", "did"),
+            ("Latin hooked f", "\u0192ixed the parser", "did"),
+            ("Latin small capitals", "\ua730\u026ax\u1d07\u1d05 the parser", "did"),
+            ("Latin dotless i", "F\u0131xed the parser", "did"),
             ("mixed script attributed", "The agent said it is fix\u0435d", "said"),
             ("NFKC", "\uff26\uff49\uff58\uff45\uff44 the parser", "said"),
             ("dash", "The agent said it ran \u2014 the bug is fixed", "said"),
@@ -517,6 +531,11 @@ class SessionSummaryTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNotNone(self.summary._COMPLETION.search(text))
                 self.assert_completion_verdict(text, "kept", "did")
+
+    def test_an_underscore_inside_a_name_still_makes_an_identifier(self) -> None:
+        for text in ("Edited test_passes_when_ok", "Ran fix_parser_bug.py"):
+            with self.subTest(text=text):
+                self.assertFalse(self.summary.completion_claim(text, kind="did"))
 
     def test_clipping_rechecks_attribution_and_names_in_the_surviving_prefix(self) -> None:
         for condition, text, cap in [
@@ -919,7 +938,41 @@ class SessionSummaryTest(unittest.TestCase):
         result = self.run_summary(entries, model)
         self.assertIn("[1] relayed:", model.prompts[0])
         self.assertIn("[2] relayed:", model.prompts[0])
-        self.assertEqual("said", result.blocks[0].phases[0].bullets[0].kind)
+        # Cited by nothing but relayed text, the line has no author to speak for, so no phase
+        # survives rather than the line reading as the agent's own words.
+        self.assertEqual((), result.blocks[0].phases)
+
+    def test_relayed_person_turns_reach_the_prompt_from_a_real_transcript(self) -> None:
+        from .test_claude_checks import SID, Transcript  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = Transcript(Path(folder))
+            transcript.prompt("Review the parser please.")
+            transcript.prompt(
+                "This session is being continued from a previous conversation that ran out "
+                "of context. Summary: the parser review was half done."
+            )
+            transcript.prompt("Another Claude session sent a message: please check the lint.")
+            path = Path(folder) / "session.jsonl"
+            path.write_text("".join(json.dumps(row) + "\n" for row in transcript.rows))
+            page = session_source.read(self.config, str(path), "claude", SID)
+        self.assertTrue(page.coverage is not None and page.coverage.complete)
+        self.assertEqual(["person", "relayed", "relayed"], [item.kind for item in page.entries])
+        # Relayed text is never a message id, so no citation of it claims a Full activity row.
+        assert page.snapshot is not None
+        self.assertEqual((page.entries[0].fact_id,), page.snapshot.message_ids)
+        model = Replies({"phases": [phase([1, 2, 3])]})
+        self.summary.summarize(
+            page.entries,
+            page.coverage,
+            "claude",
+            config=self.config,
+            model=model,
+            clock=lambda: 0.0,
+        )
+        self.assertIn("[1] asked: Review the parser please.", model.prompts[0])
+        self.assertIn("[2] relayed: This session is being continued", model.prompts[0])
+        self.assertIn("[3] relayed: Another Claude session sent a message", model.prompts[0])
 
     def test_empty_source_and_invalid_unicode_reply_are_stated_without_guessing(self) -> None:
         model = Replies()

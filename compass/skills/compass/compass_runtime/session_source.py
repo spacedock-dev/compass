@@ -17,7 +17,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
-from . import observer, record_pages
+from . import observer, record_pages, records
 from . import project_context as context
 
 if TYPE_CHECKING:
@@ -255,7 +255,7 @@ def _message(
 ) -> SourceEntry | None:
     fact = record_pages._fact(config, raw, harness, sid)  # noqa: SLF001
     if fact is None:
-        return None
+        return _relayed(raw, record, harness, sid)
     # The pages' ids remain canonical, but their reading-specific word caps are not a source cap.
     words = context.whole_message_words(config, record, harness, len(raw))
     title = str(fact["summary"])
@@ -267,6 +267,54 @@ def _message(
         "parent",
         float(fact["at"]),
         title,
+        words=words,
+    )
+
+
+RELAYED_TITLE = "Text relayed in a person turn"
+
+
+def _relayed(raw: bytes, record: dict[str, Any], harness: str, sid: str) -> SourceEntry | None:
+    """Text the harness put in a person turn: another agent's message, a resumed summary.
+
+    The message parser refuses it so it never stands in for the person's goal. The summary
+    admits it under its own kind, so it is labelled `relayed` rather than the person's words,
+    and is never a message id (docs/design-session-summary.md#menu-windows-and-prompts).
+    """
+    if harness != "claude" or record.get("type") != "user":
+        return None
+    if record.get("isSidechain") or record.get("isMeta"):
+        return None
+    message = records.message_dict(record)
+    content = message.get("content")
+    if (message.get("role") or "user") != "user" or observer._blocks_carry_tool_result(content):  # noqa: SLF001
+        return None
+    text = records.extract_text(
+        observer._redacted_message_content(content),  # noqa: SLF001
+        cap=len(raw),
+    ).strip()
+    at = records.parse_ts(record.get("timestamp") or "")
+    if (
+        at is None
+        or not records.strip_prompt_wrappers(text)
+        or not records.injected_prompt(text, harness)
+    ):
+        return None
+    words = records.safe_text(" ".join(records.mask_prose(text).split()), len(raw))
+    if not words:
+        return None
+    event: dict[str, Any] = {"at": at, "title": RELAYED_TITLE, "harness": harness, "sid": sid}
+    if isinstance(record.get("uuid"), str) and record["uuid"]:
+        event["record_id"] = record["uuid"]
+    fact = context._semantic_fact_from_event(event, "relayed", "relayed_text", "")  # noqa: SLF001
+    return SourceEntry(
+        str(fact["fact_id"]),
+        _digest(RELAYED_TITLE, words),
+        "relayed",
+        "parent",
+        "parent",
+        float(at),
+        RELAYED_TITLE,
         words=words,
     )
 

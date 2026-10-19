@@ -169,10 +169,12 @@ to the backstop and gives a bullet no other field.
   withheld.
 - **Kind, set by the code.** The model may propose a kind, and the code overrides it from what the
   citations are. `failed` when one is a failed check; otherwise `did` when one is a tool call, a
-  check or a file write; otherwise `asked` when all are the person's words; otherwise `said` when all
+  check or a file write; otherwise `asked` when any are the person's words; otherwise `said` when all
   are the agent's words. A bullet citing only person and agent words is `asked`: in all five
-  measured cases the person was deciding on the agent's proposal. Relayed text counts as the
-  agent's words for this rule, even when it arrived in a person turn.
+  measured cases the person was deciding on the agent's proposal. Relayed text is neither the
+  person's words nor the agent's, so a bullet whose citations are relayed text alone, or relayed
+  text and agent words with no person entry, has no kind it may claim and is withheld as a
+  `shape_fault`; it never gets the speech licence `said` carries.
 - **No completion claims in the summary's own voice.** The lede, titles and bullets may report
   what a named speaker said, but may not themselves state that work is fixed, done, working or
   verified. A check's result is quoted only as the tool's report, in
@@ -422,7 +424,7 @@ number-to-fact-id map. Stored citations contain fact ids only. Each menu line is
 | Source entry | Label and text |
 | -- | -- |
 | Person words | `asked`, followed by the person's words. |
-| Injected text in a person turn | `relayed`, followed by that text. `records.injected_prompt(words, "claude")` decides authorship, including other agents' messages and resumed-conversation summaries. The menu says these words were not written by the person. |
+| Injected text in a person turn | `relayed`, followed by that text. `records.injected_prompt(words, "claude")` decides authorship, including other agents' messages and resumed-conversation summaries. The message parser refuses this text, so the source admits it as its own `relayed` entry, which is never a message id. The menu says these words were not written by the person. |
 | Agent words | `said`, followed by the agent's words. |
 | Check | `ran`, followed by its masked title and `result as the tool reported: failed`, `passed` or `not-recorded`. |
 | File write | `wrote`, followed by the display path. |
@@ -480,8 +482,9 @@ with no shaped phase is a `no_valid_reply` gap; other windows survive.
 
 The code overrides the model's kind, recording `kind_overridden` on every bullet. Priority is
 `failed` for a cited failed check, then `did` for a check or file write, then `asked` if any cited
-words are the person's, and otherwise `said`. The `asked` case includes person words plus
-agent or relayed words, as decided by the measurement. Citations trimmed by the citation bound
+words are the person's, then `said` only when every citation is the agent's words. The `asked`
+case includes person words plus agent or relayed words, as decided by the measurement. Any other
+mix (relayed text alone, or relayed text with agent words) is withheld as a `shape_fault`. Citations trimmed by the citation bound
 no longer contribute to the kind.
 
 Every displayed string is redacted and checked on its whole text before any character cap.
@@ -616,9 +619,13 @@ as `a list of fixes`, `Ran the deploy script`, `a pass over the docs`, `the done
 so far` still matches and stays withheld, although the ruling would admit it. Failing closed also
 withholds some attributed speech the ruling admits: a joiner inside reported words (`the person
 asked when it would be done`), `according to the agent, ...`, a speaker whose verb is not on the
-list, and a quote followed by more words (`the agent said file."py" is fixed`). Invisible marks
-other than format characters (a combining accent), Latin look-alike letters (`ƒixed`) and a
-trailing underscore (`fixed_`) still defeat the word match. The code does not check whether an
+list, and a quote followed by more words (`the agent said file."py" is fixed`). Before matching,
+a small table folds the Latin look-alikes NFKC leaves alone (the hooked `ƒ`, the dotless `ı` and
+`ȷ`, the script `ɑ` and `ɡ`, and the small capitals) to plain letters, and an underscore that does
+not join two letters or digits (`Fixed_ the parser`) is read as a space; an underscore inside a
+name (`test_passes_when_ok`) still makes an identifier. Invisible marks other than format
+characters (a combining accent) and look-alikes outside that table still defeat the word match.
+The code does not check whether an
 attributed sentence is relevant to its citations. Where the ruling leaves malformed quotations
 unspecified, an unclosed quoted span stays atomic through the end of the string and cannot supply
 its own attribution.
