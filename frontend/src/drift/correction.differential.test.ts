@@ -51,6 +51,8 @@ function recordedNumbering(text: string): string {
 }
 
 const legacy = loadLegacyDrift();
+/* The cap the retired page was recorded at; the page's own is `CORRECTION_CAP`. */
+const RECORDED_CAP = 2000;
 
 /* The retired page numbered with whole numbers and was recorded that way; the page now reads a label. */
 const labels = (numbers: ReadonlyMap<string, number>): ReadonlyMap<string, string> =>
@@ -161,10 +163,12 @@ describe('the correction edit arithmetic matches the legacy page', () => {
       if (legacy.call('nextCockpitCorrectionWhole', run, room) !== correctionWhole(run, room)) {
         failures.push(`seed ${String(seed)} whole`);
       }
-      // A cap this small makes the fit reachable from short strings; the legacy cap is 2,000.
+      // A cap this small makes the fit reachable from short strings; the legacy cap is 2,000. The page's cap
+      // rose to 4,216 for the explanations (owner, 2026-10-20), so the arithmetic is held to the recording at
+      // the recorded cap: see docs/design-frontend-migration.md#held-to-recorded-answers.
       const long = genText(rnd, 5) + 'x'.repeat(rnd() < 0.5 ? 1995 : 10);
       const typedLong = long.slice(0, cut) + insert + long.slice(cut);
-      const fit = correctionFit(long, typedLong, cut + insert.length);
+      const fit = correctionFit(long, typedLong, cut + insert.length, RECORDED_CAP);
       const fitA = legacy.call('nextCockpitCorrectionFit', long, typedLong, cut + insert.length);
       const found = firstDifference(canonical(fitA), canonical(fit));
       if (found) failures.push(`seed ${String(seed)} fit: ${found}`);

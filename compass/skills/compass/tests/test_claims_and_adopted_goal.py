@@ -1037,6 +1037,7 @@ class SteerBackSaysWhatTheRecordDoesNotShowTest(unittest.TestCase):
         lines_judged: bool = True,
         **row: Any,
     ) -> str:
+        detail = row.pop("detail", "")
         published = {
             **SID,
             "annotation_goal": "Ship the retry",
@@ -1047,7 +1048,7 @@ class SteerBackSaysWhatTheRecordDoesNotShowTest(unittest.TestCase):
                 "window_start": 50.0,
                 "read_at": 500.0,
                 "criteria": {
-                    "claims": {"result": result, "cites": cites, "detail": "", "why": ""},
+                    "claims": {"result": result, "cites": cites, "detail": detail, "why": ""},
                 },
             },
             **row,
@@ -1074,6 +1075,21 @@ class SteerBackSaysWhatTheRecordDoesNotShowTest(unittest.TestCase):
             'You said "All tests pass" at T90{a1}; the record shows otherwise at T95{c1}.', text
         )
         self.assertNotIn("A check failed", text)
+
+    def test_a_contradicted_claim_carries_its_explanation(self) -> None:
+        # Owner, 2026-10-20: a departure carries the reading's explanation, a claim's included.
+        why = "The agent said the tests pass; the check after it failed."
+        text = self.compose(reading.RESULT_DEPARTURE, ["a1", "c1"], [SAID, FAILED], detail=why)
+        self.assertIn(
+            "the record shows otherwise at T95{c1}.\n  Why Compass reads this as drift: " + why,
+            text,
+        )
+
+    def test_an_unshown_claim_is_a_question_and_carries_no_explanation(self) -> None:
+        text = self.compose(
+            reading.RESULT_UNSUPPORTED, ["a1"], [SAID], detail="Nothing shows the tests ran."
+        )
+        self.assertNotIn("Why Compass", text)
 
     def test_a_shown_claim_adds_nothing_and_alone_is_nothing_to_steer_from(self) -> None:
         self.assertEqual("", self.compose(reading.RESULT_CONSISTENT, ["a1", "c1"], [SAID, PASSED]))

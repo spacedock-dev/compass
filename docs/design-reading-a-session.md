@@ -2932,6 +2932,8 @@ the later-direction floor (item 9).
    list)" ([the wording](#amended-2026-10-14-owner-the-correction-names-the-entry)), and a write
    outside a named folder is not a trigger
    ([the ruling](#amended-2026-10-14-owner-a-write-outside-a-named-folder-does-not-settle-a-line)).
+   Amended 2026-10-20 (owner): each departure also carries the stored reading's explanation, and
+   the cap changes to fit ([the amendment](#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
 8. Update intent instead. It opens Intent for editing and offers the later direction as a new
    outcome line under item 4's rules. It never replaces the goal.
 9. A copied correction coming back. The server records a digest of the exact text the reader
@@ -2958,7 +2960,9 @@ the later-direction floor (item 9).
     that reading from the derived level and correction until the mark is cleared.
 11. Numbering. The activity list numbers entries in the evidence window, and a citation says
     "#<n>". It says "turn" only where the harness supplies a stable turn identity. Stored readings
-    cite fact ids, so a number is recomputed, never stored.
+    cite fact ids, so a number is recomputed, never stored. Amended 2026-10-20 (owner): a
+    departure's explanation travels as text, never as a placeholder, and the page renumbers nothing
+    inside it ([the amendment](#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
 12. The unasked lane receives none of this: no outcome lines, no work evidence, no drafted or
     confirmed goal, no correction, no digest and no Not accurate token. None of them makes a
     session eligible for the lane, or triggers, orders or gates it.
@@ -4593,6 +4597,90 @@ read. The session list draws the scope from its token and gives each cutoff sent
 The reading definition and the long scope paragraph left this panel, since the page states both
 elsewhere. The cutoff is reworded at the producer in plain sentences with the same counts
 (see [what the window build decided](#what-the-window-build-decided-2026-09-27)). A reading stored before the change keeps the sentence it was stored with.
+
+### Amended 2026-10-20 (owner): the correction carries the explanation
+
+Item 7 fixed the correction as exact text with no model prose. A walk of the session page found
+what that cost: the correction named what departed and at which entry, never why, so a reader
+pasting it handed the agent a verdict it could not act on, and the Drift card beside it already
+showed the reason. The owner amended item 7 on 2026-10-20: each departure in the correction also
+carries its stored explanation, the reading's one bounded `detail` sentence, so the reader and the
+agent can see why it is drift. The explanation is the reading's own text, redacted and bounded like
+every stored reading string, labelled as Compass's reading, and never presented as the reader's
+words. This supersedes, for the explanation only, item 7's "no model prose" and the sentence of
+the [2026-10-14 amendment](#amended-2026-10-14-owner-the-correction-names-the-entry) that keeps
+model prose out; every other field and sentence of the approved template stands.
+
+The text. Under each surviving departure the correction adds one indented line:
+
+```text
+Back to my goal: Ship the retry queue (entry #1 in Compass's activity list)
+The session departed from my goal at 14:05 (entry #9 in Compass's activity list).
+  Why Compass reads this as drift: The agent rewrote the scheduler instead of the queue.
+Where it stands against what I expect:
+- The retry tests pass: departed at 14:06 (entry #10 in Compass's activity list)
+  Why Compass reads this as drift: The retry tests failed after the last change.
+- Lint is clean: consistent with 14:07 (entry #11 in Compass's activity list), as the tool reported
+Please continue from here.
+```
+
+- The label is the Drift card's own heading, "Why Compass reads this as drift:", so the line says
+  whose reading it is in the reader's words and the agent's. The line is indented under the line it
+  explains, which keeps a bullet one item in Markdown and keeps the sentence out of the reader's
+  first person ("Back to my goal", "what I expect").
+- What carries one: a departed goal, a departed outcome line, and a claim the record contradicts
+  (the claims row's own departure), each only while the line the correction writes for it stands. A
+  line the page has demoted (an older revision, an unsettled later direction, Mark as inaccurate,
+  a citation outside the window) takes its explanation with it. A consistent line, a line not
+  reached at this stop, a can't-tell line and an unshown claim carry none: the producer keeps no
+  detail for the last two, and the first is not drift.
+- Missing or withheld, the line is the approved line unchanged. A detail that is empty, or empty
+  once neutralised, adds nothing.
+- The path. The detail is passed again through `records.safe_text`, the redaction and bound every
+  stored reading string takes (240 characters, `RuntimeConfig.annotation_text_cap_chars`'s default,
+  with one closing "…" where cut, as the producer cuts). A redaction marker that would finish past
+  that bound withholds the explanation rather than pass its room. It is then neutralised so a paste
+  cannot become a command or a new instruction block: control characters, C1 controls and the
+  Unicode line and paragraph separators become spaces, so it is always one line; a backtick becomes
+  `'` (no code span or fence); `<` and `>` become `‹` and `›` (no tag an agent may read as an
+  instruction block); a word-initial `@` becomes `＠` (no file mention Claude Code reads in); and a
+  leading run of `/`, `!`, `#`, `>`, `*`, `+` or `-` is removed (no slash command, shell escape,
+  heading, quotation or list item, even where the reader edits the label away). Each swap is one
+  character for one, so neutralising never lengthens it. What it cannot remove is what a model
+  sentence says: SECURITY.md carries that residual.
+
+The cap. The lines keep item 7's 2,000 characters, counted as before without the explanations,
+with every placeholder at its widest; over it the consistent lines drop, last first, and then the
+correction is refused with the same sentence. The explanations get a fixed room on top, so adding
+them never drops a line and never refuses a correction that composed before. The worst case is
+every explanation a correction can carry, each at its widest: the goal, six outcome lines and a
+contradicted claim make eight; each is the label's 36 characters (a line break, two spaces and
+"Why Compass reads this as drift: "), 240 of detail and the "…", 277 in all; so
+2,000 + 8 × 277 = 4,216. That is the hard bound: the page's editor, its counter, the copy route and
+the composer all hold 4,216 (`copied_corrections.CORRECTION_CAP_CHARS`, the page's
+`CORRECTION_CAP`), and `test_correction` composes that worst case to exactly 4,216 and refuses it at
+one more character of lines. Recompose and the stale rules are unchanged: the stamp is still the
+saved words' revision, the settlement, the reading's `read_at` and the cited entries, and an
+explanation comes from the stored reading those already stamp, so it can change only when one of
+them does.
+
+The box. With an explanation under each departure, a correction with two departures ran past the
+six rows the box opened with, and its closing request sat below the fold in the first walk at
+1400 px. The box now opens with one row per line of the composed text and one more, from 6 to 16,
+counted once when it opens so typing never resizes it; a longer text, or one wrapped at 400 px,
+scrolls inside the box.
+
+The placeholder contract (item 11). An explanation is a text part, never a placeholder. The page
+fills only `{"entry": fact_id}` parts and renumbers nothing inside an explanation, so a number a
+model wrote there is the model's own and is not one of the activity list's. The fields are now the
+goal, each outcome line with its state, the cited entry numbers and times, a contradicted or unshown
+claim's published title, and each departure's neutralised explanation; still no command, tool
+output, check name or summary.
+
+A copied correction coming back (item 9) is unchanged. An exact paste is Compass-assisted, so the
+explanation in it is never the reader's evidence or a later direction. An edited paste is the
+reader's own words, and the model sentence inside it travels with them, as the quoted claim already
+did.
 
 ### What the result build decided, 2026-09-28
 

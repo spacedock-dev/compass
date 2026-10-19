@@ -105,9 +105,9 @@ describe('Steer back', () => {
     await act(async () => {
       fireEvent.input(field);
     });
-    expect(textOf('[data-next-correction-count]')).toBe('1000/2000');
+    expect(textOf('[data-next-correction-count]')).toBe('1000/4216');
     const before = field.value;
-    field.value = `${before}${'x'.repeat(1500)}`;
+    field.value = `${before}${'x'.repeat(3500)}`;
     await act(async () => {
       fireEvent.input(field);
     });

@@ -6,11 +6,14 @@ fixes the fields: the goal, each outcome line with its state, and the cited entr
 owner approved the template on 2026-09-28 as exact text, and ruled that the server writes each
 entry as a placeholder the page fills with "#n" from its own numbering or drops, because a number
 is recomputed on the page and never stored (item 11). So nothing here reads a summary, a command, a
-check name, tool output, a reading's detail or a message's words: a fact contributes its time and
-its id, and the id travels only inside a placeholder. One exception, by the owner's delegation of
-2026-10-04: a claim of the agent's that the record contradicts or does not show is quoted by its
-message's published title, the first sentence the activity list already shows, and never by the
-words a reading read.
+check name, tool output or a message's words: a fact contributes its time and its id, and the id
+travels only inside a placeholder. Two exceptions. By the owner's delegation of 2026-10-04, a claim
+of the agent's that the record contradicts or does not show is quoted by its message's published
+title, the first sentence the activity list already shows, and never by the words a reading read.
+By the owner's ruling of 2026-10-20, each departure carries the stored reading's own `detail` on an
+indented line labelled as Compass's reading, neutralised by `explanation` so a paste cannot turn it
+into a command or a new block, by the
+[amendment](docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation).
 
 `compose` is pure. The route hands it the session's published row, its observed record and the
 later-direction floor (`annotations.direction_floor`), and it answers the parts or why there are
@@ -26,16 +29,32 @@ React page ports the same rules under `frontend/src/drift/`.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
-from . import copied_corrections, reading
+from . import copied_corrections, reading, records
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
 # The route's own cap, so a correction this composes is always one the copy route accepts.
 CAP_CHARS = copied_corrections.CORRECTION_CAP_CHARS
+# Two budgets, so carrying the explanations (owner, 2026-10-20) changes no refusal and drops no
+# line: the template's own lines keep item 7's 2,000, measured without the explanations, and each
+# explanation has a fixed room of its own. A correction that composed before still composes, with
+# every explanation it is owed, and `CAP_CHARS` is the sum.
+LINES_CAP_CHARS = 2000
+# Labelled as Compass's reading in the card's own words, on its own indented line under the line it
+# explains, so neither an agent nor the reader takes it for the reader's words.
+EXPLANATION_LABEL = "\n  Why Compass reads this as drift: "
+# The stored detail's bound, `RuntimeConfig.annotation_text_cap_chars` at its default, and not read
+# from the config: the page mirrors the cap as a constant, so it cannot vary per run. A cut adds
+# one "…", as the producer's own cut does.
+EXPLANATION_TEXT_CHARS = 240
+EXPLANATION_MAX_CHARS = len(EXPLANATION_LABEL) + EXPLANATION_TEXT_CHARS + 1
+# What can carry one: the goal, every outcome line and a contradicted claim.
+EXPLANATIONS_MAX = 2 + reading.MAX_OUTCOME_LINES
 # Claude Code only, as the copy route is: a correction offered where a paste cannot be recognised
 # coming back would count as the reader's own words.
 HARNESSES = copied_corrections.HARNESSES
@@ -58,6 +77,39 @@ _NOT_SHOWN = "not-shown"
 _SAID = "said"
 
 Part = str | dict[str, str]
+
+# Line breaks `records.safe_text` leaves in place: C1 controls, NEL and the Unicode line and
+# paragraph separators, any of which can start a new line where the paste lands.
+_BREAKS = re.compile("[\x80-\x9f\u2028\u2029]+")
+# What could open the explanation and make it something else if the label were edited away: a
+# slash command, a shell escape, a heading, a quotation, a list item.
+_OPENERS = re.compile(r"^[\s/!#>*+\-]+")
+# Each swapped for one look-alike character, so neutralising never lengthens the text: a backtick
+# opens code or a fence, an angle bracket a tag an agent may read as an instruction block, and an
+# `@` at a word's start a file mention Claude Code reads in.
+_SWAPS = str.maketrans({"`": "'", "<": "\u2039", ">": "\u203a"})
+_MENTION = re.compile(r"(?<!\w)@")
+
+
+def explanation(detail: object) -> str:
+    """A stored reading's detail as the correction may carry it, or "" for none.
+
+    Through `records.safe_text`, the redact-and-clip path every stored reading string takes, and
+    then neutralised. A redaction marker that finishes past the bound withholds the explanation
+    rather than let it pass its room.
+    """
+    raw = detail if isinstance(detail, str) else ""
+    text = records.safe_text(raw, EXPLANATION_TEXT_CHARS)
+    # Cut, measured against the same text unbounded: a run of control characters collapses to one
+    # space, so the raw length would mark a whole sentence as cut.
+    whole = records.safe_text(raw, 2 * len(raw) + 64)
+    if len(whole) > len(text) and not text.endswith("…"):
+        text = f"{text.rstrip()}…"
+    text = _MENTION.sub("\uff20", _BREAKS.sub(" ", text).translate(_SWAPS))
+    text = " ".join(_OPENERS.sub("", text).split())
+    if not text.strip("….' ") or len(text) > EXPLANATION_TEXT_CHARS + 1:
+        return ""
+    return text
 
 
 def clock_text(at: float) -> str:
@@ -262,6 +314,15 @@ class _Rows:
         state = (_SAID, said[0]) if said and line else (_NOT_SHOWN, None)
         return (_CONSISTENT, reported[0]) if reported and line else state
 
+    def why(self, name: str) -> str:
+        """The stored explanation of one constraint, as the correction may carry it.
+
+        Asked only of a line `state` left departed, or a claim `claim` left contradicted, so it
+        never explains a verdict the panel has withdrawn.
+        """
+        row = self.criteria.get(name)
+        return explanation(row.get("detail")) if isinstance(row, dict) else ""
+
     def claim(self) -> tuple[str, dict[str, Any], dict[str, Any] | None] | None:
         """A claims departure or `unsupported` as (result, the agent's message, what
         contradicts it), or None.
@@ -389,32 +450,39 @@ def _joined(lines: list[list[Part]]) -> list[Part]:
 
 def _body(
     lines: list[tuple[int, str]], rows: _Rows | None, at: Callable[[Mapping[str, Any]], str]
-) -> list[tuple[str, list[Part]]]:
-    """One bullet per saved line, with its state and the placeholder its time rests on."""
-    body: list[tuple[str, list[Part]]] = []
+) -> list[tuple[str, list[Part], str]]:
+    """One bullet per saved line, with its state, the placeholder its time rests on and, for a
+    departure, its stored explanation."""
+    body: list[tuple[str, list[Part], str]] = []
     for k, text in lines:
         name = reading.outcome_line(k)
         if rows is not None and name not in rows.criteria and len(lines) == 1:
             name = reading.CONSTRAINT_OUTPUT
         state, cited = rows.state(name) if rows is not None else (_NOT_SHOWN, None)
-        if state == _DEPARTED and cited is not None:
-            body.append((state, [f"- {text}: departed at {at(cited)}", _placeholder(cited)]))
+        if state == _DEPARTED and cited is not None and rows is not None:
+            departed: list[Part] = [f"- {text}: departed at {at(cited)}", _placeholder(cited)]
+            body.append((state, departed, rows.why(name)))
         elif state == _CONSISTENT and cited is not None:
             said: list[Part] = [
                 f"- {text}: consistent with {at(cited)}",
                 _placeholder(cited),
                 ", as the tool reported",
             ]
-            body.append((state, said))
+            body.append((state, said, ""))
         elif state == reading.RESULT_NOT_REACHED:
-            body.append((state, [f"- {text}: not reached at this stop"]))
+            body.append((state, [f"- {text}: not reached at this stop"], ""))
         elif state == _SAID:
             body.append(
-                (_SAID, [f"- {text}: the session says this is done; not confirmed by a tool"])
+                (_SAID, [f"- {text}: the session says this is done; not confirmed by a tool"], "")
             )
         else:
-            body.append((_NOT_SHOWN, [f"- {text}: can you show evidence for this?"]))
+            body.append((_NOT_SHOWN, [f"- {text}: can you show evidence for this?"], ""))
     return body
+
+
+def _explained(line: list[Part], why: str, *, explained: bool) -> list[Part]:
+    """A line with its explanation under it, where it has one and the text carries them."""
+    return [*line, f"{EXPLANATION_LABEL}{why}"] if explained and why else line
 
 
 def _claim_line(
@@ -511,7 +579,7 @@ def compose(
 
     body = _body(lines, rows, at)
     claim = rows.claim() if rows is not None else None
-    departed = any(state == _DEPARTED for state, _ in body) or (
+    departed = any(state == _DEPARTED for state, _, _ in body) or (
         rows is not None and rows.state(reading.CONSTRAINT_GOAL)[0] == _DEPARTED
     )
     if not departed and claim is None and not failed:
@@ -532,33 +600,57 @@ def compose(
             head[0].append({"entry": adopted[0]})
         else:
             head[0][0] = f"Back to my goal: {goal.rstrip('…')}…"
-    said = [_claim_line(claim, at)] if claim is not None else []
+    # A contradicted claim is a departure of the claims row; an unshown one is a question, and the
+    # producer keeps no detail for it.
+    said: list[tuple[list[Part], str]] = (
+        [
+            (
+                _claim_line(claim, at),
+                rows.why(reading.CONSTRAINT_CLAIMS)
+                if rows is not None and claim[0] == reading.RESULT_DEPARTURE and claim[2]
+                else "",
+            )
+        ]
+        if claim is not None
+        else []
+    )
     tail = _tail(failed, clock)
     goal_gap = rows.state(reading.CONSTRAINT_GOAL) if rows is not None else (_NOT_SHOWN, None)
-    goal_line: list[list[Part]] = (
+    goal_line: list[tuple[list[Part], str]] = (
         [
-            [
-                f"The session departed from my goal at {at(goal_gap[1])}",
-                _placeholder(goal_gap[1]),
-                ".",
-            ]
+            (
+                [
+                    f"The session departed from my goal at {at(goal_gap[1])}",
+                    _placeholder(goal_gap[1]),
+                    ".",
+                ],
+                rows.why(reading.CONSTRAINT_GOAL) if rows is not None else "",
+            )
         ]
         if goal_gap[0] == _DEPARTED and goal_gap[1]
         else []
     )
     body.sort(key=lambda item: item[0] != _DEPARTED)
 
-    def assemble() -> list[Part]:
+    def assemble(*, explained: bool) -> list[Part]:
         opening: list[Part] = ["Where it stands against what I expect:"]
-        middle: list[list[Part]] = [opening, *(line for _, line in body)]
-        return _joined([*head, *goal_line, *said, *tail[:-1], *(middle if body else []), tail[-1]])
+        middle = [opening, *(_explained(line, why, explained=explained) for _, line, why in body)]
+        return _joined(
+            [
+                *head,
+                *(_explained(line, why, explained=explained) for line, why in goal_line),
+                *(_explained(line, why, explained=explained) for line, why in said),
+                *tail[:-1],
+                *(middle if body else []),
+                tail[-1],
+            ]
+        )
 
-    parts = assemble()
-    # The consistent lines go first, the last of them first, and nothing is ever cut short.
-    while _width(parts) > CAP_CHARS:
-        consistent = [i for i, (state, _) in enumerate(body) if state == _CONSISTENT]
+    # The consistent lines go first, the last of them first, and nothing is ever cut short. The
+    # lines are measured without their explanations, against the budget they had before them.
+    while _width(assemble(explained=False)) > LINES_CAP_CHARS:
+        consistent = [i for i, (state, _, _) in enumerate(body) if state == _CONSISTENT]
         if not consistent:
             return {"ok": False, "reason": REASON_TOO_LONG, "why": TOO_LONG}
         del body[consistent[-1]]
-        parts = assemble()
-    return {"ok": True, "parts": parts}
+    return {"ok": True, "parts": assemble(explained=True)}

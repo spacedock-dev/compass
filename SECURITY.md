@@ -1997,7 +1997,7 @@ unknown session answer one `409 not-running` body, so the route says nothing abo
 exist. It writes no consent and reserves nothing.
 
 The copied-correction route. `POST /api/correction/copied` names a session
-and the exact text the reader copied, at most 2,000 characters, and the server records its digest:
+and the exact text the reader copied, at most 4,216 characters, and the server records its digest:
 a SHA-256 of the text after one normalisation, applied to both sides, which is what Claude Code
 2.1.283 was measured doing to a paste: CRLF and CR become LF, a tab becomes four spaces, and
 whitespace is trimmed at both ends. The store holds the digest, the moment of the copy and where the
@@ -2043,8 +2043,8 @@ Steer back's correction. `POST /api/correction` names a session and nothing
 else, and answers a correction the server composes without a model from that session's published
 row and observed record: the goal and outcome lines the reader saved, each line's state re-derived
 from a stored reading of those exact words, and the time of each entry a line or sentence rests on.
-It never reads a fact's summary, a command, a check name, tool output, a reading's detail or a
-message's text, so none of them can reach the correction, with one exception since 2026-10-04: for
+It never reads a fact's summary, a command, a check name, tool output or a message's text, so
+none of them can reach the correction, with one exception since 2026-10-04: for
 a claim of the agent's that a stored reading found the record contradicts or does not show, it
 quotes that one agent message's published title, its first sentence of at most 112 characters,
 which the activity list already shows, and never the message's words. The owner amendment of
@@ -2053,10 +2053,22 @@ evidence request in their place
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-04-owner-what-the-agent-claims-is-its-own-constraint)).
 A reader who copies such a correction and edits it before sending it pastes the quoted claim back
 into the session; edited past recognition, it arrives as the reader's own words, as any edited
-correction does. Each entry travels as its time and a
+correction does. A second exception since the owner's ruling of 2026-10-20: each surviving
+departure, a contradicted claim's included, carries the stored reading's own explanation, the one
+bounded `detail` sentence a model wrote, on its own line labelled "Why Compass reads this as
+drift:", so it reads as Compass's reading and never as the reader's words
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
+It is passed again through the redaction and bound every stored reading string takes (240
+characters and a closing ellipsis where cut), and neutralised so that a paste cannot become a command
+or a new instruction block: control characters and line separators become spaces, a backtick, an
+angle bracket and a word-initial `@` are each replaced by one look-alike character, and a leading
+`/`, `!`, `#`, `>` or list marker is removed. It remains model prose: a reader who pastes it hands
+the agent a sentence a model wrote about its session, and one who edits the correction past
+recognition sends that sentence as their own words. Each entry travels as its time and a
 placeholder holding its fact id, which the page replaces with the number its own list draws, or
-drops. A reply is at most 2,000 characters however the page numbers it, and is never truncated: a
-longer one drops its consistent lines and then answers a refusal sentence. It stores nothing of
+drops. A reply's lines are at most 2,000 characters however the page numbers them, and each of at
+most eight explanations has 277 more, so a reply is at most 4,216 characters and is never
+truncated: lines over their 2,000 drop the consistent ones and then answer a refusal sentence. It stores nothing of
 its own: it reads, and the collection it runs to read the session may rewrite the semantic history
 store, as `POST /api/direction`'s does. It is guarded as `POST /api/direction` is, reads Claude Code sessions only, and answers one body for an
 unknown session, another harness, and a session with nothing to steer from alike. The reader edits

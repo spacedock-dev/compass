@@ -91,11 +91,12 @@ export function correctionFit(
   before: string,
   typed: string,
   caret?: number | null,
+  cap: number = CORRECTION_CAP,
 ): { readonly value: string; readonly caret: number } | null {
-  if (correctionLength(typed) <= CORRECTION_CAP) return null;
+  if (correctionLength(typed) <= cap) return null;
   const edit = correctionEdit(before, typed, caret);
   const kept = correctionLength(edit.head) + correctionLength(edit.tail);
-  const run = correctionWhole(edit.run, CORRECTION_CAP - kept);
+  const run = correctionWhole(edit.run, cap - kept);
   return { value: edit.head + run + edit.tail, caret: edit.head.length + run.length };
 }
 

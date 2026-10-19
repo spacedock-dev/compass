@@ -104,6 +104,8 @@ export interface Scenario {
   readonly route?: Record<string, unknown>;
   /** Whether `POST /api/annotate` keeps a Not accurate mark, as the store does, so the next board carries it. */
   readonly keepsMarks?: boolean;
+  /** What `POST /api/correction` answers, as `correction.compose` would for this session. */
+  readonly correction?: Record<string, unknown>;
 }
 
 export const fact = (
@@ -211,6 +213,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
             return json({ ok: true, outcome: 'stored', persisted: true });
           }
         }
+        if (scenario.correction && url.startsWith('/api/correction/copied'))
+          return json({ ok: true });
+        if (scenario.correction && url.startsWith('/api/correction'))
+          return json(scenario.correction);
         if (url.startsWith('/api/data'))
           return json({
             generated: generation++,
