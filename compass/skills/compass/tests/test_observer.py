@@ -2262,6 +2262,58 @@ class ObserverModelSecurityTest(unittest.TestCase):
             self.assertEqual("readings-off", off.status)
             self.assertEqual(2, len(prompts))
 
+    def test_goal_notice_names_the_agents_messages_at_the_given_clock(self) -> None:
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        config = make_config()
+        sent = observer._model_context(
+            config,
+            [
+                {"role": "user", "text": "ship the parser"},
+                {"role": "assistant", "text": "rewriting the tokenizer now"},
+            ],
+        )
+        # The goal prompt carries what the agent said, so its notice cannot
+        # claim the words-only tier.
+        self.assertIn("rewriting the tokenizer now", sent)
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(state_dir=Path(home))
+            caller = observer.CodexGoalModel(
+                config, consent=True, session_key="pi:one", clock=lambda: 1_700_000_000.0
+            )
+
+            def execute(*_args: Any, **kwargs: Any) -> tuple[str, str]:
+                kwargs["before_call"]()
+                return "ship parser", "ok"
+
+            with mock.patch.object(observer, "codex_exec", side_effect=execute):
+                caller(sent, "stage")
+            assert caller.notice is not None
+            self.assertEqual(reading_policy.CONTENT_VERSION, caller.notice["content"])
+            self.assertGreater(caller.notice["content"], reading_policy.WORDS_CONTENT_VERSION)
+            self.assertEqual(1_700_000_000.0, caller.notice["at"])
+
+    def test_an_off_stored_mid_call_is_named_off_even_at_the_cap(self) -> None:
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(state_dir=Path(home))
+            now = 1_700_000_000.0
+            caller = observer.CodexGoalModel(
+                config, consent=True, session_key="pi:one", clock=lambda: now
+            )
+
+            def execute(*_args: Any, **kwargs: Any) -> tuple[str, str]:
+                for _ in range(reading_policy.DAILY_CAP):
+                    reading_policy.reserve(config, now=now)
+                reading_policy.set_consent(config, False, now=now)
+                kwargs["before_call"]()
+                return "ship parser", "ok"
+
+            with mock.patch.object(observer, "codex_exec", side_effect=execute):
+                self.assertIsNone(caller("private transcript", "stage"))
+            self.assertEqual("readings-off", caller.status)
+
     def test_relative_resolution_is_refused(self) -> None:
         config = dataclasses.replace(make_config(), observer_model_enabled=True)
         for binary in ("codex", "./codex", "bin/codex"):

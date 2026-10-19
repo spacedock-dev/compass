@@ -753,8 +753,12 @@ class CodexGoalModel:
         consent: bool = False,
         session_key: str = "",
         resolve_destination: Callable[[], str] | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.config = config
+        # The collection's clock, so the store's prune and the notice's time
+        # follow the clock the refresh was given rather than the wall.
+        self.clock = clock
         # Passed in rather than imported: `reading_route` imports this module, and an
         # unnamed destination ("") is still a notice the reader is shown.
         self.resolve_destination = resolve_destination
@@ -771,7 +775,7 @@ class CodexGoalModel:
     def _refusal(self) -> str:
         if not self.config.observer_model_enabled or self.config.model_calls_disabled:
             return "disabled"
-        answer = reading_policy.status(self.config, now=time.time())
+        answer = reading_policy.status(self.config, now=self.clock())
         return "" if answer["consent"] else "readings-off" if answer["off"] else answer["reason"]
 
     def metadata(self) -> dict[str, str]:
@@ -803,7 +807,7 @@ class CodexGoalModel:
                 _MODEL_IN_FLIGHT.discard(key)
 
     def _note(self) -> None:
-        answer = reading_policy.status(self.config, now=time.time())
+        answer = reading_policy.status(self.config, now=self.clock())
         if not answer["consent"]:
             raise reading_policy.RefusedError(answer)
         notice = reading_policy.note(
@@ -811,15 +815,17 @@ class CodexGoalModel:
             kind="goal",
             provider="codex",
             destination=self.resolve_destination() if self.resolve_destination else "",
-            content=reading_policy.WORDS_CONTENT_VERSION,
+            # The agent's messages ride with the user's (`_model_context`), so
+            # the notice names the tier that includes them.
+            content=reading_policy.CONTENT_VERSION,
             tool_output="",
-            now=time.time(),
+            now=self.clock(),
         )
         if notice is not None:
             self.notice = notice
         refusal = self._refusal()
         if refusal:
-            raise reading_policy.RefusedError(reading_policy.status(self.config, now=time.time()))
+            raise reading_policy.RefusedError(reading_policy.status(self.config, now=self.clock()))
 
     def _invoke(self, recent_text: str, entity_stage: str) -> str | None:
         instruction = (
@@ -855,7 +861,8 @@ class CodexGoalModel:
                 before_call=self._note,
             )
         except reading_policy.RefusedError as exc:
-            self.status = exc.answer["reason"]
+            # A stored off is named as one, though the cap outranks it in the answer.
+            self.status = "readings-off" if exc.answer["off"] else exc.answer["reason"]
             return None
         if status != "ok":
             self.status = status

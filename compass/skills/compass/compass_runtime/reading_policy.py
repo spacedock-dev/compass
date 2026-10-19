@@ -165,13 +165,22 @@ def _allowed(db: Any) -> dict[str, bool]:
 
 
 def _off(db: Any) -> bool:
-    return any(
-        db.execute(query).fetchone() is not None
+    """A stored refusal with no Allow beside it.
+
+    This build's off writes 0 for every provider and its Turn on clears them
+    (`_clear_off`), so both values stand together only after an older build's
+    Allow, which rewrote just the provider it allowed and left its own off's
+    zeros on the rest. That reader's last answer was Allow, so it reads as on.
+    """
+    values = {
+        value
         for query in (
-            "SELECT 1 FROM permission WHERE allowed = 0",
-            "SELECT 1 FROM provider_permission WHERE allowed = 0",
+            "SELECT allowed FROM permission",
+            "SELECT allowed FROM provider_permission",
         )
-    )
+        for (value,) in db.execute(query)
+    }
+    return 0 in values and 1 not in values
 
 
 def _notices(db: Any) -> dict[str, dict[str, Notice]]:
@@ -179,7 +188,18 @@ def _notices(db: Any) -> dict[str, dict[str, Notice]]:
     for kind, provider, destination, content, tool_output, at in db.execute(
         "SELECT kind, provider, destination, content, tool_output, at FROM notice"
     ):
-        if kind in NOTICE_KINDS and provider in PROVIDERS:
+        # Checked as `_disclosed` checks its rows: the page serialises these,
+        # and a locally rewritten row of another type would break the board.
+        if (
+            kind in NOTICE_KINDS
+            and provider in PROVIDERS
+            and isinstance(destination, str)
+            and isinstance(tool_output, str)
+            and isinstance(content, int)
+            and not isinstance(content, bool)
+            and isinstance(at, float)
+            and math.isfinite(at)
+        ):
             notices.setdefault(kind, {})[provider] = Notice(
                 kind=kind,
                 provider=provider,
@@ -194,15 +214,22 @@ def _notices(db: Any) -> dict[str, dict[str, Notice]]:
 def notice_due(
     answer: Status, *, kind: str, provider: str, destination: str, content: int, tool_output: str
 ) -> bool:
-    """Whether today's disclosure differs from the last notice for this kind and provider."""
+    """Whether today's disclosure goes beyond the last notice for this kind and provider.
+
+    A wider record covers a narrower press at the same destination: a lower
+    tier, or no tool output where the record named it. Otherwise a reader
+    alternating between a Claude Code session and one it reads on another
+    harness's behalf would be shown the notice on every press.
+    """
     previous = answer["notices"].get(kind, {}).get(provider)
     return (
         answer["consent"]
         and provider in PROVIDERS
         and (
             previous is None
-            or (previous["destination"], previous["content"], previous["tool_output"])
-            != (destination, content, tool_output)
+            or previous["destination"] != destination
+            or previous["content"] < content
+            or (bool(tool_output) and previous["tool_output"] != tool_output)
         )
     )
 
@@ -756,6 +783,31 @@ def note(
     if answer["reason"] == "store-unavailable":
         raise RefusedError(answer)
     return recorded
+
+
+def retract(config: RuntimeConfig, notice: Notice) -> None:
+    """Delete a recorded notice whose call never launched, so the next press shows it.
+
+    Only that exact row, so a record a later press made is kept. Best effort:
+    a store that cannot be written here shows nothing again, which is the
+    failure the reader would have had anyway.
+    """
+    with (
+        contextlib.suppress(OSError, ValueError, RuntimeError, _SQL_ERROR),
+        contextlib.closing(_connect(config, WRITE_WAIT_SEC)) as db,
+    ):
+        db.execute(
+            "DELETE FROM notice WHERE kind = ? AND provider = ? AND destination = ? "
+            "AND content = ? AND tool_output = ? AND at = ?",
+            (
+                notice["kind"],
+                notice["provider"],
+                notice["destination"],
+                notice["content"],
+                notice["tool_output"],
+                notice["at"],
+            ),
+        )
 
 
 def forget(config: RuntimeConfig, *, now: float | None = None) -> bool:

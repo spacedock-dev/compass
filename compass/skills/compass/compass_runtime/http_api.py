@@ -2045,7 +2045,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return None
         return runtime_reading.typed_window_start(facts, harness, sid, saved_at)
 
-    def _reading_refusal(self, payload: dict[str, Any]) -> int | None:
+    def _reading_refusal(self, payload: dict[str, Any], *, off: bool = False) -> int | None:
         """The status this press must be refused with, or None to proceed.
 
         Its own function rather than a ladder inside the handler, because
@@ -2064,21 +2064,27 @@ class _RequestHandler(BaseHTTPRequestHandler):
         poll, reconnect, resume, focus change or revision save carries it.
         """
         config = self.server.application.config
+        # Turn off readings also stops goal summaries, which need neither the
+        # annotation store nor a qualified reading provider, so an off is
+        # never refused for the absence of what Analyze needs.
+        available = off or (
+            config.annotations_enabled
+            and not config.model_calls_disabled
+            and annotation_store.any_reading_enabled()
+        )
         # A table rather than a ladder, for the reason the POST routes below
-        # are one: six conditions read as a list of what must be true, and a
+        # are one: the conditions read as a list of what must be true, and a
         # ladder of early returns puts this function over ruff's return cap
         # without making any of them clearer. Every condition is a pure read,
-        # so evaluating all six costs nothing and the order is documentation.
+        # so evaluating all of them costs nothing and the order is documentation.
         checks: tuple[tuple[bool, int], ...] = (
             # 503 rather than 404, for `_annotate`'s reason: under
             # `--no-annotations` the route exists and the store does not.
-            (not config.annotations_enabled, 503),
-            (config.model_calls_disabled, 503),
             # The button and this route read the same constants, so they agree
             # by construction and a local `curl` cannot outrun the check. Any
             # provider opens the route; which one may run is the route's
             # question, answered below from the harness.
-            (not annotation_store.any_reading_enabled(), 503),
+            (not available, 503),
             # A lured navigation reads nothing back, but it would still spend
             # the reader's capacity, which is the harm this route carries.
             (self._is_document_navigation() or not self._loopback_resource_ok(), 403),
@@ -2119,7 +2125,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
-        refusal = self._reading_refusal(payload)
+        refusal = self._reading_refusal(payload, off=payload.get("consent") == "off")
         if refusal is not None:
             self._reject(refusal)
             return
@@ -3026,6 +3032,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # No thread to run it on; `launch` has already freed the slot, so
             # the next press can start one. Nothing was spent. A Keep press
             # has settled by now, so its reply says so rather than a bare 503.
+            # Nothing was sent either, so the notice is withdrawn and the next
+            # press shows it.
+            if notice is not None:
+                reading_policy.retract(config, notice)
             if self._keep_outcome is None:
                 self._reject(503)
             else:
@@ -3230,7 +3240,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # Nothing to grant: the reading runs on the reader's words and its
             # cutoff says the checks were not sent and why (owner, Q5).
             tool_output = runtime_reading.ToolOutput(destination="", label=route["label"])
-        elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES and where:
+        elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
             press = runtime_project_context.press_checks(
                 application.config, application.state, harness, sid
             )
@@ -3241,13 +3251,6 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 changed_after=press.changed_after,
                 read_incomplete=press.read_incomplete,
                 passes_and_writes=press.passes_and_writes,
-            )
-        elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
-            # Named, and no grant for it when the reading ran: never given, or
-            # withdrawn in another tab after the press was admitted. The words
-            # are read and the cutoff says the checks were not sent and why.
-            tool_output = runtime_reading.ToolOutput(
-                destination="", label=route["label"], allowed=False
             )
         return {
             "tool_output": tool_output,

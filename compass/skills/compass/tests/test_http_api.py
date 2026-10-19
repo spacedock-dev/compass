@@ -3749,6 +3749,86 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(202, status)
         self.assertEqual(1, len(calls))
 
+    def test_a_press_whose_thread_cannot_start_leaves_the_notice_for_the_next(self) -> None:
+        config, state = self._runtime()
+        reading_policy.store_path(config).unlink()
+        real_start = threading.Thread.start
+        failing = [True]
+
+        def start(thread: threading.Thread) -> None:
+            if failing[0] and thread.name.startswith(runtime_reading_jobs.THREAD_PREFIX):
+                raise RuntimeError("can't start new thread")
+            real_start(thread)
+
+        with (
+            mock.patch.object(
+                annotation_store, "ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_PASSED
+            ),
+            self._counting_model() as calls,
+            self._serving(self._app(config, state)) as port,
+            mock.patch.object(threading.Thread, "start", start),
+        ):
+            status, _ = self._post(port, self._press())
+            self.assertEqual(503, status)
+            self.assertEqual({}, reading_policy.status(config, now=1_700_000_100.0)["notices"])
+            failing[0] = False
+            status, body = self._post(port, self._press())
+        self.assertEqual(202, status, body)
+        self.assertEqual("reading", json.loads(body)["notice"]["kind"])
+        self.assertEqual(1, len(calls))
+
+    def test_turning_readings_off_is_accepted_where_analyze_is_unavailable(self) -> None:
+        # Goal summaries need neither the annotation store nor a qualified
+        # reading provider, so their off switch must not depend on them.
+        cases: tuple[tuple[str, dict[str, Any], bool], ...] = (
+            ("annotations off", {"annotations_enabled": False}, True),
+            ("reading gates closed", {}, False),
+            ("model calls refused for the run", {"model_calls_disabled": True}, True),
+        )
+        for label, runtime_changes, any_enabled in cases:
+            with self.subTest(gate=label):
+                config, state = self._runtime(**runtime_changes)
+                with (
+                    mock.patch.object(
+                        annotation_store, "any_reading_enabled", return_value=any_enabled
+                    ),
+                    self._serving(self._app(config, state)) as port,
+                ):
+                    status, body = self._post(
+                        port, {"consent": "off", "press": True, "observer_model": 1}
+                    )
+                    lured, _ = self._post(
+                        port,
+                        {"consent": "off", "press": True, "observer_model": 1},
+                        headers={"Sec-Fetch-Site": "same-site"},
+                    )
+                self.assertEqual(200, status, body)
+                self.assertEqual(403, lured)
+                stored = dataclasses.replace(config, model_calls_disabled=False)
+                self.assertTrue(reading_policy.status(stored, now=1_700_000_100.0)["off"])
+
+    def test_readings_turned_off_mid_press_and_left_off_send_nothing(self) -> None:
+        config, state = self._runtime()
+
+        def turn_off() -> None:
+            reading_policy.set_consent(config, False, now=1_700_000_100.0)
+
+        with (
+            mock.patch.object(
+                annotation_store, "ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_PASSED
+            ),
+            self._counting_model(on_collect=turn_off) as calls,
+            self._serving(self._app(config, state)) as port,
+        ):
+            status, _ = self._post(port, self._press())
+            payload = self._data(port)
+        self.assertEqual(202, status)
+        self.assertEqual([], calls)
+        self.assertEqual([], self.outcomes, "a refused press wrote an outcome")
+        self.assertEqual({}, payload["reading_jobs"])
+        self.assertEqual("readings-off", payload["reading"]["reason"])
+        self.assertFalse(payload["reading"]["consent"])
+
     def _phase(self, config: Any, harness: str) -> str | None:
         job = runtime_reading.job(config, f"{harness}:s1")
         return job.phase if job else None

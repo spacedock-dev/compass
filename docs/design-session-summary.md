@@ -194,8 +194,11 @@ No session field is added.
 
 - `board.reading.consent: bool` is true unless an explicit stored off exists, model calls are
   disabled for this run, or the store is unavailable. A missing store or missing answer is on.
-  `board.reading.off: bool` reports an explicit stored off (any legacy or provider row with
-  `allowed=0`); disabled/unavailable responses use false because they do not read that answer.
+  `board.reading.off: bool` reports an explicit stored off: a legacy or provider row with
+  `allowed=0` and no row with `allowed=1`. This build's off writes 0 for every provider and its
+  Turn on clears them, so both values stand together only after an older build's Allow, which
+  rewrote just the provider it allowed and left its own off's zeros; that store reads as on.
+  Disabled/unavailable responses use false because they do not read that answer.
 - `board.reading.reason: str` is `""`, `"daily-cap"`, `"readings-off"`, `"run-disabled"` or
   `"store-unavailable"`. The rolling cap outranks off when both apply; run-disabled and
   store-unavailable outrank both. Consent remains true at the cap unless off. The cap, reservation,
@@ -205,9 +208,12 @@ No session field is added.
   `{kind: str, provider: str, destination: str, content: int, tool_output: str, at: number}`.
   `at` is Unix seconds; `destination` names where the words go or is `""` when unknown;
   `tool_output` names its destination or is `""` when omitted. Content is the server's tier:
-  `WORDS_CONTENT_VERSION` (1) without agent messages, `CONTENT_VERSION` (4) on Claude sessions.
-- Each `board.reading_routes[harness].notice_due: bool` says whether a reading notice differs from
-  that route's last record in destination, tier or tool-output destination, or has no record.
+  `WORDS_CONTENT_VERSION` (1) without agent messages, `CONTENT_VERSION` (4) with them (Claude
+  sessions and goal summaries).
+- Each `board.reading_routes[harness].notice_due: bool` says whether a reading notice goes beyond
+  that route's last record: no record, another destination, a wider tier, or a tool-output
+  destination the record does not name. A narrower press to the same destination is covered by a
+  wider record, so fallback routing that alternates tiers under one provider shows it once.
   It is false while off, disabled or unavailable; it may be true at the cap, though no reading
   can run then. The existing route's `provider`, `vendor`, `label`, `words_destination`,
   `destination`, `disclosure` and `disclosure_parts` name the provider, content and destination
@@ -218,9 +224,13 @@ No session field is added.
   `board.reading_jobs["harness:sid"].notice` carries it through reloads. Jobs are removed when
   finished, as before; afterward `board.reading.notices` retains the last record. No new finished
   job persistence or session identifier is added to the permission store. A notice-store failure
-  refuses the press with `store-unavailable`, without launching or charging a model.
+  refuses the press with `store-unavailable`, without launching or charging a model. A press whose
+  job cannot launch withdraws the notice it recorded, so the next press carries it.
 - Turn off readings keeps the request `{consent: "off", press: true, observer_model: 1}`. It
-  stores off for all providers, clears notices, and replies 200. Subsequent presses reply 403
+  stores off for all providers, clears notices, and replies 200. It is accepted under
+  `--no-annotations`, with no qualified reading provider, and under `--no-observer-model`, since
+  goal summaries need none of those; the loopback, navigation, `observer_model` and `press` guards
+  still apply. Subsequent presses reply 403
   with `reading.reason: "readings-off"` and `reading.consent: false` (429 if the cap is also spent).
   Turning back on keeps `allow: true`, the route's `provider` and `words_destination`, and its
   `tool_output` destination when named. Stale Allow destinations still reply 409
@@ -229,13 +239,15 @@ No session field is added.
 - Project-context `observer_model.enabled: bool` is true by default and false under
   `--no-observer-model` or its alias. `observer_model.disclosure: str` states what a focused
   refresh sends, the configured destination and the off switches. `observer_model.notice?` has
-  the same record shape with `kind: "goal"`, `provider: "codex"`, content 1 and `tool_output: ""`;
-  it appears only when an actual goal call records a due notice, including a failed model attempt.
+  the same record shape with `kind: "goal"`, `provider: "codex"`, content 4 (the prompt carries the
+  agent's messages) and `tool_output: ""`; it appears only when an actual goal call records a due
+  notice, including a failed model attempt and a call made for an active child session.
   The page must still send `observer_model=1` on the focused refresh (the reader's act), with
   refresh, loopback and non-navigation guards unchanged, but removes its browser consent card.
   Passive or cached reads do not record notices. Goal status is `readings-off` for stored off,
   `disabled` for the run's model refusal, and `consent-required` only when no reader request was
-  supplied. Notice storage failure refuses a goal call as `store-unavailable`.
+  supplied. A stored off is `readings-off` even when the rolling cap is also spent. Goal calls
+  are not charged to that cap. Notice storage failure refuses a goal call as `store-unavailable`.
 - Legacy `providers`, `words`, `rebind` and `tool_output` keep their old explicit-Allow coverage,
   narrower words coverage, rebinding explanations and explicit tool-output grants. They do not
   describe default-on admission. The current page still reads them; the frontend lane must remove

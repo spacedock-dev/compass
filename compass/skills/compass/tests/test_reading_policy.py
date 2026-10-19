@@ -84,7 +84,11 @@ class ReadingPolicyTest(unittest.TestCase):
         self.assertIsNotNone(note(destination="gateway.example"))
         self.assertIsNotNone(note(kind="goal"))
         self.assertIsNotNone(note(content=reading_policy.CONTENT_VERSION + 1))
-        self.assertIsNotNone(note(tool_output=""))
+        # A narrower press is covered by the wider record; a new tool-output
+        # destination is not.
+        self.assertIsNone(note(tool_output=""))
+        self.assertIsNone(note(content=reading_policy.WORDS_CONTENT_VERSION))
+        self.assertIsNotNone(note(tool_output="gateway.example"))
         reading_policy.set_consent(self.config, False, now=101.0)
         self.assertEqual({}, reading_policy.status(self.config, now=101.0)["notices"])
         self.assertIsNone(note())
@@ -165,8 +169,125 @@ class ReadingPolicyTest(unittest.TestCase):
                     db.execute(statement)
                     db.commit()
                 answer = reading_policy.status(self.config, now=102.0)
-                self.assertTrue(answer["off"])
+                # Alone beside this build's Allow, a provider row's zero is not
+                # an off (an older build's off always writes the legacy row too),
+                # but the notices go either way.
+                self.assertEqual(table == "permission", answer["off"])
                 self.assertEqual({}, answer["notices"])
+
+    def test_an_older_builds_allow_after_its_off_reads_as_on(self) -> None:
+        # That build's Turn off wrote 0 for every provider and its Allow rewrote
+        # only the provider allowed, so the reader's last answer was Allow.
+        reading_policy.set_consent(self.config, False, now=100.0)
+        assert runtime_io.sqlite_module is not None
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+        ) as db:
+            db.execute("INSERT OR REPLACE INTO provider_permission VALUES ('claude', 1)")
+            db.execute("INSERT OR REPLACE INTO permission_destination VALUES ('claude', 'A')")
+            db.execute("INSERT OR REPLACE INTO permission_disclosure VALUES ('claude', 4, 'A')")
+            db.commit()
+        answer = reading_policy.status(
+            self.config, now=101.0, provider="claude", destinations={"claude": "A"}
+        )
+        self.assertFalse(answer["off"])
+        self.assertTrue(answer["consent"])
+        self.assertEqual("", answer["reason"])
+        self.assertEqual({"codex": False, "claude": True}, answer["providers"])
+        self.assertEqual(
+            "",
+            reading_policy.reserve(self.config, now=102.0, provider="claude", destination="A")[
+                "reason"
+            ],
+        )
+        # And this build's off still stores off over it.
+        self.assertTrue(reading_policy.set_consent(self.config, False, now=103.0)["off"])
+
+    def test_alternating_routes_show_the_reading_notice_once(self) -> None:
+        # Fallback routing: Claude Code reads its own sessions with tool output
+        # and another harness's at the words tier, under one provider record.
+        presses = (
+            (reading_policy.CONTENT_VERSION, "Anthropic"),
+            (reading_policy.WORDS_CONTENT_VERSION, ""),
+        ) * 2
+        shown = [
+            reading_policy.note(
+                self.config,
+                kind="reading",
+                provider="claude",
+                destination="Anthropic",
+                content=content,
+                tool_output=tool_output,
+                now=100.0 + index,
+            )
+            is not None
+            for index, (content, tool_output) in enumerate(presses)
+        ]
+        self.assertEqual([True, False, False, False], shown)
+        narrow_first = make_runtime(
+            state_dir=Path(self.home.name) / "narrow", state_home=self.home.name
+        )[0]
+        shown = [
+            reading_policy.note(
+                narrow_first,
+                kind="reading",
+                provider="claude",
+                destination="Anthropic",
+                content=content,
+                tool_output=tool_output,
+                now=100.0 + index,
+            )
+            is not None
+            for index, (content, tool_output) in enumerate(presses[1:])
+        ]
+        self.assertEqual([True, True, False], shown)
+
+    def test_a_tampered_notice_row_is_not_published(self) -> None:
+        reading_policy.note(
+            self.config,
+            kind="goal",
+            provider="codex",
+            destination="OpenAI",
+            content=reading_policy.CONTENT_VERSION,
+            tool_output="",
+            now=100.0,
+        )
+        assert runtime_io.sqlite_module is not None
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+        ) as db:
+            # Values the columns' affinity cannot coerce back to the right type.
+            for row in (
+                ("reading", "codex", b"OpenAI", 1, "", 100.0),
+                ("reading", "claude", "Anthropic", "four", "", 100.0),
+                ("summary", "codex", "OpenAI", 1, b"OpenAI", 100.0),
+                ("summary", "claude", "Anthropic", 1, "", "soon"),
+                ("goal", "claude", "Anthropic", 1, "", float("inf")),
+            ):
+                db.execute("INSERT OR REPLACE INTO notice VALUES (?, ?, ?, ?, ?, ?)", row)
+            db.commit()
+        notices = reading_policy.status(self.config, now=101.0)["notices"]
+        self.assertEqual(["goal"], list(notices))
+        self.assertEqual("OpenAI", notices["goal"]["codex"]["destination"])
+
+    def test_retract_removes_only_the_notice_it_names(self) -> None:
+        args: dict[str, Any] = {
+            "kind": "reading",
+            "provider": "codex",
+            "destination": "OpenAI",
+            "content": reading_policy.WORDS_CONTENT_VERSION,
+            "tool_output": "",
+        }
+        first = reading_policy.note(self.config, **args, now=100.0)
+        assert first is not None
+        reading_policy.retract(self.config, first)
+        self.assertEqual({}, reading_policy.status(self.config, now=101.0)["notices"])
+        again = reading_policy.note(self.config, **args, now=102.0)
+        self.assertIsNotNone(again)
+        reading_policy.retract(self.config, first)
+        self.assertEqual(
+            again, reading_policy.status(self.config, now=103.0)["notices"]["reading"]["codex"]
+        )
 
     def test_answer_survives_a_new_client_and_forget_preserves_spend(self) -> None:
         self.assertTrue(reading_policy.status(self.config, now=100.0)["consent"])

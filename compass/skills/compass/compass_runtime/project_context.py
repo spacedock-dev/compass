@@ -448,6 +448,7 @@ def _observe_session(
         consent=model_consent,
         session_key=f"{harness}:{sid}",
         resolve_destination=lambda: reading_route.destination(reading_route.CODEX),
+        clock=lambda: now,
     )
     model = caller if config.observer_model_enabled and model_consent else None
     result = observer.analyze(
@@ -7988,6 +7989,29 @@ def _with_command_attention(
     return semantic
 
 
+def _child_workflow(child: Mapping[str, Any]) -> dict[str, Any]:
+    workflow_entity = child.get("workflow_entity")
+    workflow_stage = child.get("workflow_stage")
+    workflow_binding = child.get("workflow_binding")
+    if not isinstance(workflow_entity, str) or not isinstance(workflow_stage, str):
+        return {}
+    bound = isinstance(workflow_binding, str) and bool(workflow_binding)
+    return {
+        "workflow_entity": workflow_entity,
+        "workflow_stage": workflow_stage,
+        **({"workflow_binding": workflow_binding} if bound else {}),
+        **(
+            {
+                "work_item_id": semantic_history.workflow_work_item_id(
+                    str(workflow_binding), workflow_entity
+                )
+            }
+            if bound
+            else {}
+        ),
+    }
+
+
 def _active_child_assignments(
     config: RuntimeConfig,
     state: RuntimeState,
@@ -7996,7 +8020,15 @@ def _active_child_assignments(
     now: float,
     refresh: bool,
     model_consent: bool = False,
+    notices: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
+    """The focused session's active children and what each is doing.
+
+    A child's goal call records the goal notice before the parent's call can,
+    so every notice a child records is appended to `notices` whatever its
+    assignment came to: dropped here, the parent finds none due and the reader
+    is never told what left the machine.
+    """
     hierarchy = session.get("subagent_hierarchy")
     if not isinstance(hierarchy, list):
         return []
@@ -8017,30 +8049,7 @@ def _active_child_assignments(
             "observer_sid": child.get("observer_sid"),
             **({"parent_session": parent_session} if parent_session else {}),
         }
-        workflow_entity = child.get("workflow_entity")
-        workflow_stage = child.get("workflow_stage")
-        workflow_binding = child.get("workflow_binding")
-        if isinstance(workflow_entity, str) and isinstance(workflow_stage, str):
-            row.update(
-                {
-                    "workflow_entity": workflow_entity,
-                    "workflow_stage": workflow_stage,
-                    **(
-                        {"workflow_binding": workflow_binding}
-                        if isinstance(workflow_binding, str) and workflow_binding
-                        else {}
-                    ),
-                    **(
-                        {
-                            "work_item_id": semantic_history.workflow_work_item_id(
-                                workflow_binding, workflow_entity
-                            )
-                        }
-                        if isinstance(workflow_binding, str) and workflow_binding
-                        else {}
-                    ),
-                }
-            )
+        row.update(_child_workflow(child))
         exact = child.get("assignment")
         if isinstance(exact, str) and exact:
             assignments.append(
@@ -8073,6 +8082,8 @@ def _active_child_assignments(
         if observed is None:
             assignments.append({**row, "assignment": None, "confidence": "unavailable"})
             continue
+        if notices is not None and observed.get("notice") is not None:
+            notices.append(observed["notice"])
         goal = observed.get("goal")
         if not isinstance(goal, str) or not goal or goal == observer.NO_GOAL:
             assignments.append({**row, "assignment": None, "confidence": "unavailable"})
@@ -8220,7 +8231,7 @@ def _kept_message_reach(
     return {"tail_truncated": not reached.reach.reached, "tail_start": reached.reach.earliest}
 
 
-def collect(  # noqa: PLR0913 - the press's window rides beside the focus it belongs to
+def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the focus it belongs to
     config: RuntimeConfig,
     state: RuntimeState,
     sessions: Sequence[Mapping[str, Any]],
@@ -8260,6 +8271,7 @@ def collect(  # noqa: PLR0913 - the press's window rides beside the focus it bel
     unavailable: list[dict[str, str]] = []
     briefings = 0
     child_assignments: list[dict[str, Any]] = []
+    child_notices: list[Any] = []
     support_totals = {
         "tool_calls": 0,
         "dispatch_builds": 0,
@@ -8289,6 +8301,7 @@ def collect(  # noqa: PLR0913 - the press's window rides beside the focus it bel
                 now=now,
                 refresh=refresh,
                 model_consent=model_consent,
+                notices=child_notices,
             )
         if (
             harness in observer.DIRECTION_HARNESSES
@@ -8394,10 +8407,17 @@ def collect(  # noqa: PLR0913 - the press's window rides beside the focus it bel
     return {
         "observer_model": {
             "enabled": config.observer_model_enabled and not config.model_calls_disabled,
-            **(
-                {"notice": next(row["notice"] for row in observers if "notice" in row)}
-                if any("notice" in row for row in observers)
-                else {}
+            # Children are observed before the parent, so a child's call is the
+            # one that records the notice when both are due.
+            **next(
+                (
+                    {"notice": notice}
+                    for notice in (
+                        *child_notices,
+                        *(row["notice"] for row in observers if "notice" in row),
+                    )
+                ),
+                {},
             ),
             "max_prompt_bytes": observer.OBSERVER_MODEL_MAX_PROMPT_BYTES,
             "disclosure": (

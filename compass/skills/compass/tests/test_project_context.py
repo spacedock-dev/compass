@@ -651,6 +651,72 @@ class ProjectContextTest(unittest.TestCase):
         self.assertNotIn("?", on["observer_model"]["disclosure"])
         self.assertIn("Turn off readings", on["observer_model"]["disclosure"])
 
+    def test_a_childs_goal_call_publishes_the_notice_it_recorded(self) -> None:
+        # The child is observed before its parent, so its call is the one that
+        # records the notice; the parent then finds none due.
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        reading_policy.store_path(self.config).unlink(missing_ok=True)
+        state = build_runtime_state(self.config, started=self.NOW)
+        parent = {
+            "project": "repo/proj",
+            "harness": "codex",
+            "sid": "parent-thread",
+            "last_activity": self.NOW,
+            "active": True,
+            "subagent_hierarchy": [
+                {"name": "Volta", "depth": 1, "parent_name": None, "observer_sid": "child"}
+            ],
+        }
+        for goal in ("Improve the assignment roster", observer.NO_GOAL):
+            with self.subTest(goal=goal):
+                reading_policy.set_consent(self.config, False, now=self.NOW)
+                reading_policy.set_consent(self.config, True, now=self.NOW)
+
+                def observe_child(*_args: Any, child_goal: str = goal, **_kwargs: Any) -> Any:
+                    notice = reading_policy.note(
+                        self.config,
+                        kind="goal",
+                        provider="codex",
+                        destination="OpenAI",
+                        content=reading_policy.CONTENT_VERSION,
+                        tool_output="",
+                        now=self.NOW,
+                    )
+                    return {
+                        "goal": child_goal,
+                        "observed_at": self.NOW,
+                        "snapshot_status": "refreshed",
+                        "notice": notice,
+                    }
+
+                with (
+                    mock.patch.object(
+                        observer,
+                        "resolve_transcript",
+                        side_effect=lambda _c, _s, _h, sid: (
+                            "/tmp/child.jsonl" if sid == "child" else None
+                        ),
+                    ),
+                    mock.patch.object(
+                        project_context, "_observe_session", side_effect=observe_child
+                    ),
+                ):
+                    result = project_context.collect(
+                        self.config,
+                        state,
+                        [parent],
+                        "repo/proj",
+                        now=self.NOW,
+                        refresh=True,
+                        model_consent=True,
+                        focus=("codex", "parent-thread"),
+                    )
+                notice = result["observer_model"]["notice"]
+                self.assertEqual("goal", notice["kind"])
+                self.assertEqual("OpenAI", notice["destination"])
+                self.assertNotIn("notice", result["child_assignments"][0])
+
     def test_refresh_without_model_consent_uses_local_analysis(self) -> None:
         # Given: model analysis is enabled but no consent was supplied.
         self.config = dataclasses.replace(self.config, observer_model_enabled=True)

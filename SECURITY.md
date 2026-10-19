@@ -1085,8 +1085,9 @@ invocation carries session-derived text, which is why invariant 1 names it separ
 widening the quota exception to cover it. The consent below is not the quota fetch's: a call a
 reader's action starts runs only on that action, and an unasked check runs only under
 `--unasked-readings` and DEC-18's preconditions. Every kind of call announces itself the first time
-it runs, and each kind has its own off switch beside that notice, where `--no-usage` is a startup
-flag alone.
+it runs, with Turn off readings beside that notice: one off switch for readings and goal summaries
+alike. `--no-observer-model` refuses all of them for the run, where `--no-usage` is a startup flag
+alone.
 
 The bounds, all of which hold together:
 
@@ -1102,12 +1103,13 @@ The bounds, all of which hold together:
     they make no invocation.
   - The notice. The first call of each kind on this machine shows a non-blocking notice naming
     what is sent (the words, and tool output where it is included) and to which provider and
-    destination, with a one-press off switch beside it. A changed destination or content tier shows the notice
-    again, naming the new destination, rather than a blocking Allow. It is disclosed this way, and
+    destination, with a one-press off switch beside it. A changed destination or a wider content tier
+    shows the notice again, naming the new destination, rather than a blocking Allow. It is disclosed this way, and
     not left silent like the quota fetch, for a stronger reason: this one spends their capacity
     rather than reading a number.
-  - The off switches. Turn off readings and Turn off summaries each stop their kind of call until
-    turned back on, and an answer of off already stored is kept across the upgrade.
+  - The off switch. Turn off readings stops readings and goal summaries alike until turned back
+    on, and an answer of off already stored is kept across the upgrade. Session summaries are not
+    built yet; the ruling gives them a Turn off summaries of their own.
     `--no-observer-model` still refuses every model call. `--allow-tool-output` and
     `--observer-model` are accepted no-ops for one release.
 - Goal summaries are on by default. The browser still sends `observer_model=1` on the focused
@@ -1115,7 +1117,9 @@ The bounds, all of which hold together:
   does not authorize sending transcripts. This parameter is not per-user authentication: a local
   process can imitate it. The per-session in-flight gate and prompt and time bounds limit that
   exposure. Turn off readings stops goal summaries too. No per-run event capability is implemented
-  on this route.
+  on this route. Goal calls are not charged to the 100-attempt rolling cap below and have no rolling
+  cap of their own: what bounds them is one call in flight per session, the refresh guards, and a
+  focused refresh reaching only its session and up to three active child sessions.
 - The operator's own harness, never a Compass credential. Compass invokes the harness the
   operator has already installed and signed in, non-interactively. It holds no API key, reads no
   new secret, and adds no endpoint to the list in Usage quota reads. Nothing about token handling
@@ -1157,15 +1161,17 @@ stated here rather than implied.
 
 The first Analyze drift press runs and shows a non-blocking notice naming the provider,
 destination and content sent, including the agent's words and tool output where included. No prior
-Allow is needed. A notice is recorded per kind and provider on this machine; changing its
-destination, content tier or tool-output destination shows it again. Goal summaries use the same
+Allow is needed. A notice is recorded per kind and provider on this machine; a new destination, a
+wider content tier or a tool-output destination the last notice did not name shows it again, and a
+narrower press to the same destination does not. Goal summaries use the same
 notice mechanism and are on by default on a focused refresh carrying `observer_model=1`.
 
 The answer and notices live under `COMPASS_HOME` (by default `~/.compass`) in
 `compass-reading-permission.sqlite3`, shared by tabs and respawned daemons. Turn off readings and
-`--forget` store an explicit off, block readings and goal summaries, and clear notices. Turning
-readings back on shows the notice again. An off saved by an older build stays off after upgrade;
-an old Allow reads as on. `--no-observer-model` refuses every model call for the run.
+`--forget` store an explicit off, block readings and goal summaries, and clear notices, so after
+`--forget` they stay off until Turn on. Turning readings back on shows the notice again. An off
+saved by an older build stays off after upgrade; an old Allow reads as on, including an older
+build's Allow given after its own off, which left that off's other rows in place. `--no-observer-model` refuses every model call for the run.
 
 The same SQLite store holds only that answer, notice rows (kind, provider, destination, content
 tier, tool-output destination and time), model-attempt timestamps and, for 30 days, the
@@ -1218,7 +1224,7 @@ the same home made in between, or one landing between the check and the job, ans
 
 ### Observer model calls
 
-Goal summaries are on by default unless readings are off or `--no-observer-model` was supplied and their disclosure accepted.
+Goal summaries are on by default unless readings are turned off or `--no-observer-model` is supplied.
 `observer.CodexGoalModel` sends a generated prompt to the installed Codex CLI, which uses its
 own authentication to reach OpenAI. `reading.CodexReadingModel` is the second caller and goes
 through the same `observer.codex_exec`, so the two share one set of sandbox flags rather than two

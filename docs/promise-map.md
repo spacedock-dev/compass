@@ -147,8 +147,9 @@ the work record read cannot reassure, and incompleteness alone establishes no de
 estimate reads checks and file paths, not the meaning of your intent; too little evidence reads
 "Not enough recorded yet"
 ([DEC-26](design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
-A reading reads them only after you allow tool output for the destination the page names, and
-where Compass cannot name that destination it sends none and says so. A recorded pass is what the
+A reading includes them by default and names them, with their destination, in the notice its
+first press shows; Turn off readings or `--no-observer-model` stops them. Where Compass cannot name
+that destination it sends none and says so. A recorded pass is what the
 tool reported, never an inspection of the work, and a reading labels it that way; a result the
 record does not carry reads as not recorded rather than as a pass.
 
