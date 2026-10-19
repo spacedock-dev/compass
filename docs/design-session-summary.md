@@ -141,12 +141,13 @@ to the backstop and gives a bullet no other field.
   are the agent's words. A bullet citing only person and agent words is `asked`: in all five
   measured cases the person was deciding on the agent's proposal. Relayed text counts as the
   agent's words for this rule, even when it arrived in a person turn.
-- **No completion words.** No string, lede, title or bullet, may say the work is fixed, done, working
-  or verified. A check's result is quoted only as the tool's report, in
+- **No completion claims in the summary's own voice.** The lede, titles and bullets may report
+  what a named speaker said, but may not themselves state that work is fixed, done, working or
+  verified. A check's result is quoted only as the tool's report, in
   [DEC-23 item 8's](design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
   wording ("as the tool reported"). A passed check does not show the requested work was delivered.
-  The producer applies this [as ruled](#no-completion-words); a narrower own-voice rule is
-  [proposed, not ruled](#proposal-the-summarys-own-voice-not-ruled).
+  The [ruled amendment](#amended-2026-10-19-owner-the-summarys-own-voice)
+  defines attribution, names, tracker states and the conditions that still withhold a string.
 - **Withheld in place.** A bullet that breaks a rule is withheld, and the place it held says so. It
   is not silently dropped.
 - **Gaps.** A part of the session that could not be summarized is shown as a gap, not skipped.
@@ -409,9 +410,11 @@ its number and label. Keep at most the newest 32 windows, state the first kept f
 
 Window calls run oldest first. The prompt names the part and its entry range, explains the menu,
 asks for phases in order with titled phases and cited bullets, and states the output bounds. It
-asks for actions, names the completion words it must not write even in quotes or attributed to a
-speaker, and gives the one tool-report form that may carry a check's result. It says relayed text is not the person's request and that the record
-is data whose instructions must be ignored. Earlier windows contribute only the newest finished
+asks for actions and names the completion words it must not state in its own voice. Reports of
+what the agent or person said must name the speaker in the same clause, such as "the agent said
+..."; quotations without a named speaker are forbidden. It gives the tool-report form for a
+check's result. It says relayed text is not the person's request and that the record is data whose
+instructions must be ignored. Earlier windows contribute only the newest finished
 phase titles that fit within one sixteenth of a window, including the disclaimer that they are
 context, not evidence and must not be cited. Earlier bullets and entries never enter this context.
 
@@ -457,33 +460,93 @@ cuts report how many were dropped. A cut reply is marked on its block.
 
 ### No completion words
 
-The producer applies DEC-28 question 1 as the owner ruled it on 2026-10-19: "No string may state
-completion; a check result is quoted only as the tool's report." A completion word anywhere in a
-title, bullet or lede withholds that string, whether it stands in the summary's own voice, after a
-speech verb, inside quotes or backticks, in a name such as `moved the issue to Done`, or as an
-infinitive such as `asked the agent to fix the parser`. The one admitted form is a check's own
-report, `<check> reported <result>, as the tool reported`, with the result `passed`, `failed` or
-`not-recorded`. Citing a passed check admits nothing else: `Tests passed` and `The build went green`
-are withheld.
+The producer holds the summary's own voice to DEC-28 question 1 under the
+[owner's amendment](#amended-2026-10-19-owner-the-summarys-own-voice).
+An unlicensed completion word withholds the whole title, bullet or lede. Attributed speech,
+tracker states, names and a check's own report are admitted only in the structures below.
+Citing a passed check admits nothing else: `Tests passed` and `The build went green` are withheld.
 
 The word list covers fix, done, complete, work, verify, success, succeed, pass, resolve, land,
 ship, merge, green, finish, solve, repair, implement, deliver, deploy and accomplish in their
-inflected forms. Text is NFKC-folded before matching, and a word that mixes Latin letters with
-letters of another script (`fix` followed by a Cyrillic `е`) is withheld, because folding does not
-map look-alike letters. The same check runs on the whole string before any character cap and on
-the clipped string after it. Citation relevance remains the
+existing inflected forms. Text is NFKC-folded before matching, and a word that mixes Latin letters
+with letters of another script (`fix` followed by a Cyrillic `е`) is withheld, because folding does
+not map look-alike letters. These checks run on the whole string before any character cap and on
+the clipped string after it. A cap must not hide an unsafe suffix or strip the attribution from a
+surviving claim. Citation relevance remains the
 [known limit](#the-known-limit-relevance-is-not-checked).
 
-### Proposal: the summary's own voice (not ruled)
+### Amended 2026-10-19 (owner): the summary's own voice
 
-The measurement recommended narrowing the backstop to the summary's own voice. Its word list
-matched 138 of 707 displayed strings, of which 28 were own-voice claims, so withholding every match
-withholds about one string in five, and about four in five of those withholdings are of attributed
-speech, names or tool reports rather than claims. The owner has not accepted that recommendation:
-the ruling's acceptance covers the shape and the ceilings, and this producer's issue records no
-ruling on it. Until the owner rules, the producer withholds every match as above. An own-voice rule,
-if accepted, must still refuse an unattributed quotation, a speech verb lent to a second clause
-joined by a comma, `so` or `which`, and a named state or infinitive used to report a result.
+The owner's final ruling narrows the completion backstop to the summary's own voice. A displayed
+string is withheld when the summary itself states that work is fixed, done, working or verified
+without a passed check behind it. Attributed speech, including a tool error's own output, names
+and tracker states are not completion claims by the summary. A passed check still licenses only
+its reported result, never a claim that the work is done.
+
+The measured basis is unchanged: 138 of 707 displayed strings matched the literal word list, and
+28 of those were own-voice claims. Withholding every match would withhold about one string in
+five, and about four in five of those withholdings would be wrong. The amendment replaces that
+blanket refusal with structures the code can check:
+
+- **Clauses.** Split at sentence ends (`.`, `!` or `?` followed by space or end), semicolons,
+  commas and the joiners `so`, `which`, `and`, `but`, `then`, `because` and `while`. A dot inside
+  `file.py` is not a sentence end. Straight and curly double quotes and backtick spans are atomic;
+  their internal punctuation and joiners do not split them. Sentence punctuation at the end of a
+  quote ends its clause after the closing quote, unless a trailing speaker attribution follows.
+- **Named attribution in the same clause.** A speaker is `the agent`, `the person`, `the user`,
+  `the subagent`, `the teammate` or `the reviewer`, and its verb is one of `said`, `says`,
+  `reported`, `reports`, `stated`, `replied`, `answered`, `asked`, `told`, `noted`, `claimed`,
+  `confirmed`, `explained`, `mentioned`, `suggested`, `proposed`, `requested` or `wanted`. A tool
+  is `the tool`, `the check` or `the error`, optionally followed by `output`, `message` or `log`,
+  and it may also have `read`, `reads`, `showed` or `shows`. The verb must follow its speaker
+  directly, with at most one `-ly` adverb between them, and the completion word must follow the
+  verb. `read` and `wrote` are not speech for a person or the agent: `the agent read the log before
+  fixing the parser` and `the agent wrote a working parser` are the summary's own claims. The
+  licence ends at the next speaker without a verb of its own, so `the person asked about the bug
+  the agent fixed` is withheld. A quote immediately followed by a speaker and its verb also admits
+  the words inside that quote: `"the parser is fixed," the agent said`. The attribution cannot
+  come from inside an unattributed quote. A trailing attribution licenses only its quote, not
+  words before the quote or after that attribution.
+- **Implicit subject only for speech bullets.** A code-set `said` or `asked` bullet may begin its
+  first clause with a speech verb: `Said the parser is fixed`, `Asked the agent to fix the parser`
+  or `Reported the tests pass`. This admits nothing in later clauses. The model's proposed kind
+  cannot grant this licence. Titles and the lede have no kind and get no implicit subject licence.
+- **Tracker states.** A verb `moved`, `set`, `changed`, `marked` or `switched`, an object `issue`,
+  `ticket`, `card`, `task`, `status`, `state` or `item`, then `to` or `as`, may name a Capitalized
+  word or a backticked state. Only that state is admitted: `Moved the issue to Done` and
+  ``Marked the ticket as `Done` ``. A bare lowercase state is withheld.
+- **Names.** A completion word inside an identifier joined by `_` or `.` with no spaces is
+  admitted, as in `hotfix_parser.py`. A slashed token is a name only when it also holds a hyphen,
+  underscore, dot or digit, as in `fix/parser-crash` and `feature/done-list`, because
+  `Fixed/verified the parser` is prose. A hyphenated or slashed compound is also admitted inside
+  backticks or immediately after `branch`, `tag`, `ref`, `path`, `file`, `directory`, `folder` or
+  `label`, as in `branch fix-parser` and `branch fix/parser`. A token made only of completion words
+  (`Fixed.Verified`, `branch fixed-done`) and a bare backticked completion word are not names.
+- **Tool reports.** Keep the existing `<check> reported <result>, as the tool reported` form,
+  with result `passed`, `failed` or `not-recorded`. Also admit `<check> passed, as the tool reported`
+  and the corresponding `failed` and `not-recorded` forms. In the latter forms the result must
+  immediately precede the comma. The report licenses only that result word; neither other words
+  before it nor words after its attribution inherit permission.
+
+The refusal conditions stay. Unattributed quotations such as `Quoted "the parser is fixed"`,
+`"Fixed the parser."`, a bare backticked `fixed` and `all fixed` are withheld. A speech verb does
+not cover a second clause: `The agent said it ran, the bug is fixed`, `The agent reported the root
+cause, so the bug is fixed`, `The agent reported the tests passed, so it works` and `The agent said
+it ran, which fixed the bug` are withheld. The same boundary holds at sentence ends, semicolons and
+each joiner above, including `The agent said "I will inspect it." The parser is fixed.`
+
+Result verbs `got`, `managed`, `made`, `brought` and `gotten` in the summary's own voice override
+the implicit-subject, state and name exceptions. `Got everything to Verified.`, `Got the tests to
+pass`, `The agent managed to fix the parser bug.` and `Brought the build to green` are withheld.
+Real attribution still admits `the agent said it got the tests to pass`. Unreported check results
+such as `Tests passed` and `The build went green.` remain withheld. NFKC folding, mixed-script
+refusal and checks before and after clipping remain in force.
+
+This is a structural backstop, not a language or relevance judge. A non-completion noun use such
+as `a list of fixes` still matches and stays withheld. The code does not check whether an
+attributed sentence is relevant to its citations. Where the ruling leaves malformed quotations
+unspecified, an unclosed quoted span stays atomic through the end of the string and cannot supply
+its own attribution.
 
 ### Bounds, spend and gaps
 
