@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 1884747,
+    "bytes": 1884999,
     "file": "react.html",
-    "sha256": "a463ef9d1df5b26ab1ee434b588defe089ed01a65d795365ec1baea67585d8a5"
+    "sha256": "7b1bf184a77e1daae2860a46a5390418e9e608ac18421175efb4e5cf4e65eae0"
   },
   "format": 1,
   "frontend": "react",
@@ -1019,7 +1019,7 @@
       },
       {
         "file": "frontend/src/sample/SampleSession.tsx",
-        "sha256": "603d7daefe10fbfcd769dd96354a7a0fcaf968ba328f1c6c2025fa4d011e28f9"
+        "sha256": "599b335b2ec79397c8cf7627407d31398a70500c48f5c3361ffe39a7fcaf8ebe"
       },
       {
         "file": "frontend/src/sample/ViewOnly.tsx",
@@ -1027,7 +1027,7 @@
       },
       {
         "file": "frontend/src/sample/fixture.ts",
-        "sha256": "e741ee6113f9fe544affedf70637ab7967c90e93904df2a4afb435dec3e1dbff"
+        "sha256": "8171a36f6f7a4ef8fa7820895f99f5f3a5aae1c290f5b9b0e6d5651d4bee9a91"
       },
       {
         "file": "frontend/src/sample/held.ts",
@@ -1042,12 +1042,16 @@
         "sha256": "f6fffafd50677779afb719866ba9aa8d7f3e751146b8fb78f6a0685182e9529b"
       },
       {
+        "file": "frontend/src/sample/paged.testing.ts",
+        "sha256": "6ccdd907bb4a7926f5363d6d8b5f31c82c3dc7467a6438b87f263290a12dbe0d"
+      },
+      {
         "file": "frontend/src/sample/sampleFetch.ts",
-        "sha256": "6e4f7d1a320226ddeab2a6241ae4b421d530837474b956f32e73884643d0f676"
+        "sha256": "7fb51d3a8b1352eafca012f74f52677bc96e2f2a2c950b7ab6b2baae31cec2dd"
       },
       {
         "file": "frontend/src/sample/sampleShell.ts",
-        "sha256": "1f27944ca8663c907e612629224ba295299c785d53103a61a6df0aa7f2e88df0"
+        "sha256": "e886c8defc5eacb04c0ab7d028a46d92ca5c195037623ddf1c17946b704c65de"
       },
       {
         "file": "frontend/src/sample/session.fixture.json",
