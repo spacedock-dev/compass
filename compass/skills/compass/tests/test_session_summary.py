@@ -201,39 +201,53 @@ class SessionSummaryTest(unittest.TestCase):
         self.assertIn("NOT written by the person", model.prompts[0])
         self.assertIn("result as the tool reported: failed", model.prompts[0])
 
-    def test_backstop_keeps_attribution_and_names_but_refuses_own_voice(self) -> None:
-        cases = [
-            ("Fixed the parser", True),
-            ("the agent said the parser is fixed", False),
-            ("Said the fix is done", False),
-            ("the person reported it works", False),
-            ("pytest reported passed, as the tool reported", False),
-            ('Quoted "the parser is fixed"', False),
-            ("Quoted 'done'", False),
-            ("Reviewed a list of fixes", False),
-            ("Inspected the `fix/foo` branch", False),
-            ("Moved the issue to Done", False),
-            ("Marked the state as complete", True),
-            ("Asked the agent to fix the parser", False),
-            ("Got the tests to pass", True),
-            ("The agent reported the error and fixed the parser", True),
-            ("Fixed the parser, pytest reported passed, as the tool reported", True),
-            ("Inspected the parser and the agent said it is fixed", False),
-            ("Working on the parser", False),
-            ("The agent said it is fixed; shipped the parser", True),
-            ("The agent said it is fixed, but the parser works", True),
-            ("The agent said it is fixed\nShipped the parser", True),
-            ("Ship the parser", True),
-            ("The parser is resolved", True),
-            ("Merged the change", True),
+    def test_backstop_withholds_every_completion_word_but_the_tool_report(self) -> None:
+        # DEC-28 question 1 as ruled: attribution, quotes and names do not license the words.
+        admitted = [
+            "pytest reported passed, as the tool reported",
+            "pytest reported failed, as the tool reported",
+            "Inspected the parser and read the failing test",
         ]
-        for text, withheld in cases:
+        withheld = [
+            "Fixed the parser",
+            "the agent said the parser is fixed",
+            "the person reported it works",
+            'Quoted "the parser is fixed"',
+            "Quoted 'done'",
+            '"Fixed the parser and verified the release."',
+            "`all fixed`",
+            "The parser bug is `fixed`.",
+            'The agent said "I will inspect it." The parser is fixed.',
+            "Reviewed a list of fixes",
+            "Moved the issue to Done",
+            "Got everything to Verified.",
+            "Asked the agent to fix the parser",
+            "The agent managed to fix the parser bug.",
+            "Working on the parser",
+            "The parser is working on every input now.",
+            "The agent said it ran, the bug is fixed",
+            "The agent reported the root cause, so the bug is fixed.",
+            "The agent reported the tests passed, so it works",
+            "reported fixed",
+            "Agent finished the migration",
+            "Solved the login bug",
+            "The bug is solved and the feature is finished.",
+            "Repaired the cache and deployed it",
+            "Implemented the change and delivered it",
+            "The build went green.",
+            "The migration passed and the feature is live",
+            "Parser fix\u0435d",
+            "\uff26\uff49\uff58\uff45\uff44 the parser",
+            "Merged the change",
+            "Ship the parser",
+        ]
+        for text in admitted + withheld:
             with self.subTest(text=text):
                 model = Replies({"phases": [phase([1], text=text)]})
                 value = self.run_summary([entry(1)], model).as_dict()["blocks"][0]["phases"][0][
                     "bullets"
                 ][0]["text"]
-                if withheld:
+                if text in withheld:
                     self.assertEqual({"withheld": True, "reason": "completion_claim"}, value)
                 else:
                     self.assertEqual(text, value)
@@ -597,22 +611,184 @@ class SessionSummaryTest(unittest.TestCase):
         result = self.run_summary([entry(1)], Replies("invalid \ud800 reply"))
         self.assertEqual("no_valid_reply", result.blocks[0].reason)
 
-    def test_pass_check_does_not_license_a_delivery_claim(self) -> None:
+    def test_pass_check_does_not_license_pass_words_outside_the_tool_report(self) -> None:
         entries = [entry(1, "check", result="passed")]
+        texts = [
+            "pytest reported passed, as the tool reported",
+            "Tests passed",
+            "The build went green.",
+            "Fixed the parser",
+        ]
         model = Replies(
             {
                 "phases": [
                     {
                         "title": "Check report",
-                        "bullets": [
-                            phase([1], text="Tests passed", kind="did")["bullets"][0],
-                            phase([1], text="Fixed the parser", kind="did")["bullets"][0],
-                        ],
+                        "bullets": [phase([1], text=t)["bullets"][0] for t in texts],
                     }
                 ]
             }
         )
         bullets = self.run_summary(entries, model).as_dict()["blocks"][0]["phases"][0]["bullets"]
-        self.assertEqual("Tests passed", bullets[0]["text"])
-        self.assertFalse(bullets[0]["kind_overridden"])
-        self.assertEqual({"withheld": True, "reason": "completion_claim"}, bullets[1]["text"])
+        self.assertEqual(texts[0], bullets[0]["text"])
+        withheld = {"withheld": True, "reason": "completion_claim"}
+        self.assertEqual([withheld] * 3, [b["text"] for b in bullets[1:]])
+
+    def test_prose_after_a_complete_reply_is_unreadable(self) -> None:
+        reply = json.dumps({"phases": [phase([1])]}) + " I also confirm delivery."
+        block = self.run_summary([entry(1)], Replies(reply)).as_dict()["blocks"][0]
+        self.assertEqual("no_valid_reply", block["reason"])
+        self.assertNotIn("cut", block)
+
+    def test_lede_reports_how_many_citations_were_cut(self) -> None:
+        entries = [entry(n) for n in range(1, 4)]
+        p = phase([1, 2])
+        p["bullets"].append(phase([3])["bullets"][0])
+        model = Replies(
+            {"phases": [p]}, {"lede": "The person requested a review.", "cites": [1, 2, 3]}
+        )
+        lede = self.run_summary(entries, model, session_summary_max_cites=2).as_dict()["lede"]
+        self.assertEqual(
+            (["fact-1", "fact-2"], True, 1), (lede["cites"], lede["cut"], lede["cites_cut"])
+        )
+
+    def test_malformed_bullet_rows_are_withheld_in_place(self) -> None:
+        rows = [{"text": ""}, {"text": "Read it", "cites": [1]}, 5]
+        model = Replies({"phases": [{"title": "Inspection", "bullets": rows}]})
+        bullets = self.run_summary([entry(1)], model).as_dict()["blocks"][0]["phases"][0]["bullets"]
+        fault = {"withheld": True, "reason": "shape_fault"}
+        self.assertEqual([fault, "Read it", fault], [b["text"] for b in bullets])
+
+    def test_a_refused_retry_is_not_counted_as_sent(self) -> None:
+        result = self.run_summary([entry(1)], Replies(("", "failed"), refusal()))
+        self.assertEqual((1, 0), (result.spend.calls, result.spend.retries))
+
+    def test_a_seam_exception_stops_the_job_and_keeps_finished_blocks(self) -> None:
+        entries = [entry(n, words="x" * 70) for n in range(1, 4)]
+        model = Replies({"phases": [phase([1])]}, TimeoutError("synthetic"))
+        result = self.run_summary(entries, model, session_summary_window_bytes=100)
+        self.assertEqual(("partial", "stopped"), (result.state, result.reason))
+        self.assertTrue(result.blocks[0].phases)
+        self.assertEqual(["stopped", "stopped"], [b.reason for b in result.blocks[1:]])
+        self.assertEqual(2, result.spend.calls)
+
+    def test_blocks_dropped_for_bytes_name_bytes_as_the_reason(self) -> None:
+        large = [entry(n, words="x" * 70) for n in range(1, 7)]
+        result = self.run_summary(
+            large, session_summary_window_bytes=100, session_summary_max_bytes=1700
+        )
+        self.assertEqual(
+            ("partial", "bytes", "bytes"), (result.state, result.reason, result.lede_reason)
+        )
+        self.assertEqual(
+            [("fact-1", "fact-6", "bytes")], [(b.first, b.last, b.reason) for b in result.blocks]
+        )
+
+    def update(
+        self,
+        prior: Any,
+        entries: Sequence[session_source.SourceEntry],
+        change: session_source.SourceChange,
+        model: Replies,
+        **bounds: Any,
+    ) -> Any:
+        return self.summary.update(
+            prior,
+            entries,
+            self.coverage,
+            change,
+            config=dataclasses.replace(self.config, **bounds),
+            model=model,
+            clock=lambda: 0.0,
+        )
+
+    def test_late_evidence_between_prior_blocks_is_a_source_change(self) -> None:
+        old = [entry(n, words="x" * 70) for n in range(1, 5)]
+        prior = self.run_summary(old, session_summary_window_bytes=100)
+        late = dataclasses.replace(entry(9, "check", result="passed"), fact_id="fact-X", at=2.5)
+        model = Replies()
+        result = self.update(
+            prior,
+            [*old[:2], late, *old[2:], entry(5, words="x" * 70)],
+            session_source.SourceChange("appended", appended=("fact-X", "fact-5")),
+            model,
+            session_summary_window_bytes=100,
+        )
+        self.assertEqual(("source_changed", "late_evidence"), (result.state, result.reason))
+        self.assertEqual((2,), result.affected_blocks)
+        self.assertEqual([], model.prompts)
+
+    def test_a_pending_check_resolved_in_the_tail_block_is_summarized_again(self) -> None:
+        pending = entry(2, "check", result="not-recorded")
+        old = [entry(1, words="EARLIER " + "x" * 70), pending]
+        prior = self.run_summary(old, session_summary_window_bytes=100)
+        resolved = dataclasses.replace(pending, fingerprint="f" * 32, result="passed")
+        model = Replies()
+        result = self.update(
+            prior,
+            [old[0], resolved, entry(3, words="NEW " + "x" * 70)],
+            session_source.SourceChange(
+                "changed_earlier", changed=(("fact-2", "check_result"),), appended=("fact-3",)
+            ),
+            model,
+            session_summary_window_bytes=100,
+        )
+        self.assertEqual("ok", result.state)
+        self.assertIs(prior.blocks[0], result.blocks[0])
+        self.assertEqual(["fact-1", "fact-2", "fact-3"], [b.first for b in result.blocks])
+        self.assertIn("result as the tool reported: passed", "\n".join(model.prompts))
+        self.assertNotIn("EARLIER", "\n".join(model.prompts))
+        earlier = self.update(
+            prior,
+            [dataclasses.replace(old[0], fingerprint="e" * 32), pending],
+            session_source.SourceChange("changed_earlier", changed=(("fact-1", "check_result"),)),
+            Replies(),
+            session_summary_window_bytes=100,
+        )
+        self.assertEqual("source_changed", earlier.state)
+
+    def test_an_update_with_no_room_left_refuses_before_any_call(self) -> None:
+        prior = self.run_summary([entry(1)])
+        size = len(json.dumps(prior.as_dict(), ensure_ascii=False, separators=(",", ":")).encode())
+        for room in (30, 700):
+            model = Replies()
+            result = self.update(
+                prior,
+                [entry(1), entry(2)],
+                session_source.SourceChange("appended", appended=("fact-2",)),
+                model,
+                session_summary_max_bytes=size + room,
+            )
+            self.assertEqual(("refused", "output_bound_full"), (result.state, result.reason))
+            self.assertEqual(([], 0), (model.prompts, result.spend.calls))
+            self.assertIs(prior.lede, result.lede)
+
+    def test_a_failed_update_lede_keeps_the_prior_lede(self) -> None:
+        prior = self.run_summary([entry(1)])
+        result = self.update(
+            prior,
+            [entry(1), entry(2)],
+            session_source.SourceChange("appended", appended=("fact-2",)),
+            Replies({"phases": [phase([])]}),
+        )
+        self.assertIsNotNone(prior.lede)
+        self.assertIs(prior.lede, result.lede)
+        self.assertIsNone(result.lede_reason)
+
+
+def refusal() -> RefusedError:
+    return RefusedError(
+        {
+            "consent": False,
+            "off": True,
+            "notices": {},
+            "used": 0,
+            "limit": 100,
+            "retry_at": None,
+            "reason": "readings-off",
+            "providers": {},
+            "rebind": {},
+            "tool_output": {},
+            "words": {},
+        }
+    )

@@ -2058,8 +2058,16 @@ is held to it. Where the ruling is silent, this entry says so rather than decidi
   the person's words, the agent's words where the harness record admits them (Claude Code only
   today), the checks and files the record shows, and, on Claude Code, tool output under the
   opt-out rule above. Everything goes through `records.redact_secrets` first and the byte bound
-  second, as every harness invocation does. No saved intent is needed or sent. The exact carrier
-  inventory is the producer's to name here before it ships.
+  second, as every harness invocation does. No saved intent is needed or sent. The producer sends
+  exactly these carriers, each redacted before it is clipped: the person's words and text relayed
+  in a person turn, at most 1,200 characters per entry; the agent's words, at most 700; a check's
+  masked title, at most 220, with the source's result token (`failed`, `passed` or
+  `not-recorded`); a written file's display path, at most 220; earlier phase titles the model
+  wrote for this same summary, as context only, within one sixteenth of a window; and, for the
+  lede, the menu lines the surviving phases cited, sent again within one window. No tool output is
+  sent yet: the source admits none, so an output prefix waits on that source change and the
+  tool-output grant. The [producer contract](docs/design-session-summary.md#producer-contract)
+  owns the exact shape.
 - To whom. The provider and destination the notice names, invoked as the operator's own harness,
   under the bounds above. Summaries have a grant of their own, bound to provider, destination and
   content tier, separate from Analyze's; turning one off leaves the other as it was. Consent,
