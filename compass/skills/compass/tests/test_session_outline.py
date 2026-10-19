@@ -109,6 +109,36 @@ class SessionOutlineTest(unittest.TestCase):
         self.assertIsNot(first, later)
         self.assertEqual(2, len(later["blocks"]))
 
+    def test_time_clipped_outline_is_not_cached(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Read the synthetic record.")
+        transcript.save(self.path)
+        config = dataclasses.replace(self.config, session_outline_max_seconds=-1.0)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            first = self.outline.for_session(config, self.state, "claude", "root")
+            second = self.outline.for_session(config, self.state, "claude", "root")
+        self.assertEqual("ok", first["state"])
+        self.assertIn("time", [region["reason"] for region in first["coverage"]["unread"]])
+        self.assertEqual({}, dict(self.state.session_outlines))
+        self.assertIsNot(first, second)
+
+    def test_unmatched_focus_keeps_the_outline_shape(self) -> None:
+        built = self.outline.build(
+            self.source.SourcePage("unavailable", "claude", "root"), self.config
+        )
+        result = self.outline.unmatched(self.config, "claude", "root")
+        self.assertEqual(set(built), set(result))
+        self.assertEqual(
+            ("unavailable", "session_not_matched", "compass", "grouping", "claude"),
+            (
+                result["state"],
+                result["reason"],
+                result["made_by"],
+                result["basis"],
+                result["harness"],
+            ),
+        )
+
     def test_unsupported_does_not_resolve_or_stat(self) -> None:
         with mock.patch.object(
             observer, "resolve_transcript", side_effect=AssertionError("no disk")

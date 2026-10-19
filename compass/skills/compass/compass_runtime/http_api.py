@@ -1253,7 +1253,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             outline = (
                 session_outline.for_session(application.config, application.state, *focus)
                 if len(matching) == 1
-                else {"state": "unavailable", "reason": "session_not_matched", "blocks": []}
+                else session_outline.unmatched(application.config, *focus)
             )
             result = {**result, "sources": {**result.get("sources", {}), "outline": outline}}
             if parse_qs(url.query).get("prompts", ["0"])[0] == "1":

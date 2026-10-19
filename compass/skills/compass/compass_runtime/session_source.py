@@ -16,8 +16,9 @@ from dataclasses import asdict, dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from . import io as runtime_io
+from . import observer, record_pages, records
 from . import project_context as context
-from . import record_pages, records
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -201,10 +202,12 @@ def _digest(*parts: object) -> str:
 class _Budget:
     remaining: int
     deadline: float
+    # Scanning stops here so classifying what was scanned can finish by `deadline`.
+    scan_deadline: float
 
     @property
     def reason(self) -> str | None:
-        if time.monotonic() >= self.deadline:
+        if time.monotonic() >= self.scan_deadline:
             return "time"
         return "bytes" if self.remaining <= 0 else None
 
@@ -221,6 +224,8 @@ class _StreamRead:
     path: str = ""
     initial: StreamCursor | None = None
     rows: list[dict[str, Any]] = field(default_factory=list)
+    # The resumable frontier just before each row, so classification can stop between rows.
+    row_cursors: list[StreamCursor] = field(default_factory=list)
     messages: list[SourceEntry] = field(default_factory=list)
     message_order: dict[str, int] = field(default_factory=dict)
     tool_order: dict[str, int] = field(default_factory=dict)
@@ -266,7 +271,14 @@ def _message(
     )
 
 
-def _take(config: RuntimeConfig, read: _StreamRead, raw: bytes, harness: str, sid: str) -> None:
+def _take(
+    config: RuntimeConfig,
+    read: _StreamRead,
+    raw: bytes,
+    harness: str,
+    sid: str,
+    before: StreamCursor,
+) -> None:
     try:
         record = json.loads(raw)
     except (ValueError, RecursionError):
@@ -284,6 +296,7 @@ def _take(config: RuntimeConfig, read: _StreamRead, raw: bytes, harness: str, si
         )
         return
     read.rows.append(record)
+    read.row_cursors.append(before)
     if read.cursor.stream == "parent":
         entry = _message(config, raw, record, harness, sid)
         if entry is not None:
@@ -303,6 +316,7 @@ def _consume(
     source.seek(cursor.offset)
     chunks = [cursor.fragment] if cursor.fragment else []
     length = len(cursor.fragment)
+    clean = cursor
     while cursor.offset < cursor.stamp[2] and budget.reason is None:
         raw = budget.line(
             source, min(config.record_page_chunk_bytes, cursor.stamp[2] - cursor.offset)
@@ -337,8 +351,9 @@ def _consume(
                 UnreadRegion(cursor.line_start, cursor.offset, "oversized_line", cursor.stream)
             )
         else:
-            _take(config, read, whole, harness, sid)
+            _take(config, read, whole, harness, sid, clean)
         cursor = replace(cursor, line_start=cursor.offset, skipping=False, line_hash=_LineHash())
+        clean = cursor
         chunks, length = [], 0
     read.cursor = replace(cursor, fragment=b"".join(chunks))
     if cursor.offset < cursor.stamp[2]:
@@ -360,7 +375,10 @@ def _read_stream(
     *,
     newest: bool,
 ) -> _StreamRead:
-    with open(path, "rb") as source:
+    # Children were admitted link-free, so a link swapped in since is refused, as the tool report's
+    # child reads do; the parent follows exactly where `project_context`'s transcript read does.
+    follow = stream == "parent" and harness not in observer.DIRECTION_HARNESSES
+    with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise OSError("source is not a regular file")
@@ -430,6 +448,105 @@ def _pending_calls(rows: list[dict[str, Any]], stream: str) -> list[PendingCall]
     ]
 
 
+def _rows_of(rows: list[dict[str, Any]], sidechain: bool) -> tuple[dict[str, int], dict[str, int]]:
+    """The first row holding each call, and the first row holding each call's result."""
+    calls: dict[str, int] = {}
+    results: dict[str, int] = {}
+    for index, row in enumerate(rows):
+        for _at, _cwd, call_id, _name, _input, _worker in context._claude_tool_uses(  # noqa: SLF001
+            [row], sidechain=sidechain
+        ):
+            calls.setdefault(call_id, index)
+        for call_id in context._tool_result_blocks([row], sidechain=sidechain):  # noqa: SLF001
+            results.setdefault(call_id, index)
+    return calls, results
+
+
+def _cut(read: _StreamRead, row: int) -> None:
+    """Move the frontier back to just before `row`; everything from there is read again."""
+    frontier = replace(read.row_cursors[row], stamp=read.cursor.stamp)
+    kept = {fact_id for fact_id, index in read.message_order.items() if index < row}
+    read.messages = [message for message in read.messages if message.fact_id in kept]
+    del read.rows[row:], read.row_cursors[row:]
+    read.unread = [region for region in read.unread if region.end_offset <= frontier.end_offset]
+    read.unread.append(
+        UnreadRegion(frontier.end_offset, frontier.stamp[2], "time", frontier.stream)
+    )
+    read.cursor = frontier
+
+
+def _classify(
+    read: _StreamRead,
+    call: PendingCall,
+    results: dict[str, Any],
+    position: int,
+    sid: str,
+    session_dir: str,
+) -> list[SourceEntry]:
+    stream = read.cursor.stream
+    tally = context._ToolReportTally(results, session_dir)  # noqa: SLF001
+    tally.add(
+        call.at,
+        call.cwd,
+        call.call_id,
+        call.name,
+        json.loads(call.input_json),
+        "" if stream == "parent" else stream,
+    )
+    actor = "parent" if stream == "parent" else "subagent"
+    entries: list[SourceEntry] = []
+    for identity, runs in tally.runs.items():
+        for run in runs:
+            if run["background"]:
+                # The published report drops background runs and names a launch with no command
+                # text; a background run is counts and times only, so it is no check here.
+                continue
+            entry = tally._check_entry([run])  # noqa: SLF001
+            fact_id = context._semantic_id(  # noqa: SLF001
+                "fact", "claude", sid, stream, "check", call.call_id, identity, run["segment"]
+            )
+            read.tool_order[fact_id] = position
+            entries.append(
+                SourceEntry(
+                    fact_id,
+                    _digest(
+                        entry["title"],
+                        entry["result"],
+                        entry.get("result_source"),
+                        run["recorded"],
+                    ),
+                    "check",
+                    actor,
+                    stream,
+                    call.at,
+                    str(entry["title"]),
+                    result=str(entry["result"]),
+                    subject=context._semantic_id("check", identity),  # noqa: SLF001
+                )
+            )
+    for path in tally.writes:
+        display = records.safe_text(path, context.TOOL_REPORT_PATH_CHARS)
+        fact_id = context._semantic_id(  # noqa: SLF001
+            "fact", "claude", sid, stream, "file", call.call_id, path
+        )
+        read.tool_order[fact_id] = position
+        entries.append(
+            SourceEntry(
+                fact_id,
+                _digest(display, call.call_id),
+                "file",
+                actor,
+                stream,
+                call.at,
+                display,
+                path=display,
+                folder=os.path.dirname(display) or ".",
+                subject=context._semantic_id("file", path),  # noqa: SLF001
+            )
+        )
+    return entries
+
+
 def _tools(
     read: _StreamRead,
     previous: tuple[PendingCall, ...],
@@ -438,89 +555,46 @@ def _tools(
     budget: _Budget,
 ) -> tuple[list[SourceEntry], list[PendingCall]]:
     stream = read.cursor.stream
-    results = context._tool_result_blocks(read.rows, sidechain=stream != "parent")  # noqa: SLF001
+    sidechain = stream != "parent"
+    results = context._tool_result_blocks(read.rows, sidechain=sidechain)  # noqa: SLF001
     calls = {call.call_id: call for call in previous if call.stream == stream}
     calls.update({call.call_id: call for call in _pending_calls(read.rows, stream)})
+    positions, result_rows = _rows_of(read.rows, sidechain)
     pending: list[PendingCall] = []
     entries: list[SourceEntry] = []
-    positions = {
-        call_id: index
-        for index, row in enumerate(read.rows)
-        for _at, _cwd, call_id, _name, _input, _worker in context._claude_tool_uses(  # noqa: SLF001
-            [row], sidechain=stream != "parent"
-        )
-    }
+    groups: dict[int, list[PendingCall]] = {}
     for call in calls.values():
-        if time.monotonic() >= budget.deadline:
-            # Classification must share the scan's clock. Retry this stream rather than consume
-            # calls whose already-read results would otherwise be lost at the next frontier.
-            read.cursor = read.initial or read.cursor
-            read.messages.clear()
-            read.tool_order.clear()
-            read.unread.append(UnreadRegion(read.start, read.cursor.stamp[2], "time", stream))
-            return [], [call for call in previous if call.stream == stream]
-        if call.call_id not in results and call.call_id not in positions:
+        row = positions.get(call.call_id, result_rows.get(call.call_id))
+        if row is None:
             pending.append(call)
-            continue
-        tally = context._ToolReportTally(results, session_dir)  # noqa: SLF001
-        first_entry = len(entries)
-        tally.add(
-            call.at,
-            call.cwd,
-            call.call_id,
-            call.name,
-            json.loads(call.input_json),
-            "" if stream == "parent" else stream,
-        )
-        actor = "parent" if stream == "parent" else "subagent"
-        for identity, runs in tally.runs.items():
-            for run in runs:
-                entry = tally._check_entry([run])  # noqa: SLF001
-                fact_id = context._semantic_id(  # noqa: SLF001
-                    "fact", "claude", sid, stream, "check", call.call_id, identity, run["segment"]
-                )
-                read.tool_order[fact_id] = positions.get(call.call_id, -1)
-                entries.append(
-                    SourceEntry(
-                        fact_id,
-                        _digest(
-                            entry["title"],
-                            entry["result"],
-                            entry.get("result_source"),
-                            run["recorded"],
-                        ),
-                        "check",
-                        actor,
-                        stream,
-                        call.at,
-                        str(entry["title"]),
-                        result=str(entry["result"]),
-                        subject=context._semantic_id("check", identity),  # noqa: SLF001
-                    )
-                )
-        for path in tally.writes:
-            display = records.safe_text(path, context.TOOL_REPORT_PATH_CHARS)
-            fact_id = context._semantic_id(  # noqa: SLF001
-                "fact", "claude", sid, stream, "file", call.call_id, path
+        else:
+            groups.setdefault(row, []).append(call)
+    ordered = sorted(groups)
+    cut = len(read.rows)
+    for number, row in enumerate(ordered):
+        # Classification shares the read's clock. The first row always classifies so every page
+        # moves forward; at a later row the frontier moves back before it, so its call and any
+        # result already read are read again rather than lost. An earlier page's call is carried.
+        if number and time.monotonic() >= budget.deadline:
+            cut = row
+            _cut(read, row)
+            pending.extend(
+                call
+                for later in ordered[number:]
+                for call in groups[later]
+                if call.call_id not in positions
             )
-            read.tool_order[fact_id] = positions.get(call.call_id, -1)
-            entries.append(
-                SourceEntry(
-                    fact_id,
-                    _digest(display, call.call_id),
-                    "file",
-                    actor,
-                    stream,
-                    call.at,
-                    display,
-                    path=display,
-                    folder=os.path.dirname(display) or ".",
-                    subject=context._semantic_id("file", path),  # noqa: SLF001
-                )
+            break
+        for call in groups[row]:
+            first_entry = len(entries)
+            entries.extend(
+                _classify(read, call, results, positions.get(call.call_id, -1), sid, session_dir)
             )
-        if call.call_id not in results:
-            pending.append(replace(call, fact_ids=tuple(e.fact_id for e in entries[first_entry:])))
-    read.result_calls = tuple(results)
+            if call.call_id not in results:
+                pending.append(
+                    replace(call, fact_ids=tuple(e.fact_id for e in entries[first_entry:]))
+                )
+    read.result_calls = tuple(call_id for call_id in results if result_rows.get(call_id, 0) < cut)
     return entries, pending
 
 
@@ -592,9 +666,12 @@ def read(
     """Read complete JSONL lines in file order, sharing one allowance across owned streams."""
     if harness not in record_pages.HARNESSES:
         return SourcePage("unsupported", harness, sid, notes=("no paged record for this harness",))
+    now = time.monotonic()
+    end = now + config.session_source_page_max_seconds if deadline is None else deadline
     budget = _Budget(
         max(0, config.session_source_page_max_bytes if max_bytes is None else max_bytes),
-        time.monotonic() + config.session_source_page_max_seconds if deadline is None else deadline,
+        end,
+        now + max(0.0, end - now) * (1 - config.session_source_classify_share),
     )
     identity = record_pages._identity(path, harness, sid)  # noqa: SLF001
     if after and (after.identity != identity or not after.streams):
@@ -605,16 +682,7 @@ def read(
             config, path, "parent", harness, sid, budget, old.get("parent"), newest=newest
         )
         children, unread = _read_children(config, path, harness, sid, budget, old, newest=newest)
-        return _finish(
-            config,
-            path,
-            harness,
-            sid,
-            [parent, *children],
-            [*parent.unread, *unread],
-            after,
-            budget,
-        )
+        return _finish(config, path, harness, sid, [parent, *children], unread, after, budget)
     except _SourceChangedError as error:
         return _stale(path, harness, sid, error)
     except OSError:
@@ -634,14 +702,16 @@ def _read_children(
     streams: list[_StreamRead] = []
     unread: list[UnreadRegion] = []
     children = context._admitted_subagent_paths(path, None) if harness == "claude" else []  # noqa: SLF001
+    subagents = os.path.join(path[: -len(".jsonl")], "subagents")
     for child in sorted(children):
-        stream = os.path.splitext(os.path.basename(child))[0]
+        # Admission accepts `subagents/` and `subagents/workflows/<wf>/`, so one agent id can
+        # appear twice; the relative path keeps their fact ids and cursors apart.
+        stream = os.path.splitext(os.path.relpath(child, subagents))[0].replace(os.sep, "/")
         try:
             child_read = _read_stream(
                 config, child, stream, harness, sid, budget, old.get(stream), newest=newest
             )
             streams.append(child_read)
-            unread.extend(child_read.unread)
             if not child_read.rows and child_read.cursor.end_offset < child_read.cursor.stamp[2]:
                 unread.append(
                     UnreadRegion(
@@ -681,14 +751,14 @@ def _finish(
         session_dir = context._session_directory(config, path, parent.rows)  # noqa: SLF001
     pending: list[PendingCall] = []
     groups = []
+    regions: list[UnreadRegion] = []
     for stream_read in streams:
-        unread_count = len(stream_read.unread)
         tools, held = (
             _tools(stream_read, after.pending if after else (), sid, session_dir, budget)
             if harness == "claude"
             else ([], [])
         )
-        unread.extend(stream_read.unread[unread_count:])
+        regions.extend(stream_read.unread)
         pending.extend(held)
         # Preserve a stream's physical order, even when its clock goes backwards. Only the
         # inter-stream merge uses call time, with the parent's next entry first at a tie.
@@ -700,6 +770,7 @@ def _finish(
     pending.extend(
         call for call in (after.pending if after else ()) if call.stream not in retained_streams
     )
+    unread = [*regions, *unread]
     entries = tuple(heapq.merge(*groups, key=lambda entry: entry.at))
     cursor = SourceCursor(
         identity,
@@ -725,10 +796,8 @@ def _finish(
         "read" if harness == "claude" else "not_admitted",
         notes,
     )
-    continuation = any(
-        s.cursor.offset < s.cursor.stamp[2] or s.cursor.fragment or s.cursor.skipping
-        for s in streams
-    )
+    # A held partial line at the end is not more to read now; `snapshot.cursor` resumes it.
+    continuation = any(s.cursor.offset < s.cursor.stamp[2] for s in streams)
     _assert_unchanged(streams)
     metadata = _metadata(
         cursor,

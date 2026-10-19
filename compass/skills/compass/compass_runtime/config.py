@@ -33,6 +33,9 @@ ENTRY_INDEX_LIMIT = 16
 # the press's two seconds, with continuation instead of sampling messages out of the middle.
 SESSION_SOURCE_PAGE_MAX_BYTES = 64 * 1024 * 1024
 SESSION_SOURCE_PAGE_MAX_SECONDS = 2.0
+# The share of that time held back from scanning for classifying the calls scanned. A scan that
+# spent it all left classification past the deadline, and the page then made no progress.
+SESSION_SOURCE_CLASSIFY_SHARE = 0.25
 # Reuse the forward index's single-line ceiling: larger records are gaps before any text masking.
 SESSION_SOURCE_LINE_MAX_BYTES = 16 * 1024 * 1024
 # A focused poll pays much less than a press; a clipped outline names its unread prefix.
@@ -219,6 +222,7 @@ class RuntimeConfig:
     entry_index_limit: int
     session_source_page_max_bytes: int
     session_source_page_max_seconds: float
+    session_source_classify_share: float
     session_source_line_max_bytes: int
     session_outline_max_bytes: int
     session_outline_max_seconds: float
@@ -799,6 +803,7 @@ def build_runtime_config(
         entry_index_limit=ENTRY_INDEX_LIMIT,
         session_source_page_max_bytes=SESSION_SOURCE_PAGE_MAX_BYTES,
         session_source_page_max_seconds=SESSION_SOURCE_PAGE_MAX_SECONDS,
+        session_source_classify_share=SESSION_SOURCE_CLASSIFY_SHARE,
         session_source_line_max_bytes=SESSION_SOURCE_LINE_MAX_BYTES,
         session_outline_max_bytes=SESSION_OUTLINE_MAX_BYTES,
         session_outline_max_seconds=SESSION_OUTLINE_MAX_SECONDS,

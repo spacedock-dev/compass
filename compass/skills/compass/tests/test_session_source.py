@@ -372,7 +372,119 @@ class SessionSourceTest(unittest.TestCase):
         self.assertFalse(page.coverage.complete)
         self.assertIn("time", [region.reason for region in page.coverage.unread])
         self.assertIsNotNone(page.next)
-        self.assertEqual(2, len(self.read(after=page.next).entries))
+        # The classified call is kept and the frontier moves to the unclassified one's row.
+        rest = self.read(after=page.next)
+        self.assertEqual(1, len(page.entries))
+        self.assertEqual(1, len(rest.entries))
+        self.assertEqual(
+            [e.fact_id for e in self.read().entries],
+            [e.fact_id for e in (*page.entries, *rest.entries)],
+        )
+
+    def test_time_clipped_pages_with_calls_each_make_progress(self) -> None:
+        for turn in range(40):
+            self.session.prompt(f"Run synthetic check {turn}.")
+            self.session.bash(f"pytest tests/test_{turn}.py", "1 passed")
+        self.save()
+        complete = self.read()
+        self.config = dataclasses.replace(self.config, session_source_page_max_seconds=40.0)
+        clock = [0.0]
+
+        def tick() -> float:
+            clock[0] += 1.0
+            return clock[0]
+
+        seen: dict[str, Any] = {}
+        order: list[str] = []
+        cursor = None
+        offset = -1
+        with mock.patch.object(self.source.time, "monotonic", side_effect=tick):
+            for _ in range(200):
+                page = self.read(after=cursor)
+                self.assertEqual("ok", page.state)
+                self.assertTrue(page.entries, "every page must return an entry")
+                frontier = page.snapshot.cursor.streams[0].offset
+                self.assertGreater(frontier, offset)
+                offset = frontier
+                for entry in page.entries:
+                    if entry.fact_id in seen:
+                        # Only a call read before its result may return, carrying the result.
+                        self.assertEqual("not-recorded", seen[entry.fact_id].result)
+                    else:
+                        order.append(entry.fact_id)
+                    seen[entry.fact_id] = entry
+                cursor = page.next
+                if cursor is None:
+                    break
+        self.assertIsNone(cursor)
+        self.assertGreater(clock[0], 0)
+        self.assertEqual([e.fact_id for e in complete.entries], order)
+        self.assertEqual(
+            [(e.fact_id, e.result) for e in complete.entries],
+            [(fact_id, seen[fact_id].result) for fact_id in order],
+        )
+
+    def test_partial_last_line_ends_paging(self) -> None:
+        whole = json.dumps(test_record_pages.RecordPagesTest.record(1)).encode() + b"\n"
+        self.path.write_bytes(whole + b'{"type":"us')
+        page = self.read()
+        self.assertEqual(1, len(page.entries))
+        self.assertIsNone(page.next)
+        self.assertEqual(b'{"type":"us', page.snapshot.cursor.streams[0].fragment)
+
+    def test_background_bash_is_not_a_check(self) -> None:
+        self.session.bash(
+            "pytest tests",
+            "Command running in background with ID: abc",
+            run_in_background=True,
+        )
+        self.session.bash("pytest tests/b.py", "1 passed")
+        self.save()
+        self.assertEqual(
+            [("check", "pytest tests/b.py")],
+            [(e.kind, e.title) for e in self.read().entries],
+        )
+
+    def test_workflow_child_with_a_shared_agent_id_has_its_own_stream(self) -> None:
+        self.session.prompt("Delegate synthetic checks.")
+        self.save()
+        base = self.path.with_suffix("") / "subagents"
+        for where, command in (
+            (base / "agent-ab12.jsonl", "pytest tests/a.py"),
+            (base / "workflows" / "wf1" / "agent-ab12.jsonl", "pytest tests/b.py"),
+        ):
+            child = Transcript(self.root)
+            child.bash(command, "1 passed")
+            for row in child.rows:
+                row["isSidechain"] = True
+            child.save(where)
+        page = self.read()
+        checks = [e for e in page.entries if e.kind == "check"]
+        self.assertEqual({"agent-ab12", "workflows/wf1/agent-ab12"}, {e.stream for e in checks})
+        self.assertEqual(2, len({e.fact_id for e in checks}))
+        self.assertEqual("unchanged", self.source.compare(page.snapshot, self.read()).kind)
+
+    def test_child_swapped_for_a_link_is_not_followed(self) -> None:
+        self.session.prompt("Delegate synthetic checks.")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        target = self.root / "elsewhere.jsonl"
+        child.save(target)
+        link = self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(target)
+        with mock.patch.object(
+            project_context, "_admitted_subagent_paths", return_value=[str(link)]
+        ):
+            page = self.read()
+        self.assertEqual(["person"], [e.kind for e in page.entries])
+        self.assertIn(
+            ("agent-ab12", "unreadable_subagent"),
+            [(r.stream, r.reason) for r in page.coverage.unread],
+        )
 
     def test_unavailable_comparison_cannot_claim_unchanged(self) -> None:
         self.session.prompt("Read the synthetic source.")

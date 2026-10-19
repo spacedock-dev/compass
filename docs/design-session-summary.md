@@ -217,7 +217,9 @@ byte offset is a fact identity.
 Entries preserve each transcript's physical order, including a message appended with an earlier
 timestamp. Parent and subagent streams merge by the next entry's call time, parent first at a tie.
 This deliberately does not globally sort a replayed message back into the past. Each check run is
-its own entry; `subject` groups its check identity across runs and streams. Each admitted write is
+its own entry; `subject` groups its check identity across runs and streams. A run launched in the
+background, or moved there, is not a check entry: the published tool report drops those runs and
+names a launch with no command text, so the source carries no command for one either. Each admitted write is
 its own entry, grouped by path. Classification, masked command titles, write admission and the
 paired call's result come from the existing project-context tally, with no second shell parser.
 Only classifier inputs and already-emitted fact ids of unresolved calls cross pages; write contents
@@ -235,8 +237,9 @@ status is named `agent_replies` rather than `agent_words`, because `for_page` st
 region. It does not mean that every evidence type is admitted for the harness. `agent_replies` is
 `read` or `not_read`; `checks_and_files` is `read` or `not_admitted`. The parent offsets delimit its
 whole-line coverage. A partial final line is held for continuation and is never decoded before
-its newline. `page.next` continues an incomplete read; even after reaching the current end,
-`page.snapshot.cursor` can read a later append. The cursor accumulates only metadata and unresolved
+its newline. `page.next` continues an incomplete read and is `None` once every stream has been
+consumed to its end, including when a partial final line is held; even after reaching the current
+end, `page.snapshot.cursor` can read a later append and completes that held line. The cursor accumulates only metadata and unresolved
 inputs, not previously emitted message words.
 
 `newest=True` begins at the first line boundary at or after `size - max_bytes`. It names `[0,
@@ -246,7 +249,11 @@ An oversized message is skipped before masking, as is a line above the line ceil
 crossing page allowances are held only to that ceiling; oversized bytes are discarded while
 hashing continues. A child with no readable allowance names `unreadable_subagent` as well as its
 limiting region. An unreadable child's unknown extent is represented as `[0, 0)` with its stream
-name, rather than invented offsets.
+name, rather than invented offsets. A child's stream name is its path below `subagents/` without
+the extension (`agent-<hex>` or `workflows/<wf>/agent-<hex>`), because admission accepts both
+directories and one agent id can appear in each. Children are opened without following a link
+swapped in after admission, as the published tool report's child reads are; the parent follows
+links exactly where that report's transcript read does.
 
 Boundary verification consumes the same byte/time allowance as new records. A smaller allowance
 than the old boundary line may therefore return no new evidence; a caller must increase that
@@ -267,9 +274,15 @@ Change comparison works on either a full re-read or a continuation:
 
 An unavailable page, or a stale page that establishes neither truncation nor replacement, cannot
 establish `unchanged`: `compare` raises `ValueError` and the caller must restart the source read.
-If tool classification reaches the shared deadline, that stream's frontier is retried and its
-extent names `time`; consuming its already-read result without classifying the call would lose
-the pairing on continuation.
+Scanning stops at `session_source_classify_share` short of the deadline, so classifying the calls
+scanned usually fits. If classification still reaches the deadline, the calls already classified
+and the messages before the first unclassified call's row are kept, the stream's frontier moves
+back to just before that row, and the rest of the stream names `time`. The unclassified call and
+any result already read for it are read again on continuation rather than lost; an earlier page's
+unresolved call whose result lies past the new frontier is carried forward as pending. The first
+row holding a call always classifies, so each page with a call makes progress. An earlier version
+moved the whole stream back to where the page began; because the scan only stops once the deadline
+has passed, that discarded every page holding a call and `page.next` repeated without end.
 
 ### Bounds and focused grouping
 
@@ -280,6 +293,7 @@ job ceilings whose numbers still require measurement:
 | -- | -- | -- |
 | `session_source_page_max_bytes` | 64 MiB | Match the press's image-heavy scan allowance; continue rather than sample. |
 | `session_source_page_max_seconds` | 2 seconds | Match the press's time allowance. |
+| `session_source_classify_share` | 0.25 | Hold back a quarter of that time from scanning for classifying what was scanned. |
 | `session_source_line_max_bytes` | 16 MiB | Match the forward index's line skip before masking. |
 | `session_outline_max_bytes` | 2 MiB | A focused poll pays less than a press and names its unread prefix. |
 | `session_outline_max_seconds` | 0.25 seconds | Bound work repeated on focused polls. |
@@ -301,9 +315,12 @@ existing masked evidence; its result tokens are as the tool reported. It authors
 whether the requested work was delivered. It requires no model grant and makes no model call.
 `for_session` resolves one transcript and caches only the built, word-free answer, under a lock.
 The cache key includes bounds and parent and admitted child stamps; a child-only append rebuilds
-the outline. An unchanged transcript costs a stat, with admission discovery and a stat for each
-owned child when present. Only a focused, matched project/session answer gains `sources.outline`,
-before `for_page`. Session rows gain nothing.
+the outline. An outline whose coverage names a `time` region is returned but not cached: the window
+reads forward from its start, so a time-clipped outline lacks the newest turns, and caching it
+would serve that until the transcript changed, for a finished session the life of the process. An unchanged transcript costs a stat, with admission discovery and a stat for each
+owned child when present. Only a focused project/session answer gains `sources.outline`, before
+`for_page`. When the focus matches no single row, `session_outline.unmatched` returns the same
+labelled shape with `state: unavailable` and `reason: session_not_matched`, reading nothing. Session rows gain nothing.
 
 ### Evidence admitted by this build
 
@@ -319,7 +336,10 @@ This table describes the implementation and does not amend the owner-ruled table
 
 - Codex checks and files are not admitted pending an owner ruling. The earlier table's "From its
   bounded record sources" does not admit a command classifier or any command onto a page; this
-  implementation reads none.
+  implementation reads none. That narrows the source issue's scope, which says a Codex read has
+  person words, checks and files, so this build does not meet the Codex scope until the owner
+  acknowledges the deferral. The follow-up the source issue requires, covering Codex checks and
+  files, Codex agent words, and Pi and the other harnesses, is not yet filed or linked here.
 - Subagent messages remain excluded. The existing ruling admits their checks and writes, while
   the message builder admits top-level messages only.
 - A relative written path resolves against the directory at the transcript's head, read with the

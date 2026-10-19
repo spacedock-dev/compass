@@ -1605,8 +1605,12 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.project_context",
         },
         # Forward evidence shares the admitted message ids and tool classifier, retaining no cache.
+        # It opens transcripts with the existing no-follow open, following links where the
+        # observer's direction harnesses say the transcript read does.
         "compass_runtime.session_source": {
             "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.observer",
             "compass_runtime.project_context",
             "compass_runtime.record_pages",
             "compass_runtime.records",

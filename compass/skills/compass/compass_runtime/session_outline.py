@@ -88,6 +88,14 @@ def build(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, A
     }
 
 
+def unmatched(config: RuntimeConfig, harness: str, sid: str) -> dict[str, Any]:
+    """The same labelled shape when the focus matches no single row; nothing is read."""
+    return {
+        **build(session_source.SourcePage("unavailable", harness, sid), config),
+        "reason": "session_not_matched",
+    }
+
+
 def for_session(
     config: RuntimeConfig, state: RuntimeState, harness: str, sid: str
 ) -> dict[str, Any]:
@@ -129,7 +137,12 @@ def for_session(
             unchanged = False
         if not unchanged:
             return build(session_source.SourcePage("stale", harness, sid), config)
-        if page.state == "ok":
+        clipped = page.coverage is not None and any(
+            region.reason == "time" for region in page.coverage.unread
+        )
+        # A time-clipped window is short of its newest turns; caching it would serve that
+        # clipped outline until the transcript changed, so the next poll retries instead.
+        if page.state == "ok" and not clipped:
             runtime_state.bounded_put(
                 state.session_outlines,
                 key,
