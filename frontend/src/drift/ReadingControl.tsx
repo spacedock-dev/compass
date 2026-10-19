@@ -6,14 +6,12 @@ import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { endedAt, readHint, type Row } from '../observed';
 import { PROMPT_SOURCES } from '../sessions/intent';
-import { askForReading, cancelReading, readingOff } from './actions';
+import { askForReading, cancelReading, readingOff, readingOn } from './actions';
 import { useDrift } from './context';
 import type { Board } from './flip';
 import {
   readingsOn,
   readingsOff,
-  turnOnPayload,
-  promptReadingRefusal,
   disclosureParts,
   readingJob,
   routeRefusal,
@@ -27,6 +25,7 @@ import {
   JOB_NOTE_SO_FAR,
   JOB_TITLE,
   READINGS_OFF,
+  MODEL_PAUSE_EXPLANATION,
 } from './sentences';
 import { Why } from './Why';
 import { ModelNotice, DisclosureParts } from './ModelNotice';
@@ -53,23 +52,28 @@ export function ReadingCount({ count }: { readonly count: number }) {
   );
 }
 
-/* Turn off readings, drawn while readings are on. It sits in the notice and in the "What is sent" popover
+/* Pause model calls, drawn while readings are on. It sits in the notice and in the "What is sent" popover
    beside what it stops, and where neither is drawn (a running job, no reader, a route with no disclosure)
    under the control instead, so the off switch is never only in a part the page did not draw.
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
 export function TurnOff() {
   const { ctx, model } = useDrift();
-  if (!readingsOn(model.payload)) return null;
+  const off = readingsOff(model.payload);
+  if (!off && !readingsOn(model.payload)) return null;
+  const action = off ? 'reading-on' : 'reading-off';
   return (
-    <ActionButton
-      weight="secondary"
-      label="Turn off readings"
-      busyLabel="Turning off…"
-      pendingKey={`reading-off:${model.key}`}
-      action="reading-off"
-      focusKey={`reading-off:${model.key}`}
-      onPress={() => void readingOff(ctx, model.identity)}
-    />
+    <>
+      <ActionButton
+        weight="secondary"
+        label={off ? 'Resume model calls' : 'Pause model calls'}
+        busyLabel={off ? 'Resuming…' : 'Pausing…'}
+        pendingKey={`${action}:${model.key}`}
+        action={action}
+        focusKey={`${action}:${model.key}`}
+        onPress={() => void (off ? readingOn : readingOff)(ctx, model.identity)}
+      />
+      <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p>
+    </>
   );
 }
 
@@ -192,15 +196,7 @@ export function ReadingControl({
   const provider = route?.['provider'] ? String(route['provider']) : '';
   const off = readingsOff(payload);
   const busyKey = `reading:${key}`;
-  const turnOnReason = off
-    ? promptReadingRefusal({
-        input: { ...model.input, payload: turnOnPayload(payload) },
-        saving: false,
-        answered: request,
-        nowMs: ctx.shell.clock.now(),
-      })
-    : '';
-  const enabled = !(off ? turnOnReason : reason) && !pending;
+  const enabled = (off || !reason) && !pending;
   const count = nextNumber(annotation?.['reading_count']) || 0;
   const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
   const parts = disclosureParts(route, provider, disclosure);
@@ -228,7 +224,7 @@ export function ReadingControl({
   /* Only from a published annotation: with the store off there is no count to read, and "0 requests" would be
      a default standing in for one. */
   const counted = annotation ? <ReadingCount count={count} /> : null;
-  /* What the last press or withdrawal came to, announced. Every arm prints it: a failed "Turn off readings"
+  /* What the last press or withdrawal came to, announced. Every arm prints it: a failed "Pause model calls"
      that says nothing leaves the reader believing a permission is gone that is still on record. */
   const answered = request?.message && !request.refusal ? String(request.message) : '';
   const said = (text: string): ReactNode =>
@@ -285,29 +281,24 @@ export function ReadingControl({
       </>
     );
   }
-  const described = off
-    ? `${REFUSED_ID}${turnOnReason ? ` ${REFUSED_ID}-turn-on` : ''}`
-    : reason
-      ? REFUSED_ID
-      : disclosure
-        ? DISCLOSURE_ID
-        : '';
-  const label = off ? 'Turn on readings and analyze' : again ? 'Analyze again' : 'Analyze drift';
-  /* A current result draws no run control (DEC-27), and off does not add one: Turn on readings and analyze
-     starts a reading, which on an unchanged session is the second run control the ruling keeps away. */
+  const described = off ? REFUSED_ID : reason ? REFUSED_ID : disclosure ? DISCLOSURE_ID : '';
+  const label = off ? 'Resume model calls' : again ? 'Analyze again' : 'Analyze drift';
+  /* A current result keeps its one Analyze; resuming permission does not start another analysis. */
   const press = showRun ? (
     <ActionButton
       weight={primary && provider && !inert ? 'primary' : 'secondary'}
       label={label}
-      busyLabel="Starting…"
-      pendingKey={busyKey}
+      busyLabel={off ? 'Resuming…' : 'Starting…'}
+      pendingKey={off ? `reading-on:${key}` : busyKey}
       inert={!enabled}
       describes={described}
       action={off ? 'reading-on' : 'reading-ask'}
-      focusKey={`reading:${key}`}
+      focusKey={off ? `reading-on:${key}` : `reading:${key}`}
+      fallbackKey={`reading:${key}`}
       onPress={() => {
-        if (identity) {
-          void askForReading(ctx, identity, off, {
+        if (off) void readingOn(ctx, identity);
+        else if (identity) {
+          void askForReading(ctx, identity, {
             route,
             revision: nextNumber(annotation?.['revision']) || 0,
           });
@@ -319,9 +310,8 @@ export function ReadingControl({
      the reason separately rendered the same sentence twice, adjacent and identical, where the contract is that
      it renders exactly once. The press is still announced, because this node carries `role="status"` when it
      is the refusal. */
-  /* Off leads only when turning readings on would lift the refusal; a higher-ranked reason (run-disabled, the
-     store, the cap) leads when it stands too, with the off sentence after it. */
-  const refusalText = off ? turnOnReason || READINGS_OFF : reason;
+  /* Pausing is the reader's durable answer even when another refusal also applies. */
+  const refusalText = off ? READINGS_OFF : reason;
   const refused = refusalText ? (
     <>
       <p
@@ -335,15 +325,6 @@ export function ReadingControl({
         {settling ? <span className="next-wait-dot" aria-hidden="true" /> : null}
         {refusalText}
       </p>
-      {off && turnOnReason ? (
-        <p
-          id={`${REFUSED_ID}-turn-on`}
-          className="next-cockpit-reading-why"
-          {...absenceAttr(READINGS_OFF)}
-        >
-          {READINGS_OFF}
-        </p>
-      ) : null}
       {inert && pressed ? (
         <Why
           name={`reading-why:${key}`}
@@ -394,12 +375,12 @@ export function ReadingControl({
     >
       {partsList}
       {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
-      <TurnOff />
+      {off && showRun ? null : <TurnOff />}
     </Why>
   ) : (
     <>
       {aboutWhy}
-      {hasNotice ? null : <TurnOff />}
+      {hasNotice || (off && showRun) ? null : <TurnOff />}
     </>
   );
   return (
@@ -417,6 +398,9 @@ export function ReadingControl({
           </>
         )}
       </div>
+      {off && showRun ? (
+        <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p>
+      ) : null}
       {changeLine}
       {inert ? null : counted}
       {accounts}
@@ -470,55 +454,36 @@ export function ReadingNotice() {
   );
 }
 
-/* Off beside an open direction question, in its `after` slot: the off sentence and the one control that lifts
-   it. The question already draws a running job above it, so no second box and no second Cancel is drawn here,
-   and while that job runs no turn-on is offered, as the job branch above offers no press. `refusedId` is false
-   when the question already holds the refusal id for an unsaved edit. */
+/* Resume changes permission alone, so it stays available while an earlier analysis unwinds.
+   The direction question owns its job box and Cancel; this slot adds neither again. */
 export function ReadingsOffAsk({ refusedId }: { readonly refusedId: boolean }) {
   const { ctx, model } = useDrift();
-  const { payload, annotation, key, identity, route, job } = model;
+  const { key, identity } = model;
   const request = ctx.intent.held.requests.get(key);
-  const turnOnReason = promptReadingRefusal({
-    input: { ...model.input, payload: turnOnPayload(payload) },
-    saving: false,
-    answered: request,
-    nowMs: ctx.shell.clock.now(),
-  });
-  const lead = turnOnReason || READINGS_OFF;
   const id = refusedId ? REFUSED_ID : undefined;
   const answered = request?.message && !request.refusal ? String(request.message) : '';
   return (
     <>
-      {job ? null : (
-        <div className="next-cockpit-reading-ask">
-          <ActionButton
-            weight="secondary"
-            label="Turn on readings and analyze"
-            busyLabel="Starting…"
-            pendingKey={`reading:${key}`}
-            inert={Boolean(turnOnReason) || Boolean(request?.pending)}
-            {...(id ? { describes: id } : {})}
-            action="reading-on"
-            focusKey={`reading:${key}`}
-            onPress={() => {
-              if (identity) {
-                void askForReading(ctx, identity, true, {
-                  route,
-                  revision: nextNumber(annotation?.['revision']) || 0,
-                });
-              }
-            }}
-          />
-        </div>
-      )}
-      <p className="next-cockpit-reading-why" id={id} {...absenceAttr(lead)}>
-        {lead}
+      <div className="next-cockpit-reading-ask">
+        <ActionButton
+          weight="secondary"
+          label="Resume model calls"
+          busyLabel="Resuming…"
+          pendingKey={`reading-on:${key}`}
+          inert={Boolean(request?.pending)}
+          {...(id ? { describes: id } : {})}
+          action="reading-on"
+          focusKey={`reading-on:${key}`}
+          fallbackKey={`reading:${key}`}
+          onPress={() => {
+            void readingOn(ctx, identity);
+          }}
+        />
+      </div>
+      <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p>
+      <p className="next-cockpit-reading-why" id={id} {...absenceAttr(READINGS_OFF)}>
+        {READINGS_OFF}
       </p>
-      {turnOnReason ? (
-        <p className="next-cockpit-reading-why" {...absenceAttr(READINGS_OFF)}>
-          {READINGS_OFF}
-        </p>
-      ) : null}
       {answered ? (
         <p
           className="next-cockpit-reading-why"

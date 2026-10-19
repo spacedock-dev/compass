@@ -163,8 +163,9 @@ the machine by default. The quota poll requires disclosure consent, carries a ve
 session content, and can be disabled with `--no-usage`. Model calls can send session content
 through an installed Claude Code or Codex CLI. Analyze drift runs on your press; Codex goal
 summaries run on a focused refresh by default. Each tells you once what is sent and where, and
-tells you again if the destination or content tier changes. Turn off readings or
-`--no-observer-model` stops them. Unasked drift checks remain a separate opt-in.
+tells you again if the destination or content tier changes. Pause model calls stops every model call until Resume model calls;
+`--no-observer-model` refuses them at startup. Turn off summaries affects session summaries only,
+is disabled while paused, and keeps its saved answer through pause and resume. Unasked drift checks remain a separate opt-in.
 Dashboard assets, including the optional terminal's vendored xterm files, need no external fetch.
 A third outbound pathway sends counts-only nudges to an operator-supplied endpoint. It stays off
 until you configure a URL, and `--no-reach` disables it. See [SECURITY.md](SECURITY.md#scope)

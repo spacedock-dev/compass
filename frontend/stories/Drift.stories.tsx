@@ -431,7 +431,7 @@ export const FirstPressRunsAndNoticesRepeatOnlyWhenChanged: Story = {
     await expect(notice).toHaveTextContent('Provider: Claude Code');
     await expect(notice).toHaveTextContent('The agent messages and tool output are included.');
     await expect(notice).toHaveTextContent('Tool output goes to: tools.example');
-    await expect(within(notice).getByRole('button', { name: 'Turn off readings' })).toBeVisible();
+    await expect(within(notice).getByRole('button', { name: 'Pause model calls' })).toBeVisible();
     await expect(noticeSequence.posts).toHaveLength(1);
     await expect(noticeSequence.posts[0]).not.toHaveProperty('allow');
     await expect(notice.contains(document.activeElement)).toBe(false);
@@ -452,31 +452,28 @@ export const FirstPressRunsAndNoticesRepeatOnlyWhenChanged: Story = {
 };
 
 const offReading = readingScenario([firstNotice]);
-export const ReadingsOffWaitsForAnExplicitTurnOn: Story = {
+export const ModelCallsPausedUntilResume: Story = {
   ...scenario({
     reading: offReading,
-    payload: { reading: { consent: false, off: true, reason: 'readings-off' } },
+    payload: { reading: { consent: false, off: true, reason: 'model-calls-paused' } },
   }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     await expect(
-      await within(card).findByText(
-        'Readings are off. Nothing is sent to a model until you turn them back on.',
-      ),
+      await within(card).findByText('Model calls are paused. Nothing is sent until you resume.'),
     ).toBeVisible();
     await expect(within(card).queryByRole('button', { name: /^Analyze/ })).toBeNull();
-    const on = within(card).getByRole('button', { name: 'Turn on readings and analyze' });
+    const on = within(card).getByRole('button', { name: 'Resume model calls' });
     await expect(on).toBeVisible();
+    await expect(card).toHaveTextContent(
+      'Compass stops sending session text to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.',
+    );
     await expect(offReading.posts).toHaveLength(0);
     await userEvent.click(on);
-    await within(card).findByText(JOB_TITLE);
+    await within(card).findByRole('button', { name: 'Analyze drift' });
+    await expect(card.querySelector('[data-next-analyzing]')).toBeNull();
     await expect(offReading.posts).toHaveLength(1);
-    await expect(offReading.posts[0]).toMatchObject({
-      allow: true,
-      words_destination: 'api',
-      tool_output: 'api',
-      provider: 'claude',
-    });
+    await expect(offReading.posts[0]).toEqual({ consent: 'on', press: true, observer_model: 1 });
   },
 };
 
@@ -486,7 +483,7 @@ export const ReadingsOffWithARunningJobAndAnOpenDirection: Story = {
       fact('u1', 1000, { type: 'user_message', by: 'person:me', summary: 'Also add retries.' }),
     ],
     payload: {
-      reading: { consent: false, off: true, reason: 'readings-off' },
+      reading: { consent: false, off: true, reason: 'model-calls-paused' },
       reading_jobs: { 'claude:s1': JOB },
     },
   }),
@@ -498,13 +495,9 @@ export const ReadingsOffWithARunningJobAndAnOpenDirection: Story = {
     await expect(within(card).getAllByText(JOB_TITLE)).toHaveLength(1);
     await expect(within(card).getAllByRole('button', { name: 'Cancel' })).toHaveLength(1);
     await expect(
-      within(card).getByText(
-        'Readings are off. Nothing is sent to a model until you turn them back on.',
-      ),
+      within(card).getByText('Model calls are paused. Nothing is sent until you resume.'),
     ).toBeVisible();
-    // No turn-on press while the job runs, and nothing sent.
-    await expect(
-      within(card).queryByRole('button', { name: 'Turn on readings and analyze' }),
-    ).toBeNull();
+    // Resume changes permission alone while the earlier analysis unwinds.
+    await expect(within(card).getByRole('button', { name: 'Resume model calls' })).toBeVisible();
   },
 };

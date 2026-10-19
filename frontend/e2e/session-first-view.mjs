@@ -170,7 +170,7 @@ try {
       .waitFor({ state: 'visible' });
     await page.getByRole('button', { name: 'Clear', exact: true }).waitFor({ state: 'visible' });
     await page
-      .getByRole('button', { name: 'Turn off readings', exact: true })
+      .getByRole('button', { name: 'Pause model calls', exact: true })
       .waitFor({ state: 'visible' });
     const update = page.waitForResponse((response) => response.url().includes('/api/data'));
     await refreshReact(page, true);

@@ -2017,7 +2017,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
         elif "adopt" in payload:
             # With `settle_through` beside it this is Keep where no analysis
-            # can start (no reader, or readings off): the draft is adopted and
+            # can start (no reader, or model calls paused): the draft is adopted and
             # the directions settled in one write, and nothing is read.
             outcome = self._adopt_prompt(
                 harness,
@@ -2104,7 +2104,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         poll, reconnect, resume, focus change or revision save carries it.
         """
         config = self.server.application.config
-        # Turn off readings also stops goal summaries, which need neither the
+        # Pause model calls also stops goal summaries, which need neither the
         # annotation store nor a qualified reading provider, so an off is
         # never refused for the absence of what Analyze needs.
         available = off or (
@@ -2165,17 +2165,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
-        refusal = self._reading_refusal(payload, off=payload.get("consent") == "off")
+        refusal = self._reading_refusal(payload, off=payload.get("consent") in ("off", "on"))
         if refusal is not None:
             self._reject(refusal)
             return
         if payload.get("consent") == "off":
             answer = reading_policy.set_consent(config, False, now=application.clock())
-            # Turn off readings also stops session summaries, including a call already running
+            # Pause model calls also stops session summaries, including a call already running
             # (docs/design-session-summary.md#job-and-grant-contract); a lock failure leaves
             # the next part's recheck to refuse.
             with contextlib.suppress(OSError, ValueError):
-                summary_jobs.stop_running(application, "readings-off")
+                summary_jobs.stop_running(application, "model-calls-paused")
+            self._reading_permission_reply(answer, off=True)
+            return
+        if payload.get("consent") == "on":
+            answer = reading_policy.resume(config, now=application.clock())
             self._reading_permission_reply(answer, off=True)
             return
         harness, sid = payload.get("harness"), payload.get("sid")
@@ -3434,9 +3438,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         except (OSError, ValueError):
             reason = "store-unavailable"
         status = summary_jobs.board(application.config, now=application.clock())
-        if reason == "store-unavailable":
+        if reason in {"store-unavailable", "model-calls-paused"}:
             self._summary_reply(
-                503,
+                403 if reason == "model-calls-paused" else 503,
                 {
                     "ok": False,
                     "reason": reason,
@@ -3455,7 +3459,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 429
                 if answer["reason"] == "daily-cap"
                 else 403
-                if answer["reason"] in {"summaries-off", "readings-off"}
+                if answer["reason"] in {"summaries-off", "model-calls-paused"}
                 else 503
             )
             self._summary_reply(

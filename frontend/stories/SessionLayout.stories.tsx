@@ -363,9 +363,9 @@ export const MoreIsRetired: Story = {
       inDrift.getByText(/^Is the work this session launched still running\?/),
     ).toBeVisible();
     await expect(inDrift.getByRole('button', { name: 'Analyze drift' })).toBeVisible();
-    await expect(inDrift.queryByRole('button', { name: 'Turn off readings' })).toBeNull();
+    await expect(inDrift.queryByRole('button', { name: 'Pause model calls' })).toBeNull();
     await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
-    const off = await within(document.body).findByRole('button', { name: 'Turn off readings' });
+    const off = await within(document.body).findByRole('button', { name: 'Pause model calls' });
     await waitFor(() => expect(off).toBeVisible());
     await expect(off.closest('[data-slot="popover-content"]')).not.toBeNull();
     await userEvent.keyboard('{Escape}');

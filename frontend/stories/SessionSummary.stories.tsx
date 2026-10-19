@@ -581,18 +581,80 @@ export const RefusedTooLarge: Story = {
   },
 };
 
-/* Readings off stops summaries too, and the card says where to turn them back on. */
-export const ReadingsOff: Story = {
+/* The master pause leaves the summary switch visible and disabled. */
+export const ModelCallsPaused: Story = {
   render: () => (
-    <SummaryPage summary={ABSENT} grant={grant({ consent: false, reason: 'readings-off' })} />
+    <SummaryPage summary={ABSENT} grant={grant({ consent: false, reason: 'model-calls-paused' })} />
   ),
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const blocked = await stateOf(region, 'blocked');
     await expect(blocked).toHaveTextContent(
-      'Readings are turned off, and that stops summaries too.',
+      'Model calls are paused. Nothing is sent for a session summary until you resume.',
     );
+    const toggle = within(blocked).getByRole('button', { name: 'Turn off summaries' });
+    await expect(toggle).toHaveAttribute('aria-disabled', 'true');
+    await expect(within(blocked).getByText('Model calls are paused')).toBeVisible();
+    await userEvent.click(toggle);
     await poll();
+    await expect(script.posts).toHaveLength(0);
+    const resume = within(canvasElement).getByRole('button', { name: 'Resume model calls' });
+    await userEvent.click(resume);
+    await waitFor(() => expect(script.masterPosts).toHaveLength(1));
+    await waitFor(() => expect(script.paused).toBe(false));
+    await userEvent.click(await within(region).findByRole('button', { name: /What is sent/ }));
+    const restored = await within(document.body).findByRole('button', {
+      name: 'Turn off summaries',
+    });
+    await expect(restored).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(script.grant?.['off']).toBe(false);
+    await expect(script.posts).toHaveLength(0);
+  },
+};
+
+export const ResumeKeepsSummariesOff: Story = {
+  render: () => (
+    <SummaryPage
+      ended={false}
+      grant={grant({ consent: false, off: true, reason: 'model-calls-paused' })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const toggle = within(region).getByRole('button', { name: 'Turn summaries on' });
+    await expect(toggle).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(toggle);
+    await expect(script.posts).toHaveLength(0);
+    await userEvent.click(
+      within(canvasElement).getByRole('button', { name: 'Resume model calls' }),
+    );
+    await waitFor(() => expect(toggle).not.toHaveAttribute('aria-disabled', 'true'));
+    await expect(within(region).getByText(SUMMARY_OFF)).toBeVisible();
+    await expect(script.grant?.['off']).toBe(true);
+    await expect(script.posts).toHaveLength(0);
+  },
+};
+
+export const PauseStopsARunningSummary: Story = {
+  render: () => <SummaryPage summary={storedSummary({ job: job({ part: 1 }) })} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await stateOf(region, 'working');
+    const drift = within(canvasElement).getByRole('region', { name: 'Drift' });
+    await userEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
+    await userEvent.click(
+      await within(document.body).findByRole('button', { name: 'Pause model calls' }),
+    );
+    await waitFor(() =>
+      expect(script.summary?.['job']).toMatchObject({
+        state: 'stopping',
+        reason: 'model-calls-paused',
+      }),
+    );
+    await expect(
+      within(region).getByRole('button', { name: 'Turn off summaries' }),
+    ).toHaveAttribute('aria-disabled', 'true');
+    await expect(within(region).getByText('Model calls are paused')).toBeVisible();
     await expect(script.posts).toHaveLength(0);
   },
 };

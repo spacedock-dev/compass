@@ -225,11 +225,11 @@ describe('notices and the durable off switch', () => {
     const shown = textOf('[data-next-reading-notice]');
     expect(shown).toContain('Provider: Claude Code');
     expect(shown).toContain('first.example');
-    expect(shown).not.toContain('Codex');
+    expect(shown).not.toContain('Provider: Codex');
     expect(shown).toContain("The session's words and the agent's messages.");
   });
 
-  it('draws one Turn off readings beside a notice when no disclosure popover is drawn', async () => {
+  it('draws one Pause model calls beside a notice when no disclosure popover is drawn', async () => {
     const page = mountDrift({
       payload: { ...fresh, reading_routes: { claude: { ...ROUTE, disclosure: '' } } },
       routes: { '/api/reading': () => json({ ok: true, produced: false, notice }) },
@@ -242,7 +242,19 @@ describe('notices and the durable off switch', () => {
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
   });
 
-  it('leads with the cap when the cap and off both stand, since turning on cannot lift it', async () => {
+  it('offers one Resume control when the route has no disclosure', async () => {
+    const page = mountDrift({
+      payload: {
+        reading: { consent: false, off: true, reason: 'model-calls-paused' },
+        reading_routes: { claude: { ...ROUTE, disclosure: '' } },
+      },
+    });
+    await page.settle();
+    await page.settle();
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-on"]')).toHaveLength(1);
+  });
+
+  it('keeps the paused reason and Resume control even when the analysis cap is spent', async () => {
     const page = mountDrift({
       payload: {
         reading: {
@@ -261,11 +273,10 @@ describe('notices and the durable off switch', () => {
       ...document.querySelectorAll('.next-session-drift-check .next-cockpit-reading-why'),
     ]
       .map((node) => node.textContent ?? '')
-      .filter((line) => /Analysis limit|Readings are off/.test(line));
-    expect(lines[0]).toContain('Analysis limit reached');
-    expect(lines).toContain(
-      'Readings are off. Nothing is sent to a model until you turn them back on.',
-    );
+      .filter((line) => /Analysis limit|Model calls are paused/.test(line));
+    expect(lines[0]).toContain('Model calls are paused');
+    expect(byAction('reading-on')?.getAttribute('aria-disabled')).toBeNull();
+    expect(lines).toContain('Model calls are paused. Nothing is sent until you resume.');
   });
 
   it('keeps the last notice while another press is pending or its response is lost', async () => {
@@ -324,41 +335,39 @@ describe('notices and the durable off switch', () => {
 
   it.each([
     { consent: false, off: true, reason: '' },
-    { consent: false, reason: 'readings-off' },
-  ])('stays off until a turn-on press runs the reading', async (reading) => {
+    { consent: false, reason: 'model-calls-paused' },
+  ])('resumes model calls without starting a reading', async (reading) => {
     const page = mountDrift({
       payload: { reading },
       routes: {
-        '/api/reading': () => json({ ok: true, job: { id: 'on', steps: [] }, notice }, 202),
+        '/api/reading': () =>
+          json({ ok: true, reading: { consent: true, off: false, reason: '' } }),
       },
     });
     await page.settle();
     await page.settle();
     expect(byAction('reading-ask')).toBeNull();
     expect(textOf('.next-session-drift-check')).toContain(
-      'Readings are off. Nothing is sent to a model until you turn them back on.',
+      'Model calls are paused. Nothing is sent until you resume.',
     );
     expect(readingPosts(page)).toHaveLength(0);
-    expect(byAction('reading-on')?.textContent).toBe('Turn on readings and analyze');
+    expect(byAction('reading-on')?.textContent).toBe('Resume model calls');
     await press(byAction('reading-on'));
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);
     expect(readingPosts(page)[0]?.body).toMatchObject({
-      allow: true,
-      provider: 'claude',
-      words_destination: 'api',
-      tool_output: 'api',
+      consent: 'on',
       press: true,
       observer_model: 1,
     });
   });
 
   it.each([
-    [409, 'destination-changed', 'Where this session would be sent changed'],
-    [400, 'page-outdated', 'Reload this page'],
+    [503, 'store-unavailable', 'Could not confirm model calls resumed'],
+    [400, 'page-outdated', 'Could not confirm model calls resumed'],
   ])('explains a refused turn-on without retrying (%s)', async (status, reason, sentence) => {
     const page = mountDrift({
-      payload: { reading: { consent: false, off: true, reason: 'readings-off' } },
+      payload: { reading: { consent: false, off: true, reason: 'model-calls-paused' } },
       routes: { '/api/reading': () => json({ ok: false, reason }, status as number) },
     });
     await page.settle();

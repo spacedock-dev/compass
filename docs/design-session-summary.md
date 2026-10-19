@@ -67,8 +67,8 @@ reader's action starts**.
   (on by default).
 - It does not cover unasked drift checks. No reader action starts them, so they stay off by default
   behind `--unasked-readings` and DEC-18's preconditions.
-- `--no-observer-model` still refuses every model call. Turn off readings and Turn off summaries
-  remain, and an answer of off already stored is kept: a reader who turned readings off is not opted
+- `--no-observer-model` still refuses every model call. Pause model calls and Turn off summaries
+  remain, and an answer of off already stored is kept: a reader who paused model calls is not opted
   back in by the upgrade.
 - A changed destination shows the notice again, naming the new destination, rather than a blocking
   Allow.
@@ -79,6 +79,38 @@ reader's action starts**.
 The product promise still holds, in the owner's words "nothing leaves your machine that you cannot
 switch off", because the off switch is one press from the card and one flag at startup. The promise
 map's wording for this changes with the work that ships it, not in this record.
+
+### Amended 2026-10-19: Pause model calls, with the summaries switch nested under it
+
+The owner renamed "Turn off readings" to
+**Pause model calls**, with **Resume model calls** as its opposite. This supersedes the
+earlier wording here and in SECURITY.md. Beside the control the page says:
+"Compass stops sending session text to Claude Code or Codex, so it uses none of your tokens,
+and stays paused until you resume."
+
+- **Paused:** Analyze drift, goal summaries and session summaries send nothing and refuse
+  with `model-calls-paused`. A running summary stops at its next part; a call already
+  spawned is cancelled and its reply cannot publish.
+- **Resumed:** each kind of call runs on the reader's action, showing its one-time notice
+  the first time. Resume changes permission only; it starts no Analyze or summary.
+- **Turn off summaries:** stops only session summaries. While model calls are paused its
+  control stays visible and disabled, with "Model calls are paused" beside it. Neither
+  pausing nor resuming writes the summary answer or its generation. After Resume model
+  calls, summaries are exactly as the reader left them.
+- **Startup refusal:** `--no-observer-model` overrides both switches and refuses every call.
+- **Upgrade:** the SQLite filename, tables, columns and stored off answer are unchanged.
+  An off answer saved by an earlier build remains paused after upgrading. Only the
+  internal reason token changes to `model-calls-paused`.
+
+The master pause still posts `{consent: "off", press: true, observer_model: 1}`.
+Resume posts the same guard fields with `consent: "on"`, without a session or provider.
+It clears the stored pause (`reading_policy.resume`) and writes no Allow, so it never covers
+the unasked lane, which still needs an explicit Allow and DEC-18's preconditions.
+Under the startup refusal Resume answers `run-disabled` and writes nothing, so the stored
+pause outlives a run started with `--no-observer-model`.
+The earlier explicit `allow: true` request remains accepted for older pages, including
+its destination checks. Summary presses keep `{consent: "off"}` and `{consent: "on"}`;
+while paused they answer 403 without changing the saved summary answer.
 
 ### The layout reversal
 
@@ -99,7 +131,7 @@ an honest limit moves and is never deleted still holds.
 | [DEC-18](design-reading-a-session.md#dec-18-an-unasked-reading-is-permitted-and-gated-on-delivery-first) | Not engaged. A summary made on open is reader-requested. | The unasked lane, its preconditions and its default off. |
 | [DEC-27](design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result), the owner's 2026-10-12 layout amendment | Reversed for this milestone: one column, More retired. | The signed table's principle that a promise or limit moves and is never deleted. |
 | [SECURITY.md, Light harness usage](../SECURITY.md#light-harness-usage-asking-a-harness-a-bounded-question), "Opt-in, and off until answered" | Becomes opt-out with a notice for calls a reader's action starts. | The operator's own harness, redaction before it leaves, one bounded question, visible spend, the off switches, and "Future harness callers need their own entry", which [Session summary calls](../SECURITY.md#session-summary-calls) answers. |
-| [Amended 2026-10-01: the first press is a consent step](design-reading-a-session.md#amended-2026-10-01-the-first-press-is-a-consent-step) | Superseded: the first press runs and shows the notice. | "Turn off readings" and its effect. |
+| [Amended 2026-10-01: the first press is a consent step](design-reading-a-session.md#amended-2026-10-01-the-first-press-is-a-consent-step) | Superseded: the first press runs and shows the notice. | "Turn off readings" (renamed Pause model calls on 2026-10-19) and its effect. |
 | [Amended 2026-10-02 (owner): the Allow is bound to where the words go](design-reading-a-session.md#amended-2026-10-02-owner-the-allow-is-bound-to-where-the-words-go) | Superseded as a blocking step: a changed destination shows the notice again. | Detecting a change, and what cannot be detected while a destination is unnamed. A refusal still holds whatever the destination. |
 
 The rulings that the consent change touches in passing, DEC-21 item 1 and its 2026-09-24
@@ -911,11 +943,11 @@ records their admission and publication shapes. No new session field is added.
   disabled for this run, or the store is unavailable. A missing store or missing answer is on.
   `board.reading.off: bool` reports an explicit stored off: a legacy or provider row with
   `allowed=0` and no row with `allowed=1`. This build's off writes 0 for every provider and its
-  Turn on clears them, so both values stand together only after an older build's Allow, which
+  Resume clears them, so both values stand together only after an older build's Allow, which
   rewrote just the provider it allowed and left its own off's zeros; that store reads as on.
   Disabled/unavailable responses use false because they do not read that answer.
-- `board.reading.reason: str` is `""`, `"daily-cap"`, `"readings-off"`, `"run-disabled"` or
-  `"store-unavailable"`. The rolling cap outranks off when both apply; run-disabled and
+- `board.reading.reason: str` is `""`, `"daily-cap"`, `"model-calls-paused"`, `"run-disabled"` or
+  `"store-unavailable"`. The master pause outranks the rolling cap when both apply; run-disabled and
   store-unavailable outrank both. Consent remains true at the cap unless off. The cap, reservation,
   spend ledger and job recovery are unchanged.
 - `board.reading.notices` is an object keyed by kind, then provider (`codex` or `claude`). Missing
@@ -941,14 +973,14 @@ records their admission and publication shapes. No new session field is added.
   job persistence or session identifier is added to the permission store. A notice-store failure
   refuses the press with `store-unavailable`, without launching or charging a model. A press whose
   job cannot launch withdraws the notice it recorded, so the next press carries it.
-- Turn off readings keeps the request `{consent: "off", press: true, observer_model: 1}`. It
+- Pause model calls keeps the request `{consent: "off", press: true, observer_model: 1}`. It
   stores off for all providers, clears notices, and replies 200. It is accepted under
   `--no-annotations`, with no qualified reading provider, and under `--no-observer-model`, since
   goal summaries need none of those; the loopback, navigation, `observer_model` and `press` guards
   still apply. Subsequent presses reply 403
-  with `reading.reason: "readings-off"` and `reading.consent: false` (429 if the cap is also spent).
-  Turning back on keeps `allow: true`, the route's `provider` and `words_destination`, and its
-  `tool_output` destination when named. Stale Allow destinations still reply 409
+  with `reading.reason: "model-calls-paused"` and `reading.consent: false`.
+  Resume model calls uses `consent: "on"` with the same press guards and starts no call.
+  Older pages may still send `allow: true` with the route's provider and destinations. Stale Allow destinations still reply 409
   `destination-changed`; missing `words_destination` replies 400 `page-outdated`. A plain press
   after a destination change runs with a new notice instead. Off and `--forget` never reset spend.
 - Project-context `observer_model.enabled: bool` is true by default and false under
@@ -959,9 +991,9 @@ records their admission and publication shapes. No new session field is added.
   notice, including a failed model attempt and a call made for an active child session.
   The page must still send `observer_model=1` on the focused refresh (the reader's act), with
   refresh, loopback and non-navigation guards unchanged, but removes its browser consent card.
-  Passive or cached reads do not record notices. Goal status is `readings-off` for stored off,
+  Passive or cached reads do not record notices. Goal status is `model-calls-paused` for stored off,
   `disabled` for the run's model refusal, and `consent-required` only when no reader request was
-  supplied. A stored off is `readings-off` even when the rolling cap is also spent. Goal calls
+  supplied. A stored off is `model-calls-paused` even when the rolling cap is also spent. Goal calls
   are not charged to that cap. Notice storage failure refuses a goal call as `store-unavailable`.
 - Legacy `providers`, `words`, `rebind` and `tool_output` keep their old explicit-Allow coverage,
   narrower words coverage, rebinding explanations and explicit tool-output grants. They do not
@@ -969,10 +1001,10 @@ records their admission and publication shapes. No new session field is added.
   those uses for reader-started calls. The unasked lane keeps requiring explicit `providers`
   coverage and never adopts default-on admission. `tool-output-consent-required` and
   `consent-required` no longer occur on the reading route. The client-contract fixture `reading-consent-required` is
-  replaced by `reading-off` (a press after Turn off readings), since a fresh store no longer refuses.
+  replaced by `reading-off` (a press after Pause model calls), since a fresh store no longer refuses.
 
 The notice is non-blocking and names the words sent (including the agent's words on Claude
-sessions), tool output where included, provider, destination and Turn off readings. A changed tier
+sessions), tool output where included, provider, destination and Pause model calls. A changed tier
 or destination repeats it. An old explicit off survives upgrade; an old Allow is on, conservatively
 showing the new notice once. Compatibility flags and the tool-output environment variable are
 accepted no-ops for this release. No browser consent or implicit Allow is written by a plain press.
@@ -1141,25 +1173,23 @@ configured destination (or that it is unknown), Turn off summaries and Turn summ
 content tier or changed destination shows it again. An unnamed destination has the same detection
 limit as a reading route: changes between two unnamed endpoints cannot be distinguished.
 
-An independent stored off is honoured through restart and upgrade. Grant presses answer
+An independent stored off is honoured through restart and upgrade. While the master is not paused, grant presses answer
 `{"ok":true,"summaries": <the board summaries block>}` with 200 (503 on store failure), including
 under `--no-observer-model` and `--no-annotations`. They change neither Analyze's answer nor a
 stored goal-summary answer. `--no-observer-model` refuses every model call with 503 `run-disabled`.
-Off refuses starts with 403 `summaries-off`; the rolling cap refuses them with 429 `daily-cap`.
-A stored Turn off readings refuses starts with 403 `readings-off` and stops each later part: the
-acceptance criteria of the opt-out issue say that after Turn off readings no reading, goal summary
-or session summary call is made until it is turned back on. DEC-28's answer 4 rules only that
-turning summaries off leaves Analyze as it was, and no ruling makes the two switches independent
-in the other direction, so the conservative reading is kept. The summary `off` field still reports
-only the summary answer, and Turn summaries on does not override readings off.
-Turning summaries off, and Turn off readings, stop every job this process runs: the job is marked
+Summary off refuses starts with 403 `summaries-off`; the rolling cap refuses them with 429 `daily-cap`.
+A stored master pause refuses starts with 403 `model-calls-paused` and stops each later part.
+The summary `off` field still reports only the summary answer. Summary-switch presses while
+paused answer 403 `model-calls-paused` and leave that answer and its generation untouched.
+Turning summaries off, and Pause model calls, stop every job this process runs: the job is marked
 `stopping` with that reason, its marker is rewritten, and a call already spawned is cancelled. A
 part already charged rechecks the grant after the board publish that follows its charge and before
 the model seam, so an off that lands in between sends nothing (the charge stays).
-The cap outranks off in board status when both apply; neither turning on nor off resets spend. `--forget`
-stores summaries off as it stores readings off: it forgets the answer as Turn off does, and the
-ruling is silent on whether forgetting should instead return to the default of on, so the
-conservative reading is kept. It never resets the summary ledger.
+The master pause outranks the cap and summary off in board status; neither turning on nor off resets spend. `--forget`
+stores summaries off and model calls paused, summaries first, so the summary off is written even
+when model calls were already paused and survives a later Resume model calls. It forgets the answer
+as Pause model calls does, and the ruling is silent on whether forgetting should instead return to
+the default of on, so the conservative reading is kept. It never resets the summary ledger.
 
 `POST /api/summary/cancel` accepts exactly `{"harness":"claude","sid":"session-id"}`.
 It answers 202 `{"ok":true,"cancelling":true}` when a job is running, otherwise 409
@@ -1210,8 +1240,8 @@ object under `summaries`:
 notice. `consent` is true by default and at the cap, false while explicitly off, run-disabled or
 store-unavailable. `off` means an explicit stored off (false when that answer cannot be read).
 `retry_at` is Unix seconds for the oldest unexpired charge plus 24 hours when at the cap, otherwise
-null. `reason` is exactly `""`, `daily-cap`, `summaries-off`, `readings-off`, `run-disabled` or
-`store-unavailable`; `consent` is also false under `readings-off`. Under `--no-observer-model`, `off`
+null. `reason` is exactly `""`, `daily-cap`, `summaries-off`, `model-calls-paused`, `run-disabled` or
+`store-unavailable`; `consent` is also false under `model-calls-paused`. Under `--no-observer-model`, `off`
 still reads the stored summary answer, read-only, while `reason` stays `run-disabled`.
 The summary content tier is 1 and has its own epoch, independent of the reading's epoch.
 
@@ -1229,7 +1259,7 @@ becomes an `interrupted` job carrying its saved part numbers and charged attempt
 metadata itself is not a new persistent store. A later restart without a marker still serves
 saved prose, but no longer carries that process's terminal job metadata.
 
-Job reasons are `""`, `cancelled`, `deleted`, `summaries-off`, `grant-changed` (including
+Job reasons are `""`, `cancelled`, `deleted`, `summaries-off`, `model-calls-paused`, `grant-changed` (including
 off then on while a reply was in flight), `destination-changed`, `daily-cap`, `run-disabled`,
 `store-unavailable`, `stopping`, `model-unavailable`, `interrupted`, `job-failed`, `store-refused`,
 `store-unwritable`, and producer outcomes `gaps`, `bytes`, `source_incomplete`, `no_entries`,

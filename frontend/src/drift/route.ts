@@ -43,25 +43,12 @@ export function readingRoute(payload: Row, session: Row | null | undefined): Row
 
 export function readingsOff(payload: Row): boolean {
   const policy = payload['reading'];
-  return isRecord(policy) && (policy['off'] === true || policy['reason'] === 'readings-off');
+  return isRecord(policy) && (policy['off'] === true || policy['reason'] === 'model-calls-paused');
 }
 
 export function readingsOn(payload: Row): boolean {
   const policy = payload['reading'];
   return isRecord(policy) && policy['consent'] === true && !readingsOff(payload);
-}
-
-export function turnOnPayload(payload: Row): Row {
-  const policy = isRecord(payload['reading']) ? payload['reading'] : {};
-  return {
-    ...payload,
-    reading: {
-      ...policy,
-      consent: true,
-      off: false,
-      reason: policy['reason'] === 'readings-off' ? '' : policy['reason'],
-    },
-  };
 }
 
 /* Whether a press could read this row now, as the board published it, or as this tab's last press was
@@ -123,20 +110,19 @@ export function routeRefusal(payload: Row, session: Row): string {
 
 export function policyReason(policy: unknown, nowMs: number = Date.now()): string {
   if (!isRecord(policy)) return MODEL_UNREAD;
-  /* The server's ranking: run-disabled and store-unavailable outrank the cap, and the cap outranks off,
-     because turning readings on lifts none of them.
+  /* The master pause outranks spend, while a startup refusal or unreadable store still leads.
      [Consent notice payload](../../../docs/design-session-summary.md#consent-notice-payload) */
   if (policy['reason'] === 'run-disabled') return MODEL_OFF;
   if (policy['reason'] === 'store-unavailable') {
     return 'Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before analyzing drift.';
   }
+  if (policy['off'] === true || policy['reason'] === 'model-calls-paused') return READINGS_OFF;
   if (policy['reason'] === 'daily-cap') {
     const at = nextNumber(policy['retry_at']);
     return at === null
       ? 'Analysis limit reached. Wait for the next update.'
       : `Analysis limit reached. You can analyze again at ${capReset(at, nowMs)}.`;
   }
-  if (policy['off'] === true || policy['reason'] === 'readings-off') return READINGS_OFF;
   return '';
 }
 

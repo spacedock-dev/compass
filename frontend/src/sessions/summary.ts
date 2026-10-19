@@ -46,8 +46,8 @@ export interface ReasonContext {
    does not hold is said as an unknown stop rather than dropped. */
 export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) => string>> = {
   'summaries-off': () => SUMMARY_OFF,
-  'readings-off': () =>
-    'Readings are turned off, and that stops summaries too. Turn on readings and analyze, in the Drift card, turns them back on and also starts a reading; it is not offered while the Drift card shows a current result.',
+  'model-calls-paused': () =>
+    'Model calls are paused. Nothing is sent for a session summary until you resume.',
   'daily-cap': ({ grant }) =>
     `Summaries have used their ${String(grant?.limit || 'daily')} model calls for the last 24 hours${grant?.retryAt ? `. They can run again at ${clock(grant.retryAt)}` : ''}.`,
   'run-disabled': () =>

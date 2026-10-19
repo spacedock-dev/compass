@@ -17,16 +17,22 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-19 — The owner renamed the master switch to Pause model calls / Resume model calls.
+The pause reason is `model-calls-paused`. Resume changes permission without starting Analyze.
+The summary switch stays visible and disabled while paused and keeps its saved answer through resume.
+`intent-parity.mjs` filters the renamed master switch from the same moved-control comparison as before;
+its recorded oracle is unchanged. Tests and stories assert the new words and behavior.
+
+
 2026-10-19 — Owner ruling, DEC-28: reader-started calls run opt-out with a notice, as
 [the widening](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
 requires. The recorded `nextReadingConsent`, `nextReadingToolOutputGranted`,
 `nextReadingNeedsAllow` and `nextReadingAnyConsent` admission answers in
 `route.differential.test.ts` no longer apply: their oracle calls remain in sequence but those
 four comparisons are withdrawn by name. Other route and refusal comparisons remain.
-`ReadingCapBanner.test.tsx` uses `readings-off` for its under-cap policy case in place of the
+`ReadingCapBanner.test.tsx` uses `model-calls-paused` for its under-cap policy case in place of the
 retired `consent-required` case; the budget and reset comparisons are unchanged. Analyze and
-Keep run directly, notices accompany due calls, and a stored off requires Turn on readings and
-analyze. Goal summaries also run on the explicit focused refresh without a browser consent card.
+Keep run directly, notices accompany due calls, and a stored off requires Resume model calls before another analysis. Goal summaries also run on the explicit focused refresh without a browser consent card.
 Golden files remain unchanged; the new behavior is asserted in component tests and Drift stories.
 The CSS display census visits a running notice instead of the removed consent card. Its chrome
 comparison maps only `reading-notice` to the recorded `reading-consent` recipe and
@@ -587,7 +593,7 @@ cohort rows retain the baseline shape. Removing the native prompt-wrapper rule l
 
 DEC-27 trims the first view: one optional outcome line, its Add and Remove controls after use,
 Undo after a goal edit or prompt choice, and six groups in the session-scoped More disclosure. Saved reads-from and
-Clear move there with Live monitor, Discard everything, Delegated work, Turn off readings and
+Clear move there with Live monitor, Discard everything, Delegated work, Pause model calls and
 neutral later-direction state. The idle monitor explanation and editor hint move with their owners.
 The count-only Direction summary draws no text, so every Keep requires the whole-text opening
 press before settlement. Activity Add stays mounted and becomes visible on hover or focus.

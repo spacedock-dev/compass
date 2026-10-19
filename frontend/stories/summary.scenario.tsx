@@ -234,6 +234,8 @@ export interface SummaryScript {
   summary: Record<string, unknown> | null;
   /** The row's own published fields, laid over the session. */
   session: Record<string, unknown>;
+  paused: boolean;
+  masterPosts: Record<string, unknown>[];
   /** Every POST to a summary route, in order. */
   posts: { path: string; body: Record<string, unknown> }[];
   /** How a summary POST is answered; the default admits a start with a running job. Status 0 loses the reply. */
@@ -250,6 +252,8 @@ export const script: SummaryScript = {
   summary: null,
   session: {},
   posts: [],
+  masterPosts: [],
+  paused: false,
   answer: () => ({ status: 202, body: { ok: true, job: job() } }),
   boards: 0,
   outline: {},
@@ -290,10 +294,19 @@ export function SummaryPage({
   readonly outline?: Record<string, unknown>;
 }) {
   const [shell] = useState(() => {
-    script.grant = published;
+    script.grant =
+      published?.['reason'] === 'model-calls-paused'
+        ? {
+            ...published,
+            consent: !published['off'],
+            reason: published['off'] ? 'summaries-off' : '',
+          }
+        : published;
     script.summary = summary;
     script.session = session;
     script.posts = [];
+    script.masterPosts = [];
+    script.paused = published?.['reason'] === 'model-calls-paused';
     script.answer = answer;
     script.boards = 0;
     script.outline = outline;
@@ -311,6 +324,30 @@ export function SummaryPage({
       reducedMotion: () => true,
       fetch: async (url, init) => {
         const path = url.split('?')[0] ?? url;
+        if ((init?.method ?? 'GET').toUpperCase() === 'POST' && path === '/api/reading') {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          script.masterPosts.push(body);
+          script.paused = body['consent'] === 'off';
+          if (script.paused && script.summary?.['job']) {
+            script.summary = {
+              ...script.summary,
+              job: {
+                ...(script.summary['job'] as object),
+                state: 'stopping',
+                reason: 'model-calls-paused',
+              },
+            };
+          }
+          return json({
+            ok: true,
+            produced: false,
+            reading: {
+              consent: !script.paused,
+              off: script.paused,
+              reason: script.paused ? 'model-calls-paused' : '',
+            },
+          });
+        }
         if ((init?.method ?? 'GET').toUpperCase() === 'POST' && path.startsWith('/api/summary')) {
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
           script.posts.push({ path, body });
@@ -325,7 +362,13 @@ export function SummaryPage({
             annotate: true,
             annotate_cap: 240,
             reading_check: 'passed',
-            reading: { consent: true, off: false, reason: '', used: 1, limit: 100 },
+            reading: {
+              consent: !script.paused,
+              off: script.paused,
+              reason: script.paused ? 'model-calls-paused' : '',
+              used: 1,
+              limit: 100,
+            },
             reading_routes: {
               claude: routeOf('claude', {
                 provider: 'claude',
@@ -335,7 +378,14 @@ export function SummaryPage({
                 fallback: false,
               }),
             },
-            ...(script.grant ? { summaries: script.grant } : {}),
+            ...(script.grant
+              ? {
+                  summaries: {
+                    ...script.grant,
+                    ...(script.paused ? { consent: false, reason: 'model-calls-paused' } : {}),
+                  },
+                }
+              : {}),
             harnesses: [{ key: 'claude', label: 'Claude Code' }],
             sessions: [
               {

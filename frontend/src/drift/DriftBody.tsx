@@ -180,7 +180,7 @@ function TriggerLine({ offer }: { readonly offer: SteerOffer }) {
 
 /* The question before the press, in the Analyze control's place while a later direction is unsettled: Keep is
    then the stage's one primary. The question is the Intent step's; this adds the Analyze step's side of it: the
-   reading Keep may start, the box a running analysis draws above it, Turn off readings beside it, and the
+   reading Keep may start, the box a running analysis draws above it, Pause model calls beside it, and the
    disclosure, the count and the refusal under it. */
 function QuestionWithAnalysis({
   board,

@@ -193,10 +193,11 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           const index = scenario.reading.posts.length;
           scenario.reading.posts.push(body);
           if (body['consent'] === 'off') {
-            reading = { consent: false, off: true, reason: 'readings-off' };
+            reading = { consent: false, off: true, reason: 'model-calls-paused' };
             return json({ ok: true, reading });
           }
           reading = POLICY;
+          if (body['consent'] === 'on') return json({ ok: true, reading });
           const notice = scenario.reading.replies[index];
           job = { ...JOB, id: `notice-${index}`, ...(notice ? { notice } : {}) };
           return new Response(JSON.stringify({ ok: true, job, ...(notice ? { notice } : {}) }), {

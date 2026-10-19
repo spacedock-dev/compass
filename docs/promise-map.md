@@ -69,7 +69,9 @@ disabled rather than silently missing.
 current turn it is, and an estimate of when that turn ends. It tells you when that changes instead
 of making you poll. The first screen sets your goal or a permitted prompt beside current activity
 and brings recorded departures forward. The session page tells you once what a reading sends and
-where, and you can turn it off, without steering it for you. Open a session, set a goal and
+where, without steering it for you. Pause model calls stops Analyze drift, goal summaries and
+session summaries until Resume model calls. Turn off summaries stops session summaries only;
+while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
 press Analyze drift. The How Intent and drift works button beside Intent explains the steps and
 the limits; Not enough recorded yet is normal until you add an expected outcome line.
 On Claude Code sessions, you can turn on a live drift estimate in the panel and header after every
@@ -156,7 +158,7 @@ estimate reads checks and file paths, not the meaning of your intent; too little
 "Not enough recorded yet"
 ([DEC-26](design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
 A reading includes them by default and names them, with their destination, in the notice its
-first press shows; Turn off readings or `--no-observer-model` stops them. Where Compass cannot name
+first press shows; Pause model calls or `--no-observer-model` stops them. Where Compass cannot name
 that destination it sends none and says so. A recorded pass is what the
 tool reported, never an inspection of the work, and a reading labels it that way; a result the
 record does not carry reads as not recorded rather than as a pass.

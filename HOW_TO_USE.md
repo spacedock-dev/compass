@@ -423,19 +423,23 @@ goal. An unavailable prompt time means you must type a goal instead. The notice 
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
-Use **Turn off readings** on a session page, in the **What is sent** popover beside Analyze drift, to revoke it. A Claude Code session is read by Claude
+Use **Pause model calls** on a session page, in the **What is sent** popover beside Analyze drift, to pause every model call. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
 read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever
 reads. **What is sent**, under the button, opens a short list naming it, and with neither installed that reason takes
-the button's place and says no analysis can run. Turn off readings stops readings and goal
-summaries; an off saved before an upgrade stays off. Analyze allows 100 attempts in a rolling
+the button's place and says no analysis can run. Pause model calls stops readings and goal
+summaries and session summaries until **Resume model calls**. Compass stops sending session text
+to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.
+An off saved before an upgrade stays paused. **Turn off summaries** stops session summaries alone;
+while paused, that control stays disabled with "Model calls are paused" beside it. Pause and Resume
+keep its saved answer, so summaries resume exactly as you left them. Analyze allows 100 attempts in a rolling
 twenty-four hours and says when capacity becomes available again. Codex goal summaries are on by
 default on a focused refresh, with their own one-time notice.
 
 A Claude Code reading includes its checks by default where Compass can name the destination: the
 command, result, last 180 characters of output and written paths. The notice names tool output too.
 `--observer-model`, `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do
-nothing in this release; they will be removed in a later release. Turn off readings or
+nothing in this release; they will be removed in a later release. Pause model calls or
 `--no-observer-model` stops these calls.
 
 `--forget` also clears reading permission without resetting its rolling spend budget. It deletes the local history store and the session-end store, removes the records of any

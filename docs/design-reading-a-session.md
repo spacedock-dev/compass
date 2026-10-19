@@ -1532,7 +1532,7 @@ harness. The reading route resolves the route again from the payload's harness a
 press that named a different provider, before it writes consent or reserves an attempt.
 Permission is kept per provider, because allowing Codex to send a reader's words to OpenAI is not
 allowing Claude Code to send them to Anthropic. An answer saved before the split reads as Codex's.
-Turning readings off and `--forget` revoke every provider, and the rolling cap (twelve attempts
+Pausing model calls and `--forget` revoke every provider, and the rolling cap (twelve attempts
 then, 100 since 2026-10-16) is shared, so a second provider cannot double it. If the CLI is missing at launch, or a call fails,
 nothing else is tried: a fresh press is the only retry. The flags the Claude Code call runs with,
 and the fact that they are CLI restrictions rather than an OS sandbox, are in
@@ -1640,7 +1640,7 @@ The binding catches that move only where the destination was named, as item 5 sa
    is asked once more. When an Allow on record does not cover today's destination, for that reason
    or because the destination moved, the consent step opens with the server's line "Where your
    words go has changed since you allowed this, so allow it again." A refusal is never asked
-   about that way: "Turn off readings" and `--forget` hold whatever the destination.
+   about that way: "Turn off readings" (renamed Pause model calls on 2026-10-19) and `--forget` hold whatever the destination.
 4. The binding is a table of its own in the store, `permission_destination`, created in place
    inside the store's existing transaction. No column is added to an older table, so an older
    build's two-value writes still succeed against a migrated store, and an older build's Turn off
@@ -2732,9 +2732,9 @@ allow it". When the permission store cannot take the write, the start
 prints one line and drops the flag for the run, so the card asks as usual. The server was safe
 either way, since a press without the row is refused `403 tool-output-consent-required`; the page
 was the part that overstated, and it was reading the flag where it should have read the outcome.
-The wording still follows the flag afterwards: Turn off readings and `--forget` delete the row while
+The wording still follows the flag afterwards: Pause model calls and `--forget` delete the row while
 the flag stays set until a restart, so the card can keep saying it after a withdrawal.
-`--no-observer-model` refuses it, "Turn off readings" and `--forget` clear it, and the Windows
+`--no-observer-model` refuses it, "Turn off readings" (renamed Pause model calls on 2026-10-19) and `--forget` clear it, and the Windows
 respawn forwards it.
 
 Why a launch flag. A reader who found on a first walk that most lines read "Can't tell" had tool
@@ -3320,7 +3320,7 @@ read it as a press that did nothing.
 [DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) supersedes this amendment.
 The first press of Analyze drift runs the reading without a consent step and shows, once per kind of
 call on this machine, a non-blocking notice naming what is sent and to which provider, with Turn off
-readings beside it. "Turn off readings" stays the off switch, and a reader who turned readings off is
+readings beside it. "Turn off readings" (renamed Pause model calls on 2026-10-19) stays the off switch, and a reader who paused model calls is
 not opted back in. This is in force once the consent change ships.
 
 #### Amended 2026-10-01: idle, the disclosure is one worded click away
@@ -3332,7 +3332,7 @@ comes first and the DEC-21 disclosure follows it with the hint" for the idle sta
   whole "0 model requests recorded for this session." to a screen reader), any account of a press,
   the one hint line, then the DEC-21 disclosure under a closed summary: "What is sent to
   <receiver>" until that receiver is allowed, and always while the route is a fallback, then "What
-  is sent". The button stays described by the disclosure's paragraph. Turn off readings sits inside
+  is sent". The button stays described by the disclosure's paragraph. Pause model calls sits inside
   the summary, still on the page. Amended 2026-10-02 (NU-9): the count is a line of its own directly
   under the button row, ahead of any account of a press, because on the row it pushed "Analyze
   again" onto a second one beside Steer back and Update intent instead, which are now one row of
@@ -3404,7 +3404,7 @@ reading is.
 Idle, "What is sent to <receiver>" (or "What is sent") opens the same list as a popover, the
 system the header's "Why" uses ([NUI-19](design-next-ui.md#nui-19-a-caveat-has-three-tiers)), in
 place of the accordion the [idle amendment](#amended-2026-10-01-idle-the-disclosure-is-one-worded-click-away)
-drew. Analyze drift stays described by the list, and Turn off readings stays inside it.
+drew. Analyze drift stays described by the list, and Pause model calls stays inside it.
 
 ### What the Cancel build decided, 2026-09-24
 
@@ -3463,7 +3463,7 @@ new strings on the issue; the other calls were made within them.
   reload draws the same. A lost answer says "Could not confirm the cancel. The analysis may still be
   running; refresh to check." The design goes straight back to idle with no sentence; the stored
   sentence is the ruling's addition.
-- "Turn off readings" does not cancel a running job in this layer: a withdrawal after the spawn does
+- "Turn off readings" (renamed Pause model calls on 2026-10-19) does not cancel a running job in this layer: a withdrawal after the spawn does
   not stop a call already sent, and that is a separate decision.
 
 ### What the accounting build decided, 2026-09-27
@@ -5150,7 +5150,7 @@ sentence about work the page cannot see stay reachable.
 | 6c | Discard everything | Moves into More and stays reachable. | Nothing; SECURITY.md still describes it |
 | 6d | What analysis does | Replaced by the "How Intent and drift works" popup. One explainer, not two. | Nothing |
 | 6e | Delegated work | Moves into More and stays reachable from Analyze drift. It is an honest limit. | Nothing |
-| 6f | Turn off readings | Moves into More. The promise map's off switch stays. | Nothing |
+| 6f | Pause model calls | Moves into More. The promise map's off switch stays. | Nothing |
 | 6g | Add to my intent on each activity row | Always visible on a row that holds a later direction. Amended 2026-10-12: a control that appears only on hover is one a reader never learns is there. DEC-24 item 3 needs it. | Nothing |
 | 6h | "No terminal to raise" and its "Why" | Shown only when the session is blocked on the reader. | DEC-20 (the raise is primary when a session is blocked) |
 
@@ -5230,7 +5230,7 @@ typed goal.
 The unblocked session header follows the goal and analysis panel, before Session activity; a blocked
 session retains its header raise and waiting panel above the goal. More has six groups at most:
 Live monitor with its explanation, saved-word caveats and Discard everything, Delegated work,
-Turn off readings, Saved with Clear, and settled or unread later directions. The privacy disclosure,
+Pause model calls, Saved with Clear, and settled or unread later directions. The privacy disclosure,
 model-request count and daily cap stay beside Analyze. The goal and primary fit at 1280 by 800 and
 375 by 667; 320 px and the 640 px layout representing 200% zoom retain wrapping and document scroll.
 
@@ -5302,7 +5302,7 @@ and where it left your intent"; that sign-off supersedes the 2026-10-12 layout a
 The written inventory of the retired session More, by group in its order, with the new home of each
 part. Nothing in it was dropped. The stories under `Sessions/One-column page` assert each row by role,
 name or text in its new home, with three exceptions no fixture there reaches: What became of discarded
-words, the armed confirmation of Discard everything (its offer is asserted), and Turn off readings
+words, the armed confirmation of Discard everything (its offer is asserted), and Pause model calls
 under the control where no popover is drawn (its place in the popover is asserted).
 
 | More held | Kind | New home |
@@ -5314,7 +5314,7 @@ under the control where no popover is drawn (its place in the popover is asserte
 | What became of discarded words | Sentences | The Intent card, under the save |
 | Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
 | Delegated work, and the "still running?" check | Limit | The Drift card, under the reading and its control, where Analyze drift is (row 6e) |
-| Turn off readings | Control | The "What is sent" popover beside Analyze drift; under the control where no popover is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
+| Pause model calls | Control | The "What is sent" popover beside Analyze drift; under the control where no popover is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
 | Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside Clear |
 | "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
 | Clear | Control | The Intent card, beside the saved stamp |

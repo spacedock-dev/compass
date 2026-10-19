@@ -125,6 +125,7 @@ export async function setSummaries(
   identity: SessionIdentity,
   on: boolean,
 ): Promise<void> {
+  if (shell.runtime.store.getSnapshot().data?.reading?.off === true) return;
   const key = compatSessKey(identity);
   const held = summaryHeldFor(shell.runtime);
   const control = `summary-grant:${key}`;
