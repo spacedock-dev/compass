@@ -114,9 +114,15 @@ def cutoff_on_timeline(assessment: dict[str, Any]) -> str:
     """
     oldest = assessment.get("window_start") or assessment["coverage"]["tail_start"]
     hours = max(0, int((assessment["read_at"] - oldest) // 3600))
-    age = f"The oldest is from about {hours}h ago" if hours else "All are from within the last hour"
-    text = re.sub(r"The oldest is from about \d+h ago", age, assessment["cutoff"])
-    return re.sub(r"the oldest about \d+h ago", "all within the last hour", text)
+
+    def age(match: re.Match[str]) -> str:
+        # `_cutoff_window` says "It is" for one entry and "The oldest is" / "All are" for several.
+        one = match.group(1) == "It is"
+        if hours:
+            return f"{match.group(1)} from about {hours}h ago"
+        return ("It is" if one else "All are") + " from within the last hour"
+
+    return re.sub(r"(The oldest is|It is) from about \d+h ago", age, assessment["cutoff"])
 
 
 def place_summary(fixture: dict[str, Any], made_at: float) -> None:

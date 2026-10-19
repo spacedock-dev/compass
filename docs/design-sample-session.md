@@ -131,7 +131,7 @@ sample was captured:
   sample's 75,130 bytes to the bound is at most about 233 KB of page, which leaves the rest of the
   400 KiB to the code that ships beside it.
 
-This sample's fixture is 128,257 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
+This sample's fixture is 128,297 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
 
@@ -177,8 +177,11 @@ the one-column page:
 7. **Full activity**, beside its trigger.
 
 The first sample's tour noted the drift level and the analysis headline instead of the summary and
-the phase; the level is now named in the departure note, because the summary is what the redesigned
-page leads with.
+the phase. Neither is noted now, because the summary is what the redesigned page leads with.
+
+The activity note says a number never moves, which holds for the entries a summary line or a finding
+cites. A number written inside quoted speech counts the original session's live board, as
+[the README](../sample-session/README.md#what-is-real-and-what-is-not) records.
 
 They are popovers that open on hover (`openOnHover`), and also on a press and from the keyboard. A
 tooltip was rejected because it is unreachable by touch and by keyboard, and the sample is most likely

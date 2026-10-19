@@ -218,7 +218,7 @@
         "fact:be63b710c3a94f33"
        ],
        "clause": "Burn down fully the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone",
-       "detail": "The milestone stood at 97.3% with DASH-3801 still open, the agent said the walk found a blocker so it can't close yet, and the session ended with PRs #325 and #327 still being merged.",
+       "detail": "The milestone stood at 97.3% with DASH-3801 still open, the agent said the walk found a blocker so it can't close yet, and the session ended with PRs #9325 and #9327 still being merged.",
        "result": "departure",
        "why": ""
       },
@@ -336,7 +336,7 @@
     "instruction": {
      "at": 1778585332.505,
      "label": "asked",
-     "text": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and get it done"
+     "text": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and get it done"
     },
     "last_activity": 1778556545.0,
     "last_output": null,
@@ -446,7 +446,7 @@
     "record_id": "fe1db57e-6591-4313-a0dc-97acc86a4067",
     "sid": "sample",
     "source": "timestamped top-level assistant text record",
-    "title": "327 is clean and #325 is behind main."
+    "title": "9327 is clean and #9325 is behind main."
    },
    {
     "at": 1778585332.505,
@@ -456,7 +456,7 @@
     "phase": "user-role instruction",
     "sid": "sample",
     "source": "timestamped non-meta user-role record",
-    "title": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
+    "title": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
    },
    {
     "at": 1778584997.941,
@@ -781,7 +781,7 @@
       "harness": "claude",
       "sid": "sample"
      },
-     "summary": "327 is clean and #325 is behind main.",
+     "summary": "9327 is clean and #9325 is behind main.",
      "type": "agent_message",
      "work_item_id": null
     },
@@ -801,7 +801,7 @@
       "harness": "claude",
       "sid": "sample"
      },
-     "summary": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge",
+     "summary": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge",
      "type": "user_message",
      "work_item_id": null
     },
@@ -1410,7 +1410,7 @@
       "derived_from": "fact:c510a22d27c0bbfa",
       "kind": "operator_intent",
       "projection_id": "intent:817dfef3dfea811b",
-      "summary": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
+      "summary": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
      }
     ],
     "steering_episodes": [],
@@ -1619,7 +1619,7 @@
       "prompt": {
        "at": 1778585332.505,
        "fact_id": "fact:c510a22d27c0bbfa",
-       "title": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
+       "title": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
       },
       "span": {
        "entries": 2,
@@ -2167,7 +2167,7 @@
       "harness": "claude",
       "sid": "sample"
      },
-     "summary": "The docs PR (#325) is clean.",
+     "summary": "The docs PR (#9325) is clean.",
      "type": "agent_message",
      "work_item_id": null
     },
@@ -2191,7 +2191,7 @@
       "harness": "claude",
       "sid": "sample"
      },
-     "summary": "While the builder works through that list, I'm checking CI on the docs PR (#325).",
+     "summary": "While the builder works through that list, I'm checking CI on the docs PR (#9325).",
      "type": "agent_message",
      "work_item_id": null
     },
@@ -2311,7 +2311,7 @@
       "harness": "claude",
       "sid": "sample"
      },
-     "summary": "The docs PR is open as #325.",
+     "summary": "The docs PR is open as #9325.",
      "type": "agent_message",
      "work_item_id": null
     },
@@ -2889,7 +2889,7 @@
     "record_id": "fe1db57e-6591-4313-a0dc-97acc86a4067",
     "sid": "sample",
     "source": "timestamped top-level assistant text record",
-    "title": "327 is clean and #325 is behind main."
+    "title": "9327 is clean and #9325 is behind main."
    },
    {
     "at": 1778585332.505,
@@ -2899,7 +2899,7 @@
     "phase": "user-role instruction",
     "sid": "sample",
     "source": "timestamped non-meta user-role record",
-    "title": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
+    "title": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
    },
    {
     "at": 1778584997.941,
@@ -3206,7 +3206,7 @@
     "at": 1778585332.505,
     "cut": false,
     "fact_id": "fact:c510a22d27c0bbfa",
-    "text": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and get it done"
+    "text": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and get it done"
    },
    {
     "at": 1778584637.681,
@@ -3260,7 +3260,7 @@
       "harness": "claude",
       "sid": "sample"
      },
-     "summary": "327 is clean and #325 is behind main.",
+     "summary": "9327 is clean and #9325 is behind main.",
      "type": "agent_message",
      "work_item_id": null
     },
@@ -3280,7 +3280,7 @@
       "harness": "claude",
       "sid": "sample"
      },
-     "summary": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge",
+     "summary": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge",
      "type": "user_message",
      "work_item_id": null
     },
@@ -3889,7 +3889,7 @@
       "derived_from": "fact:c510a22d27c0bbfa",
       "kind": "operator_intent",
       "projection_id": "intent:817dfef3dfea811b",
-      "summary": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
+      "summary": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
      }
     ],
     "steering_episodes": [],
@@ -4098,7 +4098,7 @@
       "prompt": {
        "at": 1778585332.505,
        "fact_id": "fact:c510a22d27c0bbfa",
-       "title": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
+       "title": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge"
       },
       "span": {
        "entries": 2,
@@ -4607,7 +4607,7 @@
      "harness": "claude",
      "sid": "sample"
     },
-    "summary": "327 is clean and #325 is behind main.",
+    "summary": "9327 is clean and #9325 is behind main.",
     "type": "agent_message",
     "work_item_id": null
    },
@@ -4627,7 +4627,7 @@
      "harness": "claude",
      "sid": "sample"
     },
-    "summary": "Merge PR 325 and PR 327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge",
+    "summary": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and ge",
     "type": "user_message",
     "work_item_id": null
    },
@@ -5195,7 +5195,7 @@
      "harness": "claude",
      "sid": "sample"
     },
-    "summary": "PR #327 is open.",
+    "summary": "PR #9327 is open.",
     "type": "agent_message",
     "work_item_id": null
    },
@@ -5595,7 +5595,7 @@
      "harness": "claude",
      "sid": "sample"
     },
-    "summary": "326 is merged as `21dab6b6`, with Storybook and both frontend jobs passing.",
+    "summary": "9326 is merged as `21dab6b6`, with Storybook and both frontend jobs passing.",
     "type": "agent_message",
     "work_item_id": null
    },
@@ -5619,7 +5619,7 @@
      "harness": "claude",
      "sid": "sample"
     },
-    "summary": "PR #326, the stories, is open.",
+    "summary": "PR #9326, the stories, is open.",
     "type": "agent_message",
     "work_item_id": null
    },

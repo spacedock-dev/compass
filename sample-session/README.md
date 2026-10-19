@@ -108,6 +108,17 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   characters. The board's permissions are shown as a store with no stored off reads them: readings
   and summaries on, nothing refused and no notice recorded, with one reading and the stored summary's
   three calls counted.
+- **Pull request numbers moved once more.** The sanitizer keeps a number's length, which put the
+  session's pull requests on #321 to #327 and a tracker link on #211, real and unrelated pull
+  requests in this repository. Each was rewritten after sanitizing, in the transcript and the fixture
+  alike, by putting a 9 in front (#9321 to #9327, #9211), including the stored summary's and the
+  reading's text, which quote them. `scripts/tests/test_sample_session_files.py` fails when a quoted
+  pull request number matches one in this repository's commit subjects.
+- **Numbers inside quoted speech are the original session's.** Full activity numbers the sample's own
+  record, and an entry a summary line or a finding cites is a link to that number. Text the session
+  quotes was written against the live board of its day, so a "#9" inside a quoted message or a
+  summary line that repeats one ("citing the failing run at #9") counts that board's entries, not the
+  sample's.
 
 ## Why a transcript is in the repository
 
@@ -164,7 +175,7 @@ refuses a mapping file kept in this directory.
 
 The fixture ships inside the built page, so both are bounded before anything is built;
 [the design record](../docs/design-sample-session.md#how-big-it-may-be) owns the bounds and why. This
-session's record is 81 entries in two pages, and the fixture with its summary and reading is 128,257
+session's record is 81 entries in two pages, and the fixture with its summary and reading is 128,297
 bytes of compact JSON.
 
 ## Regenerating it

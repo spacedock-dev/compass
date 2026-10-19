@@ -104,6 +104,23 @@ class SampleSessionFilesTest(unittest.TestCase):
                 text = path.read_text(encoding="utf-8")
                 self.assertEqual({}, ss.resolving_commits(text, ROOT))
 
+    def test_no_quoted_pull_request_number_is_one_in_this_repository(self) -> None:
+        # The sanitizer keeps a number's length, which put the first regeneration on #321-#327:
+        # real, unrelated pull requests here, each a dated false lead. A squash-merge subject ends
+        # "(#N)", so the subjects are the repository's own list of numbers in use.
+        subjects = git("log", "--all", "--format=%s")
+        if subjects is None:
+            self.skipTest("no git history to compare pull request numbers against")
+        used = set(re.findall(r"\(#(\d+)\)", subjects))
+        for path in (*SESSIONS, FIXTURE):
+            with self.subTest(file=path.name):
+                text = path.read_text(encoding="utf-8")
+                # A short "#9" is an entry number and "PR 5" a count of the run's pull requests;
+                # every pull request number the session carries has three digits or more.
+                written = set(re.findall(r"(?:(?<![\w&])#|PRs? #?)(\d{3,})(?!\d)", text))
+                linked = set(re.findall(r"(?:pulls?/|prNumber\\*\":)(\d+)(?!\d)", text))
+                self.assertEqual(set(), (written | linked) & used)
+
     def test_the_milestone_names_no_branch_from_this_repository(self) -> None:
         branches = {str(r["gitBranch"]) for r in self.records(MILESTONE) if r.get("gitBranch")}
         self.assertEqual(

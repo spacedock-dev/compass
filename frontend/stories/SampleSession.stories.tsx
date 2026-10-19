@@ -363,6 +363,45 @@ export const EarlyCitationOpensInFullActivity = citationOpens(cited(0, 0, 0, 'fi
 export const MiddleCitationOpensInFullActivity = citationOpens(cited(0, 1, 0, 'first'));
 export const LateCitationOpensInFullActivity = citationOpens(cited(1, 2, 1, 'last'));
 
+/* The shipped reading cites nothing before the newest page, so this variant's goal finding cites the
+   person's first message, #1, which only the older page holds. Pressing the finding reads that page and
+   lights the row, as it would for a longer session's reading. */
+const OLDER_CITE = cited(0, 0, 0, 'first');
+const OLDER_FINDING: SampleFixture = (() => {
+  const board = structuredClone(SAMPLE_FIXTURE.board) as Json;
+  const row = (board['sessions'] as Json[])[0] as Json;
+  const criteria = (row['annotation_assessment'] as Json)['criteria'] as Json;
+  criteria['goal'] = { ...(criteria['goal'] as Json), cites: [OLDER_CITE] };
+  return { ...SAMPLE_FIXTURE, board };
+})();
+
+export const FindingCitingTheOlderPageTintsIt: Story = {
+  render: () => <WithFixture fixture={OLDER_FINDING} />,
+  play: async ({ canvasElement }) => {
+    await loaded(canvasElement);
+    await expect(
+      canvasElement.querySelector(`[data-next-cockpit-work] [data-next-entry-id="${OLDER_CITE}"]`),
+    ).toBeNull();
+    const press = canvasElement.querySelector('[data-next-finding="goal"]') as HTMLElement;
+    press.scrollIntoView({ block: 'center', behavior: 'instant' });
+    await userEvent.click(press);
+    const row = () =>
+      canvasElement.querySelector(
+        `[data-next-cockpit-work] [data-next-entry-id="${OLDER_CITE}"][data-next-cited]`,
+      ) as HTMLElement | null;
+    await waitFor(() => expect(row()).not.toBeNull(), { timeout: 10000 });
+    await expect(
+      within(canvasElement).getByRole('button', { name: 'Full activity' }),
+    ).toHaveAttribute('aria-expanded', 'true');
+    await waitFor(() => expect(row()).toBeVisible(), { timeout: 5000 });
+    await expect(getComputedStyle(row() as HTMLElement).backgroundColor).not.toBe(
+      'rgba(0, 0, 0, 0)',
+    );
+    await expect(canvasElement.querySelector('[data-next-jump-missing]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-sample-held]')?.textContent ?? '').toBe('');
+  },
+};
+
 export const SessionsInvitesAReader: Story = {
   render: () => <SampleExample fragment="#n=sessions" />,
   play: async ({ canvasElement }) => {

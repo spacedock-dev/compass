@@ -939,8 +939,9 @@ This table describes the implementation and does not amend the owner-ruled table
 - Delete summary sits at the foot of a saved summary, beside What is sent. The ruling requires the
   control and names no place for it. Deleting does not summarize the session again on the same open.
 - The view-only sample never posts an open start: its fixture carries a stored summary. Its board
-  publishes the `summaries` block as captured, so the card draws its controls, and the sample's guard
-  holds every one of them ([View only](design-sample-session.md#view-only)).
+  publishes the `summaries` block as a fresh store reads it
+  ([the timeline rewrites](../sample-session/README.md#what-is-real-and-what-is-not)), so the card
+  draws its controls, and the sample's guard holds every one of them ([View only](design-sample-session.md#view-only)).
 - Subagent messages remain excluded. The existing ruling admits their checks and writes, while
   the message builder admits top-level messages only.
 - A relative written path resolves against the directory at the transcript's head, read with the

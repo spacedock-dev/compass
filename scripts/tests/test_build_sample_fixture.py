@@ -106,6 +106,22 @@ class SummaryAndCutoffTest(unittest.TestCase):
         assessment["window_start"] = 10_000.0 - 600
         self.assertIn("All are from within the last hour.", bf.cutoff_on_timeline(assessment))
 
+    def test_a_single_entry_keeps_its_own_subject(self) -> None:
+        assessment = {
+            "read_at": 10_000.0,
+            "window_start": 10_000.0 - 7_300,
+            "coverage": {"tail_start": 0},
+            "cutoff": "Read the one entry. It is from about 3846h ago.",
+        }
+        self.assertEqual(
+            "Read the one entry. It is from about 2h ago.", bf.cutoff_on_timeline(assessment)
+        )
+        assessment["window_start"] = 10_000.0 - 600
+        self.assertEqual(
+            "Read the one entry. It is from within the last hour.",
+            bf.cutoff_on_timeline(assessment),
+        )
+
 
 class RecordPagesTest(unittest.TestCase):
     """The capture reads every record page back to the start, and keeps nothing of the server's cursors."""

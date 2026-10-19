@@ -16,12 +16,12 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'summary',
     title: 'What the session has done',
-    body: 'A summary a model wrote from the record when the finished session was opened, in phases, each line citing the entries it rests on. A line that says in its own voice that work was done is withheld and says so; it may only report that someone said so. Compass checks that a cited entry exists, not that it supports the line. The outline below it is Compass’s own grouping, made with no model.',
+    body: 'A summary a model wrote from the record when the finished session was opened, in phases, each line citing the entries it rests on. A line that says in its own voice that work was done is withheld and says so. A line may report what someone said, a tracker’s state or a check’s own reported result, but not claim the work is done. Compass checks that a cited entry exists, not that it supports the line. The outline below it is Compass’s own grouping, made with no model.',
   },
   {
     id: 'phase',
     title: 'A phase that holds a departure',
-    body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold it: the milestone stood with issues still open, and at the end, short of closing every issue, the agent suggested moving an unfinished one out of the milestone, and the person replied that it stays and is to be finished.',
+    body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold it: the milestone stood with issues still open, and at the end, short of closing every issue, the agent reported a blocker, and the person replied that the open issue stays and is to be finished.',
   },
   {
     id: 'departure',
@@ -41,7 +41,7 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'activity',
     title: 'Full activity: everything the session did',
-    body: 'Collapsed at the foot of the page. Every message the agent wrote, every check it ran and every file it wrote, numbered from #1 for the oldest. A number never moves, so a summary line or a correction that names an entry still points at it later. A check or file takes the number of the message it follows, such as #50.1.',
+    body: 'Collapsed at the foot of the page. Every message the agent wrote, every check it ran and every file it wrote, numbered from #1 for the oldest. A number never moves, so an entry a summary line or a correction cites still points at it later. A check or file takes the number of the message it follows, such as #50.1.',
   },
 ];
 
