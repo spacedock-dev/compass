@@ -762,6 +762,7 @@ class _Job:
     back: int = 0
     retries: int = 0
     stop: str | None = None
+    on_part: Callable[[Summary, int, int], None] | None = None
 
     def elapsed(self) -> float:
         return max(0.0, self.clock() - self.started)
@@ -860,6 +861,8 @@ def _lede(job: _Job, lines: Sequence[_Line]) -> tuple[Lede | None, str | None]:
 def _plan(
     windows: Sequence[Sequence[_Line]], config: RuntimeConfig, *, context: bool
 ) -> str | None:
+    if config.session_summary_call_timeout > config.session_summary_max_seconds:
+        return "planned_seconds"
     if len(windows) + 1 > config.session_summary_max_calls:
         return "planned_calls"
     planned = sum(
@@ -938,6 +941,21 @@ def _bound(
     return result
 
 
+def _publish_finished(job: _Job, result: Summary, parts: int) -> None:
+    # Offered even after a stop, so a job ended by a ceiling or the cap keeps its named gaps;
+    # the caller refuses it after a cancel, a revoke or a delete. A result with no phase at
+    # all is never offered, since it would replace a stored summary with nothing.
+    if job.on_part is not None and result.state != "refused":
+        job.on_part(result, parts, parts)
+
+
+def _publish_part(
+    job: _Job, summary: Summary, lines: Sequence[_Line], retained: int, part: int, parts: int
+) -> None:
+    if job.on_part is not None and not job.stop:
+        job.on_part(_bound(summary, lines, job.config, retained), part, parts)
+
+
 def _produce(
     entries: Sequence[SourceEntry],
     coverage: SourceCoverage,
@@ -977,11 +995,38 @@ def _produce(
         )
     if prefix:
         blocks.append(_block([line for window in prefix for line in window], "before_window"))
+
+    def publish(part: int) -> None:
+        # The windows not yet answered stand as one `stopped` gap. The store keeps the whole
+        # read's snapshot, so without the gap a job cancelled here would leave a summary that
+        # compares as unchanged while silently lacking its newest entries.
+        rest = [line for window in windows[part:] for line in window]
+        partial = Summary(
+            "partial",
+            "stopped",
+            harness,
+            starts_at,
+            blocks=(*blocks, _block(rest, "stopped")) if rest else tuple(blocks),
+            # An Update keeps the saved lede until its own lede replaces it: a stop here would
+            # otherwise store no lede at all, and the final result restoring it is not saved.
+            lede=prior.lede if prior else None,
+            spend=job.spend(),
+            lede_reason=None if prior and prior.lede else "stopped",
+            coverage=coverage,
+        )
+        _publish_part(
+            job, partial, lines, len(prior.blocks) if prior else 0, part, len(windows) + 1
+        )
+
+    publish(0)
     for n, window in enumerate(windows, 1):
         prompt = _prompt(window, n, len(windows), _earlier(blocks, config), config)
         raw, reason = job.call(prompt)
         blocks.append(_block(window, reason) if reason else _parse_block(raw, window, config))
-    return _finish(blocks, lines, job, prior, starts_at, coverage)
+        publish(n)
+    result = _finish(blocks, lines, job, prior, starts_at, coverage)
+    _publish_finished(job, result, len(windows) + 1)
+    return result
 
 
 def _finish(
@@ -1070,9 +1115,12 @@ def summarize(
     config: RuntimeConfig,
     model: Model,
     clock: Callable[[], float],
+    on_part: Callable[[Summary, int, int], None] | None = None,
 ) -> Summary:
     """Summarize Claude Code evidence sequentially; never retain or publish source words."""
-    return _produce(entries, coverage, harness, _Job(config, model, clock, clock()))
+    return _produce(
+        entries, coverage, harness, _Job(config, model, clock, clock(), on_part=on_part)
+    )
 
 
 def _affected(
@@ -1131,6 +1179,7 @@ def update(
     config: RuntimeConfig,
     model: Model,
     clock: Callable[[], float],
+    on_part: Callable[[Summary, int, int], None] | None = None,
 ) -> Summary:
     """Validate every old span from a full source read, then send only the appended entries."""
     if prior.harness != "claude":
@@ -1158,7 +1207,7 @@ def update(
         entries[offset:],
         coverage,
         prior.harness,
-        _Job(config, model, clock, clock()),
+        _Job(config, model, clock, clock(), on_part=on_part),
         base,
         offset,
     )
@@ -1203,4 +1252,72 @@ def change_report(
         "new_entries": len(change.appended),
         "appendable": reason is None and change.kind != "unchanged",
         "action": "summarize_again" if reason else None if change.kind == "unchanged" else "update",
+    }
+
+
+def plan(
+    entries: Sequence[SourceEntry],
+    harness: str,
+    *,
+    config: RuntimeConfig,
+    prior: Summary | None = None,
+    change: SourceChange | None = None,
+) -> dict[str, Any]:
+    """The producer's conservative admission plan, before a job can spend."""
+    offset = 0
+    if prior is not None and change is not None:
+        report = change_report(prior, entries, change)
+        if report["action"] == "summarize_again":
+            return {"reason": report["reason"], "state": "source_changed"}
+        base = (
+            replace(prior, blocks=prior.blocks[:-1])
+            if _tail_result(prior, entries, change)
+            else prior
+        )
+        offset = next(
+            (
+                n + 1
+                for n, e in enumerate(entries)
+                if base.blocks and e.fact_id == base.blocks[-1].last
+            ),
+            0,
+        )
+        prior = base
+    reason = "harness_not_supported" if harness != "claude" else None
+    if (
+        config.session_summary_window_bytes < len(f"[{len(entries)}] relayed: \n".encode())
+        or config.session_summary_max_windows < 1
+    ):
+        reason = "invalid_bounds"
+    lines = (
+        tuple(
+            _line(e, n + offset + 1, config.session_summary_window_bytes)
+            for n, e in enumerate(entries[offset:])
+        )
+        if reason is None
+        else ()
+    )
+    windows = (
+        _windows(lines, config.session_summary_window_bytes)[-config.session_summary_max_windows :]
+        if lines
+        else []
+    )
+    if lines and prior is not None and not _room_for_update(prior, lines, config):
+        reason = "output_bound_full"
+    reason = reason or (
+        _plan(windows, config, context=bool(prior and prior.blocks)) if windows else None
+    )
+    return {
+        "reason": reason,
+        "parts": len(windows) + (1 if windows else 0),
+        "largest_read": {
+            "windows": min(
+                config.session_summary_max_windows, max(0, config.session_summary_max_calls - 1)
+            ),
+            "window_bytes": config.session_summary_window_bytes,
+            "calls": config.session_summary_max_calls,
+            "bytes_sent": config.session_summary_max_bytes_sent,
+            "seconds": config.session_summary_max_seconds,
+            "call_timeout": config.session_summary_call_timeout,
+        },
     }

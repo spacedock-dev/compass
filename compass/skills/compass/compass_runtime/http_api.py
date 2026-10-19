@@ -35,6 +35,8 @@ from compass_runtime import (
     record_pages,
     records,
     session_outline,
+    session_source,
+    summary_jobs,
     summary_store,
     tripwires,
 )
@@ -1255,7 +1257,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 if len(matching) == 1
                 else session_outline.unmatched(application.config, *focus)
             )
-            summary = (
+            summary: dict[str, Any] = (
                 summary_store.for_session(application.config, application.state, *focus)
                 if len(matching) == 1
                 else {
@@ -1264,6 +1266,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     "reason": "session_not_matched",
                     "job": None,
                 }
+            )
+            summary["job"] = (
+                summary_jobs.published(application, *focus) if len(matching) == 1 else None
             )
             result = {
                 **result,
@@ -2165,9 +2170,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(refusal)
             return
         if payload.get("consent") == "off":
-            self._reading_permission_reply(
-                reading_policy.set_consent(config, False, now=application.clock()), off=True
-            )
+            answer = reading_policy.set_consent(config, False, now=application.clock())
+            # Turn off readings also stops session summaries, including a call already running
+            # (docs/design-session-summary.md#job-and-grant-contract); a lock failure leaves
+            # the next part's recheck to refuse.
+            with contextlib.suppress(OSError, ValueError):
+                summary_jobs.stop_running(application, "readings-off")
+            self._reading_permission_reply(answer, off=True)
             return
         harness, sid = payload.get("harness"), payload.get("sid")
         if not isinstance(harness, str) or not isinstance(sid, str) or not harness or not sid:
@@ -3369,35 +3378,164 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "application/json",
         )
 
-    def _summary_delete(self) -> None:
-        # Deletion must remain available with both models and annotations off.
+    def _summary_payload(self) -> dict[str, Any] | None:
         if self._is_document_navigation() or not self._loopback_resource_ok():
             self._reject(403)
-            return
-        config = self.server.application.config
+            return None
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = -1
-        if not 0 <= length <= config.annotation_body_cap_bytes:
+        if not 0 <= length <= self.server.application.config.annotation_body_cap_bytes:
             self._reject(413)
-            return
+            return None
         try:
             payload = json.loads(self._read_body(length) or b"{}")
         except (ValueError, RecursionError):
             payload = None
+        if not isinstance(payload, dict):
+            self._reject(400)
+            return None
+        return payload
+
+    def _summary_identity(self, payload: dict[str, Any]) -> bool:
+        cap = self.server.application.config.summary_store_key_cap_chars
+        return all(
+            isinstance(payload.get(key), str) and 0 < len(payload[key]) <= cap
+            for key in ("harness", "sid")
+        )
+
+    def _summary_reply(self, code: int, answer: dict[str, Any]) -> None:
+        self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json", code)
+
+    def _summary(self) -> None:
+        payload = self._summary_payload()
+        if payload is None:
+            return
+        if set(payload) == {"consent"} and payload["consent"] in ("off", "on"):
+            self._summary_consent(payload["consent"] == "on")
+            return
         if (
-            not isinstance(payload, dict)
-            or set(payload) != {"harness", "sid"}
-            or any(
-                not isinstance(payload[key], str)
-                or not 0 < len(payload[key]) <= config.summary_store_key_cap_chars
-                for key in ("harness", "sid")
-            )
+            set(payload) != {"harness", "sid", "action", "origin"}
+            or not self._summary_identity(payload)
+            or payload["action"] not in ("start", "update", "rerun")
+            or payload["origin"] not in ("press", "open")
+            or (payload["origin"] == "open" and payload["action"] != "start")
         ):
             self._reject(400)
             return
-        outcome = summary_store.delete(config, payload["harness"], payload["sid"])
+        self._summary_start(payload)
+
+    def _summary_consent(self, allowed: bool) -> None:
+        application = self.server.application
+        try:
+            answer = summary_jobs.set_consent(application, allowed)
+            reason = answer["reason"]
+        except (OSError, ValueError):
+            reason = "store-unavailable"
+        status = summary_jobs.board(application.config, now=application.clock())
+        if reason == "store-unavailable":
+            self._summary_reply(
+                503,
+                {
+                    "ok": False,
+                    "reason": reason,
+                    "summaries": {**status, "consent": False, "reason": reason},
+                },
+            )
+        else:
+            self._summary_reply(200, {"ok": True, "summaries": status})
+
+    def _summary_start(self, payload: dict[str, Any]) -> None:
+        application = self.server.application
+        config = application.config
+        answer = reading_policy.summary_status(config, now=application.clock())
+        if answer["reason"]:
+            code = (
+                429
+                if answer["reason"] == "daily-cap"
+                else 403
+                if answer["reason"] in {"summaries-off", "readings-off"}
+                else 503
+            )
+            self._summary_reply(
+                code,
+                {
+                    "ok": False,
+                    "reason": answer["reason"],
+                    "summaries": summary_jobs.board(config, now=application.clock()),
+                },
+            )
+            return
+        harness, sid = payload["harness"], payload["sid"]
+        row = self._published_row(harness, sid)
+        reason = (
+            "session-unavailable"
+            if row is None
+            else "session-running"
+            if payload["origin"] == "open" and not row.get("ended_at")
+            else "store-unavailable"
+            if summary_store.load(config).state != "ok"
+            else "summary-exists"
+            if payload["origin"] == "open" and summary_store.get(config, harness, sid)
+            else ""
+        )
+        if reason:
+            self._summary_reply(
+                409 if reason != "store-unavailable" else 503, {"ok": False, "reason": reason}
+            )
+            return
+        running = summary_jobs.published(application, harness, sid)
+        if running is not None and running["state"] in summary_jobs.ACTIVE:
+            # Before the source read, which can take seconds on a long transcript: a second
+            # press on a running job must not pay it only to be refused at admission.
+            self._summary_reply(409, {"ok": False, "reason": "in-flight", "job": running})
+            return
+        path = runtime_observer.resolve_transcript(config, application.state, harness, sid)
+        page = (
+            session_source.read(config, path, harness, sid)
+            if path
+            else session_source.SourcePage("unavailable", harness, sid)
+        )
+        code, response = summary_jobs.start(
+            application, page, action=payload["action"], origin=payload["origin"]
+        )
+        self._summary_reply(code, response)
+
+    def _summary_cancel(self) -> None:
+        payload = self._summary_payload()
+        if payload is None:
+            return
+        if set(payload) != {"harness", "sid"} or not self._summary_identity(payload):
+            self._reject(400)
+            return
+        try:
+            accepted = summary_jobs.cancel(
+                self.server.application, payload["harness"], payload["sid"]
+            )
+        except (OSError, ValueError):
+            self._summary_reply(503, {"ok": False, "reason": "store-unavailable"})
+            return
+        self._summary_reply(
+            202 if accepted else 409,
+            {"ok": True, "cancelling": True}
+            if accepted
+            else {"ok": False, "reason": "not-running"},
+        )
+
+    def _summary_delete(self) -> None:
+        payload = self._summary_payload()
+        if payload is None:
+            return
+        if set(payload) != {"harness", "sid"} or not self._summary_identity(payload):
+            self._reject(400)
+            return
+        try:
+            outcome = summary_jobs.delete(
+                self.server.application, payload["harness"], payload["sid"]
+            )
+        except (OSError, ValueError):
+            outcome = "unwritable"
         self._send(
             json.dumps({"outcome": outcome}, separators=(",", ":")).encode(), "application/json"
         )
@@ -3502,6 +3640,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/correction/copied": self._correction_copied,
             "/api/reading": self._reading,
             "/api/reading/cancel": self._reading_cancel,
+            "/api/summary": self._summary,
+            "/api/summary/cancel": self._summary_cancel,
             "/api/summary/delete": self._summary_delete,
             "/api/focus": self._focus,
             "/api/ask": self._ask,

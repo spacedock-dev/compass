@@ -31,7 +31,7 @@ class LiveTransport:
         self.verified = verified
         self.pinned_binary = score_abstention.PinnedClaude(verified.path, verified.identity)
 
-    def __call__(
+    def __call__(  # noqa: PLR0913 - must preserve the production executor signature
         self,
         config: Any,
         prompt: str,
@@ -41,6 +41,8 @@ class LiveTransport:
         runner: Any = None,
         binary_resolver: Any = None,
         on_diagnostic: Any = None,
+        system_prompt: str | None = None,
+        timeout: float | None = None,
     ) -> tuple[str, str]:
         from compass_runtime import supervise  # noqa: PLC0415 - exact production default seam
 
@@ -48,6 +50,10 @@ class LiveTransport:
             runner not in (None, supervise.run)
             or binary_resolver not in (None, shutil.which)
             or on_diagnostic is not None
+            # Only the reading's own call reaches this wrapper. A summary call names its own
+            # prompt and timeout, and the Analyze campaign must never carry one.
+            or system_prompt is not None
+            or timeout is not None
         ):
             raise abstention_ledger.LedgerError("the live wrapper refuses a substituted executor")
         if self.observer.claude_exec is not self:

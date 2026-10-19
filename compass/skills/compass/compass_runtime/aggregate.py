@@ -24,6 +24,7 @@ from . import (
     reading_route,
     records,
     sessions,
+    summary_jobs,
     summary_store,
     tripwires,
     unasked,
@@ -884,6 +885,9 @@ class Application:
                     checked=summary_store.last_checked(state, stored),
                 )
             )
+            row["summary"]["job"] = summary_jobs.published(
+                self, str(row["harness"]), str(row["sid"])
+            )
         # After dedupe, which keys on (harness, sid) and would otherwise decide
         # between two rows one of which carries the annotation. And AFTER the
         # overlays, which is the half that was wrong: identity is not patchable
@@ -956,6 +960,10 @@ class Application:
             "native_notify": self.native_notifier(config.platform_name),
             "in_quiet_hours": in_quiet,
             "harnesses": harnesses,
+            # The summary grant's own block. Not under `summary`, which already names the
+            # board's counts, and not behind `annotate`, because the summary store does not
+            # depend on the annotation store: docs/design-session-summary.md#job-and-grant-contract.
+            "summaries": summary_jobs.board(config, now=now),
             "summary": {
                 "needs_input": sum(1 for x in active_sessions if x["state"] == "needs_input"),
                 "working": sum(1 for x in active_sessions if x["state"] == "working"),

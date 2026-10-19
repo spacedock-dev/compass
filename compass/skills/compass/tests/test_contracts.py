@@ -1050,6 +1050,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.aggregate": {
             # Each row's small summary state; no blocks and no transcript read.
             "compass_runtime.summary_store",
+            # The summary grant on the board and each row's `summary.job` metadata.
+            "compass_runtime.summary_jobs",
             "compass_runtime.reading_policy",
             # The served page's build, so an open tab can tell it is stale
             # (regressions major 1, ui5).
@@ -1506,6 +1508,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.session_outline",
             # Stored summaries on the focused answer, and `POST /api/summary/delete`.
             "compass_runtime.summary_store",
+            # Summary consent, start, cancel and delete routes, and the job on the focused answer.
+            "compass_runtime.summary_jobs",
+            # The summary start route reads the source page the job summarizes.
+            "compass_runtime.session_source",
             # Each message's fixed number on the record pages and the focused context (DRC-4897).
             "compass_runtime.entry_numbers",
             "compass_runtime.record_pages",
@@ -1568,6 +1574,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # Serving records what a stopped dashboard left spent, and shutdown
             # kills every supervised group (DRC-4686, Q2 and Q5).
             "compass_runtime.reading_jobs",
+            "compass_runtime.summary_jobs",
             "compass_runtime.supervise",
         },
         # The read-only terminal substrate uses only the standard library. Its
@@ -1632,6 +1639,21 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.session_source",
             "compass_runtime.session_summary",
             "compass_runtime.state",
+        },
+        # Summary jobs run the producer part by part under reading_policy's grant and ledger,
+        # reuse the reading lane's process supervision, and write through the summary store.
+        "compass_runtime.summary_jobs": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.observer",
+            "compass_runtime.reading_jobs",
+            "compass_runtime.reading_policy",
+            "compass_runtime.reading_route",
+            "compass_runtime.session_source",
+            "compass_runtime.session_summary",
+            "compass_runtime.state",
+            "compass_runtime.summary_store",
+            "compass_runtime.supervise",
         },
         # Grouping resolves one transcript and keeps only built outlines in the state leaf.
         "compass_runtime.session_outline": {
