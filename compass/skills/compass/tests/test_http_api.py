@@ -21,6 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
 from unittest import mock
+from urllib.parse import urlparse
 
 from compass_runtime import (
     aggregate,
@@ -30,6 +31,9 @@ from compass_runtime import (
     lifecycle,
     notifications,
     reading_policy,
+    session_source,
+    session_summary,
+    summary_store,
 )
 from compass_runtime import annotations as annotation_store
 from compass_runtime import asks as runtime_asks
@@ -63,6 +67,8 @@ from .support import (
     store_patch,
     without_focus_meta,
 )
+from .test_claude_checks import Transcript
+from .test_session_summary import Replies
 
 
 def _application(os_name: str) -> Any:
@@ -5959,3 +5965,203 @@ class ConsentNoticeHandlerTest(unittest.TestCase):
 
     def test_content_tier_migration_runs_with_a_notice(self) -> None:
         self._exercise("test_prior_claude_content_versions_run_with_a_notice")
+
+
+class SummaryStoreHTTPTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.store = summary_store
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.config, self.state = make_runtime(
+            state_home=self.temp.name,
+            state_dir=Path(self.temp.name),
+            model_calls_disabled=True,
+            annotations_enabled=False,
+        )
+        self.path = Path(self.temp.name) / "session.jsonl"
+        transcript = Transcript(Path(self.temp.name))
+        transcript.prompt("Inspect the parser")
+        transcript.save(self.path)
+        page = session_source.read(self.config, str(self.path), "claude", "root")
+        assert page.coverage is not None and page.snapshot is not None
+        summary = session_summary.summarize(
+            page.entries,
+            page.coverage,
+            "claude",
+            config=self.config,
+            model=Replies(),
+            clock=lambda: 0.0,
+        )
+        self.assertEqual(
+            "stored",
+            summary_store.put(
+                self.config,
+                "claude",
+                "root",
+                summary,
+                page.snapshot,
+                made_at=100.0,
+                model_stamp="synthetic-model",
+            ),
+        )
+        self.application: Any = aggregate.Application(
+            self.config,
+            self.state,
+            (),
+            native_notifier=lambda _: "",
+            popup_notifier=lambda *_: None,
+            diagnostic_sink=lambda _: None,
+        )
+        self.row = {"harness": "claude", "sid": "root", "project": "synthetic", "ended_at": 90.0}
+        patcher = mock.patch.object(
+            self.application,
+            "collect_json",
+            return_value=(
+                (1.0, 1),
+                json.dumps({"sessions": [self.row]}).encode(),
+            ),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @contextlib.contextmanager
+    def serving(self) -> Any:
+        try:
+            server = make_server(application=self.application)
+        except PermissionError:
+            self.skipTest("sandbox denies loopback socket binding")
+        thread = threading.Thread(target=poll_fast(server), daemon=True)
+        thread.start()
+        try:
+            yield server.server_port
+        finally:
+            server.shutdown()
+            thread.join(3)
+            server.server_close()
+
+    @staticmethod
+    def request(
+        port: int,
+        method: str,
+        path: str,
+        body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request(method, path, body=body, headers=headers or {})
+            response = conn.getresponse()
+            raw = response.read()
+            return response.status, json.loads(raw) if response.status == 200 else raw
+        finally:
+            conn.close()
+
+    def test_focused_reopen_serves_a_stored_summary_without_a_model_call(self) -> None:
+        """Serving only: generating on first open and its summary ledger belong to the job lane.
+
+        Models are off and the summary is saved before the first open, so this cannot catch an
+        open that starts a summary job; the ledger asserted is the Analyze reading ledger.
+        """
+        with (
+            self.serving() as port,
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(runtime_observer, "prepare_claude_exec") as claude,
+            mock.patch.object(runtime_observer, "codex_exec") as codex,
+            mock.patch.object(session_summary, "summarize") as model_seam,
+        ):
+            for _ in range(2):
+                status, answer = self.request(
+                    port, "GET", "/api/project-context?project=synthetic&session=claude:root"
+                )
+                self.assertEqual(200, status)
+                summary = answer["sources"]["summary"]
+                self.assertTrue(summary["exists"])
+                self.assertEqual("synthetic-model", summary["model_stamp"])
+                self.assertEqual("unchanged", summary["out_of_date"]["kind"])
+                self.assertEqual(1, len(summary["blocks"]))
+            self.assertEqual(0, claude.call_count + codex.call_count + model_seam.call_count)
+            status, answer = self.request(port, "GET", "/api/project-context?project=synthetic")
+            self.assertNotIn("summary", answer["sources"])
+        self.assertEqual(0, reading_policy.status(self.config, now=time.time())["used"])
+
+    def test_delete_route_works_with_annotations_and_models_off(self) -> None:
+        with self.serving() as port:
+            status, answer = self.request(
+                port, "POST", "/api/summary/delete", b'{"harness":"claude","sid":"root"}'
+            )
+        self.assertEqual(200, status)
+        self.assertEqual("deleted", answer["outcome"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+
+    def test_delete_refuses_navigation_cross_site_and_host_before_store_or_body(self) -> None:
+        with self.serving() as port, mock.patch.object(self.store, "delete") as delete:
+            for headers in (
+                {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"},
+                {"Sec-Fetch-Site": "cross-site"},
+                {"Sec-Fetch-Site": "same-site"},
+                {"Host": "example.com"},
+                {"Origin": "https://example.com"},
+            ):
+                with self.subTest(headers=headers):
+                    status, _answer = self.request(
+                        port, "POST", "/api/summary/delete", b"invalid JSON", headers
+                    )
+                    self.assertEqual(403, status)
+            delete.assert_not_called()
+        self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
+
+    def handler(
+        self, path: str = "/api/summary/delete", body: bytes = b'{"harness":"claude","sid":"root"}'
+    ) -> Any:
+        handler: Any = object.__new__(http_api._RequestHandler)
+        handler.server = SimpleNamespace(application=self.application, server_port=12345)
+        handler.path = path
+        handler.headers = {"Content-Length": str(len(body)), "Host": "127.0.0.1:12345"}
+        handler.client_address = ("127.0.0.1", 10000)
+        handler.rfile = io.BytesIO(body)
+        handler._send = mock.Mock()
+        handler._reject = mock.Mock()
+        handler.send_error = mock.Mock()
+        return handler
+
+    def test_focused_handler_serves_second_open_without_a_model(self) -> None:
+        handler = self.handler()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(runtime_observer, "prepare_claude_exec") as claude,
+            mock.patch.object(runtime_observer, "codex_exec") as codex,
+            mock.patch.object(session_summary, "summarize") as model_seam,
+        ):
+            for _ in range(2):
+                handler._project_context(
+                    urlparse("/api/project-context?project=synthetic&session=claude:root")
+                )
+                answer = json.loads(handler._send.call_args.args[0])
+                self.assertEqual("unchanged", answer["sources"]["summary"]["out_of_date"]["kind"])
+                self.assertEqual("synthetic-model", answer["sources"]["summary"]["model_stamp"])
+            self.assertEqual(0, claude.call_count + codex.call_count + model_seam.call_count)
+        self.assertEqual(0, reading_policy.status(self.config, now=time.time())["used"])
+
+    def test_delete_handler_removes_only_the_summary(self) -> None:
+        handler = self.handler()
+        handler.do_POST()
+        handler._reject.assert_not_called()
+        self.assertEqual("deleted", json.loads(handler._send.call_args.args[0])["outcome"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+
+    def test_delete_handler_guards_run_before_reading_body_or_store(self) -> None:
+        for headers in (
+            {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"},
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Sec-Fetch-Site": "same-site"},
+            {"Host": "example.com"},
+            {"Origin": "https://example.com"},
+        ):
+            with self.subTest(headers=headers):
+                handler = self.handler(body=b"invalid JSON")
+                handler.headers.update(headers)
+                with mock.patch.object(self.store, "delete") as delete:
+                    handler.do_POST()
+                    handler._reject.assert_called_once_with(403)
+                    delete.assert_not_called()
+                    self.assertEqual(0, handler.rfile.tell())

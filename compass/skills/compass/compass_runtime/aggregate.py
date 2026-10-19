@@ -24,6 +24,7 @@ from . import (
     reading_route,
     records,
     sessions,
+    summary_store,
     tripwires,
     unasked,
 )
@@ -872,6 +873,17 @@ class Application:
         # ranked by the state it no longer claims. The summary below is counted
         # from the patched rows for the same reason.
         history_fields = self._apply_overlays(out_sessions, now=now)
+        stored_summaries = summary_store.load(config)
+        summaries_by_key = {(entry.harness, entry.sid): entry for entry in stored_summaries.entries}
+        for row in out_sessions:
+            stored = summaries_by_key.get((str(row["harness"]), str(row["sid"])))
+            row.update(
+                summary_store.published(
+                    stored,
+                    available=stored_summaries.state == "ok",
+                    checked=summary_store.last_checked(state, stored),
+                )
+            )
         # After dedupe, which keys on (harness, sid) and would otherwise decide
         # between two rows one of which carries the annotation. And AFTER the
         # overlays, which is the half that was wrong: identity is not patchable

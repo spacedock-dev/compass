@@ -35,6 +35,7 @@ from compass_runtime import (
     record_pages,
     records,
     session_outline,
+    summary_store,
     tripwires,
 )
 from compass_runtime import events as runtime_events
@@ -1254,7 +1255,24 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 if len(matching) == 1
                 else session_outline.unmatched(application.config, *focus)
             )
-            result = {**result, "sources": {**result.get("sources", {}), "outline": outline}}
+            summary = (
+                summary_store.for_session(application.config, application.state, *focus)
+                if len(matching) == 1
+                else {
+                    "state": "unavailable",
+                    "exists": False,
+                    "reason": "session_not_matched",
+                    "job": None,
+                }
+            )
+            result = {
+                **result,
+                "sources": {
+                    **result.get("sources", {}),
+                    "outline": outline,
+                    "summary": summary,
+                },
+            }
             if parse_qs(url.query).get("prompts", ["0"])[0] == "1":
                 result = _with_prompt_choices(
                     application, result, collected["sessions"], focus, project
@@ -3351,6 +3369,39 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "application/json",
         )
 
+    def _summary_delete(self) -> None:
+        # Deletion must remain available with both models and annotations off.
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
+        config = self.server.application.config
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= config.annotation_body_cap_bytes:
+            self._reject(413)
+            return
+        try:
+            payload = json.loads(self._read_body(length) or b"{}")
+        except (ValueError, RecursionError):
+            payload = None
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != {"harness", "sid"}
+            or any(
+                not isinstance(payload[key], str)
+                or not 0 < len(payload[key]) <= config.summary_store_key_cap_chars
+                for key in ("harness", "sid")
+            )
+        ):
+            self._reject(400)
+            return
+        outcome = summary_store.delete(config, payload["harness"], payload["sid"])
+        self._send(
+            json.dumps({"outcome": outcome}, separators=(",", ":")).encode(), "application/json"
+        )
+
     def _focus(self) -> None:
         """Raise the terminal one session is running in. Answers one boolean.
 
@@ -3451,6 +3502,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/correction/copied": self._correction_copied,
             "/api/reading": self._reading,
             "/api/reading/cancel": self._reading_cancel,
+            "/api/summary/delete": self._summary_delete,
             "/api/focus": self._focus,
             "/api/ask": self._ask,
             "/api/ask/withdraw": self._withdraw,

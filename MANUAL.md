@@ -94,9 +94,9 @@ Dashboards using the same Compass home share persistent stores.
 | `--history-days DAYS` | Retain observations for this many days. Default: `14`. Must be finite and greater than zero; fractions are accepted. Narrowing the window evicts older records; widening it cannot recover them. |
 | `--history-max-bytes BYTES` | History size and read cap. Default: `1048576` (1 MiB). Must be a positive integer. A history file larger than this cap is discarded unread rather than parsed. |
 | `--no-history` | Do not read or write observation history for this run. Existing history is left on disk. Does not disable the separate annotations or session-end store. |
-| `--no-annotations` | Do not read or write saved goals, expected outcome lines or readings for this run. The page offers no editable intent fields; `Analyze drift` remains visible but disabled with a reason. Existing annotations are left on disk. |
+| `--no-annotations` | Do not read or write saved goals, expected outcome lines or readings for this run. The page offers no editable intent fields; `Analyze drift` remains visible but disabled with a reason. Existing annotations are left on disk. Does not govern the separate session-summary store. |
 | `--no-dismiss` | Do not read or write the handled-session store. Previously handled sessions return to the board and its dismiss control is unavailable for this run. |
-| `--forget` | A one-shot cleanup: delete observation history, recorded session ends and copied-correction digests; sweep annotation discard records; store readings as off, which stops readings and goal summaries until you turn readings back on in the page. Preserve the words you typed and unexpired model-spend timestamps. Refused while a dashboard answers on the selected port: stop it first. The deletions are irreversible. |
+| `--forget` | A one-shot cleanup: delete observation history, recorded session ends, stored session summaries and copied-correction digests; sweep annotation discard records; store readings as off, which stops readings and goal summaries until you turn readings back on in the page. Preserve the words you typed and unexpired model-spend timestamps. Refused while a dashboard answers on the selected port: stop it first. The deletions are irreversible. |
 
 `--forget` checks only the named port. Stop every dashboard sharing that Compass home before
 cleanup; an instance on another port can otherwise retain or recreate observations. It does not
@@ -183,6 +183,7 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-history.json` | Bounded observation history. |
 | `compass-ends.json` | Recorded session ends from the event coordinator. |
 | `compass-annotations.json` | Saved reader goals, outcome lines, readings and discard records. |
+| `compass-summaries.json` | Stored session summaries and word-free source comparison metadata. Independent of annotations; Delete summary removes one session and `--forget` deletes the store. |
 | `compass-dismissals.json` | Sessions marked handled. |
 | `compass-tripwires.json` | Saved workflow stage conditions. |
 | `compass-copied-corrections.json` | Digests recording copied corrections, without their text. |

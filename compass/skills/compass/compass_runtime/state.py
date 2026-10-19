@@ -67,6 +67,9 @@ class RuntimeState:
     entry_index_lock: LockType = field(default_factory=threading.Lock)
     session_outlines: dict[str, Any] = field(default_factory=dict)
     session_outline_lock: LockType = field(default_factory=threading.Lock)
+    # (harness, sid) -> (source stamps and stored record identity, out-of-date report).
+    summary_freshness: dict[tuple[str, str], Any] = field(default_factory=dict)
+    summary_freshness_lock: LockType = field(default_factory=threading.Lock)
     transcript_user_cache: dict[
         tuple[str, str, str], tuple[tuple[int, int, int, int], list[dict[str, Any]]]
     ] = field(default_factory=dict)

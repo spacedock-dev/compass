@@ -268,6 +268,20 @@ class RuntimeConfig:
     session_summary_bullet_chars: int
     session_summary_lede_chars: int
     session_summary_max_bytes: int
+    # Full UUID session ids fit in 64 characters, as in the annotation store's key contract.
+    summary_store_key_cap_chars: int
+    # A provider/model identity is tens of characters. The stamp is resent on every focused poll,
+    # so an edited file or a buggy caller must not make it kilobytes.
+    summary_store_model_stamp_cap_chars: int
+    # Match annotation writers: ten seconds bounds one local queue plus the filesystem lock.
+    summary_store_lock_wait_sec: float
+    summary_store_filename: str
+    # 64 summaries x 512 KiB = 32 MiB, plus 32 MiB for comparison metadata and envelopes.
+    # Independent of annotations so summary eviction can never remove a reader's saved words.
+    summary_store_max_bytes: int
+    # Eviction orders by last write or read, so an hour's precision is enough; touching on every
+    # focused poll would rewrite a store of up to 64 MiB once per board revision.
+    summary_store_touch_interval_sec: float
     popup_cooldown_sec: float
     global_popup_cooldown_sec: float
     popup_repeat_suppress_sec: float
@@ -862,6 +876,12 @@ def build_runtime_config(
         session_summary_bullet_chars=SESSION_SUMMARY_BULLET_CHARS,
         session_summary_lede_chars=SESSION_SUMMARY_LEDE_CHARS,
         session_summary_max_bytes=SESSION_SUMMARY_MAX_BYTES,
+        summary_store_key_cap_chars=64,
+        summary_store_model_stamp_cap_chars=256,
+        summary_store_lock_wait_sec=10.0,
+        summary_store_filename="compass-summaries.json",
+        summary_store_max_bytes=64 * 1024 * 1024,
+        summary_store_touch_interval_sec=3600.0,
         popup_cooldown_sec=60,
         global_popup_cooldown_sec=15,
         popup_repeat_suppress_sec=600,

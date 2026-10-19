@@ -376,7 +376,8 @@ ledger for `session_summary_rolling_cap`, and the consent, destination and tool-
 again before every part. The existing Claude reading invocation fixes its own system prompt, so
 its exec path needs a system-prompt parameter, carrying `session_summary.SYSTEM_PROMPT` and that
 prompt's provenance digest. The job lane also wires `session_summary_call_timeout`. Defining those
-values here does not wire a summary job, guard, store, HTTP endpoint or page.
+values here does not wire a summary job, guard or page. The [store contract](#store-contract)
+names the separate storage and delete endpoint.
 
 ### Menu, windows and prompts
 
@@ -835,3 +836,109 @@ sessions), tool output where included, provider, destination and Turn off readin
 or destination repeats it. An old explicit off survives upgrade; an old Allow is on, conservatively
 showing the new notice once. Compatibility flags and the tool-output environment variable are
 accepted no-ops for this release. No browser consent or implicit Allow is written by a plain press.
+
+## Store contract
+
+`summary_store.py` owns persistence only: no model seam, job, timer or automatic generation.
+The job lane calls these functions with frozen runtime configuration and a source snapshot from
+the read that produced the summary:
+
+| Function | Return |
+| -- | -- |
+| `store_path(config: RuntimeConfig) -> str` | `config.state_home / config.summary_store_filename`, default `~/.compass/compass-summaries.json`; shared across ports. |
+| `put(config, harness: str, sid: str, summary: Summary, snapshot: SourceSnapshot, *, made_at: float, model_stamp: str) -> str` | `stored`, `refused` (invalid shape or cannot fit alone), `unavailable` (unreadable existing store) or `unwritable` (lock/write failure). Redacts before validation and bounding. |
+| `load(config) -> Store` | `Store(state="ok", entries: tuple[StoredSummary, ...])`, including an empty tuple for a missing file, or `state="unavailable"` with no records. This read does not touch access times. The parsed, redacted answer is reused while the file's device, inode, size and modification time are unchanged, because the board loads the store on every collection. |
+| `get(config, harness: str, sid: str, *, now: float \| None = None) -> StoredSummary \| None` | A redacted record, or `None` for absent/unavailable. Persists last access time under the writer lock, at most once per `summary_store_touch_interval_sec` (one hour), so a focused poll does not rewrite the file; the interval is checked again after the locked reload, so two focused reads that both waited rewrite it once. A failed touch still serves the readable record. `now` defaults to wall time. Use `load` to distinguish missing from unavailable. |
+| `delete(config, harness: str, sid: str) -> str` | `deleted`, `absent`, `unavailable` or `unwritable`. Never touches annotations. A missing store answers `absent` before any lock, creating no state home or lock file. |
+| `forget(config) -> str` | `deleted`, `absent` or `unwritable`. A missing store answers `absent` before any lock. Deletes even an unreadable file under the writer lock, and also when the filesystem lock is unsupported, denied or cannot be created; only a lock another holder keeps past the wait answers `unwritable`. |
+| `last_checked(state: RuntimeState, entry: StoredSummary \| None) -> dict[str, Any] \| None` | The `kind` and `reason` of the last focused report cached for this exact record (same made-at time, model stamp and block fingerprints), or `None`. Reads no transcript and stats no file. |
+| `published(entry: StoredSummary \| None, *, available: bool = True, checked: dict[str, Any] \| None = None) -> dict[str, Any]` | Exactly one declared session-row field, `summary`: `exists`, store `state`, saved `coverage`, `made_at`, `out_of_date` (the `checked` report, or `null`), `job: null`. No blocks or prose. |
+| `focused(config, harness: str, sid: str, page: SourcePage \| None, *, now: float \| None = None) -> dict[str, Any]` | Saved `Summary.as_dict()` plus `exists`, `made_at`, `model_stamp`, `out_of_date` and `job: null`; absent/unavailable states carry no prose. Comparison metadata never reaches HTTP. |
+| `for_session(config, state: RuntimeState, harness: str, sid: str) -> dict[str, Any]` | Resolves the focused transcript through the observer and performs a bounded source read, then answers as `focused` does. The report is cached in runtime state per session, keyed by the transcript and admitted children's stamps and the stored record's identity, so reopening an unchanged session costs a stat; a read clipped by the time allowance is not cached. No model calls or grants are involved. |
+
+`StoredSummary` holds `harness`, `sid`, `summary: Summary`, `snapshot: SourceSnapshot`,
+`made_at: float`, `model_stamp: str`, and `accessed_at: float`. The model stamp is the job's
+provider/model identity string; it is informational, not a grant or destination binding. A caller
+must check its own grant and source stability before publishing a result. The store does not
+serialize a resumable cursor. `get().snapshot` is for `session_source.compare`, not continuation
+reads. The job re-reads the full source before calling `session_summary.update`.
+
+The on-disk envelope is exactly `{"v": 1, "entries": [...]}`. Each entry admits exactly `harness`,
+`sid`, `summary`, `source`, `made_at`, `model_stamp`, `accessed_at`. `summary` is the closed
+`Summary.as_dict()` shape described above, including its lede, coverage, gaps and spend. Its
+redacted UTF-8 encoding must fit `session_summary_max_bytes` (512 KiB). `source` admits only:
+
+- `stamp`: four integers (device, inode, byte length, modification nanoseconds), `end_offset` and
+  `boundary_digest`, for replacement and truncation checks;
+- `entries`: fact-id/fingerprint/time triples, `subjects`: subject/fact-id/result-or-fingerprint
+  triples, and `message_ids`, for source change classification;
+- `pending`: objects holding only `stream`, `call_id`, `fact_ids`, to recognize a later check
+  result. No pending tool input, source words, path, fragment, hash state or cursor is stored.
+
+Harness and session keys are nonempty and bounded by `summary_store_key_cap_chars` (64), enough
+for a full UUID, matching the annotation key width. The model stamp is bounded by
+`summary_store_model_stamp_cap_chars` (256), because every focused answer resends it. All nested keys and primitive types are validated. Unknown schema versions, unknown fields,
+malformed records, duplicate session keys, torn JSON and oversized files refuse the whole file.
+A normal save/delete never overwrites such a file. Every string is redacted with
+`records.redact_secrets` on entry and again on read, before serialized size checks, because another
+local process can rewrite the file. Identifiers are matched rather than read, so they are checked
+instead of rewritten: when redaction would change the harness, session id, a citation, a block's
+first or last fact id or fingerprint, or anything under `source`, a save is `refused` and a load is
+unavailable. A redacted key would be unreachable by `get` and `delete`, and a second save would
+write a duplicate key that refuses the whole file. Redaction does not authenticate the prose or its citations.
+
+`summary_store_max_bytes` is **64 MiB**: 64 summaries x 512 KiB = 32 MiB, plus 32 MiB for comparison
+metadata and envelopes. This is a chosen retention budget, not a measurement or a promise that
+64 unusually large snapshots fit. Actual serialized UTF-8 bytes determine eviction, dropping the
+least recently read/written record until the file fits; the entry being saved or touched is kept.
+If it cannot fit alone the write is refused. There is no age expiry. The file is independent of
+`compass-annotations.json`, so even a worst-case summary set cannot evict saved intent.
+
+Each mutation and access-time touch takes a path-keyed process lock followed by
+`io.held_file_lock(filename + ".lock")`, with one deadline (`summary_store_lock_wait_sec`, default ten seconds), across the fresh read,
+eviction and rename. Unsupported or unavailable locks refuse writes; unlike irreplaceable saved
+intent, summaries can be regenerated. `forget` is the exception: it is an irreversible privacy
+delete, not a write that could be lost, so only a busy lock stops it. `io.atomic_write_owner_only` creates a randomized exclusive
+0600 temporary file in the state home and replaces the target atomically. Two writers serialize
+and readers see one whole envelope. These files have the same advisory Windows permission limit
+as the other Compass stores.
+
+Freshness reuses `session_source.compare` and `session_summary.change_report`, which is also the
+check used by `update`, without a model call. `out_of_date` carries `kind`, `reason`, zero-based
+`affected_blocks`, `new_entries`, `appendable` and `action`:
+
+| Kind | Action |
+| -- | -- |
+| `unchanged` | None; serve the saved summary without a summary call or charge. |
+| `appended` | `update`, with the number of new entries; offers Update summary. |
+| `changed_earlier` | `summarize_again`, naming affected blocks; offers Summarize again. A `check_result` change wholly inside the newest block is appendable and offers `update` instead. |
+| `truncated` or `replaced` | `summarize_again`; keep the saved blocks visible with their age. |
+| `unavailable` | No action; source missing, unreadable or incomplete. Never infer freshness from missing evidence. |
+
+Freshness is computed only for the focused answer. Board collection loads stored metadata once
+and reads no transcript for this field. A row carries the `kind` and `reason` of the last focused
+report this process cached for that same record, and `out_of_date: null` when it has none. That
+report is as of the last focused check: an append made since moves it only when the session is
+opened again. The focused
+read uses the source's byte/time allowance. If that cannot reach every prior span, freshness is
+unavailable (`source_incomplete`), preserving the summary. Physical truncation/replacement can
+still be reported from an incomplete read. A read stopped by the byte allowance is cached while
+the transcript is unchanged: the same allowance would stop at the same place, and a finished long
+session would otherwise pay that read on every focused poll. A read whose coverage names a `time`
+region is returned but not cached, as for the outline: a slow disk or a loaded CPU stops it early,
+and caching it would show a finished session as unavailable for the life of the process. A report's `reason` may additionally name a span
+mismatch or late evidence, which requires Summarize again.
+
+`GET /api/project-context?...&session=harness:sid` attaches this answer as `sources.summary` beside
+`sources.outline` only for one matched session in the project. A project-only answer has neither
+summary prose nor an implicit summary call. `POST /api/summary/delete` accepts exactly
+`{"harness": "...", "sid": "..."}` and returns `{"outcome": "..."}`. Loopback, Host/Origin,
+fetch-site and non-navigation guards run before parsing the body or reading the store. Local
+processes without browser metadata can delete summaries; this is not authentication.
+
+`--forget` deletes this file even with annotations disabled. Discard everything leaves it alone.
+The ruling was silent on `--no-annotations`: it does **not** govern this independent store.
+`--no-observer-model` is the job's call gate and does not hide or prevent deleting saved summaries.
+Start/cancel routes and summary generation belong to the next lane and are not implemented here.
+Neither `events.PATCHABLE` nor `history.OBSERVATION_FIELDS` admits `summary`: events cannot write
+this store-derived field, and session observation history must not duplicate summary state or prose.
