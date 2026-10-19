@@ -270,6 +270,9 @@ class RuntimeConfig:
     session_summary_max_bytes: int
     # Full UUID session ids fit in 64 characters, as in the annotation store's key contract.
     summary_store_key_cap_chars: int
+    # A provider/model identity is tens of characters. The stamp is resent on every focused poll,
+    # so an edited file or a buggy caller must not make it kilobytes.
+    summary_store_model_stamp_cap_chars: int
     # Match annotation writers: ten seconds bounds one local queue plus the filesystem lock.
     summary_store_lock_wait_sec: float
     summary_store_filename: str
@@ -874,6 +877,7 @@ def build_runtime_config(
         session_summary_lede_chars=SESSION_SUMMARY_LEDE_CHARS,
         session_summary_max_bytes=SESSION_SUMMARY_MAX_BYTES,
         summary_store_key_cap_chars=64,
+        summary_store_model_stamp_cap_chars=256,
         summary_store_lock_wait_sec=10.0,
         summary_store_filename="compass-summaries.json",
         summary_store_max_bytes=64 * 1024 * 1024,

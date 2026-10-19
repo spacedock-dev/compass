@@ -342,6 +342,83 @@ class SummaryStoreTest(_StoreCase):
         self.assertEqual("deleted", self.store.forget(config))
         self.assertFalse(Path(self.store.store_path(config)).exists())
 
+    def test_forget_deletes_the_store_when_the_lock_file_is_unusable(self) -> None:
+        self.transcript.prompt("Inspect")
+        self.save(self.read())
+        Path(self.store.store_path(self.config) + ".lock").unlink()
+        Path(self.store.store_path(self.config) + ".lock").mkdir()
+        self.assertEqual("unwritable", self.store.delete(self.config, "claude", "root"))
+        self.assertEqual("deleted", self.store.forget(self.config))
+        self.assertFalse(Path(self.store.store_path(self.config)).exists())
+
+    def test_forget_and_delete_on_a_fresh_machine_make_no_state_home(self) -> None:
+        self.assertEqual("absent", self.store.forget(self.config))
+        self.assertEqual("absent", self.store.delete(self.config, "claude", "root"))
+        self.assertFalse(Path(self.config.state_home).exists())
+
+    def test_a_credential_shaped_identifier_refuses_the_record(self) -> None:
+        self.transcript.prompt("Inspect")
+        page = self.read()
+        self.save(page)
+        assert page.coverage is not None
+        summary = session_summary.summarize(
+            page.entries,
+            page.coverage,
+            "claude",
+            config=self.config,
+            model=Replies(),
+            clock=lambda: 0.0,
+        )
+        sid = "ghp_" + "A" * 36
+        for _ in range(2):
+            self.assertEqual(
+                "refused",
+                self.store.put(
+                    self.config,
+                    "claude",
+                    sid,
+                    summary,
+                    page.snapshot,
+                    made_at=100.0,
+                    model_stamp="synthetic-model",
+                ),
+            )
+        store = self.store.load(self.config)
+        self.assertEqual("ok", store.state)
+        self.assertEqual(["root"], [entry.sid for entry in store.entries])
+
+    def test_an_oversized_model_stamp_is_refused(self) -> None:
+        self.transcript.prompt("Inspect")
+        page = self.read()
+        assert page.coverage is not None
+        summary = session_summary.summarize(
+            page.entries,
+            page.coverage,
+            "claude",
+            config=self.config,
+            model=Replies(),
+            clock=lambda: 0.0,
+        )
+        stamp = "m" * (self.config.summary_store_model_stamp_cap_chars + 1)
+        self.assertEqual(
+            "refused",
+            self.store.put(
+                self.config,
+                "claude",
+                "root",
+                summary,
+                page.snapshot,
+                made_at=1.0,
+                model_stamp=stamp,
+            ),
+        )
+        self.save(page)
+        path = Path(self.store.store_path(self.config))
+        raw = json.loads(path.read_text())
+        raw["entries"][0]["model_stamp"] = stamp
+        path.write_text(json.dumps(raw))
+        self.assertEqual("unavailable", self.store.load(self.config).state)
+
     def test_discard_everything_keeps_the_summary(self) -> None:
         self.transcript.prompt("Inspect")
         self.save(self.read())
@@ -546,6 +623,49 @@ class SummaryStoreCostTest(_StoreCase):
         self.assertEqual("ok", self.store.load(self.config).state)
         Path(self.store.store_path(self.config)).write_text("{", encoding="utf-8")
         self.assertEqual("unavailable", self.store.load(self.config).state)
+
+    def test_a_touch_another_reader_made_while_this_one_waited_is_not_repeated(self) -> None:
+        self.transcript.prompt("Inspect")
+        self.save(self.read())
+        stale = self.store.load(self.config)
+        later = 100.0 + self.config.summary_store_touch_interval_sec
+        self.store.get(self.config, "claude", "root", now=later)
+        touched = self.store.load(self.config)
+        with (
+            mock.patch.object(self.store, "load", side_effect=[stale, touched]),
+            mock.patch.object(self.store.runtime_io, "atomic_write_owner_only") as write,
+        ):
+            record = self.store.get(self.config, "claude", "root", now=later + 1)
+        write.assert_not_called()
+        self.assertEqual(later, record.accessed_at)
+
+    def test_a_time_clipped_freshness_read_is_not_cached(self) -> None:
+        from compass_runtime import observer  # noqa: PLC0415
+
+        self.transcript.prompt("Inspect")
+        self.save(self.read())
+        rushed = dataclasses.replace(self.config, session_source_page_max_seconds=0.0)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            clipped = self.store.for_session(rushed, self.state, "claude", "root")
+            self.assertEqual("source_incomplete", clipped["out_of_date"]["reason"])
+            full = self.store.for_session(self.config, self.state, "claude", "root")
+        self.assertEqual("unchanged", full["out_of_date"]["kind"])
+
+    def test_the_board_row_carries_the_last_focused_report_without_a_read(self) -> None:
+        from compass_runtime import observer  # noqa: PLC0415
+
+        self.transcript.prompt("Inspect")
+        self.save(self.read())
+        entry = self.store.load(self.config).entries[0]
+        self.assertIsNone(self.store.last_checked(self.state, entry))
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            self.store.for_session(self.config, self.state, "claude", "root")
+        with mock.patch.object(session_source, "read", side_effect=AssertionError("board read")):
+            checked = self.store.last_checked(self.state, entry)
+            row = self.store.published(entry, checked=checked)
+        self.assertEqual({"kind": "unchanged", "reason": None}, row["summary"]["out_of_date"])
+        resummarized = dataclasses.replace(entry, made_at=entry.made_at + 1)
+        self.assertIsNone(self.store.last_checked(self.state, resummarized))
 
     def test_reopening_an_unchanged_session_reads_no_transcript(self) -> None:
         from compass_runtime import observer  # noqa: PLC0415

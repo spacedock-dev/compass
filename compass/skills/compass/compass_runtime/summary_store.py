@@ -129,13 +129,24 @@ def _valid(value: Any, shape: Any) -> bool:
     )
 
 
-def _clean(value: Any) -> Any:
+# Keys, citations and comparison metadata are matched, not read. Redacting one would store a
+# record under a key no lookup or delete can find, and a second save would add a duplicate key
+# that makes the whole file unavailable, so a credential-shaped identifier refuses the record.
+_IDENTIFIERS = frozenset({"harness", "sid", "cites", "first", "last", "fingerprint", "source"})
+
+
+def _clean(value: Any, key: str = "") -> Any:
     if isinstance(value, str):
-        return records.redact_secrets(value)
+        cleaned = records.redact_secrets(value)
+        if key in _IDENTIFIERS and cleaned != value:
+            raise ValueError("credential-shaped identifier")
+        return cleaned
     if isinstance(value, list):
-        return [_clean(item) for item in value]
+        return [_clean(item, key) for item in value]
     if isinstance(value, dict):
-        return {key: _clean(item) for key, item in value.items()}
+        return {
+            name: _clean(item, key if key in _IDENTIFIERS else name) for name, item in value.items()
+        }
     return value
 
 
@@ -304,6 +315,7 @@ def _record(value: Any, config: RuntimeConfig) -> StoredSummary:
         or any(len(e) != 3 for e in source["subjects"])
         or not 0 < len(value["harness"]) <= config.summary_store_key_cap_chars
         or not 0 < len(value["sid"]) <= config.summary_store_key_cap_chars
+        or len(value["model_stamp"]) > config.summary_store_model_stamp_cap_chars
         or value["summary"]["harness"] != value["harness"]
         or len(_bytes(value["summary"])) > config.session_summary_max_bytes
     ):
@@ -374,26 +386,27 @@ def _parse(handle: Any, config: RuntimeConfig) -> Store:
 
 
 @contextlib.contextmanager
-def _locked(config: RuntimeConfig) -> Iterator[bool]:
+def _locked(config: RuntimeConfig) -> Iterator[str]:
+    """Yield an `io` lock answer; writers refuse anything but `LOCK_HELD`."""
     path = store_path(config)
     with _WRITERS_LOCK:
         writer = _WRITERS.setdefault(path, threading.Lock())
     wait = max(0.0, config.summary_store_lock_wait_sec)
     deadline = time.monotonic() + wait
     if not writer.acquire(timeout=wait):
-        yield False
+        yield runtime_io.LOCK_BUSY
         return
     try:
         try:
             os.makedirs(config.state_home, mode=0o700, exist_ok=True)
         except OSError:
-            yield False
+            yield runtime_io.LOCK_UNCREATABLE
             return
         with runtime_io.held_file_lock(
             path + ".lock", wait=max(0.0, deadline - time.monotonic())
         ) as held:
             # Refuse unsupported locks too: a reconstructible summary is not worth a lost write.
-            yield held == runtime_io.LOCK_HELD
+            yield held
     finally:
         writer.release()
 
@@ -444,7 +457,7 @@ def put(
     except (ValueError, TypeError, RecursionError, OverflowError):
         return "refused"
     with _locked(config) as held:
-        if not held:
+        if held != runtime_io.LOCK_HELD:
             return "unwritable"
         store = load(config)
         if store.state != "ok":
@@ -472,7 +485,12 @@ def get(
     with _locked(config) as held:
         store = load(config)
         entry = _find(store, harness, sid)
-        if entry is not None and held:
+        # A concurrent read may have touched it while this one waited; one rewrite is enough.
+        if (
+            entry is not None
+            and held == runtime_io.LOCK_HELD
+            and at - entry.accessed_at >= config.summary_store_touch_interval_sec
+        ):
             entry = replace(entry, accessed_at=max(entry.accessed_at, at))
             others = tuple(e for e in store.entries if (e.harness, e.sid) != (harness, sid))
             _write(config, (*others, entry), (harness, sid))
@@ -481,8 +499,10 @@ def get(
 
 def delete(config: RuntimeConfig, harness: str, sid: str) -> str:
     """Delete one summary independently of annotations and model switches."""
+    if not os.path.lexists(store_path(config)):
+        return "absent"
     with _locked(config) as held:
-        if not held:
+        if held != runtime_io.LOCK_HELD:
             return "unwritable"
         store = load(config)
         if store.state != "ok":
@@ -496,8 +516,13 @@ def delete(config: RuntimeConfig, harness: str, sid: str) -> str:
 
 def forget(config: RuntimeConfig) -> str:
     """Delete even an unreadable store under its writer lock; retain no cached records."""
+    # No state home or lock file is made on a machine that never saved a summary.
+    if not os.path.lexists(store_path(config)):
+        return "absent"
     with _locked(config) as held:
-        if not held:
+        # Only a live holder can lose a write to this unlink. An unusable lock refuses saves
+        # because summaries can be regenerated; it must not keep model-written text on disk.
+        if held == runtime_io.LOCK_BUSY:
             return "unwritable"
         try:
             os.unlink(store_path(config))
@@ -508,7 +533,27 @@ def forget(config: RuntimeConfig) -> str:
         return "deleted"
 
 
-def published(entry: StoredSummary | None, *, available: bool = True) -> dict[str, Any]:
+def _identity(entry: StoredSummary) -> tuple[Any, ...]:
+    return (entry.made_at, entry.model_stamp, tuple(b.fingerprint for b in entry.summary.blocks))
+
+
+def last_checked(state: RuntimeState, entry: StoredSummary | None) -> dict[str, Any] | None:
+    """The last focused report's kind and reason for this record, reading no transcript."""
+    if entry is None:
+        return None
+    with state.summary_freshness_lock:
+        cached = state.summary_freshness.get((entry.harness, entry.sid))
+    if cached is None or cached[0][1:] != _identity(entry):
+        return None
+    return {"kind": cached[1]["kind"], "reason": cached[1]["reason"]}
+
+
+def published(
+    entry: StoredSummary | None,
+    *,
+    available: bool = True,
+    checked: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Board metadata only; freshness needs a focused source read, never a transcript per row."""
     return {
         "summary": {
@@ -516,7 +561,7 @@ def published(entry: StoredSummary | None, *, available: bool = True) -> dict[st
             "state": "ok" if available else "unavailable",
             "coverage": entry.summary.as_dict()["coverage"] if entry else None,
             "made_at": entry.made_at if entry else None,
-            "out_of_date": None,
+            "out_of_date": checked if entry is not None else None,
             "job": None,
         }
     }
@@ -590,25 +635,26 @@ def for_session(
         return _answer(entry, _report(entry, None))
     # A finished session is opened again and again; its freshness only changes with the
     # transcript or the stored record, so an unchanged pair costs a stat instead of a full read.
-    key = (
-        stamps,
-        entry.made_at,
-        entry.model_stamp,
-        tuple(b.fingerprint for b in entry.summary.blocks),
-    )
+    key = (stamps, *_identity(entry))
     with state.summary_freshness_lock:
         cached = state.summary_freshness.get((harness, sid))
     if cached is not None and cached[0] == key:
         return _answer(entry, cached[1])
-    report = _report(entry, session_source.read(config, path, harness, sid))
+    page = session_source.read(config, path, harness, sid)
+    report = _report(entry, page)
     try:
         unchanged = session_source.source_stamps(path, harness) == stamps
     except OSError:
         unchanged = False
-    # An incomplete read is cached too: an unchanged transcript reread under the same allowance
-    # would stop at the same place, and a finished long session would pay that read every poll.
-    if unchanged and report["reason"] != "source_unavailable":
+    # A byte-limited read is cached: the same transcript under the same allowance stops at the
+    # same place, and a finished long session would pay that read every poll. A time-limited
+    # read is not, because a slow disk or a loaded CPU would pin it for the life of the process.
+    clipped = page.coverage is not None and any(
+        region.reason == "time" for region in page.coverage.unread
+    )
+    if unchanged and not clipped and report["reason"] != "source_unavailable":
         with state.summary_freshness_lock:
+            # The outline's bound: both hold one answer per recently focused session.
             runtime_state.bounded_put(
                 state.summary_freshness,
                 (harness, sid),

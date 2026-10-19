@@ -148,7 +148,9 @@ The posture rests on two invariants:
    `POST /api/reading` writes. The sixth, `POST /api/correction/copied`, records the digest of a
    correction you copied, never its text, in `compass-copied-corrections.json`; [Analyze drift,
    Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections) owns its bounds.
-   The seventh, `POST /api/summary/delete`, deletes one stored summary. The separate
+   The seventh, `POST /api/summary/delete`, deletes one stored summary, and reading one writes
+   too: a focused `GET /api/project-context` records its last access time, named with the other
+   writing `GET` below. The separate
    **summary store**, `compass-summaries.json` under the same home, holds model-written
    summaries keyed by harness and session, without a saved intent. Discard everything does not
    remove it. Its versioned closed schema admits the producer's summary (lede, blocks, spans,
@@ -161,7 +163,9 @@ The posture rests on two invariants:
    The bound allows 64 summaries at 512 KiB each (32 MiB), plus 32 MiB for comparison metadata
    and envelopes. Eviction drops the least recently read or written summaries, never the summary
    being saved, and cannot touch the annotation store. Delete summary removes one session;
-   `--forget` deletes the whole store, even when unreadable. `--no-annotations` does not govern it.
+   `--forget` deletes the whole store, even when unreadable and even when the filesystem lock is
+   unsupported or unusable; only a lock another holder keeps past ten seconds refuses it.
+   `--no-annotations` does not govern it.
    Deletion is loopback-only, same-origin and refused for document navigation before the body or
    store is read. A local process with no fetch metadata can delete a summary; it cannot use this
    route to remove saved intent. [Session summary calls](#session-summary-calls) owns model-call bounds;
@@ -217,7 +221,15 @@ The posture rests on two invariants:
    docstring records that reasoning. The POST-route inventory in the test suite cannot see a `GET`,
    so this paragraph is the accounting for it.
 
-   One `GET` writes as well, which is why it is named here rather than left to the count above.
+   Two `GET`s write as well, which is why they are named here rather than left to the count above.
+   `GET /api/project-context` with a `session` that matches one row reads that session's stored
+   summary, and at most once an hour per summary that read records the summary's last access time,
+   which eviction orders by. It writes nothing else: the same entry with a later `accessed_at`,
+   under the summary store's process lock and `compass-summaries.json.lock`, by rewriting the whole
+   file, up to 64 MiB, through the owner-only temporary file and rename every save uses. That
+   rewrite applies the same size bound, so it can evict other summaries but never the one read, and
+   it never touches the annotation store. Under a non-default `--host` bind, a peer that can reach
+   the port can cause that hourly rewrite; it cannot choose what is written.
    `GET /api/observe` is a trigger rather than a poll: it derives one session's goal, stage and open
    block and records the answer as a sidecar under `~/.compass/observer/`, again Compass's own
    state and never a harness store. Its two components are the harness key and the session id, and

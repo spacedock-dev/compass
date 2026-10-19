@@ -6056,7 +6056,12 @@ class SummaryStoreHTTPTest(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_second_focused_open_returns_stored_summary_without_model_or_charge(self) -> None:
+    def test_focused_reopen_serves_a_stored_summary_without_a_model_call(self) -> None:
+        """Serving only: generating on first open and its summary ledger belong to the job lane.
+
+        Models are off and the summary is saved before the first open, so this cannot catch an
+        open that starts a summary job; the ledger asserted is the Analyze reading ledger.
+        """
         with (
             self.serving() as port,
             mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),

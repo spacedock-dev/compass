@@ -876,10 +876,12 @@ class Application:
         stored_summaries = summary_store.load(config)
         summaries_by_key = {(entry.harness, entry.sid): entry for entry in stored_summaries.entries}
         for row in out_sessions:
+            stored = summaries_by_key.get((str(row["harness"]), str(row["sid"])))
             row.update(
                 summary_store.published(
-                    summaries_by_key.get((str(row["harness"]), str(row["sid"]))),
+                    stored,
                     available=stored_summaries.state == "ok",
+                    checked=summary_store.last_checked(state, stored),
                 )
             )
         # After dedupe, which keys on (harness, sid) and would otherwise decide
