@@ -11,37 +11,37 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'intent',
     title: 'Your intent',
-    body: 'The goal and the outcomes you expect, in your own words. Compass compares the session with these and never writes into the session. Here the goal says to leave the pull request’s code alone, so changing it is what drift looks like.',
+    body: 'The goal and the outcome you expect, in your own words. Here the person set the goal once: burn a milestone down fully, with every issue in it closed. Compass reads the session against these words and never writes into the session.',
   },
   {
-    id: 'level',
-    title: 'The drift level',
-    body: 'None or low, Medium, High or Extreme. Here it is High. A live estimate reads only recorded checks and file paths, with no model involved (it is High because a check failed after the last message and nothing has fixed it), and the analysis below adds a stored reading of your goal against the record.',
+    id: 'summary',
+    title: 'What the session has done',
+    body: 'A summary a model wrote from the record when the finished session was opened, in phases, each line citing the entries it rests on. A line that says in its own voice that work was done is withheld and says so; it may only report that someone said so. Compass checks that a cited entry exists, not that it supports the line. The outline below it is Compass’s own grouping, made with no model.',
   },
   {
-    id: 'analysis',
-    title: 'What the analysis found',
-    body: 'One reading asks a model to compare your goal with what is on record. It found a departure: after a clean rebase the agent added a test and started changing code, when only history was meant to change. It is an account of the evidence, never a verification that the work was done.',
+    id: 'phase',
+    title: 'A phase that holds a departure',
+    body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold it: the milestone stood with issues still open, and at the end, short of closing every issue, the agent suggested moving an unfinished one out of the milestone, and the person replied that it stays and is to be finished.',
   },
   {
-    id: 'cited',
-    title: 'Check the evidence yourself',
-    body: 'Every finding names the entries it rests on, by number. Press a number and Full activity opens on that entry, with every entry the finding cites lit up in the list and the words of the finding beside them, so you can see what the claim stands on.',
+    id: 'departure',
+    title: 'A departure, and its evidence',
+    body: 'The analysis compares your words with the record. Each departure names what it rests on under What, by entry number, and says why in one sentence. Press a number and Full activity opens on that entry, with every cited entry lit up. It is an account of the evidence, never a verification that the work was done.',
   },
   {
     id: 'steer',
     title: 'Steer back',
-    body: 'A correction written from your own goal and expected outcomes, naming the entries by number. Copy it and paste it into the session yourself. Compass never sends anything into a session.',
+    body: 'A correction written from your own goal and expected outcome, naming the entries by number. Copy it and paste it into the session yourself. Compass never sends anything into a session.',
   },
   {
     id: 'sent',
-    title: 'What is sent',
-    body: 'A press runs the reading directly. You are told once what leaves your machine and where, and one press pauses model calls. A changed destination repeats the notice. Each reading counts against a daily limit.',
+    title: 'What is sent, and Pause model calls',
+    body: 'A summary or an analysis runs on your action, through your own Claude Code. The first of each kind says once what leaves your machine and where, and Pause model calls stops every one of them in one press. Each counts against a daily limit.',
   },
   {
     id: 'activity',
     title: 'Full activity: everything the session did',
-    body: 'Collapsed at the foot of the page. Every message the agent wrote, every check it ran and every file it wrote, numbered from #1 for the oldest. A number never moves, so a correction that names an entry still points at it later. A check or file takes the number of the message it follows, such as #12.1.',
+    body: 'Collapsed at the foot of the page. Every message the agent wrote, every check it ran and every file it wrote, numbered from #1 for the oldest. A number never moves, so a summary line or a correction that names an entry still points at it later. A check or file takes the number of the message it follows, such as #50.1.',
   },
 ];
 

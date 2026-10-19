@@ -1111,13 +1111,16 @@ function SampleWithSummary() {
       sources: {
         ...context['sources'],
         summary: storedSummary({
-          lede: { text: 'The agent worked on the rebase of PR 56.', cites: [SAMPLE_SAID] },
+          lede: {
+            text: 'The agent coordinated other agents on the milestone.',
+            cites: [SAMPLE_SAID],
+          },
           blocks: [
             block(SAMPLE_PHASE_START, SAMPLE_SAID, 3, [
               {
-                title: 'Writing the failing test',
+                title: 'Looking into the refused reading',
                 bullets: [
-                  bullet('Said it is writing the failing test first.', 'said', [
+                  bullet('Said it would check the merge order first.', 'said', [
                     SAMPLE_PHASE_START,
                   ]),
                 ],
@@ -1135,8 +1138,10 @@ function SampleWithSummary() {
   );
 }
 
-const SAMPLE_PHASE_START = 'fact:2e1135d2f9e44011';
-const SAMPLE_SAID = 'fact:fd062660762701e6';
+/* Two of the sample's agent messages on the newest record page (#81 and #79), so a chip lands without reading an
+   older page. */
+const SAMPLE_PHASE_START = 'fact:be63b710c3a94f33';
+const SAMPLE_SAID = 'fact:8d9a97cc2010ab9e';
 
 export const SampleDrawsAStoredSummary: Story = {
   render: () => <SampleWithSummary />,
@@ -1144,10 +1149,10 @@ export const SampleDrawsAStoredSummary: Story = {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     await expect(within(summary).getByRole('heading', { level: 3 })).toHaveTextContent(
-      'Writing the failing test',
+      'Looking into the refused reading',
     );
     await attributed(summary);
-    // The sample session has not ended, so its open posts nothing, and the controls are held.
+    // The sample holds a stored summary, so its open posts nothing, and the controls are held.
     await userEvent.click(within(region).getByRole('button', { name: 'Delete summary' }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-sample-held]')).toHaveTextContent(

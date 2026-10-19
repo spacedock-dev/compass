@@ -6,8 +6,8 @@ local mapping file (`--mapping`), written outside the repository because it cont
 originals. The shape of that file is documented in
 [sample-session/README.md](sample-session/README.md).
 
-    sanitize_session.py --mapping M.json --input session.jsonl --output example-session.jsonl
-    sanitize_session.py --mapping M.json --input session.jsonl --output example-session.jsonl \
+    sanitize_session.py --mapping M.json --input session.jsonl --output milestone-session.jsonl
+    sanitize_session.py --mapping M.json --input session.jsonl --output milestone-session.jsonl \
         --verify
 
 What it does, by walking every string value (and every key) of every record:

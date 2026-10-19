@@ -1,4 +1,4 @@
-import { SampleBeside, SampleMark } from '../sample/SampleMark';
+import { SampleBeside } from '../sample/SampleMark';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
@@ -137,7 +137,9 @@ function CitedEntries({ row }: { readonly row: Criterion }) {
     ) : null;
   return (
     <>
-      {chips ? <SampleBeside id={row.key === 'goal' ? 'cited' : ''}>{chips}</SampleBeside> : null}
+      {chips ? (
+        <SampleBeside id={row.key === 'goal' ? 'departure' : ''}>{chips}</SampleBeside>
+      ) : null}
       {load}
       {older ? (
         <p className={QUIET} data-next-unloaded>
@@ -343,7 +345,6 @@ function ResultAnswer({
         <span className="next-cockpit-result-count rounded-full bg-[var(--clay)] px-2.5 py-px text-label font-semibold text-[color:var(--bg)] [font-family:var(--mono)]">
           {count}
         </span>
-        <SampleMark id="analysis" />
       </h3>
     );
   } else if (answer.kind === 'failed-check') {

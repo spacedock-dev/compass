@@ -4,6 +4,7 @@ import { parseOutline } from '../api/outline';
 import { useControls } from '../controls';
 import { entriesHeld } from '../drift/citations';
 import { useDrift } from '../drift/context';
+import { SampleMark } from '../sample/SampleMark';
 import { useDisplayed, useShell } from '../shell/context';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
@@ -256,9 +257,13 @@ export function WhatItDid({
       data-next-session-summary
     >
       <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 id="next-session-summary-heading" className="next-session-drift-heading">
-          What the session has done
-        </h2>
+        {/* The sample's mark beside the heading, outside it, so the card's name stays the heading's words. */}
+        <span className="flex items-baseline">
+          <h2 id="next-session-summary-heading" className="next-session-drift-heading">
+            What the session has done
+          </h2>
+          <SampleMark id="summary" />
+        </span>
         {stamp ? (
           <span
             className="font-[family-name:var(--mono)] text-label text-muted-foreground"

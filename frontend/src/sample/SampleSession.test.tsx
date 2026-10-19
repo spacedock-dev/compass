@@ -27,12 +27,17 @@ describe('the sample session', () => {
     );
   });
 
-  it('draws the real Session page over the stored session: its entries, its intent and its reading', async () => {
+  it('draws the real Session page over the stored session: its entries, its intent, its summary and its reading', async () => {
     await mountSample();
     expect(document.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThanOrEqual(18);
-    expect(document.body.textContent).toContain('Resolve the merge conflicts on PR 56');
-    expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain('High');
+    expect(document.body.textContent).toContain('Burn down fully the');
+    expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain('Medium');
     expect(document.querySelector('[data-next-finding]')).not.toBeNull();
+    await waitFor(() => expect(document.querySelector('[data-next-summary]')).not.toBeNull());
+    expect(document.querySelectorAll('[data-next-summary-phase]').length).toBeGreaterThanOrEqual(4);
+    expect(document.querySelectorAll('[data-next-summary-marked]').length).toBeGreaterThanOrEqual(
+      1,
+    );
   });
 
   it('numbers an entry by the message it follows, and keeps the number', async () => {
@@ -40,8 +45,9 @@ describe('the sample session', () => {
     const numbers = [...document.querySelectorAll('[data-next-entry]')].map((row) =>
       row.getAttribute('data-next-entry'),
     );
-    expect(numbers).toContain('1');
-    expect(numbers).toContain('18');
+    // The newest page is numbered from the record's start, so its last entry is #81, not #1.
+    expect(numbers).toContain('81');
+    expect(numbers).toContain('50.1');
     expect(numbers.some((n) => /^\d+\.\d+$/.test(n ?? ''))).toBe(true);
   });
 
@@ -62,8 +68,8 @@ describe('the sample session', () => {
 
   it('opens the words of a note from its mark, and the same words are in the text legend', async () => {
     await mountSample();
-    const note = TOUR.find((each) => each.id === 'level');
-    const mark = document.querySelector('[data-sample-mark="level"]') as HTMLElement;
+    const note = TOUR.find((each) => each.id === 'summary');
+    const mark = document.querySelector('[data-sample-mark="summary"]') as HTMLElement;
     await act(async () => {
       fireEvent.click(mark);
     });
@@ -100,7 +106,7 @@ describe('the sample session', () => {
     expect(box.value).toBe(text);
   });
 
-  it('holds a press on Clear in the Intent card, and lets the grouped checks open', async () => {
+  it('holds a press on Clear in the Intent card, and lets the outline open', async () => {
     await mountSample();
     expect(document.querySelector('[data-next-session-more]')).toBeNull();
     const clear = document.querySelector(
@@ -115,12 +121,30 @@ describe('the sample session', () => {
     });
     expect(goal.value).toBe(before);
     expect(held()).toBe('View only: this sample cannot be edited, saved or run.');
-    const checks = document.querySelector('[data-check-run] button') as HTMLElement;
-    expect(checks.getAttribute('aria-expanded')).toBe('false');
+    const outline = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === "Compass's outline of this session",
+    ) as HTMLElement;
+    expect(outline.getAttribute('aria-expanded')).toBe('false');
     await act(async () => {
-      fireEvent.click(checks);
+      fireEvent.click(outline);
     });
-    expect(checks.getAttribute('aria-expanded')).toBe('true');
+    expect(outline.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it.each([
+    ['Delete summary', 'summary-delete'],
+    ['Turn off summaries', 'summary-off'],
+    ['Pause model calls', 'reading-off'],
+  ])('holds %s and keeps the summary', async (_name, action) => {
+    const page = await mountSample();
+    await waitFor(() => expect(document.querySelector('[data-next-summary]')).not.toBeNull());
+    const press = document.querySelector(`[data-next-cockpit-action="${action}"]`) as HTMLElement;
+    await act(async () => {
+      fireEvent.click(press);
+    });
+    expect(held()).toBe('View only: this sample cannot be edited, saved or run.');
+    expect(document.querySelector('[data-next-summary]')).not.toBeNull();
+    expect(page.posts()).toBe(0);
   });
 
   it('lights up the entries a finding cites when one of its numbers is pressed, and goes back', async () => {

@@ -56,10 +56,9 @@ frontend/                           # React sources, unit tests, Storybook stori
 ├── e2e/                            # Playwright browser proofs, run on demand by `pnpm test:*:browser`; not required by CI or the pre-PR list
 └── build/ dev/                     # the packager and the contributor development supervisor
 sample-session/                    # the anonymized example session behind "Sample session (view only)"; not shipped
-│                                   # (`example-session.jsonl`, `shaping.json`, its README; `milestone-session.jsonl` is the
-│                                   # next sample's record, not drawn yet). The page's fixture built from it
+│                                   # (`milestone-session.jsonl` and its README). The page's fixture built from it
 │                                   # is `frontend/src/sample/session.fixture.json`; `scripts/cut_sample_session.py`,
-│                                   # `sanitize_session.py`, `shape_sample_session.py` and `build_sample_fixture.py` make both
+│                                   # `sanitize_session.py` and `build_sample_fixture.py` make both
 scripts/frozen-page/               # the retired page's script parts, outside the plugin: the paused study
 │                                   # binds their digest (`scripts/frozen_page.py` loads them); not shipped
 compass-gemini/                    # extension root: Gemini CLI (hooks only)

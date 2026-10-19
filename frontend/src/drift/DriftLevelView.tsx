@@ -1,4 +1,3 @@
-import { SampleMark } from '../sample/SampleMark';
 import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Fragment } from 'react';
@@ -187,7 +186,6 @@ export function DriftLevelView() {
       <div className="next-session-drift-live" data-next-drift-level>
         <p className="next-session-drift-live-head">
           <span className="next-session-drift-level">{level.label}</span>
-          <SampleMark id="level" />
           {level.source ? <span className="next-session-drift-source">{level.source}</span> : null}
         </p>
         {level.level ? (

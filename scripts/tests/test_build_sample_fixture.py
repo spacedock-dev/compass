@@ -48,6 +48,65 @@ class RewriteTest(unittest.TestCase):
         self.assertEqual(9.5, bf.last_record_time(context))
 
 
+class SummaryAndCutoffTest(unittest.TestCase):
+    """The stored summary is placed on the sample's timeline, and the reading's age counted from it."""
+
+    @staticmethod
+    def fixture() -> dict[str, Any]:
+        job = {"started_at": CAPTURED - 100, "notice": {"at": CAPTURED - 100}}
+        summary = {
+            "exists": True,
+            "made_at": CAPTURED - 90,
+            "model_stamp": "claude:claude-sonnet-5-5:" + "ab" * 32,
+            "spend": {"calls": 3, "seconds": 21.5},
+            "job": dict(job),
+        }
+        return {
+            "context": {"sources": {"summary": dict(summary)}},
+            "prompts": {"sources": {"summary": dict(summary, job=dict(job))}},
+            "board": {
+                "sessions": [{"summary": {"made_at": CAPTURED - 90, "job": dict(job)}}],
+                "summaries": {"used": 6, "notices": {"claude": {}}, "off": False, "reason": ""},
+            },
+        }
+
+    def test_the_summary_sits_before_the_reading_and_its_digest_is_cut(self) -> None:
+        fixture = self.fixture()
+        bf.place_summary(fixture, 1000.0)
+        for answer in (fixture["context"], fixture["prompts"]):
+            summary = answer["sources"]["summary"]
+            self.assertEqual(1000.0, summary["made_at"])
+            self.assertEqual(1000.0 - 21.5, summary["job"]["started_at"])
+            self.assertIsNone(summary["job"]["notice"])
+            self.assertEqual("claude:claude-sonnet-5-5:" + "ab" * 16, summary["model_stamp"])
+        self.assertEqual(1000.0, fixture["board"]["sessions"][0]["summary"]["made_at"])
+        grant = fixture["board"]["summaries"]
+        self.assertEqual((3, {}, None), (grant["used"], grant["notices"], grant["retry_at"]))
+
+    def test_no_stored_summary_changes_nothing(self) -> None:
+        fixture: dict[str, Any] = {
+            "context": {"sources": {}},
+            "prompts": {},
+            "board": {"summaries": {"used": 2}},
+        }
+        bf.place_summary(fixture, 1000.0)
+        self.assertEqual(2, fixture["board"]["summaries"]["used"])
+
+    def test_the_oldest_entry_is_aged_from_the_reading_not_the_capture(self) -> None:
+        assessment = {
+            "read_at": 10_000.0,
+            "window_start": 10_000.0 - 5_500,
+            "coverage": {"tail_start": 0},
+            "cutoff": "Read all 88 entries. The oldest is from about 3846h ago. More.",
+        }
+        self.assertEqual(
+            "Read all 88 entries. The oldest is from about 1h ago. More.",
+            bf.cutoff_on_timeline(assessment),
+        )
+        assessment["window_start"] = 10_000.0 - 600
+        self.assertIn("All are from within the last hour.", bf.cutoff_on_timeline(assessment))
+
+
 class RecordPagesTest(unittest.TestCase):
     """The capture reads every record page back to the start, and keeps nothing of the server's cursors."""
 
