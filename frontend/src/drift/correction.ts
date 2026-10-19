@@ -297,6 +297,10 @@ export function offeredDirection(
   return last ? String(last.id || '') : '';
 }
 
+/* Whose check failed, said: under "Not checked yet" a bare "Check failed at #2.2" read as the drift check having
+   failed. */
+export const CHECK_FAILED_TRIGGER = 'A check the agent ran failed';
+
 /* What put Steer back on offer, in one line: the entry, its number and its age. */
 export function steerTrigger(input: {
   readonly offer: SteerOffer | null;
@@ -309,9 +313,11 @@ export function steerTrigger(input: {
 }): string {
   const { offer, shape, session, entries, numbers, scan } = input;
   if (!offer) return '';
+  /* A departure's first cited entry, which its result row and its reason line name: taking the latest of all
+     its citations named "#4" here beside "Departs; evidence #3" on the same card. */
   const ids =
     offer.departed && shape
-      ? shape.departures.flatMap((row) => row.citedIds || [])
+      ? shape.departures.flatMap((row) => (row.citedIds || []).slice(0, 1))
       : offer.claimed && shape
         ? shape.criteria.filter((row) => row.key === CLAIMS).flatMap((row) => row.citedIds || [])
         : [];
@@ -331,6 +337,6 @@ export function steerTrigger(input: {
     ? 'Departure evidence'
     : offer.claimed
       ? 'Claim to check'
-      : 'Check failed';
+      : CHECK_FAILED_TRIGGER;
   return `${trigger}${n !== undefined ? ` at #${String(n)}` : ''} · ${age}`;
 }

@@ -19,10 +19,14 @@ export const SUMMARY_ADDS =
   'A summary tells this session as a short story in phases, each line citing the entries it rests on. It is written by a model; the outline below is Compass’s own grouping.';
 export const SUMMARY_WORKING_KEEP = 'You can keep working. The summary will appear here.';
 export const SUMMARY_STARTING = 'Starting a summary of this finished session…';
+/* The switch is one for the whole machine, so the sentence says so: it once said "this session", and a reader
+   who turned summaries off on one session found them off on the next. */
 export const SUMMARY_OFF =
-  'Summaries are turned off. Nothing from this session is sent for a summary until you turn them on.';
-export const SUMMARY_NOT_CLAUDE = (harness: string) =>
-  `${harness} sessions cannot be summarized yet: Compass summarizes Claude Code sessions only. The outline below is Compass’s own grouping.`;
+  'Summaries are turned off for every session. Nothing is sent for a summary until you turn them on.';
+/* The outline is named only where one is drawn: a Gemini session has none, and the sentence once pointed at "the
+   outline below" above the line saying this session has no outline. */
+export const SUMMARY_NOT_CLAUDE = (harness: string, outlined = true) =>
+  `${harness} sessions cannot be summarized yet: Compass summarizes Claude Code sessions only.${outlined ? ' The outline below is Compass’s own grouping.' : ''}`;
 export const SUMMARY_RELEVANCE =
   'Each line cites the entries it rests on. Compass checks that a cited entry exists and what kind it is, not that it supports the line.';
 export const SUMMARY_FAILED_SEND =
@@ -150,18 +154,32 @@ export const WITHHELD_LINES: Readonly<Record<string, string>> = {
 };
 export const withheldSentence = (reason: string): string =>
   WITHHELD_LINES[reason] ?? 'Withheld: this line broke a rule a summary line must keep.';
-export const WITHHELD_TITLE = 'A phase title was withheld here.';
+/* A withheld title says why, as a withheld line does. It once said only that it was withheld, on most phases, and
+   a reader could not tell that "Revenue chart tooltip date fix" had been held for the word "fix": a title has no
+   speaker, so the backstop holds every completion word in it
+   ([DEC-28](../../../docs/design-session-summary.md#amended-2026-10-19-owner-the-summarys-own-voice)). */
+export const WITHHELD_TITLES: Readonly<Record<string, string>> = {
+  completion_claim:
+    'Phase title withheld: it used a word that can say work is done, such as “fix” or “done”, which a title may not.',
+  shape_fault: 'Phase title withheld: it was not in the shape a phase title must take.',
+  too_long_cut: 'Phase title withheld: it was too long, and cutting it changed what it said.',
+};
+export const withheldTitle = (reason: string): string =>
+  WITHHELD_TITLES[reason] ?? 'Phase title withheld: it broke a rule a phase title must keep.';
 export const LEDE_LAST = 'The opening summary is written once every part has been read.';
 
-/* A `said` bullet reads as the agent's words: it opens with "Said", and keeps the model's own opening when the
-   model already wrote it so. */
+/* A `said` bullet reads as the agent's words: it opens with the label "Said:", as the card names a speaker. The
+   producer's attribution rule asks the model to name the speaker ("The agent said ...", "The agent also said
+   that ..."), and the label already names it, so the two are folded rather than stacked. Folded to a bare "Said"
+   they read as a sentence with no subject ("Said the tooltip formats ..."), and an adverb the fold did not know
+   left "Said: The agent also said ...". */
+const AGENT_SPEECH =
+  /^(?:the agent\s+(?:(?:also|then|later|again|first|finally|now)\s+)?)?said\b(?:\s+that\b)?[\s:,]*/i;
 export function saidText(words: string): string {
   const flat = words.trim();
-  if (/^said\b/i.test(flat)) return words;
-  /* The producer's attribution rule asks the model to name the speaker ("The agent said ..."), and the card's
-     own "Said" already names it, so the two are folded rather than stacked. */
-  const named = /^the agent\s+said\b\s*/i.exec(flat);
-  return named ? `Said ${flat.slice(named[0].length)}` : `Said: ${words}`;
+  const named = AGENT_SPEECH.exec(flat);
+  const rest = named ? flat.slice(named[0].length) : flat;
+  return rest ? `Said: ${rest}` : words;
 }
 
 /* An `asked` bullet reads as the person's words, as Full activity names them "You": the server admits it under
@@ -181,13 +199,25 @@ export function askedText(words: string): string {
 
 /* A failed check is told apart from plain work in words, not only in colour, as the outline words it. */
 export const FAILED_MARK = 'Failed as the tool reported:';
+/* The producer's own tool-report form already says it, so a line in that form takes the short mark: both
+   together read "Failed as the tool reported: ... reported failed, as the tool reported." */
+export const FAILED_SHORT = 'Failed:';
+const TOOL_REPORT = /\breported\s+failed,\s*as\s+the\s+tool\s+reported\b/i;
 
 /* What a bullet draws, and what its chips are named for: the speaker for words, the failure for a check. */
 export function bulletWords(kind: string, words: string): string {
   if (kind === 'said') return saidText(words);
   if (kind === 'asked') return askedText(words);
-  if (kind === 'failed') return `${FAILED_MARK} ${words}`;
+  if (kind === 'failed') return `${TOOL_REPORT.test(words) ? FAILED_SHORT : FAILED_MARK} ${words}`;
   return words;
+}
+
+/* Cited entries a chip cannot open: an earlier check or file has no entry of its own in Full activity. Said as a
+   sentence that names why, where it once read "2 cited entries Full activity cannot open from here". */
+export function unlinkedSentence(n: number): string {
+  return n === 1
+    ? '(1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.)'
+    : `(${String(n)} cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.)`;
 }
 
 /* The card's right-hand header: the model, and when the summary was made. */

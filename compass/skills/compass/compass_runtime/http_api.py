@@ -3886,12 +3886,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(400)
             return
         label_cap = config.ask_option_cap_chars
+        # harness and session_id share the option cap: they really are short
+        # labels of the same order. `project` does not, and gets its own knob
+        # below, because it is a filesystem path.
+        harness = records.safe_text(payload.get("harness"), label_cap).strip()
+        native_sid = records.safe_text(payload.get("session_id"), label_cap).strip()
+        # The stdio server sends Claude's whole CLAUDE_CODE_SESSION_ID, and rows key
+        # on the collector's sid, so an unmapped id attached to no row: the page
+        # matches the two exactly. The event route's mapping is the one rule for
+        # both. An id it cannot map is kept as sent, which still matches nothing
+        # rather than guessing a row.
+        session_id = runtime_events.normalize_session_id(harness, native_sid) or native_sid
         ask = runtime_asks.PendingAsk(
-            # harness and session_id share the option cap: they really are short
-            # labels of the same order. `project` does not, and gets its own knob
-            # below, because it is a filesystem path.
-            harness=records.safe_text(payload.get("harness"), label_cap).strip(),
-            session_id=records.safe_text(payload.get("session_id"), label_cap).strip(),
+            harness=harness,
+            session_id=session_id,
             project=self._ask_project(payload.get("project")),
             question=question,
             options=options,

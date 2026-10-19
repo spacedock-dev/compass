@@ -65,6 +65,17 @@ describe('the "Use your prompt" menu', () => {
     expect(page.posts()).toBe(0);
   });
 
+  it('names the menu a replacement beside a saved typed goal, so its face never reads as the source', async () => {
+    const page = mountSession({
+      store: { goal: 'Saved', revision: 1 },
+      routes: { '/api/project-context': menu },
+    });
+    await settle(page);
+    expect(text('[data-next-cockpit-goal-source]')).toMatch(/^Typed · saved/);
+    expect(select().textContent).toBe('Replace with your prompt');
+    expect(select().getAttribute('aria-label')).toBe('Use your prompt');
+  });
+
   it('names each prompt by its place and time, marks an excerpt, and cuts the line at a word', async () => {
     const page = mountSession({
       store: { goal: 'Saved', revision: 1 },

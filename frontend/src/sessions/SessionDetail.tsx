@@ -358,7 +358,9 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             project={route.project}
             summary={
               <WhatItDid
-                running={!observed.isEnded}
+                // Running is what the session is doing now, not that it has not ended: an idle or
+                // completed session is open but does nothing until the person writes again.
+                running={observed.isWorking || observed.isNeeds}
                 harness={labels.get(observed.harness) ?? observed.harness}
               />
             }

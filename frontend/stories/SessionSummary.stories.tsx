@@ -22,6 +22,7 @@ import {
   SUMMARY_OFF,
   SUMMARY_WORKING_KEEP,
   WITHHELD_LINES,
+  withheldTitle,
 } from '../src/sessions/summary';
 import { neverDone, noCheckMark } from './drift.checks';
 import { COVERAGE, claudeOutline } from './outline.scenario';
@@ -96,9 +97,9 @@ async function attributed(summary: HTMLElement) {
     const words = row.querySelector('[data-next-summary-text]')?.textContent ?? '';
     const chips = [...row.querySelectorAll<HTMLElement>('[data-next-outline-entry]')];
     await expect(chips.length).toBeGreaterThan(0);
-    if (kind === 'said') await expect(words).toMatch(/^Said\b/);
+    if (kind === 'said') await expect(words).toMatch(/^Said: /);
     if (kind === 'asked') await expect(words).toMatch(/^You (asked|said)\b/);
-    if (kind === 'failed') await expect(words).toMatch(/^Failed as the tool reported: /);
+    if (kind === 'failed') await expect(words).toMatch(/^Failed(?: as the tool reported)?: /);
     for (const chip of chips) {
       await expect(chip.getAttribute('aria-label')).toContain(`cited for “${words}”`);
       const id = chip.dataset['nextOutlineEntry'] ?? '';
@@ -164,6 +165,38 @@ export const Ready: Story = {
   },
 };
 
+/* With Full activity closed, a chip opens it and the cited row lands on screen. A smooth scroll begun while
+   the panel still grew was clamped at the foot of a page not yet tall enough and left the row at the edge. */
+export const ChipLandsOnScreenWithFullActivityClosed: Story = {
+  render: () => <SummaryPage summary={storedSummary()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await expect(
+      canvasElement
+        .querySelector('[data-next-full-activity-trigger]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('false');
+    await userEvent.click(
+      within(summary).getByRole('button', { name: /^Open entry #2\.1, cited for/ }),
+    );
+    const row = await waitFor(() => {
+      const node = entryRow(canvasElement, 'c1');
+      expect(document.activeElement).toBe(node);
+      return node as HTMLElement;
+    });
+    await waitFor(
+      () => {
+        // The row's head is on screen and clear of the foot, where the clamped scroll left it (728 of 729).
+        const box = row.getBoundingClientRect();
+        expect(box.top).toBeGreaterThanOrEqual(0);
+        expect(box.top).toBeLessThanOrEqual(window.innerHeight - 80);
+      },
+      { timeout: 3000 },
+    );
+  },
+};
+
 /* A running session's summary: the header says when it was updated and that the session still runs, and
    opening it posts nothing. */
 export const ReadyStillRunning: Story = {
@@ -176,6 +209,20 @@ export const ReadyStillRunning: Story = {
     );
     await poll();
     await expect(summaryPosts()).toHaveLength(0);
+  },
+};
+
+/* An idle session that has not ended, such as a Codex session after its task completed: the stamp names when
+   it was summarized and never says "still running", which the walk found on idle and completed sessions. */
+export const ReadyIdleIsNotStillRunning: Story = {
+  render: () => <SummaryPage summary={storedSummary()} ended={false} session={{ state: 'idle' }} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await summaryOf(region);
+    await expect(region.querySelector('[data-next-outline-stamp]')).toHaveTextContent(
+      /^claude-sonnet-5-5 · summarized at \d\d:\d\d$/,
+    );
+    await expect(region).not.toHaveTextContent('still running');
   },
 };
 
@@ -523,7 +570,7 @@ export const Partial: Story = {
     await expect(withheld).toHaveTextContent(WITHHELD_LINES.completion_claim ?? '');
     await expect(
       summary.querySelector('h3 [data-next-summary-withheld="completion_claim"]'),
-    ).toHaveTextContent('A phase title was withheld here.');
+    ).toHaveTextContent(withheldTitle('completion_claim'));
     await neverDone(region);
   },
 };
@@ -1455,7 +1502,7 @@ export const CheckCitationTheRecordDoesNotCarry: Story = {
     });
     await expect(row.querySelector('[data-next-outline-entry]')).toBeNull();
     await expect(row.querySelector('[data-next-summary-unlinked]')).toHaveTextContent(
-      '1 cited entry Full activity cannot open from here',
+      '(1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.)',
     );
     const line = await waitFor(() => {
       const node = canvasElement.querySelector<HTMLElement>('[data-next-departure-summary]');

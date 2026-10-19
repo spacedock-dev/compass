@@ -309,7 +309,12 @@ function pressIsHeld(fixture: keyof typeof VARIANTS, name: RegExp, opener?: stri
       press.scrollIntoView({ block: 'center', behavior: 'instant' });
       await settle();
       await userEvent.click(press);
-      await expect(canvasElement.querySelector('[data-sample-held]')).toHaveTextContent(HELD);
+      const status = canvasElement.querySelector('[data-sample-held]') as HTMLElement;
+      await expect(status).toHaveTextContent(HELD);
+      // Seen where the press was: the sentence once sat in the banner, thousands of pixels above.
+      const box = status.getBoundingClientRect();
+      await expect(box.top).toBeGreaterThanOrEqual(0);
+      await expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
       await expect(canvasElement.querySelector('[data-next-summary]')).not.toBeNull();
     },
   };

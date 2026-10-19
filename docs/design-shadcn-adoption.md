@@ -653,7 +653,8 @@ uses two-line items with full titles. Non-modal mode keeps the page and its live
 
 PromptSelect opens before fetching and shows a disabled loading item in that popup, then choices
 or one of two stated absences (none found in the part of the session read, or the read failed) in the same popup. The trigger stays "Use your prompt" until a
-choice stands in the goal as a pending adoption; choosing saves nothing. It reserves 18rem on
+choice stands in the goal as a pending adoption, and reads "Replace with your prompt" beside a saved
+typed goal; choosing saves nothing. It reserves 18rem on
 wide screens and fills the remaining label-row width on narrow screens. Stage and direction keep
 their controlled values and existing change owners. The focus keys remain on the trigger buttons.
 

@@ -160,6 +160,10 @@ function Block({
   );
 }
 
+/* Long enough for a smooth scroll over a long record to end; short enough that a reader's own scroll after it is
+   not mistaken for the landing's. */
+const LAND_SETTLE_MS = 1500;
+
 /* The What the session has done card: a stable region between the Intent card and the Drift card. Until a
    summary exists it holds Compass's outline, one block per message of the reader's, read from the focused
    context and updated with the board; once one is saved, the summary stands in the slot and the outline is one
@@ -220,12 +224,25 @@ export function WhatItDid({
     );
     if (!node) return false;
     node.focus({ preventScroll: true });
-    node.scrollIntoView({
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'instant'
-        : 'smooth',
-      block: 'center',
-    });
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    node.scrollIntoView({ behavior: reduce ? 'instant' : 'smooth', block: 'center' });
+    if (!reduce) {
+      /* A smooth scroll runs against the page as it was when it started. Full activity opening or its rows
+         arriving under it moved the row after that, and the scroll ended with the row at the foot of the
+         screen or below it, so it is checked once where the scroll ends and placed again if it is off screen.
+         The check is dropped after a moment, so a scroll of the reader's own is never answered. */
+      const recheck = () => {
+        window.clearTimeout(drop);
+        const box = node.getBoundingClientRect();
+        if (box.top < 0 || box.bottom > window.innerHeight)
+          node.scrollIntoView({ behavior: 'instant', block: 'center' });
+      };
+      const drop = window.setTimeout(
+        () => window.removeEventListener('scrollend', recheck),
+        LAND_SETTLE_MS,
+      );
+      window.addEventListener('scrollend', recheck, { once: true });
+    }
     return true;
   };
   const open = (from: 'summary' | 'outline') => (id: string, n: string | null) => {
@@ -233,10 +250,17 @@ export function WhatItDid({
     latestPress.current = press;
     setMissing(null);
     controls.disclosures.set(fullActivityKey(model.project, model.session), true);
+    /* After Full activity has finished opening. A smooth scroll begun while its panel still grew was clamped
+       at the foot of a page not yet tall enough, and left the row at the bottom edge (top 728 of 729 px). */
     const settle = () =>
       requestAnimationFrame(() => {
         if (latestPress.current !== press) return;
-        if (!land(id)) setMissing({ what: n ? `entry #${n}` : 'that entry', from });
+        const panel = document.querySelector('[data-next-full-activity-body]');
+        const growing = panel?.getAnimations?.() ?? [];
+        void Promise.allSettled(growing.map((animation) => animation.finished)).then(() => {
+          if (latestPress.current !== press) return;
+          if (!land(id)) setMissing({ what: n ? `entry #${n}` : 'that entry', from });
+        });
       });
     if (model.byId.has(id) || !identity) {
       settle();

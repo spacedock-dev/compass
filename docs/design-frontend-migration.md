@@ -497,6 +497,12 @@ retired triggers with the measured row-filling how-to; its fonts, inks and borde
 normalizers account for labels and counter placement; the proof asserts the first-step controls
 and counts one click on each of four active/recent, saved/drafted fixtures. Goldens stay unchanged.
 
+Deviation (2026-10-20): ACTIVE NOW counts the cards listed under Active now, which include a
+session holding recorded drift. The legacy count left drift out, so a browser walk read
+"ACTIVE NOW 0" above a listed drift card. WORKING is unchanged and still never counts an idle
+session with drift. The recorded side of `sessions.differential.test.tsx` sets that one count to its
+own active group's rows; every other fact still compares.
+
 The observed model that Sessions, the header counts and session detail all stand on is a full port of
 the legacy `next-observed.js`, checked by executing the real legacy file next to it over hundreds of
 generated payloads with no difference, and by mutants that show the comparison can fail. The header
@@ -555,6 +561,8 @@ Deviations (owner, 2026-10-12): prompt, stage and direction choices now use shad
 The prompt opens immediately, shows "Loading your prompts" as a disabled item while fetching,
 and keeps that popup open for choices or a stated absence for an empty read or a failed read after an empty or failed
 read. The trigger stays "Use your prompt" at rest and carries `aria-busy` during the request.
+Beside a saved typed goal its face reads "Replace with your prompt" (2026-10-20), because "Use your
+prompt" beside "Typed · saved" read as the goal's source; its accessible name stays "Use your prompt".
 Its width is 18rem on wide screens and the remaining label-row width on narrow screens. The Goal label and trigger retain one row on narrow screens, preserving the first-view positions of Analyze, results, direction questions and Steer back. The popup drops
 below the trigger, scrolls without shifting the page, and clamps each titled item to two lines.
 Escape closes only the popup before any disclosure or route dismissal. A choice fills a pending
@@ -651,6 +659,12 @@ with the stated reason and sends nothing more. A refusal on an adopted prompt is
 action writes. Steer back composes an editable correction (2000 code points) that is only ever copied, never
 written to the session; the proof drives typing, caret, selection and native undo through board ticks, IME
 composition through the debugger protocol, a paste over the cap, and a pointer held through the click.
+
+Deviation (2026-10-20): the line saying what put Steer back on offer names a departure by its first cited
+entry, the one its result row and its reason line name. The legacy line took the latest of all its citations,
+so one card read "Departs; evidence #3" beside "Departure evidence at #4". A failed check there reads "A
+check the agent ran failed", because a bare "Check failed" under "Not checked yet" read as the drift check
+having failed. `correction.differential.test.ts` gives the recorded side the same first citation and wording.
 
 Deviations, each recorded rather than hidden. The card, the numbered list and the departures hold the last
 board they drew while the reader is in the correction box (untouched or edited), composing, or holding a

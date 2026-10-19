@@ -125,7 +125,11 @@ describe('the groups', () => {
     expect(document.querySelector('[data-next-session-drift-mark]')?.textContent).toBe(
       'Drift · 1m ago',
     );
-    expect(document.querySelector('[data-next-fleet-fact="active"] strong')?.textContent).toBe('0');
+    // Counted with the cards listed under Active now, and still not called working.
+    expect(document.querySelector('[data-next-fleet-fact="active"] strong')?.textContent).toBe('1');
+    expect(document.querySelector('[data-next-fleet-fact="working"] strong')?.textContent).toBe(
+      '0',
+    );
   });
 
   it('says annotations are off, and the goal cell says so too, when the payload does not publish them', async () => {

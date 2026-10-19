@@ -335,7 +335,11 @@ export function buildSessionsScreen(
   };
   return {
     context,
-    counters: model.counters,
+    // The count under "Active now" counts the cards listed there, which include recorded drift. The model's
+    // count is the board's and has no drift, so it read 0 above a listed drift card.
+    counters: model.counters.map((counter) =>
+      counter.label === 'ACTIVE NOW' ? { ...counter, value: groups.active.length } : counter,
+    ),
     lede: anyChecked(rows, context) === false,
     active: groups.active.map((session) => row(session, false)),
     history: groups.history.map((session) => row(session, true)),

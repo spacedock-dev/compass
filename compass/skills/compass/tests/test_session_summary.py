@@ -1134,6 +1134,24 @@ class SessionSummaryTest(unittest.TestCase):
             self.assertEqual(([], 0), (model.prompts, result.spend.calls))
             self.assertIs(prior.lede, result.lede)
 
+    def test_an_update_lede_is_told_its_record_is_only_the_newest_part(self) -> None:
+        # Decision 5 keeps earlier entries out of an Update, the lede included. Told nothing,
+        # the lede said the record did not show the person's goal, above the phase quoting it.
+        old = [entry(1, words="EARLIER PRIVATE GOAL")]
+        first = Replies({"phases": [phase([1])]}, {"lede": "The person asked.", "cites": [1]})
+        prior = self.run_summary(old, first)
+        model = Replies({"phases": [phase([2])]}, {"lede": "The agent ran checks.", "cites": [2]})
+        self.update(
+            prior,
+            [*old, entry(2)],
+            session_source.SourceChange("appended", appended=("fact-2",)),
+            model,
+        )
+        self.assertNotIn("newest part of a longer session", first.prompts[-1])
+        self.assertIn("newest part of a longer session", model.prompts[-1])
+        self.assertIn("never say the record does not show", model.prompts[-1])
+        self.assertNotIn("EARLIER PRIVATE GOAL", "\n".join(model.prompts))
+
     def test_a_failed_update_lede_keeps_the_prior_lede(self) -> None:
         prior = self.run_summary([entry(1)])
         result = self.update(

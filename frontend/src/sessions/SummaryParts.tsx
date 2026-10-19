@@ -28,7 +28,8 @@ import {
   SUMMARY_RELEVANCE,
   SUMMARY_STARTING,
   SUMMARY_WORKING_KEEP,
-  WITHHELD_TITLE,
+  withheldTitle,
+  unlinkedSentence,
   blockName,
   bulletWords,
   gapSentence,
@@ -186,7 +187,9 @@ export function SummaryControls({
   if (!grant) return null;
   if (state.harness !== 'claude')
     return (
-      <Line data-next-summary-state="unsupported">{SUMMARY_NOT_CLAUDE(state.harnessLabel)}</Line>
+      <Line data-next-summary-state="unsupported">
+        {SUMMARY_NOT_CLAUDE(state.harnessLabel, outline.entries !== null)}
+      </Line>
     );
   if (jobActive(job) && job) {
     const control = `summary-cancel:${state.key}`;
@@ -396,7 +399,7 @@ function Cites({
       ))}
       {unlinked ? (
         <span className="text-label text-muted-foreground" data-next-summary-unlinked={unlinked}>
-          {`${counted(unlinked, 'cited entry', 'cited entries')} Full activity cannot open from here`}
+          {unlinkedSentence(unlinked)}
         </span>
       ) : null}
       {cut ? (
@@ -612,7 +615,7 @@ export function SummaryView({
                         className="font-normal text-muted-foreground"
                         data-next-summary-withheld={phase.title.withheld}
                       >
-                        {WITHHELD_TITLE}
+                        {withheldTitle(phase.title.withheld)}
                       </span>
                     )}
                   </h3>

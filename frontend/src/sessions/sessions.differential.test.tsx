@@ -115,6 +115,14 @@ function legacySummary(payload: unknown): Summary {
   template.content.querySelectorAll('.next-operation-assignment').forEach((node) => {
     node.textContent = node.textContent?.replace(/^ASSIGNMENT · /, 'Current task · ') ?? '';
   });
+  /* Deviation (2026-10-20, docs/design-frontend-migration.md#sessions-session-detail-the-timeline-and-the-terminal):
+     ACTIVE NOW counts the cards listed under Active now, recorded drift included. The legacy count left drift
+     out, so it read 0 above a listed drift card. */
+  const counted = template.content.querySelectorAll(
+    '[data-next-operation-group="active"] article.next-operation-row',
+  ).length;
+  const active = template.content.querySelector('[data-next-fleet-fact="active"] strong');
+  if (active) active.textContent = String(counted);
   return summarize(template.content);
 }
 

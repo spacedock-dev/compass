@@ -13,7 +13,7 @@ import { ViewOnly } from './ViewOnly';
 const HELD_SENTENCE = 'View only: this sample cannot be edited, saved or run.';
 const HELD_MS = 5000;
 
-function Banner({ held }: { readonly held: boolean }) {
+function Banner() {
   return (
     <Card
       as="section"
@@ -45,10 +45,26 @@ function Banner({ held }: { readonly held: boolean }) {
           ))}
         </ol>
       </details>
-      <p role="status" className="m-0 min-h-[1.5em] text-[var(--amber)]" data-sample-held>
-        {held ? HELD_SENTENCE : ''}
-      </p>
     </Card>
+  );
+}
+
+/* Why a press did nothing, drawn where the reader pressed. It sat in the banner once, about 3,000 px above
+   Delete summary, so a held press there looked dead. Sticky to the foot of the viewport while the sample is on
+   screen, and drawn only while held, so it never covers the page otherwise. */
+function Held({ held }: { readonly held: boolean }) {
+  return (
+    <p
+      role="status"
+      className={
+        held
+          ? 'sticky bottom-4 z-10 m-0 mt-4 rounded-card border border-solid border-[var(--amber)] bg-card px-[12px] py-[8px] text-[var(--amber)]'
+          : 'm-0'
+      }
+      data-sample-held
+    >
+      {held ? HELD_SENTENCE : ''}
+    </p>
   );
 }
 
@@ -74,8 +90,9 @@ export function SampleSession({ children }: { readonly children: ReactNode }) {
       <ControlsProvider controls={shell.controls}>
         <TourContext value>
           <section data-sample-session>
-            <Banner held={held} />
+            <Banner />
             <ViewOnly onHeld={onHeld}>{children}</ViewOnly>
+            <Held held={held} />
           </section>
         </TourContext>
       </ControlsProvider>

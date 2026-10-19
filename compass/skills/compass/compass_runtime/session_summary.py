@@ -322,9 +322,20 @@ def _prompt(
     )
 
 
-def _lede_prompt(lines: Sequence[_Line], config: RuntimeConfig) -> str:
+# An Update's lede reads only the appended entries (decision 5 in
+# docs/design-session-summary.md), so it must be told that the record is a tail. Told nothing, it
+# wrote that the record did not show the person's goal while the earlier phase quoting it sat below.
+_UPDATE_LEDE_SCOPE = (
+    "These entries are only the newest part of a longer session; the earlier entries, where the "
+    "person may have set out the goal, are not shown. Say what these entries show, and never say "
+    "the record does not show, lacks or omits something. "
+)
+
+
+def _lede_prompt(lines: Sequence[_Line], config: RuntimeConfig, *, tail: bool = False) -> str:
     return (
-        f"Write at most 2 sentences and {config.session_summary_lede_chars} characters saying "
+        (_UPDATE_LEDE_SCOPE if tail else "")
+        + f"Write at most 2 sentences and {config.session_summary_lede_chars} characters saying "
         "what the person set out to do and what the agent worked on. If the cited entries show "
         "the person correcting or redirecting the agent, say so. Relayed entries were not written "
         "by the person. Use actions only. Never state in your own voice that work is fixed, done, "
@@ -876,10 +887,12 @@ def _lede_lines(
     return tuple(sorted(kept, key=lambda line: line.number))
 
 
-def _lede(job: _Job, lines: Sequence[_Line]) -> tuple[Lede | None, str | None]:
+def _lede(
+    job: _Job, lines: Sequence[_Line], *, tail: bool = False
+) -> tuple[Lede | None, str | None]:
     if not lines:
         return None, job.stop or "no_cited_entries"
-    raw, reason = job.call(_lede_prompt(lines, job.config))
+    raw, reason = job.call(_lede_prompt(lines, job.config, tail=tail))
     if reason:
         return None, reason
     value, _cut = _payload(raw)
@@ -909,7 +922,9 @@ def _plan(
     )
     # Reserve a whole lede window before knowing its citations. This conservative plan cannot
     # undercount a later reply's context; retry bytes are charged only if a retry is attempted.
-    planned += len(_lede_prompt((), config).encode()) + config.session_summary_window_bytes
+    planned += (
+        len(_lede_prompt((), config, tail=context).encode()) + config.session_summary_window_bytes
+    )
     return "planned_bytes" if planned > config.session_summary_max_bytes_sent else None
 
 
@@ -1103,7 +1118,8 @@ def _finish(
         return bounded
     blocks = list(bounded.blocks)
     lede_lines = _lede_lines(lines, blocks, config)
-    lede, lede_reason = _lede(job, lede_lines)
+    # A prior with no blocks read nothing earlier, so its lede input is the whole record.
+    lede, lede_reason = _lede(job, lede_lines, tail=bool(prior and prior.blocks))
     if lede is None and prior is not None and prior.lede is not None:
         # The update's lede reads only new entries; failing it must not erase a valid one.
         lede, lede_reason = prior.lede, None

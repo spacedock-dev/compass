@@ -13,6 +13,10 @@ import {
   positionOf,
   reasonSentence,
   saidText,
+  SUMMARY_NOT_CLAUDE,
+  SUMMARY_OFF,
+  unlinkedSentence,
+  withheldTitle,
   summaryStamp,
 } from './summary';
 
@@ -216,10 +220,18 @@ describe('the parsers', () => {
 
 describe('what the card says', () => {
   it('opens a said bullet with Said, once', () => {
-    expect(saidText('Said the parser is ready.')).toBe('Said the parser is ready.');
+    expect(saidText('Said the parser is ready.')).toBe('Said: the parser is ready.');
+    expect(saidText('Said: the parser is ready.')).toBe('Said: the parser is ready.');
     expect(saidText('The parser is ready.')).toBe('Said: The parser is ready.');
     expect(saidText('The agent said it left the tests alone.')).toBe(
-      'Said it left the tests alone.',
+      'Said: it left the tests alone.',
+    );
+    // An adverb the fold once missed stacked the speaker twice: "Said: The agent also said ...".
+    expect(saidText('The agent also said it would move the chart.')).toBe(
+      'Said: it would move the chart.',
+    );
+    expect(saidText('The agent said that the tooltip formats dates.')).toBe(
+      'Said: the tooltip formats dates.',
     );
   });
   it('names the person on an asked bullet, whatever verb it opens with', () => {
@@ -235,8 +247,27 @@ describe('what the card says', () => {
     );
     expect(askedText('You asked for tests.')).toBe('You asked for tests.');
   });
+  it('points at the outline only where one is drawn, and says summaries are off everywhere', () => {
+    expect(SUMMARY_NOT_CLAUDE('Gemini CLI', false)).not.toContain('outline');
+    expect(SUMMARY_NOT_CLAUDE('Codex')).toContain('The outline below');
+    // One switch for the machine: the sentence once said "this session".
+    expect(SUMMARY_OFF).toContain('every session');
+    expect(SUMMARY_OFF).not.toContain('this session');
+  });
+  it('says why a phase title was withheld, as a withheld line does', () => {
+    expect(withheldTitle('completion_claim')).toMatch(/^Phase title withheld: it used a word/);
+    expect(withheldTitle('completion_claim')).toContain('“fix”');
+    expect(withheldTitle('unknown')).toMatch(/^Phase title withheld: /);
+  });
   it('words a failed check in text, not only in colour', () => {
     expect(bulletWords('failed', 'Ran pytest.')).toBe('Failed as the tool reported: Ran pytest.');
+    // The producer's report form already says "as the tool reported"; the mark does not say it again.
+    expect(bulletWords('failed', 'pnpm test reported failed, as the tool reported.')).toBe(
+      'Failed: pnpm test reported failed, as the tool reported.',
+    );
+    expect(unlinkedSentence(2)).toBe(
+      '(2 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.)',
+    );
     expect(bulletWords('did', 'Ran pytest.')).toBe('Ran pytest.');
     expect(bulletWords('said', 'Ran pytest.')).toBe('Said: Ran pytest.');
   });

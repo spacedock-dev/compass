@@ -1076,6 +1076,25 @@ class AskEndpointTest(RuntimeTestCase):
         self.assertEqual(404, gone_status)
         self.assertEqual(0, state.asks.count)
 
+    def test_a_whole_claude_session_id_is_keyed_on_the_rows_sid(self) -> None:
+        # The stdio server sends CLAUDE_CODE_SESSION_ID whole; rows key on its
+        # first eight characters, and the page matches the two exactly. Every ask
+        # test before this one sent the short form, which is how a real ask came
+        # to attach to no session.
+        config, state = self._runtime()
+        whole = "a5a5a5a5-4444-4555-8666-777788889999"
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            claude_id = self._register(port, session_id=whole)
+            other_id = self._register(port, harness="codex", session_id=whole)
+            unmapped_id = self._register(port, harness="unknown", session_id=whole)
+            claude = state.asks.get(claude_id)
+            other = state.asks.get(other_id)
+            unmapped = state.asks.get(unmapped_id)
+        assert claude is not None and other is not None and unmapped is not None
+        self.assertEqual("a5a5a5a5", claude.session_id)
+        self.assertEqual(whole, other.session_id, "Codex keys on the whole id")
+        self.assertEqual(whole, unmapped.session_id, "an unmapped id is kept as sent")
+
     def test_registering_and_answering_both_drop_the_published_body(self) -> None:
         config, state = self._runtime()
         with self._serving(cli.build_application(config, state, clock=time.time)) as port:

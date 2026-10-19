@@ -45,7 +45,7 @@ describe('the lede of a stored summary', () => {
       within(lede).getAllByRole('button', { name: /cited for the opening summary/ }),
     ).toHaveLength(1);
     expect(lede.querySelector('[data-next-summary-unlinked]')?.textContent).toBe(
-      '1 cited entry Full activity cannot open from here',
+      '(1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.)',
     );
   });
 });
