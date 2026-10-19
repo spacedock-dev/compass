@@ -1242,14 +1242,14 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             "no consent.",
         )
         # A fresh store no longer refuses a press (DEC-28), so the refusal recorded is a
-        # stored Turn off readings, the one answer that still stops a reader-started call.
+        # stored Pause model calls, the one answer that still stops a reader-started call.
         rig.send(post("/api/reading", {**press, "consent": "off"}))
         off = recorder.capture(
             rig,
             "reading-off",
             post("/api/reading", {**press, "provider": "claude", "model": model}),
-            "With readings turned off, a resolved route answers 403 readings-off and names its "
-            "route; nothing is read.",
+            "With model calls paused, a resolved route answers 403 model-calls-paused and "
+            "names its route; nothing is read.",
         )
         route = off["body"].get("route", {})
         recorder.capture(

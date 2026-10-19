@@ -2259,7 +2259,7 @@ class ObserverModelSecurityTest(unittest.TestCase):
             reading_policy.set_consent(config, False, now=time.time())
             off = caller()
             self.assertIsNone(off("private transcript", "stage"))
-            self.assertEqual("readings-off", off.status)
+            self.assertEqual("model-calls-paused", off.status)
             self.assertEqual(2, len(prompts))
 
     def test_goal_notice_names_the_agents_messages_at_the_given_clock(self) -> None:
@@ -2312,7 +2312,7 @@ class ObserverModelSecurityTest(unittest.TestCase):
 
             with mock.patch.object(observer, "codex_exec", side_effect=execute):
                 self.assertIsNone(caller("private transcript", "stage"))
-            self.assertEqual("readings-off", caller.status)
+            self.assertEqual("model-calls-paused", caller.status)
 
     def test_relative_resolution_is_refused(self) -> None:
         config = dataclasses.replace(make_config(), observer_model_enabled=True)

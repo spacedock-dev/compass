@@ -52,8 +52,8 @@ async function hold(page: ReturnType<typeof mountDrift>) {
   box?.focus();
 }
 
-describe('Turn on sends what the card showed', () => {
-  const off = { reading: { consent: false, off: true, reason: 'readings-off' } };
+describe('Resume changes only the master switch', () => {
+  const off = { reading: { consent: false, off: true, reason: 'model-calls-paused' } };
   const open = async (route: Record<string, unknown> = ROUTE) => {
     const page = mountDrift({
       session,
@@ -83,31 +83,32 @@ describe('Turn on sends what the card showed', () => {
     ['who reads it', { provider: 'codex' }, /The reader for this session changed/],
     ['the model', { model: 'other' }, /The reader for this session changed/],
   ])(
-    'refuses, sending nothing, when %s moved while the card was held',
-    async (_name, patch, said) => {
+    'resumes without sending session text when %s moved while the card was held',
+    async (_name, patch, _said) => {
       const page = await open();
       await page.poll(moved(patch));
       await press(byAction('reading-on'));
       await page.settle();
-      expect(readingPosts(page)).toEqual([]);
-      expect(textOf('.next-session-drift')).toMatch(said);
-      // And the press that follows is the reader's own, over the card the reader now sees.
+      expect(readingPosts(page)).toHaveLength(1);
+      expect(readingPosts(page)[0]?.body).toEqual({
+        consent: 'on',
+        press: true,
+        observer_model: 1,
+      });
       await page.advance(5_000);
-      expect(readingPosts(page)).toEqual([]);
+      expect(readingPosts(page)).toHaveLength(1);
     },
   );
 
-  it('sends the drawn values when nothing moved', async () => {
+  it('resumes without a provider or destination when nothing moved', async () => {
     const page = await open();
     await press(byAction('reading-on'));
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);
     expect(readingPosts(page)[0]?.body).toMatchObject({
-      provider: 'claude',
-      model: 'm',
-      allow: true,
-      words_destination: 'api',
-      tool_output: 'api',
+      consent: 'on',
+      press: true,
+      observer_model: 1,
     });
   });
 });

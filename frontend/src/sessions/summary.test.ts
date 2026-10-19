@@ -20,7 +20,7 @@ import {
 const GRANT_REASONS = [
   'daily-cap',
   'summaries-off',
-  'readings-off',
+  'model-calls-paused',
   'run-disabled',
   'store-unavailable',
 ];

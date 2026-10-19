@@ -34,6 +34,38 @@ class ReadingPolicyTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def test_pausing_preserves_the_summary_answer_and_refuses_switch_presses(self) -> None:
+        for allowed in (False, True):
+            with self.subTest(allowed=allowed):
+                reading_policy.set_consent(self.config, True, now=100.0)
+                before = reading_policy.set_summary_consent(self.config, allowed, now=100.0)
+                reading_policy.set_consent(self.config, False, now=101.0)
+                for press in (True, False):
+                    paused = reading_policy.set_summary_consent(self.config, press, now=102.0)
+                    self.assertEqual("model-calls-paused", paused["reason"])
+                    self.assertEqual(not allowed, paused["off"])
+                    self.assertEqual(before["generation"], paused["generation"])
+                self.assertEqual(
+                    "model-calls-paused",
+                    reading_policy.reserve_summary(self.config, now=103.0, receipt="paused")[
+                        "reason"
+                    ],
+                )
+                reading_policy.set_consent(self.config, True, now=104.0)
+                self.assertEqual(before, reading_policy.summary_status(self.config, now=100.0))
+
+    def test_resume_lifts_the_pause_and_grants_no_provider(self) -> None:
+        reading_policy.set_consent(self.config, False, now=100.0)
+        self.assertEqual(
+            "model-calls-paused", reading_policy.reserve(self.config, now=100.0)["reason"]
+        )
+        answer = reading_policy.resume(self.config, now=101.0)
+        self.assertFalse(answer["off"])
+        self.assertTrue(answer["consent"])
+        self.assertEqual(dict.fromkeys(reading_policy.PROVIDERS, False), answer["providers"])
+        self.assertEqual("", reading_policy.reserve(self.config, now=102.0)["reason"])
+        self.assertEqual("", reading_policy.summary_status(self.config, now=102.0)["reason"])
+
     def test_summary_switch_leaves_analyze_coverage_and_goal_notice_unchanged(self) -> None:
         reading_policy.set_consent(
             self.config,
@@ -89,21 +121,32 @@ class ReadingPolicyTest(unittest.TestCase):
         self.assertEqual("", reading_policy.reserve(self.config, now=100.0)["reason"])
 
     def test_legacy_off_survives_upgrade_and_allow_turns_every_reader_call_on(self) -> None:
+        # Freeze the pre-rename off schema rather than letting the new writer define the fixture.
         assert runtime_io.sqlite_module is not None
         with contextlib.closing(
             runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
         ) as db:
-            db.execute("CREATE TABLE permission (id INTEGER PRIMARY KEY, allowed INTEGER)")
-            db.execute("INSERT INTO permission VALUES (1, 0)")
             db.execute(
-                "CREATE TABLE provider_permission (provider TEXT PRIMARY KEY, allowed INTEGER)"
+                "CREATE TABLE permission (id INTEGER PRIMARY KEY CHECK(id=1), "
+                "allowed INTEGER NOT NULL CHECK(allowed IN (0,1)))"
             )
-            db.execute("INSERT INTO provider_permission VALUES ('claude', 0)")
+            db.execute("INSERT OR REPLACE INTO permission VALUES (1, 0)")
+            db.execute(
+                "CREATE TABLE provider_permission (provider TEXT PRIMARY KEY, "
+                "allowed INTEGER NOT NULL CHECK(allowed IN (0,1)))"
+            )
+            db.execute("INSERT OR REPLACE INTO provider_permission VALUES ('claude', 0)")
             db.commit()
         answer = reading_policy.status(self.config, now=100.0)
         self.assertTrue(answer["off"])
         self.assertFalse(answer["consent"])
-        self.assertEqual("readings-off", reading_policy.reserve(self.config, now=100.0)["reason"])
+        self.assertEqual(
+            "model-calls-paused", reading_policy.reserve(self.config, now=100.0)["reason"]
+        )
+        self.assertEqual(
+            "model-calls-paused",
+            reading_policy.reserve_summary(self.config, now=100.0, receipt="upgrade")["reason"],
+        )
         self.assertTrue(reading_policy.set_consent(self.config, True, now=101.0)["consent"])
         self.assertEqual(
             "", reading_policy.reserve(self.config, provider="claude", now=102.0)["reason"]
@@ -174,9 +217,9 @@ class ReadingPolicyTest(unittest.TestCase):
                     db.commit()
                 answer = reading_policy.status(self.config, now=100.0)
                 self.assertTrue(answer["off"])
-                self.assertEqual("readings-off", answer["reason"])
+                self.assertEqual("model-calls-paused", answer["reason"])
                 self.assertEqual(
-                    "readings-off", reading_policy.reserve(self.config, now=100.0)["reason"]
+                    "model-calls-paused", reading_policy.reserve(self.config, now=100.0)["reason"]
                 )
                 reading_policy.store_path(self.config).unlink()
 
@@ -436,7 +479,7 @@ class ReadingPolicyTest(unittest.TestCase):
                     destination=destination,
                     content=content,
                 )
-                self.assertEqual("readings-off", refused["reason"])
+                self.assertEqual("model-calls-paused", refused["reason"])
                 self.assertEqual(1, refused["used"])
                 self.assertEqual({}, refused["tool_output"])
 
@@ -1033,7 +1076,7 @@ class TheJobLedgerTest(unittest.TestCase):
     def test_a_refused_reservation_records_no_job(self) -> None:
         reading_policy.set_consent(self.config, False, now=100.0)
         self.assertEqual(
-            "readings-off",
+            "model-calls-paused",
             reading_policy.reserve(self.config, now=100.0, job_id="j1")["reason"],
         )
         self.assertIs(False, self._charged("j1"))

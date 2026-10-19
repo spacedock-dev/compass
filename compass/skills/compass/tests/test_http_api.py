@@ -3009,7 +3009,7 @@ class ReadingRouteTest(unittest.TestCase):
             self._post(port, {"consent": "off", "press": True, "observer_model": 1})
             status, body = self._post(port, self._press())
             self.assertEqual(403, status, body)
-            self.assertEqual("readings-off", json.loads(body)["reading"]["reason"])
+            self.assertEqual("model-calls-paused", json.loads(body)["reading"]["reason"])
             self.assertFalse(json.loads(body)["reading"]["consent"])
             self.assertEqual(2, len(calls))
             status, body = self._post(port, self._press(allow=True, words_destination=""))
@@ -3834,7 +3834,7 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual([], calls)
         self.assertEqual([], self.outcomes, "a refused press wrote an outcome")
         self.assertEqual({}, payload["reading_jobs"])
-        self.assertEqual("readings-off", payload["reading"]["reason"])
+        self.assertEqual("model-calls-paused", payload["reading"]["reason"])
         self.assertFalse(payload["reading"]["consent"])
 
     def _phase(self, config: Any, harness: str) -> str | None:
@@ -4762,7 +4762,7 @@ class ReadingRouteTest(unittest.TestCase):
         )
 
         def withdraw() -> None:
-            # Another tab turns readings off and allows the words alone again.
+            # Another tab pauses model calls and allows the words alone again.
             reading_policy.set_consent(config, False, now=1_700_000_100.0)
             reading_policy.set_consent(
                 config, True, now=1_700_000_100.0, provider="codex", destination="OpenAI"
@@ -5953,11 +5953,19 @@ class ConsentNoticeHandlerTest(unittest.TestCase):
         with (
             mock.patch.object(fixture, "_serving", serving),
             mock.patch.object(fixture, "_post", post),
+            mock.patch.object(
+                fixture,
+                "_data",
+                lambda _port: json.loads(application.collect_json(show_all=False)[1]),
+            ),
         ):
             getattr(fixture, name)()
 
     def test_fresh_press_notice_off_and_turn_on(self) -> None:
         self._exercise("test_fresh_press_runs_with_notice_then_off_blocks_until_allow")
+
+    def test_pause_during_analyze_admission_sends_nothing(self) -> None:
+        self._exercise("test_readings_turned_off_mid_press_and_left_off_send_nothing")
 
     def test_claude_tool_output_defaults_on(self) -> None:
         self._exercise("test_a_fresh_claude_reading_includes_tool_output_without_a_grant")
@@ -6327,6 +6335,40 @@ class SummaryJobHTTPTest(unittest.TestCase):
             "summaries-off", reading_policy.summary_status(config, now=100.0)["reason"]
         )
 
+    def test_pause_and_resume_leave_the_summary_switch_exactly_as_stored(self) -> None:
+        for allowed in (False, True):
+            reading_policy.set_consent(self.config, True, now=100.0)
+            original = reading_policy.set_summary_consent(self.config, allowed, now=100.0)
+            pause = self.handler(
+                "/api/reading",
+                b'{"consent":"off","press":true,"observer_model":1}',
+            )
+            pause.do_POST()
+            self.assertEqual(200, pause._send.call_args.args[2])
+            for consent in ("off", "on"):
+                switch = self.handler("/api/summary", json.dumps({"consent": consent}).encode())
+                switch.do_POST()
+                self.assertEqual(403, switch._send.call_args.args[2])
+                self.assertEqual(
+                    "model-calls-paused",
+                    json.loads(switch._send.call_args.args[0])["reason"],
+                )
+            for origin in ("open", "press"):
+                refused = self.request_summary(origin=origin)
+                self.assertEqual(403, refused._send.call_args.args[2])
+                self.assertEqual(
+                    "model-calls-paused",
+                    json.loads(refused._send.call_args.args[0])["reason"],
+                )
+            resume = self.handler(
+                "/api/reading",
+                b'{"consent":"on","press":true,"observer_model":1}',
+            )
+            resume.do_POST()
+            self.assertEqual(200, resume._send.call_args.args[2])
+            self.assertEqual({}, self.state.summary_jobs)
+            self.assertEqual(original, reading_policy.summary_status(self.config, now=100.0))
+
     def test_malformed_summary_values_are_refused_without_model_work(self) -> None:
         payload: dict[str, Any]
         for payload in (
@@ -6356,7 +6398,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
             )
 
     def test_turn_off_readings_refuses_and_stops_session_summaries(self) -> None:
-        # After Turn off readings no session summary call is made until readings are back on.
+        # After Pause model calls no session summary call is made until Resume model calls.
         entered, release = threading.Event(), threading.Event()
         replies = Replies()
 
@@ -6377,12 +6419,12 @@ class SummaryJobHTTPTest(unittest.TestCase):
             finally:
                 release.set()
             wait_job(self.application, "claude", "root", timeout=5)
-            self.assertEqual("readings-off", self.state.summary_jobs["claude:root"].reason)
+            self.assertEqual("model-calls-paused", self.state.summary_jobs["claude:root"].reason)
             self.assertEqual(1, len(replies.prompts))
             self.assertIsNone(self.store.get(self.config, "claude", "root"))
             refused = self.request_summary(origin="press")
             self.assertEqual(403, refused._send.call_args.args[2])
             answer = json.loads(refused._send.call_args.args[0])
-            self.assertEqual("readings-off", answer["reason"])
+            self.assertEqual("model-calls-paused", answer["reason"])
             self.assertFalse(answer["summaries"]["consent"])
             self.assertEqual(1, len(replies.prompts))

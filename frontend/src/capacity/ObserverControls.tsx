@@ -7,11 +7,11 @@ import type { ProjectContext, SessionIdentity } from '../api/types';
 import { useFocusKey } from '../controls/useFocusKey';
 import { useDisplayed, useShell } from '../shell/context';
 import { selectObserverModel, selectObserverRequest, selectObserverOff } from '../store/selectors';
-import { turnOffReadings } from '../api/readings';
+import { resumeModelCalls, turnOffReadings } from '../api/readings';
 import { isRecord } from '../observed';
 import { ModelNotice } from '../drift/ModelNotice';
 import { noticeAnnouncement, noticeLabel } from '../drift/notice';
-import { READINGS_OFF_CONSOLE } from '../drift/sentences';
+import { MODEL_PAUSE_EXPLANATION, READINGS_OFF_CONSOLE } from '../drift/sentences';
 import { heldFor, useConsent } from './held';
 import './capacity.css';
 
@@ -90,11 +90,15 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
     void runtime.requestObserverSummary({ projectKey, focus: identity });
   };
   const turnOff = async () => {
-    const press = runtime.pending.start('observer:off', 'Turning off…', 'Turning off readings.');
+    const press = runtime.pending.start(
+      'observer:off',
+      off ? 'Resuming…' : 'Pausing…',
+      off ? 'Resuming model calls.' : 'Pausing model calls.',
+    );
     if (!press) return;
     setRefused(null);
     try {
-      const reply = await turnOffReadings(runtime.client, press.signal);
+      const reply = await (off ? resumeModelCalls : turnOffReadings)(runtime.client, press.signal);
       const body = reply.kind === 'ok' && isRecord(reply.body) ? reply.body : null;
       const reading = body && isRecord(body['reading']) ? body['reading'] : null;
       if (body?.['ok'] !== true || !reading) throw new Error('off not confirmed');
@@ -104,7 +108,11 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
       if (snapshot.data) runtime.store.acceptData({ ...snapshot.data, reading }, snapshot.revision);
       await display.paint({ manual: true, accepted: true });
     } catch {
-      setRefused('Could not confirm readings are off. Try turning them off again.');
+      setRefused(
+        off
+          ? 'Could not confirm model calls resumed. Try resuming again.'
+          : 'Could not confirm model calls are paused. Try pausing again.',
+      );
     } finally {
       runtime.pending.end('observer:off', press);
     }
@@ -113,9 +121,9 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
     setRefused(null);
     heldFor(runtime).observer.answer('granted');
   };
-  /* Turn off readings is drawn whenever readings are on: inside the notice while one is shown, and beside
+  /* Pause model calls is drawn whenever readings are on: inside the notice while one is shown, and beside
      Summarize otherwise, so the off switch never depends on a notice the next read could replace. */
-  const offButton = off ? null : (
+  const offButton = (
     <Button
       ref={offRef}
       type="button"
@@ -124,7 +132,13 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
       disabled={offPending}
       onClick={() => void turnOff()}
     >
-      {offPending ? 'Turning off…' : 'Turn off readings'}
+      {offPending
+        ? off
+          ? 'Resuming…'
+          : 'Pausing…'
+        : off
+          ? 'Resume model calls'
+          : 'Pause model calls'}
     </Button>
   );
   const shownNotice = notice && !off ? notice : null;
@@ -152,10 +166,15 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
       {pending ? 'Request in progress' : 'Summarize this session'}
     </Button>
   );
-  const actions = off ? null : (
+  const actions = (
     <>
-      {request}
-      {shownNotice ? null : offButton}
+      {off ? null : request}
+      {shownNotice ? null : (
+        <>
+          {offButton}
+          <p>{MODEL_PAUSE_EXPLANATION}</p>
+        </>
+      )}
     </>
   );
   const status = off
@@ -192,6 +211,7 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
           parts={[disclosure]}
         >
           {offButton}
+          <p>{MODEL_PAUSE_EXPLANATION}</p>
         </ModelNotice>
       ) : null}
       <Alert as="p" variant="observer-status">

@@ -119,7 +119,7 @@ class SummaryGrantTest(_SummaryCase):
         self.assertIsNotNone(reading_policy.note(self.config, **args))
         self.assertIsNone(reading_policy.note(self.config, **args))
         reading_policy.set_consent(self.config, False, now=101.0)
-        # Readings off refuses summaries too, so nothing new is due, but their record stays.
+        # Model calls paused refuses summaries too, so nothing new is due, but their record stays.
         self.assertIsNone(
             reading_policy.note(self.config, **{**args, "destination": "gateway.example"})
         )
@@ -209,6 +209,23 @@ class SummaryJobTest(_SummaryCase):
         self.assertEqual(4, reading_policy.summary_status(self.config, now=100.0)["used"])
         self.assertEqual(0, reading_policy.status(self.config, now=100.0)["used"])
         self.assertNotIn("notice", self.run_job())
+
+    def test_pausing_before_each_part_sends_no_more_session_text(self) -> None:
+        for part in range(1, 5):
+            with self.subTest(part=part):
+                reading_policy.set_consent(self.config, True, now=100.0)
+                replies = Replies()
+
+                def pause(*, stop_at: int = part, **_: Any) -> tuple[int, bytes]:
+                    current = self.state.summary_jobs.get("claude:s1")
+                    if current is not None and current.attempts == stop_at:
+                        reading_policy.set_consent(self.config, False, now=100.0)
+                    return 0, b"{}"
+
+                self.application.collect_json = pause
+                self.run_job(replies)
+                self.assertEqual(part - 1, len(replies.prompts))
+                self.assertEqual("model-calls-paused", self.state.summary_jobs["claude:s1"].reason)
 
     def test_cancel_keeps_finished_parts_and_rejects_inflight_reply(self) -> None:
         entered, release = threading.Event(), threading.Event()
@@ -598,7 +615,7 @@ class SummaryJobTest(_SummaryCase):
         code, answer = self.jobs.start(
             self.application, self.page, action="start", model=model, destination="Anthropic"
         )
-        self.assertEqual((403, "readings-off"), (code, answer["reason"]))
+        self.assertEqual((403, "model-calls-paused"), (code, answer["reason"]))
         status = reading_policy.summary_status(self.config, now=100.0)
         self.assertEqual((False, False), (status["consent"], status["off"]))
         self.assertEqual([], model.prompts)
@@ -616,11 +633,11 @@ class SummaryJobTest(_SummaryCase):
         self.assertEqual(202, code)
         self.assertTrue(entered.wait(5))
         reading_policy.set_consent(self.config, False, now=102.0)
-        self.jobs.stop_running(self.application, "readings-off")
+        self.jobs.stop_running(self.application, "model-calls-paused")
         release.set()
         wait_job(self.application, "claude", "s1", timeout=5)
         self.assertEqual(1, len(model.prompts))
-        self.assertEqual("readings-off", self.state.summary_jobs["claude:s1"].reason)
+        self.assertEqual("model-calls-paused", self.state.summary_jobs["claude:s1"].reason)
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
 
     def extended_page(self) -> Any:

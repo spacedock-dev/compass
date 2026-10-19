@@ -79,7 +79,7 @@ export interface DirectionQuestionProps {
   readonly reading?: DirectionReading | null;
   /** The one primary action a question can have, while the session is not waiting on the reader. */
   readonly primary?: boolean;
-  /** Controls the Analyze step draws beside Keep and Add (Turn off readings). */
+  /** Controls the Analyze step draws beside Keep and Add (Pause model calls). */
   readonly buttons?: ReactNode;
   /** What the Analyze step draws under the answer: the disclosure, the count, the budget, a refusal. */
   readonly after?: ReactNode;

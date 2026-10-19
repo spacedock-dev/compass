@@ -36,7 +36,7 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'sent',
     title: 'What is sent',
-    body: 'A press runs the reading directly. You are told once what leaves your machine and where, and one press turns readings off. A changed destination repeats the notice. Each reading counts against a daily limit.',
+    body: 'A press runs the reading directly. You are told once what leaves your machine and where, and one press pauses model calls. A changed destination repeats the notice. Each reading counts against a daily limit.',
   },
   {
     id: 'activity',

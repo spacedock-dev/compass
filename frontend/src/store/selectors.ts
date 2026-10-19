@@ -149,7 +149,7 @@ export function isPending(snapshot: BoardSnapshot, key: string): boolean {
 
 export function selectReadingsOff(snapshot: BoardSnapshot): boolean {
   const policy = snapshot.data?.reading;
-  return policy?.off === true || policy?.reason === 'readings-off';
+  return policy?.off === true || policy?.reason === 'model-calls-paused';
 }
 
 export function selectObserverOff(
@@ -157,6 +157,8 @@ export function selectObserverOff(
   key: string,
   identity: SessionIdentity | null,
 ): boolean {
+  // A goal answer can outlive Resume; the current master answer owns permission.
+  if (typeof snapshot.data?.reading?.off === 'boolean') return selectReadingsOff(snapshot);
   return (
     selectReadingsOff(snapshot) ||
     snapshot.contexts
@@ -165,7 +167,7 @@ export function selectObserverOff(
         (row) =>
           row.harness === identity?.harness &&
           row.sid === identity?.sid &&
-          row.model?.status === 'readings-off',
+          row.model?.status === 'model-calls-paused',
       ) === true
   );
 }

@@ -183,21 +183,21 @@
       "method": "GET",
       "name": "context-focused-facts",
       "route": "/api/project-context",
-      "sha256": "8020ff85c7db84465afaea3db829632e0300efbff30eafc3ffe41f72c1c7ea80",
+      "sha256": "b625d43705a6ac4819d4993bf9de81a10d11ce4057021485bb5bd75c1b6e08ec",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-prompts",
       "route": "/api/project-context",
-      "sha256": "f60c10b1d36f60f3ab209709e392f9bb08ecd0df2ccd934d02fcac41bdc6874b",
+      "sha256": "98e95aa2f354d79ba042efa583d0b0fbc2ef0902486f73fac3ed0dc55424bbaf",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-session",
       "route": "/api/project-context",
-      "sha256": "7e8093e3687804296d2ed82595b76b97d5259484bb444327e0e3b4f2dcfc4268",
+      "sha256": "7469e460d2e070479e04d68bca70ac09ce3672876c47f603b519253b0af4a7cf",
       "status": 200
     },
     {
@@ -232,21 +232,21 @@
       "method": "GET",
       "name": "context-project",
       "route": "/api/project-context",
-      "sha256": "c014196c28c8180148efb62d7e10d6679bb41f01ea91776e1eaf876f32abfb6c",
+      "sha256": "75d570efe33121aa2339c5c26e4272d86cde9e30295bd3ea00617cd0593de70f",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-project-key",
       "route": "/api/project-context",
-      "sha256": "45dc6b498d82e6c6fd3b1d2c13aedf6c8b183df10c3fdc0445d067e3c5996173",
+      "sha256": "c96f8fb79cbe3d0b0793be183b07881a5ecb258b3ad1b6cb2a28d2357a0f808a",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-refresh-model-disabled",
       "route": "/api/project-context",
-      "sha256": "77cfa31f8f784e13786e00160631c652c19284e8dbe04b906d8aed481d11f521",
+      "sha256": "bb0c3f752945697eae43c736074db4e097460f4d1fb3bcbe4ed7c8c64d648a92",
       "status": 200
     },
     {
@@ -547,7 +547,7 @@
       "method": "POST",
       "name": "reading-off",
       "route": "/api/reading",
-      "sha256": "280eb6ce6ee05401bbf03576c9a94c3ffef45e79e2bf15debf9ee3c7a9d86fb4",
+      "sha256": "96cdc7780418489f88a2df8f395b2e7b3b2c49b9613caab9b0af5cc6d205f809",
       "status": 403
     },
     {

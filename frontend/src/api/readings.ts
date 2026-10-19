@@ -7,3 +7,10 @@ export function turnOffReadings(client: Pick<ApiClient, 'postReading'>, signal?:
     signal,
   );
 }
+
+export function resumeModelCalls(client: Pick<ApiClient, 'postReading'>, signal?: AbortSignal) {
+  return client.postReading(
+    { consent: 'on', press: true, observer_model: 1 } as unknown as ReadingRequest,
+    signal,
+  );
+}

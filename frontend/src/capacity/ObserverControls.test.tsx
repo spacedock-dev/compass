@@ -109,13 +109,13 @@ describe('an offer nothing has read is not an offer that is off', () => {
 
 describe('reader-started goal summaries', () => {
   it.each([undefined, 'granted'])(
-    'offers a direct request with no stored decline (%s), and Turn off readings beside it',
+    'offers a direct request with no stored decline (%s), and Pause model calls beside it',
     async (answer) => {
       const page = mount(offer(), answer ? { storage: { [CONSENT]: answer } } : {});
       await page.settle();
       expect(text()).toContain(DISCLOSURE);
       expect(action('request')?.textContent).toBe('Summarize this session');
-      expect(action('off')?.textContent).toBe('Turn off readings');
+      expect(action('off')?.textContent).toBe('Pause model calls');
       expect(action('allow')).toBeNull();
       expect(action('decline')).toBeNull();
       await page.poll({ ...board, generated: 1002 });
@@ -135,7 +135,7 @@ describe('reader-started goal summaries', () => {
     expect(action('request')?.textContent).toBe('Summarize this session');
   });
 
-  it('shows the goal notice and turns readings off with one press', async () => {
+  it('shows the goal notice and pauses model calls with one press', async () => {
     const notice = {
       kind: 'goal',
       provider: 'codex',
@@ -149,7 +149,7 @@ describe('reader-started goal summaries', () => {
         '/api/project-context': (request) =>
           json({ observer_model: offer(/observer_model=1/.test(request.url) ? { notice } : {}) }),
         '/api/reading': () =>
-          json({ ok: true, reading: { consent: false, off: true, reason: 'readings-off' } }),
+          json({ ok: true, reading: { consent: false, off: true, reason: 'model-calls-paused' } }),
       },
     });
     await page.settle();
@@ -173,26 +173,48 @@ describe('reader-started goal summaries', () => {
     expect(text()).toContain('goal.example');
     expect(text()).toContain('Provider: Codex');
     const off = document.querySelector<HTMLButtonElement>('[data-next-observer-action="off"]');
-    expect(off?.textContent).toBe('Turn off readings');
+    expect(off?.textContent).toBe('Pause model calls');
     fireEvent.click(off as HTMLElement);
     await page.settle();
     expect(
       page.state.requests.filter((r) => r.method === 'POST' && r.path === '/api/reading')[0]?.body,
     ).toEqual({ consent: 'off', press: true, observer_model: 1 });
-    expect(text()).toContain('Readings are off.');
+    expect(text()).toContain('Model calls are paused.');
     expect(action('request')).toBeNull();
   });
 
-  it('reads a readings-off goal status as off and sends nothing on render', async () => {
+  it('resumes from the Console even while its last goal answer still says paused', async () => {
     const page = mount(offer(), {
       routes: {
         '/api/project-context': context(offer(), {
-          observers: [{ ...focus, model: { status: 'readings-off' } }],
+          observers: [{ ...focus, model: { status: 'model-calls-paused' } }],
+        }),
+        '/api/reading': () =>
+          json({ ok: true, reading: { consent: true, off: false, reason: '' } }),
+      },
+    });
+    await page.settle();
+    expect(action('off')?.textContent).toBe('Resume model calls');
+    press('off');
+    await page.settle();
+    expect(action('off')?.textContent).toBe('Pause model calls');
+    expect(action('request')).not.toBeNull();
+    expect(modelRequests(page)).toHaveLength(0);
+    expect(
+      page.state.requests.filter((r) => r.method === 'POST' && r.path === '/api/reading')[0]?.body,
+    ).toEqual({ consent: 'on', press: true, observer_model: 1 });
+  });
+
+  it('reads a model-calls-paused goal status as off and sends nothing on render', async () => {
+    const page = mount(offer(), {
+      routes: {
+        '/api/project-context': context(offer(), {
+          observers: [{ ...focus, model: { status: 'model-calls-paused' } }],
         }),
       },
     });
     await page.settle();
-    expect(text()).toContain('Readings are off.');
+    expect(text()).toContain('Model calls are paused.');
     expect(action('request')).toBeNull();
     expect(modelRequests(page)).toEqual([]);
   });

@@ -70,8 +70,9 @@ then `--forget`, then `--stop`, then `--status`; it does not execute a sequence 
 ### Model use and quota
 
 Analyze drift runs on your press and Codex goal summaries run on a focused refresh. Each tells you
-once what is sent and where, again if the destination or content tier changes. Turn off readings or
-`--no-observer-model` stops them. Unattended checks remain a separate opt-in. A model ID selects a
+once what is sent and where, again if the destination or content tier changes. Pause model calls stops every model call until Resume model calls;
+`--no-observer-model` refuses them at startup. Turn off summaries affects session summaries only,
+is disabled while paused, and keeps its saved answer through pause and resume. Unattended checks remain a separate opt-in. A model ID selects a
 reader, not proof of accuracy.
 
 | Option | Behavior and default |
@@ -96,7 +97,7 @@ Dashboards using the same Compass home share persistent stores.
 | `--no-history` | Do not read or write observation history for this run. Existing history is left on disk. Does not disable the separate annotations or session-end store. |
 | `--no-annotations` | Do not read or write saved goals, expected outcome lines or readings for this run. The page offers no editable intent fields; `Analyze drift` remains visible but disabled with a reason. Existing annotations are left on disk. Does not govern the separate session-summary store. |
 | `--no-dismiss` | Do not read or write the handled-session store. Previously handled sessions return to the board and its dismiss control is unavailable for this run. |
-| `--forget` | A one-shot cleanup: delete observation history, recorded session ends, stored session summaries and copied-correction digests; sweep annotation discard records; store readings as off, which stops readings and goal summaries until you turn readings back on in the page. Preserve the words you typed and unexpired model-spend timestamps. Refused while a dashboard answers on the selected port: stop it first. The deletions are irreversible. |
+| `--forget` | A one-shot cleanup: delete observation history, recorded session ends, stored session summaries and copied-correction digests; sweep annotation discard records; store readings as off, which stops readings and goal summaries until you use Resume model calls in the page. Preserve the words you typed and unexpired model-spend timestamps. Refused while a dashboard answers on the selected port: stop it first. The deletions are irreversible. |
 
 `--forget` checks only the named port. Stop every dashboard sharing that Compass home before
 cleanup; an instance on another port can otherwise retain or recreate observations. It does not

@@ -175,7 +175,7 @@ def _refusal(reason: str, **extra: Any) -> tuple[int, dict[str, Any]]:
         else 503
         if reason in {"run-disabled", "store-unavailable", "job-unrecorded", "no-thread"}
         else 403
-        if reason in {"summaries-off", "readings-off"}
+        if reason in {"summaries-off", "model-calls-paused"}
         else 409
         if reason in {"summary-changed", "summary-exists"}
         else 422
@@ -569,7 +569,7 @@ def set_consent(application: reading_jobs.Application, allowed: bool) -> reading
         answer = reading_policy.set_summary_consent(
             application.config, allowed, now=application.clock()
         )
-        if not allowed:
+        if not allowed and answer["reason"] != "model-calls-paused":
             _stop_running(application, "summaries-off")
     _publish(application)
     return answer

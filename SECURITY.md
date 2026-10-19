@@ -321,7 +321,7 @@ its destination: a check's command, result, last 180 characters of output and wr
 `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do nothing for one release;
 they will be removed in a later release. They write no grant and need no forwarding on respawn.
 `test_lifecycle.EveryOptOutReachesTheWindowsChildTest.test_compatibility_flags_and_environment_change_nothing`
-binds this compatibility behavior. Turn off readings and `--no-observer-model` stop the calls.
+binds this compatibility behavior. Pause model calls and `--no-observer-model` stop the calls.
 
 ### What can reach into a session
 
@@ -1122,7 +1122,7 @@ invocation carries session-derived text, which is why invariant 1 names it separ
 widening the quota exception to cover it. The consent below is not the quota fetch's: a call a
 reader's action starts runs only on that action, and an unasked check runs only under
 `--unasked-readings` and DEC-18's preconditions. Every kind of call announces itself the first time
-it runs. Turn off readings stops readings, goal summaries and session summaries; Turn off
+it runs. Pause model calls stops readings, goal summaries and session summaries; Turn off
 summaries stops session summaries alone. `--no-observer-model` refuses all of them for the run, where `--no-usage` is a startup flag
 alone.
 
@@ -1144,17 +1144,20 @@ The bounds, all of which hold together:
     shows the notice again, naming the new destination, rather than a blocking Allow. It is disclosed this way, and
     not left silent like the quota fetch, for a stronger reason: this one spends their capacity
     rather than reading a number.
-  - The off switch. Turn off readings stops readings, goal summaries and session summaries until
-    turned back on, including a session summary call already running, and an answer of off already
-    stored is kept across the upgrade. Session summaries also have Turn off summaries and Turn
-    summaries on of their own; turning summaries on does not override readings off.
+  - The master switch. Pause model calls stops Analyze drift, goal summaries and session summaries
+    until Resume model calls. Compass stops sending session text to Claude Code or Codex, so it
+    uses none of your tokens, and stays paused until you resume. An answer of off already stored
+    is kept across upgrades. A running summary stops at its next part and a spawned call is cancelled.
+    Turn off summaries affects session summaries alone. While paused, that control stays visible
+    and disabled with "Model calls are paused" beside it. Pause and Resume never change the stored
+    summaries answer; resuming restores the switch exactly as the reader left it.
     `--no-observer-model` still refuses every model call. `--allow-tool-output` and
     `--observer-model` are accepted no-ops for one release.
 - Goal summaries are on by default. The browser still sends `observer_model=1` on the focused
   refresh that the reader starts; a document navigation never authorizes a call. Quota consent
   does not authorize sending transcripts. This parameter is not per-user authentication: a local
   process can imitate it. The per-session in-flight gate and prompt and time bounds limit that
-  exposure. Turn off readings stops goal summaries too. No per-run event capability is implemented
+  exposure. Pause model calls stops goal summaries too. No per-run event capability is implemented
   on this route. Goal calls are not charged to the 100-attempt rolling cap below and have no rolling
   cap of their own: what bounds them is one call in flight per session, the refresh guards, and a
   focused refresh reaching only its session and up to three active child sessions.
@@ -1205,9 +1208,9 @@ narrower press to the same destination does not. Goal summaries use the same
 notice mechanism and are on by default on a focused refresh carrying `observer_model=1`.
 
 The answer and notices live under `COMPASS_HOME` (by default `~/.compass`) in
-`compass-reading-permission.sqlite3`, shared by tabs and respawned daemons. Turn off readings and
+`compass-reading-permission.sqlite3`, shared by tabs and respawned daemons. Pause model calls and
 `--forget` store an explicit off, block readings and goal summaries, and clear their notices, so after
-`--forget` they stay off until Turn on. Turning readings back on shows the notice again. An off
+`--forget` they stay paused until Resume model calls. Resuming shows the notice again on the next call. An off
 saved by an older build stays off after upgrade; an old Allow reads as on, including an older
 build's Allow given after its own off, which left that off's other rows in place. `--no-observer-model` refuses every model call for the run.
 
@@ -1243,7 +1246,7 @@ An unnamed destination is `""`: two endpoints Compass cannot name are indistingu
 move cannot trigger a new notice. This includes every Windows destination and every Codex base URL
 under `OPENAI_BASE_URL` or `OPENAI_API_BASE`. An unnamed legacy Allow keeps covering every endpoint
 it cannot name, including every destination on Windows. Tool output is not sent where its destination is
-unnamed. Turn off readings and `--forget` revoke all providers; schema triggers also clear notices,
+unnamed. Pause model calls and `--forget` revoke all providers; schema triggers also clear notices,
 other provider answers and grants when an older build writes its legacy off. The 100-attempt cap
 is shared between providers and reports `daily-cap` when spent.
 
@@ -1263,7 +1266,7 @@ the same home made in between, or one landing between the check and the job, ans
 
 ### Observer model calls
 
-Goal summaries are on by default unless readings are turned off or `--no-observer-model` is supplied.
+Goal summaries are on by default unless model calls are paused or `--no-observer-model` is supplied.
 `observer.CodexGoalModel` sends a generated prompt to the installed Codex CLI, which uses its
 own authentication to reach OpenAI. `reading.CodexReadingModel` is the second caller and goes
 through the same `observer.codex_exec`, so the two share one set of sandbox flags rather than two
@@ -1405,7 +1408,7 @@ version-3 rows cannot prove which disclosure created them, so the wide consent e
 now 4. Reader-started presses use a renewed notice rather than this legacy Allow bound. This adds
 no transmitted content.
 A verified wider grant survives a narrower Allow only at the same provider and destination;
-Turn off still revokes every tier and tool-output grant without refunding spend. Words-only
+Pause model calls still withdraws every tier and tool-output grant without refunding spend. Words-only
 consent remains grandfathered under the earlier ruling.
 
 An agent message, cropped or whole, is quoted as one JSON string with the menu heading neutralised, as a check's output
@@ -1464,7 +1467,7 @@ Only loopback peers can authorize a model call, and cross-origin Fetch Metadata 
 The response publishes the disclosure and byte cap. The backend does not treat `usage=1` as
 authorization to send transcript content. Goal summaries honor the notice and durable off switch. Console sends `observer_model=1` on an explicit focused refresh;
 no browser consent card is required. The notice names Codex and its configured destination, and
-Turn off readings or `--no-observer-model` stops the call. Passive refreshes never carry the request.
+Pause model calls or `--no-observer-model` stops the call. Passive refreshes never carry the request.
 
 Transcript message content is redacted before extraction can clip credential shapes. The complete
 generated prompt, including workflow stage, then goes through `records.redact_secrets` again
@@ -1777,7 +1780,7 @@ and the reservation. The unasked lane still receives no tool output.
 - The legacy `tool_output_permission` table remains keyed by provider and destination, so an older
   build can still read its explicit grants. Old word-only answers remain distinct from those
   grants. An explicit Allow carrying a stale tool-output destination still answers
-  `409 destination-changed` before writing or spending. Turn off readings and `--forget` clear
+  `409 destination-changed` before writing or spending. Pause model calls and `--forget` clear
   all grants and notices. A plain reader press needs no grant lookup.
 - `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted no-ops for this release and
   will be removed in a later release. Startup writes no grant, changes no disclosure and prints
@@ -1877,12 +1880,12 @@ intent", settles through `POST /api/annotate` with no `allow` and no `tool_outpu
 "Allow and analyze", with its disclosure, as the press that sends. Superseded by
 [DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
 for the consent step and the tool-output allow: the first press runs and shows the notice, and a
-stored off still refuses every press until readings are turned back on.
+stored off still refuses every press until Resume model calls.
 
 Keeping your intent and adding a later direction. "Keep my intent and
 analyze" settles every unsettled later direction before anything else in the press, so a press
 that then starts no analysis (another provider, the budget, one already in flight) has still
-settled. Where no analysis can start at all, no reader or readings turned off, or where an Allow
+settled. Where no analysis can start at all, no reader or model calls paused, or where an Allow
 is still owed, the same answer is the `settle_through` field of a `POST /api/annotate` body and
 reads nothing. Over an unsaved draft either one adopts the draft and records the settlement in one
 store write, and a refused adoption settles nothing.
@@ -2107,7 +2110,7 @@ Opening a stored summary makes no summary call or charge.
   owns the exact shape.
 - To whom. The provider and destination the notice names, invoked as the operator's own harness,
   under the bounds above. Summaries have a grant of their own, bound to provider, destination and
-  content tier, separate from Analyze's; turning one off leaves the other as it was. Consent,
+  content tier, separate from Analyze's; turning summaries off leaves Analyze as it was. Consent,
   destination and the tool-output grant are checked again before every part of a multi-part
   summary, so a revoke stops the job at the next part.
 - When. A finished session is summarized when the reader opens it, unless summaries are turned
@@ -2127,8 +2130,9 @@ Opening a stored summary makes no summary call or charge.
 - Off switch. Turn off summaries, one press from the notice and the card, stops every summary call
   until it is turned back on, and an answer of off already stored survives restart and upgrade.
   It changes neither Analyze's grant nor a goal-summary answer, and it cancels a summary call
-  already running. A stored Turn off readings also refuses every summary call, with the reason
-  `readings-off`. The first summary shows a
+  already running. A stored Pause model calls also refuses every summary call, with the reason
+  `model-calls-paused`. Its summary switch is disabled while paused and says "Model calls are paused";
+  its stored answer is preserved through pause and resume. The first summary shows a
   non-blocking notice naming all the carriers above, Claude Code/Anthropic and the configured
   destination, and the off switch. A new destination or wider content tier repeats the notice.
   Each part rechecks grant, destination and content; this source sends no tool output and
@@ -2902,7 +2906,7 @@ and no goal is not read by it at all (item 12 of
 [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)).
 Nothing new leaves the machine that did not already leave it when you pressed the control by hand,
 because the lane retains the explicit Allow binding before each send (consent F5,
-ui5): with no Codex Allow on record, after "Turn off readings", or once the Codex destination is
+ui5): with no Codex Allow on record, after "Pause model calls", or once the Codex destination is
 no longer the one the Allow was given for, the check is skipped, nothing is spent, and the skip is
 written to the dashboard's diagnostic log. It does not charge the reading budget; its own caps
 below bound it. What is new is that nobody is there at the moment it goes.

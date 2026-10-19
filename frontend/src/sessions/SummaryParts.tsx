@@ -64,18 +64,25 @@ function Line({
 function Turn({ state, on }: { readonly state: SummaryState; readonly on: boolean }) {
   const shell = useShell();
   const control = `summary-grant:${state.key}`;
+  const paused = state.grant?.reason === 'model-calls-paused';
+  const reasonId = `summary-paused:${state.key}`;
   return (
-    <ActionButton
-      weight="secondary"
-      label={on ? 'Turn summaries on' : 'Turn off summaries'}
-      busyLabel={on ? 'Turning on…' : 'Turning off…'}
-      pendingKey={control}
-      focusKey={control}
-      action={on ? 'summary-on' : 'summary-off'}
-      onPress={() => {
-        if (state.identity) void setSummaries(shell, state.identity, on);
-      }}
-    />
+    <>
+      <ActionButton
+        weight="secondary"
+        inert={paused}
+        describedBy={reasonId}
+        label={on ? 'Turn summaries on' : 'Turn off summaries'}
+        busyLabel={on ? 'Turning on…' : 'Turning off…'}
+        pendingKey={control}
+        focusKey={control}
+        action={on ? 'summary-on' : 'summary-off'}
+        onPress={() => {
+          if (!paused && state.identity) void setSummaries(shell, state.identity, on);
+        }}
+      />
+      {paused ? <Line id={reasonId}>Model calls are paused</Line> : null}
+    </>
   );
 }
 

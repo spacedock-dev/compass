@@ -630,7 +630,7 @@ class ProjectContextTest(unittest.TestCase):
         with mock.patch.object(observer, "codex_exec") as execute:
             off = self.collect(model_consent=True)
         execute.assert_not_called()
-        self.assertEqual("readings-off", off["observers"][0]["model"]["status"])
+        self.assertEqual("model-calls-paused", off["observers"][0]["model"]["status"])
         self.assertNotIn("notice", off["observer_model"])
         reading_policy.set_consent(self.config, True, now=self.NOW + 1)
 
@@ -649,7 +649,7 @@ class ProjectContextTest(unittest.TestCase):
         )
         self.assertNotIn("notice", again["observer_model"])
         self.assertNotIn("?", on["observer_model"]["disclosure"])
-        self.assertIn("Turn off readings", on["observer_model"]["disclosure"])
+        self.assertIn("Pause model calls", on["observer_model"]["disclosure"])
 
     def test_a_childs_goal_call_publishes_the_notice_it_recorded(self) -> None:
         # The child is observed before its parent, so its call is the one that

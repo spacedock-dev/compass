@@ -1,7 +1,7 @@
 {
   "format": 1,
   "name": "reading-off",
-  "notes": "With readings turned off, a resolved route answers 403 readings-off and names its route; nothing is read.",
+  "notes": "With model calls paused, a resolved route answers 403 model-calls-paused and names its route; nothing is read.",
   "request": {
     "body": {
       "harness": "claude",
@@ -31,7 +31,7 @@
           "claude": false,
           "codex": false
         },
-        "reason": "readings-off",
+        "reason": "model-calls-paused",
         "rebind": {},
         "retry_at": null,
         "tool_output": {},
@@ -67,7 +67,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "2563",
+      "Content-Length": "2569",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

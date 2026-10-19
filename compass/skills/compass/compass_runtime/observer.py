@@ -792,7 +792,9 @@ class CodexGoalModel:
         if not self.config.observer_model_enabled or self.config.model_calls_disabled:
             return "disabled"
         answer = reading_policy.status(self.config, now=self.clock())
-        return "" if answer["consent"] else "readings-off" if answer["off"] else answer["reason"]
+        return (
+            "" if answer["consent"] else "model-calls-paused" if answer["off"] else answer["reason"]
+        )
 
     def metadata(self) -> dict[str, str]:
         return {
@@ -878,7 +880,7 @@ class CodexGoalModel:
             )
         except reading_policy.RefusedError as exc:
             # A stored off is named as one, though the cap outranks it in the answer.
-            self.status = "readings-off" if exc.answer["off"] else exc.answer["reason"]
+            self.status = "model-calls-paused" if exc.answer["off"] else exc.answer["reason"]
             return None
         if status != "ok":
             self.status = status

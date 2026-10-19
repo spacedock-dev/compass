@@ -146,7 +146,7 @@ const summarizeEditor = () => {
           said: norm(question.querySelector('.next-cockpit-direction-said')),
           buttons: [...question.querySelectorAll('.next-cockpit-reading-ask button')]
             .map(norm)
-            .filter((label) => label !== 'Turn off readings'),
+            .filter((label) => label !== 'Pause model calls'),
         }
       : null,
   };

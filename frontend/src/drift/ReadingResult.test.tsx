@@ -201,17 +201,17 @@ describe('result focus', () => {
   });
 });
 
-describe('a current result while readings are off', () => {
-  it('draws no turn-on-and-analyze control, which would run a second reading of unchanged words', async () => {
+describe('a current result while model calls are paused', () => {
+  it('offers Resume model calls without a second Analyze of unchanged words', async () => {
     const page = mountDrift({
       session: stored(),
       facts: FACTS,
-      payload: { reading: { consent: false, off: true, reason: 'readings-off' } },
+      payload: { reading: { consent: false, off: true, reason: 'model-calls-paused' } },
     });
     await page.settle();
     await page.settle();
     expect(document.querySelector('[data-next-result]')).not.toBeNull();
-    expect(byAction('reading-on')).toBeNull();
+    expect(byAction('reading-on')?.textContent).toBe('Resume model calls');
     expect(byAction('reading-ask')).toBeNull();
   });
 });

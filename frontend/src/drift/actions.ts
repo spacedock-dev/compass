@@ -1,4 +1,4 @@
-import { turnOffReadings } from '../api/readings';
+import { resumeModelCalls, turnOffReadings } from '../api/readings';
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
 import type { ReadingRequest, SessionIdentity } from '../api/types';
@@ -444,7 +444,7 @@ export async function cancelReading(ctx: DriftCtx, identity: SessionIdentity): P
   }
 }
 
-/* "Turn off readings": withdraws every provider's permission. The one request in this section that names no
+/* "Pause model calls": withdraws every provider's permission. The one request in this section that names no
    session, so the control is keyed on the session the reader is looking at. */
 /* The notice card is not focused, so a reply that carries a new one is said once through the polite region. */
 function sayNotice(shell: DriftCtx['shell'], notice: unknown): void {
@@ -454,14 +454,34 @@ function sayNotice(shell: DriftCtx['shell'], notice: unknown): void {
 }
 
 export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null): Promise<void> {
+  return setModelPause(ctx, identity, true);
+}
+
+export async function readingOn(ctx: DriftCtx, identity: SessionIdentity | null): Promise<void> {
+  return setModelPause(ctx, identity, false);
+}
+
+async function setModelPause(
+  ctx: DriftCtx,
+  identity: SessionIdentity | null,
+  paused: boolean,
+): Promise<void> {
   const { intent, shell } = ctx;
   const key = identity ? compatSessKey(identity) : '';
-  const control = key ? `reading-off:${key}` : 'reading-off';
-  const press = pendingStart(intent, control, 'Turning off…', 'Turning off readings.');
+  const action = paused ? 'reading-off' : 'reading-on';
+  const control = key ? `${action}:${key}` : action;
+  const press = pendingStart(
+    intent,
+    control,
+    paused ? 'Pausing…' : 'Resuming…',
+    paused ? 'Pausing model calls.' : 'Resuming model calls.',
+  );
   if (!press) return;
   intent.held.notify();
   try {
-    const reply = answered(await turnOffReadings(shell.runtime.client, press.signal));
+    const reply = answered(
+      await (paused ? turnOffReadings : resumeModelCalls)(shell.runtime.client, press.signal),
+    );
     const answer = reply.kind === 'answered' && reply.ok ? (reply.body as Row | null) : null;
     if (!answer || answer['ok'] !== true || !isRecord(answer['reading'])) {
       throw new Error('permission not saved');
@@ -475,7 +495,9 @@ export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null
     if (key) {
       intent.held.requests.set(key, {
         ...intent.held.requests.get(key),
-        message: 'Could not confirm readings are off. Try turning them off again.',
+        message: paused
+          ? 'Could not confirm model calls are paused. Try pausing again.'
+          : 'Could not confirm model calls resumed. Try resuming again.',
       });
     }
   } finally {

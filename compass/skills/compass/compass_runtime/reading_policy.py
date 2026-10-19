@@ -128,8 +128,8 @@ def _answer(
         # The cap first: the budget is shared, so a spent day refuses every
         # provider, and the page reads the Codex answer. Consent first told a
         # reader with only Claude Code allowed that nothing stood in the way
-        # (DRC-4666).
-        "reason": reason or ("daily-cap" if full else "readings-off" if off else ""),
+        # (DRC-4666). A pause still reads as one from `off`.
+        "reason": reason or ("daily-cap" if full else "model-calls-paused" if off else ""),
         "providers": dict(providers) if providers else dict.fromkeys(PROVIDERS, False),
         "tool_output": {name: list(where) for name, where in (tool_output or {}).items()},
         "rebind": dict(rebind or {}),
@@ -493,7 +493,7 @@ def _transaction(
                     (provider, tool_output),
                 )
         elif operation == "off":
-            # Every receiver at once: "Turn off readings" and `--forget` name
+            # Every receiver at once: "Pause model calls" and `--forget` name
             # no provider, and a revocation that left one allowed would not be
             # the answer the reader gave.
             for name in PROVIDERS:
@@ -592,7 +592,7 @@ def set_consent(
     destinations: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
 ) -> Status:
-    """Turn readings on with one explicit Allow, or revoke every provider.
+    """Resume model calls with one explicit Allow, or pause every provider.
 
     `destination` is where the press's disclosure said the words go, and the
     Allow covers presses only while they still go there. `tool_output` is the
@@ -605,6 +605,24 @@ def set_consent(
     today = {**(destinations or {}), provider: destination}
     operation = "allow" if allowed else "off"
     return _run(config, now, operation, provider, tool_output, today=today, content=content)
+
+
+def resume(config: RuntimeConfig, *, now: float) -> Status:
+    """Resume model calls: clear the stored pause without writing an Allow.
+
+    An Allow would also cover the unasked lane, which no reader press turns on
+    (owner, 2026-10-19, DRC-4915), so only the refusal rows go.
+    """
+    if runtime_io.sqlite_module is not None and os.path.lexists(store_path(config)):
+        try:
+            with contextlib.closing(_connect(config, WRITE_WAIT_SEC)) as db:
+                db.execute("BEGIN IMMEDIATE")
+                if _readings_off(db):
+                    _clear_off(db)
+                db.execute("COMMIT")
+        except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+            return _answer(reason="store-unavailable")
+    return _run(config, now, "read", LEGACY_PROVIDER)
 
 
 def reserve(
@@ -842,7 +860,13 @@ def _summary_answer(
     answer["limit"] = config.session_summary_rolling_cap
     answer["retry_at"] = min(dates) + DAY_SEC if full and dates else None
     answer["reason"] = reason or (
-        "daily-cap" if full else "summaries-off" if off else "readings-off" if readings_off else ""
+        "model-calls-paused"
+        if readings_off
+        else "daily-cap"
+        if full
+        else "summaries-off"
+        if off
+        else ""
     )
     answer["consent"] = answer["consent"] and not readings_off
     answer["generation"] = generation
@@ -874,7 +898,7 @@ def _summary_transaction(
         )
         db.execute("DELETE FROM summary_spends WHERE at <= ?", (now - JOB_LEDGER_SEC,))
         row = db.execute("SELECT allowed, generation FROM summary_permission WHERE id=1").fetchone()
-        if operation in ("on", "off"):
+        if operation in ("on", "off") and not _readings_off(db):
             was_off = row is not None and row[0] == 0
             off = operation == "off"
             generation = (row[1] if row else 0) + int(was_off != off)
@@ -922,13 +946,19 @@ def _summary_transaction(
             and db.execute("SELECT 1 FROM summary_spends WHERE receipt=?", (receipt,)).fetchone()
         ):
             # A retried receipt is already charged, including at the cap; no second spend.
-            answer["reason"] = "summaries-off" if answer["off"] else ""
+            answer["reason"] = (
+                "model-calls-paused"
+                if _readings_off(db)
+                else "summaries-off"
+                if answer["off"]
+                else ""
+            )
         db.execute("COMMIT")
         return answer, recorded
 
 
 def _readings_off(db: Any) -> bool:
-    # After Turn off readings no session summary call is made either
+    # After Pause model calls no session summary call is made either
     # (docs/design-session-summary.md#job-and-grant-contract). The summary answer stays
     # its own, so `off` still reports only that.
     tables = {

@@ -37,7 +37,10 @@ function GoalExample({ declined = false }: { readonly declined?: boolean }) {
           });
         if (url === '/api/reading') {
           requests.push(String(init?.body));
-          return json({ ok: true, reading: { consent: false, off: true, reason: 'readings-off' } });
+          return json({
+            ok: true,
+            reading: { consent: false, off: true, reason: 'model-calls-paused' },
+          });
         }
         const requested = url.includes('observer_model=1');
         if (requested) {
@@ -102,7 +105,7 @@ export const DirectRequestAndOnePressOff: Story = {
     const canvas = within(canvasElement);
     const summarize = await canvas.findByRole('button', { name: 'Summarize this session' });
     await expect(requests).toHaveLength(0);
-    await expect(canvas.getByRole('button', { name: 'Turn off readings' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Pause model calls' })).toBeVisible();
     await userEvent.click(summarize);
     await expect(await canvas.findByText('Words go to: goal.example')).toBeVisible();
     await expect(canvas.getByRole('region', { name: 'Model request notice' })).toBeVisible();
@@ -111,13 +114,11 @@ export const DirectRequestAndOnePressOff: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Simulate board poll' }));
     await new Promise((done) => setTimeout(done, 50));
     await expect(canvas.getByText('Words go to: goal.example')).toBeVisible();
-    await expect(canvas.getAllByRole('button', { name: 'Turn off readings' })).toHaveLength(1);
+    await expect(canvas.getAllByRole('button', { name: 'Pause model calls' })).toHaveLength(1);
     await expect(requests).toHaveLength(1);
-    await userEvent.click(canvas.getByRole('button', { name: 'Turn off readings' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Pause model calls' }));
     await expect(
-      await canvas.findByText(
-        'Readings are off. Nothing is sent to a model until you turn them back on with Turn on readings and analyze in the Drift card.',
-      ),
+      await canvas.findByText('Model calls are paused. Nothing is sent until you resume.'),
     ).toBeVisible();
     await expect(canvas.queryByRole('button', { name: 'Summarize this session' })).toBeNull();
     await expect(JSON.parse(requests[1] ?? '{}')).toEqual({

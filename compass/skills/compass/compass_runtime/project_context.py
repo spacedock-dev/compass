@@ -8437,7 +8437,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
                 "for a goal summary. Each prompt is capped "
                 "at 16 KiB, with a 60-second timeout "
                 "and one call in flight per session. A focused refresh can include up to three "
-                "active child sessions. Turn off readings or --no-observer-model stops these calls."
+                "active child sessions. Pause model calls or --no-observer-model stops these calls."
             ),
         },
         "project": project,
