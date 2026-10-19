@@ -644,6 +644,12 @@ All tunable bounds are declared once in `config.py` and carried by `RuntimeConfi
 | `session_summary_bullet_chars` | 200 | The measured prompt's bullet width. |
 | `session_summary_lede_chars` | 400 | A short lede without another window of prose. |
 | `session_summary_max_bytes` | 524,288 | 32 windows × 4 phases × 6 bullets × 200 characters plus eight ordinary fact ids and JSON overhead fits in 512 KiB at ordinary text widths. A 256 KiB bound would cut that shape even in ASCII; wider text and ids still hit the byte bound. |
+| `session_summary_person_chars` | 1,200 | The measurement's clip for person-turn words, asked or relayed. |
+| `session_summary_agent_chars` | 700 | The measurement's clip for the agent's words. |
+| `session_summary_check_chars` | 220 | The measurement's clip for a masked check title. |
+| `session_summary_path_chars` | 220 | The measurement's clip for a display path. |
+| `session_summary_attempts_per_part` | 2 | One retry for an empty reply; the focused plan's call bound counts both attempts. |
+| `summary_freshness_retry_sec` | 300 | A focused freshness answer clipped by the read's time allowance is reused this long for an unchanged transcript. Re-reading it each board revision cost about two seconds a poll on 42 and 52 MiB transcripts. |
 
 Before the first call the producer plans the retained windows plus a lede. Exceeding planned
 calls or prompt bytes refuses the job with `planned_calls` or `planned_bytes`, spending nothing.
@@ -655,7 +661,9 @@ ceiling leaves the current and all later windows as `ceiling` gaps. A call start
 elapsed seconds plus `session_summary_call_timeout` stay within `session_summary_max_seconds`, so
 the job ends inside its ceiling without cancelling a call in flight. With the defaults, no call
 starts after 420 seconds; the largest measured job took 307. The job lane's per-call timeout
-bounds each wait. The producer does not pass a timeout to any subprocess function.
+bounds each wait. The producer does not pass a timeout to any subprocess function. The job lane
+checks the job's deadline again after its own lock waits and board collection, immediately before
+spawning, and gives the call the smaller of `session_summary_call_timeout` and the seconds left.
 
 `session_summary.plan(entries, harness, *, config, prior=None, change=None)` runs that same
 admission without a model and returns `reason`, `parts` (retained windows plus one lede) and
@@ -1331,7 +1339,7 @@ bytes-only field under the same name.
 `complete` is the outline read's own coverage. The outline reads a newest window of at most
 `session_outline_max_bytes`, while a start reads the whole source, so off a partial read `parts`
 is a floor. `calls` is an upper bound on charged attempts: with a complete read it is
-`min(parts x ATTEMPTS_PER_PART, session_summary_max_calls)`, because a part makes one retry
+`min(parts x session_summary_attempts_per_part, session_summary_max_calls)`, because a part makes one retry
 after an empty reply and no more; with a partial read it is the whole-job call ceiling. `minutes`
 is `ceil(min(calls x session_summary_call_timeout, session_summary_max_seconds) / 60)`, an upper
 bound from configured ceilings, never a timing measurement.

@@ -46,6 +46,8 @@ ACTIVE = {"running", "stopping"}
 PRODUCER_STOPS = {"daily-cap", "model-unavailable", "stopping"}
 # A summary disclosure must not renew Analyze's notice when its content changes.
 CONTENT_VERSION = 1
+# Looked up at each job start, so a test can run the whole-job ceiling on a fake clock.
+_monotonic = time.monotonic
 
 
 @dataclass
@@ -129,9 +131,11 @@ def _remember(application: reading_jobs.Application, job: Job) -> None:
 def published(
     application: reading_jobs.Application, harness: str, sid: str
 ) -> dict[str, Any] | None:
-    with _LOCK:
-        job = application.state.summary_jobs.get(_key(harness, sid))
-        return job.as_dict() if isinstance(job, Job) else None
+    # Unlocked on purpose: board collection calls this once per row, and `_locked` holds
+    # `_LOCK` across a file-lock wait of up to ten seconds. A snapshot one transition stale
+    # is corrected by the publish that follows every transition.
+    job = application.state.summary_jobs.get(_key(harness, sid))
+    return job.as_dict() if isinstance(job, Job) else None
 
 
 def disclosure(destination: str) -> str:
@@ -344,9 +348,16 @@ class GuardedSummaryModel:
     """Each actual attempt rechecks the grant and records one summary-only receipt."""
 
     def __init__(
-        self, application: reading_jobs.Application, job: Job, model: session_summary.Model
+        self,
+        application: reading_jobs.Application,
+        job: Job,
+        model: session_summary.Model,
+        *,
+        deadline: float = float("inf"),
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.application, self.job, self.model = application, job, model
+        self.deadline, self.clock = deadline, clock
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         app, job = self.application, self.job
@@ -384,6 +395,10 @@ class GuardedSummaryModel:
             if reason:
                 job.reason = reason
                 return "", "failed"
+        # The producer admitted this call against the job's seconds before the two lock waits
+        # and the board collection above, which can each take seconds of their own.
+        if self.deadline - self.clock() <= 0:
+            return "", "failed"
         text, status = self.model(prompt, output_cap_bytes=output_cap_bytes)
         # Admission already charged this attempt. A later local refusal cannot refund it in
         # the producer's spend while leaving the durable receipt charged.
@@ -391,16 +406,30 @@ class GuardedSummaryModel:
 
 
 class ClaudeSummaryModel:
-    def __init__(self, application: reading_jobs.Application, job: Job) -> None:
+    def __init__(
+        self,
+        application: reading_jobs.Application,
+        job: Job,
+        *,
+        deadline: float = float("inf"),
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.application, self.job = application, job
+        self.deadline, self.clock = deadline, clock
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+        # A call never outlives the job's seconds ceiling, whatever its own timeout allows.
+        timeout = min(
+            self.application.config.session_summary_call_timeout, self.deadline - self.clock()
+        )
+        if timeout <= 0:
+            return "", "failed"
         return observer.claude_exec(
             self.application.config,
             prompt,
             output_cap_bytes=output_cap_bytes,
             system_prompt=session_summary.SYSTEM_PROMPT,
-            timeout=self.application.config.session_summary_call_timeout,
+            timeout=timeout,
             on_spawn=self.spawned,
         )
 
@@ -462,13 +491,20 @@ def _run(
 ) -> None:
     if page.coverage is None:
         return
+    clock = _monotonic
+    # Taken before the producer reads its own start, so this deadline is never the later one.
+    deadline = clock() + application.config.session_summary_max_seconds
     try:
         arguments: dict[str, Any] = {
             "config": application.config,
             "model": GuardedSummaryModel(
-                application, job, model or ClaudeSummaryModel(application, job)
+                application,
+                job,
+                model or ClaudeSummaryModel(application, job, deadline=deadline, clock=clock),
+                deadline=deadline,
+                clock=clock,
             ),
-            "clock": time.monotonic,
+            "clock": clock,
             "on_part": lambda summary, part, parts: _save(
                 application, job, page, summary, part, parts
             ),
@@ -531,7 +567,13 @@ def _stop(application: reading_jobs.Application, harness: str, sid: str, reason:
             job.group.cancel()
         _write(application, job)
         return True
-    if isinstance(job, Job):
+    if isinstance(job, Job) and marker.get("id") == job.id:
+        if job.state not in ACTIVE:
+            # `_run` has written this job's terminal state and is about to unlink its marker.
+            # Marking it stopping would leave it in ACTIVE, refusing every later start as in
+            # flight until a restart.
+            path.unlink(missing_ok=True)
+            return False
         job.reason, job.state = reason, "stopping"
         if job.group is not None:
             job.group.cancel()

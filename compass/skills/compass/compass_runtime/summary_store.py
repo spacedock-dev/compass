@@ -511,7 +511,15 @@ def delete(config: RuntimeConfig, harness: str, sid: str) -> str:
         if len(kept) == len(store.entries):
             return "absent"
         outcome = _write(config, kept, ("", ""))
+        _drop_loaded(config)
         return "deleted" if outcome == "stored" else outcome
+
+
+def _drop_loaded(config: RuntimeConfig) -> None:
+    # The cached parse holds model-written text; a stale entry is never served, but a deleted
+    # summary must not stay in process memory until the next board collection replaces it.
+    with _LOADED_LOCK:
+        _LOADED.pop(store_path(config), None)
 
 
 def forget(config: RuntimeConfig) -> str:
@@ -524,6 +532,7 @@ def forget(config: RuntimeConfig) -> str:
         # because summaries can be regenerated; it must not keep model-written text on disk.
         if held == runtime_io.LOCK_BUSY:
             return "unwritable"
+        _drop_loaded(config)
         try:
             os.unlink(store_path(config))
         except FileNotFoundError:
@@ -559,7 +568,12 @@ def published(
         "summary": {
             "exists": entry is not None,
             "state": "ok" if available else "unavailable",
-            "coverage": entry.summary.as_dict()["coverage"] if entry else None,
+            # The coverage serializer alone: the whole summary's dict is not built per row.
+            "coverage": (
+                session_summary._coverage(entry.summary.coverage)  # noqa: SLF001
+                if entry
+                else None
+            ),
             "made_at": entry.made_at if entry else None,
             "out_of_date": checked if entry is not None else None,
             "job": None,
@@ -636,9 +650,10 @@ def for_session(
     # A finished session is opened again and again; its freshness only changes with the
     # transcript or the stored record, so an unchanged pair costs a stat instead of a full read.
     key = (stamps, *_identity(entry))
+    now = time.monotonic()
     with state.summary_freshness_lock:
         cached = state.summary_freshness.get((harness, sid))
-    if cached is not None and cached[0] == key:
+    if cached is not None and cached[0] == key and now < cached[2]:
         return _answer(entry, cached[1])
     page = session_source.read(config, path, harness, sid)
     report = _report(entry, page)
@@ -646,19 +661,22 @@ def for_session(
         unchanged = session_source.source_stamps(path, harness) == stamps
     except OSError:
         unchanged = False
-    # A byte-limited read is cached: the same transcript under the same allowance stops at the
-    # same place, and a finished long session would pay that read every poll. A time-limited
-    # read is not, because a slow disk or a loaded CPU would pin it for the life of the process.
+    # A byte-limited read is kept for as long as the pair is unchanged: the same transcript
+    # under the same allowance stops at the same place. A time-limited read stops wherever the
+    # disk and CPU let it, so it is kept only for `summary_freshness_retry_sec`: long enough
+    # that a finished large session does not pay a two-second read on every board revision,
+    # short enough that one slow read does not pin `source_incomplete` for the process's life.
     clipped = page.coverage is not None and any(
         region.reason == "time" for region in page.coverage.unread
     )
-    if unchanged and not clipped and report["reason"] != "source_unavailable":
+    if unchanged and report["reason"] != "source_unavailable":
+        until = now + config.summary_freshness_retry_sec if clipped else math.inf
         with state.summary_freshness_lock:
             # The outline's bound: both hold one answer per recently focused session.
             runtime_state.bounded_put(
                 state.summary_freshness,
                 (harness, sid),
-                (key, report),
+                (key, report, until),
                 limit=config.session_outline_cache_limit,
             )
     return _answer(entry, report)

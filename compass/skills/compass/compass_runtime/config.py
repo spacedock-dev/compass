@@ -268,6 +268,18 @@ class RuntimeConfig:
     session_summary_bullet_chars: int
     session_summary_lede_chars: int
     session_summary_max_bytes: int
+    # The entry clips the measurement used, not source admission limits; redaction precedes
+    # every clip (docs/design-session-summary.md#measurement-and-ceilings).
+    session_summary_person_chars: int
+    session_summary_agent_chars: int
+    session_summary_check_chars: int
+    session_summary_path_chars: int
+    # One retry for an empty reply; the focused plan's upper bound counts both attempts.
+    session_summary_attempts_per_part: int
+    # How long a focused freshness answer clipped by the read's time allowance is reused for an
+    # unchanged transcript. Re-reading it on every board revision cost about two seconds a poll
+    # on 42 and 52 MiB transcripts; never re-reading it would pin a slow-disk answer.
+    summary_freshness_retry_sec: float
     # Full UUID session ids fit in 64 characters, as in the annotation store's key contract.
     summary_store_key_cap_chars: int
     # A provider/model identity is tens of characters. The stamp is resent on every focused poll,
@@ -876,6 +888,12 @@ def build_runtime_config(
         session_summary_bullet_chars=SESSION_SUMMARY_BULLET_CHARS,
         session_summary_lede_chars=SESSION_SUMMARY_LEDE_CHARS,
         session_summary_max_bytes=SESSION_SUMMARY_MAX_BYTES,
+        session_summary_person_chars=1_200,
+        session_summary_agent_chars=700,
+        session_summary_check_chars=220,
+        session_summary_path_chars=220,
+        session_summary_attempts_per_part=2,
+        summary_freshness_retry_sec=300.0,
         summary_store_key_cap_chars=64,
         summary_store_model_stamp_cap_chars=256,
         summary_store_lock_wait_sec=10.0,

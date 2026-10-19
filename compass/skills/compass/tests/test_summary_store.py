@@ -9,9 +9,11 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
 
@@ -674,7 +676,7 @@ class SummaryStoreCostTest(_StoreCase):
         write.assert_not_called()
         self.assertEqual(later, record.accessed_at)
 
-    def test_a_time_clipped_freshness_read_is_not_cached(self) -> None:
+    def test_a_time_clipped_freshness_read_is_reused_only_for_its_retry_interval(self) -> None:
         from compass_runtime import observer  # noqa: PLC0415
 
         self.transcript.prompt("Inspect")
@@ -683,8 +685,41 @@ class SummaryStoreCostTest(_StoreCase):
         with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
             clipped = self.store.for_session(rushed, self.state, "claude", "root")
             self.assertEqual("source_incomplete", clipped["out_of_date"]["reason"])
-            full = self.store.for_session(self.config, self.state, "claude", "root")
+            # A finished large session is polled once per board revision; within the interval
+            # an unchanged transcript costs a stat, not another clipped read.
+            with mock.patch.object(session_source, "read", side_effect=AssertionError("reread")):
+                again = self.store.for_session(rushed, self.state, "claude", "root")
+            self.assertEqual(clipped, again)
+            # Past the interval the read runs again, so one slow read is not pinned.
+            later = self.config.summary_freshness_retry_sec + 1
+            clock = SimpleNamespace(monotonic=lambda: time.monotonic() + later, time=time.time)
+            with mock.patch.object(self.store, "time", clock):
+                full = self.store.for_session(self.config, self.state, "claude", "root")
         self.assertEqual("unchanged", full["out_of_date"]["kind"])
+
+    def test_delete_and_forget_drop_the_cached_parse(self) -> None:
+        for drop in ("delete", "forget"):
+            with self.subTest(drop=drop):
+                self.transcript.prompt("Inspect")
+                self.save(self.read())
+                self.assertEqual(1, len(self.store.load(self.config).entries))
+                path = self.store.store_path(self.config)
+                self.assertIn(path, self.store._LOADED)
+                if drop == "delete":
+                    self.assertEqual("deleted", self.store.delete(self.config, "claude", "root"))
+                else:
+                    self.assertEqual("deleted", self.store.forget(self.config))
+                self.assertNotIn(path, self.store._LOADED)
+
+    def test_a_board_row_carries_coverage_without_serializing_the_summary(self) -> None:
+        self.transcript.prompt("Inspect")
+        self.save(self.read())
+        entry = self.store.load(self.config).entries[0]
+        with mock.patch.object(
+            session_summary.Summary, "as_dict", side_effect=AssertionError("whole summary")
+        ):
+            row = self.store.published(entry)
+        self.assertEqual(entry.summary.as_dict()["coverage"], row["summary"]["coverage"])
 
     def test_the_board_row_carries_the_last_focused_report_without_a_read(self) -> None:
         from compass_runtime import observer  # noqa: PLC0415

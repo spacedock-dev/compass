@@ -109,7 +109,7 @@ def _plan(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, A
     complete = page.coverage is not None and page.coverage.complete
     calls = int(ceilings["calls"])
     if complete:
-        calls = min(calls, parts * session_summary.ATTEMPTS_PER_PART)
+        calls = min(calls, parts * config.session_summary_attempts_per_part)
     return {
         "reason": planned["reason"],
         "complete": complete,

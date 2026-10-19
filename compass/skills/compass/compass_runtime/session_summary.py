@@ -27,14 +27,6 @@ SYSTEM_PROMPT = (
     "You summarize a record of an agent's work session. Use only the text of the user message. "
     "Reply with the JSON object it asks for and nothing else."
 )
-# The entry clips used by the measurement, not new source admission limits:
-# docs/design-session-summary.md#measurement-and-ceilings. Redaction precedes every clip.
-PERSON_CHARS = 1_200
-AGENT_CHARS = 700
-CHECK_CHARS = 220
-PATH_CHARS = 220
-# One retry for an empty reply; the focused plan's upper bound counts both attempts per part.
-ATTEMPTS_PER_PART = 2
 
 
 class Model(Protocol):
@@ -207,22 +199,29 @@ def _byte_clip(text: str, cap: int) -> str:
     return text.encode("utf-8", "replace")[: max(0, cap)].decode("utf-8", "ignore")
 
 
-def _line(entry: SourceEntry, number: int, cap: int) -> _Line:
+def _line(entry: SourceEntry, number: int, config: RuntimeConfig) -> _Line:
+    cap = config.session_summary_window_bytes
     if entry.kind in {"person", "agent"}:
         words = entry.words or ""
         label = "said"
         if entry.kind == "person":
             label = "relayed" if records.injected_prompt(words, "claude") else "asked"
-        text = _clip(_clean(words), PERSON_CHARS if entry.kind == "person" else AGENT_CHARS)
+        text = _clip(
+            _clean(words),
+            config.session_summary_person_chars
+            if entry.kind == "person"
+            else config.session_summary_agent_chars,
+        )
     elif entry.kind == "check":
         label = "ran"
         outcome = (
             entry.result if entry.result in {"failed", "passed", "not-recorded"} else "not-recorded"
         )
-        text = f"{_clip(_clean(entry.title), CHECK_CHARS)}; result as the tool reported: {outcome}"
+        title = _clip(_clean(entry.title), config.session_summary_check_chars)
+        text = f"{title}; result as the tool reported: {outcome}"
     else:
         label = "wrote"
-        text = _clip(_clean(entry.path or entry.title), PATH_CHARS)
+        text = _clip(_clean(entry.path or entry.title), config.session_summary_path_chars)
     prefix = f"[{number}] {label}: "
     text = prefix + _byte_clip(text, cap - len(prefix.encode()) - 1) + "\n"
     return _Line(number, entry, label, text)
@@ -780,7 +779,7 @@ class _Job:
 
     def call(self, prompt: str) -> tuple[str, str | None]:
         size = len(prompt.encode())
-        for attempt in range(ATTEMPTS_PER_PART):
+        for attempt in range(self.config.session_summary_attempts_per_part):
             if self.stop or self._over(size):
                 return "", self.stop or self._halt("ceiling")
             self.calls += 1
@@ -981,9 +980,7 @@ def _produce(
     prefix_bytes = len(f"[{offset + len(entries)}] relayed: \n".encode())
     if config.session_summary_window_bytes < prefix_bytes or config.session_summary_max_windows < 1:
         return Summary("refused", "invalid_bounds", harness)
-    lines = tuple(
-        _line(e, n + offset + 1, config.session_summary_window_bytes) for n, e in enumerate(entries)
-    )
+    lines = tuple(_line(e, n + offset + 1, config) for n, e in enumerate(entries))
     if not lines:
         return (
             prior
@@ -1301,10 +1298,7 @@ def plan(
     ):
         reason = "invalid_bounds"
     lines = (
-        tuple(
-            _line(e, n + offset + 1, config.session_summary_window_bytes)
-            for n, e in enumerate(entries[offset:])
-        )
+        tuple(_line(e, n + offset + 1, config) for n, e in enumerate(entries[offset:]))
         if reason is None
         else ()
     )

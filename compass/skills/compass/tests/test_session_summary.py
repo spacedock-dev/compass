@@ -631,6 +631,51 @@ class SessionSummaryTest(unittest.TestCase):
             ["ceiling", "ceiling"], [b["reason"] for b in result.as_dict()["blocks"][1:]]
         )
 
+    def test_a_call_starts_only_if_its_whole_timeout_fits_in_the_job_seconds(self) -> None:
+        # 600 s job, 180 s calls: a call may start at elapsed 420 and not a moment after, for a
+        # window, for its retry and for the lede.
+        config = dataclasses.replace(
+            self.config, session_summary_max_seconds=600.0, session_summary_call_timeout=180.0
+        )
+        for case, late in (("lede", False), ("lede", True), ("retry", False), ("retry", True)):
+            with self.subTest(case=case, late=late):
+                now = [0.0]
+                recorded = Replies(("", "ok")) if case == "retry" else Replies()
+
+                def model(
+                    prompt: str,
+                    *,
+                    output_cap_bytes: int,
+                    seen: Replies = recorded,
+                    now: list[float] = now,
+                    late: bool = late,
+                ) -> tuple[str, str]:
+                    answer = seen(prompt, output_cap_bytes=output_cap_bytes)
+                    now[0] = 420.001 if late else 420.0
+                    return answer
+
+                now[0] = 420.0
+                started = [True]
+
+                def clock(at: list[float] = now, first: list[bool] = started) -> float:
+                    if first[0]:
+                        first[0] = False
+                        return 0.0
+                    return at[0]
+
+                result = self.summary.summarize(
+                    [entry(1, words="Review the parser.")],
+                    self.coverage,
+                    "claude",
+                    config=config,
+                    model=model,
+                    clock=clock,
+                )
+                # On time, the retry and then the lede both start at 420.
+                admitted = 1 if late else 3 if case == "retry" else 2
+                self.assertEqual(admitted, len(recorded.prompts))
+                self.assertEqual(admitted, result.spend.calls)
+
     def test_terminal_statuses_stop_without_retry(self) -> None:
         for status in ("unavailable", "closed", "cancelled"):
             model = Replies(("", status))

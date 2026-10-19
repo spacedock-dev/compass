@@ -9,7 +9,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from compass_runtime import (
@@ -30,6 +30,9 @@ from compass_runtime import (
 
 from .support import make_runtime
 from .test_session_summary import Replies, entry
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def wait_job(application: Any, harness: str, sid: str, *, timeout: float) -> None:
@@ -253,6 +256,51 @@ class SummaryJobTest(_SummaryCase):
         job = self.jobs.published(self.application, "claude", "s1")
         assert job is not None
         self.assertEqual(("cancelled", [1]), (job["reason"], job["finished_parts"]))
+
+    def test_stop_after_the_terminal_state_leaves_the_session_startable(self) -> None:
+        # The window between `_run` writing a terminal state and its finally removing the
+        # marker: a Cancel or Delete there must not put the finished job back in flight.
+        for stop in ("cancel", "delete"):
+            with self.subTest(stop=stop):
+                self.state.summary_jobs.pop("claude:s1", None)
+                real_marker = summary_jobs._marker
+                landed: list[object] = []
+
+                def marker(
+                    config: Any,
+                    harness: str,
+                    sid: str,
+                    *,
+                    act: str = stop,
+                    landed: list[object] = landed,
+                    real_marker: Callable[[Any, str, str], Path] = real_marker,
+                ) -> Path:
+                    job = self.state.summary_jobs.get(f"{harness}:{sid}")
+                    if not landed and job is not None and job.state not in summary_jobs.ACTIVE:
+                        landed.append(None)
+                        landed[0] = (
+                            summary_jobs.cancel(self.application, harness, sid)
+                            if act == "cancel"
+                            else summary_jobs.delete(self.application, harness, sid)
+                        )
+                    return real_marker(config, harness, sid)
+
+                with mock.patch.object(summary_jobs, "_marker", side_effect=marker):
+                    self.run_job()
+                self.assertTrue(landed)
+                if stop == "cancel":
+                    self.assertFalse(landed[0])
+                job = self.state.summary_jobs["claude:s1"]
+                self.assertNotIn(job.state, summary_jobs.ACTIVE)
+                code, answer = self.jobs.start(
+                    self.application,
+                    self.page,
+                    action="start",
+                    model=Replies(),
+                    destination="Anthropic",
+                )
+                self.assertEqual(202, code, answer)
+                wait_job(self.application, "claude", "s1", timeout=5)
 
     def test_off_then_on_does_not_allow_a_late_reply(self) -> None:
         entered, release = threading.Event(), threading.Event()
@@ -520,6 +568,94 @@ class SummaryJobTest(_SummaryCase):
         argv, timeout = captured[0]
         self.assertEqual(session_summary.SYSTEM_PROMPT, argv[argv.index("--system-prompt") + 1])
         self.assertEqual(12.5, timeout)
+
+    def test_published_answers_while_a_summary_write_holds_the_job_lock(self) -> None:
+        self.run_job()
+        held, release = threading.Event(), threading.Event()
+
+        def hold() -> None:
+            with summary_jobs._LOCK:
+                held.set()
+                release.wait(5)
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        self.addCleanup(holder.join)
+        self.addCleanup(release.set)
+        self.assertTrue(held.wait(5))
+        answer: list[Any] = []
+        reader = threading.Thread(
+            target=lambda: answer.append(self.jobs.published(self.application, "claude", "s1"))
+        )
+        reader.start()
+        reader.join(2)
+        self.assertFalse(reader.is_alive(), "board collection waited on the job lock")
+        self.assertEqual("complete", answer[0]["state"])
+
+    def run_real_model(self, exec_stub: Any, clock: Any) -> list[dict[str, Any]]:
+        """Run a job through the real ClaudeSummaryModel, recording what reaches claude_exec."""
+        calls: list[dict[str, Any]] = []
+
+        def claude_exec(_config: Any, prompt: str, **kwargs: Any) -> tuple[str, str]:
+            calls.append(kwargs)
+            text, status = exec_stub(prompt, **kwargs)
+            return str(text), str(status)
+
+        with (
+            mock.patch.object(observer, "claude_exec", side_effect=claude_exec),
+            mock.patch.object(summary_jobs.ClaudeSummaryModel, "available", return_value=True),
+            mock.patch.object(summary_jobs, "_monotonic", clock),
+        ):
+            code, answer = self.jobs.start(
+                self.application, self.page, action="start", destination="Anthropic"
+            )
+            self.assertEqual(202, code, answer)
+            wait_job(self.application, "claude", "s1", timeout=5)
+        return calls
+
+    def test_real_summary_model_forwards_its_system_prompt_timeout_and_spawn_hook(self) -> None:
+        self.config = dataclasses.replace(self.config, session_summary_call_timeout=137.25)
+        self.application.config = self.config
+        replies = Replies()
+
+        def exec_stub(prompt: str, **kwargs: Any) -> tuple[str, str]:
+            group = mock.Mock()
+            kwargs["on_spawn"](group)
+            self.assertIs(group, self.state.summary_jobs["claude:s1"].group)
+            return replies(prompt, output_cap_bytes=kwargs["output_cap_bytes"])
+
+        calls = self.run_real_model(exec_stub, lambda: 0.0)
+        self.assertEqual(4, len(calls))
+        for call in calls:
+            self.assertEqual(session_summary.SYSTEM_PROMPT, call["system_prompt"])
+            self.assertEqual(137.25, call["timeout"])
+            self.assertEqual(self.config.session_summary_output_cap_bytes, call["output_cap_bytes"])
+
+    def test_lock_and_publish_waits_cannot_carry_a_call_past_the_job_ceiling(self) -> None:
+        # Scaled from the reviewed case: an 8 s job, 1 s calls, and a board collection inside
+        # the guarded seam that takes 1.7 s before each spawn.
+        self.config = dataclasses.replace(
+            self.config, session_summary_max_seconds=8.0, session_summary_call_timeout=1.0
+        )
+        self.application.config = self.config
+        now = [0.0]
+        ends: list[float] = []
+        replies = Replies()
+
+        def collect_json(**_: Any) -> tuple[int, bytes]:
+            now[0] += 1.7
+            return 0, b"{}"
+
+        def exec_stub(prompt: str, **kwargs: Any) -> tuple[str, str]:
+            self.assertGreater(kwargs["timeout"], 0)
+            now[0] += kwargs["timeout"]  # every call runs to its full timeout
+            ends.append(now[0])
+            return replies(prompt, output_cap_bytes=kwargs["output_cap_bytes"])
+
+        self.application.collect_json = collect_json
+        calls = self.run_real_model(exec_stub, lambda: now[0])
+        self.assertTrue(calls)
+        self.assertLessEqual(max(ends), 8.0)
 
     def test_destination_change_between_parts_stops_without_a_second_charge(self) -> None:
         model = Replies()
