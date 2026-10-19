@@ -173,6 +173,9 @@ describe('POST adapters', () => {
     await client.postTripwire({ action: 'save', id: 'r', stage: 'x', expected_revision: '' });
     await client.postLane({ supported: true, permission: 'granted' });
     await client.postAnswer({ id: 'a', index: 1 });
+    await client.postSummary({ consent: 'off' });
+    await client.postSummaryCancel(identity);
+    await client.postSummaryDelete(identity);
     expect(calls.map((call) => call.url)).toEqual([
       '/api/direction',
       '/api/reading',
@@ -182,6 +185,9 @@ describe('POST adapters', () => {
       '/api/tripwire',
       '/api/lane',
       '/api/answer',
+      '/api/summary',
+      '/api/summary/cancel',
+      '/api/summary/delete',
     ]);
     expect(calls.every((call) => call.init?.method === 'POST')).toBe(true);
   });
@@ -306,6 +312,9 @@ describe('no adapter ever retries an action', () => {
       postAnswer: (c) => c.postAnswer({ id: 'a', index: 0 }),
       postDismiss: (c) => c.postDismiss(identity),
       postNotify: (c) => c.postNotify({ message: 'm', session_id: 's' }),
+      postSummary: (c) => c.postSummary({ ...identity, action: 'start', origin: 'open' }),
+      postSummaryCancel: (c) => c.postSummaryCancel(identity),
+      postSummaryDelete: (c) => c.postSummaryDelete(identity),
       focus: (c) => c.focus({ identity, capability: 'cap' }),
     };
 

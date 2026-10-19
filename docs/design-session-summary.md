@@ -185,6 +185,7 @@ until a later change adds their record they say they cannot be summarized.
 | The in-order, paged read with fact ids and fingerprints | `session_source.py`, reusing `record_pages.py` message facts and `project_context.py` tool classification |
 | The deterministic outline | `session_outline.py`, served on `/api/project-context` as `sources.outline` for a focused session only |
 | The What the session has done card and the outline drawn in it | `frontend/src/sessions/WhatItDid.tsx` and `outline.ts`, parsing `sources.outline` in `frontend/src/api/outline.ts` |
+| The summary drawn in that card, its controls, its notice and the departure marks | `frontend/src/sessions/SummaryParts.tsx`, `summary.ts`, `summaryState.ts`, `summaryActions.ts`, `summaryHeld.ts` and `summaryMarks.ts`, parsing `sources.summary` and the board's `summaries` block in `frontend/src/api/summary.ts` |
 | The summary producer and its closed-shape parser | `session_summary.py` |
 | The multi-part job, its ceilings and its own rolling cap | `summary_jobs.py`, `session_summary.py`, `reading_policy.py` and `config.py` |
 | The summary store, Delete summary and `--forget` | `summary_store.py`, `summary_jobs.py`, `http_api.py` and `cli.py` |
@@ -858,6 +859,26 @@ This table describes the implementation and does not amend the owner-ruled table
 - The sample session's fixture carries no `sources.outline`: `scripts/build_sample_fixture.py`
   captures the whole page from a server holding a stored reading, and recapturing it needs a model
   reading and a rebuilt page. Until it is recaptured, the sample shows the card's no-outline line.
+- Before a summary runs, nothing publishes its plan: the focused answer for an absent summary carries
+  no `parts` or `largest_read`, and the 422 refusal is the only reply that does. The card therefore
+  says how large the read is from the outline's own entry count ("About 6 entries to read", "More
+  than" when the outline's read was partial), names the parts once the job publishes them ("part 3
+  of 12"), and gives the largest read allowed only after a refusal. Publishing the plan on the
+  focused answer would let the card say "in 4 parts, up to N minutes" up front; it needs a source
+  read on the focused poll, which this build does not add.
+- A summary citation's chip reads older record pages for its fact id, whatever kind of entry it
+  cites, so every chip either lands or says it could not be loaded. Until a check or file fact id
+  here matches the record's (the gap above), a chip citing one reads pages to the record's page cap
+  and then says so; the outline's chips still read nothing for those ids.
+- The departure mark places a departure's cited entries against the summary by the activity list's
+  `#n`. A phase publishes no bounds, so its span is the span its own bullets cite, and an entry
+  between two phases is in neither ("inside the span the summary covers, but in no phase"). An entry
+  the page has not numbered cannot be placed, and the departure card says so.
+- Delete summary sits at the foot of a saved summary, beside What is sent. The ruling requires the
+  control and names no place for it. Deleting does not summarize the session again on the same open.
+- The view-only sample never posts an open start, and its board publishes no `summaries` block, so
+  the sample draws a stored summary only when its fixture carries `sources.summary` and offers no
+  summary control. Every summary control a later fixture brings is held by the sample's guard.
 - Subagent messages remain excluded. The existing ruling admits their checks and writes, while
   the message builder admits top-level messages only.
 - A relative written path resolves against the directory at the transcript's head, read with the

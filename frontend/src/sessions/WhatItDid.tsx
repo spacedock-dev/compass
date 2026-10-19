@@ -7,6 +7,9 @@ import { useDrift } from '../drift/context';
 import { useDisplayed, useShell } from '../shell/context';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
+import { Disclosure, disclosureKey } from '../controls';
+import { SummaryControls, SummaryView } from './SummaryParts';
+import { summaryHeader, useOpenSummary, useSummaryState } from './summaryState';
 import { fullActivityKey } from './fullActivityKey';
 import {
   NO_PROMPT,
@@ -25,7 +28,7 @@ export const WHAT_IT_DID_PLACEHOLDER =
 /* An entry chip: its `#n` where the page holds and numbers the entry. Pressing it opens Full activity and lands
    on the entry, reading older record pages for it first when the page does not hold it, as Show cited entries
    does (docs/design-reader-state.md#the-inventory). */
-function EntryChip({
+export function EntryChip({
   id,
   purpose,
   onOpen,
@@ -43,6 +46,7 @@ function EntryChip({
       className="px-2 py-0 font-[family-name:var(--mono)] text-label"
       aria-label={`Open ${n ? `entry #${n}` : 'the entry'}, ${purpose}, in Full activity`}
       data-next-outline-entry={id}
+      data-next-cockpit-action="finding-jump"
       onClick={() => onOpen(id, n)}
     >
       {n ? `#${n}` : 'entry'}
@@ -156,8 +160,9 @@ function Block({
 
 /* The What the session has done card: a stable region between the Intent card and the Drift card. Until a
    summary exists it holds Compass's outline, one block per message of the reader's, read from the focused
-   context and updated with the board. `data-next-session-summary-slot` is the hook the outline sits in, and
-   `data-next-session-summary-controls` the empty region the summary's controls take beside it. */
+   context and updated with the board; once one is saved, the summary stands in the slot and the outline is one
+   press below it, where every gap points. `data-next-session-summary-controls` holds the summary's notice and
+   controls, and is empty where this server publishes no summaries. */
 export function WhatItDid({
   running,
   harness,
@@ -193,8 +198,11 @@ export function WhatItDid({
   const [missing, setMissing] = useState<string | null>(null);
   // The latest press: a read that ends after another press began says nothing about the one now standing.
   const latestPress = useRef<object | null>(null);
-  const stamp =
-    outline?.state === 'ok'
+  const summary = useSummaryState(entry, running, harness);
+  useOpenSummary(summary);
+  const stamp = summary.stored
+    ? summaryHeader(summary)
+    : outline?.state === 'ok'
       ? outlineStamp(entry?.revision ?? null, running, Boolean(entry?.error))
       : '';
 
@@ -255,10 +263,36 @@ export function WhatItDid({
           </span>
         ) : null}
       </header>
-      {/* The summary's own controls (Summarize, what is sent, its notice) arrive here in a later part. */}
-      <div className="flex flex-col gap-2 empty:hidden" data-next-session-summary-controls />
+      <div className="flex flex-col gap-2 empty:hidden" data-next-session-summary-controls>
+        <SummaryControls state={summary} outline={outlineSize(outline)} />
+      </div>
       <div className="flex flex-col gap-3" data-next-session-summary-slot>
-        <Outline view={view} missing={missing} onOpen={open} />
+        {summary.stored ? (
+          <>
+            {missing ? <MissingLine missing={missing} /> : null}
+            <SummaryView
+              state={summary}
+              startsAt={
+                summary.stored.startsAt && model.numbers.get(summary.stored.startsAt)
+                  ? `#${model.numbers.get(summary.stored.startsAt) ?? ''}`
+                  : ''
+              }
+              chip={(id, purpose) => <EntryChip id={id} purpose={purpose} onOpen={open} />}
+            />
+            <Disclosure
+              disclosureKey={disclosureKey({
+                project: model.project,
+                scope: model.key,
+                name: 'summary-outline',
+              })}
+              summary="Compass's outline of this session"
+            >
+              <Outline view={view} missing={null} onOpen={open} />
+            </Disclosure>
+          </>
+        ) : (
+          <Outline view={view} missing={missing} onOpen={open} />
+        )}
       </div>
     </Card>
   );
@@ -311,11 +345,7 @@ function Outline({
         </p>
       ))}
       {view.empty ? <p className="next-cockpit-define">{OUTLINE_EMPTY}</p> : null}
-      {missing ? (
-        <p className="next-cockpit-define" role="status" data-next-outline-missing>
-          {`Full activity does not show ${missing}: it could not be loaded, or it sits in a folded run of checks.`}
-        </p>
-      ) : null}
+      {missing ? <MissingLine missing={missing} /> : null}
       {view.blocks.length ? (
         <ol className="m-0 flex list-none flex-col gap-3 p-0">
           {view.blocks.map((block) => (
@@ -325,4 +355,27 @@ function Outline({
       ) : null}
     </section>
   );
+}
+
+/* A chip whose entry Full activity could not show, said where the press was made. */
+function MissingLine({ missing }: { readonly missing: string }) {
+  return (
+    <p className="next-cockpit-define" role="status" data-next-outline-missing>
+      {`Full activity does not show ${missing}: it could not be loaded, or it sits in a folded run of checks.`}
+    </p>
+  );
+}
+
+/* How many entries the outline counted, for the size of a read before a summary plans its parts. */
+function outlineSize(outline: ReturnType<typeof parseOutline>): {
+  readonly entries: number | null;
+  readonly more: boolean;
+} {
+  if (outline?.state !== 'ok' || !outline.blocks.length) return { entries: null, more: false };
+  const entries = outline.blocks.reduce((sum, block) => sum + block.span.entries, 0);
+  const partial =
+    outline.moreBlocks > 0 ||
+    (outline.coverage !== null &&
+      (outline.coverage.startOffset > 0 || outline.coverage.unread.length > 0));
+  return { entries, more: partial };
 }
