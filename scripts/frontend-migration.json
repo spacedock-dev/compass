@@ -1101,6 +1101,46 @@
       "disposition": "stable-identity"
     },
     {
+      "name": "The summary's notice, and the answer to Turn off summaries",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx",
+        "frontend/src/sessions/summary.test.ts"
+      ],
+      "contract": "The notice the last summary start's reply carried is held per session in memory until a later start's reply replaces or clears it, or Turn off summaries clears every held notice; a running job's own notice stands in when none is held. The grant is the server's; a consent reply is drawn over only the board it answered. The once-per-page-load open start is marked in the same entry before anything is sent, and Delete summary sets it. Nothing reaches browser storage.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "A summary's progress",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx",
+        "frontend/src/sessions/summary.test.ts"
+      ],
+      "contract": "The job is the focused context's, redrawn each board revision; the job a 202 named is drawn only until a focused read made after that answer. No per-part announcement. A press's refusal or lost answer is held per session until the next press.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "An open citation in a summary",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx",
+        "frontend/src/sessions/summary.test.ts"
+      ],
+      "contract": "As an outline chip: the press opens Full activity and focuses the entry's row, reading older record pages by fact id within the page cap, so every chip lands or says it could not be loaded. Only the latest press settles. The sentence a press leaves stays until the next press.",
+      "disposition": "stable-identity"
+    },
+    {
+      "name": "The Full activity target, and the jumps between a summary phase and a departure",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx",
+        "frontend/src/sessions/summary.test.ts"
+      ],
+      "contract": "The full-activity disclosure key is written open and the entry focused on the reader's press only; a summary that lands moves no focus and replaces no node an edit lives in. The phase and departure headings are focused only by the jump buttons. Which phase holds a departure is derived each render; nothing is stored.",
+      "disposition": "stable-identity"
+    },
+    {
       "name": "A finding selected in the session result",
       "owner": "DRC-4825",
       "oracles": [

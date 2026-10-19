@@ -305,6 +305,25 @@ class SessionSummaryTest(unittest.TestCase):
             with self.subTest(text=text, verdict=verdict, kind=kind):
                 self.assert_completion_verdict(text, verdict, kind)
 
+    def test_check_mark_glyphs_are_withheld_in_every_voice(self) -> None:
+        cases = [
+            ("Added the retry handler \u2713", "did"),
+            ("Added the retry handler \u2714\ufe0f", "did"),
+            ("\u2705 Retry handler", "did"),
+            ("\u2611 the retry handler", "failed"),
+            ("Added the retry handler \U0001f5f8", "did"),
+            ("Retry handler \u221a", "did"),
+            ("Said the retry handler is in \u2713", "said"),
+            ("The agent said \u201cthe handler is in \u2713\u201d", "said"),
+            ("Asked for the retry handler \u2713", "asked"),
+            # An invisible format character elsewhere in the line does not hide the glyph.
+            ("Added the retry\u200b handler \u2713", "did"),
+        ]
+        for text, kind in cases:
+            with self.subTest(text=text, kind=kind):
+                self.assert_completion_verdict(text, "withheld", kind)
+        self.assert_completion_verdict("Added the retry handler", "kept", "did")
+
     def test_titles_and_lede_have_no_implicit_subject_licence(self) -> None:
         for text, verdict in [
             ("Said the parser is fixed", "withheld"),

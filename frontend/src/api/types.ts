@@ -246,3 +246,15 @@ export interface TripwireRequest {
   readonly stage: string;
   readonly expected_revision: string;
 }
+
+/* `POST /api/summary`: exactly one of these shapes. `open` is only ever a start. */
+export type SummaryRequest =
+  | (SessionIdentity & {
+      readonly action: 'start' | 'update' | 'rerun';
+      readonly origin: 'press' | 'open';
+    })
+  | { readonly consent: 'off' | 'on' };
+
+/* Every summary route answers a JSON object: `{ok, job, notice?}`, `{ok, summaries}`, `{ok: false, reason, ...}`,
+   `{ok, cancelling}` or `{outcome}`. Read through `api/summary.ts`, never cast further. */
+export type SummaryReceipt = Readonly<Record<string, unknown>>;

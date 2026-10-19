@@ -9,6 +9,7 @@ import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { entryWindow, olderEntriesRemain, type WorkEntry } from '../intent/work';
 import { markNotAccurate } from './actions';
+import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
 import { EvidenceList } from './Evidence';
 import { evidenceRows } from './level';
@@ -218,6 +219,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
           </p>
           <h4
             id={head}
+            tabIndex={-1}
             className={`m-0 text-body font-semibold leading-[1.45] [overflow-wrap:anywhere] ${row.clauseKnown ? 'text-foreground' : 'text-muted-foreground'}`}
           >
             {row.clauseKnown && row.clause ? row.clause : CLAUSE_UNRETAINED}
@@ -238,6 +240,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
           {status}
         </p>
         {row.coverage ? <p className={QUIET}>{row.coverage}</p> : null}
+        <DepartureSummaryLine row={row.key} />
         <EvidenceMore row={row} status={status} rows />
       </div>
     </article>

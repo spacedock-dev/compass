@@ -20,6 +20,8 @@ import type {
   ReadingRequest,
   SessionIdentity,
   SessionRecord,
+  SummaryReceipt,
+  SummaryRequest,
   TripwireReceipt,
   TripwireRequest,
 } from './types';
@@ -207,6 +209,14 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       },
       signal?: AbortSignal,
     ) => post<ReadingCancelReceipt>('/api/reading/cancel', body, signal),
+    /* A summary start, Update summary, Summarize again, or the summary grant's off and on
+       (docs/design-session-summary.md#requests-and-replies). */
+    postSummary: (body: SummaryRequest, signal?: AbortSignal) =>
+      post<SummaryReceipt>('/api/summary', body, signal),
+    postSummaryCancel: (body: SessionIdentity, signal?: AbortSignal) =>
+      post<SummaryReceipt>('/api/summary/cancel', body, signal),
+    postSummaryDelete: (body: SessionIdentity, signal?: AbortSignal) =>
+      post<SummaryReceipt>('/api/summary/delete', body, signal),
     postCorrection: (body: SessionIdentity, signal?: AbortSignal) =>
       post<CorrectionReceipt>('/api/correction', body, signal),
     postCorrectionCopied: (
