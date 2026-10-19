@@ -322,13 +322,14 @@ def _notice_schema(db: Any) -> None:
     )
     for table in ("permission", "provider_permission"):
         for event in ("INSERT", "UPDATE"):
-            # The pre-summary triggers cleared every kind. Replace those by name on upgrade,
-            # retaining summary notices when an older reading answer is turned off.
-            db.execute(f"DROP TRIGGER IF EXISTS notice_off_{table}_{event.lower()}")
+            # Pause model calls clears every notice, the summary's included, so Resume shows
+            # each again on its next call (SECURITY.md). An earlier trigger of this branch kept
+            # the summary's; it is replaced by name. Turn off summaries keeps its own handling.
+            db.execute(f"DROP TRIGGER IF EXISTS reading_notice_off_{table}_{event.lower()}")
             db.execute(
-                f"CREATE TRIGGER IF NOT EXISTS reading_notice_off_{table}_{event.lower()} "  # noqa: S608
+                f"CREATE TRIGGER IF NOT EXISTS notice_off_{table}_{event.lower()} "  # noqa: S608
                 f"AFTER {event} ON {table} WHEN NEW.allowed = 0 BEGIN "
-                "DELETE FROM notice WHERE kind != 'summary'; END"
+                "DELETE FROM notice; END"
             )
 
 
@@ -473,8 +474,9 @@ def _transaction(
                 # A narrower disclosure cannot widen consent, or erase an
                 # earlier wider Allow that still covers this destination.
                 version = max(content, previous[0])
-            # An Allow turns the global off switch back on without granting the unasked lane
-            # permission for any other provider.
+            # An Allow clears the global off switch and grants the provider it names, the
+            # unasked lane included. No reader press writes one (`http_api._reading_permission`
+            # reads the stored answer only); Resume model calls clears the pause alone.
             _clear_off(db)
             _write(db, provider, True)
             allowed[provider] = True
@@ -500,7 +502,7 @@ def _transaction(
                 _write(db, name, False)
             allowed = dict.fromkeys(PROVIDERS, False)
             db.execute("DELETE FROM tool_output_permission")
-            db.execute("DELETE FROM notice WHERE kind != 'summary'")
+            db.execute("DELETE FROM notice")
             # Every bound destination and disclosure goes too, by the triggers
             # the legacy row's write above fires, as for an older build's off.
         bound, disclosed = _bound(db), _disclosed(db)
@@ -960,6 +962,53 @@ def _summary_transaction(
         return answer, recorded
 
 
+def _summary_read(config: RuntimeConfig, now: float) -> Status:
+    """The summary answer without a write lock, for board collection and preflight.
+
+    Every collection asks this, and dashboards on other ports share the store, so the read
+    takes no `BEGIN IMMEDIATE` and creates or prunes nothing: the 24-hour window is the
+    SELECT's own filter, and schema and pruning stay on the write paths.
+    """
+    if not math.isfinite(now) or now <= 0:
+        raise ValueError("Invalid summary timestamp")
+    with contextlib.closing(_connect(config, READ_WAIT_SEC)) as db:
+        db.execute("BEGIN")
+        tables = {
+            name
+            for (name,) in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name IN ('summary_permission', 'summary_spends', 'notice')"
+            )
+        }
+        row = (
+            db.execute("SELECT allowed, generation FROM summary_permission WHERE id=1").fetchone()
+            if "summary_permission" in tables
+            else None
+        )
+        dates = (
+            tuple(
+                float(at)
+                for (at,) in db.execute(
+                    "SELECT at FROM summary_spends WHERE at > ? ORDER BY at", (now - DAY_SEC,)
+                )
+            )
+            if "summary_spends" in tables
+            else ()
+        )
+        if any(not math.isfinite(at) or at <= 0 for at in dates):
+            raise ValueError("Invalid summary spend")
+        answer = _summary_answer(
+            config,
+            dates,
+            off=row is not None and row[0] == 0,
+            readings_off=_readings_off(db),
+            generation=row[1] if row else 0,
+            notices=_notices(db) if "notice" in tables else {},
+        )
+        db.execute("COMMIT")
+        return answer
+
+
 def _readings_off(db: Any) -> bool:
     # After Pause model calls no session summary call is made either
     # (docs/design-session-summary.md#job-and-grant-contract). The summary answer stays
@@ -994,6 +1043,8 @@ def _summary_run(config: RuntimeConfig, now: float, operation: str, receipt: str
     if config.model_calls_disabled and operation not in {"off", "on", "forget"}:
         return _summary_answer(config, off=_summary_off(config), reason="run-disabled")
     try:
+        if operation == "read":
+            return _summary_read(config, now)
         return _summary_transaction(config, now, operation, receipt)[0]
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         return _summary_answer(config, reason="store-unavailable")

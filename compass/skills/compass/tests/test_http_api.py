@@ -2985,7 +2985,7 @@ class ReadingRouteTest(unittest.TestCase):
         reading_policy.set_consent(config, True, now=1_700_000_100.0)
         return config, state
 
-    def test_fresh_press_runs_with_notice_then_off_blocks_until_allow(self) -> None:
+    def test_fresh_press_runs_with_notice_then_off_blocks_until_resume(self) -> None:
         config, state = self._runtime()
         reading_policy.store_path(config).unlink()
         application = self._app(config, state)
@@ -3012,12 +3012,28 @@ class ReadingRouteTest(unittest.TestCase):
             self.assertEqual("model-calls-paused", json.loads(body)["reading"]["reason"])
             self.assertFalse(json.loads(body)["reading"]["consent"])
             self.assertEqual(2, len(calls))
+            # An Allow from an older page or a local client lifts nothing: only Resume model
+            # calls does, and neither grants the unasked lane (owner, 2026-10-19).
+            status, body = self._post(port, self._press(allow=True, words_destination=""))
+            self.assertEqual(403, status, body)
+            self.assertEqual("model-calls-paused", json.loads(body)["reading"]["reason"])
+            self.assertEqual(2, len(calls))
+            self.assertEqual(
+                {"codex": False, "claude": False},
+                reading_policy.status(config, now=1_700_000_100.0)["providers"],
+            )
+            status, _ = self._post(port, {"consent": "on", "press": True, "observer_model": 1})
+            self.assertEqual(200, status)
             status, body = self._post(port, self._press(allow=True, words_destination=""))
             self.assertEqual(202, status, body)
             self.assertIn("notice", json.loads(body))
             self.assertEqual(3, len(calls))
+            self.assertEqual(
+                {"codex": False, "claude": False},
+                reading_policy.status(config, now=1_700_000_100.0)["providers"],
+            )
 
-    def test_stored_off_requires_allow_then_checks_without_startup_opt_in(self) -> None:
+    def test_stored_off_requires_resume_then_checks_without_startup_opt_in(self) -> None:
         config, state = self._runtime(observer_model_enabled=False)
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
         with self._counting_model() as calls, self._serving(self._app(config, state)) as port:
@@ -3025,6 +3041,11 @@ class ReadingRouteTest(unittest.TestCase):
             self.assertEqual(403, status)
             self.assertEqual([], calls)
             status, _ = self._post(port, self._press(allow=True, words_destination=""))
+            self.assertEqual(403, status)
+            self.assertEqual([], calls)
+            status, _ = self._post(port, {"consent": "on", "press": True, "observer_model": 1})
+            self.assertEqual(200, status)
+            status, _ = self._post(port, self._press())
             self.assertEqual(202, status)
             self.assertEqual(1, len(calls))
             status, _ = self._post(port, self._press())
@@ -3888,7 +3909,15 @@ class ReadingRouteTest(unittest.TestCase):
 
     def test_a_claude_reading_notices_its_wider_content_without_renewing_allow(self) -> None:
         config, state = self._runtime()
+        # A Codex Allow an earlier build stored under the narrower, words-only disclosure.
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
+        reading_policy.set_consent(
+            config,
+            True,
+            now=1_700_000_100.0,
+            provider="codex",
+            content=reading_policy.WORDS_CONTENT_VERSION,
+        )
         with self._counting_model(harness="pi") as calls:
             with self._serving(self._app(config, state, "pi")) as port:
                 status, body = self._post(
@@ -4151,7 +4180,9 @@ class ReadingRouteTest(unittest.TestCase):
         self,
     ) -> None:
         config, state = self._runtime()
+        # Paused, then resumed: model calls on, and no provider holds an Allow.
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
+        reading_policy.resume(config, now=1_700_000_100.0)
         started: list[str] = []
         start_job = runtime_reading.start_job
 
@@ -4190,9 +4221,9 @@ class ReadingRouteTest(unittest.TestCase):
         assert entry is not None
         self.assertEqual(0, entry.get("readings", 0), "an attempt was counted")
         self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
-        # The narrow Allow carried by the press remains the reader's answer.
-        self.assertTrue(reading_policy.status(config, now=1_700_000_100.0)["words"]["codex"])
-        self.assertFalse(self._consents(config)["codex"], "narrow Allow widened the grant")
+        # The legacy Allow the press carried records nothing, narrow or wide.
+        self.assertFalse(reading_policy.status(config, now=1_700_000_100.0)["words"]["codex"])
+        self.assertFalse(self._consents(config)["codex"], "a press granted the unasked lane")
 
     def _published_row(self, port: int, harness: str) -> dict[str, Any]:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
@@ -4354,7 +4385,8 @@ class ReadingRouteTest(unittest.TestCase):
             )
         self.assertEqual(202, status)
         self.assertEqual(["claude", "claude"], self.providers)
-        self.assertEqual({"codex": True, "claude": True}, self._consents(config))
+        # The legacy `allow` field is a plain press: it records no Claude Code Allow.
+        self.assertEqual({"codex": True, "claude": False}, self._consents(config))
         self.assertIn(runtime_observer.CLAUDE_READING_MODEL, self._stamp(config, "claude"))
 
     def test_a_claude_code_allow_covers_a_pi_session_that_falls_back_to_it(self) -> None:
@@ -4388,14 +4420,16 @@ class ReadingRouteTest(unittest.TestCase):
         and the words' own binding is the only thing that can refuse.
         """
         config, state = self._runtime()
+        # An Allow an earlier build stored; no press writes one now.
+        reading_policy.set_consent(
+            config, True, now=1_700_000_100.0, provider="claude", destination="Anthropic"
+        )
         with (
             self._open_claude(),
             self._counting_model(("claude",), destination="Anthropic") as calls,
             self._serving(self._app(config, state)) as port,
         ):
-            status, body = self._post(
-                port, self._press(provider="claude", allow=True, words_destination="Anthropic")
-            )
+            status, body = self._post(port, self._press(provider="claude"))
         self.assertEqual(202, status, body)
         self.assertEqual(1, len(calls))
         for moved in ("gw.corp.example", "Amazon Bedrock"):
@@ -4422,14 +4456,16 @@ class ReadingRouteTest(unittest.TestCase):
         one; the reservation is refused `destination-changed` and nothing is
         spent or sent, and the board then says the Allow no longer covers."""
         config, state = self._runtime()
+        # An Allow an earlier build stored; no press writes one now.
+        reading_policy.set_consent(
+            config, True, now=1_700_000_100.0, provider="claude", destination="Anthropic"
+        )
         with (
             self._open_claude(),
             self._counting_model(("claude",), destination="Anthropic") as calls,
             self._serving(self._app(config, state)) as port,
         ):
-            status, body = self._post(
-                port, self._press(provider="claude", allow=True, words_destination="Anthropic")
-            )
+            status, body = self._post(port, self._press(provider="claude"))
         self.assertEqual(202, status, body)
         self.assertEqual(1, len(calls))
         used = reading_policy.status(config, now=1_700_000_100.0, provider="claude")["used"]
@@ -4659,7 +4695,7 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual({}, reading_policy.status(config, now=1_700_000_100.0)["tool_output"])
         self.assertEqual(1, reading_policy.status(config, now=1_700_000_100.0)["used"])
 
-    def test_an_allow_naming_where_the_checks_go_sends_them_to_codex(self) -> None:
+    def test_an_allow_naming_where_the_checks_go_sends_them_and_records_nothing(self) -> None:
         config, state = self._runtime()
         status, answer, calls = self._checks_press(
             config,
@@ -4670,9 +4706,9 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(["codex"], self.providers)
         self.assertEqual(2, self._checks_sent(calls[0]))
         self.assertIn(json.dumps(self.TAILS["call-0"]), calls[0])
+        # A press writes no Allow, so no grant is recorded; none is needed to send them.
         granted = reading_policy.status(config, now=1_700_000_100.0, provider="codex")
-        self.assertTrue(reading_policy.tool_output_allowed(granted, "codex", "OpenAI"))
-        # The grant is remembered: the next press needs no second Allow.
+        self.assertFalse(reading_policy.tool_output_allowed(granted, "codex", "OpenAI"))
         status, _answer, calls = self._checks_press(config, state, self._claude_press())
         self.assertEqual(202, status)
         self.assertEqual(2, self._checks_sent(calls[0]))
@@ -5962,7 +5998,7 @@ class ConsentNoticeHandlerTest(unittest.TestCase):
             getattr(fixture, name)()
 
     def test_fresh_press_notice_off_and_turn_on(self) -> None:
-        self._exercise("test_fresh_press_runs_with_notice_then_off_blocks_until_allow")
+        self._exercise("test_fresh_press_runs_with_notice_then_off_blocks_until_resume")
 
     def test_pause_during_analyze_admission_sends_nothing(self) -> None:
         self._exercise("test_readings_turned_off_mid_press_and_left_off_send_nothing")

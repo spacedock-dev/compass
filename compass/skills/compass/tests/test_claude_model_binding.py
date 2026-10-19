@@ -34,15 +34,14 @@ class AClaudePressBindsItsDrawnModel(unittest.TestCase):
                 )
                 self.assertEqual([], calls)
                 self.assertFalse(reading_policy.status(config, now=1_700_000_100.0)["consent"])
+            # A press writes no Allow, so model calls resume only through Resume model calls.
+            status, _raw = fixture._post(
+                port, {"consent": "on", "press": True, "observer_model": 1}
+            )
+            self.assertEqual(200, status)
             status, _raw = fixture._post(
                 port,
-                fixture._press(
-                    harness="claude",
-                    provider="claude",
-                    allow=True,
-                    words_destination="",
-                    model="claude-opus-6",
-                ),
+                fixture._press(harness="claude", provider="claude", model="claude-opus-6"),
             )
             self.assertEqual(202, status)
             self.assertEqual(1, len(calls))

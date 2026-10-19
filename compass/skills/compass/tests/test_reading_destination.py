@@ -88,11 +88,18 @@ class ThePressAndTheJobAgree(RuntimeTestCase):
             db.commit()
             db.close()
         elif given is not None:
+            # An Allow an earlier build stored for `given`; no press writes one now.
+            reading_policy.set_consent(
+                config,
+                True,
+                now=1_700_000_100.0,
+                provider="claude",
+                destination=given,
+                content=reading_policy.WORDS_CONTENT_VERSION,
+            )
             stack, calls = self._on(given)
             with stack, self.route._serving(self.route._app(config, state)) as port:
-                status, body = self.route._post(
-                    port, self.route._press(provider="claude", allow=True, words_destination=given)
-                )
+                status, body = self.route._post(port, self.route._press(provider="claude"))
             self.assertEqual(202, status, body)
             self.assertEqual(1, len(calls))
         if declined:
@@ -188,7 +195,8 @@ class ThePressAndTheJobAgree(RuntimeTestCase):
                 bound = db.execute("SELECT provider, destination FROM permission_destination")
                 rows = [tuple(row) for row in bound]
                 db.close()
-                self.assertIn(("claude", ""), rows)
+                # A press binds nothing now; a legacy binding, if any, still names no host.
+                self.assertNotIn("claude", [provider for provider, _where in rows])
                 for _provider, where in rows:
                     self.assertFalse(PATH_KEY.lower() in where.lower(), "the key was stored")
                     self.assertFalse("4598" in where, "a host the CLI never reaches was bound")

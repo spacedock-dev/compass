@@ -122,11 +122,13 @@ class SummaryGrantTest(_SummaryCase):
         self.assertIsNotNone(reading_policy.note(self.config, **args))
         self.assertIsNone(reading_policy.note(self.config, **args))
         reading_policy.set_consent(self.config, False, now=101.0)
-        # Model calls paused refuses summaries too, so nothing new is due, but their record stays.
+        # Model calls paused refuses summaries too, so nothing new is due, and the pause
+        # clears the record: Resume shows the notice again on the next call.
         self.assertIsNone(
             reading_policy.note(self.config, **{**args, "destination": "gateway.example"})
         )
-        reading_policy.set_consent(self.config, True, now=101.5)
+        reading_policy.resume(self.config, now=101.5)
+        self.assertIsNotNone(reading_policy.note(self.config, **args))
         self.assertIsNone(reading_policy.note(self.config, **args))
         self.assertIsNotNone(
             reading_policy.note(self.config, **{**args, "destination": "gateway.example"})

@@ -159,28 +159,72 @@ class ReadingPolicyTest(unittest.TestCase):
             reading_policy.set_summary_consent(self.config, allowed, now=101.0)
             self.assertEqual(before, reading_policy.status(self.config, now=100.0))
 
-    def test_legacy_reading_notice_triggers_cannot_erase_a_summary_notice(self) -> None:
+    def test_summary_status_reads_without_a_write_lock_or_schema_writes(self) -> None:
+        reading_policy.status(self.config, now=100.0)
+        assert runtime_io.sqlite_module is not None
+        path = reading_policy.store_path(self.config)
+        with contextlib.closing(runtime_io.sqlite_module.connect(path)) as db:
+            before = sorted(row[0] for row in db.execute("SELECT name FROM sqlite_master"))
+        self.assertNotIn("summary_spends", before)
+        answer = reading_policy.summary_status(self.config, now=100.0)
+        self.assertEqual(("", 0, True), (answer["reason"], answer["used"], answer["consent"]))
+        with contextlib.closing(runtime_io.sqlite_module.connect(path)) as db:
+            after = sorted(row[0] for row in db.execute("SELECT name FROM sqlite_master"))
+        self.assertEqual(before, after)
+        # Another dashboard holding the write lock does not hold up a board read.
+        reading_policy.reserve_summary(self.config, now=100.0, receipt="one")
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(path, isolation_level=None, timeout=0)
+        ) as writer:
+            writer.execute("BEGIN IMMEDIATE")
+            answer = reading_policy.summary_status(self.config, now=100.0)
+            writer.execute("ROLLBACK")
+        self.assertEqual(("", 1), (answer["reason"], answer["used"]))
+        # The window is the read's own filter; pruning stays on the write paths.
+        self.assertEqual(0, reading_policy.summary_status(self.config, now=100.0 + 86_401)["used"])
+
+    def test_pause_then_resume_shows_the_summary_notice_again(self) -> None:
+        # SECURITY.md: Pause model calls clears the notices and Resume shows each again on the
+        # next call, the summary's included. An earlier trigger of this branch that kept the
+        # summary's notice is replaced on the next open.
         reading_policy.set_consent(self.config, True, now=100.0)
         assert runtime_io.sqlite_module is not None
         with contextlib.closing(
             runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
         ) as db:
-            db.execute("DROP TRIGGER IF EXISTS notice_off_permission_insert")
-            db.execute(
-                "CREATE TRIGGER notice_off_permission_insert AFTER INSERT ON permission WHEN NEW.allowed=0 BEGIN DELETE FROM notice; END"
-            )
+            for event in ("insert", "update"):
+                for table in ("permission", "provider_permission"):
+                    db.execute(f"DROP TRIGGER IF EXISTS notice_off_{table}_{event}")
+                    db.execute(
+                        f"CREATE TRIGGER reading_notice_off_{table}_{event} AFTER "  # noqa: S608
+                        f"{event.upper()} ON {table} WHEN NEW.allowed=0 BEGIN "
+                        "DELETE FROM notice WHERE kind != 'summary'; END"
+                    )
             db.commit()
+        args: dict[str, Any] = {
+            "kind": "summary",
+            "provider": "claude",
+            "destination": "Anthropic",
+            "content": 1,
+            "tool_output": "",
+        }
+        self.assertIsNotNone(reading_policy.note(self.config, **args, now=100.0))
         reading_policy.note(
             self.config,
-            kind="summary",
+            kind="reading",
             provider="claude",
             destination="Anthropic",
-            content=1,
+            content=reading_policy.CONTENT_VERSION,
             tool_output="",
             now=100.0,
         )
         reading_policy.set_consent(self.config, False, now=101.0)
-        self.assertIn("summary", reading_policy.summary_status(self.config, now=102.0)["notices"])
+        self.assertEqual({}, reading_policy.summary_status(self.config, now=102.0)["notices"])
+        answer = reading_policy.resume(self.config, now=103.0)
+        self.assertEqual({}, answer["notices"])
+        self.assertTrue(
+            reading_policy.notice_due(reading_policy.summary_status(self.config, now=104.0), **args)
+        )
 
     def test_fresh_store_is_on_without_explicit_unasked_coverage(self) -> None:
         answer = reading_policy.status(self.config, now=100.0)

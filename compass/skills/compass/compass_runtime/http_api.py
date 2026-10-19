@@ -2317,41 +2317,29 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _reading_permission(
         self, payload: dict[str, Any], route: runtime_reading_route.Route
     ) -> reading_policy.Status:
-        """The stored answer this press rests on, after any Allow it carried.
+        """The stored answer this press rests on. A press never writes one.
 
-        Covered only where the Allow was given for the destination the route
-        names now (owner, 2026-10-02). Every provider's is computed by the one
-        `reading_route.destination` the board publishes from, and this route's
-        own is the one its disclosure named, so the reply's `providers` is the
-        board's and the job's reservation checks the same value.
+        An `allow: true` from an older page or a local client is read as a plain
+        press: writing an Allow would lift Pause model calls without Resume model
+        calls and grant the unasked lane to the provider named, which no reader
+        press turns on (owner, 2026-10-19). While a pause is stored the answer
+        carries `model-calls-paused`, so the press is refused before any charge.
+        Every provider's destination is computed by the one
+        `reading_route.destination` the board publishes from, so the reply's
+        `providers` is the board's and the job's reservation checks the same value.
         """
+        del payload
         application = self.server.application
-        config = application.config
-        provider, where = route["provider"], route["destination"]
         today = {
             **runtime_reading_route.destinations(),
-            provider: route["words_destination"],
+            route["provider"]: route["words_destination"],
         }
-        content = _press_content(route["harness"])
-        return (
-            reading_policy.set_consent(
-                config,
-                True,
-                now=application.clock(),
-                provider=provider,
-                tool_output=where,
-                destination=route["words_destination"],
-                destinations=today,
-                content=content,
-            )
-            if payload.get("allow") is True
-            else reading_policy.status(
-                config,
-                now=application.clock(),
-                provider=provider,
-                destinations=today,
-                content=content,
-            )
+        return reading_policy.status(
+            application.config,
+            now=application.clock(),
+            provider=route["provider"],
+            destinations=today,
+            content=_press_content(route["harness"]),
         )
 
     def _reading_route(
