@@ -4,8 +4,9 @@
 The sample session is a real, anonymized Claude Code session read by a real Compass server and a
 real stored reading (see [sample-session/README.md](sample-session/README.md)). This script asks
 that server for exactly what the Session page asks for, and writes the answers to one JSON file the
-page bundles. The server is never the user's own: it runs against an isolated home, so nothing
-about a real machine or session can reach the capture.
+page bundles. That includes every page of the session's record, back to its start, so a citation
+anywhere in the sample opens in Full activity. The server is never the user's own: it runs
+against an isolated home, so nothing about a real machine or session can reach the capture.
 
     build_sample_fixture.py --base-url http://127.0.0.1:4712 --project acme/dashboard \
         --sid f7352072 --out frontend/src/sample/session.fixture.json
@@ -33,6 +34,12 @@ from typing import Any
 
 SAMPLE_SID = "sample"
 SIX_HOURS = 6 * 3600
+# The page's own page size and its cap on pages read to resolve a citation (`RECORD_PAGE_SIZE` and
+# `RESOLVE_MAX_PAGES` in frontend/src/transport/record.ts). A sample whose record needs more pages
+# than a citation could ever reach is too long to ship, so the capture refuses it.
+RECORD_PAGE_SIZE = 50
+RECORD_MAX_PAGES = 20
+OLDER_CURSOR = "older-{}"
 READ_AFTER_LAST_RECORD = 45
 GENERATED_AFTER_LAST_RECORD = 95
 
@@ -92,6 +99,40 @@ def rename(node: Any, old: str, new: str) -> Any:
     return node
 
 
+def capture_record(base: str, stem: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """The newest record page and every older one, to the record's start.
+
+    The server's cursors bind the capture machine's file (its device, inode, size and time) and are
+    signed with a key that dies with the server, so each one is replaced by `older-<n>`: the
+    sample's own server answers an older-page request by that name, and nothing about the capture
+    survives.
+    """
+    pages: list[dict[str, Any]] = []
+    before: str | None = None
+    while len(pages) < RECORD_MAX_PAGES:
+        query = f"/api/session-record?{stem}&limit={RECORD_PAGE_SIZE}"
+        if before is not None:
+            query += f"&before={urllib.parse.quote(before, safe='')}"
+        page = fetch(base, query)
+        if page.get("state") != "ok":
+            msg = f"record page {len(pages) + 1} answered state {page.get('state')!r}"
+            raise SystemExit(msg)
+        pages.append(page)
+        if page.get("reached_start"):
+            break
+        before = page.get("next")
+        if not before:
+            msg = f"record page {len(pages)} neither reached the start nor named an older page"
+            raise SystemExit(msg)
+    else:
+        msg = f"the record needs more than {RECORD_MAX_PAGES} pages; cut the sample shorter"
+        raise SystemExit(msg)
+    for index, page in enumerate(pages):
+        page["next"] = None if page.get("reached_start") else OLDER_CURSOR.format(index + 1)
+    older = {OLDER_CURSOR.format(index): page for index, page in enumerate(pages[1:], 1)}
+    return pages[0], older
+
+
 def build(base: str, project: str, sid: str) -> dict[str, Any]:
     quote = urllib.parse.quote
     session = f"claude:{sid}"
@@ -99,7 +140,7 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
     board = fetch(base, "/api/data")
     context = fetch(base, f"/api/project-context?{stem}")
     prompts = fetch(base, f"/api/project-context?{stem}&prompts=1")
-    record = fetch(base, f"/api/session-record?{stem}&limit=50")
+    record, older = capture_record(base, stem)
     correction = fetch(base, "/api/correction", {"harness": "claude", "sid": sid})
     rows = [row for row in board["sessions"] if row["sid"] == sid]
     if len(rows) != 1:
@@ -116,6 +157,8 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
         "record": record,
         "correction": correction,
     }
+    if older:
+        fixture["older"] = older
     fixture = shift_numbers(fixture, captured, delta)
     fixture = rename(fixture, sid, SAMPLE_SID)
     row = fixture["board"]["sessions"][0]

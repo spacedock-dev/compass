@@ -2,7 +2,7 @@ import { createBrowserEnvironment } from '../transport/browser';
 import type { EventSourceLike } from '../transport/ports';
 import { createShell } from '../shell/createShell';
 import type { Shell } from '../shell/context';
-import { SAMPLE_FIXTURE } from './fixture';
+import { SAMPLE_FIXTURE, type SampleFixture } from './fixture';
 import { createSampleBackend } from './memoryBackend';
 import { createSampleFetch } from './sampleFetch';
 
@@ -22,23 +22,23 @@ class QuietStream implements EventSourceLike {
    about 11m ago") is measured from `generated`, so the sample's clock starts there and runs on from it: the page
    reads as it did when the reading was taken, on any day, instead of "154d ago". */
 const startedAt = Date.now();
-function sampleNow(): number {
-  return Number(SAMPLE_FIXTURE.board['generated']) * 1000 + (Date.now() - startedAt);
+function sampleClock(fixture: SampleFixture): () => number {
+  return () => Number(fixture.board['generated']) * 1000 + (Date.now() - startedAt);
 }
 
 /* The sample session's own shell: its own runtime, store, display gate and controls over an in-memory
    server and in-memory storage, so it cannot read, write or poll anything the page is showing. It speaks
    through the page's live regions and navigates with the page's router, which are the two things a reader
    of the sample shares with the rest of the page. */
-export function createSampleShell(page: Shell): Shell {
+export function createSampleShell(page: Shell, fixture: SampleFixture = SAMPLE_FIXTURE): Shell {
   return createShell({
     env: createBrowserEnvironment({
       window,
       document,
       EventSource: QuietStream,
-      now: sampleNow,
+      now: sampleClock(fixture),
     }),
-    fetch: createSampleFetch(SAMPLE_FIXTURE),
+    fetch: createSampleFetch(fixture),
     provider: createSampleBackend(),
     events: { addEventListener: () => undefined, removeEventListener: () => undefined },
     search: '',

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { use, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ControlsProvider } from '../controls/ControlsProvider';
 import { Card } from '../ui/card';
 import { RouteLink } from '../shell/RouteLink';
 import { ShellContext, useShell } from '../shell/context';
 import { useBoardRuntime } from '../transport/hooks';
+import { SampleFixtureContext } from './fixture';
 import { TourContext } from './tourContext';
 import { createSampleShell } from './sampleShell';
 import { TOUR } from './tour';
@@ -54,7 +55,8 @@ function Banner({ held }: { readonly held: boolean }) {
    and its record come from the fixture and nothing it does is written anywhere. */
 export function SampleSession({ children }: { readonly children: ReactNode }) {
   const page = useShell();
-  const [shell] = useState(() => createSampleShell(page));
+  const fixture = use(SampleFixtureContext);
+  const [shell] = useState(() => createSampleShell(page, fixture));
   const [held, setHeld] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useBoardRuntime(shell.runtime);

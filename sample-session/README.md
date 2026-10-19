@@ -6,7 +6,9 @@ list ("See a sample session"), or at `#n=session:acme%2Fdashboard:claude:sample`
 (i) marks give a short tour. [The design record](../docs/design-sample-session.md) owns the decisions.
 
 This directory holds the session it was made from. The page itself ships a fixture built from it, in
-`frontend/src/sample/session.fixture.json`.
+`frontend/src/sample/session.fixture.json`. It also holds the longer session the next sample will be
+made from, `milestone-session.jsonl`, which the page does not draw yet;
+[The next sample](#the-next-sample) says what it is and what is left before the page switches to it.
 
 ## What is real, and what is not
 
@@ -16,7 +18,7 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   `scripts/sanitize_session.py`. The project reads as `dashboard`, the organization as `example-org`,
   the person as `Alex Doe`, and the home directory as `/Users/dev`. Thinking blocks are dropped. Run and
   job numbers and commit hashes are regenerated, and every timestamp moves by one fixed offset, so the
-  order and the gaps survive and the real dates and hours do not.
+  order and the gaps survive and no timestamp shows the real date or hour.
 - **Cut.** The record is one turn of a longer session: from the person's request to resolve a pull
   request's merge conflicts, to the moment after the agent has reproduced a Windows-only test failure and
   before it writes the fix. The first record's parent, which the cut removed, is `null`.
@@ -62,7 +64,9 @@ committed, and `.gitignore` refuses a mapping file kept in this directory.
 
 The mapping file (`mapping.json`) holds the originals and lives outside the repository. Its shape is a
 `salt`, a `day_shift`, a `time_shift_seconds`, an `ai_title`, a list of `literals` (`from`, `to`,
-`category`, and `word` for whole-word matches), and lists of `hashes` and `numbers` to regenerate.
+`category`, and `word` for whole-word matches), lists of `hashes` and `numbers` to regenerate, and
+optionally `commit_repo`, the repository the session worked in: every hex token in the session that
+names a commit there is regenerated, and `--verify` fails if any token in the output names one.
 
 1. Cut the original to the turn, then `python3 scripts/sanitize_session.py --mapping mapping.json
    --input cut.jsonl --output out.jsonl`, and again with `--verify`.
@@ -78,3 +82,132 @@ The mapping file (`mapping.json`) holds the originals and lives outside the repo
 
 The live level reads High on its own, from the two failed runs after the last message, and the
 analysis reads High from the departures the reading found.
+
+## The next sample
+
+The sample above is one turn, so it reads like a single task. Compass is for longer work: a run toward a
+milestone, where the goal is set once and the session has to hold to it for hours. The next sample is
+that kind of session, and `milestone-session.jsonl` is its record. The page still draws the first sample
+until the next one has its summary and reading; the switch is the last step below.
+
+### Why this session, and why this stretch
+
+It is one of this repository's own sessions: an agent coordinating other agents to burn down a
+milestone of Compass's own roadmap, with the person's end goal stated in so many words ("burn down
+fully" the milestone, with every issue in it closed). It was chosen over the other long sessions
+measured for the summary work because it holds a real departure and a real steer, the steer in the
+person's own words, and because the drift can be said in a sentence without knowing the project: the
+goal was to close every issue in the milestone, and the agent, short of that, proposed moving an
+unfinished issue out of the milestone so the milestone could close. The person's reply put it back:
+the issue "is not done so of course it stays", and the agent was to finish it.
+
+The whole session ran for about fourteen hours. The stretch kept is about ninety minutes of it, and it
+holds the story from start to end:
+
+- **The start.** The person asks the agent to coordinate several agents and burn the milestone down.
+- **The work.** The agent runs builders and reviewers in parallel, merges their pull requests and
+  brings the milestone to two open issues. Its context is compacted partway, so the record carries the
+  summary Claude Code wrote at that point.
+- **The goal, restated.** The person asks the agent to walk Intent and drift on this very session, and
+  states the goal and the expected outcome.
+- **A correction.** The person pastes a Steer back correction Compass composed for the session.
+- **The departure and the steer.** The agent files one new defect outside the milestone and suggests
+  moving another out of it, and the person steers it back. The stretch ends on the agent's first step
+  after the steer.
+
+### How it was made
+
+- **Cut.** `scripts/cut_sample_session.py` keeps the records from the person's burndown request to the
+  agent's reply after the steer, and only the kinds the page reads or the story needs: the person's and
+  the agent's messages with their tool calls and results, the compaction marker, turn timings, pull
+  request links and the title. Everything else Claude Code writes beside them is dropped: the loaded
+  instructions and tool lists, account and remote-session records, hook summaries, editor snapshots and
+  mode switches. Compass reads none of it, and most of it describes the machine rather than the work.
+  1,015 records remain.
+- **Anonymized**, as above, with the sanitizer's newer rules on: screenshots inside tool results are
+  replaced by a placeholder, the short eight-character form of a session id becomes the short form
+  of its replacement, and times written as text (a monitor's log, a file listing, "failed at 13:58" in a pasted
+  correction, a Unix time in an API answer) move with the timestamps. A machine's local times are
+  turned into UTC on the way, because a local time beside its UTC timestamp gives the time zone away.
+  The tracker reads as `tracker.example.com`, its issue keys as `DASH-<n>` with regenerated numbers,
+  and the slugs its links and branch names carry, which spell issue titles, are dropped. The product's
+  name, under its current and its earlier name alike, reads as `Dashboard`. A companion tool, other
+  projects and sessions on the machine, a status-line script and a desktop utility read under neutral
+  names, and pull request numbers are regenerated wherever they appear, the pull-request link records
+  included. So is everything that would find this repository's public history: every quoted hash that
+  names a commit in it, the branch names (as `work/branch-<letter>`), the pull-request titles and
+  commit subjects the session quotes, cut short or whole, and each line it quotes from a pull request's
+  description or a commit's body, which reads as "(a line of the pull request's description)". The project key Compass prints, a hash of the repository's path,
+  is the hash of the replaced path.
+- **What is not replaced.** The product's feature names (Intent and drift, Steer back and the others),
+  its documents and file names, the identifiers in the code the session quotes, and the versions of
+  the tools it ran. A reader who knows the product will recognise it, and one with the public
+  repository can place the session within a few weeks, from the files it reads and the versions it
+  records. Matching the work it quotes against that history could narrow it further, and a few
+  sentences the agent wrote in its own messages and later reused, reworded, in a pull request's
+  description are close enough to search for; the replacements above make that a search rather than a
+  lookup.
+  No shaping was needed: the failing check the story turns on was already run on its own and recorded
+  as a failure.
+- **Nothing is authored yet.** The intent is the person's own words, from the record. The summary and
+  the reading will be generated once with the real producer, and stored as they come back with only the
+  timeline rewrites above.
+
+### How big it may be
+
+The fixture ships inside the built page, so both are bounded before anything is built;
+[the design record](../docs/design-sample-session.md#how-big-it-may-be) owns the bounds and why.
+Measured against an isolated server, this session's record is 81 entries in two pages, and the capture
+without a summary or a reading is 112,166 bytes.
+
+### Permission to commit it
+
+The repository does not commit session transcripts. The owner approved this one on 2026-10-19, as an
+exception like the first sample's, for the session chosen here, once it had passed
+`scripts/sanitize_session.py --verify` and two independent leak reviews. The mapping and the original
+stay outside the repository.
+
+### Checks it passed
+
+- `scripts/sanitize_session.py --verify`: passed on the committed file.
+- Two independent leak reviews of the anonymized file alone, with different lenses: one reader on
+  identity and environment (Codex, `gpt-6.1-sol`, high effort, read-only), the other on project and
+  business content (AGY, `gemini-4-argon-high`, plan mode), both on secrets and structure. Each finding sent the file back through the sanitizer and both reviews ran again on the
+  result. The first rounds found local times that still showed the machine's time zone beside the UTC
+  timestamps, a machine's uptime clock, pull request numbers held as integers in the link records and
+  in a form the rule missed, a companion tool's name, two other sessions' titles, other projects on the
+  machine, and a status-line script and desktop utility by name. On 2026-10-19 the last round of each,
+  run on the committed file, returned no leak found. A later review against the repository itself
+  found what a reader of the file alone could not: eight short commit hashes and the branch names,
+  pull-request titles, commit subjects and pull-request descriptions the session quotes, all of which
+  lead to dated public history;
+  the tracker slugs, which spell issue titles; and a project key computed from the real path. They are replaced as described above, `--verify` and the file tests now
+  check the hashes, branch names and project key against the repository, and both reviews ran again on
+  the result, asked this time to look for those classes too. Both returned "leak found", and each
+  finding was checked against the repository rather than the file: the titles, subjects, hashes,
+  branch prefix and review slug they named are the regenerated replacements, none of which appears in
+  the repository's commits or pull requests; the project key is the hash of the replaced path; and the
+  rest is what is kept on purpose below, or worktree and scratch-folder names that exist only on the
+  machine.
+- Kept on purpose, after review: the names of public tools (Claude, Codex, AGY, Chrome and the
+  others); the identifiers in the code the session quotes (`next-cockpit-*` and the other class and
+  attribute names, and a string-length constant), which belong to this public repository and would
+  only point back to the product the sample is shown in; and dates, which moved by one fixed offset and
+  fall in April and May 2026.
+- `scripts/tests/test_sample_session_files.py` runs the repository's sweeps on it, including the newer
+  ones for tracker references, encoded home directories and machine temp paths, and checks against this
+  repository that no quoted hash names a commit, no branch name is one of its refs, and the project key
+  is the hash of the sample's own path.
+
+### Switching the page to it
+
+1. Start an isolated Compass as in step 3 above, holding only this session, and save the intent in the
+   person's own words from the record, where they state the goal (burn the milestone down fully) and
+   the expected outcome (every issue in it closed), its window opening at the person's first message.
+2. Open the session so its summary is generated, and run one reading, then compose the correction.
+3. `python3 scripts/build_sample_fixture.py --base-url <that server> --project acme/dashboard --sid
+   <the first eight characters of the session id> --out frontend/src/sample/session.fixture.json`. The
+   capture now reads every record page back to the start and stores the older ones under `older`.
+4. Rewrite the tour for the new page, update the sample design record, move this section's facts into
+   the sections above, then `pnpm build`. `pnpm test` fails if the page or the fixture is over its
+   bound.

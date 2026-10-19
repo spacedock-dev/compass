@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SAMPLE_FIXTURE } from './fixture';
+import { pagedSample } from './paged.testing';
 import { createSampleFetch } from './sampleFetch';
 
 const fetcher = createSampleFetch(SAMPLE_FIXTURE);
@@ -32,7 +33,30 @@ describe('the sample session server', () => {
     expect(context.body['semantic']).toBeDefined();
     expect(prompts.body['prompt_choices']).toBeDefined();
     expect((page.body['entries'] as unknown[]).length).toBeGreaterThan(10);
-    expect(older.body).toMatchObject({ entries: [], next: null, reached_start: true });
+    expect(page.body).toMatchObject({ next: null, reached_start: true });
+    // The one page is the whole record, so an older-page request names a cursor the capture never issued.
+    // It is answered as unreadable, never as an empty start that would say the cited entries do not exist.
+    expect(older.body).toMatchObject({ entries: [], state: 'stale', reached_start: false });
+  });
+
+  it('answers every older page of a longer record, in order, to its start', async () => {
+    const paged = createSampleFetch(pagedSample(SAMPLE_FIXTURE, 'oldest'));
+    const stem = '/api/session-record?project=acme%2Fdashboard&session=claude%3Asample&limit=50';
+    const seen: string[] = [];
+    let url = stem;
+    for (let step = 0; step < 5; step += 1) {
+      const body = (await (await paged(url)).json()) as Record<string, unknown>;
+      seen.push(...(body['entries'] as { fact_id: string }[]).map((fact) => fact.fact_id));
+      if (body['reached_start'] === true) break;
+      url = `${stem}&before=${encodeURIComponent(String(body['next']))}`;
+    }
+    const all = (SAMPLE_FIXTURE.record['entries'] as { fact_id: string }[]).map((f) => f.fact_id);
+    expect(seen).toEqual(all);
+    const unknown = (await (await paged(`${stem}&before=toString`)).json()) as Record<
+      string,
+      unknown
+    >;
+    expect(unknown).toMatchObject({ state: 'stale', entries: [] });
   });
 
   it('composes the correction the real server composed, and accepts a copy', async () => {
