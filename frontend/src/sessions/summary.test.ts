@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseFocusedSummary, parseGrant, parseJob, stampModel } from '../api/summary';
 import {
   GAP_LINES,
+  readSize,
   askedText,
   bulletWords,
   SUMMARY_REASONS,
@@ -385,5 +386,60 @@ describe('the open of a finished session', () => {
       }),
     ).toBe(false);
     expect(due({ focused: null })).toBe(false);
+  });
+});
+
+describe('the focused summary plan before a start', () => {
+  const plan = (extra: Record<string, unknown> = {}) =>
+    parseFocusedSummary({
+      sources: {
+        summary: {
+          exists: false,
+          state: 'absent',
+          plan: {
+            reason: null,
+            complete: true,
+            parts: 4,
+            windows: 3,
+            calls: 8,
+            minutes: 10,
+            largest_read: { windows: 32, window_bytes: 16384 },
+            ...extra,
+          },
+        },
+      },
+    })?.plan ?? null;
+
+  it('says the parts and the upper bound on the minutes, singular and plural', () => {
+    expect(readSize(6, false, plan())).toBe(
+      'About 6 entries to read in 4 parts, up to 10 minutes.',
+    );
+    expect(readSize(1, false, plan({ parts: 1, windows: 0, minutes: 1 }))).toBe(
+      'About 1 entry to read in 1 part, up to 1 minute.',
+    );
+  });
+
+  it('gives a floor on the parts off a partial read', () => {
+    expect(readSize(6, true, plan({ complete: false }))).toBe(
+      'More than 6 entries to read in at least 4 parts, up to 10 minutes.',
+    );
+  });
+
+  it('keeps the entry count alone without a plan, with no parts, or with one the preflight would refuse', () => {
+    const fallback =
+      'About 6 entries to read. Compass plans the parts when the summary starts, and shows them here.';
+    expect(readSize(6, false, null)).toBe(fallback);
+    expect(readSize(6, false, plan({ parts: 0 }))).toBe(fallback);
+    expect(readSize(6, false, plan({ reason: 'planned_calls' }))).toBe(fallback);
+    expect(plan({ complete: 'yes' })).toBeNull();
+    expect(plan({ minutes: -1 })).toBeNull();
+    expect(readSize(null, false, plan())).toBe('');
+  });
+
+  it('is not read beside a saved summary', () => {
+    const focused = parseFocusedSummary({
+      sources: { summary: { exists: true, state: 'ok', plan: { complete: true } } },
+    });
+    expect(focused?.plan ?? null).toBeNull();
   });
 });

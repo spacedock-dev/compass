@@ -1252,10 +1252,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     str(row.get("project") or ""),
                 }
             ]
-            outline = (
-                session_outline.for_session(application.config, application.state, *focus)
+            outline, plan = (
+                session_outline.for_session_with_plan(application.config, application.state, *focus)
                 if len(matching) == 1
-                else session_outline.unmatched(application.config, *focus)
+                else (session_outline.unmatched(application.config, *focus), None)
             )
             summary: dict[str, Any] = (
                 summary_store.for_session(application.config, application.state, *focus)
@@ -1267,6 +1267,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     "job": None,
                 }
             )
+            summary["plan"] = plan if summary["state"] == "absent" else None
             summary["job"] = (
                 summary_jobs.published(application, *focus) if len(matching) == 1 else None
             )

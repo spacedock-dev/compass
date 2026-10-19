@@ -5,6 +5,7 @@ import type {
   SummaryBlock,
   SummaryGrant,
   SummaryJob,
+  SummaryPlan,
 } from '../api/summary';
 import { clock } from '../observed';
 
@@ -257,11 +258,20 @@ export function summaryNotes(summary: StoredSummary, startsAt: string): string[]
   return notes;
 }
 
-/* How large the read is, before a summary runs. The server plans its parts when a summary starts, so before
-   then the card says what the outline counted. */
-export function readSize(entries: number | null, more: boolean): string {
+/* How large the read is, before a summary runs. With the server's plan it adds the parts and an upper bound on the
+   minutes; a plan off a partial read gives a floor on the parts, and a plan the preflight would refuse, or one
+   with no parts, is not quoted, so the card falls back to what the outline counted. */
+export function readSize(
+  entries: number | null,
+  more: boolean,
+  plan: SummaryPlan | null = null,
+): string {
   if (entries === null) return '';
-  return `${more ? 'More than' : 'About'} ${plural(entries, 'entry', 'entries')} to read. Compass plans the parts when the summary starts, and shows them here.`;
+  const size = `${more ? 'More than' : 'About'} ${plural(entries, 'entry', 'entries')} to read`;
+  if (!plan || plan.reason || plan.parts < 1)
+    return `${size}. Compass plans the parts when the summary starts, and shows them here.`;
+  const parts = `${plan.complete ? '' : 'at least '}${plural(plan.parts, 'part', 'parts')}`;
+  return `${size} in ${parts}, up to ${plural(plan.minutes, 'minute', 'minutes')}.`;
 }
 
 export function progressLine(job: SummaryJob): string {

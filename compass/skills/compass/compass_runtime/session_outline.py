@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from collections import Counter
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
-from . import observer, session_source
+from . import observer, session_source, session_summary
 from . import state as runtime_state
 
 if TYPE_CHECKING:
@@ -96,30 +97,67 @@ def unmatched(config: RuntimeConfig, harness: str, sid: str) -> dict[str, Any]:
     }
 
 
+def _plan(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, Any] | None:
+    if page.state != "ok" or page.harness != "claude":
+        return None
+    planned = session_summary.plan(page.entries, page.harness, config=config)
+    ceilings = planned["largest_read"]
+    parts = int(planned["parts"])
+    # The outline reads a newest window; the job reads the whole source. Off a partial read the
+    # parts are a floor, so the call count falls back to the whole-job ceiling to stay an upper
+    # bound, as [the focused plan](docs/design-session-summary.md#the-focused-plan) records.
+    complete = page.coverage is not None and page.coverage.complete
+    calls = int(ceilings["calls"])
+    if complete:
+        calls = min(calls, parts * session_summary.ATTEMPTS_PER_PART)
+    return {
+        "reason": planned["reason"],
+        "complete": complete,
+        "parts": parts,
+        "windows": max(0, parts - 1),
+        "calls": calls,
+        "minutes": math.ceil(min(calls * ceilings["call_timeout"], ceilings["seconds"]) / 60),
+        "largest_read": ceilings,
+    }
+
+
 def for_session(
     config: RuntimeConfig, state: RuntimeState, harness: str, sid: str
 ) -> dict[str, Any]:
+    """The deterministic grouping from the shared focused source pass."""
+    return for_session_with_plan(config, state, harness, sid)[0]
+
+
+def for_session_with_plan(
+    config: RuntimeConfig, state: RuntimeState, harness: str, sid: str
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Cache word-free grouping by transcript stamps; no grants or model seams are involved."""
     if harness not in session_source.HARNESSES:
-        return build(session_source.SourcePage("unsupported", harness, sid), config)
+        return build(session_source.SourcePage("unsupported", harness, sid), config), None
     path = observer.resolve_transcript(config, state, harness, sid)
     if path is None:
-        return build(session_source.SourcePage("unavailable", harness, sid), config)
+        return build(session_source.SourcePage("unavailable", harness, sid), config), None
     key = f"{os.path.abspath(path)}\0{harness}\0{sid}"
     with state.session_outline_lock:
         try:
             stamps = session_source.source_stamps(path, harness)
         except OSError:
-            return build(session_source.SourcePage("unavailable", harness, sid), config)
+            return build(session_source.SourcePage("unavailable", harness, sid), config), None
         bounds = (
             config.session_outline_max_bytes,
             config.session_outline_max_seconds,
             config.session_outline_max_blocks,
             config.session_outline_highlights,
+            config.session_summary_window_bytes,
+            config.session_summary_max_windows,
+            config.session_summary_max_calls,
+            config.session_summary_max_bytes_sent,
+            config.session_summary_max_seconds,
+            config.session_summary_call_timeout,
         )
         cached = state.session_outlines.get(key)
         if cached is not None and cached[0] == (stamps, bounds):
-            result: dict[str, Any] = cached[1]
+            result: tuple[dict[str, Any], dict[str, Any] | None] = cached[1]
             return result
         page = session_source.read(
             config,
@@ -130,13 +168,13 @@ def for_session(
             max_bytes=config.session_outline_max_bytes,
             deadline=time.monotonic() + config.session_outline_max_seconds,
         )
-        result = build(page, config)
+        result = (build(page, config), _plan(page, config))
         try:
             unchanged = session_source.source_stamps(path, harness) == stamps
         except OSError:
             unchanged = False
         if not unchanged:
-            return build(session_source.SourcePage("stale", harness, sid), config)
+            return build(session_source.SourcePage("stale", harness, sid), config), None
         clipped = page.coverage is not None and any(
             region.reason == "time" for region in page.coverage.unread
         )

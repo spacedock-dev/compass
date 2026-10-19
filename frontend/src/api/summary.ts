@@ -181,11 +181,38 @@ export interface StoredSummary {
   readonly outOfDate: OutOfDate | null;
 }
 
+/* `sources.summary.plan`: what a start would cost, planned from the outline's own read
+   (docs/design-session-summary.md#the-focused-plan). Off a partial read the parts are a floor. */
+export interface SummaryPlan {
+  readonly reason: string;
+  readonly complete: boolean;
+  readonly parts: number;
+  readonly windows: number;
+  readonly calls: number;
+  readonly minutes: number;
+}
+
+function parsePlan(value: unknown): SummaryPlan | null {
+  const raw = record(value);
+  if (!raw || typeof raw['complete'] !== 'boolean') return null;
+  const counts = ['parts', 'windows', 'calls', 'minutes'];
+  if (!counts.every((key) => Number.isSafeInteger(raw[key]) && Number(raw[key]) >= 0)) return null;
+  return {
+    reason: text(raw['reason']),
+    complete: raw['complete'],
+    parts: count(raw['parts']),
+    windows: count(raw['windows']),
+    calls: count(raw['calls']),
+    minutes: count(raw['minutes']),
+  };
+}
+
 export interface FocusedSummary {
   /** `ok` with a summary, `absent` with none, `unavailable` when the store or the match could not be read. */
   readonly state: 'ok' | 'absent' | 'unavailable';
   readonly reason: string;
   readonly summary: StoredSummary | null;
+  readonly plan: SummaryPlan | null;
   readonly job: SummaryJob | null;
 }
 
@@ -284,11 +311,13 @@ export function parseFocusedSummary(context: unknown): FocusedSummary | null {
   const raw = record(sources?.['summary']);
   if (!raw) return null;
   const job = parseJob(raw['job']);
-  if (raw['exists'] === true) return { state: 'ok', reason: '', summary: stored(raw), job };
+  if (raw['exists'] === true)
+    return { state: 'ok', reason: '', summary: stored(raw), job, plan: null };
   return {
     state: text(raw['state']) === 'absent' ? 'absent' : 'unavailable',
     reason: text(raw['reason']),
     summary: null,
+    plan: raw['state'] === 'absent' ? parsePlan(raw['plan']) : null,
     job,
   };
 }

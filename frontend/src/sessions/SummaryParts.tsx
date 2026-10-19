@@ -291,8 +291,10 @@ export function SummaryControls({
       ) : (
         <>
           <Line>{SUMMARY_ADDS}</Line>
-          {readSize(outline.entries, outline.more) ? (
-            <Line data-next-summary-size>{readSize(outline.entries, outline.more)}</Line>
+          {readSize(outline.entries, outline.more, state.plan) ? (
+            <Line data-next-summary-size>
+              {readSize(outline.entries, outline.more, state.plan)}
+            </Line>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {opening ? null : <Press state={state} action="start" label="Summarize" primary />}
@@ -343,9 +345,10 @@ const spoken = (bullet: SummaryBullet): string =>
 const counted = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
 
 /* A chip for each citation the reader can follow. A message id is the record's own, so a chip on the agent's or
-   the person's words reads older record pages for it. A check or file id is not yet the record's
-   (docs/design-session-summary.md#open-questions), so a line that may cite one gets a chip only once the page
-   holds an entry under that id, and its press reads nothing; the rest are counted, not dropped. */
+   the person's words reads older record pages for it. Record pages hold no checks or files, so a line that may
+   cite one gets a chip only once the page holds an entry under that id, and its press reads nothing; an earlier
+   run or write has no entry of its own (docs/design-session-summary.md#source-and-outline-contract), so the
+   rest are counted, not dropped. */
 function Cites({
   cites,
   cut = 0,

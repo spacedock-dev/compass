@@ -17,7 +17,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
-from . import observer, record_pages, records
+from . import observer, record_pages
 from . import project_context as context
 
 if TYPE_CHECKING:
@@ -496,15 +496,21 @@ def _classify(
     actor = "parent" if stream == "parent" else "subagent"
     entries: list[SourceEntry] = []
     for identity, runs in tally.runs.items():
-        for run in runs:
+        last_by_title = {run["title"]: index for index, run in enumerate(runs)}
+        for index, run in enumerate(runs):
             if run["background"]:
                 # The published report drops background runs and names a launch with no command
                 # text; a background run is counts and times only, so it is no check here.
                 continue
             entry = tally._check_entry([run])  # noqa: SLF001
-            fact_id = context._semantic_id(  # noqa: SLF001
-                "fact", "claude", sid, stream, "check", call.call_id, identity, run["segment"]
+            if index != last_by_title[run["title"]]:
+                # The record collapses repeated checks in one call. Keep its latest id and
+                # distinguish earlier segments through the same event-to-fact derivation.
+                entry["record_id"] = f"{call.call_id}:segment:{run['segment']}"
+            fact = context._semantic_fact_from_event(  # noqa: SLF001
+                {**entry, "harness": "claude", "sid": sid}, "check_run", "tool_report", ""
             )
+            fact_id = str(fact["fact_id"])
             read.tool_order[fact_id] = position
             entries.append(
                 SourceEntry(
@@ -524,11 +530,13 @@ def _classify(
                     subject=context._semantic_id("check", identity),  # noqa: SLF001
                 )
             )
-    for path in tally.writes:
-        display = records.safe_text(path, context.TOOL_REPORT_PATH_CHARS)
-        fact_id = context._semantic_id(  # noqa: SLF001
-            "fact", "claude", sid, stream, "file", call.call_id, path
+    for path, write in tally.writes.items():
+        event = tally._write_entry(path, write)  # noqa: SLF001
+        display = str(event["title"])
+        fact = context._semantic_fact_from_event(  # noqa: SLF001
+            {**event, "harness": "claude", "sid": sid}, "path_written", "tool_report", ""
         )
+        fact_id = str(fact["fact_id"])
         read.tool_order[fact_id] = position
         entries.append(
             SourceEntry(

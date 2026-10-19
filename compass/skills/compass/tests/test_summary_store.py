@@ -88,6 +88,41 @@ class SummaryStoreTest(_StoreCase):
         self.assertEqual("unchanged", self.focused()["out_of_date"]["kind"])
         self.assertEqual(0o600, os.stat(self.store.store_path(self.config)).st_mode & 0o777)
 
+    def test_previous_schema_is_unavailable_and_normal_save_preserves_file(self) -> None:
+        self.transcript.prompt("Inspect the parser")
+        page = self.read()
+        self.save(page)
+        path = Path(self.store.store_path(self.config))
+        raw = json.loads(path.read_text())
+        raw["v"] = 1
+        path.write_text(json.dumps(raw))
+        before = path.read_bytes()
+        self.assertEqual("unavailable", self.store.load(self.config).state)
+        record = raw["entries"][0]
+        assert page.coverage is not None
+        summary = session_summary.summarize(
+            page.entries,
+            page.coverage,
+            "claude",
+            config=self.config,
+            model=Replies(),
+            clock=lambda: 0.0,
+        )
+        self.assertEqual(
+            "unavailable",
+            self.store.put(
+                self.config,
+                "claude",
+                "root",
+                summary,
+                page.snapshot,
+                made_at=200.0,
+                model_stamp=record["model_stamp"],
+            ),
+        )
+        self.assertEqual("unavailable", self.store.delete(self.config, "claude", "root"))
+        self.assertEqual(before, path.read_bytes())
+
     def test_append_reports_new_entry_count_and_update(self) -> None:
         self.transcript.prompt("Inspect")
         self.save(self.read())

@@ -33,6 +33,8 @@ PERSON_CHARS = 1_200
 AGENT_CHARS = 700
 CHECK_CHARS = 220
 PATH_CHARS = 220
+# One retry for an empty reply; the focused plan's upper bound counts both attempts per part.
+ATTEMPTS_PER_PART = 2
 
 
 class Model(Protocol):
@@ -423,9 +425,12 @@ _TOOL_REPORT = re.compile(
 
 
 # A tick on a work line ("Added the retry handler \u2713") claims completion in the summary's own
-# voice whatever surrounds it, because a result is never a check mark:
+# voice whatever surrounds it. Every character Unicode names a check mark, plus the square-root
+# look-alike; NOT CHECK MARK (U+237B) and ballot X (U+2612) claim no tick:
 # [No completion words](docs/design-session-summary.md#no-completion-words).
-_CHECK_GLYPH = re.compile("[\u221a\u2611\u2705\u2713\u2714\U0001f5f8\U0001f5f9]")
+_CHECK_GLYPH = re.compile(
+    "[\u221a\u2611\u2705\u2713\u2714\U00010102\U0001f5f8\U0001f5f9\U0001fbb1]"
+)
 
 
 def _mixed_script(text: str) -> bool:
@@ -775,7 +780,7 @@ class _Job:
 
     def call(self, prompt: str) -> tuple[str, str | None]:
         size = len(prompt.encode())
-        for attempt in range(2):
+        for attempt in range(ATTEMPTS_PER_PART):
             if self.stop or self._over(size):
                 return "", self.stop or self._halt("ceiling")
             self.calls += 1

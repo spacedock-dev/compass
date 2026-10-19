@@ -1627,7 +1627,6 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.observer",
             "compass_runtime.project_context",
             "compass_runtime.record_pages",
-            "compass_runtime.records",
         },
         # The summary store persists the producer's frozen result and compares it with a fresh
         # source read; it resolves the focused transcript itself and holds no model seam.
@@ -1655,11 +1654,13 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.summary_store",
             "compass_runtime.supervise",
         },
-        # Grouping resolves one transcript and keeps only built outlines in the state leaf.
+        # Grouping resolves one transcript and keeps only built outlines in the state leaf. It
+        # calls the producer's pure plan for the focused plan, never its model seam.
         "compass_runtime.session_outline": {
             "compass_runtime.config",
             "compass_runtime.observer",
             "compass_runtime.session_source",
+            "compass_runtime.session_summary",
             "compass_runtime.state",
         },
         # The summary producer is a pure function of source facts and a model seam:

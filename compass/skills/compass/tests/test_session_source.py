@@ -63,6 +63,36 @@ class SessionSourceTest(unittest.TestCase):
             )
             self.assertNotIn("words", self.source.entry_for_page(entry))
 
+    def test_tool_ids_match_published_context_facts(self) -> None:
+        self.session.bash("pytest tests", "1 passed")
+        self.session.write(str(self.root / "src/a.py"))
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/test_child.py", "1 failed", is_error=True)
+        child.write(str(self.root / "src/child.py"))
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        events, _ = project_context.claude_tool_reports(self.config, str(self.path), "root")
+        facts = [
+            project_context._semantic_fact_from_event(event, event["kind"], "tool_report", "")
+            for event in events
+        ]
+        self.assertEqual(
+            {fact["summary"]: fact["fact_id"] for fact in facts},
+            {entry.title: entry.fact_id for entry in self.read().entries},
+        )
+
+    def test_repeated_check_in_one_call_keeps_distinct_ids_and_latest_record_id(self) -> None:
+        self.session.bash("pytest tests; pytest tests", "1 passed")
+        self.save()
+        entries = self.read().entries
+        self.assertEqual(2, len(entries))
+        self.assertNotEqual(entries[0].fact_id, entries[1].fact_id)
+        events, _ = project_context.claude_tool_reports(self.config, str(self.path), "root")
+        fact = project_context._semantic_fact_from_event(events[0], "check_run", "tool_report", "")
+        self.assertEqual(fact["fact_id"], entries[-1].fact_id)
+
     def test_newest_window_names_the_unread_prefix(self) -> None:
         self.path.write_text(
             "".join(
