@@ -108,11 +108,19 @@ export type Shown =
   | { readonly text: string; readonly cut: boolean }
   | { readonly withheld: string };
 
+/* The producer withholds a string holding a tick; one that reaches the page anyway is withheld here too,
+   because a result is never a check mark
+   ([No completion words](../../../docs/design-session-summary.md#no-completion-words)). */
+const CHECK_GLYPH = /[\u221a\u2611\u2705\u2713\u2714\u{1f5f8}\u{1f5f9}]/u;
+
 function shown(value: unknown, cut = false): Shown {
   const raw = record(value);
   if (raw) return { withheld: text(raw['reason']) || 'shape_fault' };
   const words = text(value);
-  return words ? { text: words, cut } : { withheld: 'shape_fault' };
+  if (!words) return { withheld: 'shape_fault' };
+  return CHECK_GLYPH.test(words.normalize('NFKC'))
+    ? { withheld: 'completion_claim' }
+    : { text: words, cut };
 }
 
 export type BulletKind = 'did' | 'said' | 'asked' | 'failed';
@@ -181,11 +189,14 @@ export interface FocusedSummary {
   readonly job: SummaryJob | null;
 }
 
+/* A kind the card does not know is withheld rather than drawn as plain work: text the server admitted under
+   the said or asked speech licence would otherwise lose the speaker it was admitted for. */
 function bullet(row: Raw): SummaryBullet {
   const kind = text(row['kind']);
+  const known = KINDS.includes(kind);
   return {
-    text: shown(row['text'], row['cut'] === true),
-    kind: (KINDS.includes(kind) ? kind : 'did') as BulletKind,
+    text: known ? shown(row['text'], row['cut'] === true) : { withheld: 'shape_fault' },
+    kind: (known ? kind : 'did') as BulletKind,
     cites: ids(row['cites']),
     citesCut: count(row['cites_cut']),
   };

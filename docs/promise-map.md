@@ -80,8 +80,9 @@ as such.
 On Claude Code sessions, What the session has done tells the session as a short story in phases,
 each line citing the entries it rests on, written by a model through your own Claude Code. A finished
 session is summarized when you open it and a running one when you press Summarize or Update summary;
-the first summary says what is sent and where, with Turn off summaries beside it. A summary never says
-the work is done, and a citation shows where a line came from, not that the line is right.
+the first summary says what is sent and where, with Turn off summaries beside it. A summary does not
+say in its own voice that the work is done, and a citation shows where a line came from, not that the
+line is right.
 Reader-requested readings are capped at 100 attempts per rolling twenty-four hours. With no saved
 goal, a check adopts the goal drafted from your first Claude Code or Codex prompt (your latest
 where no first one with a time is published); the goal field also offers your latest prompt.

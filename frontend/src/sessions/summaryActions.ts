@@ -56,8 +56,11 @@ export async function startSummary(
   held.patch(key, { refusal: null, failed: '' });
   try {
     const answer = bodyOf(await shell.runtime.client.postSummary({ ...identity, action, origin }));
+    /* A lost reply may still have been admitted and charged, so the card asks the board rather than saying
+       nothing changed. */
     if (!answer) {
       held.patch(key, { failed: SUMMARY_FAILED_SEND });
+      await shell.runtime.refresh();
       return;
     }
     const { status, body } = answer;

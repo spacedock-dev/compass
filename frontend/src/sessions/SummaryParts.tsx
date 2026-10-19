@@ -1,16 +1,26 @@
 import type { ReactNode } from 'react';
-import { jobActive, type Shown, type SummaryBullet } from '../api/summary';
+import {
+  jobActive,
+  type Shown,
+  type StoredSummary,
+  type SummaryBullet,
+  type SummaryGrant,
+  type SummaryJob,
+} from '../api/summary';
 import { useDrift } from '../drift/context';
 import { ModelNotice } from '../drift/ModelNotice';
 import { Why } from '../drift/Why';
 import { ActionButton } from '../intent/ActionButton';
 import { useShell } from '../shell/context';
 import {
+  FAILED_MARK,
   FRESHNESS_UNKNOWN,
   LEDE_LAST,
   PLACE_LINES,
   SUMMARY_ADDS,
+  REPLY_CUT,
   SUMMARY_HOLDS,
+  SUMMARY_INCOMPLETE,
   SUMMARY_LABEL,
   SUMMARY_NOT_CLAUDE,
   SUMMARY_OFF,
@@ -19,6 +29,7 @@ import {
   SUMMARY_WORKING_KEEP,
   WITHHELD_TITLE,
   blockName,
+  bulletWords,
   gapSentence,
   outOfDateLine,
   partsKept,
@@ -26,7 +37,6 @@ import {
   progressLine,
   readSize,
   reasonSentence,
-  saidText,
   summaryNotes,
   withheldSentence,
 } from './summary';
@@ -74,11 +84,14 @@ function Press({
   action,
   label,
   primary = false,
+  focus = '',
 }: {
   readonly state: SummaryState;
   readonly action: 'start' | 'update' | 'rerun';
   readonly label: string;
   readonly primary?: boolean;
+  /** Tells two presses on one card apart for focus; they share the one start in flight. */
+  readonly focus?: string;
 }) {
   const shell = useShell();
   const control = `summary:${state.key}`;
@@ -88,7 +101,7 @@ function Press({
       label={label}
       busyLabel="Starting…"
       pendingKey={control}
-      focusKey={control}
+      focusKey={focus ? `${control}:${focus}` : control}
       action={`summary-${action}`}
       onPress={() => {
         if (state.identity) void startSummary(shell, state.identity, action, 'press');
@@ -97,23 +110,39 @@ function Press({
   );
 }
 
-/* What is sent, one press away beside Summarize, with the off switch inside it. */
+/* Off is the grant's own `off`, not its reason: at the cap while off the server publishes `daily-cap`, because
+   the cap outranks off in the reason. */
+const summariesOff = (grant: SummaryGrant): boolean =>
+  grant.off || grant.reason === 'summaries-off';
+
+/* What is sent, one press away beside Summarize, with the off switch inside it, or the on switch while off. */
 function Sent({ state }: { readonly state: SummaryState }) {
   if (!state.grant?.disclosure) return null;
   const receiver = state.grant.provider === 'claude' ? 'Claude Code' : state.grant.provider;
   return (
     <Why name="summary-sent" pop summary={`What is sent to ${receiver}`}>
       <p className="next-cockpit-reading-why">{state.grant.disclosure}</p>
-      <Turn state={state} on={false} />
+      <Turn state={state} on={summariesOff(state.grant)} />
     </Why>
   );
+}
+
+function noticeOf(state: SummaryState): Readonly<Record<string, unknown>> | null {
+  const notice = state.held.notice ?? (jobActive(state.job) ? state.job?.notice : null) ?? null;
+  return notice && state.grant && !summariesOff(state.grant) ? notice : null;
+}
+
+/* The off switch one press from the card wherever the notice, which carries its own, is not drawn. */
+function OffSwitch({ state }: { readonly state: SummaryState }) {
+  if (!state.grant || summariesOff(state.grant) || noticeOf(state)) return null;
+  return <Turn state={state} on={false} />;
 }
 
 /* The notice the first summary on this machine shows, and again when where it goes or what it sends changes:
    the same notice card a reading's notice uses, with Turn off summaries beside it. */
 function Notice({ state }: { readonly state: SummaryState }) {
-  const notice = state.held.notice ?? (jobActive(state.job) ? state.job?.notice : null) ?? null;
-  if (!notice || !state.grant || state.grant.reason === 'summaries-off') return null;
+  const notice = noticeOf(state);
+  if (!notice || !state.grant) return null;
   return (
     <div data-next-summary-notice>
       <ModelNotice
@@ -152,8 +181,8 @@ export function SummaryControls({
           {progressLine(job)}
         </p>
         <Line>{SUMMARY_WORKING_KEEP}</Line>
-        {job.state === 'running' ? (
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 empty:hidden">
+          {job.state === 'running' ? (
             <ActionButton
               weight="secondary"
               label="Cancel"
@@ -165,16 +194,21 @@ export function SummaryControls({
                 if (state.identity) void cancelSummary(shell, state.identity);
               }}
             />
-          </div>
-        ) : null}
+          ) : null}
+          <OffSwitch state={state} />
+        </div>
         {failed}
       </div>
     );
   }
-  if (grant.reason === 'summaries-off') {
+  if (summariesOff(grant)) {
+    const also = grant.reason && grant.reason !== 'summaries-off' ? grant.reason : '';
     return (
       <div className="flex flex-col gap-2" data-next-summary-state="off">
         <Line>{SUMMARY_OFF}</Line>
+        {also ? (
+          <Line data-next-summary-reason={also}>{reasonSentence(also, state.reasons)}</Line>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <Turn state={state} on />
         </div>
@@ -190,6 +224,9 @@ export function SummaryControls({
         <Line data-next-summary-reason={grant.reason}>
           {reasonSentence(grant.reason, state.reasons)}
         </Line>
+        <div className="flex flex-wrap items-center gap-2 empty:hidden">
+          <OffSwitch state={state} />
+        </div>
         {failed}
       </div>
     );
@@ -203,6 +240,7 @@ export function SummaryControls({
   const why = refusal ? reasonSentence(refusal.reason, state.reasons) : stop;
   if (stored) {
     const outdated = outOfDateLine(stored, state.reasons);
+    const again = outdated?.action !== 'rerun' && incomplete(stored, job);
     return (
       <div className="flex flex-col gap-2 empty:hidden" data-next-summary-state="ready">
         {notice}
@@ -214,6 +252,12 @@ export function SummaryControls({
               action={outdated.action}
               label={outdated.action === 'update' ? 'Update summary' : 'Summarize again'}
             />
+          </div>
+        ) : null}
+        {again ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2" data-next-summary-incomplete>
+            <p className="m-0 text-body text-foreground">{SUMMARY_INCOMPLETE}</p>
+            <Press state={state} action="rerun" label="Summarize again" focus="incomplete" />
           </div>
         ) : null}
         {stored.outOfDate?.kind === 'unavailable' ? (
@@ -261,6 +305,19 @@ export function SummaryControls({
   );
 }
 
+/* A summary that stopped partway compares as unchanged against its own snapshot, so freshness offers nothing;
+   Summarize again is what covers the rest. A gap no rerun would fill, a session longer than one summary reads
+   or a summary at its largest saved size, does not offer it. */
+const RERUN_FILLS_NOTHING = new Set(['before_window', 'bytes']);
+const STOPPED_JOBS = new Set(['partial', 'cancelled', 'interrupted']);
+function incomplete(stored: StoredSummary, job: SummaryJob | null): boolean {
+  return (
+    stored.ledeReason === 'stopped' ||
+    stored.blocks.some((block) => block.gap !== null && !RERUN_FILLS_NOTHING.has(block.gap)) ||
+    (job !== null && !jobActive(job) && STOPPED_JOBS.has(job.state))
+  );
+}
+
 function ShownText({ value, cited }: { readonly value: Shown; readonly cited?: string }) {
   if ('withheld' in value)
     return (
@@ -278,29 +335,52 @@ function ShownText({ value, cited }: { readonly value: Shown; readonly cited?: s
 /* The words a chip's name gives for the bullet it supports. */
 const spoken = (bullet: SummaryBullet): string =>
   'text' in bullet.text
-    ? bullet.kind === 'said'
-      ? saidText(bullet.text.text)
-      : bullet.text.text
-    : 'a withheld line';
+    ? bulletWords(bullet.kind, bullet.text.text)
+    : bullet.kind === 'failed'
+      ? `${FAILED_MARK} a withheld line`
+      : 'a withheld line';
 
+const counted = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
+
+/* A chip for each citation the reader can follow. A message id is the record's own, so a chip on the agent's or
+   the person's words reads older record pages for it. A check or file id is not yet the record's
+   (docs/design-session-summary.md#open-questions), so a line that may cite one gets a chip only once the page
+   holds an entry under that id, and its press reads nothing; the rest are counted, not dropped. */
 function Cites({
   cites,
+  cut = 0,
   purpose,
+  reads,
   chip,
 }: {
   readonly cites: readonly string[];
+  readonly cut?: number;
   readonly purpose: string;
+  readonly reads: boolean;
   readonly chip: (id: string, purpose: string) => ReactNode;
 }) {
-  if (!cites.length) return null;
+  const { model } = useDrift();
+  const linked = reads ? cites : cites.filter((id) => model.byId.has(id));
+  const unlinked = cites.length - linked.length;
+  if (!cites.length && !cut) return null;
   return (
     <span
       className="ml-1 inline-flex flex-wrap items-center gap-x-1 align-baseline"
       data-next-summary-cites
     >
-      {cites.map((id) => (
+      {linked.map((id) => (
         <span key={id}>{chip(id, purpose)}</span>
       ))}
+      {unlinked ? (
+        <span className="text-label text-muted-foreground" data-next-summary-unlinked={unlinked}>
+          {`${counted(unlinked, 'cited entry', 'cited entries')} Full activity cannot open from here`}
+        </span>
+      ) : null}
+      {cut ? (
+        <span className="text-label text-muted-foreground" data-next-summary-cites-cut={cut}>
+          {`${counted(cut, 'more citation was', 'more citations were')} cut`}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -314,16 +394,25 @@ function Bullet({
 }) {
   const failed = bullet.kind === 'failed';
   const value: Shown =
-    'text' in bullet.text && bullet.kind === 'said'
-      ? { text: saidText(bullet.text.text), cut: bullet.text.cut }
+    'text' in bullet.text
+      ? { text: bulletWords(bullet.kind, bullet.text.text), cut: bullet.text.cut }
       : bullet.text;
   return (
     <li
       className={`text-body [overflow-wrap:anywhere] ${failed ? 'text-destructive' : 'text-foreground'}`}
       data-next-summary-bullet={bullet.kind}
     >
+      {failed && !('text' in value) ? (
+        <span data-next-summary-failed-mark>{`${FAILED_MARK} `}</span>
+      ) : null}
       <ShownText value={value} cited="yes" />
-      <Cites cites={bullet.cites} purpose={`cited for “${spoken(bullet)}”`} chip={chip} />
+      <Cites
+        cites={bullet.cites}
+        cut={bullet.citesCut}
+        purpose={`cited for “${spoken(bullet)}”`}
+        reads={bullet.kind === 'said' || bullet.kind === 'asked'}
+        chip={chip}
+      />
     </li>
   );
 }
@@ -422,6 +511,7 @@ export function SummaryView({
           <Cites
             cites={stored.ledeCites}
             purpose={`cited for the opening summary${'text' in lede ? ` “${lede.text}”` : ''}`}
+            reads={false}
             chip={chip}
           />
         </p>
@@ -496,6 +586,7 @@ export function SummaryView({
             {block.phasesCut ? (
               <Line>{`${String(block.phasesCut)} more ${block.phasesCut === 1 ? 'phase was' : 'phases were'} cut from this part.`}</Line>
             ) : null}
+            {block.replyCut ? <Line data-next-summary-reply-cut>{REPLY_CUT}</Line> : null}
           </div>
         ),
       )}

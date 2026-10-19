@@ -34,7 +34,9 @@ export interface SummaryState {
   readonly job: SummaryJob | null;
   readonly held: SessionSummaryHeld;
   readonly reasons: ReasonContext;
-  /** The open of this finished session is due to post its one summary start. */
+  /** This open's one decision is due now: the first render holding the board's grant and the focused answer. */
+  readonly deciding: boolean;
+  /** That decision posts the open's one summary start. */
   readonly due: boolean;
 }
 
@@ -55,11 +57,13 @@ export function useSummaryState(
   const job =
     focused?.job ?? (held.job && (context?.revision ?? 0) <= held.jobAt ? held.job : null);
   const ended = typeof model.session['ended_at'] === 'number' && model.session['ended_at'] > 0;
-  const due =
-    !held.opened &&
-    model.identity !== null &&
-    autoStartDue({ grant, focused, harness: model.harness, ended, sample });
+  /* Decided once per session per page load, at the first render that can decide it, and not again: a session
+     that ends while open, a cap that lifts, the grant returning, or a summary deleted in another tab is not
+     summarized on this open ([answer 5](../../../docs/design-session-summary.md#the-ruling)). */
+  const deciding = !held.opened && model.identity !== null && grant !== null && focused !== null;
+  const due = deciding && autoStartDue({ grant, focused, harness: model.harness, ended, sample });
   return {
+    deciding,
     due,
     identity: model.identity,
     key,
@@ -79,13 +83,16 @@ export function useSummaryState(
   };
 }
 
-/* The one summary a finished session gets when it is opened, posted once per session per page load. */
+/* The one summary a finished session gets when it is opened, posted once per session per page load, and the
+   decision not to post recorded the same way. */
 export function useOpenSummary(state: SummaryState): void {
   const shell = useShell();
-  const { due, identity } = state;
+  const { deciding, due, identity, key } = state;
   useEffect(() => {
-    if (due && identity) void startSummary(shell, identity, 'start', 'open');
-  }, [due, identity, shell]);
+    if (!deciding || !identity) return;
+    if (due) void startSummary(shell, identity, 'start', 'open');
+    else summaryHeldFor(shell.runtime).patch(key, { opened: true });
+  }, [deciding, due, identity, key, shell]);
 }
 
 export function summaryHeader(state: SummaryState): string {

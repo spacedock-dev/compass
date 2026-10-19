@@ -13,14 +13,18 @@ import {
   FRESHNESS_UNKNOWN,
   GAP_RUNNING,
   PLACE_LINES,
+  REPLY_CUT,
   SUMMARY_ADDS,
+  SUMMARY_FAILED_SEND,
   SUMMARY_HOLDS,
+  SUMMARY_INCOMPLETE,
   SUMMARY_LABEL,
   SUMMARY_OFF,
   SUMMARY_WORKING_KEEP,
   WITHHELD_LINES,
 } from '../src/sessions/summary';
 import { neverDone, noCheckMark } from './drift.checks';
+import { claudeOutline } from './outline.scenario';
 import {
   ABSENT,
   FIRST_PHASE,
@@ -81,8 +85,9 @@ async function atWidth(width: number, check: () => Promise<void>) {
   }
 }
 
-/* Each `said` bullet opens with "Said" and cites only the agent's messages; each `asked` cites only the
-   person's; every chip is named for the bullet it supports and names a row of Full activity. */
+/* Each `said` bullet opens with "Said" and cites only the agent's messages; each `asked` opens with "You" and
+   cites only the person's; a `failed` one says so in words; every chip is named for the bullet it supports and
+   names a row of Full activity. */
 async function attributed(summary: HTMLElement) {
   const bullets = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-bullet]')];
   await expect(bullets.length).toBeGreaterThan(0);
@@ -92,6 +97,8 @@ async function attributed(summary: HTMLElement) {
     const chips = [...row.querySelectorAll<HTMLElement>('[data-next-outline-entry]')];
     await expect(chips.length).toBeGreaterThan(0);
     if (kind === 'said') await expect(words).toMatch(/^Said\b/);
+    if (kind === 'asked') await expect(words).toMatch(/^You (asked|said)\b/);
+    if (kind === 'failed') await expect(words).toMatch(/^Failed as the tool reported: /);
     for (const chip of chips) {
       await expect(chip.getAttribute('aria-label')).toContain(`cited for “${words}”`);
       const id = chip.dataset['nextOutlineEntry'] ?? '';
@@ -268,6 +275,11 @@ export const OffStaysOff: Story = {
     await waitFor(() =>
       expect(script.posts[0]).toEqual({ path: '/api/summary', body: { consent: 'on' } }),
     );
+    // Turning summaries on is not an open: the finished session is not summarized on this page load.
+    await stateOf(region, 'none');
+    await poll();
+    await poll();
+    await expect(script.posts).toEqual([{ path: '/api/summary', body: { consent: 'on' } }]);
   },
 };
 
@@ -523,10 +535,11 @@ export const AtItsCap: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const blocked = await stateOf(region, 'blocked');
-    await expect(blocked).toHaveTextContent(
+    await expect(blocked.querySelector('[data-next-summary-reason="daily-cap"]')).toHaveTextContent(
       /^Summaries have used their 200 model calls for the last 24 hours\. They can run again at \d\d:\d\d\.$/,
     );
     await expect(within(blocked).queryByRole('button', { name: 'Summarize' })).toBeNull();
+    await expect(within(blocked).getByRole('button', { name: 'Turn off summaries' })).toBeVisible();
     await poll();
     await expect(script.posts).toHaveLength(0);
   },
@@ -864,7 +877,7 @@ export const ColdReopenCitesAnOlderPage: Story = {
       '[data-next-summary-phase="0:0"] [data-next-outline-entry="p1"]',
     ) as HTMLElement;
     await expect(chip).toHaveAccessibleName(
-      `Open the entry, cited for “${FIRST_PHASE.bullets[0]?.text as string}”, in Full activity`,
+      'Open the entry, cited for “You asked for retry with backoff on the webhook handler.”, in Full activity',
     );
     await expect(entryRow(canvasElement, 'p1')).toBeNull();
     await userEvent.click(chip);
@@ -894,7 +907,7 @@ export const CitationThatCannotLoad: Story = {
     const summary = await summaryOf(region);
     await userEvent.click(
       within(summary).getByRole('button', {
-        name: /^Open the entry, cited for “Asked about a missing entry\.”/,
+        name: /^Open the entry, cited for “You asked about a missing entry\.”/,
       }),
     );
     await waitFor(() =>
@@ -1037,5 +1050,428 @@ export const SampleDrawsAStoredSummary: Story = {
     await waitFor(() =>
       expect(document.activeElement).toBe(entryRow(canvasElement, SAMPLE_PHASE_START)),
     );
+  },
+};
+
+const consent = (on: boolean) => ({ path: '/api/summary', body: { consent: on ? 'on' : 'off' } });
+const openPosts = () => summaryPosts().filter((post) => post.body['origin'] === 'open');
+
+/* The off switch is one press from the card while a job runs and no notice is drawn. */
+export const TurnOffWhileWorking: Story = {
+  render: () => <SummaryPage summary={{ ...ABSENT, job: job({ part: 1 }) }} ended={false} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const working = await stateOf(region, 'working');
+    await expect(working.querySelector('[data-next-summary-notice]')).toBeNull();
+    await userEvent.click(within(working).getByRole('button', { name: 'Turn off summaries' }));
+    await waitFor(() => expect(script.posts).toEqual([consent(false)]));
+  },
+};
+
+/* At the cap, Turn off is one press away; turning summaries back on after the cap posts only the consent, never
+   the open's summary. */
+export const CapTurnOffThenOn: Story = {
+  render: () => <SummaryPage summary={ABSENT} grant={grant({ reason: 'daily-cap', used: 200 })} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const blocked = await stateOf(region, 'blocked');
+    await userEvent.click(within(blocked).getByRole('button', { name: 'Turn off summaries' }));
+    const off = await stateOf(region, 'off');
+    await poll();
+    await userEvent.click(within(off).getByRole('button', { name: 'Turn summaries on' }));
+    await stateOf(region, 'none');
+    await poll();
+    await poll();
+    await expect(script.posts).toEqual([consent(false), consent(true)]);
+  },
+};
+
+/* Off at the cap: the server names the cap as the reason, and the card still draws off with Turn summaries on,
+   the cap said beneath it. */
+export const OffAtTheCap: Story = {
+  render: () => (
+    <SummaryPage
+      summary={ABSENT}
+      grant={grant({ consent: false, off: true, reason: 'daily-cap', used: 200 })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const off = await stateOf(region, 'off');
+    await expect(off).toHaveTextContent(SUMMARY_OFF);
+    await expect(off.querySelector('[data-next-summary-reason="daily-cap"]')).toHaveTextContent(
+      /^Summaries have used their 200 model calls/,
+    );
+    await expect(within(off).getByRole('button', { name: 'Turn summaries on' })).toBeVisible();
+    await expect(within(off).queryByRole('button', { name: 'Turn off summaries' })).toBeNull();
+    await poll();
+    await expect(script.posts).toHaveLength(0);
+  },
+};
+
+/* A saved summary while summaries are off: what is sent offers Turn summaries on, never Turn off. */
+export const SentWhileOff: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary()}
+      grant={grant({ consent: false, off: true, reason: 'summaries-off' })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await userEvent.click(
+      within(summary).getByRole('button', { name: 'What is sent to Claude Code' }),
+    );
+    // The off state's own Turn summaries on, and the one inside what is sent.
+    await waitFor(() =>
+      expect(
+        within(document.body).getAllByRole('button', { name: 'Turn summaries on' }),
+      ).toHaveLength(2),
+    );
+    await expect(
+      within(document.body).queryByRole('button', { name: 'Turn off summaries' }),
+    ).toBeNull();
+    await userEvent.keyboard('{Escape}');
+  },
+};
+
+/* The open is decided once: a session that ends while it is open is not summarized on this page load. */
+export const EndsWhileOpen: Story = {
+  render: () => <SummaryPage summary={ABSENT} ended={false} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await stateOf(region, 'none');
+    await poll();
+    script.session = { state: 'idle', ended_at: 1 };
+    await poll();
+    await poll();
+    await expect(within(region).getByRole('button', { name: 'Summarize' })).toBeVisible();
+    await expect(openPosts()).toEqual([]);
+    await expect(script.posts).toEqual([]);
+  },
+};
+
+/* A cap that lifts while the finished session is open does not summarize it on this page load. */
+export const CapLiftsWhileOpen: Story = {
+  render: () => <SummaryPage summary={ABSENT} grant={grant({ reason: 'daily-cap', used: 200 })} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await stateOf(region, 'blocked');
+    await poll();
+    script.grant = grant();
+    await poll();
+    await stateOf(region, 'none');
+    await poll();
+    await expect(script.posts).toEqual([]);
+  },
+};
+
+/* A summary deleted in another tab leaves this one with none, and this open does not make another. */
+export const DeletedInAnotherTab: Story = {
+  render: () => <SummaryPage summary={storedSummary()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await summaryOf(region);
+    script.summary = ABSENT;
+    await poll();
+    await stateOf(region, 'none');
+    await poll();
+    await expect(script.posts).toEqual([]);
+  },
+};
+
+/* A summary left partway by a cancel compares as unchanged, and still offers Summarize again for the rest,
+   keeping the saved summary drawn until a new one is published. */
+export const IncompleteOffersSummarizeAgain: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        state: 'partial',
+        lede: null,
+        lede_reason: 'stopped',
+        blocks: [block('p1', 'c2', 4, [FIRST_PHASE]), gap('p2', 'a2', 2, 'stopped')],
+        job: job({ state: 'cancelled', reason: 'cancelled', parts: 2, finished_parts: [1] }),
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const line = await waitFor(() => {
+      const node = region.querySelector<HTMLElement>('[data-next-summary-incomplete]');
+      if (!node) throw new Error('no Summarize again for the rest');
+      return node;
+    });
+    await expect(line).toHaveTextContent(SUMMARY_INCOMPLETE);
+    await expect(region.querySelector('[data-next-summary-outdated]')).toBeNull();
+    for (const width of [1280, 400])
+      await atWidth(width, async () => {
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+      });
+    await userEvent.click(within(line).getByRole('button', { name: 'Summarize again' }));
+    await waitFor(() =>
+      expect(summaryPosts()).toEqual([
+        {
+          path: '/api/summary',
+          body: { harness: 'claude', sid: 's1', action: 'rerun', origin: 'press' },
+        },
+      ]),
+    );
+    await expect(summary.isConnected).toBe(true);
+    await expect(summary.querySelector('[data-next-summary-phase="0:0"]')).not.toBeNull();
+  },
+};
+
+/* An asked bullet that opens with another speech verb still names the person, in its text and its chip. */
+export const AskedNamesThePerson: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [
+            {
+              title: 'Agreeing the scope',
+              bullets: [bullet('Confirmed the parser change is in scope.', 'asked', ['p1'])],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const row = summary.querySelector('[data-next-summary-bullet="asked"]') as HTMLElement;
+    await expect(row.querySelector('[data-next-summary-text]')).toHaveTextContent(
+      'You said: Confirmed the parser change is in scope.',
+    );
+    await waitFor(() =>
+      expect(
+        within(row).getByRole('button', {
+          name: /cited for “You said: Confirmed the parser change is in scope\.”/,
+        }),
+      ).toBeVisible(),
+    );
+    await attributed(summary);
+  },
+};
+
+/* A failed check whose text names no failure is told apart from work in words, in its text and its chip. */
+export const FailedSaysSoInWords: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [
+            {
+              title: 'Running the webhook tests',
+              bullets: [
+                bullet('Ran pytest tests/test_webhook.py.', 'failed', ['c1']),
+                bullet({ withheld: true, reason: 'too_long_cut' }, 'failed', ['c1']),
+              ],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const [shownRow, withheldRow] = [
+      ...summary.querySelectorAll<HTMLElement>('[data-next-summary-bullet="failed"]'),
+    ];
+    await expect(shownRow?.querySelector('[data-next-summary-text]')).toHaveTextContent(
+      'Failed as the tool reported: Ran pytest tests/test_webhook.py.',
+    );
+    await waitFor(() =>
+      expect(
+        within(shownRow as HTMLElement).getByRole('button', {
+          name: /cited for “Failed as the tool reported: Ran pytest/,
+        }),
+      ).toBeVisible(),
+    );
+    await expect(withheldRow).toHaveTextContent(/^Failed as the tool reported: Withheld:/);
+  },
+};
+
+/* A summary citing a check under the source's own id, which the record does not carry: the bullet gets no
+   chip that would read pages to the cap, says the citation cannot be opened from here, and the departure the
+   check is evidence for is not placed where Compass cannot stand behind it. */
+export const CheckCitationTheRecordDoesNotCarry: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [FIRST_PHASE]),
+          block('p2', 'source-check-9', 4, [
+            {
+              title: 'Checking the webhook',
+              bullets: [
+                bullet('Asked to keep the diff small.', 'asked', ['p2']),
+                bullet(
+                  'pytest tests/test_webhook.py reported failed, as the tool reported.',
+                  'failed',
+                  ['source-check-9'],
+                ),
+              ],
+            },
+          ]),
+        ],
+      })}
+      session={departureReading(['c3'])}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const row = await waitFor(() => {
+      const rows = summary.querySelectorAll<HTMLElement>('[data-next-summary-bullet="failed"]');
+      const last = rows[rows.length - 1];
+      if (!last) throw new Error('no failed bullet');
+      return last;
+    });
+    await expect(row.querySelector('[data-next-outline-entry]')).toBeNull();
+    await expect(row.querySelector('[data-next-summary-unlinked]')).toHaveTextContent(
+      '1 cited entry Full activity cannot open from here',
+    );
+    const line = await waitFor(() => {
+      const node = canvasElement.querySelector<HTMLElement>('[data-next-departure-summary]');
+      if (!node) throw new Error('no summary line on the departure');
+      return node;
+    });
+    await expect(line.dataset['nextDepartureSummary']).toBe('unplaced');
+    await expect(line).toHaveTextContent(PLACE_LINES.unplaced);
+    await expect(summary.querySelector('[data-next-summary-marked]')).toBeNull();
+  },
+};
+
+/* Hostile text: a tick the server let through, and a kind the card does not know, are withheld in place. */
+export const HostileTickAndKind: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        lede: { text: 'The retry handler ✅', cites: ['p1'] },
+        blocks: [
+          block('p1', 'c2', 4, [
+            {
+              title: 'Retry handler ✔️',
+              bullets: [
+                bullet('Added the retry handler ✓', 'did', ['c1']),
+                bullet('Said the parser is fixed', 'verdict', ['a1']),
+              ],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await expect(
+      summary.querySelectorAll('[data-next-summary-withheld="completion_claim"]'),
+    ).toHaveLength(3);
+    await expect(
+      summary.querySelector('[data-next-summary-withheld="shape_fault"]'),
+    ).toHaveTextContent(WITHHELD_LINES.shape_fault ?? '');
+    await expect(summary).not.toHaveTextContent('Said the parser is fixed');
+    await neverDone(region);
+  },
+};
+
+/* A cut citation list and a cut reply are each said where they stand. */
+export const CutsAreSaid: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          {
+            ...block('p1', 'c2', 4, [
+              {
+                ...FIRST_PHASE,
+                bullets: [{ ...bullet('Asked for retry.', 'asked', ['p1']), cites_cut: 2 }],
+              },
+            ]),
+            cut: { phases: 0, reply: true },
+          },
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await expect(summary.querySelector('[data-next-summary-cites-cut="2"]')).toHaveTextContent(
+      '2 more citations were cut',
+    );
+    await expect(summary.querySelector('[data-next-summary-reply-cut]')).toHaveTextContent(
+      REPLY_CUT,
+    );
+  },
+};
+
+/* A lost reply says the request is unconfirmed, not that nothing changed, and still asks for the next board. */
+export const LostReplyAsksTheBoard: Story = {
+  render: () => (
+    <SummaryPage summary={ABSENT} ended={false} answer={() => ({ status: 0, body: {} })} />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const none = await stateOf(region, 'none');
+    const before = script.boards;
+    await userEvent.click(within(none).getByRole('button', { name: 'Summarize' }));
+    await waitFor(() =>
+      expect(region.querySelector('[data-next-summary-failed]')).toHaveTextContent(
+        SUMMARY_FAILED_SEND,
+      ),
+    );
+    await expect(region).not.toHaveTextContent('Nothing changed');
+    await waitFor(() => expect(script.boards).toBeGreaterThan(before));
+  },
+};
+
+/* A chip pressed in the outline under a saved summary says it could not be shown inside the outline, where the
+   press was made, not above the summary. */
+export const MissingLineStaysInTheOutline: Story = {
+  render: () => {
+    const outline = claudeOutline({}, true) as { blocks: Record<string, unknown>[] };
+    const [first, ...rest] = outline.blocks;
+    return (
+      <SummaryPage
+        summary={storedSummary()}
+        outline={{
+          ...outline,
+          blocks: [
+            {
+              ...first,
+              prompt: { fact_id: 'p9', title: 'An entry no page holds.', at: 1 },
+              span: { first: 'p9', last: 'p9', entries: 1, from_at: 1, to_at: 1 },
+            },
+            ...rest,
+          ],
+        }}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await summaryOf(region);
+    await userEvent.click(
+      within(region).getByRole('button', { name: "Compass's outline of this session" }),
+    );
+    const outline = await waitFor(() => {
+      const node = region.querySelector<HTMLElement>('[data-next-outline="blocks"]');
+      if (!node) throw new Error('no outline');
+      return node;
+    });
+    await userEvent.click(
+      within(outline).getAllByRole('button', { name: /^Open the entry/ })[0] as HTMLElement,
+    );
+    await waitFor(() =>
+      expect(outline.querySelector('[data-next-outline-missing]')).not.toBeNull(),
+    );
+    await expect(region.querySelectorAll('[data-next-outline-missing]')).toHaveLength(1);
   },
 };

@@ -195,7 +195,12 @@ export function WhatItDid({
     { loaded: Boolean(entry?.data), failed: Boolean(entry?.error) && !entry?.data },
     harness,
   );
-  const [missing, setMissing] = useState<string | null>(null);
+  /* Which surface the press came from, so the line saying an entry could not be shown stands where it was made:
+     the summary, or the outline folded beneath it. */
+  const [missing, setMissing] = useState<{
+    readonly what: string;
+    readonly from: 'summary' | 'outline';
+  } | null>(null);
   // The latest press: a read that ends after another press began says nothing about the one now standing.
   const latestPress = useRef<object | null>(null);
   const summary = useSummaryState(entry, running, harness);
@@ -220,7 +225,7 @@ export function WhatItDid({
     });
     return true;
   };
-  const open = (id: string, n: string | null) => {
+  const open = (from: 'summary' | 'outline') => (id: string, n: string | null) => {
     const press = {};
     latestPress.current = press;
     setMissing(null);
@@ -228,7 +233,7 @@ export function WhatItDid({
     const settle = () =>
       requestAnimationFrame(() => {
         if (latestPress.current !== press) return;
-        if (!land(id)) setMissing(n ? `entry #${n}` : 'that entry');
+        if (!land(id)) setMissing({ what: n ? `entry #${n}` : 'that entry', from });
       });
     if (model.byId.has(id) || !identity) {
       settle();
@@ -269,7 +274,7 @@ export function WhatItDid({
       <div className="flex flex-col gap-3" data-next-session-summary-slot>
         {summary.stored ? (
           <>
-            {missing ? <MissingLine missing={missing} /> : null}
+            {missing?.from === 'summary' ? <MissingLine missing={missing.what} /> : null}
             <SummaryView
               state={summary}
               startsAt={
@@ -277,7 +282,9 @@ export function WhatItDid({
                   ? `#${model.numbers.get(summary.stored.startsAt) ?? ''}`
                   : ''
               }
-              chip={(id, purpose) => <EntryChip id={id} purpose={purpose} onOpen={open} />}
+              chip={(id, purpose) => (
+                <EntryChip id={id} purpose={purpose} onOpen={open('summary')} />
+              )}
             />
             <Disclosure
               disclosureKey={disclosureKey({
@@ -287,11 +294,19 @@ export function WhatItDid({
               })}
               summary="Compass's outline of this session"
             >
-              <Outline view={view} missing={null} onOpen={open} />
+              <Outline
+                view={view}
+                missing={missing?.from === 'outline' ? missing.what : null}
+                onOpen={open('outline')}
+              />
             </Disclosure>
           </>
         ) : (
-          <Outline view={view} missing={missing} onOpen={open} />
+          <Outline
+            view={view}
+            missing={missing?.from === 'outline' ? missing.what : null}
+            onOpen={open('outline')}
+          />
         )}
       </div>
     </Card>

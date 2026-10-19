@@ -236,8 +236,12 @@ export interface SummaryScript {
   session: Record<string, unknown>;
   /** Every POST to a summary route, in order. */
   posts: { path: string; body: Record<string, unknown> }[];
-  /** How a summary POST is answered; the default admits a start with a running job. */
+  /** How a summary POST is answered; the default admits a start with a running job. Status 0 loses the reply. */
   answer: (path: string, body: Record<string, unknown>) => Reply;
+  /** How many boards the page has asked for. */
+  boards: number;
+  /** The focused `sources.outline`. */
+  outline: Record<string, unknown>;
   shell: Shell | null;
 }
 
@@ -247,6 +251,8 @@ export const script: SummaryScript = {
   session: {},
   posts: [],
   answer: () => ({ status: 202, body: { ok: true, job: job() } }),
+  boards: 0,
+  outline: {},
   shell: null,
 };
 
@@ -273,6 +279,7 @@ export function SummaryPage({
   paged = false,
   session = {},
   answer = defaultAnswer,
+  outline = claudeOutline({}, true),
 }: {
   readonly grant?: Record<string, unknown> | null;
   readonly summary?: Record<string, unknown> | null;
@@ -280,6 +287,7 @@ export function SummaryPage({
   readonly paged?: boolean;
   readonly session?: Record<string, unknown>;
   readonly answer?: SummaryScript['answer'];
+  readonly outline?: Record<string, unknown>;
 }) {
   const [shell] = useState(() => {
     script.grant = published;
@@ -287,6 +295,8 @@ export function SummaryPage({
     script.session = session;
     script.posts = [];
     script.answer = answer;
+    script.boards = 0;
+    script.outline = outline;
     const history = fakeRouterEnvironment('#n=session:demo:claude:s1');
     let generation = G;
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -305,9 +315,11 @@ export function SummaryPage({
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
           script.posts.push({ path, body });
           const reply = script.answer(path, body);
+          if (reply.status === 0) throw new TypeError('The reply was lost.');
           return json(reply.body, reply.status);
         }
-        if (url.startsWith('/api/data'))
+        if (url.startsWith('/api/data')) {
+          script.boards += 1;
           return json({
             generated: generation++,
             annotate: true,
@@ -343,6 +355,7 @@ export function SummaryPage({
               },
             ],
           });
+        }
         if (url.startsWith('/api/project-context')) {
           if (!url.includes('session='))
             return json({ semantic: { facts: [] }, sources: { work: {} } });
@@ -350,7 +363,7 @@ export function SummaryPage({
             semantic: { facts: [] },
             sources: {
               work: { tool_reports: [] },
-              outline: claudeOutline({}, true),
+              outline: script.outline,
               ...(script.summary ? { summary: script.summary } : {}),
             },
           });

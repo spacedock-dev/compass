@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseFocusedSummary, parseGrant, parseJob, stampModel } from '../api/summary';
 import {
   GAP_LINES,
+  askedText,
+  bulletWords,
   SUMMARY_REASONS,
   WITHHELD_LINES,
   autoStartDue,
@@ -135,9 +137,39 @@ describe('the parsers', () => {
     expect(focused?.summary?.lede).toEqual({ withheld: 'completion_claim' });
     const [summarized, gap] = focused?.summary?.blocks ?? [];
     expect(summarized?.phases[0]?.title).toEqual({ withheld: 'completion_claim' });
-    // An unknown kind is never trusted as speech; a non-string citation is dropped.
-    expect(summarized?.phases[0]?.bullets[0]).toMatchObject({ kind: 'did', cites: ['a'] });
+    // An unknown kind is never drawn as plain work: its text is withheld. A non-string citation is dropped.
+    expect(summarized?.phases[0]?.bullets[0]).toMatchObject({
+      text: { withheld: 'shape_fault' },
+      cites: ['a'],
+    });
     expect(gap).toMatchObject({ gap: 'no_output', phases: [] });
+  });
+  it('withholds a string holding a tick, even one the server admitted', () => {
+    const focused = parseFocusedSummary({
+      sources: {
+        summary: {
+          exists: true,
+          lede: { text: 'Retry handler \u2705', cites: ['a'] },
+          blocks: [
+            {
+              first: 'a',
+              last: 'a',
+              entries: 1,
+              phases: [
+                {
+                  title: 'Retry \u2714\ufe0f',
+                  bullets: [{ text: 'Added the retry handler \u2713', kind: 'did', cites: ['a'] }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const phase = focused?.summary?.blocks[0]?.phases[0];
+    expect(focused?.summary?.lede).toEqual({ withheld: 'completion_claim' });
+    expect(phase?.title).toEqual({ withheld: 'completion_claim' });
+    expect(phase?.bullets[0]?.text).toEqual({ withheld: 'completion_claim' });
   });
   it('reads an absent and an unavailable answer, and none', () => {
     expect(
@@ -162,6 +194,24 @@ describe('what the card says', () => {
     expect(saidText('The agent said it left the tests alone.')).toBe(
       'Said it left the tests alone.',
     );
+  });
+  it('names the person on an asked bullet, whatever verb it opens with', () => {
+    expect(askedText('Asked for retry with backoff.')).toBe('You asked for retry with backoff.');
+    expect(askedText('The person asked to keep the diff small.')).toBe(
+      'You asked to keep the diff small.',
+    );
+    expect(askedText('The user confirmed the parser is fixed.')).toBe(
+      'You confirmed the parser is fixed.',
+    );
+    expect(askedText('Confirmed the parser is fixed.')).toBe(
+      'You said: Confirmed the parser is fixed.',
+    );
+    expect(askedText('You asked for tests.')).toBe('You asked for tests.');
+  });
+  it('words a failed check in text, not only in colour', () => {
+    expect(bulletWords('failed', 'Ran pytest.')).toBe('Failed as the tool reported: Ran pytest.');
+    expect(bulletWords('did', 'Ran pytest.')).toBe('Ran pytest.');
+    expect(bulletWords('said', 'Ran pytest.')).toBe('Said: Ran pytest.');
   });
   const base = parseFocusedSummary({
     sources: {
@@ -269,6 +319,28 @@ describe('what the card says', () => {
     expect(placeDeparture(base, ['c3'], numbers).where).toBe('after');
     expect(placeDeparture(base, ['c2'], numbers).where).toBe('between');
     expect(placeDeparture(base, ['zz'], numbers).where).toBe('unplaced');
+  });
+  it('says only what it can stand behind when the page cannot number a summary citation', () => {
+    if (!base) throw new Error('no summary');
+    // The source's id for a check is not the record's, so the first phase's span is known only in part.
+    const unmatched = {
+      ...base,
+      blocks: base.blocks.map((block, b) =>
+        b === 0
+          ? {
+              ...block,
+              last: 'source-check',
+              phases: block.phases.map((phase) => ({
+                ...phase,
+                bullets: phase.bullets.map((row) => ({ ...row, cites: ['p1', 'source-check'] })),
+              })),
+            }
+          : block,
+      ),
+    };
+    expect(placeDeparture(unmatched, ['c2'], numbers).where).toBe('unplaced');
+    expect(placeDeparture(unmatched, ['c3'], numbers).where).toBe('unplaced');
+    expect(placeDeparture(unmatched, ['a2'], numbers)).toEqual({ where: 'phase', phases: ['1:0'] });
   });
 });
 

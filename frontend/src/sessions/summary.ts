@@ -25,9 +25,13 @@ export const SUMMARY_NOT_CLAUDE = (harness: string) =>
 export const SUMMARY_RELEVANCE =
   'Each line cites the entries it rests on. Compass checks that a cited entry exists and what kind it is, not that it supports the line.';
 export const SUMMARY_FAILED_SEND =
-  'Compass could not confirm the request. Nothing changed; try again.';
+  'Compass could not confirm the request. The next board shows whether it started.';
 export const SUMMARY_CANCEL_FAILED = 'Compass could not confirm the cancel. Try again.';
 export const SUMMARY_HOLDS = 'Holds evidence for a departure';
+export const SUMMARY_INCOMPLETE =
+  'This summary does not cover every part of the session. Summarize again reads it from the start.';
+export const REPLY_CUT =
+  'The model’s reply for this part was cut short, so only the phases it finished are shown.';
 export const SUMMARY_LABEL = 'Summary: written by a model from this session’s record';
 
 const plural = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
@@ -43,7 +47,7 @@ export interface ReasonContext {
 export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) => string>> = {
   'summaries-off': () => SUMMARY_OFF,
   'readings-off': () =>
-    'Readings are turned off, and that stops summaries too. Turn readings back on in the Drift card to summarize.',
+    'Readings are turned off, and that stops summaries too. Turn on readings and analyze, in the Drift card, turns them back on and also starts a reading; it is not offered while the Drift card shows a current result.',
   'daily-cap': ({ grant }) =>
     `Summaries have used their ${String(grant?.limit || 'daily')} model calls for the last 24 hours${grant?.retryAt ? `. They can run again at ${clock(grant.retryAt)}` : ''}.`,
   'run-disabled': () =>
@@ -157,6 +161,32 @@ export function saidText(words: string): string {
      own "Said" already names it, so the two are folded rather than stacked. */
   const named = /^the agent\s+said\b\s*/i.exec(flat);
   return named ? `Said ${flat.slice(named[0].length)}` : `Said: ${words}`;
+}
+
+/* An `asked` bullet reads as the person's words, as Full activity names them "You": the server admits it under
+   the same speech licence as a `said` bullet, so text that opens with another verb ("Confirmed the parser is
+   fixed") would otherwise read in the summary's own voice. A leading "Asked", or the person named with a
+   speech verb, is folded into the card's own "You". */
+const PERSON_SPEECH =
+  /^(?:the\s+(?:person|user)\s+)?(asked|said|reported|confirmed|requested|wanted|told|noted|explained|mentioned|suggested|proposed|stated|replied|answered|claimed|wrote)\b\s*/i;
+export function askedText(words: string): string {
+  const flat = words.trim();
+  if (/^you\s+(?:asked|said)\b/i.test(flat)) return words;
+  const named = PERSON_SPEECH.exec(flat);
+  if (named && (named[0].toLowerCase().startsWith('the') || /^asked$/i.test(named[1] ?? '')))
+    return `You ${(named[1] ?? '').toLowerCase()} ${flat.slice(named[0].length)}`.trimEnd();
+  return `You said: ${words}`;
+}
+
+/* A failed check is told apart from plain work in words, not only in colour, as the outline words it. */
+export const FAILED_MARK = 'Failed as the tool reported:';
+
+/* What a bullet draws, and what its chips are named for: the speaker for words, the failure for a check. */
+export function bulletWords(kind: string, words: string): string {
+  if (kind === 'said') return saidText(words);
+  if (kind === 'asked') return askedText(words);
+  if (kind === 'failed') return `${FAILED_MARK} ${words}`;
+  return words;
 }
 
 /* The card's right-hand header: the model, and when the summary was made. */
@@ -344,11 +374,22 @@ export function placeDeparture(
     );
     if (gap) return { where: gap.block.gap === 'before_window' ? 'before' : 'gap', phases };
   }
+  /* A summary id the page has not numbered narrows every span read from the ids it has: a check or file id
+     here is not the record's (docs/design-session-summary.md#open-questions). A point inside a narrowed span is
+     inside the real one, so a phase or a gap still holds; before, after and between are said only when every
+     id is numbered, or, for before, when the summary's own start is. */
+  const whole = summary.blocks.every((block) =>
+    [
+      block.first,
+      block.last,
+      ...block.phases.flatMap((phase) => phase.bullets.flatMap((row) => row.cites)),
+    ].every((id) => at(id) !== null),
+  );
   for (const q of points) {
-    if (start && before(q, start)) return { where: 'before', phases };
-    if (end && before(end, q)) return { where: 'after', phases };
+    if (start && before(q, start) && (whole || first)) return { where: 'before', phases };
+    if (whole && end && before(end, q)) return { where: 'after', phases };
   }
-  return { where: points.length && start && end ? 'between' : 'unplaced', phases };
+  return { where: whole && points.length && start && end ? 'between' : 'unplaced', phases };
 }
 
 export const phaseId = (key: string, place: string) =>

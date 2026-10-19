@@ -422,6 +422,12 @@ _TOOL_REPORT = re.compile(
 )
 
 
+# A tick on a work line ("Added the retry handler \u2713") claims completion in the summary's own
+# voice whatever surrounds it, because a result is never a check mark:
+# [No completion words](docs/design-session-summary.md#no-completion-words).
+_CHECK_GLYPH = re.compile("[\u221a\u2611\u2705\u2713\u2714\U0001f5f8\U0001f5f9]")
+
+
 def _mixed_script(text: str) -> bool:
     # A Latin word with a look-alike letter from another script ("fix\u0435d") reads as the
     # claim it imitates; NFKC folding does not map confusables, so such a word is withheld.
@@ -661,7 +667,7 @@ def completion_claim(text: str, *, kind: str | None = None) -> bool:
     folded = "".join(
         c for c in unicodedata.normalize("NFKC", text) if unicodedata.category(c) != "Cf"
     )
-    if _mixed_script(folded):
+    if _mixed_script(folded) or _CHECK_GLYPH.search(folded):
         return True
     return any(
         _clause_claim(clause, implicit=index == 0 and kind in {"said", "asked"})

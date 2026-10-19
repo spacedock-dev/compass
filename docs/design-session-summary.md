@@ -471,7 +471,9 @@ The word list covers fix, done, complete, work, verify, success, succeed, pass, 
 ship, merge, green, finish, solve, repair, implement, deliver, deploy and accomplish in their
 existing inflected forms. Text is NFKC-folded before matching, and a word that mixes Latin letters
 with letters of another script (`fix` followed by a Cyrillic `е`) is withheld, because folding does
-not map look-alike letters. These checks run on the whole string before any character cap and on
+not map look-alike letters. A string holding a check or tick glyph (U+2713, U+2714, U+2705,
+U+2611, U+221A, U+1F5F8 or U+1F5F9) is withheld wherever the glyph stands, quoted or attributed,
+because a result is never a check mark. These checks run on the whole string before any character cap and on
 the clipped string after it. A cap must not hide an unsafe suffix or strip the attribution from a
 surviving claim. Citation relevance remains the
 [known limit](#the-known-limit-relevance-is-not-checked).
@@ -866,10 +868,18 @@ This table describes the implementation and does not amend the owner-ruled table
   of 12"), and gives the largest read allowed only after a refusal. Publishing the plan on the
   focused answer would let the card say "in 4 parts, up to N minutes" up front; it needs a source
   read on the focused poll, which this build does not add.
-- A summary citation's chip reads older record pages for its fact id, whatever kind of entry it
-  cites, so every chip either lands or says it could not be loaded. Until a check or file fact id
-  here matches the record's (the gap above), a chip citing one reads pages to the record's page cap
-  and then says so; the outline's chips still read nothing for those ids.
+- A summary citation's chip on a `said` or `asked` line reads older record pages for its fact id,
+  because a message id is the record's own, so it either lands or says it could not be loaded.
+  Until a check or file fact id here matches the record's (the gap above), a `did` or `failed`
+  line and the lede get a chip only for an entry the page holds, as the outline's chips do, read no
+  pages, and say how many cited entries Full activity cannot open from here. The departure mark
+  says only what a narrowed span still supports: with any summary id the page has not numbered, a
+  departure is placed in a phase or a gap, or before a numbered start, and is otherwise unplaced.
+- A summary left partway by Cancel, a revoke or a restart compares as unchanged, so the card offers
+  Summarize again whenever the saved summary has a gap a rerun could fill, its lede stopped, or its
+  last job ended partial, cancelled or interrupted. A `before_window` or `bytes` gap offers nothing,
+  because a rerun meets the same limit. Whether a rerun's first saved part replaces the stored
+  summary before the rerun finishes is the job's, not the card's; the card draws what is saved.
 - The departure mark places a departure's cited entries against the summary by the activity list's
   `#n`. A phase publishes no bounds, so its span is the span its own bullets cite, and an entry
   between two phases is in neither ("inside the span the summary covers, but in no phase"). An entry
