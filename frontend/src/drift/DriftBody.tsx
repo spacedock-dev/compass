@@ -18,8 +18,10 @@ import {
   JobBox,
   TurnOff,
   ReadingNotice,
+  ReadingsOffAsk,
   type SteerSlot,
 } from './ReadingControl';
+import { useNoticeShown } from './notice';
 import { ReadingResult } from './ReadingResult';
 import { disclosureParts, promptReadingRefusal, routeRefusal, readingsOff } from './route';
 import {
@@ -197,6 +199,7 @@ function QuestionWithAnalysis({
   const receiver = String(route?.['label'] || provider);
   const analyze = !edited && !reason && !job;
   const request = ctx.intent.held.requests.get(model.key);
+  const noticeShown = useNoticeShown();
   const count = Number(annotation?.['reading_count']) || 0;
   const running = endedAt(session) === null && session['state'] !== 'idle';
   const reading: DirectionReading = {
@@ -215,7 +218,7 @@ function QuestionWithAnalysis({
       before={job ? <JobBox job={job} running={running} /> : null}
       after={
         off ? (
-          <ReadingControl board={board} primary={primary} refusalOf={reason} />
+          <ReadingsOffAsk refusedId={!edited} />
         ) : (
           <>
             <ReadingNotice />
@@ -241,7 +244,7 @@ function QuestionWithAnalysis({
                 />
                 <TurnOff />
               </Why>
-            ) : (
+            ) : noticeShown ? null : (
               <TurnOff />
             )}
             {annotation ? <ReadingCount count={count} /> : null}

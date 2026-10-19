@@ -196,6 +196,78 @@ describe('notices and the durable off switch', () => {
     expect(textOf('[data-next-reading-notice]')).not.toContain('first.example');
   });
 
+  it('names the provider the notice was recorded for after the route falls back to another', async () => {
+    const page = mountDrift({
+      payload: fresh,
+      routes: {
+        '/api/reading': () => json({ ok: true, job: { id: 'j', steps: [] }, notice }, 202),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(textOf('[data-next-reading-notice]')).toContain('Your saved words.');
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_routes: {
+        claude: {
+          ...ROUTE,
+          provider: 'codex',
+          label: 'Codex',
+          fallback: true,
+          disclosure: 'This sends the session to Codex.',
+          disclosure_parts: ['Codex words.'],
+        },
+      },
+    });
+    const shown = textOf('[data-next-reading-notice]');
+    expect(shown).toContain('Provider: Claude Code');
+    expect(shown).toContain('first.example');
+    expect(shown).not.toContain('Codex');
+    expect(shown).toContain("The session's words and the agent's messages.");
+  });
+
+  it('draws one Turn off readings beside a notice when no disclosure popover is drawn', async () => {
+    const page = mountDrift({
+      payload: { ...fresh, reading_routes: { claude: { ...ROUTE, disclosure: '' } } },
+      routes: { '/api/reading': () => json({ ok: true, produced: false, notice }) },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(document.querySelector('[data-next-reading-notice]')).not.toBeNull();
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
+  });
+
+  it('leads with the cap when the cap and off both stand, since turning on cannot lift it', async () => {
+    const page = mountDrift({
+      payload: {
+        reading: {
+          consent: false,
+          off: true,
+          reason: 'daily-cap',
+          used: 10,
+          limit: 10,
+          retry_at: null,
+        },
+      },
+    });
+    await page.settle();
+    await page.settle();
+    const lines = [
+      ...document.querySelectorAll('.next-session-drift-check .next-cockpit-reading-why'),
+    ]
+      .map((node) => node.textContent ?? '')
+      .filter((line) => /Analysis limit|Readings are off/.test(line));
+    expect(lines[0]).toContain('Analysis limit reached');
+    expect(lines).toContain(
+      'Readings are off. Nothing is sent to a model until you turn them back on.',
+    );
+  });
+
   it('keeps the last notice while another press is pending or its response is lost', async () => {
     let first = true;
     const page = mountDrift({

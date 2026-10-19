@@ -533,3 +533,32 @@ export const ReadingsOffWaitsForAnExplicitTurnOn: Story = {
     });
   },
 };
+
+export const ReadingsOffWithARunningJobAndAnOpenDirection: Story = {
+  ...scenario({
+    facts: [
+      fact('u1', 1000, { type: 'user_message', by: 'person:me', summary: 'Also add retries.' }),
+    ],
+    payload: {
+      reading: { consent: false, off: true, reason: 'readings-off' },
+      reading_jobs: { 'claude:s1': JOB },
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await within(card).findByText(JOB_TITLE);
+    await expect(await within(card).findByText(/later direction/)).toBeVisible();
+    // One box and one Cancel: the off state does not draw a second job box beside the question.
+    await expect(within(card).getAllByText(JOB_TITLE)).toHaveLength(1);
+    await expect(within(card).getAllByRole('button', { name: 'Cancel' })).toHaveLength(1);
+    await expect(
+      within(card).getByText(
+        'Readings are off. Nothing is sent to a model until you turn them back on.',
+      ),
+    ).toBeVisible();
+    // No turn-on press while the job runs, and nothing sent.
+    await expect(
+      within(card).queryByRole('button', { name: 'Turn on readings and analyze' }),
+    ).toBeNull();
+  },
+};

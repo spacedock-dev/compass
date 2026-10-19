@@ -34,7 +34,7 @@ const FOCUS = { harness: 'claude', sid: 's:1' };
 const PROJECT = { projectKey: '/repo/a', focus: null };
 const FOCUSED = { projectKey: '/repo/a', focus: FOCUS };
 
-function setup(_consent: Consent = null) {
+function setup(consent: Consent = null) {
   const board = createBoardStore({ now: () => 1 });
   const calls: {
     query: Parameters<ReturnType<typeof clientStub>['getProjectContext']>[0];
@@ -56,6 +56,7 @@ function setup(_consent: Consent = null) {
   const loader = createContextLoader({
     client: clientStub(),
     store: board,
+    storage: { observerConsent: () => consent },
   });
   return { board, calls, loader };
 }
@@ -194,8 +195,8 @@ describe('explicit observer summary', () => {
     }
   });
 
-  it.each([null, 'declined'] as const)(
-    'requests a summary without using the retired browser answer (%s)',
+  it.each([null, 'granted'] as const)(
+    'requests a summary with no stored decline (%s)',
     async (answer) => {
       const s = await withOffer(answer);
       const pending = s.loader.requestObserverSummary(FOCUSED);
@@ -204,6 +205,41 @@ describe('explicit observer summary', () => {
       await pending;
     },
   );
+
+  it('keeps a decline this browser stored before the upgrade: nothing is sent', async () => {
+    const s = await withOffer('declined');
+    await s.loader.requestObserverSummary(FOCUSED);
+    expect(s.calls).toHaveLength(1);
+  });
+
+  it('holds the reply notice past the next passive read, until the next Summarize reply', async () => {
+    const key = '/repo/a\nclaude:s:1';
+    const notice = {
+      kind: 'goal',
+      provider: 'codex',
+      destination: 'OpenAI',
+      content: 4,
+      tool_output: '',
+      at: 5,
+    };
+    const s = await withOffer('granted');
+    const first = s.loader.requestObserverSummary(FOCUSED);
+    s.calls[1]?.answer.resolve(
+      okContext({ observer_model: { ...offer().observer_model, notice } }),
+    );
+    await first;
+    expect(s.board.getSnapshot().observer.notices.get(key)).toEqual(notice);
+    accept(s.board, 11);
+    s.loader.load(FOCUSED);
+    s.calls[2]?.answer.resolve(okContext(offer()));
+    await flush();
+    expect(s.board.getSnapshot().contexts.get(key)?.data?.observer_model?.notice).toBeUndefined();
+    expect(s.board.getSnapshot().observer.notices.get(key)).toEqual(notice);
+    const second = s.loader.requestObserverSummary(FOCUSED);
+    s.calls[3]?.answer.resolve(okContext(offer()));
+    await second;
+    expect(s.board.getSnapshot().observer.notices.has(key)).toBe(false);
+  });
 
   it('reads the focused session with refresh and observer_model, and records ready', async () => {
     const s = await withOffer('granted');

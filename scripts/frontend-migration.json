@@ -355,8 +355,7 @@
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/drift/ReadingStart.test.tsx",
-        "frontend/src/drift/ReadingResult.test.tsx",
-        "frontend/e2e/drift-parity.mjs"
+        "frontend/src/drift/ReadingResult.test.tsx"
       ],
       "contract": "Only explicit authorized Analyze starts work; notice/destination, durable off switch, revision floor, pending/error/withheld/completed state and result cues remain correct."
     },

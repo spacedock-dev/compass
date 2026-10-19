@@ -4,6 +4,7 @@ import { compatSessKey, contextKey } from '../api/identity';
 import type { ApiFailure, SessionIdentity } from '../api/types';
 import type { BoardStore, DataFailure } from '../store/board';
 import { selectObserverOff } from '../store/selectors';
+import type { TransportStorage } from './ports';
 
 export interface ContextScope {
   /** The stable project key, never a label assumed unique. */
@@ -15,6 +16,8 @@ export interface ContextScope {
 export interface ContextLoaderDeps {
   readonly client: Pick<ApiClient, 'getProjectContext'>;
   readonly store: BoardStore;
+  /** Read only for a stored decline, which the upgrade keeps: see `requestObserverSummary`. */
+  readonly storage: Pick<TransportStorage, 'observerConsent'>;
 }
 
 function failureOf(result: ApiFailure): DataFailure | null {
@@ -36,7 +39,7 @@ function failureOf(result: ApiFailure): DataFailure | null {
    disposal. A failed read keeps the previous data beside the new error rather
    than replacing it, which is why an entry carries both. */
 export function createContextLoader(deps: ContextLoaderDeps) {
-  const { client, store } = deps;
+  const { client, store, storage } = deps;
   const passive = new Map<string, object>();
   const observerRequests = new Set<string>();
   const controllers = new Set<AbortController>();
@@ -87,6 +90,9 @@ export function createContextLoader(deps: ContextLoaderDeps) {
         disposed ||
         !focus ||
         selectObserverOff(store.getSnapshot(), key, focus) ||
+        /* A summary off this browser stored before the widening is kept: the upgrade opts nobody back in.
+           [The widening](../../../docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts) */
+        storage.observerConsent() === 'declined' ||
         model?.enabled !== true ||
         !model.disclosure ||
         observerRequests.has(key)
@@ -113,6 +119,7 @@ export function createContextLoader(deps: ContextLoaderDeps) {
             revision: nextFiniteNumber(store.getSnapshot().data?.generated),
             error: null,
           });
+          store.setObserverNotice(key, result.body.observer_model?.notice ?? null);
           store.setObserverState(key, 'ready');
         } else {
           store.setObserverState(key, 'error');

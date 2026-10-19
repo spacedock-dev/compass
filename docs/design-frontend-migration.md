@@ -31,6 +31,11 @@ Golden files remain unchanged; the new behavior is asserted in component tests a
 The CSS display census visits a running notice instead of the removed consent card. Its chrome
 comparison maps only `reading-notice` to the recorded `reading-consent` recipe and
 `observer-controls` to `observer-consent`; these preserve the same card styling, not the old admission behavior.
+The on-demand browser proofs `drift-parity.mjs` and `journey-budget.mjs` still drive the removed
+consent card, so `drift-parity.mjs` is no longer an oracle for the Analyze notice row of
+`scripts/frontend-migration.json`, and the consent-step journeys in both are retired until they
+are rewritten for the notice. Their shared fixture policy, once `UNCONSENTED`, is
+`FIRST_PRESS`: readings on with no notice recorded.
 
 The rename kept saved browser choices readable until 1.0.0: a missing Compass key read the matching
 Cargento key through the shared storage adapter. 1.0.0 removed that fallback with the adapter code

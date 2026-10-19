@@ -40,6 +40,7 @@ import {
 } from './sentences';
 import type { DriftCtx } from './state';
 import { pressLine } from './route';
+import { noticeAnnouncement } from './notice';
 
 /* Every request the Drift section sends, each from one explicit press of one control. A mount, a second
    mount under StrictMode, a board refresh, a poll, a reconnect or a retry reaches none of them, and a lost
@@ -269,6 +270,7 @@ export async function askForReading(
       throw new Error('reading not confirmed');
     }
     note['notice'] = isRecord(answer?.['notice']) ? answer['notice'] : null;
+    sayNotice(shell, note['notice']);
     if (turnOn) {
       const policy = (currentPayload(ctx) ?? payload)['reading'];
       if (isRecord(policy)) showReading(ctx, { ...policy, consent: true, off: false, reason: '' });
@@ -370,6 +372,7 @@ export async function keepReading(
   if (reply.ok && answer['ok'] === true && isRecord(answer['job'])) {
     const note = intent.held.requests.get(key);
     if (note) note.notice = isRecord(answer['notice']) ? answer['notice'] : null;
+    sayNotice(shell, answer['notice']);
     showJob(ctx, key, answer['job']);
     return { kind: 'started' };
   }
@@ -443,6 +446,13 @@ export async function cancelReading(ctx: DriftCtx, identity: SessionIdentity): P
 
 /* "Turn off readings": withdraws every provider's permission. The one request in this section that names no
    session, so the control is keyed on the session the reader is looking at. */
+/* The notice card is not focused, so a reply that carries a new one is said once through the polite region. */
+function sayNotice(shell: DriftCtx['shell'], notice: unknown): void {
+  if (!isRecord(notice)) return;
+  const { key, sentence } = noticeAnnouncement(notice);
+  shell.announcer.announce(key, sentence);
+}
+
 export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null): Promise<void> {
   const { intent, shell } = ctx;
   const key = identity ? compatSessKey(identity) : '';

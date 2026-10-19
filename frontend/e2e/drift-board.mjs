@@ -38,10 +38,11 @@ export const POLICY = {
   limit: 10,
 };
 
-export const UNCONSENTED = {
+export const FIRST_PRESS = {
   consent: true,
   off: false,
   reason: '',
+  notices: {},
   providers: { claude: false },
   words: {},
   tool_output: {},

@@ -1,7 +1,7 @@
 import { Alert } from '../ui/alert';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { contextKey, exactIdentity } from '../api/identity';
 import type { ProjectContext, SessionIdentity } from '../api/types';
 import { useFocusKey } from '../controls/useFocusKey';
@@ -10,7 +10,9 @@ import { selectObserverModel, selectObserverRequest, selectObserverOff } from '.
 import { turnOffReadings } from '../api/readings';
 import { isRecord } from '../observed';
 import { ModelNotice } from '../drift/ModelNotice';
-import { READINGS_OFF } from '../drift/sentences';
+import { noticeAnnouncement, noticeLabel } from '../drift/notice';
+import { READINGS_OFF_CONSOLE } from '../drift/sentences';
+import { heldFor, useConsent } from './held';
 import './capacity.css';
 
 /* The optional model goal summary, offered in the Console for one exact session. It runs without a prior
@@ -26,6 +28,8 @@ const DISABLED =
   'Observer model is disabled for this run. Restart without --no-observer-model or its alias --no-harness-usage to offer goal summaries.';
 const NO_SESSION = 'Select one exact session to request an optional model goal summary.';
 const NO_DISCLOSURE = 'Observer disclosure is unavailable; model requests are withheld.';
+const SUMMARIES_DECLINED =
+  'Goal summaries are off in this browser. Nothing is sent for a summary until you turn them back on.';
 const DISCLOSURE_CHANGED =
   'The observer model offer changed since this page was drawn, so nothing was sent; read it now and press again.';
 
@@ -41,7 +45,7 @@ function Absence({ children }: { readonly children: string }) {
 }
 
 export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
-  const { runtime, controls, display } = useShell();
+  const { runtime, controls, display, announcer } = useShell();
   const identity = focus ? exactIdentity(focus) : null;
   const key = contextKey(projectKey, identity);
   const entry = useDisplayed((snapshot) => snapshot.contexts.get(key));
@@ -51,6 +55,15 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
   const state = useDisplayed((snapshot) => selectObserverRequest(snapshot, key).state);
   const off = useDisplayed((snapshot) => selectObserverOff(snapshot, key, identity));
   const offPending = useDisplayed((snapshot) => snapshot.pending.includes('observer:off'));
+  /* The notice the last Summarize reply carried, held by the store past the passive reads that replace the
+     context entry, so the notice and its off switch stay until a turn-off or the next reply. */
+  const notice = useDisplayed((snapshot) => snapshot.observer.notices.get(key));
+  const declined = useConsent('observer') === 'declined';
+  useEffect(() => {
+    if (!notice || off) return;
+    const said = noticeAnnouncement({ ...notice });
+    announcer.announce(said.key, said.sentence);
+  }, [notice, off, announcer]);
   const [refused, setRefused] = useState<string | null>(null);
   const requestRef = useFocusKey<HTMLButtonElement>(controls.focusLane, 'observer:request');
   const offRef = useFocusKey<HTMLButtonElement>(controls.focusLane, 'observer:off');
@@ -64,7 +77,7 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
   const summarize = () => {
     setRefused(null);
     if (selectObserverOff(runtime.store.getSnapshot(), key, identity)) {
-      setRefused(READINGS_OFF);
+      setRefused(READINGS_OFF_CONSOLE);
       return;
     }
     const now: ProjectContext['observer_model'] | null = selectObserverModel(
@@ -85,6 +98,8 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
       const body = reply.kind === 'ok' && isRecord(reply.body) ? reply.body : null;
       const reading = body && isRecord(body['reading']) ? body['reading'] : null;
       if (body?.['ok'] !== true || !reading) throw new Error('off not confirmed');
+      // The server cleared every notice with the off.
+      runtime.store.clearObserverNotices();
       const snapshot = runtime.store.getSnapshot();
       if (snapshot.data) runtime.store.acceptData({ ...snapshot.data, reading }, snapshot.revision);
       await display.paint({ manual: true, accepted: true });
@@ -94,7 +109,37 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
       runtime.pending.end('observer:off', press);
     }
   };
-  const actions = off ? null : (
+  const turnOn = () => {
+    setRefused(null);
+    heldFor(runtime).observer.answer('granted');
+  };
+  /* Turn off readings is drawn whenever readings are on: inside the notice while one is shown, and beside
+     Summarize otherwise, so the off switch never depends on a notice the next read could replace. */
+  const offButton = off ? null : (
+    <Button
+      ref={offRef}
+      type="button"
+      data-next-observer-action="off"
+      data-next-focus="observer:off"
+      disabled={offPending}
+      onClick={() => void turnOff()}
+    >
+      {offPending ? 'Turning off…' : 'Turn off readings'}
+    </Button>
+  );
+  const shownNotice = notice && !off ? notice : null;
+  const request = declined ? (
+    <Button
+      size="consent"
+      ref={requestRef}
+      type="button"
+      data-next-observer-action="on"
+      data-next-focus="observer:request"
+      onClick={turnOn}
+    >
+      Turn on summaries
+    </Button>
+  ) : (
     <Button
       size="consent"
       ref={requestRef}
@@ -107,15 +152,23 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
       {pending ? 'Request in progress' : 'Summarize this session'}
     </Button>
   );
+  const actions = off ? null : (
+    <>
+      {request}
+      {shownNotice ? null : offButton}
+    </>
+  );
   const status = off
-    ? READINGS_OFF
-    : pending
-      ? 'The requested model summary is in progress.'
-      : state === 'error'
-        ? 'The summary request failed. Local analysis remains available.'
-        : state === 'ready'
-          ? 'The refresh returned. Model failures fall back to local analysis.'
-          : 'Use Summarize this session for each model request.';
+    ? READINGS_OFF_CONSOLE
+    : declined
+      ? SUMMARIES_DECLINED
+      : pending
+        ? 'The requested model summary is in progress.'
+        : state === 'error'
+          ? 'The summary request failed. Local analysis remains available.'
+          : state === 'ready'
+            ? 'The refresh returned. Model failures fall back to local analysis.'
+            : 'Use Summarize this session for each model request.';
   const observed = (Array.isArray(entry?.data?.observers) ? entry.data.observers : []).find(
     (row) => row.harness === identity.harness && row.sid === identity.sid,
   );
@@ -132,18 +185,13 @@ export function ObserverControls({ projectKey, focus }: ObserverControlsProps) {
       <p>{disclosure}</p>
       <p>Credential redaction does not remove private prose.</p>
       <div className="next-usage-consent-actions">{actions}</div>
-      {model.notice && !off ? (
-        <ModelNotice notice={{ ...model.notice }} provider="Codex" parts={[disclosure]}>
-          <Button
-            ref={offRef}
-            type="button"
-            data-next-observer-action="off"
-            data-next-focus="observer:off"
-            disabled={offPending}
-            onClick={() => void turnOff()}
-          >
-            {offPending ? 'Turning off…' : 'Turn off readings'}
-          </Button>
+      {shownNotice ? (
+        <ModelNotice
+          notice={{ ...shownNotice }}
+          provider={noticeLabel({ ...shownNotice })}
+          parts={[disclosure]}
+        >
+          {offButton}
         </ModelNotice>
       ) : null}
       <Alert as="p" variant="observer-status">

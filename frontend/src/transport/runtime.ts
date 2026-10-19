@@ -99,7 +99,7 @@ export function createBoardRuntime(options: RuntimeOptions) {
     const refresh = createRefreshController({ sink, revisions });
     return {
       refresh,
-      context: createContextLoader({ client, store }),
+      context: createContextLoader({ client, store, storage }),
       record: createRecordLoader({ client, store }),
       live: createLiveTransport({
         env,

@@ -36,7 +36,7 @@ import {
   ROUTE,
   SAVED,
   SID,
-  UNCONSENTED,
+  FIRST_PRESS,
   check,
   fact,
   freshScript,
@@ -494,7 +494,7 @@ try {
     'an Allow is owed: Analyze offers the receiver one click away and sends nothing',
     async () => {
       const state = await compare('allow owed', (g) =>
-        claude(g, { payload: { reading: UNCONSENTED } }),
+        claude(g, { payload: { reading: FIRST_PRESS } }),
       );
       assert.match(state.text, /What is sent to Claude Code/);
     },
@@ -822,7 +822,7 @@ try {
       assert.ok(!state.buttons.some(([label]) => label === 'Analyze drift'));
       const owed = await compare('question, an Allow owed', (g) =>
         claude(g, {
-          payload: { reading: UNCONSENTED },
+          payload: { reading: FIRST_PRESS },
           facts: [fact('d1', g - 100, { summary: 'Keep the flag off by default.' })],
         }),
       );
@@ -844,7 +844,7 @@ try {
     'pressing Analyze where an Allow is owed asks for it, naming the receiver, and sends nothing',
     async () => {
       const g = await clockOf();
-      await setState(react, () => claude(g, { payload: { reading: UNCONSENTED } }));
+      await setState(react, () => claude(g, { payload: { reading: FIRST_PRESS } }));
       await load(react);
       await react.page.locator('[data-next-cockpit-action="reading-ask"]').click();
       const old = golden.observe('consent: the step');
@@ -1244,7 +1244,7 @@ try {
     async () => {
       await apply(react, (g) =>
         claude(g, {
-          payload: { reading: UNCONSENTED },
+          payload: { reading: FIRST_PRESS },
           routes: {
             '/api/reading': () => ({
               status: 409,
@@ -1541,7 +1541,7 @@ try {
     async () => {
       await apply(react, (g) =>
         claude(g, {
-          payload: { reading: UNCONSENTED },
+          payload: { reading: FIRST_PRESS },
           routes: { '/api/reading': () => ({ body: { ok: true, produced: false } }) },
         }),
       );
@@ -1623,7 +1623,7 @@ try {
                 payload: { reading_jobs: { [`${HARNESS}:${SID}`]: JOB(g) } },
               }),
           ],
-          ['the consent step', (g) => claude(g, { payload: { reading: UNCONSENTED } })],
+          ['the consent step', (g) => claude(g, { payload: { reading: FIRST_PRESS } })],
           [
             'a stale result and a gap',
             (g) => stored(g, { session: { annotation_revision: 4 }, contextError: true }),

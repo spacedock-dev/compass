@@ -35,8 +35,8 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   Claude Code, and the Steer back correction was composed by Compass from it. Both are stored in the
   fixture as they came back, apart from two rewrites that put them on the sample's own timeline (the
   reading's time, and one sentence that counted entries "about 3718h ago"). The board's reading
-  permission was recorded before readings ran without asking first, and is set to the current
-  shape: readings on, with nothing refused.
+  permission was captured under the old consent step and is edited to readings on, with nothing
+  refused and no notice recorded. `scripts/build_sample_fixture.py` makes that edit.
 
 ## Why a transcript is in the repository
 

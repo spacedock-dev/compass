@@ -108,19 +108,32 @@ describe('an offer nothing has read is not an offer that is off', () => {
 });
 
 describe('reader-started goal summaries', () => {
-  it.each([undefined, 'declined', 'granted'])(
-    'offers a direct request regardless of the retired browser answer (%s)',
+  it.each([undefined, 'granted'])(
+    'offers a direct request with no stored decline (%s), and Turn off readings beside it',
     async (answer) => {
       const page = mount(offer(), answer ? { storage: { [CONSENT]: answer } } : {});
       await page.settle();
       expect(text()).toContain(DISCLOSURE);
       expect(action('request')?.textContent).toBe('Summarize this session');
+      expect(action('off')?.textContent).toBe('Turn off readings');
       expect(action('allow')).toBeNull();
       expect(action('decline')).toBeNull();
       await page.poll({ ...board, generated: 1002 });
       expect(modelRequests(page)).toEqual([]);
     },
   );
+
+  it('keeps a summary decline the browser stored before the upgrade, until the reader turns them on', async () => {
+    const page = mount(offer(), { storage: { [CONSENT]: 'declined' } });
+    await page.settle();
+    expect(action('request')).toBeNull();
+    expect(text()).toContain('Goal summaries are off in this browser.');
+    expect(action('on')?.textContent).toBe('Turn on summaries');
+    press('on');
+    await page.settle();
+    expect(modelRequests(page)).toEqual([]);
+    expect(action('request')?.textContent).toBe('Summarize this session');
+  });
 
   it('shows the goal notice and turns readings off with one press', async () => {
     const notice = {
@@ -143,6 +156,22 @@ describe('reader-started goal summaries', () => {
     press('request');
     await page.settle();
     expect(text()).toContain('goal.example');
+    expect(document.querySelector('[data-next-reading-notice]')?.getAttribute('aria-label')).toBe(
+      'Model request notice',
+    );
+    expect(document.querySelectorAll('[data-next-observer-action="off"]')).toHaveLength(1);
+    /* The next revision's passive read replaces the context entry with a body carrying no notice; the
+       notice and its off switch stay. */
+    const passive = () =>
+      page.state.requests.filter(
+        (r) => r.path === '/api/project-context' && !/observer_model=1/.test(r.url),
+      ).length;
+    const before = passive();
+    await page.poll({ ...board, generated: 1005 });
+    await page.settle();
+    expect(passive()).toBeGreaterThan(before);
+    expect(text()).toContain('goal.example');
+    expect(text()).toContain('Provider: Codex');
     const off = document.querySelector<HTMLButtonElement>('[data-next-observer-action="off"]');
     expect(off?.textContent).toBe('Turn off readings');
     fireEvent.click(off as HTMLElement);

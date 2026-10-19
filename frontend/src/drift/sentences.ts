@@ -303,6 +303,10 @@ export const READINGS_OFF =
   'Readings are off. Nothing is sent to a model until you turn them back on.';
 export const PAGE_OUTDATED = 'Reload this page before turning readings on. Nothing was sent.';
 export const NOTICE_SENT = 'This request sends:';
+export const NOTICE_WORDS = "The session's words, without the agent's messages.";
+export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
+export const READINGS_OFF_CONSOLE =
+  'Readings are off. Nothing is sent to a model until you turn them back on with Turn on readings and analyze in the Drift card.';
 export const noticeProvider = (label: string): string => `Provider: ${label}`;
 export const noticeDestination = (destination: string): string =>
   `Words go to: ${destination || 'destination not published'}`;

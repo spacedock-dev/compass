@@ -47,7 +47,12 @@ export function ModelNotice({
 }) {
   const output = String(notice['tool_output'] || '');
   return (
-    <Card variant="reading-notice" data-next-reading-notice="">
+    <Card
+      as="section"
+      variant="reading-notice"
+      data-next-reading-notice=""
+      aria-label="Model request notice"
+    >
       <p className="next-cockpit-reading-why">{NOTICE_SENT}</p>
       <DisclosureParts parts={parts} />
       <div>

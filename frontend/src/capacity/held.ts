@@ -3,7 +3,9 @@ import { STORAGE_KEYS, type ConsentAnswer, type ConsentStore } from '../storage'
 import { useDisplayed, useShell } from '../shell/context';
 import type { BrowserRuntime } from '../transport/browser';
 
-/* Quota consent remains browser-owned. Reader-started goal summaries use the server's durable off switch.
+/* Quota consent remains browser-owned. Reader-started goal summaries use the server's durable off switch, and
+   the old browser answer is read only for a decline, which the upgrade keeps rather than opting the reader back
+   in. Turning summaries back on here writes `granted`, which no longer gates anything.
    [The widening](../../../docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts) */
 
 export type Consent = ConsentAnswer | null;
@@ -69,6 +71,7 @@ export type SelectionLane = ReturnType<typeof selectionLane>;
 
 export interface Held {
   readonly usage: ConsentLane;
+  readonly observer: ConsentLane;
   readonly selection: SelectionLane;
 }
 
@@ -79,6 +82,7 @@ export function heldFor(runtime: BrowserRuntime): Held {
   if (!lane) {
     lane = {
       usage: consentLane(runtime.storage.usageConsent, STORAGE_KEYS.usageConsent),
+      observer: consentLane(runtime.storage.observerConsent, STORAGE_KEYS.observerConsent),
       selection: selectionLane(),
     };
     held.set(runtime, lane);
@@ -87,7 +91,7 @@ export function heldFor(runtime: BrowserRuntime): Held {
 }
 
 /** The consent this origin has recorded: `null` is unanswered, and unanswered is never granted. */
-export function useConsent(kind: 'usage'): Consent {
+export function useConsent(kind: 'usage' | 'observer'): Consent {
   const lane = heldFor(useShell().runtime)[kind];
   return useSyncExternalStore(lane.subscribe, lane.read);
 }

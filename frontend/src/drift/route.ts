@@ -123,7 +123,9 @@ export function routeRefusal(payload: Row, session: Row): string {
 
 export function policyReason(policy: unknown, nowMs: number = Date.now()): string {
   if (!isRecord(policy)) return MODEL_UNREAD;
-  if (policy['off'] === true || policy['reason'] === 'readings-off') return READINGS_OFF;
+  /* The server's ranking: run-disabled and store-unavailable outrank the cap, and the cap outranks off,
+     because turning readings on lifts none of them.
+     [Consent notice payload](../../../docs/design-session-summary.md#consent-notice-payload) */
   if (policy['reason'] === 'run-disabled') return MODEL_OFF;
   if (policy['reason'] === 'store-unavailable') {
     return 'Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before analyzing drift.';
@@ -134,6 +136,7 @@ export function policyReason(policy: unknown, nowMs: number = Date.now()): strin
       ? 'Analysis limit reached. Wait for the next update.'
       : `Analysis limit reached. You can analyze again at ${capReset(at, nowMs)}.`;
   }
+  if (policy['off'] === true || policy['reason'] === 'readings-off') return READINGS_OFF;
   return '';
 }
 

@@ -269,6 +269,8 @@
   "reading": {
    "consent": true,
    "limit": 12,
+   "notices": {},
+   "off": false,
    "providers": {
     "claude": true,
     "codex": false

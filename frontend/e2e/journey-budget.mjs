@@ -8,7 +8,7 @@ import {
   HARNESS,
   SID,
   ROUTE,
-  UNCONSENTED,
+  FIRST_PRESS,
   RECORD,
   fact,
   freshScript,
@@ -123,7 +123,7 @@ try {
         ...(fixture.noDraft ? { first_prompt: '', instruction: null } : {}),
       };
       script.payload = {
-        reading: structuredClone(UNCONSENTED),
+        reading: structuredClone(FIRST_PRESS),
         reading_routes: { claude: ROUTE },
         reading_check: 'accepted',
         reading_jobs: {},
