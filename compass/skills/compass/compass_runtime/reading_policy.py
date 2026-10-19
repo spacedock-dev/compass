@@ -831,6 +831,7 @@ def _summary_answer(
     dates: tuple[float, ...] = (),
     *,
     off: bool = False,
+    readings_off: bool = False,
     reason: str = "",
     generation: int = 0,
     notices: dict[str, dict[str, Notice]] | None = None,
@@ -840,7 +841,10 @@ def _summary_answer(
     answer["used"] = len(dates)
     answer["limit"] = config.session_summary_rolling_cap
     answer["retry_at"] = min(dates) + DAY_SEC if full and dates else None
-    answer["reason"] = reason or ("daily-cap" if full else "summaries-off" if off else "")
+    answer["reason"] = reason or (
+        "daily-cap" if full else "summaries-off" if off else "readings-off" if readings_off else ""
+    )
+    answer["consent"] = answer["consent"] and not readings_off
     answer["generation"] = generation
     return answer
 
@@ -893,6 +897,7 @@ def _summary_transaction(
             config,
             dates,
             off=row is not None and row[0] == 0,
+            readings_off=_readings_off(db),
             generation=row[1] if row else 0,
             notices=_notices(db),
         )
@@ -922,9 +927,35 @@ def _summary_transaction(
         return answer, recorded
 
 
+def _readings_off(db: Any) -> bool:
+    # After Turn off readings no session summary call is made either
+    # (docs/design-session-summary.md#job-and-grant-contract). The summary answer stays
+    # its own, so `off` still reports only that.
+    tables = {
+        name
+        for (name,) in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('permission', 'provider_permission')"
+        )
+    }
+    return tables == {"permission", "provider_permission"} and _off(db)
+
+
+def _summary_off(config: RuntimeConfig) -> bool:
+    """The stored summary off, read without writing; false when it cannot be read."""
+    if runtime_io.sqlite_module is None or not os.path.lexists(store_path(config)):
+        return False
+    try:
+        with contextlib.closing(_connect(config, READ_WAIT_SEC)) as db:
+            row = db.execute("SELECT allowed FROM summary_permission WHERE id=1").fetchone()
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return False
+    return row is not None and row[0] == 0
+
+
 def _summary_run(config: RuntimeConfig, now: float, operation: str, receipt: str = "") -> Status:
     if config.model_calls_disabled and operation not in {"off", "on"}:
-        return _summary_answer(config, reason="run-disabled")
+        return _summary_answer(config, off=_summary_off(config), reason="run-disabled")
     try:
         return _summary_transaction(config, now, operation, receipt)[0]
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):

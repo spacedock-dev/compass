@@ -2170,9 +2170,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(refusal)
             return
         if payload.get("consent") == "off":
-            self._reading_permission_reply(
-                reading_policy.set_consent(config, False, now=application.clock()), off=True
-            )
+            answer = reading_policy.set_consent(config, False, now=application.clock())
+            # Turn off readings also stops session summaries, including a call already running
+            # (docs/design-session-summary.md#job-and-grant-contract); a lock failure leaves
+            # the next part's recheck to refuse.
+            with contextlib.suppress(OSError, ValueError):
+                summary_jobs.stop_running(application, "readings-off")
+            self._reading_permission_reply(answer, off=True)
             return
         harness, sid = payload.get("harness"), payload.get("sid")
         if not isinstance(harness, str) or not isinstance(sid, str) or not harness or not sid:
@@ -3451,7 +3455,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 429
                 if answer["reason"] == "daily-cap"
                 else 403
-                if answer["reason"] == "summaries-off"
+                if answer["reason"] in {"summaries-off", "readings-off"}
                 else 503
             )
             self._summary_reply(

@@ -6354,3 +6354,35 @@ class SummaryJobHTTPTest(unittest.TestCase):
             self.assertIn(
                 reply.get("reason") or reply.get("outcome"), ("store-unavailable", "unwritable")
             )
+
+    def test_turn_off_readings_refuses_and_stops_session_summaries(self) -> None:
+        # After Turn off readings no session summary call is made until readings are back on.
+        entered, release = threading.Event(), threading.Event()
+        replies = Replies()
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return replies(prompt, output_cap_bytes=output_cap_bytes)
+
+        off = json.dumps({"consent": "off", "press": True, "observer_model": 1}).encode()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            self.request_summary(origin="press")
+            self.assertTrue(entered.wait(5))
+            try:
+                self.handler("/api/reading", off).do_POST()
+            finally:
+                release.set()
+            wait_job(self.application, "claude", "root", timeout=5)
+            self.assertEqual("readings-off", self.state.summary_jobs["claude:root"].reason)
+            self.assertEqual(1, len(replies.prompts))
+            self.assertIsNone(self.store.get(self.config, "claude", "root"))
+            refused = self.request_summary(origin="press")
+            self.assertEqual(403, refused._send.call_args.args[2])
+            answer = json.loads(refused._send.call_args.args[0])
+            self.assertEqual("readings-off", answer["reason"])
+            self.assertFalse(answer["summaries"]["consent"])
+            self.assertEqual(1, len(replies.prompts))

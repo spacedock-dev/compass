@@ -119,6 +119,11 @@ class SummaryGrantTest(_SummaryCase):
         self.assertIsNotNone(reading_policy.note(self.config, **args))
         self.assertIsNone(reading_policy.note(self.config, **args))
         reading_policy.set_consent(self.config, False, now=101.0)
+        # Readings off refuses summaries too, so nothing new is due, but their record stays.
+        self.assertIsNone(
+            reading_policy.note(self.config, **{**args, "destination": "gateway.example"})
+        )
+        reading_policy.set_consent(self.config, True, now=101.5)
         self.assertIsNone(reading_policy.note(self.config, **args))
         self.assertIsNotNone(
             reading_policy.note(self.config, **{**args, "destination": "gateway.example"})
@@ -335,6 +340,10 @@ class SummaryJobTest(_SummaryCase):
         self.assert_finished_prefix(stored.summary)
         self.assertEqual("daily-cap", self.state.summary_jobs["claude:s1"].reason)
         self.assertEqual(1, len(replies.prompts))
+        # The producer's final result is saved after the cap stopped it, not only the prefix.
+        job = self.state.summary_jobs["claude:s1"]
+        self.assertIn(job.parts, job.finished_parts)
+        self.assertEqual("refused", stored.summary.reason)
 
     def test_restart_reports_finished_parts_without_resuming(self) -> None:
         entered, release = threading.Event(), threading.Event()
@@ -538,3 +547,187 @@ class SummaryJobTest(_SummaryCase):
         reading_policy.set_summary_consent(self.config, True, now=101.0)
         self.run_job(model)
         self.assertGreater(len(model.prompts), 0)
+
+    def test_summary_off_between_charge_and_model_seam_makes_no_model_call(self) -> None:
+        replies = Replies()
+        real = reading_jobs._publish
+        turned = threading.Event()
+
+        def publish(application: Any) -> None:
+            job = self.state.summary_jobs.get("claude:s1")
+            if job is not None and job.attempts == 1 and not turned.is_set():
+                turned.set()
+                self.jobs.set_consent(self.application, False)
+            real(application)
+
+        with mock.patch.object(reading_jobs, "_publish", side_effect=publish):
+            self.run_job(replies)
+        self.assertTrue(turned.is_set())
+        self.assertEqual([], replies.prompts)
+        self.assertEqual("summaries-off", self.state.summary_jobs["claude:s1"].reason)
+        self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
+
+    def test_summary_off_cancels_a_call_already_running(self) -> None:
+        entered, cancelled = threading.Event(), threading.Event()
+
+        class Group:
+            def cancel(self) -> None:
+                cancelled.set()
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            del prompt, output_cap_bytes
+            self.state.summary_jobs["claude:s1"].group = Group()
+            entered.set()
+            self.assertTrue(cancelled.wait(5))
+            return "", "cancelled"
+
+        code, _ = self.jobs.start(
+            self.application, self.page, action="start", model=model, destination="Anthropic"
+        )
+        self.assertEqual(202, code)
+        self.assertTrue(entered.wait(5))
+        self.jobs.set_consent(self.application, False)
+        self.assertTrue(cancelled.is_set())
+        wait_job(self.application, "claude", "s1", timeout=5)
+        self.assertEqual("summaries-off", self.state.summary_jobs["claude:s1"].reason)
+        self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
+
+    def test_readings_off_refuses_summary_start_and_stops_a_running_job(self) -> None:
+        model = Replies()
+        reading_policy.set_consent(self.config, False, now=100.0)
+        code, answer = self.jobs.start(
+            self.application, self.page, action="start", model=model, destination="Anthropic"
+        )
+        self.assertEqual((403, "readings-off"), (code, answer["reason"]))
+        status = reading_policy.summary_status(self.config, now=100.0)
+        self.assertEqual((False, False), (status["consent"], status["off"]))
+        self.assertEqual([], model.prompts)
+        reading_policy.set_consent(self.config, True, now=101.0)
+        entered, release = threading.Event(), threading.Event()
+
+        def held(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return model(prompt, output_cap_bytes=output_cap_bytes)
+
+        code, _ = self.jobs.start(
+            self.application, self.page, action="start", model=held, destination="Anthropic"
+        )
+        self.assertEqual(202, code)
+        self.assertTrue(entered.wait(5))
+        reading_policy.set_consent(self.config, False, now=102.0)
+        self.jobs.stop_running(self.application, "readings-off")
+        release.set()
+        wait_job(self.application, "claude", "s1", timeout=5)
+        self.assertEqual(1, len(model.prompts))
+        self.assertEqual("readings-off", self.state.summary_jobs["claude:s1"].reason)
+        self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
+
+    def extended_page(self) -> Any:
+        extra = entry(4, words="A new synthetic direction")
+        assert self.page.snapshot is not None
+        return dataclasses.replace(
+            self.page,
+            entries=(*self.entries, extra),
+            snapshot=dataclasses.replace(
+                self.page.snapshot,
+                entries=tuple((e.fact_id, e.fingerprint, e.at) for e in (*self.entries, extra)),
+            ),
+        )
+
+    def test_cancelled_update_keeps_the_saved_lede(self) -> None:
+        self.run_job()
+        before = summary_store.get(self.config, "claude", "s1")
+        assert before is not None
+        self.assertIsNotNone(before.summary.lede)
+        entered, release = threading.Event(), threading.Event()
+        replies = Replies()
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            if replies.prompts:
+                entered.set()
+                self.assertTrue(release.wait(5))
+            return replies(prompt, output_cap_bytes=output_cap_bytes)
+
+        code, _ = self.jobs.start(
+            self.application,
+            self.extended_page(),
+            action="update",
+            model=model,
+            destination="Anthropic",
+        )
+        self.assertEqual(202, code)
+        self.assertTrue(entered.wait(5))
+        try:
+            self.jobs.cancel(self.application, "claude", "s1")
+        finally:
+            release.set()
+        wait_job(self.application, "claude", "s1", timeout=5)
+        stored = summary_store.get(self.config, "claude", "s1")
+        assert stored is not None
+        self.assertEqual(before.summary.lede, stored.summary.lede)
+        self.assertIsNone(stored.summary.lede_reason)
+
+    def test_update_after_delete_refuses_instead_of_restoring_deleted_text(self) -> None:
+        self.run_job()
+        prior = summary_store.get(self.config, "claude", "s1")
+        real_get = summary_store.get
+        reads = iter([prior])
+
+        def get(*args: Any, **kwargs: Any) -> Any:
+            # The first read is the request's own, before Delete summary runs.
+            return next(reads, None) or real_get(*args, **kwargs)
+
+        self.jobs.delete(self.application, "claude", "s1")
+        model = Replies()
+        with mock.patch.object(summary_store, "get", side_effect=get):
+            code, answer = self.jobs.start(
+                self.application,
+                self.extended_page(),
+                action="update",
+                model=model,
+                destination="Anthropic",
+            )
+        self.assertEqual((422, "no-summary"), (code, answer["reason"]))
+        self.assertEqual([], model.prompts)
+        self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
+
+    def test_marker_is_removed_when_the_lock_fails_as_the_job_ends(self) -> None:
+        failing = threading.Event()
+        real = summary_jobs._locked
+        replies = Replies()
+
+        def locked(application: Any) -> Any:
+            if failing.is_set():
+                raise OSError("lock unavailable")
+            return real(application)
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            answer = replies(prompt, output_cap_bytes=output_cap_bytes)
+            failing.set()
+            return answer
+
+        with mock.patch.object(summary_jobs, "_locked", side_effect=locked):
+            self.run_job(model)
+        self.assertFalse(any((self.config.state_dir / self.jobs.MARKER_DIR).glob("*.json")))
+        self.run_job()
+
+    def test_torn_marker_neither_blocks_delete_nor_leaves_the_session_in_flight(self) -> None:
+        self.run_job()
+        marker = summary_jobs._marker(self.config, "claude", "s1")
+        marker.write_text("{torn")
+        self.assertEqual("deleted", self.jobs.delete(self.application, "claude", "s1"))
+        self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
+        self.assertFalse(marker.exists())
+        self.run_job()
+        marker.write_text("{torn")
+        self.assertEqual(0, self.jobs.recover(self.application, alive=lambda _: False))
+        self.assertFalse(marker.exists())
+
+    def test_run_disabled_still_reports_a_stored_summary_off(self) -> None:
+        reading_policy.set_summary_consent(self.config, False, now=100.0)
+        disabled = dataclasses.replace(self.config, model_calls_disabled=True)
+        answer = reading_policy.summary_status(disabled, now=100.0)
+        self.assertEqual(("run-disabled", True), (answer["reason"], answer["off"]))
+        board = summary_jobs.board(disabled, now=100.0)
+        self.assertTrue(board["off"])

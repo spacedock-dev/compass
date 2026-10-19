@@ -148,7 +148,10 @@ The posture rests on two invariants:
    `POST /api/reading` writes. The sixth, `POST /api/correction/copied`, records the digest of a
    correction you copied, never its text, in `compass-copied-corrections.json`; [Analyze drift,
    Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections) owns its bounds.
-   Two more disk writers, `POST /api/summary` and `POST /api/summary/cancel`,
+   The seventh, `POST /api/summary/delete`, deletes one stored summary, and reading one writes
+   too: a focused `GET /api/project-context` records its last access time, named with the other
+   writing `GET` below.
+   The eighth, `POST /api/summary`, and the ninth, `POST /api/summary/cancel`,
    start or stop a server-owned summary job, and the first also stores Turn off summaries or
    Turn summaries on. The first writes the separate summary store incrementally after each part.
    Both write identifier-only progress markers in `state_dir/summary-jobs/` before any charge;
@@ -161,10 +164,7 @@ The posture rests on two invariants:
    the random job id and attempt number, never a session id or source text, and is retained for
    30 days for restart accounting; the rolling cap reads only the newest 24 hours.
    All three summary POST routes are loopback-only, enforce Host/Origin and fetch-site checks,
-   and refuse document navigation before parsing a body or touching a store.
-   The seventh, `POST /api/summary/delete`, deletes one stored summary, and reading one writes
-   too: a focused `GET /api/project-context` records its last access time, named with the other
-   writing `GET` below. The separate
+   and refuse document navigation before parsing a body or touching a store. The separate
    **summary store**, `compass-summaries.json` under the same home, holds model-written
    summaries keyed by harness and session, without a saved intent. Discard everything does not
    remove it. Its versioned closed schema admits the producer's summary (lede, blocks, spans,
@@ -1122,8 +1122,8 @@ invocation carries session-derived text, which is why invariant 1 names it separ
 widening the quota exception to cover it. The consent below is not the quota fetch's: a call a
 reader's action starts runs only on that action, and an unasked check runs only under
 `--unasked-readings` and DEC-18's preconditions. Every kind of call announces itself the first time
-it runs. Turn off readings governs readings and goal summaries; Turn off summaries governs
-session summaries independently. `--no-observer-model` refuses all of them for the run, where `--no-usage` is a startup flag
+it runs. Turn off readings stops readings, goal summaries and session summaries; Turn off
+summaries stops session summaries alone. `--no-observer-model` refuses all of them for the run, where `--no-usage` is a startup flag
 alone.
 
 The bounds, all of which hold together:
@@ -1144,9 +1144,10 @@ The bounds, all of which hold together:
     shows the notice again, naming the new destination, rather than a blocking Allow. It is disclosed this way, and
     not left silent like the quota fetch, for a stronger reason: this one spends their capacity
     rather than reading a number.
-  - The off switch. Turn off readings stops readings and goal summaries alike until turned back
-    on, and an answer of off already stored is kept across the upgrade. Session summaries have
-    Turn off summaries and Turn summaries on of their own, independent of that answer.
+  - The off switch. Turn off readings stops readings, goal summaries and session summaries until
+    turned back on, including a session summary call already running, and an answer of off already
+    stored is kept across the upgrade. Session summaries also have Turn off summaries and Turn
+    summaries on of their own; turning summaries on does not override readings off.
     `--no-observer-model` still refuses every model call. `--allow-tool-output` and
     `--observer-model` are accepted no-ops for one release.
 - Goal summaries are on by default. The browser still sends `observer_model=1` on the focused
@@ -2125,7 +2126,9 @@ Opening a stored summary makes no summary call or charge.
   starts unless its full timeout fits inside the remaining whole-job seconds.
 - Off switch. Turn off summaries, one press from the notice and the card, stops every summary call
   until it is turned back on, and an answer of off already stored survives restart and upgrade.
-  It changes neither Analyze's grant nor a goal-summary answer. The first summary shows a
+  It changes neither Analyze's grant nor a goal-summary answer, and it cancels a summary call
+  already running. A stored Turn off readings also refuses every summary call, with the reason
+  `readings-off`. The first summary shows a
   non-blocking notice naming all the carriers above, Claude Code/Anthropic and the configured
   destination, and the off switch. A new destination or wider content tier repeats the notice.
   Each part rechecks grant, destination and content; this source sends no tool output and

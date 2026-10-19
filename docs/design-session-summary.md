@@ -773,8 +773,9 @@ This table describes the implementation and does not amend the owner-ruled table
 
 ## Consent notice payload
 
-Reader-started readings and goal summaries use the reading off switch. Session summaries use
-`summary` notices with an independent durable off switch; the [job and grant contract](#job-and-grant-contract)
+Reader-started readings and goal summaries use the reading off switch, and a stored reading off
+also refuses session summaries. Session summaries use `summary` notices with a durable off switch
+of their own; the [job and grant contract](#job-and-grant-contract)
 records their admission and publication shapes. No new session field is added.
 
 - `board.reading.consent: bool` is true unless an explicit stored off exists, model calls are
@@ -1016,6 +1017,16 @@ An independent stored off is honoured through restart and upgrade. Grant presses
 under `--no-observer-model` and `--no-annotations`. They change neither Analyze's answer nor a
 stored goal-summary answer. `--no-observer-model` refuses every model call with 503 `run-disabled`.
 Off refuses starts with 403 `summaries-off`; the rolling cap refuses them with 429 `daily-cap`.
+A stored Turn off readings refuses starts with 403 `readings-off` and stops each later part: the
+acceptance criteria of the opt-out issue say that after Turn off readings no reading, goal summary
+or session summary call is made until it is turned back on. DEC-28's answer 4 rules only that
+turning summaries off leaves Analyze as it was, and no ruling makes the two switches independent
+in the other direction, so the conservative reading is kept. The summary `off` field still reports
+only the summary answer, and Turn summaries on does not override readings off.
+Turning summaries off, and Turn off readings, stop every job this process runs: the job is marked
+`stopping` with that reason, its marker is rewritten, and a call already spawned is cancelled. A
+part already charged rechecks the grant after the board publish that follows its charge and before
+the model seam, so an off that lands in between sends nothing (the charge stays).
 The cap outranks off in board status when both apply; neither turning on nor off resets spend. `--forget`
 stores summaries off as it stores readings off: it forgets the answer as Turn off does, and the
 ruling is silent on whether forgetting should instead return to the default of on, so the
@@ -1023,8 +1034,12 @@ conservative reading is kept. It never resets the summary ledger.
 
 `POST /api/summary/cancel` accepts exactly `{"harness":"claude","sid":"session-id"}`.
 It answers 202 `{"ok":true,"cancelling":true}` when a job is running, otherwise 409
-`{"ok":false,"reason":"not-running"}`. An unreadable marker or unavailable publication lock
-answers 503 `store-unavailable`. It keeps already saved parts and refuses later replies.
+`{"ok":false,"reason":"not-running"}`. An unavailable publication lock or an unwritable marker
+answers 503 `store-unavailable`. A marker that cannot be parsed is rewritten from the job this
+process runs, or removed when no such job is running (cancel then answers `not-running`); Delete
+summary still deletes, and startup recovery removes such a marker rather than leaving the session
+in flight. If the publication lock is unavailable when a job ends, its own marker is removed
+without the lock, since the slot is that job's. It keeps already saved parts and refuses later replies.
 The identity names the current job, so a stale tab can cancel a newer job on that same session;
 this conservative choice follows the specified identity-only request. Delete uses the existing
 `/api/summary/delete` shape and outcome; it cancels the job and deletes the stored summary under
@@ -1040,7 +1055,13 @@ producer's newest-block check-result exception. Earlier source changes refuse be
 answered as one `stopped` gap, with `lede_reason: "stopped"`, so a summary left by Cancel, a revoke
 or a restart names what it does not cover instead of comparing as unchanged against a snapshot of
 the whole read. The producer's final result is offered for saving even after a ceiling or the cap
-stopped it, keeping its named gaps; it is never offered when its state is `refused`. Summarize
+stopped it, keeping its named gaps; it is never offered when its state is `refused`. Only the
+producer's own stops (`daily-cap`, `model-unavailable`, `stopping`) still save; every publication
+bar (a grant, generation or destination change, either off switch, Cancel, Delete summary, an
+unavailable store) refuses the save. An update's intermediate parts carry the saved lede, so an
+update stopped part-way keeps it. An update re-reads the stored summary under the publication lock
+at admission and refuses `no-summary` (422) if Delete summary removed it since the request read
+it, or `summary-changed` (409) if another job replaced it. Summarize
 again covers the remainder; an unchanged update preserves the saved answer. A start on a session
 whose job is still `running` or `stopping` answers 409 `in-flight` before the source is read.
 
@@ -1060,7 +1081,9 @@ object under `summaries`:
 notice. `consent` is true by default and at the cap, false while explicitly off, run-disabled or
 store-unavailable. `off` means an explicit stored off (false when that answer cannot be read).
 `retry_at` is Unix seconds for the oldest unexpired charge plus 24 hours when at the cap, otherwise
-null. `reason` is exactly `""`, `daily-cap`, `summaries-off`, `run-disabled` or `store-unavailable`.
+null. `reason` is exactly `""`, `daily-cap`, `summaries-off`, `readings-off`, `run-disabled` or
+`store-unavailable`; `consent` is also false under `readings-off`. Under `--no-observer-model`, `off`
+still reads the stored summary answer, read-only, while `reason` stays `run-disabled`.
 The summary content tier is 1 and has its own epoch, independent of the reading's epoch.
 
 Each row's already-declared `summary.job` and focused `sources.summary.job` is null until this

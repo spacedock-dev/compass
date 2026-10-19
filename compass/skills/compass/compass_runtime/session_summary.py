@@ -777,8 +777,11 @@ def _produce(
             harness,
             starts_at,
             blocks=(*blocks, _block(rest, "stopped")) if rest else tuple(blocks),
+            # An Update keeps the saved lede until its own lede replaces it: a stop here would
+            # otherwise store no lede at all, and the final result restoring it is not saved.
+            lede=prior.lede if prior else None,
             spend=job.spend(),
-            lede_reason="stopped",
+            lede_reason=None if prior and prior.lede else "stopped",
             coverage=coverage,
         )
         _publish_part(

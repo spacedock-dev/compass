@@ -40,6 +40,10 @@ if TYPE_CHECKING:
 MARKER_DIR = "summary-jobs"
 _LOCK = threading.RLock()
 ACTIVE = {"running", "stopping"}
+# Stops the producer reports about itself. Its final result is still offered for saving after
+# one of these; every other reason bars publication
+# (docs/design-session-summary.md#job-and-grant-contract).
+PRODUCER_STOPS = {"daily-cap", "model-unavailable", "stopping"}
 # A summary disclosure must not renew Analyze's notice when its content changes.
 CONTENT_VERSION = 1
 
@@ -171,7 +175,9 @@ def _refusal(reason: str, **extra: Any) -> tuple[int, dict[str, Any]]:
         else 503
         if reason in {"run-disabled", "store-unavailable", "job-unrecorded", "no-thread"}
         else 403
-        if reason == "summaries-off"
+        if reason in {"summaries-off", "readings-off"}
+        else 409
+        if reason in {"summary-changed", "summary-exists"}
         else 422
     )
     return code, {"ok": False, "reason": reason, **extra}
@@ -221,6 +227,26 @@ def start(
         return _refusal("job-unrecorded")
 
 
+def _store_moved(
+    config: RuntimeConfig,
+    page: session_source.SourcePage,
+    prior: summary_store.StoredSummary | None,
+    origin: str,
+) -> str:
+    # `start` read the store outside the publication lock. A Delete summary that ran since left
+    # no marker to stop, so an update merging that prior would bring deleted text back.
+    current = summary_store.get(config, page.harness, page.sid)
+    if origin == "open" and current:
+        return "summary-exists"
+    if prior is None:
+        return ""
+    if current is None:
+        return "no-summary"
+    if current.snapshot != prior.snapshot or current.summary != prior.summary:
+        return "summary-changed"
+    return ""
+
+
 def _admit(
     application: reading_jobs.Application,
     page: session_source.SourcePage,
@@ -233,8 +259,9 @@ def _admit(
 ) -> tuple[int, dict[str, Any]]:
     config = application.config
     with _locked(application):
-        if origin == "open" and summary_store.get(config, page.harness, page.sid):
-            return 409, {"ok": False, "reason": "summary-exists"}
+        moved = _store_moved(config, page, prior, origin)
+        if moved:
+            return _refusal(moved)
         old = application.state.summary_jobs.get(_key(page.harness, page.sid))
         marker = _marker(config, page.harness, page.sid)
         if (isinstance(old, Job) and old.state in ACTIVE) or marker.exists():
@@ -350,6 +377,13 @@ class GuardedSummaryModel:
             job.attempts += 1
             _write(app, job)
         _publish(app)
+        with _locked(app):
+            # The board collection above runs unlocked and can take long enough for an off,
+            # cancel or delete to land. The charge stays; the model is not called.
+            reason = _eligible(app, job)
+            if reason:
+                job.reason = reason
+                return "", "failed"
         text, status = self.model(prompt, output_cap_bytes=output_cap_bytes)
         # Admission already charged this attempt. A later local refusal cannot refund it in
         # the producer's spend while leaving the durable receipt charged.
@@ -391,9 +425,11 @@ def _save(
     parts: int,
 ) -> None:
     with _locked(application):
-        job.reason = _eligible(application, job)
-        if job.reason:
-            return
+        reason = _eligible(application, job)
+        if reason:
+            job.reason = reason
+            if reason not in PRODUCER_STOPS:
+                return
         job.parts = parts
         if part:
             if page.snapshot is None:
@@ -459,8 +495,15 @@ def _run(
     except Exception:  # noqa: BLE001 (the marker and completed parts survive any seam failure)
         job.state, job.reason = "interrupted", job.reason or "job-failed"
     finally:
-        with contextlib.suppress(OSError), _locked(application):
-            _marker(application.config, job.harness, job.sid).unlink(missing_ok=True)
+        marker = _marker(application.config, job.harness, job.sid)
+        try:
+            with _locked(application):
+                marker.unlink(missing_ok=True)
+        except OSError:
+            # The slot is this thread's; leaving the marker would refuse every later start on
+            # the session as in-flight until a restart.
+            with contextlib.suppress(OSError):
+                marker.unlink(missing_ok=True)
         _publish(application)
 
 
@@ -473,14 +516,28 @@ def _stop(application: reading_jobs.Application, harness: str, sid: str, reason:
     path = _marker(application.config, harness, sid)
     if not path.exists():
         return False
-    marker = json.loads(path.read_text(encoding="utf-8"))
-    marker["reason"] = reason
-    marker["state"] = "stopping"
-    runtime_io.atomic_write_owner_only(str(path), json.dumps(marker))
+    try:
+        marker = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(marker, dict):
+            raise TypeError("Summary job marker is not an object")  # noqa: TRY301
+    except (ValueError, TypeError):
+        # A torn marker must not keep Delete summary from deleting or leave the session in
+        # flight forever. A live job here rewrites it whole; otherwise nothing can read it.
+        if not isinstance(job, Job) or job.state not in ACTIVE:
+            path.unlink(missing_ok=True)
+            return False
+        job.reason, job.state = reason, "stopping"
+        if job.group is not None:
+            job.group.cancel()
+        _write(application, job)
+        return True
     if isinstance(job, Job):
         job.reason, job.state = reason, "stopping"
         if job.group is not None:
             job.group.cancel()
+    marker["reason"] = reason
+    marker["state"] = "stopping"
+    runtime_io.atomic_write_owner_only(str(path), json.dumps(marker))
     return True
 
 
@@ -493,18 +550,36 @@ def cancel(
     return accepted
 
 
+def _stop_running(application: reading_jobs.Application, reason: str) -> None:
+    # Held under the publication lock by the caller; the file lock is not re-entrant.
+    for job in list(application.state.summary_jobs.values()):
+        if isinstance(job, Job) and job.state in ACTIVE:
+            _stop(application, job.harness, job.sid, reason)
+
+
+def stop_running(application: reading_jobs.Application, reason: str) -> None:
+    """Stop every job this process runs, cancelling a call already spawned."""
+    with _locked(application):
+        _stop_running(application, reason)
+    _publish(application)
+
+
 def set_consent(application: reading_jobs.Application, allowed: bool) -> reading_policy.Status:
     with _locked(application):
         answer = reading_policy.set_summary_consent(
             application.config, allowed, now=application.clock()
         )
+        if not allowed:
+            _stop_running(application, "summaries-off")
     _publish(application)
     return answer
 
 
 def delete(application: reading_jobs.Application, harness: str, sid: str) -> str:
     with _locked(application):
-        _stop(application, harness, sid, "deleted")
+        # A stop that fails still deletes: `_stop` bars the in-memory job before it writes.
+        with contextlib.suppress(OSError):
+            _stop(application, harness, sid, "deleted")
         outcome = summary_store.delete(application.config, harness, sid)
     _publish(application)
     return outcome
@@ -547,6 +622,11 @@ def recover(application: reading_jobs.Application, *, alive: Callable[[int], boo
                 _remember(application, job)
                 path.unlink()
                 count += 1
-            except (OSError, ValueError, KeyError, TypeError):
+            except OSError:
                 continue
+            except (ValueError, KeyError, TypeError):
+                # Unparsable: no job can be reported from it, and keeping it would refuse every
+                # later start on its session as in-flight across restarts.
+                with contextlib.suppress(OSError):
+                    path.unlink()
     return count
