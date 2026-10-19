@@ -179,9 +179,154 @@ until a later change adds their record they say they cannot be summarized.
 | Part | Where |
 | -- | -- |
 | The notice, the default-on grants and the off switches for every reader-started call | `reading_policy.py`, `reading_route.py` and the session page's "What is sent" popover |
-| The in-order, paged read with fact ids and fingerprints | `record_pages.py` and `project_context.py` |
+| The in-order, paged read with fact ids and fingerprints | `session_source.py`, reusing `record_pages.py` message facts and `project_context.py` tool classification |
+| The deterministic outline | `session_outline.py`, served on `/api/project-context` as `sources.outline` for a focused session only |
 | The summary producer and its closed-shape parser | A new producer module beside `reading.py` |
 | The multi-part job, its ceilings and its own rolling cap | `reading_jobs.py`, `reading_policy.py` and `config.py` |
 | The summary store, Delete summary and `--forget` | A new store module under the Compass home, and `cli.py` |
 | The one-column page and the retired More | `frontend/src/sessions/SessionDetail.tsx` |
 | The ceilings' numbers | The measurement of a model summary against a deterministic outline |
+
+## Source and outline contract
+
+`session_source.read(config, path, harness, sid, after=None, newest=False, max_bytes=None,
+deadline=None)` is a forward, contiguous JSONL read, independent of a reading's retained messages
+and anchors. `deadline` is an absolute monotonic deadline. The module retains nothing between
+calls. Its frozen dataclasses are the contract for the later summary producer:
+
+| Shape | Fields and meaning |
+| -- | -- |
+| `SourceEntry` | `fact_id`, `fingerprint`, `kind` (`person`, `agent`, `check`, `file`), `actor` (`parent`, `subagent`), `stream`, `at`, masked `title`, optional `result`, display `path`, `folder`, grouping `subject`, and server-only `words`. |
+| `UnreadRegion` | `start_offset`, `end_offset`, `reason`, `stream`. Offsets belong to the named stream, so two transcripts never share a byte coordinate. |
+| `SourceCoverage` | `complete`, `starts_at`, `start_offset`, `end_offset`, `unread`, `agent_replies`, `checks_and_files`, `notes`. |
+| `SourcePage` | `state` (`ok`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, and tuple `notes`. Non-ok pages contain no entries. |
+| `SourceCursor` | Source identity digest, tuple of `StreamCursor` frontiers, unresolved `PendingCall` inputs, session directory, and accumulated id/fingerprint/time and subject metadata. A stream frontier holds its file stamp, consumed offset, last complete-line boundary and SHA-256 digest, and bounded unfinished-line state. These are server-only Python values, not HTTP cursors. |
+| `SourceSnapshot` | Parent `(device, inode, size, mtime_ns)` stamp, `end_offset`, `boundary_digest`, accumulated `(fact_id, fingerprint, at)` entries, read-only `subjects` mapping to latest fact and result/write fingerprint, `pending_calls`, continuation `cursor`, `message_ids`, and boundary hashes measured by this read. `verified_boundary` records a continuation's comparison against its previous boundary. `result_calls` names processed `(stream, call id)` result pairs, including a refused call that retracts an earlier unknown run. `snapshot(page)` returns this same value. |
+| `SourceChange` | `kind`, tuple `changed` of `(fact_id, reason)`, tuple `appended` of new fact ids. |
+
+Message ids come from `record_pages._fact`, including its title normalization and redaction.
+Tool ids hash the harness, session, stream, kind and tool call id, with the check identity and shell
+segment for a check, or the original path for a write. A compound call can therefore contain two
+runs of the same check without giving them one id. A fingerprint is 32 hexadecimal SHA-256
+characters over masked content: title and whole words for a message; title, tool-reported result
+and result source and recorded-result presence for a check; display path and call id for a file. Fact ids are keys. Displayed
+`#n` labels remain derived at render time by the
+[fixed-position index](design-session-record-pages.md#fixed-positions); neither an ordinal nor a
+byte offset is a fact identity.
+
+Entries preserve each transcript's physical order, including a message appended with an earlier
+timestamp. Parent and subagent streams merge by the next entry's call time, parent first at a tie.
+This deliberately does not globally sort a replayed message back into the past. Each check run is
+its own entry; `subject` groups its check identity across runs and streams. Each admitted write is
+its own entry, grouped by path. Classification, masked command titles, write admission and the
+paired call's result come from the existing project-context tally, with no second shell parser.
+Only classifier inputs and already-emitted fact ids of unresolved calls cross pages; write contents
+and old/new edit strings
+are excluded. A result arriving on a later page may return an updated fact with the same id.
+
+`words` contains the complete admitted, normalized and masked person or agent text, without a
+reading's prompt cap. `entry_for_page` omits it, and the outline never copies it. The coverage
+status is named `agent_replies` rather than `agent_words`, because `for_page` strips every
+`agent_words` key as message prose and a privacy filter takes no exceptions.
+
+### Coverage and continuations
+
+`complete` means this call read from byte zero through the last complete line with no unread
+region. It does not mean that every evidence type is admitted for the harness. `agent_replies` is
+`read` or `not_read`; `checks_and_files` is `read` or `not_admitted`. The parent offsets delimit its
+whole-line coverage. A partial final line is held for continuation and is never decoded before
+its newline. `page.next` continues an incomplete read; even after reaching the current end,
+`page.snapshot.cursor` can read a later append. The cursor accumulates only metadata and unresolved
+inputs, not previously emitted message words.
+
+`newest=True` begins at the first line boundary at or after `size - max_bytes`. It names `[0,
+start_offset)` as `before_window`, and `starts_at` names the first emitted fact when coverage is
+partial. Other unread reasons are `bytes`, `time`, `oversized_line`, and `unreadable_subagent`.
+An oversized message is skipped before masking, as is a line above the line ceiling. Fragments
+crossing page allowances are held only to that ceiling; oversized bytes are discarded while
+hashing continues. A child with no readable allowance names `unreadable_subagent` as well as its
+limiting region. An unreadable child's unknown extent is represented as `[0, 0)` with its stream
+name, rather than invented offsets.
+
+Boundary verification consumes the same byte/time allowance as new records. A smaller allowance
+than the old boundary line may therefore return no new evidence; a caller must increase that
+allowance to verify it. File identities and boundaries are checked before continuation and stamps
+are checked again after reading. A source changed during the call returns `stale`; it is never
+silently accepted as an empty session. Local filesystem operations and a single parse or masking
+operation must return before the next monotonic deadline check can run; this is not I/O cancellation.
+
+Change comparison works on either a full re-read or a continuation:
+
+| Change kind | Evidence and reasons |
+| -- | -- |
+| `unchanged` | No new fact or changed fingerprint. |
+| `appended` | Only new ids, with no earlier evidence changed. |
+| `changed_earlier` | `content` for an earlier id's changed content; `check_result` for a pending result or a different result on a later run, naming the earlier fact; `file_rewritten` for another write to a previously written path, naming the earlier fact; `reordered` for a newly appended message older than the previous newest message. New ids also appear in `appended`. |
+| `truncated` | Same inode, smaller than the previous consumed end. |
+| `replaced` | Different device/inode or a different line digest at the old boundary. |
+
+An unavailable page, or a stale page that establishes neither truncation nor replacement, cannot
+establish `unchanged`: `compare` raises `ValueError` and the caller must restart the source read.
+If tool classification reaches the shared deadline, that stream's frontier is retried and its
+extent names `time`; consuming its already-read result without classifying the call would lose
+the pairing on continuation.
+
+### Bounds and focused grouping
+
+These are implementation allowances for reading and deterministic grouping, not the model-summary
+job ceilings whose numbers still require measurement:
+
+| RuntimeConfig field | Default | Decision |
+| -- | -- | -- |
+| `session_source_page_max_bytes` | 64 MiB | Match the press's image-heavy scan allowance; continue rather than sample. |
+| `session_source_page_max_seconds` | 2 seconds | Match the press's time allowance. |
+| `session_source_line_max_bytes` | 16 MiB | Match the forward index's line skip before masking. |
+| `session_outline_max_bytes` | 2 MiB | A focused poll pays less than a press and names its unread prefix. |
+| `session_outline_max_seconds` | 0.25 seconds | Bound work repeated on focused polls. |
+| `session_outline_max_blocks` | 20 | Keep recent turns in a bounded focused response. |
+| `session_outline_highlights` | 3 | Bound each block's failures, folders and check examples separately. |
+| `session_outline_cache_limit` | 16 | Match the message-index cache's session count. |
+
+`session_outline.build(page, config)` returns `state`, `made_by: compass`, `basis: grouping`,
+`reason`, `harness`, `coverage`, `blocks` and `more_blocks`. Each block has `prompt` (fact id,
+title and time, or null for work before the first held prompt), a `span` (first/last fact ids,
+entry count, from/to times), `counts` (checks, failed checks, files, agent messages, subagent
+entries), bounded `failures` and `checks` (fact id, title, tool-reported result), and bounded
+`folders` (folder and write count). Folders sort by count descending then name; check examples
+and failures keep the newest entries in their block. Rewrites count as write entries, not unique
+paths. Extra blocks are dropped from the front and counted in `more_blocks`.
+
+This is Compass's grouping, never a summary or a completion verdict. Its titles quote the
+existing masked evidence; its result tokens are as the tool reported. It authors no prose about
+whether the requested work was delivered. It requires no model grant and makes no model call.
+`for_session` resolves one transcript and caches only the built, word-free answer, under a lock.
+The cache key includes bounds and parent and admitted child stamps; a child-only append rebuilds
+the outline. An unchanged transcript costs a stat, with admission discovery and a stat for each
+owned child when present. Only a focused, matched project/session answer gains `sources.outline`,
+before `for_page`. Session rows gain nothing.
+
+### Evidence admitted by this build
+
+This table describes the implementation and does not amend the owner-ruled table above.
+
+| Harness | Person words | Agent words | Checks and files | Outline |
+| -- | -- | -- | -- | -- |
+| Claude Code | Parent messages | Parent messages | Parent and admitted subagent transcripts | Yes, within the named coverage |
+| Codex | Person messages | Not read; `codex_agent_words_not_admitted` | Not admitted; `codex_checks_and_files_not_admitted` | Yes, from person messages only |
+| Pi and every other harness | Not read | Not read | Not read | `unsupported`, `reason: no_paged_record`, no disk resolution |
+
+### Open questions
+
+- Codex checks and files are not admitted pending an owner ruling. The earlier table's "From its
+  bounded record sources" does not admit a command classifier or any command onto a page; this
+  implementation reads none.
+- Subagent messages remain excluded. The existing ruling admits their checks and writes, while
+  the message builder admits top-level messages only.
+- A relative written path resolves against the directory at the transcript's head, read with the
+  same bounded head read the published tool report uses, so a newest window that begins after a
+  `cd` still names the same path the activity list does.
+- A prompt before a clipped window is unknown. Work in that window has a null-prompt leading
+  block; no earlier prompt is inferred from retained anchors or saved intent.
+- Cursors are process-local Python values, with copy-on-extension hash state for unfinished
+  oversized lines. Durable cursor serialization and on-disk snapshot loading belong to the future
+  summary store, which must validate its own input; this module creates no store.

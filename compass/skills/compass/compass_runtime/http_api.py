@@ -34,6 +34,7 @@ from compass_runtime import (
     reading_policy,
     record_pages,
     records,
+    session_outline,
     tripwires,
 )
 from compass_runtime import events as runtime_events
@@ -1239,6 +1240,22 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if focus is not None:
             result = _with_message_ordinals(application, result, focus)
             result = _with_levels(application, result, collected["sessions"], focus, project)
+            matching = [
+                row
+                for row in collected["sessions"]
+                if (row.get("harness"), row.get("sid")) == focus
+                and project
+                in {
+                    str(row.get("project_key") or row.get("project") or ""),
+                    str(row.get("project") or ""),
+                }
+            ]
+            outline = (
+                session_outline.for_session(application.config, application.state, *focus)
+                if len(matching) == 1
+                else {"state": "unavailable", "reason": "session_not_matched", "blocks": []}
+            )
+            result = {**result, "sources": {**result.get("sources", {}), "outline": outline}}
             if parse_qs(url.query).get("prompts", ["0"])[0] == "1":
                 result = _with_prompt_choices(
                     application, result, collected["sessions"], focus, project

@@ -29,6 +29,20 @@ DIRECTION_SCAN_MAX_SECONDS = 2.0
 ENTRY_INDEX_MAX_SECONDS = 5.0
 # How many sessions' indexes the runtime keeps. Each holds one time and one id per message.
 ENTRY_INDEX_LIMIT = 16
+# A summary source may cross the same image-heavy stretches as a press; its time bound is also
+# the press's two seconds, with continuation instead of sampling messages out of the middle.
+SESSION_SOURCE_PAGE_MAX_BYTES = 64 * 1024 * 1024
+SESSION_SOURCE_PAGE_MAX_SECONDS = 2.0
+# Reuse the forward index's single-line ceiling: larger records are gaps before any text masking.
+SESSION_SOURCE_LINE_MAX_BYTES = 16 * 1024 * 1024
+# A focused poll pays much less than a press; a clipped outline names its unread prefix.
+SESSION_OUTLINE_MAX_BYTES = 2 * 1024 * 1024
+SESSION_OUTLINE_MAX_SECONDS = 0.25
+# Keep the focused answer small while retaining several recent turns and three examples per list.
+SESSION_OUTLINE_MAX_BLOCKS = 20
+SESSION_OUTLINE_HIGHLIGHTS = 3
+# Match the message-index cache's session count; only built, word-free outlines are retained.
+SESSION_OUTLINE_CACHE_LIMIT = 16
 
 STORE_ENV_VARS = (
     "CLAUDE_CONFIG_DIR",
@@ -203,6 +217,14 @@ class RuntimeConfig:
     direction_scan_max_seconds: float
     entry_index_max_seconds: float
     entry_index_limit: int
+    session_source_page_max_bytes: int
+    session_source_page_max_seconds: float
+    session_source_line_max_bytes: int
+    session_outline_max_bytes: int
+    session_outline_max_seconds: float
+    session_outline_max_blocks: int
+    session_outline_highlights: int
+    session_outline_cache_limit: int
     popup_cooldown_sec: float
     global_popup_cooldown_sec: float
     popup_repeat_suppress_sec: float
@@ -775,6 +797,14 @@ def build_runtime_config(
         direction_scan_max_seconds=DIRECTION_SCAN_MAX_SECONDS,
         entry_index_max_seconds=ENTRY_INDEX_MAX_SECONDS,
         entry_index_limit=ENTRY_INDEX_LIMIT,
+        session_source_page_max_bytes=SESSION_SOURCE_PAGE_MAX_BYTES,
+        session_source_page_max_seconds=SESSION_SOURCE_PAGE_MAX_SECONDS,
+        session_source_line_max_bytes=SESSION_SOURCE_LINE_MAX_BYTES,
+        session_outline_max_bytes=SESSION_OUTLINE_MAX_BYTES,
+        session_outline_max_seconds=SESSION_OUTLINE_MAX_SECONDS,
+        session_outline_max_blocks=SESSION_OUTLINE_MAX_BLOCKS,
+        session_outline_highlights=SESSION_OUTLINE_HIGHLIGHTS,
+        session_outline_cache_limit=SESSION_OUTLINE_CACHE_LIMIT,
         popup_cooldown_sec=60,
         global_popup_cooldown_sec=15,
         popup_repeat_suppress_sec=600,
