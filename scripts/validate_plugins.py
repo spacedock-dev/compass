@@ -472,6 +472,8 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/reach.py",
     "skills/compass/compass_runtime/semantic_history.py",
     "skills/compass/compass_runtime/record_pages.py",
+    "skills/compass/compass_runtime/session_source.py",
+    "skills/compass/compass_runtime/session_outline.py",
     "skills/compass/compass_runtime/entry_numbers.py",
     "skills/compass/compass_runtime/interaction_prototype.py",
     "skills/compass/compass_runtime/project_context.py",

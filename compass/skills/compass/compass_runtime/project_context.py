@@ -551,6 +551,16 @@ def _message_words(config: RuntimeConfig, text: str, harness: str) -> str:
     return records.safe_text(" ".join((command or text).split()), READER_WORDS_CAP_CHARS)
 
 
+def whole_message_words(
+    config: RuntimeConfig, record: dict[str, Any], harness: str, cap: int
+) -> str:
+    """Source words use the same parser and slash-command normalization, without a prompt cap."""
+    message = observer.parse_message_record(record, cap=cap)
+    text = str(message["text"]) if message else ""
+    command = transcripts.command_direction(config, text) if harness == "claude" else None
+    return records.safe_text(" ".join(records.mask_prose(command or text).split()), cap)
+
+
 def _agent_message_event(
     config: RuntimeConfig,
     record: Any,
@@ -3802,6 +3812,7 @@ class _ToolReportTally:
                     "at": call.at,
                     "record_id": call_id,
                     "title": _check_line(words),
+                    "segment": index,
                     "result": outcome,
                     "result_source": source,
                     "recorded": result is not None,

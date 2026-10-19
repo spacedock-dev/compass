@@ -1499,6 +1499,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            # Deterministic grouping belongs only to the focused context answer.
+            "compass_runtime.session_outline",
             # Each message's fixed number on the record pages and the focused context (DRC-4897).
             "compass_runtime.entry_numbers",
             "compass_runtime.record_pages",
@@ -1601,6 +1603,24 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.record_pages": {
             "compass_runtime.config",
             "compass_runtime.project_context",
+        },
+        # Forward evidence shares the admitted message ids and tool classifier, retaining no cache.
+        # It opens transcripts with the existing no-follow open, following links where the
+        # observer's direction harnesses say the transcript read does.
+        "compass_runtime.session_source": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.observer",
+            "compass_runtime.project_context",
+            "compass_runtime.record_pages",
+            "compass_runtime.records",
+        },
+        # Grouping resolves one transcript and keeps only built outlines in the state leaf.
+        "compass_runtime.session_outline": {
+            "compass_runtime.config",
+            "compass_runtime.observer",
+            "compass_runtime.session_source",
+            "compass_runtime.state",
         },
         # Semantic history is a pure reducer over bounded records and process
         # state. Project composition owns the higher-level joins.
