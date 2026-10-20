@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { clock, datedClock } from '../observed/values';
 import { SAMPLE_FIXTURE } from './fixture';
-import { createSampleFetch } from './sampleFetch';
+import { createSampleFetch, drawCorrection } from './sampleFetch';
 
 const fetcher = createSampleFetch(SAMPLE_FIXTURE);
 const read = async (url: string, init?: RequestInit) => {
@@ -71,6 +72,25 @@ describe('the sample session server', () => {
       .join('');
     expect(text.match(/\n {2}Why Compass reads this as drift: /g)).toHaveLength(2);
     expect(copied.body).toEqual({ ok: true });
+  });
+
+  it('draws the correction’s times on the reader’s clock, as the route does, and keeps no mark', async () => {
+    const stored = (SAMPLE_FIXTURE.correction['parts'] as unknown[]).find(
+      (part): part is string => typeof part === 'string' && part.includes('{{clock:'),
+    );
+    const at = Number(/\{\{clock:([\d.]+)\}\}/.exec(stored ?? '')?.[1]);
+    const composed = await read('/api/correction', { method: 'POST', body: '{}' });
+    const text = (composed.body['parts'] as unknown[])
+      .filter((part): part is string => typeof part === 'string')
+      .join('');
+    expect(text).not.toContain('{{clock:');
+    expect(text).toContain(
+      `departed from my goal at ${datedClock(at, Number(SAMPLE_FIXTURE.board['generated']))}`,
+    );
+    // Same day as the frozen moment in the reader's zone draws hours and minutes only.
+    expect(drawCorrection({ parts: ['at {{clock:1000.5}}.'] }, 1060)).toEqual({
+      parts: [`at ${clock(1000.5)}.`],
+    });
   });
 
   it.each([

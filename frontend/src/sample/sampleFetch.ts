@@ -1,4 +1,5 @@
 import type { FetchLike } from '../api/client';
+import { datedClock } from '../observed/values';
 import type { SampleFixture } from './fixture';
 
 /* The sample session's whole server. A read answers from the fixture, composing a Steer back correction
@@ -13,6 +14,25 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
+}
+
+/* The stored correction keeps each time as its moment (`CLOCK_MARK` in scripts/build_sample_fixture.py), because
+   the real route draws times on the reader's clock (owner, 2026-10-20) and a text drawn in the capture's zone would
+   disagree with the page beside it. Drawn here by `datedClock`, the page's copy of the route's rule, against the
+   moment the sample is frozen at. */
+const CLOCK_MARK = /\{\{clock:(\d+(?:\.\d+)?)\}\}/g;
+
+export function drawCorrection(correction: Record<string, unknown>, frozen: number): unknown {
+  const parts = correction['parts'];
+  if (!Array.isArray(parts)) return correction;
+  return {
+    ...correction,
+    parts: parts.map((part) =>
+      typeof part === 'string'
+        ? part.replace(CLOCK_MARK, (_, at: string) => datedClock(Number(at), frozen))
+        : part,
+    ),
+  };
 }
 
 export function createSampleFetch(fixture: SampleFixture): FetchLike {
@@ -47,7 +67,10 @@ export function createSampleFetch(fixture: SampleFixture): FetchLike {
       }
       return Promise.resolve(json({}, 404));
     }
-    if (path === COMPOSE) return Promise.resolve(json(fixture.correction));
+    if (path === COMPOSE)
+      return Promise.resolve(
+        json(drawCorrection(fixture.correction, Number(fixture.board['generated']))),
+      );
     if (path === COPIED) return Promise.resolve(json({ ok: true }));
     return Promise.resolve(
       json(

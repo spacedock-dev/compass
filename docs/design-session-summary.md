@@ -1576,8 +1576,9 @@ cites are sent again for its opening line. Everything is redacted first. No comm
 tool output is sent." The usability review read "lede" and "the source admits none" as jargon, and
 read "No command output" as leaving file reads and fetched pages open, so the sentence names every
 tool kind. The sample
-session's fixture still carries the earlier wording, because it is rebuilt from a real server
-reading and never edited by hand.
+session's fixture carries this wording since it was captured again on 2026-10-20, because it is
+rebuilt from a real server reading and never edited by hand; `test_sample_session_files` fails when
+the two differ.
 
 An independent stored off is honoured through restart and upgrade. While the master is not paused, grant presses answer
 `{"ok":true,"summaries": <the board summaries block>}` with 200 (503 on store failure), including

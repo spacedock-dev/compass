@@ -85,39 +85,63 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   pasted correction and the steer) are settled through the last record, as Keep would settle them.
   The save writes the store directly, because a save over HTTP opens its window at the latest message
   before it.
-- **The summary and the reading are real**, each generated once on 2026-10-19 through an isolated
-  Compass and the owner's signed-in Claude Code, and stored in the fixture as they came back, apart
-  from the timeline rewrites below.
-  - The summary was made by the summary job when the finished session was opened (`origin: "open"`),
-    in three parts: two windows of 77 and 13 entries and the opening summary, three model calls,
-    `claude-sonnet-5-5`. It was run twice, the second a Summarize again, because the first withheld
-    its last phase whole; the second is kept, and it withholds it too. Both runs were read against the
-    raw replies and withhold the same kind of line for the same reasons: the session is about merging
-    pull requests and closing issues, and a line saying so in the summary's own voice ("The agent
-    merged PRs"), after a comma that ends a speaker's licence, or under "It said" rather than a named
-    speaker, is withheld as the ruled backstop requires. None was a producer bug. The page shows each
-    withheld line in its place.
-  - The reading was one Analyze through the same server, `claude-sonnet-5-5`, with tool output
-    included as the default allows. It found a departure on the goal and on the outcome line, and the
-    Steer back correction was composed by Compass from it. Seven model calls were made in all: six for
-    the two summaries and one for the reading.
+- **The summary and the reading are real**, each made through an isolated Compass and the owner's
+  signed-in Claude Code, and stored in the fixture as they came back, apart from the rewrites below.
+  Nothing a model wrote is edited by hand.
+  - The summary was made again on 2026-10-20, with the current summary prompts (named speakers,
+    plain verbs, results attributed to whoever reported them, phase titles as headings) and the
+    broadened completion check. The summary job made it when the finished session was opened
+    (`origin: "open"`), in three parts: two windows and the opening summary, three model calls, model
+    stamp `claude:claude-sonnet-5-5` with the summary prompt's digest cut as below. It was run twice,
+    the second a Summarize again, because the first withheld 10 of its 32 lines and a phase title,
+    among them the person's steer and the agent's note filing an issue outside the milestone; the
+    second is kept. It shows its opening summary (cut at the 400-character bound), all seven phase
+    titles and 28 of its 35 lines. The 7 withheld lines were read against the raw reply and each is
+    the ruled backstop at work rather than a producer bug: a second claim joined after one speaker's
+    words, or a completion word in the summary's own voice ("merged", "finished"), or, in one case, a
+    line citing only text relayed in a person turn. The page shows each run of withheld lines as one
+    muted line in its place. The session's last phase, the steer and the agent's reply to it, is
+    withheld whole; its entries still carry the departure, and the opening summary ends on them.
+  - The reading is the one made on 2026-10-19: one Analyze through the same kind of server,
+    `claude-sonnet-5-5`, with tool output included as the default allows. It found a departure on the
+    goal and on the outcome line, and each carries its one-sentence explanation, which the correction
+    now quotes. It was kept rather than made again. Its citations were moved once: it was read before
+    the pull-request numbers below were moved again, and a message's id covers its text, so the eight
+    messages that quote those numbers carry new ids for the same records. Each old id was matched to
+    the new one by the record it names (its record id, or for the person's messages its time, kind and
+    position), and the four citations that named one of them now name the same message by its new id.
+    Nothing else in the reading changed.
+  - Model calls: seven on 2026-10-19 (six for two summaries, one for the reading) and six on
+    2026-10-20 (two summaries of three calls each). The board counts the kept summary's three and the
+    one reading.
 - **The timeline rewrites.** `scripts/build_sample_fixture.py` puts the stored summary 30 seconds
-  after the session's last record and the reading 45 seconds after it, moves the reading's age
-  sentence ("The oldest is from about 3846h ago") to the reading's place on that timeline ("about 1h
-  ago"), and cuts the board's intent digest and the summary's prompt digest in its model stamp to 32
-  characters. The board's permissions are shown as a store with no stored off reads them: readings
-  and summaries on, nothing refused and no notice recorded, with one reading and the stored summary's
-  three calls counted.
+  after the session's last record, the reading 45 seconds after it and the settling of the later
+  directions 60 seconds after it, moves the reading's age sentence ("The oldest is from about 3846h
+  ago") to the reading's place on that timeline ("about 1h ago"), and cuts the board's intent digest
+  and the summary's prompt digest in its model stamp to 32 characters. The reading and the settle
+  were kept from the earlier capture, so their moments are placed rather than shifted. The board's
+  permissions are shown as a store with no stored off reads them: readings and summaries on, nothing
+  refused and no notice records kept, with no notice due because both kinds of call were made, and
+  with one reading and the stored summary's three calls counted. The capture was taken from a server
+  restarted after the summary job, so the summary carries no job metadata.
+- **The capture zone.** The isolated server ran with `TZ=UTC`, so every time it wrote as text, such
+  as the reading's "read at" stamp, is in UTC. The page draws every other time in the reader's own
+  zone.
 - **The correction is composed again.** The fixture's Steer back correction is what Compass's own
-  composer makes from the fixture's row and record, with its times in UTC like the rest of the
-  timeline, rather than the server's answer on the day. It carries each departure's explanation, and
-  `python3 scripts/build_sample_fixture.py --recompose --out frontend/src/sample/session.fixture.json`
-  composes it again after the composer changes. A test fails while the two differ.
+  composer makes from the fixture's row and record, rather than the server's answer on the day. It
+  carries each departure's explanation, quotes the agent's own words at the moment it departed, and
+  names no Compass entry number, as the owner ruled on 2026-10-20. The composer writes times on the
+  reader's local clock, so the fixture keeps each time as its moment (`{{clock:<seconds>}}`) and the
+  sample's own server draws it on the reader's clock by the composer's rule: hours and minutes on the
+  sample's day, with the date otherwise. `python3 scripts/build_sample_fixture.py --recompose --out
+  frontend/src/sample/session.fixture.json` composes it again after the composer changes, with no
+  server and no model call. A test fails while the two differ.
 - **Pull request numbers moved once more.** The sanitizer keeps a number's length, which put the
   session's pull requests on #321 to #327 and a tracker link on #211, real and unrelated pull
   requests in this repository. Each was rewritten after sanitizing, in the transcript and the fixture
-  alike, by putting a 9 in front (#9321 to #9327, #9211), including the stored summary's and the
-  reading's text, which quote them. `scripts/tests/test_sample_session_files.py` fails when a quoted
+  alike, by putting a 9 in front (#9321 to #9327, #9211), including the kept reading's explanation,
+  which quotes two of them. The summary of 2026-10-20 was made from the rewritten transcript, so its
+  numbers needed no rewrite. `scripts/tests/test_sample_session_files.py` fails when a quoted
   pull request number matches one in this repository's commit subjects.
 - **Numbers inside quoted speech are the original session's.** Full activity numbers the sample's own
   record, and an entry a summary line or a finding cites is a link to that number. Text the session
@@ -180,7 +204,7 @@ refuses a mapping file kept in this directory.
 
 The fixture ships inside the built page, so both are bounded before anything is built;
 [the design record](../docs/design-sample-session.md#how-big-it-may-be) owns the bounds and why. This
-session's record is 81 entries in two pages, and the fixture with its summary and reading is 128,297
+session's record is 81 entries in two pages, and the fixture with its summary and reading is 132,994
 bytes of compact JSON.
 
 ## Regenerating it
@@ -205,7 +229,10 @@ names a commit there is regenerated, and `--verify` fails if any token in the ou
    last record, so the board reads it as finished and the save as made before the end.
 4. Open the session's summary with `POST /api/summary` `{"action": "start", "origin": "open"}`, run one
    reading with `POST /api/reading`, settle the later directions through the last record with `POST
-   /api/annotate` `{"settle_through": ...}`, and check that `POST /api/correction` composes.
+   /api/annotate` `{"settle_through": ...}`, and check that `POST /api/correction` composes. To keep
+   an earlier reading instead, copy that home's `compass-annotations.json` and `compass-ends.json` in
+   before the server starts, and check that every citation names an entry the transcript still has.
+   Restart the server before the capture, so the summary carries no job metadata.
 5. `python3 scripts/build_sample_fixture.py --base-url <that server> --project acme/dashboard --sid
    <the first eight characters of the session id> --out frontend/src/sample/session.fixture.json`,
    then `pnpm build`. The capture reads every record page back to the start and stores the older ones

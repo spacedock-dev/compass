@@ -1198,7 +1198,7 @@ function SampleWithSummary() {
 
 /* Two of the sample's agent messages on the newest record page (#81 and #79), so a chip lands without reading an
    older page. */
-const SAMPLE_PHASE_START = 'fact:be63b710c3a94f33';
+const SAMPLE_PHASE_START = 'fact:d5e713ad0690df2d';
 const SAMPLE_SAID = 'fact:8d9a97cc2010ab9e';
 
 export const SampleDrawsAStoredSummary: Story = {
