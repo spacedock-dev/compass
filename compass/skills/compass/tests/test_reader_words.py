@@ -46,6 +46,7 @@ from compass_runtime import (
 )
 from compass_runtime import annotations as annotation_store
 
+from .reading_pins import refuse_real_models
 from .support import make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
 from .test_direction_adoption import _row
@@ -519,11 +520,17 @@ class TheWordsAreNeitherStoredNorPublishedTest(_Collected):
 
     def test_no_store_on_disk_holds_the_words_after_an_unasked_reading(self) -> None:
         self.annotate()
-        # The lane sends only under a Codex Allow for today's destination
-        # (consent F5, ui5); `model()` names none, so the Allow is given for "".
-        reading_policy.set_consent(self.config, True, now=1_000.0, provider="codex", destination="")
+        refuse_real_models(self)
+        # The lane is off unless `--unasked-readings` turned it on.
+        config = dataclasses.replace(self.config, unasked_enabled=True)
+        # `model()` puts only Codex on PATH, so this Claude Code session's check
+        # falls back to Codex, which needs the deliberate grant for today's
+        # destination; `model()` names none, so the grant is for "".
+        reading_policy.set_unasked_grant(
+            config, True, now=1_000.0, provider="codex", destination=""
+        )
         lane = unasked.Lane(
-            self.config,
+            config,
             popup_notifier=lambda _t, _m: None,
             diagnostic_sink=lambda _m: None,
             clock=lambda: NOW,
@@ -534,6 +541,9 @@ class TheWordsAreNeitherStoredNorPublishedTest(_Collected):
             self.model() as prompts,
             mock.patch.object(observer.CodexGoalModel, "__call__", return_value=None),
         ):
+            self.assertEqual(
+                reading_route.CODEX, reading_route.resolve("claude", unasked=True)["provider"]
+            )
             lane.consider(self.state, [_row(state="working")], entries, now=NOW)
             ended = _row(state="ended", ended_at=START.timestamp() + 600)
             lane.consider(self.state, [ended], entries, now=NOW)

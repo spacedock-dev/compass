@@ -58,7 +58,7 @@ DESTINATION_MOVED = "destination-changed"
 # messages, 3 added the newest final reply whole within 4,096 bytes, and 4 repaired the
 # ambiguity of a version-3 Allow written from a narrower harness disclosure. Words-only
 # routes and the unasked lane retain epoch 1. Reader-started calls renew the notice when
-# the epoch changes; unasked calls retain the explicit coverage boundary.
+# the epoch changes; Codex unasked calls retain the explicit coverage boundary.
 CONTENT_VERSION = 4
 WORDS_CONTENT_VERSION = 1
 NOTICE_KINDS = ("reading", "goal", "summary")
@@ -362,6 +362,73 @@ def _clear_off(db: Any, tables: frozenset[str] = PERMISSION_TABLES) -> None:
         db.execute(f"DELETE FROM {table} WHERE allowed = 0")  # noqa: S608 - fixed table names
 
 
+def _change_permissions(
+    db: Any,
+    operation: str | Notice,
+    provider: str,
+    current: Mapping[str, str],
+    content: int,
+    tool_output: str,
+    allowed: dict[str, bool],
+) -> None:
+    if operation in ("unasked-grant", "unasked-revoke") and _off(db):
+        return
+    if operation == "unasked-revoke":
+        _clear_off(db)
+        # Deleting the grant avoids writing a zero, which means Pause model calls
+        # in older stores. Revocation must not pause reader-requested calls.
+        table = "permission" if provider == LEGACY_PROVIDER else "provider_permission"
+        column, value = ("id", 1) if provider == LEGACY_PROVIDER else ("provider", provider)
+        db.execute(f"DELETE FROM {table} WHERE {column} = ?", (value,))  # noqa: S608 - fixed schema identifiers
+        db.execute("DELETE FROM permission_destination WHERE provider = ?", (provider,))
+        db.execute("DELETE FROM permission_disclosure WHERE provider = ?", (provider,))
+        allowed[provider] = False
+    if operation in ("allow", "unasked-grant") and provider in allowed:
+        where = current.get(provider, "")
+        previous = _disclosed(db).get(provider)
+        version = content
+        if (
+            allowed[provider]
+            and _bound(db).get(provider) == where
+            and previous is not None
+            and previous[1] == where
+            and previous[0] <= CONTENT_VERSION
+        ):
+            # A narrower disclosure cannot widen consent, or erase an
+            # earlier wider Allow that still covers this destination.
+            version = max(content, previous[0])
+        # An Allow clears the global off switch and grants the provider it names, the
+        # unasked lane included. No reader press writes one (`http_api._reading_permission`
+        # reads the stored answer only); Resume model calls clears the pause alone.
+        if operation == "allow":
+            _clear_off(db)
+        _write(db, provider, True)
+        allowed[provider] = True
+        # Bound to the destination the Allow's disclosure named, which
+        # the press has checked is today's (`http_api._reading_route`).
+        db.execute("INSERT OR REPLACE INTO permission_destination VALUES (?, ?)", (provider, where))
+        db.execute(
+            "INSERT OR REPLACE INTO permission_disclosure VALUES (?, ?, ?)",
+            (provider, version, where),
+        )
+        if tool_output:
+            db.execute(
+                "INSERT OR IGNORE INTO tool_output_permission VALUES (?, ?)",
+                (provider, tool_output),
+            )
+    elif operation == "off":
+        # Every receiver at once: "Pause model calls" and `--forget` name
+        # no provider, and a revocation that left one allowed would not be
+        # the answer the reader gave.
+        for name in PROVIDERS:
+            _write(db, name, False)
+        allowed.update(dict.fromkeys(PROVIDERS, False))
+        db.execute("DELETE FROM tool_output_permission")
+        db.execute("DELETE FROM notice")
+        # Every bound destination and disclosure goes too, by the triggers
+        # the legacy row's write above fires, as for an older build's off.
+
+
 def _transaction(
     config: RuntimeConfig,
     now: float,
@@ -460,51 +527,7 @@ def _transaction(
         if any(not math.isfinite(at) or at <= 0 for at in dates):
             raise ValueError("Invalid spend timestamp")
         current = dict(today or {})
-        if operation == "allow" and provider in allowed:
-            where = current.get(provider, "")
-            previous = _disclosed(db).get(provider)
-            version = content
-            if (
-                allowed[provider]
-                and _bound(db).get(provider) == where
-                and previous is not None
-                and previous[1] == where
-                and previous[0] <= CONTENT_VERSION
-            ):
-                # A narrower disclosure cannot widen consent, or erase an
-                # earlier wider Allow that still covers this destination.
-                version = max(content, previous[0])
-            # An Allow clears the global off switch and grants the provider it names, the
-            # unasked lane included. No reader press writes one (`http_api._reading_permission`
-            # reads the stored answer only); Resume model calls clears the pause alone.
-            _clear_off(db)
-            _write(db, provider, True)
-            allowed[provider] = True
-            # Bound to the destination the Allow's disclosure named, which
-            # the press has checked is today's (`http_api._reading_route`).
-            db.execute(
-                "INSERT OR REPLACE INTO permission_destination VALUES (?, ?)", (provider, where)
-            )
-            db.execute(
-                "INSERT OR REPLACE INTO permission_disclosure VALUES (?, ?, ?)",
-                (provider, version, where),
-            )
-            if tool_output:
-                db.execute(
-                    "INSERT OR IGNORE INTO tool_output_permission VALUES (?, ?)",
-                    (provider, tool_output),
-                )
-        elif operation == "off":
-            # Every receiver at once: "Pause model calls" and `--forget` name
-            # no provider, and a revocation that left one allowed would not be
-            # the answer the reader gave.
-            for name in PROVIDERS:
-                _write(db, name, False)
-            allowed = dict.fromkeys(PROVIDERS, False)
-            db.execute("DELETE FROM tool_output_permission")
-            db.execute("DELETE FROM notice")
-            # Every bound destination and disclosure goes too, by the triggers
-            # the legacy row's write above fires, as for an older build's off.
+        _change_permissions(db, operation, provider, current, content, tool_output, allowed)
         bound, disclosed = _bound(db), _disclosed(db)
         covered, rebind = _covered(allowed, bound, current, disclosed, content=content)
         words, _ = _covered(allowed, bound, current, disclosed, content=WORDS_CONTENT_VERSION)
@@ -609,11 +632,68 @@ def set_consent(
     return _run(config, now, operation, provider, tool_output, today=today, content=content)
 
 
+def set_unasked_grant(
+    config: RuntimeConfig,
+    allowed: bool,
+    *,
+    now: float,
+    provider: str,
+    destination: str,
+    destinations: Mapping[str, str] | None = None,
+) -> Status:
+    """Grant or revoke words-only unasked coverage for one provider and destination.
+
+    The only writer of that grant: no press, Analyze or Resume writes one. It never
+    lifts Pause model calls, and while paused it changes nothing. A revoke deletes
+    the provider's rows rather than writing a zero, which an older store reads as a
+    pause. `destinations` is as `status` takes it, for the answer returned.
+    """
+    if provider not in PROVIDERS:
+        raise ValueError("Unknown unasked provider")
+    if config.model_calls_disabled or not config.unasked_enabled:
+        return _answer(reason="run-disabled")
+    answer = _run(
+        config,
+        now,
+        "unasked-grant" if allowed else "unasked-revoke",
+        provider,
+        today={provider: destination},
+        content=WORDS_CONTENT_VERSION,
+    )
+    if answer["reason"] not in {"", "daily-cap"}:
+        return answer
+    return status(config, now=now, destinations={**(destinations or {}), provider: destination})
+
+
+def unasked_status(config: RuntimeConfig, *, now: float, provider: str, destination: str) -> Status:
+    """Admission at the unasked seam, without spending the reader-requested budget."""
+    if not config.unasked_enabled:
+        return _answer(reason="run-disabled")
+    answer = status(
+        config,
+        now=now,
+        provider=provider,
+        destinations={provider: destination},
+        content=WORDS_CONTENT_VERSION,
+    )
+    # The lane's own durable check counts bound it; Analyze's budget cannot replace them.
+    if answer["reason"] == "daily-cap":
+        answer = {**answer, "reason": ""}
+    # The accepted Claude producer needs no separate grant; Codex retains explicit coverage.
+    # [DEC-18](docs/design-reading-a-session.md#amended-2026-10-20-unasked-checks-remain-reachable)
+    if not answer["reason"] and (
+        provider not in PROVIDERS
+        or (provider != "claude" and not answer["words"].get(provider, False))
+    ):
+        answer = {**answer, "reason": "unasked-permission-required"}
+    return answer
+
+
 def resume(config: RuntimeConfig, *, now: float) -> Status:
     """Resume model calls: clear the stored pause without writing an Allow.
 
-    An Allow would also cover the unasked lane, which no reader press turns on
-    (owner, 2026-10-19, DRC-4915), so only the refusal rows go. A run started
+    An Allow would also cover Codex unasked checks, so Resume clears only refusal
+    rows; their deliberate grant belongs to the separate toggle (owner, 2026-10-20). A run started
     with model calls disabled keeps the stored pause: the startup switch is not
     the reader's answer, and clearing it would lose theirs.
     """
@@ -724,9 +804,11 @@ class GuardedModel:
         before_reserve: Callable[[], str | None] | None = None,
         cancelled: Callable[[], bool] | None = None,
         content: int = CONTENT_VERSION,
+        unasked: bool = False,
     ) -> None:
         self.config = config
         self.content = content
+        self.unasked = unasked
         self.model = model
         self.clock = clock
         self.provider = provider
@@ -763,6 +845,13 @@ class GuardedModel:
         if self.resolve_destination is not None and self.resolve_destination() != self.destination:
             # The press-time notice cannot cover a destination that moved mid-job.
             raise RefusedError(_answer(reason=DESTINATION_MOVED))
+        if self.unasked:
+            answer = unasked_status(
+                self.config, now=self.clock(), provider=self.provider, destination=self.destination
+            )
+            if answer["reason"]:
+                raise RefusedError(answer)
+            return self.model(prompt, output_cap_bytes=output_cap_bytes)
         job_id = self.before_reserve() if self.before_reserve is not None else None
         answer = reserve(
             self.config,

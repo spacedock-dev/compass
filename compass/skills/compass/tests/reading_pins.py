@@ -8,13 +8,50 @@ that names the vendor in its place.
 from __future__ import annotations
 
 import platform
+import shutil
+import unittest
 from pathlib import Path
 from typing import Any, Self
 from unittest import mock
 
-from compass_runtime import reading_route
+from compass_runtime import reading, reading_route
 
 _REAL_DESTINATION = reading_route.destination
+# Captured at import, before any test swaps the module names for stand-ins, so
+# the guard below patches the classes that really start a CLI.
+_REAL_MODELS = (reading.CodexReadingModel, reading.ClaudeReadingModel)
+_REAL_WHICH = shutil.which
+
+
+def refuse_real_models(case: unittest.TestCase) -> None:
+    """Fail `case` if a real Codex or Claude Code reading model is called.
+
+    A lane test that patched one provider's model ran the other's real CLI once
+    the unasked route moved to Claude Code: the lane swallows the error, so the
+    test failed on a count and a machine with the CLI spent a real call. The
+    guard records rather than only raising for that reason.
+    """
+    called: list[str] = []
+
+    def refused(model: Any, *_args: Any, **_kwargs: Any) -> Any:
+        called.append(type(model).__name__)
+        message = f"a test called the real {type(model).__name__}"
+        raise AssertionError(message)
+
+    for model in _REAL_MODELS:
+        case.enterContext(mock.patch.object(model, "__call__", refused))
+    case.addCleanup(lambda: case.assertEqual([], called, "a real reading model was called"))
+
+
+def cli_on_path(*names: str) -> Any:
+    """Of the reading CLIs only these resolve, so a route picks one provider on every runner."""
+
+    def which(name: str, *args: Any, **kwargs: Any) -> str | None:
+        if name not in reading_route.BINARIES.values():
+            return _REAL_WHICH(name, *args, **kwargs)
+        return f"/usr/local/bin/{name}" if name in names else None
+
+    return mock.patch.object(shutil, "which", which)
 
 
 def named_platform() -> Any:

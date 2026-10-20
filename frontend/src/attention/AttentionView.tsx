@@ -1,3 +1,4 @@
+import { UnaskedAttentionCue } from '../drift/UnaskedPermission';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useMemo } from 'react';
@@ -146,6 +147,7 @@ function Board({
   return (
     <section className="next-attention" data-next-view-body="attention">
       <Title />
+      {data ? <UnaskedAttentionCue payload={data as unknown as Record<string, unknown>} /> : null}
       {collection ? (
         <section className="next-operations-fleet" aria-label="Request and block facts">
           {observed.counters.slice(2).map((counter, index) => (

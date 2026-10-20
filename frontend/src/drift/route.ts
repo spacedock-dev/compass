@@ -41,6 +41,15 @@ export function readingRoute(payload: Row, session: Row | null | undefined): Row
   return isRecord(route) ? route : null;
 }
 
+/* Who an unasked check of this session would reach. Not `reading_routes`: on a harness with no producer of its
+   own the lane prefers Claude Code where Analyze reads with Codex, so the toggle asks only where the lane sends. */
+export function unaskedRoute(payload: Row, session: Row | null | undefined): Row | null {
+  const routes = payload['unasked_routes'];
+  const route =
+    isRecord(routes) && session ? (routes as Row)[String(session['harness'] || '')] : null;
+  return isRecord(route) ? route : null;
+}
+
 export function readingsOff(payload: Row): boolean {
   const policy = payload['reading'];
   return isRecord(policy) && (policy['off'] === true || policy['reason'] === 'model-calls-paused');

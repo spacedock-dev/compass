@@ -221,6 +221,15 @@ export type ApiFailure = Exclude<ApiResult<unknown>, { kind: 'ok' }>;
 
 export type FocusOutcome = 'sent' | 'declined' | 'throttled' | 'stale' | 'failed' | 'unavailable';
 
+export interface UnaskedGrantRequest extends SessionIdentity {
+  readonly provider: string;
+  readonly model: string;
+  readonly words_destination: string;
+  readonly unasked_grant: boolean;
+  readonly press: true;
+  readonly observer_model: 1;
+}
+
 export interface ReadingRequest {
   readonly harness: string;
   readonly sid: string;

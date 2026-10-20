@@ -1202,6 +1202,55 @@ The cumulative cap is per session and per day, and exhaustion is visible on the 
 by construction not present, so "nothing departed" and "nothing was checked" must never render
 alike.
 
+### Amended 2026-10-20: unasked checks remain reachable
+
+Owner, 2026-10-20: the lane stays reachable under `--unasked-readings`, and Claude Code is its
+provider by default. Claude Code checks Claude Code sessions and Codex checks Codex sessions. On a
+harness with no producer of its own the lane prefers Claude Code, and Codex serves only when Claude
+Code is unavailable or unqualified on this machine. This is `reading_route.resolve(unasked=True)`,
+with no fallback after a failed launch. A pressed Analyze drift keeps its own rule, Codex first on
+such a harness: the ruling named the unasked lane, and changing who a press sends to was not asked
+for. The board publishes the lane's routes as `unasked_routes`, beside `reading_routes`, only while
+the lane is attached. It replaces the Codex-only restriction in DEC-21's earlier amendments, not the
+default-off ruling.
+
+Claude Code uses the owner's 2026-10-02 producer acceptance, never described as a passed check,
+through `reading_policy.GuardedModel`, the same guarded seam as Codex and requested readings.
+The prompt remains words-only: typed goal and bounded reader messages, no agent messages, expected
+outcome lines or tool output. All eligibility gates, observed state-change trigger, quiet hours,
+delivery records, one-flight slot, fifteen-minute floor and caps (three per session, twelve per rolling
+day) remain. Only departures are raised. The preconditions for changing the default remain unmet.
+
+Codex requires a deliberate provider grant bound to the current destination. With the flag on,
+the session's Drift card shows “Allow Codex to run unasked checks”, or the opposite to revoke it,
+and Attention names sessions with typed goals waiting for that permission and links to their Drift
+cards. The disclosure names the words, provider, destination and capacity used; the grant covers
+all sessions routed to that provider at that destination. Claude Code needs no separate toggle,
+but its Drift card names it and lists what each check sends: a reader who turned the flag on when
+only a Codex grant could start a check would otherwise begin sending words to Anthropic with no
+sign of it. A stored Codex grant keeps its revoke switch on every session page, whichever provider
+checks that session today. The cue's "none of them has been checked yet" is derived from each
+listed session's `departure_checked`. With the flag off, or under `--no-annotations` (which turns
+the flag off), neither control nor cue is shown.
+
+`reading_policy.set_unasked_grant` writes only this explicit words-only coverage. It is a separate
+`unasked_grant: bool` body on the existing reading POST, with session identity, provider, model,
+words destination and the normal explicit-press guards. It starts no analysis. It refuses paused
+or disabled runs, non-loopback clients and document navigations. A grant is also refused for a
+stale provider, model or destination and for a session Claude Code would check
+(`no-grant-needed`); a revoke is not, and deletes the Codex grant whatever today's route is, since
+a grant that could be revoked only while Codex held the route would return with it. Pause followed by Resume
+clears the grant, so a reader who paused grants it again on purpose. Analyze,
+legacy `allow: true` presses and Resume never grant it. Revocation cancels this daemon's running
+call and refuses the next send; Pause stops both providers, and `--no-observer-model` still wins.
+Already-sent words cannot be recalled. A cancelled call, or one that started and failed, keeps a
+withdrawn check row for the caps, without a finding or a completed-check claim; without it a
+signed-out Claude Code CLI was started again on every state change. A withdrawn row is no later
+check for a standing raise's follow-up. The cancel test and the departure write share one lock, so
+a revoke lands before the write or after it, and a revoke after the write still suppresses the
+notification. A revoke removes the grant rather than writing the zero
+that older stores interpret as the master pause.
+
 ### The alternative that was rejected
 
 Automatic evaluation writing into the board only, with no push. It would have sidestepped the
@@ -1586,7 +1635,7 @@ item 1 of the 2026-09-23 amendment and leaves items 2 and 3 as they apply once t
    session's "What is sent to Claude Code" popover beside Analyze drift, before the press.
    Allowing Codex does not allow Claude Code, so the first press routed to a provider with no
    Allow opens that provider's consent step.
-4. The unasked lane and goal summaries stay on Codex, as item 3 of the 2026-09-23 amendment
+4. Superseded for the unasked lane by the [2026-10-20 amendment](#amended-2026-10-20-unasked-checks-remain-reachable). At this date the unasked lane and goal summaries stayed on Codex, as item 3 of the 2026-09-23 amendment
    ruled, and the rolling cap (twelve attempts then, 100 since 2026-10-16) stays shared between
    providers.
 

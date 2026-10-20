@@ -460,6 +460,10 @@ def follow_up(entries: Iterable[Check], row: Check) -> str:
         if other["harness"] == row["harness"]
         and other["sid"] == row["sid"]
         and other["at"] > row["at"]
+        # A withdrawn row is a spend that finished no check (cancelled, failed,
+        # or its words cleared), so it is no evidence about a later raise.
+        # `counts` still charges it.
+        and not other["withdrawn"]
     ]
     if not later:
         return FOLLOW_UP_NO_LATER_CHECK

@@ -26,6 +26,14 @@ cut is still held to the recorded answer at the recorded cap; the page's own cap
 `SteerBack.test.tsx` and the Steer back correction stories. The composition refusal sentence names
 4,216 where the frozen page named 2,000. Golden files are unchanged.
 
+2026-10-20: unasked checks keep their opt-in flag and gain a destination-bound Codex grant
+in the Drift card, with an Attention cue linking sessions waiting for it. Claude Code needs no
+separate toggle. The page reads who the lane reaches from `unasked_routes`, never from
+`reading_routes`, because on a harness with no producer of its own the lane prefers Claude Code
+where Analyze prefers Codex. No golden recording or differential
+comparison was changed for this addition; permission behavior is held by `UnaskedPermission.test.tsx`
+and `UnaskedChecks.stories.tsx`.
+
 2026-10-19: the owner renamed the master switch to Pause model calls / Resume model calls.
 The pause reason is `model-calls-paused`. Resume changes permission without starting Analyze.
 The summary switch stays visible and disabled while paused and keeps its saved answer through resume.

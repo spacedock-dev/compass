@@ -21,13 +21,13 @@ from typing import Any, cast
 from unittest import mock
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import departures, reading, reading_policy, unasked
+from compass_runtime import departures, reading, reading_route, unasked
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime.config import RuntimeConfig, build_runtime_config
 from compass_runtime.state import build_runtime_state
 
 # Read through the module, so the loader does not collect that class a second time here.
-from .reading_pins import named_machine
+from .reading_pins import cli_on_path, named_machine, refuse_real_models
 
 STOP = 1_800_000_000.0  # the turn stopped
 PROMPT = STOP - 600.0  # the reader's latest message, which started that turn
@@ -640,13 +640,13 @@ class TheUnaskedLaneSpendsNothingAtATurnStopTest(unittest.TestCase):
                 calls.append(prompt)
                 return json.dumps({"goal": {"result": "departure", "cites": [1]}}), "ok"
 
-        self.enterContext(mock.patch.object(reading, "CodexReadingModel", CountingModel))
-        # The lane sends only under a Codex Allow for today's destination
-        # (consent F5, ui5), so the machine is pinned and the Allow given.
+        refuse_real_models(self)
+        self.enterContext(mock.patch.object(reading, "ClaudeReadingModel", CountingModel))
+        # A Claude Code session's unasked check is Claude Code's, which needs no
+        # grant (owner, 2026-10-20); the CLI is pinned so every runner routes it there.
+        self.enterContext(cli_on_path("claude"))
         self.enterContext(named_machine())
-        reading_policy.set_consent(
-            self.config, True, now=1_000.0, provider="codex", destination="OpenAI"
-        )
+        assert reading_route.resolve("claude", unasked=True)["provider"] == reading_route.CLAUDE
         self.entry = cast(
             "annotation_store.Annotation",
             {

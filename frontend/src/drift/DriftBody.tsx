@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
 import { endedAt } from '../observed';
 import { directionsOpen, intentKey, intentUnsaved } from '../intent/derive';
@@ -156,6 +157,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
   }
   return (
     <>
+      <UnaskedPermission key={key} payload={payload} session={session} />
       {hasQuestion ? area : null}
       <DriftLevelView />
       {hasQuestion ? null : area}

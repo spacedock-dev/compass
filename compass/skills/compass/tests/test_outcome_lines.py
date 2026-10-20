@@ -24,12 +24,20 @@ from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import cli, departures, history, observer, reading, reading_policy, unasked
+from compass_runtime import (
+    cli,
+    departures,
+    history,
+    observer,
+    reading,
+    reading_route,
+    unasked,
+)
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime.config import RuntimeConfig, build_runtime_config
 from compass_runtime.state import build_runtime_state
 
-from .reading_pins import named_machine
+from .reading_pins import cli_on_path, named_machine, refuse_real_models
 from .support import make_config, make_runtime, make_server, serve_until_closed
 from .support import os_name as support_os_name
 
@@ -1591,7 +1599,7 @@ class TheUnaskedLaneSeesNoLinesTest(unittest.TestCase):
         results = self.results
 
         class Model:
-            def __init__(self, _config: Any) -> None:
+            def __init__(self, _config: Any, **_kw: Any) -> None:
                 pass
 
             def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
@@ -1605,13 +1613,13 @@ class TheUnaskedLaneSeesNoLinesTest(unittest.TestCase):
             results.append(result)
             return result
 
-        self.enterContext(mock.patch.object(reading, "CodexReadingModel", Model))
-        # The lane sends only under a Codex Allow for today's destination
-        # (consent F5, ui5), so the machine is pinned and the Allow given.
+        refuse_real_models(self)
+        self.enterContext(mock.patch.object(reading, "ClaudeReadingModel", Model))
+        # A Claude Code session's unasked check is Claude Code's, which needs no
+        # grant (owner, 2026-10-20); the CLI is pinned so every runner routes it there.
+        self.enterContext(cli_on_path("claude"))
         self.enterContext(named_machine())
-        reading_policy.set_consent(
-            self.config, True, now=1_000.0, provider="codex", destination="OpenAI"
-        )
+        assert reading_route.resolve("claude", unasked=True)["provider"] == reading_route.CLAUDE
         return unasked.Lane(
             self.config,
             popup_notifier=lambda _title, _message: "handed-over",
