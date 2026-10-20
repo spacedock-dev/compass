@@ -17,7 +17,8 @@ const surfaces = {
     'min-h-[56px] p-[7px] bg-background text-[var(--ink-value)] leading-[1.55] in-[[data-next-cockpit-drafted]]:bg-muted in-[.next-cockpit-held-line]:min-h-[44px]',
   memo: 'min-h-[5rem] p-[8px] bg-background text-foreground leading-[1.5]',
   draft: 'p-[8px] bg-background text-foreground leading-[1.5]',
-  correction: 'min-h-[120px] p-[7px] bg-background text-[var(--ink-value)] leading-[1.55]',
+  correction:
+    'min-h-[120px] p-[7px] bg-background text-[var(--ink-value)] font-[family-name:var(--mono)] text-label leading-[1.6]',
 };
 
 /* A box is as tall as its words, and no taller than most of the screen, where it scrolls. `field-sizing` does
