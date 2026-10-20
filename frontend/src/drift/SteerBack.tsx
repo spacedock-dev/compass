@@ -16,6 +16,8 @@ import {
   correctionDraft,
   recomposeCorrection,
   rememberShown,
+  lapseCopied,
+  COPIED_MS,
   steerBack,
 } from './steerActions';
 import { entryNumbers } from '../intent/work';
@@ -93,6 +95,14 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
   );
   /* What the box last drew, for a recomposition to freeze before the record can renumber its parts. */
   useEffect(() => rememberShown(held, draft));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per box drawn, by design.
+  useEffect(() => lapseCopied(ctx, key), []);
+  const copied = held.cue === 'copied';
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timer = setTimeout(() => lapseCopied(ctx, key), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [ctx, key, copied]);
   /* The node is mounted once per composition and keeps its caret, selection and undo across every redraw. It
      is replaced only where the page changed the words for a reason other than typing: a new composition, or
      a record that renumbered an unedited text, where there is no reader text to lose. */

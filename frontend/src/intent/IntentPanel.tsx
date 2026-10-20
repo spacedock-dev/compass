@@ -12,10 +12,8 @@ import { DirectionQuestion } from './DirectionQuestion';
 import { chosenIsStale, goalKey, intentDraft, type DraftInput } from './derive';
 import { reconcileDirection } from './directions';
 import { IntentSection } from './IntentSection';
-import { LIVE_HARNESSES } from './liveMonitor';
 import { LiveMonitorSwitch } from './LiveMonitorSwitch';
 import { DRIFT_SUBTITLE } from './sentences';
-import { LIVE_HINT } from '../drift/sentences';
 import { PanelContext, useHeldVersion, useIntentCtx, type Panel } from './useIntent';
 import { workSource } from './work';
 
@@ -42,6 +40,8 @@ export interface IntentPanelProps {
   readonly summary?: ReactNode;
   /** The Drift card header's model and when the analysis last ran, beside its title. */
   readonly stamp?: ReactNode;
+  /** Controls the Drift card header holds in every state: Pause or Resume model calls. */
+  readonly actions?: ReactNode;
   /** What the session page composes beneath: the delegated-work line and the departures raised away. */
   readonly children?: ReactNode;
 }
@@ -64,6 +64,7 @@ export function IntentPanel({
   drift,
   summary,
   stamp,
+  actions,
   children,
 }: IntentPanelProps) {
   const shell = useShell();
@@ -76,7 +77,6 @@ export function IntentPanel({
   const harness = String(session['harness'] || '');
   const sid = String(session['sid'] || '');
   const annotating = annotateOn(payload);
-  const monitor = annotating && LIVE_HARNESSES.has(harness);
   const projectKey = useMemo(
     () =>
       stableProjectKey({
@@ -179,16 +179,13 @@ export function IntentPanel({
               <p className="next-session-drift-sub basis-full text-body">{DRIFT_SUBTITLE}</p>
             </div>
             {/* The live monitor and what it does, in the head of the card it controls now that More is retired:
-                placement only, its value and default are unchanged.
+                placement only, its value and default are unchanged. What it does is the switch's own helper
+                text, not a line of the card (usability review, 2026-10-20). Pause model calls sits beside it.
                 [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */}
-            <LiveMonitorSwitch />
-            {monitor ? (
-              <div className="basis-full">
-                <p className="next-cockpit-reading-why m-0" data-next-live-hint>
-                  {LIVE_HINT}
-                </p>
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-start justify-end gap-x-4 gap-y-2 max-[760px]:justify-start">
+              {actions}
+              <LiveMonitorSwitch />
+            </div>
           </header>
           {drift ?? (
             <>

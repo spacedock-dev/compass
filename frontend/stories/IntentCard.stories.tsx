@@ -250,9 +250,12 @@ export const FromPromptSource: Story = {
         'From your prompt · first · not saved. Analyze reads at most the first 1,000 characters of any prompt.',
       ),
     ).toBeVisible();
-    await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
-      'Unsaved changes',
-    );
+    /* A goal drafted from the prompt is Compass's suggestion, not the reader's edit: muted, and saying what
+       it is (usability review, 2026-10-20). */
+    const status = card.querySelector('[data-next-intent-status]') as HTMLElement;
+    await expect(status).toHaveTextContent('Draft from your first prompt, not saved');
+    await expect(status).not.toHaveTextContent('Unsaved changes');
+    await expect(status.className).toContain('text-muted-foreground');
   },
 };
 

@@ -22,8 +22,7 @@ import {
   ReadingsOffAsk,
   type SteerSlot,
 } from './ReadingControl';
-import { useNoticeShown } from './notice';
-import { ReadingResult } from './ReadingResult';
+import { DriftVerdict, ReadingResult } from './ReadingResult';
 import { disclosureParts, promptReadingRefusal, routeRefusal, readingsOff } from './route';
 import {
   absenceAttr,
@@ -38,7 +37,7 @@ import { useFollowCorrection } from './useFollowCorrection';
 import { Why } from './Why';
 import { READING_NOT_A_VERIFICATION } from '../intent/logModel';
 
-/* The Drift section's body, in the page's order: the level, the one control (or the question before it, or the
+/* The Drift section's body, in the page's order: the answer in one sentence, the level, the one control (or the question before it, or the
    result that stands in its place), what analysis does, what the session launched, and a reading this build
    could not read. Everything here is drawn from the payload and the reader's held state; a press sends, and
    nothing else does. The legacy page's `nextCockpitDriftBlock` and `nextCockpitReadingParts` are the oracle,
@@ -155,12 +154,14 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       </div>
     );
   }
+  /* The answer first, then the level, in every state: a later direction's question once drew above the level,
+     so the verdict moved between visits (usability review, 2026-10-20). */
   return (
     <>
       <UnaskedPermission key={key} payload={payload} session={session} />
-      {hasQuestion ? area : null}
+      <DriftVerdict />
       <DriftLevelView />
-      {hasQuestion ? null : area}
+      {area}
       <ReadingSection />
     </>
   );
@@ -201,7 +202,6 @@ function QuestionWithAnalysis({
   const receiver = String(route?.['label'] || provider);
   const analyze = !edited && !reason && !job;
   const request = ctx.intent.held.requests.get(model.key);
-  const noticeShown = useNoticeShown();
   const count = Number(annotation?.['reading_count']) || 0;
   const running = endedAt(session) === null && session['state'] !== 'idle';
   const reading: DirectionReading = {
@@ -244,11 +244,9 @@ function QuestionWithAnalysis({
                   parts={disclosureParts(route, provider, disclosure)}
                   id={DISCLOSURE_ID}
                 />
-                <TurnOff />
+                <TurnOff closes="reading-sent" />
               </Why>
-            ) : noticeShown ? null : (
-              <TurnOff />
-            )}
+            ) : null}
             {annotation ? <ReadingCount count={count} /> : null}
             {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
           </>

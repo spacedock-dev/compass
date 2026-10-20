@@ -311,10 +311,16 @@ function pressIsHeld(fixture: keyof typeof VARIANTS, name: RegExp, opener?: stri
       await userEvent.click(press);
       const status = canvasElement.querySelector('[data-sample-held]') as HTMLElement;
       await expect(status).toHaveTextContent(HELD);
-      // Seen where the press was: the sentence once sat in the banner, thousands of pixels above.
+      // Seen where the press was: the sentence once sat in the banner, thousands of pixels above, and
+      // then at the foot of the viewport over the Copy button. It is drawn just under the press now.
       const box = status.getBoundingClientRect();
+      const pressed = press.getBoundingClientRect();
       await expect(box.top).toBeGreaterThanOrEqual(0);
       await expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
+      await expect(box.top).toBeGreaterThanOrEqual(pressed.bottom);
+      await expect(box.top - pressed.bottom).toBeLessThan(16);
+      await expect(box.left).toBeGreaterThanOrEqual(0);
+      await expect(box.right).toBeLessThanOrEqual(document.documentElement.clientWidth);
       await expect(canvasElement.querySelector('[data-next-summary]')).not.toBeNull();
     },
   };

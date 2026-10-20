@@ -132,6 +132,52 @@ describe('the groups', () => {
     );
   });
 
+  it('leads each row with one state word and shows the project label alone as where', async () => {
+    await open(data);
+    const state = (sid: string) =>
+      document.querySelector(`article[data-next-session="${sid}"] [data-next-row-state]`)
+        ?.textContent;
+    expect(state('gate')).toBe('Waiting on you');
+    expect(state('work')).toBe('Working');
+    expect(state('idle-new')).toBe('Idle');
+    expect(state('done')).toBe('Ended');
+    const groups = [...document.querySelectorAll('[data-next-operation-group]')];
+    for (const group of groups) expect(group.textContent).not.toMatch(/NOW · |QUIET/);
+    expect(document.body.textContent).not.toContain('Exact location not published');
+    expect(
+      document.querySelector('article[data-next-session="work"] [data-next-operation-fact="where"]')
+        ?.textContent,
+    ).toBe('PROJECTp');
+  });
+
+  it('names the level of a departing stored reading on the drift chip', async () => {
+    await open(
+      board(
+        [
+          {
+            harness: 'claude',
+            sid: 'read',
+            project: 'p',
+            state: 'idle',
+            annotation_revision: 2,
+            annotation_assessment: {
+              read_at: NOW - 240,
+              revision_read: 2,
+              criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'x' } },
+            },
+          },
+        ],
+        { annotate: true },
+      ),
+    );
+    const mark = document.querySelector('[data-next-session-drift-mark]');
+    // This tab holds no analysis for the project, so the chip says what a departure is at least.
+    expect(mark?.textContent).toBe('Drift: Medium or higher · 4m ago');
+    expect(
+      mark?.querySelector('[data-next-row-drift-level]')?.getAttribute('data-next-row-drift-level'),
+    ).toBe('medium');
+  });
+
   it('says annotations are off, and the goal cell says so too, when the payload does not publish them', async () => {
     await open(board([{ harness: 'claude', sid: 'a', project: 'p', state: 'idle' }]));
     expect(document.querySelector('[data-next-operation-fact="goal"]')?.textContent).toBe(

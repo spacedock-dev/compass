@@ -5,7 +5,7 @@ import type { WorkEntry, WorkSource } from '../intent/work';
 import { entryNumbers, labelOrder } from '../intent/work';
 import { clock, isRecord, type Row } from '../observed';
 import type { ContextEntry } from '../store/board';
-import { recordedTime } from './result';
+import { localRecordedTime, recordedTime } from './result';
 import { fmtDur } from './route';
 import {
   BLOCKER_LINES,
@@ -207,6 +207,13 @@ export interface EvidenceRow {
   readonly at: string;
   readonly result: string;
   readonly source: string;
+  /** The row as the page draws it, in the reader's local time; the fields above are the retired page's. */
+  readonly shown: {
+    readonly head: string;
+    readonly summary: string;
+    readonly at: string;
+    readonly result: string;
+  };
 }
 
 /* The cited entries' own rows: what each is, who recorded it, and when, with the source one click away. A
@@ -228,19 +235,21 @@ export function evidenceRows(
         ? 'Result time not recorded.'
         : `Result recorded at ${recordedTime(entry.resultAt)}`
       : '';
+    const at = nextNumber(entry.at);
+    const kind = check
+      ? `${entry.result || 'Recorded'} check`
+      : entry.subject === 'write'
+        ? 'File write'
+        : agentMessage(entry)
+          ? 'Agent message'
+          : String(entry.type || 'Recorded entry');
     return {
       id: String(entry.id || ''),
       label: [
         n === undefined ? 'Entry not numbered in this view' : `#${String(n)}`,
         String(entry.summary || 'Recorded entry'),
       ].join(' · '),
-      kind: check
-        ? `${entry.result || 'Recorded'} check`
-        : entry.subject === 'write'
-          ? 'File write'
-          : agentMessage(entry)
-            ? 'Agent message'
-            : String(entry.type || 'Recorded entry'),
+      kind,
       who: [harness || 'Harness not recorded', entry.workerKind].filter(Boolean).join(' · '),
       eventLabel:
         entry.type === 'tool_report' && check && harness === 'claude'
@@ -249,6 +258,20 @@ export function evidenceRows(
       at: recordedTime(entry.at),
       result,
       source: String(entry.source || 'Source not recorded'),
+      shown: {
+        head: [
+          n === undefined ? 'Entry not numbered in this view' : `#${String(n)}`,
+          kind,
+          ...(at !== null && at > 0 ? [clock(at)] : []),
+        ].join(' · '),
+        summary: String(entry.summary || ''),
+        at: localRecordedTime(entry.at),
+        result: check
+          ? localRecordedTime(entry.resultAt) === 'time not recorded'
+            ? 'Result time not recorded.'
+            : `Result recorded at ${localRecordedTime(entry.resultAt)}`
+          : '',
+      },
     };
   });
 }

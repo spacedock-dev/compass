@@ -221,6 +221,18 @@ export function recordedTime(at: unknown): string {
     : 'time not recorded';
 }
 
+/* The same recorded time as the page draws it: the reader's local zone, as every other time on the page is
+   (usability review, 2026-10-20: "01:15:00 UTC" beside a "09:15" the reader had just read). The date stays,
+   so older evidence is still unambiguous. */
+export function localRecordedTime(at: unknown): string {
+  const epoch = nextNumber(at);
+  if (epoch === null || epoch <= 0) return 'time not recorded';
+  const date = new Date(epoch * 1000);
+  if (!Number.isFinite(date.getTime())) return 'time not recorded';
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${String(date.getFullYear())}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`;
+}
+
 export interface WorkGroup {
   readonly folder: string;
   readonly files: number;
@@ -299,6 +311,8 @@ export interface Stale {
   readonly head: string;
   /** The revision sentence, only where the words changed. */
   readonly superseded: string;
+  /** When the reader's first message after the reading was sent, where one was. */
+  readonly before: number | null;
 }
 
 /* The two stale states of item 6, from the revision the reading read and the newest entry it saw
@@ -332,7 +346,12 @@ export function resultStale(
     : after
       ? `Read before your message at ${clock(Number(after.at))}. New work since this analysis.`
       : 'New work since this analysis.';
-  return { kind: superseded ? 'intent' : 'work', head, superseded };
+  return {
+    kind: superseded ? 'intent' : 'work',
+    head,
+    superseded,
+    before: after ? nextNumber(after.at) : null,
+  };
 }
 
 /* What arrived since a reading read, counted from the entries and never authored. */
@@ -369,7 +388,7 @@ export function arrivedLine(
 
 /* How far the message tail reached, said as clauses. Coverage that was not recorded says so rather than
    reading as complete. */
-export function coverageLine(shape: Shape): string {
+export function coverageLimits(shape: Shape): string {
   const measured = shape.coverage;
   const clauses: string[] = [];
   if (!measured || measured.tail_truncated === null) {
@@ -392,16 +411,27 @@ export function coverageLine(shape: Shape): string {
       `${String(measured.unread_checks)} ${measured.unread_checks === 1 ? 'check' : 'checks'} had no room in the reading.`,
     );
   }
-  if (measured && ['excerpt', 'unroomed'].includes(measured.goal_source)) {
-    clauses.push(
-      'The adopted source could not be read whole; this reading used the saved excerpt. Put the instruction you meant in the goal box, then analyze again.',
-    );
-  } else if (measured && measured.goal_source === 'whole') {
-    clauses.push(
-      'The adopted source was found. Analyze reads at most the first 1,000 characters of any prompt.',
-    );
-  }
   return clauses.join(' ');
+}
+
+/* What the analysis did with an adopted prompt. Said under What the analysis read rather than beside the
+   answer (usability review, 2026-10-20): it is about the reading's input, and above the departures it stood
+   between the reader and the verdict. */
+export function goalSourceLine(shape: Shape): string {
+  const measured = shape.coverage;
+  if (measured && ['excerpt', 'unroomed'].includes(measured.goal_source)) {
+    return 'The adopted source could not be read whole; this reading used the saved excerpt. Put the instruction you meant in the goal box, then analyze again.';
+  }
+  if (measured && measured.goal_source === 'whole') {
+    return 'The adopted source was found. Analyze reads at most the first 1,000 characters of any prompt.';
+  }
+  return '';
+}
+
+/* The retired page's one coverage sentence, which the differential test is held to: the limits, then the
+   goal source. The page draws the two halves in different places. */
+export function coverageLine(shape: Shape): string {
+  return [coverageLimits(shape), goalSourceLine(shape)].filter(Boolean).join(' ');
 }
 
 /* Whether an entry is one of the agent's own words, for the evidence rows' kind. */
@@ -423,6 +453,109 @@ export function citedKind(entry: WorkEntry): string {
   if (agentMessage(entry)) return 'Agent message';
   if (personAuthored(entry)) return 'Your message';
   return 'Recorded entry';
+}
+
+/* A cited entry's own words as What shows them: attributed and quoted, so an agent's "Done" reads as the
+   agent's and never as the result's (usability review, 2026-10-20: "#5 Agent message" sent the reader into
+   Evidence for the line the departure is about). Plain text, one line, bounded. */
+const QUOTE_MAX = 200;
+
+/* A check glyph in the agent's words would draw a check mark inside the result, the one shape kept off every
+   result; it is said in words instead. */
+const CHECK_GLYPHS = /[\u221a\u2611\u2705\u2713\u2714\u{10102}\u{1f5f8}\u{1f5f9}\u{1fbb1}]/gu;
+
+function bounded(text: string): string {
+  const flat = text.replace(CHECK_GLYPHS, '[check mark]').replace(/\s+/g, ' ').trim();
+  if (flat.length <= QUOTE_MAX) return flat;
+  const cut = flat.slice(0, QUOTE_MAX);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > QUOTE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+export function citedLine(entry: WorkEntry): string {
+  const words = bounded(String(entry.summary || ''));
+  if (!words) return citedKind(entry);
+  if (entry.subject === 'check') {
+    const result = String(entry.result || 'Recorded');
+    return `${result.charAt(0).toUpperCase()}${result.slice(1)} check: ${words}`;
+  }
+  if (entry.subject === 'write') return `File write: ${words}`;
+  if (agentMessage(entry)) return `Agent said: “${words}”`;
+  if (personAuthored(entry)) return `You said: “${words}”`;
+  return citedKind(entry);
+}
+
+/* An entry as the verdict sentence names it, with its time. */
+function entryPhrase(entry: WorkEntry): string {
+  const kind =
+    entry.subject === 'check'
+      ? `a ${String(entry.result || 'recorded')} check`
+      : entry.subject === 'write'
+        ? 'a file write'
+        : agentMessage(entry)
+          ? "the agent's message"
+          : personAuthored(entry)
+            ? 'your message'
+            : 'an entry';
+  const at = nextNumber(entry.at);
+  return at !== null && at > 0 ? `${kind} at ${clock(at)}` : kind;
+}
+
+/* The Drift card's one plain answer, first under its heading: the level word, how many departures, and what
+   and when each rests on, from the stored reading and the entries it cites alone. It never reassures where
+   the reading could not settle: "Can't tell" and "Not reached" carry no level word. */
+export function verdictLine({
+  answer,
+  level,
+  byId,
+  midFlight,
+}: {
+  readonly answer: Answer;
+  /** The analysis level's word, or empty where no level stands for this reading. */
+  readonly level: string;
+  readonly byId: EntryIndex;
+  /** A reading of a running session, which answers for the work so far. */
+  readonly midFlight: boolean;
+}): string {
+  const said = (text: string) => (midFlight ? `So far: ${text}` : text);
+  const levelled = (text: string) =>
+    level ? `${level}${midFlight ? ' so far' : ''}: ${text}` : said(text);
+  if (answer.kind === 'cant-tell') return said("Can't tell from what was read.");
+  if (answer.kind === 'not-reached') return said('Not reached at this stop.');
+  if (answer.kind === 'nothing-found') return levelled('Nothing found against what it read.');
+  if (answer.kind === 'failed-check') {
+    const at = evidenceAt(answer.failed);
+    return levelled(at !== null && at > 0 ? `A check failed at ${clock(at)}.` : 'A check failed.');
+  }
+  const count = `${String(answer.count)} departure${answer.count === 1 ? '' : 's'}`;
+  const held = answer.departures.map((row) =>
+    row.citedIds
+      .map((id) => byId.get(String(id)))
+      .filter((entry): entry is WorkEntry => Boolean(entry)),
+  );
+  const distinct = [
+    ...new Map(held.flat().map((entry) => [String(entry.id || ''), entry])).values(),
+  ];
+  let where = '';
+  const [first, second] = distinct;
+  if (first && distinct.length === 1) {
+    const all = answer.count === 1 ? '' : answer.count === 2 ? 'both ' : 'all ';
+    where = held.every((rows) => rows.length)
+      ? `, ${all}at ${entryPhrase(first)}`
+      : `, at ${entryPhrase(first)}`;
+  } else if (first && second && distinct.length === 2) {
+    where = `, at ${entryPhrase(first)} and ${entryPhrase(second)}`;
+  } else if (distinct.length > 2) {
+    const times = distinct
+      .map((entry) => nextNumber(entry.at))
+      .filter((at): at is number => at !== null && at > 0);
+    const span =
+      times.length === distinct.length
+        ? ` from ${clock(Math.min(...times))} to ${clock(Math.max(...times))}`
+        : '';
+    where = `, citing ${String(distinct.length)} entries${span}`;
+  }
+  return levelled(`${count}${where}.`);
 }
 
 /* The model a stored reading names, from the stamp the server composes as "<model> · read at HH:MM". Only

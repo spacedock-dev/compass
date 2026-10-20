@@ -219,9 +219,12 @@ export const WhatTheAnalysisRead: Story = {
       'Everything up to the session’s end.',
       'Read all 4 entries after your intent: 1 from you, 1 file write, 1 failed check, 1 passed check.',
       'The oldest is from about 13h ago.',
+      // The level's range and reason, moved here from between the meter and the answer (2026-10-20).
+      'Entries read: #1 to #4.',
+      'pytest -q failed 8m ago at #2; no passing re-run recorded.',
     ]);
     // Each item is its own line, not one run of words.
-    await expect(new Set(session.map((li) => li.getBoundingClientRect().top)).size).toBe(3);
+    await expect(new Set(session.map((li) => li.getBoundingClientRect().top)).size).toBe(5);
     await expect(section('not-read')).toHaveTextContent(READ_NEVER);
     for (const retired of [
       'A reading is one model pass',

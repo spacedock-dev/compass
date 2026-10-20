@@ -198,8 +198,12 @@ export function DriftLevelView() {
         {!running && !level.analysis && !readingStored(annotation) ? (
           <p className="next-session-drift-detail">No model assessment for this intent yet.</p>
         ) : null}
-        {level.range && !running ? <p className="next-session-drift-range">{level.range}</p> : null}
-        {!signals && reasons.first ? (
+        {/* An analysis level's range and reason are said under What the analysis read, with the rest of
+            what it read; a live estimate's stay beside it. */}
+        {level.range && !running && !level.analysis ? (
+          <p className="next-session-drift-range">{level.range}</p>
+        ) : null}
+        {!signals && reasons.first && !level.analysis ? (
           <p className="next-session-drift-reason">{reasons.first}</p>
         ) : null}
         {!running && signals ? <SignalsView signals={signals} /> : null}

@@ -6,6 +6,7 @@ export { DriftProvider } from './DriftProvider';
 export { useDrift } from './context';
 export { DriftPill } from './DriftLevelView';
 export { DriftStamp } from './DriftStamp';
+export { DriftHeadPause } from './ReadingControl';
 export { DeparturesSection } from './Departures';
 export { WorkListView } from './WorkListView';
 export { ReadingCapBanner } from './ReadingCapBanner';

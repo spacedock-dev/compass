@@ -9,6 +9,7 @@ import { TourContext } from './tourContext';
 import { createSampleShell } from './sampleShell';
 import { TOUR } from './tour';
 import { ViewOnly } from './ViewOnly';
+import { heldPosition, type HeldAt } from './held';
 
 const HELD_SENTENCE = 'View only: this sample cannot be edited, saved or run.';
 const HELD_MS = 5000;
@@ -50,20 +51,23 @@ function Banner() {
 }
 
 /* Why a press did nothing, drawn where the reader pressed. It sat in the banner once, about 3,000 px above
-   Delete summary, so a held press there looked dead. Sticky to the foot of the viewport while the sample is on
-   screen, and drawn only while held, so it never covers the page otherwise. */
-function Held({ held }: { readonly held: boolean }) {
+   Delete summary, so a held press there looked dead; then at the foot of the viewport, where it covered the
+   Copy button beside the press (usability review, 2026-10-20). It is drawn just under the refused control,
+   inside the sample's own box, and only while held. */
+
+function Held({ at }: { readonly at: HeldAt | null }) {
   return (
     <p
       role="status"
       className={
-        held
-          ? 'sticky bottom-4 z-10 m-0 mt-4 rounded-card border border-solid border-[var(--amber)] bg-card px-[12px] py-[8px] text-[var(--amber)]'
+        at
+          ? 'absolute z-10 m-0 max-w-[min(28rem,calc(100%-16px))] rounded-card border border-solid border-[var(--amber)] bg-card px-[12px] py-[8px] text-[var(--amber)]'
           : 'm-0'
       }
+      style={at ? { top: at.top, left: at.left } : undefined}
       data-sample-held
     >
-      {held ? HELD_SENTENCE : ''}
+      {at ? HELD_SENTENCE : ''}
     </p>
   );
 }
@@ -74,25 +78,31 @@ export function SampleSession({ children }: { readonly children: ReactNode }) {
   const page = useShell();
   const fixture = use(SampleFixtureContext);
   const [shell] = useState(() => createSampleShell(page, fixture));
-  const [held, setHeld] = useState(false);
+  const [held, setHeld] = useState<HeldAt | null>(null);
+  const box = useRef<HTMLElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useBoardRuntime(shell.runtime);
   // `useBoardRuntime` releases the runtime on unmount and tolerates a second mount, so the shell is not
   // disposed here: StrictMode's simulated unmount would otherwise end it before it ever read.
   useEffect(() => () => clearTimeout(timer.current), []);
-  const onHeld = () => {
-    setHeld(true);
+  const onHeld = (control: Element) => {
+    const node = box.current;
+    setHeld(
+      node
+        ? heldPosition(control.getBoundingClientRect(), node.getBoundingClientRect())
+        : { top: 0, left: 8 },
+    );
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setHeld(false), HELD_MS);
+    timer.current = setTimeout(() => setHeld(null), HELD_MS);
   };
   return (
     <ShellContext value={shell}>
       <ControlsProvider controls={shell.controls}>
         <TourContext value>
-          <section data-sample-session>
+          <section ref={box} className="relative" data-sample-session>
             <Banner />
             <ViewOnly onHeld={onHeld}>{children}</ViewOnly>
-            <Held held={held} />
+            <Held at={held} />
           </section>
         </TourContext>
       </ControlsProvider>

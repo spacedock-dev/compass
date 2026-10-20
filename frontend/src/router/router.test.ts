@@ -78,6 +78,21 @@ describe('moving between views', () => {
     expect(fake.calls.scroll).toBe(1);
   });
 
+  it('opens a page reached by a typed address or Back at its top too, and a tab change where it was', () => {
+    const fake = fakeEnvironment('#n=project:recce');
+    const router = createRouter(fake.env);
+    router.subscribe(() => undefined);
+    fake.type('#n=project:recce:course');
+    fake.flush();
+    expect(fake.calls.scroll).toBe(0);
+    fake.type('#n=session:recce:codex:one');
+    fake.flush();
+    expect(fake.calls.scroll).toBe(1);
+    fake.back();
+    fake.flush();
+    expect(fake.calls.scroll).toBe(2);
+  });
+
   it('rewrites a pasted or malformed fragment by replacement, so Back is never stuck on it', () => {
     const fake = fakeEnvironment('#n=sessions');
     const router = createRouter(fake.env);

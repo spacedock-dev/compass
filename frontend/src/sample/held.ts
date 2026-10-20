@@ -25,3 +25,21 @@ export function isHeld(target: Element): boolean {
     ?.getAttribute('data-next-cockpit-action');
   return !(action && LIVE_ACTIONS.has(action));
 }
+
+/* The control a held press landed on, or the target itself. */
+export function heldControl(target: Element): Element {
+  return target.closest(CONTROL) ?? target;
+}
+
+export interface HeldAt {
+  readonly top: number;
+  readonly left: number;
+}
+
+/* Under the control, its left edge kept inside the box so the sentence never runs off a narrow screen. */
+const HELD_WIDTH = 448;
+export function heldPosition(control: DOMRect, box: DOMRect): HeldAt {
+  const width = Math.min(HELD_WIDTH, box.width - 16);
+  const left = Math.max(8, Math.min(control.left - box.left, box.width - width - 8));
+  return { top: control.bottom - box.top + 6, left };
+}
