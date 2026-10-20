@@ -139,14 +139,15 @@ def published(
 
 
 def disclosure(destination: str) -> str:
+    # Plain words for every fact the earlier wording gave ("lede", "the source admits none"
+    # read as jargon in the 2026-10-20 usability review); the facts and their order are unchanged.
     return (
-        "Summaries send redacted session text in windows of at most 16 KiB: your words, "
-        "text relayed in a person turn, the agent's replies, masked check titles with "
-        "their per-check result words (failed, passed or not-recorded), and file-write "
-        "display paths. Earlier phase titles provide context; cited entries are sent again "
-        "for the lede. No tool output is sent: the source admits none. "
-        "Sent through your Claude Code to "
-        f"{destination or 'a destination Compass cannot name'}. "
+        f"Sends to {destination or 'a destination Compass cannot name'} through your "
+        "Claude Code, at most 16 KiB at a time: your messages, text relayed in your turn, "
+        "the agent's replies, check names with their result (failed, passed or not "
+        "recorded), and the paths of files written. Titles of earlier parts go along as "
+        "context, and the entries a summary cites are sent again for its opening line. "
+        "Everything is redacted first. No command output is sent. "
         "Turn off summaries stops these calls; Turn summaries on restores them."
     )
 

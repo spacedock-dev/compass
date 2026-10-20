@@ -17,6 +17,21 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-20, from the usability review: Full activity draws its rows in number order, so a check
+sits under the message whose number it carries even when it last ran later; it says "Last turn"
+once, on the turn's newest row, with the numbers the turn spans; it puts each row's source sentence
+behind a Source toggle in the row head instead of reading it out on every row; and it draws an
+agent's `**emphasis**` as the words it marks. All four are presentation in `WorkListView` and
+`EntrySource`: the `workList` model keeps the recorded order, words, per-row turn flag and source,
+so `workList.differential.test.ts` is unchanged. Landing on a row now waits for the Full activity
+panel to finish easing open (`drift/panelSettle.ts`); the hidden source line had been stretching
+the page past the panel's clip, which is why a landing during the ease used to reach. The session
+header names the token rate's unit ("44 tokens/min" where the retired page wrote "44 /m"):
+`detail.differential.test.tsx` restates the recorded identity line in those words with
+`projectRecordedRateUnit` before comparing. The header's entry count stays the session's total
+once an intent is saved, with the entries since the intent's start beside it, and a chip for an
+entry before that start keeps its number, muted. Golden files are unchanged.
+
 2026-10-20: the owner ruled that Steer back's correction carries each departure's explanation
 ([the amendment](design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)),
 and the correction's cap rose from 2,000 to 4,216 characters to hold them. The retired page was

@@ -13,7 +13,8 @@ import {
 import type { Held } from '../intent/held';
 import {
   conflictCandidates,
-  entryNumbers,
+  entryLabel,
+  entryNumbering,
   workSource,
   type WorkEntry,
   type WorkSource,
@@ -50,6 +51,10 @@ export interface DriftModel {
   /** The full set, never the displayed window: a citation resolves against what the payload holds. */
   readonly entries: readonly WorkEntry[];
   readonly numbers: ReadonlyMap<string, string>;
+  /** Every number the page can say, `numbers` and the fixed numbers of entries before the intent's window. */
+  readonly labels: ReadonlyMap<string, string>;
+  /** Entries from before the intent's window opened: numbered in `labels`, never read by Analyze. */
+  readonly outside: ReadonlySet<string>;
   readonly byId: ReadonlyMap<string, WorkEntry>;
   readonly generated: number;
   readonly limit: string;
@@ -71,6 +76,8 @@ export interface DriftModel {
   readonly pill: DriftLevel | null;
   /** The header's "N entries": nothing where the record was not read, because 0 would be a default. */
   readonly entryCount: number | null;
+  /** The entries since the intent's window opened, where one has and entries before it are held; else null. */
+  readonly windowCount: number | null;
 }
 
 function humanLabel(value: string): string {
@@ -119,7 +126,22 @@ export function buildModel(input: ModelInput): DriftModel {
   const draftInput: DraftInput = { held, contexts, payload, session, annotation };
   const source = workSource(contexts, input.projectKey, session, input.record);
   const entries = source.all || source.entries;
-  const numbers = entryNumbers(session, source, payload);
+  const numbering = entryNumbering(session, source, payload);
+  const numbers = new Map(
+    [...numbering.numbers].map(([entry, n]) => [String(entry.id || ''), n] as const),
+  );
+  /* An entry before the window keeps its fixed number on a chip, muted: saving an intent once turned every chip
+     before it into the bare word "entry" and the header's 62 entries into 2, as though the record were erased.
+     Counted numbers start at the window, so an earlier entry has none to keep. */
+  const labels = new Map(numbers);
+  const outside = new Set<string>();
+  for (const entry of numbering.earlier) {
+    const id = String(entry.id || '');
+    outside.add(id);
+    const label = numbering.ordinals ? entryLabel(entry) : null;
+    if (label !== null) labels.set(id, label);
+  }
+  const read = source.state === 'read' || source.state === 'empty';
   const harness = String(session['harness'] || '');
   const draft = intentDraft(draftInput);
   /* Any stored value that is there: a malformed one is the shape contract's to refuse, not the page's to
@@ -189,6 +211,8 @@ export function buildModel(input: ModelInput): DriftModel {
     source,
     entries,
     numbers,
+    labels,
+    outside,
     byId: new Map(entries.map((entry) => [String(entry.id || ''), entry])),
     generated,
     limit,
@@ -202,6 +226,7 @@ export function buildModel(input: ModelInput): DriftModel {
     estimate,
     analysis,
     pill,
-    entryCount: source.state === 'read' || source.state === 'empty' ? numbers.size : null,
+    entryCount: read ? numbers.size + numbering.earlier.length : null,
+    windowCount: read && numbering.earlier.length ? numbers.size : null,
   };
 }

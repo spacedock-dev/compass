@@ -196,7 +196,13 @@ function SessionMetadata({
   readonly generated: number | null;
 }) {
   const drift = useDrift();
-  const meta = sessionMeta(session, labels, generated, drift.model.entryCount);
+  const meta = sessionMeta(
+    session,
+    labels,
+    generated,
+    drift.model.entryCount,
+    drift.model.windowCount,
+  );
   return meta ? <p className="next-session-detail-meta">{meta}</p> : null;
 }
 
@@ -238,7 +244,8 @@ function Header({
         </h1>
         <p className="next-session-identity">
           {`${observed.harness} · ${observed.sid}`}
-          {observed.rateKnown ? ` · ${observed.rateText}` : ''}
+          {/* Named in full here, where it stands alone among identifiers: a bare "44 /m" said no unit. */}
+          {observed.rateKnown ? ` · ${observed.rateText.replace(/ \/m$/, ' tokens/min')}` : ''}
           {label && sessionHome(route) !== 'projects' ? (
             <>
               {' · '}

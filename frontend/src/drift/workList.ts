@@ -551,4 +551,42 @@ export function workList(input: WorkListInput): WorkList {
   };
 }
 
+/* What the list draws, apart from what the model says, so the comparison with the recorded answers still reads the
+   model's own words and order (docs/design-frontend-migration.md#activity-list-order). */
+
+/* The rows in number order: a check or file sits under the message whose number it carries. It was drawn where it
+   last ran, so #59.1 stood between #67 and #66. A row with no number keeps its place. */
+export function rowsByNumber(rows: readonly WorkRow[]): WorkRow[] {
+  const numbered = rows
+    .filter((row) => row.n !== null)
+    .sort((a, b) => labelOrder(String(a.n), String(b.n)));
+  let next = 0;
+  return rows.map((row) => (row.n === null ? row : (numbered[next++] as WorkRow)));
+}
+
+/* The last turn said once, on its newest row, with the numbers it spans: on every row it was the same tag down the
+   whole list. */
+export function lastTurnLead(rows: readonly WorkRow[]): {
+  readonly id: string;
+  readonly range: string;
+} | null {
+  const turn = rows.filter((row) => row.turn);
+  const lead = turn.at(-1);
+  if (!lead) return null;
+  const labels = turn
+    .map((row) => row.n)
+    .filter((n): n is string => n !== null)
+    .sort(labelOrder);
+  const first = labels[0];
+  const last = labels.at(-1);
+  const range = first && last && first !== last ? `#${first} to #${last}` : '';
+  return { id: lead.entry.id, range };
+}
+
+/* Markdown emphasis an agent wrote ("**High**") drawn as the words it marks. Only paired asterisks: a lone `*` is
+   a glob and an underscore is part of a name. */
+export function plainEmphasis(text: string): string {
+  return text.replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, '$1');
+}
+
 export { WORK_AS_REPORTED };

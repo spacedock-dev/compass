@@ -247,6 +247,29 @@ describe('what the card says', () => {
     );
     expect(askedText('You asked for tests.')).toBe('You asked for tests.');
   });
+  it('never credits the agent’s words to the person, or the person’s to the agent', () => {
+    // The sample's own line: an `asked` bullet whose text reports the agent read "You said: The agent said ...".
+    expect(askedText('The agent said it also raised the billing rate.')).toBe(
+      'Said: it also raised the billing rate.',
+    );
+    expect(bulletWords('asked', 'The agent also said it would first answer the question.')).toBe(
+      'Said: it would first answer the question.',
+    );
+    // A `said` bullet cites the agent alone: one naming the person stays the agent's report of them.
+    expect(bulletWords('said', 'The user asked for a walk on a new port.')).toBe(
+      'Said: you asked for a walk on a new port.',
+    );
+    // Work cited with words: a named speaker is said as that speaker's.
+    expect(bulletWords('did', 'The agent said it ran the suite twice.')).toBe(
+      'Said: it ran the suite twice.',
+    );
+    expect(bulletWords('did', 'The person asked to keep the diff small.')).toBe(
+      'You asked to keep the diff small.',
+    );
+    // A bare "Said" on an asked line is still the person's.
+    expect(askedText('Said to keep going.')).toBe('You said to keep going.');
+    expect(askedText('Said: keep going.')).toBe('You said: keep going.');
+  });
   it('points at the outline only where one is drawn, and says summaries are off everywhere', () => {
     expect(SUMMARY_NOT_CLAUDE('Gemini CLI', false)).not.toContain('outline');
     expect(SUMMARY_NOT_CLAUDE('Codex')).toContain('The outline below');

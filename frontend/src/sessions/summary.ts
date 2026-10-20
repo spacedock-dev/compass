@@ -154,6 +154,57 @@ export const WITHHELD_LINES: Readonly<Record<string, string>> = {
 };
 export const withheldSentence = (reason: string): string =>
   WITHHELD_LINES[reason] ?? 'Withheld: this line broke a rule a summary line must keep.';
+
+/* A run of withheld lines in a phase is one muted line, as the owner ruled on 2026-10-20: eleven "Withheld: ..."
+   lines in twelve made the sample's summary unreadable. Each reason is the table's above, said of one line or of
+   several; the rule that withholds them is unchanged, and each line's own reason stays one press away. */
+const HIDDEN_WHY: Readonly<Record<string, readonly [string, string]>> = {
+  completion_claim: [
+    'it said, in the summary’s own voice, that work was done or working',
+    'they said, in the summary’s own voice, that work was done or working',
+  ],
+  no_citation: ['it cited no entry', 'they cited no entry'],
+  shape_fault: [
+    'it was not in the shape a summary line must take',
+    'they were not in the shape a summary line must take',
+  ],
+  too_long_cut: [
+    'it was too long, and cutting it changed what it said',
+    'they were too long, and cutting them changed what they said',
+  ],
+};
+export function hiddenSentence(reasons: readonly string[], range: string): string {
+  const n = reasons.length;
+  const kinds = new Set(reasons);
+  const one = kinds.size === 1 ? HIDDEN_WHY[reasons[0] ?? ''] : undefined;
+  const why = one
+    ? one[n === 1 ? 0 : 1]
+    : n === 1
+      ? 'it broke a rule a summary line must keep'
+      : kinds.size === 1
+        ? 'they broke a rule a summary line must keep'
+        : 'each broke a rule a summary line must keep';
+  return `${plural(n, 'line', 'lines')} hidden: ${why}.${range ? ` ${range}.` : ''}`;
+}
+
+/* "Entries #50.1 to #55" over the entries a run of hidden lines cites, in the activity list's order; "Entry #44"
+   for one; nothing where the page numbers none of them. */
+export function hiddenRange(cites: readonly string[], labels: ReadonlyMap<string, string>): string {
+  const known = [...new Set(cites.map((id) => labels.get(id)).filter((n): n is string => !!n))];
+  const sorted = known
+    .map((label) => ({ label, at: positionOf(label) }))
+    .filter((row): row is { label: string; at: Position } => row.at !== null)
+    .sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1]);
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  if (!first || !last) return '';
+  // An entry the page has not numbered is counted, so the range never reads as all the run cites.
+  const more = new Set(cites.filter((id) => !labels.has(id))).size;
+  const extra = more ? `, and ${String(more)} more` : '';
+  return first.label === last.label
+    ? `Entry #${first.label}${extra}`
+    : `Entries #${first.label} to #${last.label}${extra}`;
+}
 /* A withheld title says why, as a withheld line does. It once said only that it was withheld, on most phases, and
    a reader could not tell that "Revenue chart tooltip date fix" had been held for the word "fix": a title has no
    speaker, so the backstop holds every completion word in it
@@ -181,6 +232,11 @@ export function saidText(words: string): string {
   const rest = named ? flat.slice(named[0].length) : flat;
   return rest ? `Said: ${rest}` : words;
 }
+/* The agent named as the speaker, as opposed to a bare "Said", which an `asked` line uses for the person too. */
+const AGENT_NAMED = /^the agent\s+(?:(?:also|then|later|again|first|finally|now)\s+)?said\b/i;
+/* The person named as the speaker, by the same verbs an `asked` line folds into "You". */
+const PERSON_NAMED =
+  /^(?:you|the\s+(?:person|user))\s+(?:asked|said|reported|confirmed|requested|wanted|told|noted|explained|mentioned|suggested|proposed|stated|replied|answered|claimed|wrote)\b/i;
 
 /* An `asked` bullet reads as the person's words, as Full activity names them "You": the server admits it under
    the same speech licence as a `said` bullet, so text that opens with another verb ("Confirmed the parser is
@@ -191,9 +247,20 @@ const PERSON_SPEECH =
 export function askedText(words: string): string {
   const flat = words.trim();
   if (/^you\s+(?:asked|said)\b/i.test(flat)) return words;
+  /* The line names the agent as its speaker. An `asked` bullet cites the person and the agent, so it may report
+     either, and "You said: The agent said ..." credited the agent's words to the person. */
+  if (AGENT_NAMED.test(flat)) return saidText(words);
   const named = PERSON_SPEECH.exec(flat);
-  if (named && (named[0].toLowerCase().startsWith('the') || /^asked$/i.test(named[1] ?? '')))
-    return `You ${(named[1] ?? '').toLowerCase()} ${flat.slice(named[0].length)}`.trimEnd();
+  if (
+    named &&
+    (named[0].toLowerCase().startsWith('the') || /^(?:asked|said)$/i.test(named[1] ?? ''))
+  ) {
+    const rest = flat.slice(named[0].length);
+    const verb = (named[1] ?? '').toLowerCase();
+    return rest.startsWith(':')
+      ? `You ${verb}: ${rest.slice(1).trimStart()}`.trimEnd()
+      : `You ${verb} ${rest}`.trimEnd();
+  }
   return `You said: ${words}`;
 }
 
@@ -206,8 +273,18 @@ const TOOL_REPORT = /\breported\s+failed,\s*as\s+the\s+tool\s+reported\b/i;
 
 /* What a bullet draws, and what its chips are named for: the speaker for words, the failure for a check. */
 export function bulletWords(kind: string, words: string): string {
+  const flat = words.trim();
+  /* A `said` line cites only the agent's words, so a line naming the person is the agent's report of them: it
+     keeps "Said:" and names the person as the card does, "you". */
+  if (kind === 'said' && PERSON_NAMED.test(flat)) {
+    const you = askedText(flat);
+    return `Said: ${(you[0] ?? '').toLowerCase()}${you.slice(1)}`;
+  }
   if (kind === 'said') return saidText(words);
   if (kind === 'asked') return askedText(words);
+  /* Work cited with words: a line that names its speaker is said as that speaker's, not in the summary's voice. */
+  if (kind === 'did' && AGENT_NAMED.test(flat)) return saidText(words);
+  if (kind === 'did' && PERSON_NAMED.test(flat)) return askedText(words);
   if (kind === 'failed') return `${TOOL_REPORT.test(words) ? FAILED_SHORT : FAILED_MARK} ${words}`;
   return words;
 }

@@ -53,7 +53,8 @@ describe('the outline card model', () => {
     const [only] = view.blocks;
     expect(only?.prompt).toBe('Add retry with backoff.');
     expect(only?.counts).toEqual([
-      '9 entries',
+      // The span says "#1 to #2" in message numbers: the count names the messages and what sits under them.
+      '2 messages with 7 checks and files under them',
       '2 agent replies',
       '3 checks run, 1 failed as the tool reported',
       '4 files written in src/webhook (3), no folder (1)',

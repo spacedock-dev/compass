@@ -54,6 +54,30 @@ class _SummaryCase(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
 
+class SummaryDisclosureTest(unittest.TestCase):
+    def test_names_every_fact_sent_in_plain_words(self) -> None:
+        text = summary_jobs.disclosure("Anthropic")
+        for fact in (
+            "Sends to Anthropic through your Claude Code",
+            "16 KiB",
+            "your messages",
+            "text relayed in your turn",
+            "the agent's replies",
+            "check names with their result (failed, passed or not recorded)",
+            "the paths of files written",
+            "Titles of earlier parts go along as context",
+            "sent again for its opening line",
+            "redacted",
+            "No command output is sent",
+            "Turn off summaries stops these calls",
+        ):
+            self.assertIn(fact, text)
+        # The usability review read these as jargon.
+        for word in ("lede", "admits none", "display paths"):
+            self.assertNotIn(word, text)
+        self.assertIn("a destination Compass cannot name", summary_jobs.disclosure(""))
+
+
 class SummaryGrantTest(_SummaryCase):
     def test_summary_off_survives_restart_without_changing_reading_or_goal_answers(self) -> None:
         reading_policy.note(

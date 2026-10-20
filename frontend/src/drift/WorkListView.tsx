@@ -4,8 +4,16 @@ import { DirectionActionButton } from '../intent/DirectionActionButton';
 import { compatSessKey } from '../api/identity';
 import { useDrift } from './context';
 import { missingCites, WORK_AS_REPORTED } from './sentences';
-import { foldRuns, workList, type CheckRunModel } from './workList';
-import { ActivityHead } from './ActivityHead';
+import {
+  foldRuns,
+  lastTurnLead,
+  plainEmphasis,
+  rowsByNumber,
+  workList,
+  type CheckRunModel,
+} from './workList';
+import { EntryHead } from './EntrySource';
+import { afterPanelSettles } from './panelSettle';
 import { ActivityLegend } from './ActivityMarks';
 import { CheckRun } from './CheckRun';
 import { TooltipProvider } from '../ui/tooltip';
@@ -120,7 +128,7 @@ export function WorkListView() {
         rows.find((node) => finding.citedIds.includes(node.dataset['nextEntryId'] ?? ''));
       if (target) {
         jumped.current = jump;
-        land(target);
+        afterPanelSettles(() => land(target));
         return;
       }
     }
@@ -197,6 +205,8 @@ export function WorkListView() {
     const boundary = panel.current.querySelector<HTMLElement>('[data-record-stop]');
     (retained ?? firstNew ?? boundary)?.focus({ preventScroll: true });
   }, [record]);
+  const ordered = rowsByNumber(list.rows);
+  const turnLead = lastTurnLead(ordered);
   const hasChecks = list.rows.some((row) => 'check' in row.head && row.head.check);
   const about = (
     <>
@@ -239,7 +249,7 @@ export function WorkListView() {
         {list.unnumbered ? <p className="next-cockpit-work-absent">{list.unnumbered}</p> : null}
         {list.rows.length ? (
           <div className="next-cockpit-work-rows" role="list">
-            {foldRuns([...list.rows].reverse(), new Set(finding?.citedIds)).map((item) => {
+            {foldRuns([...ordered].reverse(), new Set(finding?.citedIds)).map((item) => {
               const renderRow = (row: (typeof list.rows)[number]) => {
                 const { entry } = row;
                 const type = entry.type;
@@ -273,7 +283,12 @@ export function WorkListView() {
                       )}
                     </span>
                     <div className="next-cockpit-work-body">
-                      <ActivityHead row={row} />
+                      <EntryHead
+                        row={row}
+                        turnRange={turnLead?.id === entry.id ? turnLead.range : null}
+                        project={model.project}
+                        scope={model.key}
+                      />
                       {finding?.citedIds.includes(entry.id) ? (
                         <p className="next-cockpit-reading-evidence" data-next-finding-entry>
                           {`Cited for “${finding.detail || finding.clause || finding.label}” · ${row.n === null ? 'Entry not numbered in this view' : `#${String(row.n)}`}`}
@@ -285,13 +300,14 @@ export function WorkListView() {
                       {/* A model's paraphrase takes the third treatment, not the mono of a string a source
                       published: the reader must be able to tell the record from an account of it. */}
                       {entry.modelDerived ? (
-                        <em className="next-cockpit-work-derived">{entry.summary}</em>
+                        <em className="next-cockpit-work-derived">
+                          {plainEmphasis(entry.summary)}
+                        </em>
                       ) : (
-                        <span className="next-cockpit-work-summary">{entry.summary}</span>
+                        <span className="next-cockpit-work-summary">
+                          {plainEmphasis(entry.summary)}
+                        </span>
                       )}
-                      <span className="next-cockpit-work-source next-visually-hidden">
-                        {row.source}
-                      </span>
                       {row.add ? (
                         <DirectionActionButton
                           feedbackKey={`direction-row:${compatSessKey(model.session)}:${entry.id}`}

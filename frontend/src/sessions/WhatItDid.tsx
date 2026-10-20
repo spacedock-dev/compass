@@ -3,16 +3,19 @@ import { contextKey } from '../api/identity';
 import { parseOutline } from '../api/outline';
 import { useControls } from '../controls';
 import { entriesHeld } from '../drift/citations';
+import { afterPanelSettles } from '../drift/panelSettle';
 import { useDrift } from '../drift/context';
 import { SampleMark } from '../sample/SampleMark';
 import { useDisplayed, useShell } from '../shell/context';
 import { Button } from '../ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Card } from '../ui/card';
 import { Disclosure, disclosureKey } from '../controls';
 import { SummaryControls, SummaryView } from './SummaryParts';
 import { summaryHeader, useOpenSummary, useSummaryState } from './summaryState';
 import { fullActivityKey } from './fullActivityKey';
 import {
+  missingSentence,
   NO_PROMPT,
   OUTLINE_EMPTY,
   OUTLINE_FAILED,
@@ -29,7 +32,9 @@ export const WHAT_IT_DID_PLACEHOLDER =
 
 /* An entry chip: its `#n` where the page holds and numbers the entry. Pressing it opens Full activity and lands
    on the entry, reading older record pages for it first when the page does not hold it, as Show cited entries
-   does (docs/design-reader-state.md#the-inventory). */
+   does (docs/design-reader-state.md#the-inventory). An entry from before the intent's window keeps its number,
+   muted, and says why Analyze does not read it. */
+export const OUTSIDE_WINDOW = 'Before your intent’s start; not read by Analyze';
 export function EntryChip({
   id,
   purpose,
@@ -40,19 +45,30 @@ export function EntryChip({
   readonly onOpen: (id: string, n: string | null) => void;
 }) {
   const { model } = useDrift();
-  const n = model.numbers.get(id) ?? null;
-  return (
+  const n = model.labels.get(id) ?? null;
+  const outside = model.outside.has(id);
+  const chip = (
     <Button
       type="button"
       variant="quiet"
-      className="px-2 py-0 font-[family-name:var(--mono)] text-label"
-      aria-label={`Open ${n ? `entry #${n}` : 'the entry'}, ${purpose}, in Full activity`}
+      className={`px-2 py-0 font-[family-name:var(--mono)] text-label${outside ? ' text-muted-foreground opacity-70' : ''}`}
+      aria-label={`Open ${n ? `entry #${n}` : 'the entry'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`}
       data-next-outline-entry={id}
       data-next-cockpit-action="finding-jump"
+      {...(outside ? { 'data-next-entry-outside': '' } : {})}
       onClick={() => onOpen(id, n)}
     >
       {n ? `#${n}` : 'entry'}
     </Button>
+  );
+  if (!outside) return chip;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger render={chip} />
+        <TooltipContent>{OUTSIDE_WINDOW}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -258,8 +274,10 @@ export function WhatItDid({
         const panel = document.querySelector('[data-next-full-activity-body]');
         const growing = panel?.getAnimations?.() ?? [];
         void Promise.allSettled(growing.map((animation) => animation.finished)).then(() => {
-          if (latestPress.current !== press) return;
-          if (!land(id)) setMissing({ what: n ? `entry #${n}` : 'that entry', from });
+          afterPanelSettles(() => {
+            if (latestPress.current !== press) return;
+            if (!land(id)) setMissing({ what: missingSentence(n, model.outside.has(id)), from });
+          });
         });
       });
     if (model.byId.has(id) || !identity) {
@@ -407,7 +425,7 @@ function Outline({
 function MissingLine({ missing }: { readonly missing: string }) {
   return (
     <p className="next-cockpit-define" role="status" data-next-outline-missing>
-      {`Full activity does not show ${missing}: it could not be loaded, or it sits in a folded run of checks.`}
+      {missing}
     </p>
   );
 }

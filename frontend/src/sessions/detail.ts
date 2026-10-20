@@ -67,6 +67,8 @@ export function sessionMeta(
   labels: ReadonlyMap<string, string>,
   generated: number | null,
   entries: number | null,
+  /** The entries since the intent's window opened, where entries before it are also held. */
+  since: number | null = null,
 ): string {
   const parts: string[] = [];
   const harness = registryLabel(labels, session);
@@ -91,7 +93,10 @@ export function sessionMeta(
       if (started !== null) parts.push(`session started ${started} ago`);
     }
   }
-  if (entries !== null) parts.push(`${String(entries)} ${entries === 1 ? 'entry' : 'entries'}`);
+  if (entries !== null)
+    parts.push(
+      `${String(entries)} ${entries === 1 ? 'entry' : 'entries'}${since === null ? '' : `, ${String(since)} since your intent’s start`}`,
+    );
   if (isScanOnly(session)) parts.push('read by scanning: no turn end can be observed here');
   const gaps = gapNames(session);
   if (gaps.length) parts.push(`source not fully read: ${gaps.join(', ')}`);
