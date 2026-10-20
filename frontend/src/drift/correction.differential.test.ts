@@ -36,18 +36,14 @@ import { readingShape } from './shape';
 /* The correction's pure half, run next to the legacy page: the edit arithmetic that decides what an
    over-the-cap paste keeps, the text composed from the server's parts and the list's numbers, whether it is
    stale, and whether there is anything to steer from. */
-/* The one deliberate departure from what the retired page said (owner, 2026-10-14): every number reads
-   "(entry #n in Compass's activity list)" where it read "(#n in Compass)" on the first and "(#n)" after.
-   The recorded answer is compared through this projection, which turns the new wording back into the old
-   so the rest of the text, the placeholders dropped and the order stay held to the recording. See
+/* The one deliberate departure from what the retired page said: every number it drew, " (#n in Compass)" on
+   the first and " (#n)" after, became " (entry #n in Compass's activity list)" (owner, 2026-10-14) and is now
+   drawn as nothing (owner, 2026-10-20), because the agent the text is pasted into never saw that list. The
+   recorded answer is compared through this projection, which removes the old numbers, so the rest of the
+   text, the placeholders dropped and the order stay held to the recording. See
    docs/design-frontend-migration.md#held-to-recorded-answers. */
-function recordedNumbering(text: string): string {
-  let first = true;
-  return text.replace(/ \(entry #(\d+) in Compass's activity list\)/g, (_all, n: string) => {
-    const said = first ? ` (#${n} in Compass)` : ` (#${n})`;
-    first = false;
-    return said;
-  });
+function recordedWithoutNumbers(text: string): string {
+  return text.replace(/ \(#\d+(?: in Compass)?\)/g, '');
 }
 
 const legacy = loadLegacyDrift();
@@ -164,8 +160,9 @@ describe('the correction edit arithmetic matches the legacy page', () => {
         failures.push(`seed ${String(seed)} whole`);
       }
       // A cap this small makes the fit reachable from short strings; the legacy cap is 2,000. The page's cap
-      // rose to 4,216 for the explanations (owner, 2026-10-20), so the arithmetic is held to the recording at
-      // the recorded cap: see docs/design-frontend-migration.md#held-to-recorded-answers.
+      // rose to 4,216 for the explanations and to 5,140 for the agent's quoted words (owner, 2026-10-20), so
+      // the arithmetic is held to the recording at the recorded cap: see
+      // docs/design-frontend-migration.md#held-to-recorded-answers.
       const long = genText(rnd, 5) + 'x'.repeat(rnd() < 0.5 ? 1995 : 10);
       const typedLong = long.slice(0, cut) + insert + long.slice(cut);
       const fit = correctionFit(long, typedLong, cut + insert.length, RECORDED_CAP);
@@ -239,8 +236,8 @@ describe('the correction text, staleness and offer match the legacy page', () =>
         ]),
       );
       if (
-        legacy.call('nextCockpitCorrectionText', parts, numbers) !==
-        recordedNumbering(correctionText(parts as never, labels(numbers)))
+        recordedWithoutNumbers(legacy.call<string>('nextCockpitCorrectionText', parts, numbers)) !==
+        correctionText(parts as never)
       ) {
         failures.push(`seed ${String(seed)} text`);
       }

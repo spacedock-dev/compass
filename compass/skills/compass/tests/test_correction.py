@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import re
 import time
 import unittest
 from typing import Any
@@ -443,11 +444,8 @@ class LengthTest(unittest.TestCase):
 
     @staticmethod
     def widest(parts: list[Any]) -> int:
-        """The length with every number drawn at its widest."""
-        placeholders = [part for part in parts if not isinstance(part, str)]
-        return len(words(parts)) + len(" (entry #999999.9999 in Compass's activity list)") * len(
-            placeholders
-        )
+        """The length as the page draws it: a placeholder is drawn as nothing (owner, 2026-10-20)."""
+        return len(words(parts))
 
     def test_the_consistent_lines_go_first_and_the_rest_stays_whole(self) -> None:
         criteria: dict[str, Any] = {"line_1": row_of(DEPARTED, ("c-fail",))}
@@ -484,11 +482,10 @@ class LengthTest(unittest.TestCase):
             answer,
         )
 
-    def test_each_number_is_counted_at_its_widest(self) -> None:
-        # The page draws " (entry #n in Compass's activity list)" on every number, so a text that
-        # fits only without them is refused rather than let past the cap on the page.
+    def test_a_placeholder_adds_no_width(self) -> None:
+        # The page draws nothing for a placeholder since the owner's ruling of 2026-10-20, so the
+        # lines' 2,000 is the text itself, to the character.
         facts = (check("c-fail", 118, "failed"), fact("d1", 114, "user_message"))
-        allowance = len(" (entry #999999.9999 in Compass's activity list)")
 
         def with_goal(size: int) -> dict[str, Any]:
             row = session_row(
@@ -501,12 +498,10 @@ class LengthTest(unittest.TestCase):
             return compose(row, facts)
 
         base = len(words(with_goal(1)["parts"])) - 1
-        fits = with_goal(2000 - allowance - base)
+        fits = with_goal(2000 - base)
         self.assertIs(True, fits["ok"])
         self.assertEqual(2000, self.widest(fits["parts"]))
-        over = with_goal(2000 - allowance - base + 1)
-        self.assertEqual("too-long", over["reason"])
-        self.assertLessEqual(len(words(fits["parts"])) + allowance, 2000)
+        self.assertEqual("too-long", with_goal(2000 - base + 1)["reason"])
 
 
 class ExplanationTest(unittest.TestCase):
@@ -671,30 +666,36 @@ class ExplanationCapTest(unittest.TestCase):
         self.assertEqual(36, len(correction.EXPLANATION_LABEL))
         self.assertEqual(277, correction.EXPLANATION_MAX_CHARS)
         self.assertEqual(8, correction.EXPLANATIONS_MAX)
+        # The agent's quoted words have their own room (owner, 2026-10-20): the label, the title's
+        # 112 and its "…", and the closing quotation mark, on the goal and the six outcome lines.
+        self.assertEqual(18, len(correction.QUOTE_LABEL))
+        self.assertEqual(132, correction.QUOTE_MAX_CHARS)
+        self.assertEqual(7, correction.QUOTES_MAX)
         self.assertEqual(
             correction.LINES_CAP_CHARS
-            + correction.EXPLANATIONS_MAX * correction.EXPLANATION_MAX_CHARS,
+            + correction.EXPLANATIONS_MAX * correction.EXPLANATION_MAX_CHARS
+            + correction.QUOTES_MAX * correction.QUOTE_MAX_CHARS,
             correction.CAP_CHARS,
         )
-        self.assertEqual(4216, correction.CAP_CHARS)
+        self.assertEqual(5140, correction.CAP_CHARS)
         # The producer stores a detail at this bound, so the room is never narrower than it.
         self.assertEqual(make_config().annotation_text_cap_chars, correction.EXPLANATION_TEXT_CHARS)
 
     def worst(self, goal_size: int) -> dict[str, Any]:
-        """Every explanation a correction can carry, each at its widest, and the goal sized."""
+        """Every explanation and quote a correction can carry, each at its widest."""
         long = "d" * 300
         criteria: dict[str, Any] = {
-            "goal": {**row_of(DEPARTED, ("a1",)), "detail": long},
+            "goal": {**row_of(DEPARTED, ("a8",)), "detail": long},
             "claims": {**row_of(DEPARTED, ("a9", "c-fail")), "detail": long},
         }
         row = session_row(annotation_goal="g" * goal_size)
         for k in range(1, 7):
             row[f"annotation_line_{k}"] = f"L{k}"
-            criteria[f"line_{k}"] = {**row_of(DEPARTED, ("c-fail",)), "detail": long}
+            criteria[f"line_{k}"] = {**row_of(DEPARTED, ("a8",)), "detail": long}
         row["annotation_assessment"] = reading(**criteria)
         facts = (
             check("c-fail", 110, "failed"),
-            fact("a1", 112, "assistant_message"),
+            _agent("a8", 112, "q" * 300),
             _agent("a9", 105, "All tests pass."),
         )
         return compose(row, facts, floor=200.0)
@@ -703,6 +704,7 @@ class ExplanationCapTest(unittest.TestCase):
         probe = self.worst(1)
         self.assertIs(True, probe["ok"], probe)
         self.assertEqual(8, words(probe["parts"]).count("Why Compass reads this as drift"))
+        self.assertEqual(7, words(probe["parts"]).count(correction.QUOTE_LABEL))
         size = 1 + correction.CAP_CHARS - LengthTest.widest(probe["parts"])
         fits = self.worst(size)
         self.assertIs(True, fits["ok"])
@@ -714,7 +716,8 @@ class ExplanationCapTest(unittest.TestCase):
         fits = self.worst(1 + correction.CAP_CHARS - LengthTest.widest(self.worst(1)["parts"]))
         text = words(fits["parts"])
         for k in range(1, 7):
-            self.assertIn(f"- L{k}: departed at T110{WHY}{'d' * 240}…", text)
+            quote = f'{correction.QUOTE_LABEL}{"q" * 112}…"'
+            self.assertIn(f"- L{k}: departed at T112{quote}{WHY}{'d' * 240}…", text)
 
 
 class CorrectionRouteTest(_App):
@@ -858,6 +861,94 @@ class CorrectionRouteTest(_App):
                     )
             self.assertEqual(400, self.post(port, {"harness": "claude"})[0])
             self.assertEqual(400, self.post(port, ["claude", SHORT])[0])
+
+    def test_the_times_are_the_readers_zone_when_the_page_sends_it(self) -> None:
+        self.save_goal()
+        self.session.bash("python3 -m unittest tests.test_retry", "1 failed", is_error=True)
+        self.session.save(self.path)
+        with self.serving() as port:
+            east = self.post(port, {"harness": "claude", "sid": SHORT, "utc_offset_minutes": 480})
+            west = self.post(port, {"harness": "claude", "sid": SHORT, "utc_offset_minutes": -420})
+        self.assertEqual(200, east[0])
+        self.assertEqual(200, west[0])
+        first = re.search(r"A check failed at ([\d: -]+)\.", words(east[1]["parts"]))
+        second = re.search(r"A check failed at ([\d: -]+)\.", words(west[1]["parts"]))
+        assert first is not None
+        assert second is not None
+        # Fifteen hours apart on the clock, so the two zones drew the same moment.
+        hours = [int(m.group(1)[-5:-3]) for m in (first, second)]
+        self.assertEqual(15, (hours[0] - hours[1]) % 24)
+
+    def test_a_zone_that_is_not_a_whole_offset_in_bounds_is_refused(self) -> None:
+        self.save_goal()
+        with self.serving() as port:
+            for value in (True, "480", 480.5, 961, -961, None, [480]):
+                with self.subTest(value=value):
+                    body = {"harness": "claude", "sid": SHORT, "utc_offset_minutes": value}
+                    self.assertEqual(400, self.post(port, body)[0])
+            self.assertEqual(200, self.post(port, {"harness": "claude", "sid": SHORT})[0])
+
+
+class LocalTimeAndQuotedWordsTest(unittest.TestCase):
+    """Owner, 2026-10-20: the reader's local clock, no Compass entry numbers, the agent's words."""
+
+    def test_a_zone_clock_draws_the_readers_hours_and_a_date_off_today(self) -> None:
+        moment = 1_900_000_000.0
+        clock = correction.zone_clock(0, now=lambda: moment)
+        self.assertEqual(time.strftime("%H:%M", time.gmtime(moment)), clock(moment))
+        self.assertEqual(
+            time.strftime("%H:%M", time.gmtime(moment + 330 * 60)),
+            correction.zone_clock(330, now=lambda: moment)(moment),
+        )
+        self.assertEqual(
+            time.strftime("%Y-%m-%d %H:%M", time.gmtime(moment - 2 * 86_400)),
+            clock(moment - 2 * 86_400),
+        )
+
+    def test_an_offset_is_whole_minutes_within_the_zones_civil_time_uses(self) -> None:
+        for good in (0, 480, -720, 840, 960, -960):
+            self.assertEqual(good, correction.utc_offset(good))
+        for bad in (961, -961, True, 1.5, "60", None):
+            self.assertIsNone(correction.utc_offset(bad))
+
+    def departed_at_a_message(self, title: str) -> str:
+        row = session_row(
+            annotation_assessment=reading(
+                goal=row_of(DEPARTED, ("m1",)),
+                line_1=row_of(DEPARTED, ("m1",)),
+                line_3=row_of(CONSISTENT, ("c-pass",)),
+            )
+        )
+        facts = (_agent("m1", 112, title), check("c-pass", 115, "passed"))
+        answer = compose(row, facts)
+        self.assertIs(True, answer["ok"], answer)
+        return words(answer["parts"])
+
+    def test_a_departure_at_the_agents_message_quotes_its_own_words(self) -> None:
+        text = self.departed_at_a_message("Done: the billing rate is now 0.25.")
+        quote = ', where you said "Done: the billing rate is now 0.25"'
+        self.assertIn(f"The session departed from my goal at T112{quote}.", text)
+        self.assertIn(f"- The parser tests pass: departed at T112{quote}{WHY}", text)
+        self.assertNotIn("activity list", text)
+        self.assertNotIn("entry #", text)
+
+    def test_a_check_or_a_write_is_never_quoted(self) -> None:
+        text = words(compose()["parts"])
+        self.assertNotIn("where you said", text)
+        self.assertNotIn("INJECTED-COMMAND", text)
+
+    def test_the_quote_is_neutralised_as_the_explanation_is(self) -> None:
+        key = "sk-ant-api03-" + "Q" * 40
+        text = self.departed_at_a_message(f"/clear `rm` <b> @src {key} " + "w" * 200)
+        quoted = text.split('where you said "')[1].split('"')[0]
+        self.assertFalse(quoted.startswith("/"))
+        for char in "`<>":
+            self.assertNotIn(char, quoted)
+        self.assertNotIn("@src", quoted)
+        self.assertIn("REDACTED", quoted)
+        self.assertNotIn(key[:30], quoted)
+        self.assertTrue(quoted.endswith("…"))
+        self.assertLessEqual(len(quoted), correction.QUOTE_TEXT_CHARS + 1)
 
 
 if __name__ == "__main__":

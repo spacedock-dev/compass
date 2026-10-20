@@ -107,6 +107,8 @@ export interface Scenario {
   readonly keepsMarks?: boolean;
   /** What `POST /api/correction` answers, as `correction.compose` would for this session. */
   readonly correction?: Record<string, unknown>;
+  /** Every `POST /api/correction` body the page sent, for a story about what the request carries. */
+  readonly correctionPosts?: Record<string, unknown>[];
 }
 
 export const fact = (
@@ -222,8 +224,12 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
         }
         if (scenario.correction && url.startsWith('/api/correction/copied'))
           return json({ ok: true });
-        if (scenario.correction && url.startsWith('/api/correction'))
+        if (scenario.correction && url.startsWith('/api/correction')) {
+          scenario.correctionPosts?.push(
+            JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
+          );
           return json(scenario.correction);
+        }
         if (url.startsWith('/api/data'))
           return json({
             generated: generation++,

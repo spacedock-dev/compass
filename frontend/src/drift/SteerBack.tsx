@@ -18,13 +18,19 @@ import {
   rememberShown,
   steerBack,
 } from './steerActions';
-import { entryNumbers } from '../intent/work';
 
 /* Steer back: the button that opens the correction, and the box that holds it. The box is Copy only: the
    words are the reader's to edit and to paste where they choose, and nothing here is ever sent to the
    session ([DEC-16](../../../docs/design-reading-a-session.md#dec-16-compass-does-not-write-into-a-session)). */
 
-export function SteerButton({ primary }: { readonly primary: boolean }) {
+export function SteerButton({
+  primary,
+  from = '',
+}: {
+  readonly primary: boolean;
+  /** Which check the correction comes from, "from the check at 09:16", where it comes from one. */
+  readonly from?: string;
+}) {
   const { ctx, model } = useDrift();
   const ref = useFocusKey<HTMLButtonElement>(
     ctx.shell.controls.focusLane,
@@ -48,6 +54,11 @@ export function SteerButton({ primary }: { readonly primary: boolean }) {
       >
         Steer back
       </Button>
+      {from ? (
+        <span className="next-cockpit-reading-why" data-next-steer-from>
+          {from}
+        </span>
+      ) : null}
       <SampleMark id="steer" />
     </>
   );
@@ -87,10 +98,7 @@ function correctionRows(text: string): number {
 function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
   const { ctx, model } = useDrift();
   const { key, identity } = model;
-  const read = model.source.state === 'read' || model.source.state === 'empty';
-  const draft = correctionDraft(held, model.source, () =>
-    read ? entryNumbers(model.session, model.source, model.payload) : new Map(),
-  );
+  const draft = correctionDraft(held);
   /* What the box last drew, for a recomposition to freeze before the record can renumber its parts. */
   useEffect(() => rememberShown(held, draft));
   /* The node is mounted once per composition and keeps its caret, selection and undo across every redraw. It

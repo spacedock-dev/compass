@@ -523,9 +523,9 @@
           "provider": null,
           "rate_per_min": null,
           "reading_eligibility": {
-            "ok": false,
-            "reason": "idle-unknown",
-            "sentence": "Claude Code records a turn as finished when its Stop hooks run, and this session's transcript has no such record after its last message. The turn may still be running a long tool, waiting on a permission, or interrupted, or Claude Code has no Stop hooks registered (How to use: \"Make the board live rather than polled\"). Analyze opens while the session works, and once a finished turn is recorded.",
+            "ok": true,
+            "reason": null,
+            "sentence": null,
             "until": null
           },
           "resume_id": null,
@@ -595,7 +595,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "19333",
+      "Content-Length": "18925",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

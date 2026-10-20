@@ -262,8 +262,10 @@ Claude Code's hooks go in `~/.claude/settings.json`. Antigravity's status line g
 settings file. Both are yours to edit; the plugin does not write either.
 
 Analyze drift reads a Claude Code session's last turn once Claude Code records it finishing, which
-it does when Stop hooks are registered (the plugin registers them), whichever board you view. Any
-other harness can be read after its session ends only when its hooks reach this board.
+it does when Stop hooks are registered (the plugin registers them), whichever board you view. An
+idle Claude Code session whose last turn has no recorded finish, such as an interrupted turn, is
+read up to its last recorded entry instead, and the result says so. Any other harness can be read
+after its session ends only when its hooks reach this board.
 
 ## Install or migrate Droid hooks
 

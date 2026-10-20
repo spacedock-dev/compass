@@ -183,9 +183,14 @@ describe('the route and unchanged refusals read as the legacy page reads them', 
           canonical(
             typeof theirs === 'string'
               ? capped(
+                  /* Deviation (owner, 2026-10-20): Claude Code has no idle line of its own, since an
+                     idle Claude Code session is read rather than refused; a stale idle token falls to
+                     the line every harness gets. */
                   theirs.replace(
                     "Last turn isn't recorded as finished. Run another turn to open Analyze.",
-                    'Analyze opens while this session runs.',
+                    session['acquisition'] === 'event'
+                      ? 'Analyze opens while this session runs or once it ends.'
+                      : 'Analyze opens while this session runs.',
                   ),
                 )
               : theirs,

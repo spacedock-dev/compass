@@ -81,7 +81,8 @@ async function openBox(canvasElement: HTMLElement): Promise<HTMLTextAreaElement>
   return (await canvas.findByLabelText('Correction to copy')) as HTMLTextAreaElement;
 }
 
-const NUMBERED = String.raw` \(entry #\d+ in Compass's activity list\)`;
+/* Owner, 2026-10-20: a placeholder is drawn as nothing; the agent never saw Compass's numbers. */
+const NUMBERED = '';
 const linesOf = (box: HTMLTextAreaElement) => box.value.split('\n');
 const explanations = (box: HTMLTextAreaElement) =>
   linesOf(box).filter((line) => line.startsWith(`  ${CORRECTION_WHY_LABEL}`));
@@ -131,7 +132,7 @@ export const TwoDeparturesEachExplained: Story = {
       (node) => node.lastElementChild?.textContent ?? '',
     );
     await expect(whys).toEqual([GOAL_WHY, LINE_WHY]);
-    await expect(within(canvasElement).getByText(/^\d+\/4216$/)).toHaveTextContent(
+    await expect(within(canvasElement).getByText(/^\d+\/5140$/)).toHaveTextContent(
       `${String([...box.value].length)}/${String(CORRECTION_CAP)}`,
     );
     await noOpeningLine(box);
@@ -201,15 +202,17 @@ export const AnInjectionInTheExplanationIsInert: Story = {
   },
 };
 
-/* The cap: every explanation a correction can carry (the goal, six lines and a contradicted claim), each at
-   its widest, over lines at their own 2,000 with every number counted at its widest. The page holds it whole,
-   counts it against 4,216, and a paste past the cap keeps the composed text and stops at the cap. */
-const PLACEHOLDER_MAX = " (entry #999999.9999 in Compass's activity list)".length;
+/* The cap: every explanation a correction can carry (the goal, six lines and a contradicted claim) and every
+   quote of the agent's own words (the goal and six lines), each at its widest, over lines at their own 2,000.
+   A placeholder is drawn as nothing (owner, 2026-10-20). The page holds it whole, counts it against 5,140, and
+   a paste past the cap keeps the composed text and stops at the cap. */
+const PLACEHOLDER_MAX = 0;
 const EXPLAINED =
   `${'The record shows the work moved away from this line of your intent. '.repeat(4)}`.slice(
     0,
     240,
   );
+const QUOTE = `, where you said "${'q'.repeat(112)}…"`;
 const LINES = [1, 2, 3, 4, 5, 6].map((k) => `Line ${String(k)} holds`);
 
 function worst(goal: string): Part[] {
@@ -217,14 +220,18 @@ function worst(goal: string): Part[] {
   return [
     `Back to my goal: ${goal}\nThe session departed from my goal at 00:08`,
     { entry: 'c1' },
-    `.${why}\nYou said "All green locally: the tests pass" at 00:07`,
+    `${QUOTE}.${why}\nYou said "All green locally: the tests pass" at 00:07`,
     { entry: 'm1' },
     '; the record shows otherwise at 00:08',
     { entry: 'c1' },
     `.${why}\nA check failed at 00:08`,
     { entry: 'c1' },
     '.\nWhere it stands against what I expect:',
-    ...LINES.flatMap((line) => [`\n- ${line}: departed at 00:08`, { entry: 'c1' }, why]),
+    ...LINES.flatMap((line) => [
+      `\n- ${line}: departed at 00:08`,
+      { entry: 'c1' },
+      `${QUOTE}${why}`,
+    ]),
     '\nPlease continue from here.',
   ];
 }
@@ -270,7 +277,7 @@ export const TheCapHoldsEveryExplanation: Story = {
     await expect(box.rows).toBe(16);
     const length = [...box.value].length;
     await expect(length).toBeLessThanOrEqual(CORRECTION_CAP);
-    const count = within(canvasElement).getByText(/^\d+\/4216$/);
+    const count = within(canvasElement).getByText(/^\d+\/5140$/);
     await expect(count).toHaveTextContent(`${String(length)}/${String(CORRECTION_CAP)}`);
     const composedText = box.value;
     box.focus();

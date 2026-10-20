@@ -701,8 +701,13 @@ export const PendingLaterDirection: Story = {
       keep.compareDocumentPosition(departures(shown)[0] as HTMLElement) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    // While the question stands, Keep is the one primary and Steer back is not offered.
-    await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    // While the question stands, Keep is the one primary, and Steer back stays beside the departures
+    // as a secondary press from the check (owner, 2026-10-20), with no Update intent instead.
+    const steer = await within(drift).findByRole('button', { name: 'Steer back' });
+    await expect(steer).toHaveAttribute('data-variant', 'default');
+    await expect(steer.closest('[data-next-result-steer]')).not.toBeNull();
+    await expect(within(drift).getByText(/^from the check at \d\d:\d\d$/)).toBeVisible();
+    await expect(within(drift).queryByRole('button', { name: 'Update intent instead' })).toBeNull();
     await neverDone(shown);
   },
 };

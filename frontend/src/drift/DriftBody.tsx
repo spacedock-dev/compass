@@ -1,13 +1,21 @@
 import type { ReactNode } from 'react';
 import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
+import { nextNumber } from '../api/bootstrap';
 import { endedAt } from '../observed';
+import { clock } from '../observed/values';
 import { directionsOpen, intentKey, intentUnsaved } from '../intent/derive';
 import type { DirectionReading } from '../intent/directions';
 import { useDisplayed } from '../shell/context';
 import { keepReading } from './actions';
 import { useDrift } from './context';
-import { offeredDirection, steerOffer, steerTrigger, type SteerOffer } from './correction';
+import {
+  offeredDirection,
+  steerOffer,
+  steerTrigger,
+  steerWithheld,
+  type SteerOffer,
+} from './correction';
 import { DriftLevelView } from './DriftLevelView';
 import { readingBoard } from './flip';
 import {
@@ -31,7 +39,9 @@ import {
   OFFER,
   READING_DEFINITION,
   SCOPE,
+  steerFrom,
   UNKNOWN_KEY,
+  WHY_OFF,
 } from './sentences';
 import { SteerBox, SteerButton, UpdateIntentButton } from './SteerBack';
 import { useFollowCorrection } from './useFollowCorrection';
@@ -82,16 +92,25 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     drafted: model.drafted,
   });
   useFollowCorrection(steerable !== null);
-  const offer = hasQuestion ? null : steerable;
+  /* While a later direction stands, Steer back stays beside the departures it steers from (owner, 2026-10-20):
+     the question owns the primary press, so Steer back is secondary there and offers no Update intent instead,
+     which the question's own Add already is. A failed check alone still waits for the question. */
+  const fromCheck = Boolean(steerable && (steerable.departed || steerable.claimed));
+  const offer = hasQuestion && !fromCheck ? null : steerable;
   const departed = Boolean(offer?.departed);
   const noReader = annotate ? routeRefusal(payload, session) : '';
+  const readAt = nextNumber(model.raw?.['read_at']);
+  const from = fromCheck && readAt !== null && readAt > 0 ? steerFrom(clock(readAt)) : '';
   const slotted: SteerSlot | null = offer
     ? {
-        lead: departed,
+        lead: departed && !hasQuestion,
         button: (
           <>
-            <SteerButton primary={steerPrimary(offer, Boolean(noReader), primary)} />
-            {departed ? (
+            <SteerButton
+              primary={!hasQuestion && steerPrimary(offer, Boolean(noReader), primary)}
+              from={from}
+            />
+            {departed && !hasQuestion ? (
               <UpdateIntentButton
                 factId={offeredDirection(annotation, model.entries, session, shape, model.draft)}
               />
@@ -128,6 +147,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       <ReadingResult
         question={control}
         slotted={slotted}
+        steerOff={steerWithheld({ session, annotation, shape, offer })}
         again={(steer, showRun = true) => (
           <ReadingControl
             board={board}
@@ -282,7 +302,7 @@ function RefusedLine({
       {board.inert && board.pressed ? (
         <Why
           name={`reading-why:${model.key}`}
-          summary="Why it can't read"
+          summary={WHY_OFF}
           body={String(board.pressed['sentence'] || '')}
         />
       ) : null}

@@ -48,8 +48,11 @@ import {
   RESULT_NOT_ACCURATE_HINT,
   RESULT_NOTHING_FOUND,
   RESULT_UNMARK,
+  readIdle,
+  SCOPE_TEXT_IDLE,
   unloadedCites,
 } from './sentences';
+import { clock } from '../observed/values';
 import type { SteerSlot } from './ReadingControl';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
 import { Why } from './Why';
@@ -518,10 +521,27 @@ function intentLabel(label: string, lines: number): string {
   return n && lines > 1 ? `Expected outcome ${n}` : 'Expected outcome';
 }
 
+/* A reading of an idle Claude Code session whose last turn has no recorded finish says so where its answer is,
+   with the reader's local time of the last entry it read, so it is never taken for a verdict on how the turn
+   ended (owner, 2026-10-20). Known by its stored sentence, since its scope is the running session's. */
+function idleLine(shape: Shape, raw: Readonly<Record<string, unknown>>): string {
+  if (shape.scope !== 'mid-flight' || shape.scopeText !== SCOPE_TEXT_IDLE) return '';
+  const through = nextNumber(raw['evidence_through']);
+  return readIdle(through !== null && through > 0 ? clock(through) : '');
+}
+
 /* What it read, one click away: the model, the intent it read against (which revision, when and where it came
    from), how much of the session it read, and what it never reads. Revision and times are about the reading,
    never about the work. */
-function Baseline({ shape, arrived }: { readonly shape: Shape; readonly arrived: string }) {
+function Baseline({
+  shape,
+  raw,
+  arrived,
+}: {
+  readonly shape: Shape;
+  readonly raw: Readonly<Record<string, unknown>>;
+  readonly arrived: string;
+}) {
   const { model } = useDrift();
   const cap = nextNumber(model.payload['annotate_cap']);
   /* With no time it said "time not recorded"; adopted words were saved rather than typed, so their missing
@@ -548,7 +568,7 @@ function Baseline({ shape, arrived }: { readonly shape: Shape; readonly arrived:
           .join(' · ');
   const lines = shape.readClauses.filter(([label]) => intentLabel(label, 0) !== 'Goal').length;
   const session = [
-    READ_SCOPE[shape.scope] ?? shape.scopeText,
+    idleLine(shape, raw) || READ_SCOPE[shape.scope] || shape.scopeText,
     ...readSentences(shape.cutoff),
     arrived,
   ].filter(Boolean);
@@ -611,11 +631,14 @@ export function ReadingResult({
   question,
   again,
   slotted,
+  steerOff = '',
 }: {
   /** The question before the press, which keeps the result's head while a later direction is unsettled. */
   readonly question: ReactNode;
   /** Steer back's row and box, where the control offers it. */
   readonly slotted: SteerSlot | null;
+  /** Why Steer back does not carry the departures listed, said beside them (`steerWithheld`). */
+  readonly steerOff?: string;
   /** The stale result's one run control. */
   readonly again: (steer: SteerSlot | null, showRun?: boolean) => ReactNode;
 }) {
@@ -629,6 +652,7 @@ export function ReadingResult({
       ? driftAnswer(shape, entries, source.scan)
       : null;
   const coverage = coverageLine(shape);
+  const idle = idleLine(shape, raw);
   /* From the reading rather than from the live row. A reading describes the moment it was taken. */
   const arrived = arrivedLine(annotation, entries);
   const intent = shape.criteria.filter((row) => row.key !== CLAIMS);
@@ -681,6 +705,11 @@ export function ReadingResult({
           focusKey={staleState || question ? null : `reading:${model.key}`}
         />
       ) : null}
+      {idle ? (
+        <p className="next-cockpit-reading-why" data-next-reading-idle>
+          {idle}
+        </p>
+      ) : null}
       {coverage ? (
         <p className="next-cockpit-reading-why" data-next-reading-coverage>
           {coverage}
@@ -692,6 +721,21 @@ export function ReadingResult({
             <DepartureCard key={row.key} row={row} outcomes={outcomes} />
           ))}
         </div>
+      ) : null}
+      {departures.length && steerOff ? (
+        <p className="next-cockpit-reading-why" data-next-steer-off>
+          {steerOff}
+        </p>
+      ) : null}
+      {/* While a later direction stands the question owns the primary press, and Steer back stays beside the
+          departures it steers from (owner, 2026-10-20). */}
+      {question && slotted ? (
+        <>
+          <div className="next-cockpit-reading-ask" data-next-result-steer>
+            {slotted.button}
+          </div>
+          {slotted.box}
+        </>
       ) : null}
       {quiet ? (
         <div
@@ -727,7 +771,7 @@ export function ReadingResult({
         data-next-result-footer
       >
         <ResultFoot />
-        <Baseline shape={shape} arrived={arrived} />
+        <Baseline shape={shape} raw={raw} arrived={arrived} />
       </div>
     </div>
   );

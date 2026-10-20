@@ -14,6 +14,11 @@ By the owner's ruling of 2026-10-20, each departure carries the stored reading's
 indented line labelled as Compass's reading, neutralised by `explanation` so a paste cannot turn it
 into a command or a new block, by the
 [amendment](docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation).
+By the owner's second ruling of that day (local time and quoted words,
+[amended](docs/design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)),
+the times are the reader's local clock, a placeholder is drawn as nothing (an agent never saw the
+activity list's numbers), and a departure cited at one of the agent's messages quotes that
+message's published title, neutralised as the explanation is, so the agent can find the moment.
 
 `compose` is pure. The route hands it the session's published row, its observed record and the
 later-direction floor (`annotations.direction_floor`), and it answers the parts or why there are
@@ -29,6 +34,7 @@ React page ports the same rules under `frontend/src/drift/`.
 
 from __future__ import annotations
 
+import datetime
 import re
 import time
 import unicodedata
@@ -56,24 +62,33 @@ EXPLANATION_TEXT_CHARS = 240
 EXPLANATION_MAX_CHARS = len(EXPLANATION_LABEL) + EXPLANATION_TEXT_CHARS + 1
 # What can carry one: the goal, every outcome line and a contradicted claim.
 EXPLANATIONS_MAX = 2 + reading.MAX_OUTCOME_LINES
+# The agent's own words where a departure is cited at its message (owner, 2026-10-20): the
+# message's published title, the first sentence the activity list shows, at that title's own bound
+# and one "…". The third budget, on the same terms as the explanations': the lines are measured
+# without the quotes, so a correction that composed before still composes, and each quote has fixed
+# room. The claim line quotes its title already, and a consistent line stands on a tool's report,
+# so only the goal and the outcome lines can carry one.
+QUOTE_LABEL = ', where you said "'
+QUOTE_TEXT_CHARS = reading.CLAIM_TITLE_CAP_CHARS
+QUOTE_MAX_CHARS = len(QUOTE_LABEL) + QUOTE_TEXT_CHARS + 1 + len('"')
+QUOTES_MAX = 1 + reading.MAX_OUTCOME_LINES
+# The reader's zone as the page sends it, minutes east of UTC. Bounded to the offsets civil time
+# uses (UTC-12 to UTC+14), with a margin, so a request cannot ask for a date the clock cannot draw.
+UTC_OFFSET_MAX_MINUTES = 16 * 60
 # Claude Code only, as the copy route is: a correction offered where a paste cannot be recognised
 # coming back would count as the reader's own words.
 HARNESSES = copied_corrections.HARNESSES
 
-# Names what the 2,000 bounds, the goal and lines, since the page counts the whole text to 4,216.
+# Names what the 2,000 bounds, the goal and lines, since the page counts the whole text to the cap.
 TOO_LONG = (
     "Your goal and lines would be longer than 2,000 characters. Shorten a line of your intent."
 )
 REASON_NOTHING = "nothing"
 REASON_TOO_LONG = "too-long"
 
-# What a placeholder can become on the page: " (entry #n in Compass's activity list)", on every
-# number drawn (owner, 2026-10-14; it was "(#n in Compass)" on the first and "(#n)" after). A
-# bare "#n" or "#n in Compass" is a reference an agent that has never seen Compass cannot place.
-# A check or file's number is the message it follows and its place after it ("41.2"). Counted at
-# six digits and four, so the page's text never passes the cap whatever it numbers; a
-# correction within a few characters of 2,000 is refused slightly early instead.
-NUMBER_MAX_CHARS = len(" (entry #999999.9999 in Compass's activity list)")
+# A placeholder is drawn as nothing since the owner's ruling of 2026-10-20: " (entry #n in
+# Compass's activity list)" named a list the agent never saw. It stays in the parts, because the
+# page reads the cited ids from it to tell when a held correction went stale, and adds no width.
 
 _DEPARTED = "departed"
 _CONSISTENT = "consistent"
@@ -139,36 +154,80 @@ def _redact_joined(text: str) -> str:
 
 
 def explanation(detail: object) -> str:
-    """A stored reading's detail as the correction may carry it, or "" for none.
+    """A stored reading's detail as the correction may carry it, or "" for none."""
+    return neutralised(detail, EXPLANATION_TEXT_CHARS)
+
+
+def neutralised(value: object, cap: int) -> str:
+    """Text a model or an agent wrote, as the correction may carry it, or "" for none.
 
     Invisible characters and openers go first, so nothing hides an opener and a key behind a
     stripped "-" is whole when the redactor reads it; then `records.safe_text`, the redact-and-clip
     path every stored reading string takes; then the look-alike swaps. A redaction marker that
-    finishes past the bound withholds the explanation rather than let it pass its room.
+    finishes past the bound withholds the text rather than let it pass its room.
     """
-    raw = detail if isinstance(detail, str) else ""
+    raw = value if isinstance(value, str) else ""
     prepared = _redact_joined(_strip_openers(_visible(raw)))
-    text = records.safe_text(prepared, EXPLANATION_TEXT_CHARS)
+    text = records.safe_text(prepared, cap)
     # Cut, measured against the same text unbounded: a run of spaces collapses to one, so the raw
     # length would mark a whole sentence as cut.
     whole = records.safe_text(prepared, 2 * len(prepared) + 64)
     if len(whole) > len(text) and not text.endswith("…"):
         text = f"{text.rstrip()}…"
     text = " ".join(_MENTION.sub("\uff20", text.translate(_SWAPS)).split())
-    if not text.strip("….' ") or len(text) > EXPLANATION_TEXT_CHARS + 1:
+    if not text.strip("….' ") or len(text) > cap + 1:
         return ""
     return text
 
 
 def clock_text(at: float) -> str:
-    """Hours and minutes on this machine's clock, the previous page's `nextSessionClock`."""
+    """Hours and minutes on this machine's clock, the previous page's `nextSessionClock`.
+
+    The fallback for a request that sends no zone; the page sends the reader's (`zone_clock`).
+    """
     then, today = time.localtime(at), time.localtime()
     pattern = "%H:%M" if then[:3] == today[:3] else "%Y-%m-%d %H:%M"
     return time.strftime(pattern, then)
 
 
+def utc_offset(value: object) -> int | None:
+    """A request's `utc_offset_minutes`, or None where it is not a whole offset in bounds."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if abs(value) <= UTC_OFFSET_MAX_MINUTES else None
+
+
+def zone_clock(
+    offset_minutes: int, *, now: Callable[[], float] = time.time
+) -> Callable[[float], str]:
+    """`clock_text` on the reader's clock, `offset_minutes` east of UTC.
+
+    One offset for every time in the text, the reader's now: a correction cites the session's
+    recent work, and a daylight-saving change between two of its times is the one case it draws
+    an hour off. The server never guesses a zone; it draws the one the page sent.
+    """
+    zone = datetime.timezone(datetime.timedelta(minutes=offset_minutes))
+
+    def clock(at: float) -> str:
+        then = datetime.datetime.fromtimestamp(at, zone)
+        today = datetime.datetime.fromtimestamp(now(), zone)
+        return then.strftime("%H:%M" if then.date() == today.date() else "%Y-%m-%d %H:%M")
+
+    return clock
+
+
 def _placeholder(fact: Mapping[str, Any]) -> dict[str, str]:
     return {"entry": str(fact.get("fact_id") or "")}
+
+
+def _quote(fact: Mapping[str, Any]) -> list[Part]:
+    """The agent's own words at a cited message, or nothing for any other entry."""
+    if fact.get("type") != reading.AGENT_MESSAGE_TYPE:
+        return []
+    # Its closing stop dropped, as the claim line drops it: the sentence around it keeps its own.
+    text = neutralised(fact.get("summary"), QUOTE_TEXT_CHARS).rstrip(".").rstrip()
+    # Marked rather than written as text, so the lines can be measured without it (`_joined`).
+    return [{"quote": f'{QUOTE_LABEL}{text}"'}] if text else []
 
 
 def _own(row: Mapping[str, Any], facts: Iterable[Any]) -> list[dict[str, Any]]:
@@ -477,18 +536,21 @@ def _current_rows(
 
 
 def _width(parts: list[Part]) -> int:
-    placeholders = sum(1 for part in parts if not isinstance(part, str))
-    text = sum(len(part) for part in parts if isinstance(part, str))
-    if not placeholders:
-        return text
-    return text + NUMBER_MAX_CHARS * placeholders
+    """The text's width: a placeholder is drawn as nothing."""
+    return sum(len(part) for part in parts if isinstance(part, str))
 
 
-def _joined(lines: list[list[Part]]) -> list[Part]:
-    """The lines as one list of parts, adjacent text merged."""
+def _joined(lines: list[list[Part]], *, quoted: bool) -> list[Part]:
+    """The lines as one list of parts, adjacent text merged, each quote kept as text or dropped."""
     parts: list[Part] = []
     for index, line in enumerate(lines):
-        for part in [*line] if index == 0 else ["\n", *line]:
+        for raw in [*line] if index == 0 else ["\n", *line]:
+            if isinstance(raw, dict) and "quote" in raw:
+                if not quoted:
+                    continue
+                part: Part = raw["quote"]
+            else:
+                part = raw
             if isinstance(part, str) and parts and isinstance(parts[-1], str):
                 parts[-1] += part
             else:
@@ -508,7 +570,11 @@ def _body(
             name = reading.CONSTRAINT_OUTPUT
         state, cited = rows.state(name) if rows is not None else (_NOT_SHOWN, None)
         if state == _DEPARTED and cited is not None and rows is not None:
-            departed: list[Part] = [f"- {text}: departed at {at(cited)}", _placeholder(cited)]
+            departed: list[Part] = [
+                f"- {text}: departed at {at(cited)}",
+                _placeholder(cited),
+                *_quote(cited),
+            ]
             body.append((state, departed, rows.why(name)))
         elif state == _CONSISTENT and cited is not None:
             said: list[Part] = [
@@ -670,6 +736,7 @@ def compose(
                 [
                     f"The session departed from my goal at {at(goal_gap[1])}",
                     _placeholder(goal_gap[1]),
+                    *_quote(goal_gap[1]),
                     ".",
                 ],
                 rows.why(reading.CONSTRAINT_GOAL) if rows is not None else "",
@@ -691,11 +758,13 @@ def compose(
                 *tail[:-1],
                 *(middle if body else []),
                 tail[-1],
-            ]
+            ],
+            quoted=explained,
         )
 
     # The consistent lines go first, the last of them first, and nothing is ever cut short. The
-    # lines are measured without their explanations, against the budget they had before them.
+    # lines are measured without their explanations and quotes, against the budget they had
+    # before either.
     while _width(assemble(explained=False)) > LINES_CAP_CHARS:
         consistent = [i for i, (state, _, _) in enumerate(body) if state == _CONSISTENT]
         if not consistent:

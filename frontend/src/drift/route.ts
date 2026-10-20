@@ -17,7 +17,6 @@ import {
   READINGS_OFF,
   MODEL_UNREAD,
   NO_WORDS,
-  PRESS_CLAUDE,
   PRESS_CODEX,
   PRESS_EVENTS,
   PRESS_LINES,
@@ -81,12 +80,14 @@ export function eligibility(
 /* The short line beside an inert Analyze drift, one per token the board can publish as
    `reading_eligibility.reason`. Codex, which reads only while a turn runs and has no session end the board
    can observe, gets its own line for both idle tokens. No line promises Analyze opens "once this session
-   finishes a turn": the turn may have finished where Compass could not see it. */
+   finishes a turn": the turn may have finished where Compass could not see it. Claude Code has no idle line
+   since the owner's ruling of 2026-10-20: an idle Claude Code session is read up to its last recorded entry,
+   so the board never refuses one for being idle, and the line it had ("Analyze opens while this session
+   runs.") was false of a session that would not run again. */
 export function pressLine(session: Row | null | undefined, held: Row): string {
   const reason = String(held['reason']);
   const harness = String(session?.['harness'] || '');
   if (harness === 'codex' && ['idle-unknown', 'turn-stop'].includes(reason)) return PRESS_CODEX;
-  if (reason === 'idle-unknown' && harness === 'claude') return PRESS_CLAUDE;
   if (reason === 'idle-unknown' && session && session['acquisition'] === 'event')
     return PRESS_EVENTS;
   return Object.hasOwn(PRESS_LINES, reason)

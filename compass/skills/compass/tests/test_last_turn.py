@@ -156,7 +156,12 @@ class ASessionWaitingAtItsPromptIsReadWhenYouPressTest(unittest.TestCase):
                 row = {**_waiting(), "finished_at": stop}
                 scope, withheld = self.eligibility(row, admit_turn_stop=True)
                 self.assertNotEqual(reading.SCOPE_LAST_TURN, scope)
-                self.assertIn(withheld, reading.WITHHELD)
+                # No stop, so the press reads the idle session up to its last recorded entry,
+                # never final (owner, 2026-10-20).
+                self.assertEqual((reading.SCOPE_MID_FLIGHT, ""), (scope, withheld))
+                self.assertEqual(
+                    reading.SCOPE_TEXT_MID_FLIGHT_IDLE, reading._scope_text(scope, row)
+                )
 
     def test_words_typed_after_a_session_ended_are_still_withheld_when_you_press(self) -> None:
         ended = {**_waiting(), "ended_at": STOP}

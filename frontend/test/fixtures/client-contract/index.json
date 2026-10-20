@@ -302,28 +302,28 @@
       "method": "GET",
       "name": "data-healthy",
       "route": "/api/data",
-      "sha256": "474dbc4289be8b65a1ffce137d9d0df1ba7fd307d75d9ca9d2afe51b46ae761d",
+      "sha256": "78e003907891e0ba7b36d05049e4af3fc3b0e0c290e47ee88b0aa484601e8f3b",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-identity-collisions",
       "route": "/api/data",
-      "sha256": "9d2d0761aac7cb475101997adc0c987f1f8ce53c31a5e5bc16c537c0dba18fbb",
+      "sha256": "af8c98e8d90dbdff643a8951add6dcd0abc5994827cd8ae765e09d4b4c416780",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-restarted-build",
       "route": "/api/data",
-      "sha256": "ee74fdfd99f186a62998abb7f9ccdaa658a61786e164fa42c0b8382475634709",
+      "sha256": "8e11fa390e9d6c852cb3b2128617cf408c1be4141628bb87e429e55e3e52e276",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
-      "sha256": "c68b9a1a6fa6fc67d67468f9931c595cd555d8f63dabfa2a3735d97a27bd794c",
+      "sha256": "95cbf351cc7c40b2b2b1f76d07d54ace328682ecb32607fb334efc919a200571",
       "status": 200
     },
     {
