@@ -1084,7 +1084,7 @@ class SessionSummaryTest(unittest.TestCase):
                     {"lede": text, "cites": [1]},
                 )
                 data = self.run_summary([entry(1, "agent")], model).as_dict()
-                self.assertIn("only as 'the error read: <its words>'", model.prompts[-1])
+                self.assertIn('only as "the error read: <its words>"', model.prompts[-1])
                 title = data["blocks"][0]["phases"][0]["title"]
                 if verdict == "withheld":
                     self.assertEqual({"withheld": True, "reason": "completion_claim"}, title)
@@ -1943,7 +1943,31 @@ class SummaryPromptTest(unittest.TestCase):
         for prompt in (self.window, self.lede):
             text = self.instructions(prompt)
             self.assertIn("plain verbs the record shows: ran, read, edited, wrote, opened", text)
-            self.assertIn('"the agent requested a merge of PR #12"', text)
+            self.assertIn('"The agent ran pytest."', text)
+            self.assertIn("never add a result to it", text)
+            # The check reads these as speech and shows completion words after them.
+            actions = text.split("plain verbs the record shows: ")[1].split(", as in")[0]
+            for speech in ("asked", "requested"):
+                self.assertNotIn(speech, actions)
+            self.assertNotIn("requested a merge", text)
+
+    def test_sentences_extending_each_taught_action_with_a_result_are_refused(self) -> None:
+        actions = (
+            self.instructions(self.window)
+            .split("plain verbs the record shows: ")[1]
+            .split(", as in")[0]
+            .split(", ")
+        )
+        for verb in actions:
+            for result in (
+                " parser.py and the parser is fixed.",
+                " parser.py that fixed the parser.",
+                " parser.py with all checks green.",
+                " parser.py, which fixed the parser.",
+            ):
+                with self.subTest(verb=verb, result=result):
+                    sentence = f"The agent {verb}{result}"
+                    self.assertTrue(self.summary.completion_claim(sentence, kind="did"))
 
     def test_both_prompts_name_every_completion_word_and_ask_for_attributed_outcomes(
         self,
@@ -1952,13 +1976,53 @@ class SummaryPromptTest(unittest.TestCase):
             text = self.instructions(prompt)
             listed = text.split("not even as nouns: ")[1].split(".")[0]
             self.assertEqual(list(self.COMPLETION_STEMS), listed.split(", "))
-            self.assertIn("only in what a named speaker said, directly after the speaker", text)
-            self.assertIn('never add a second claim to it after "and", "with", "so"', text)
+            self.assertIn(
+                "The only exceptions: what a named speaker said, directly after the", text
+            )
+            self.assertIn(
+                'never add a second claim to it after "and", "with", "so", "which", "that" or a '
+                "trailing phrase",
+                text,
+            )
+            ban = text.split("not even as nouns: ")[1].split("\n")[0]
+            self.assertIn("The only exceptions: what a named speaker said", ban)
+            self.assertIn("the check-report form below", ban)
             self.assertIn(
                 '"<check> reported passed, as the tool reported" (or failed, or not-recorded)',
                 text,
             )
-            self.assertIn("A count or any other outcome is only a speaker's words", text)
+            self.assertIn(
+                "Report a count or other outcome only if the agent or the person wrote it, and "
+                "cite that entry. Otherwise use the check-report form.",
+                text,
+            )
+            self.assertNotIn("The agent said 12 tests passed", text)
+        title_exception = "a phase title's opening -ing verb with a direct object"
+        self.assertIn(title_exception, self.instructions(self.window))
+        self.assertNotIn(title_exception, self.instructions(self.lede))
+
+    def test_every_root_the_check_refuses_is_one_the_prompt_names(self) -> None:
+        # The other direction of the stem test: a word added to the check alone would leave the
+        # model untaught and its lines withheld.
+        body = self.summary._COMPLETION.pattern.split("(?:", 1)[1].rsplit(")(?!", 1)[0]
+        roots = []
+        depth = 0
+        start = 0
+        for index, char in enumerate(body):
+            depth += {"(": 1, ")": -1}.get(char, 0)
+            if char == "|" and depth == 0:
+                roots.append(body[start:index])
+                start = index + 1
+        roots.append(body[start:])
+        words = self.summary._COMPLETION_WORDS.split(", ")
+        self.assertEqual(list(self.COMPLETION_STEMS), words)
+        for alternative in roots:
+            root = re.match(r"[a-z]+", alternative)
+            self.assertIsNotNone(root, alternative)
+            assert root is not None
+            with self.subTest(root=root.group()):
+                self.assertTrue(any(word.startswith(root.group()) for word in words))
+        self.assertEqual(len(words), len(roots))
 
     def test_every_stem_the_prompt_names_is_one_the_check_refuses(self) -> None:
         # A word the prompt forbids but the check admits would cost the model nothing to avoid;
@@ -1979,7 +2043,16 @@ class SummaryPromptTest(unittest.TestCase):
             "where this part ends",
         ):
             self.assertIn(need, text)
-        self.assertIn("A bullet that cites a relayed entry must also cite an asked", text)
+        self.assertIn(
+            "Do not write a bullet whose only source is relayed text, and never cite an entry "
+            "that does not itself show the bullet.",
+            text,
+        )
+        # Naming an extra citation taught the model to pad a relayed-only bullet past the guard.
+        self.assertNotIn("must also cite", text)
+        self.assertNotIn("otherwise cite only", text)
+        self.assertIn("never use working or passing in a title", text)
+        self.assertIn("an opening -ing verb that takes a direct object", text)
         self.assertNotIn("A phase title is a short heading", self.instructions(self.lede))
 
     def test_lede_prompt_asks_for_two_sentences_of_goal_course_and_end(self) -> None:
@@ -1990,14 +2063,17 @@ class SummaryPromptTest(unittest.TestCase):
         self.assertIn("names any point where the person corrected or redirected", text)
 
     def test_every_example_the_prompts_teach_is_one_the_check_shows(self) -> None:
-        # Each line as a model would write it, beside the fragment the prompts teach.
-        bullets = [
+        # Each line as a model would write it, beside the fragment both prompts teach.
+        lines = [
             ("The agent said PR #12 was merged.", '"The agent said PR #12 was merged."'),
-            ("The agent requested a merge of PR #12.", "the agent requested a merge of PR #12"),
+            ("The agent ran pytest.", '"The agent ran pytest."'),
             ("pytest reported passed, as the tool reported.", "reported passed, as the tool"),
-            ("The agent said 12 tests passed.", '"The agent said 12 tests passed."'),
             ("The agent stopped and waited for the person.", "The agent stopped and waited"),
             ("The error read: ModuleNotFoundError.", '"the error read: <its words>"'),
+            (
+                'The error read: "check failed, and nothing passed".',
+                '"the error read: <its words>"',
+            ),
         ]
         titles = [
             "Rebasing the branch",
@@ -2005,15 +2081,20 @@ class SummaryPromptTest(unittest.TestCase):
             "Release checks for v1.2",
             "Merging PRs 1 and 2",
         ]
-        for text, taught in bullets:
-            with self.subTest(text=text):
-                self.assertIn(taught, self.window)
-                self.assertFalse(self.summary.completion_claim(text, kind="did"))
-                self.assertFalse(self.summary.completion_claim(text))
+        for prompt in (self.window, self.lede):
+            for text, taught in lines:
+                with self.subTest(text=text, lede=prompt is self.lede):
+                    self.assertIn(taught, self.instructions(prompt))
+                    self.assertFalse(self.summary.completion_claim(text, kind="did"))
+                    self.assertFalse(self.summary.completion_claim(text))
         for text in titles:
             with self.subTest(title=text):
                 self.assertIn(f'"{text}"', self.window)
                 self.assertFalse(self.summary.completion_claim(text, title=True))
+        # The forms the title rule now names as ones to avoid, as the check withholds them.
+        for text in ("Working on the parser", "Passing the intent prop"):
+            with self.subTest(avoided=text):
+                self.assertTrue(self.summary.completion_claim(text, title=True))
 
     def test_the_record_stays_delimited_as_data_after_the_rules(self) -> None:
         for prompt in (self.window, self.lede):
