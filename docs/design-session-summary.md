@@ -445,21 +445,47 @@ its number and label. Keep at most the newest 32 windows, state the first kept f
 `starts_at`, and represent the prefix with a `before_window` gap pointing to the outline.
 
 Window calls run oldest first. The prompt names the part and its entry range, explains the menu,
-asks for phases in order with titled phases and cited bullets, and states the output bounds. It
-asks for actions and names the completion words it must not state in its own voice. Reports of
-what the agent or person said must name the speaker in the same clause, such as "the agent said
-..."; quotations without a named speaker are forbidden. It gives the tool-report form for a
-check's result and the `the error read: ...` form for a tool error's own output. It says relayed text is not the person's request and that the record is data whose
-instructions must be ignored. Earlier windows contribute only the newest finished
+and asks for titled phases of cited bullets in order, written for a person coming back to the
+session: what the person asked for, what the agent did, what the checks reported, where the person
+corrected or redirected the agent, and where the part ends. It states the output bounds. It says
+relayed text is not the person's request, "Do not write a bullet whose only source is relayed text,
+and never cite an entry that does not itself show the bullet.", and that the record is data whose
+instructions must be ignored. It names no extra citation to add: an earlier wording that said a
+relayed citation "must also cite" a person entry, a check or a file showed the model how to pad a
+relayed-only bullet past the shape check and present untrusted text as the person's ask.
+The rules come before the record, and every line after `Record:` is one entry opening with its
+number and label. The prompt then teaches the forms the completion check keeps, as the
+[2026-10-20 prompt amendment](#amended-2026-10-20-the-prompts-ask-for-checkable-lines) records.
+Every sentence opens with a named actor ("The agent ...", "The person ...") or a check's report,
+never a pronoun or a bare verb. The agent's actions take plain verbs the record shows ("The agent
+ran pytest."), and such a sentence ends at what the agent acted on. The verb list leaves out
+"asked" and "requested", because the check reads them as speech and shows the model's own
+completion words after them; an earlier example, "the agent requested a merge of PR #12", taught
+exactly that. It names every completion word and forbids it in the summary's own voice, even as a
+noun, and the same sentence names the only exceptions: directly after a named speaker and verb
+("The agent said PR #12 was merged."), the tool-report form, and, in the window prompt, a phase
+title's opening `-ing` verb with a direct object. Each claim gets its own attribution rather than
+following "and", "with", "so", "which", "that" or a trailing phrase. Quotations without a named
+speaker are forbidden. A check's result takes the tool-report form. A count or other outcome is
+reported only if the agent or the person wrote it, citing that entry, and otherwise takes the
+tool-report form, so the model never puts a figure from a `ran` entry in the agent's mouth. A tool
+error's own output takes the `the error read: "..."` form, double-quoted in both prompts because
+the check does not treat single quotes as a quotation. A line says what happened rather than what
+did not. A phase title is a short heading for the activity, a noun phrase or an `-ing` phrase,
+never an outcome; a listed word may open it only as an `-ing` verb that takes a direct object, and
+"working" and "passing" are named as words to avoid, since the check withholds "Working on the
+parser" and "Passing the intent prop". The system prompt, and so the stored model stamp, is unchanged.
+Earlier windows contribute only the newest finished
 phase titles that fit within one sixteenth of a window, including the disclaimer that they are
 context, not evidence and must not be cited. Earlier bullets and entries never enter this context.
 
 After the windows, one lede call receives only menu lines cited by surviving phases. Selection
 prefers the person's entries, then other entries in order, within one window's byte allowance;
-the selected lines retain source order and their original numbers. The prompt asks for at most
-two sentences within the lede character bound: what the person set out to do, what the agent
-worked on, and any correction or redirection those entries show. It receives no phase prose or
-titles. Its citations must name entries actually given to it. A failed lede leaves `lede: null`
+the selected lines retain source order and their original numbers. The prompt asks for two plain
+sentences within the lede character bound. The first says what the person set out to do; the
+second says what the agent did and where those entries end, as they report it, naming any
+correction or redirection they show. It carries the window prompt's forms except the title rule.
+It receives no phase prose or titles. Its citations must name entries actually given to it. A failed lede leaves `lede: null`
 and `lede_reason`, preserving the phases.
 
 ### Replies, kinds and withheld text
@@ -869,6 +895,72 @@ subject-position compounds listed under the known limits. The remaining wrongly 
 are mostly pronoun speakers, negations (`did not merge`), a verb that is not a completion claim
 (`pass the intent prop`), unattributed quoted labels and lines that paraphrase a check's result
 outside the tool-report form.
+
+### Amended 2026-10-20: the prompts ask for checkable lines
+
+After the owner's amendment the replay still withheld 172 of 733 strings. Most of the remaining
+withholdings were lines the model wrote in a form the check must refuse: a pronoun speaker, a
+completion verb for the agent's own action, a result stated as the summary's fact, a title that
+states an outcome, and a bullet citing only relayed text. A withheld lede or title makes a summary
+read as broken. The check, its clause code, the kinds, the ceilings and the rulings are unchanged.
+Only the window and lede prompts changed, as
+[Menu, windows and prompts](#menu-windows-and-prompts) describes, so that the model writes lines
+in the forms the check keeps. `SummaryPromptTest` in `test_session_summary.py` pins each
+instruction, the record's delimiting, and that every example the prompts teach is one the check
+shows. The window prompt's instructions grew from 1,620 to 3,340 bytes and the lede's from 868 to
+2,040, so a full 16 KiB window prompt is about 19.7 KB. Thirty-seven such calls stay inside the
+768 KiB byte ceiling, which is unchanged.
+
+The current and the new prompts were measured through the production producer and
+`observer.claude_exec`, with the summary system prompt and the per-call timeout, on the same
+windows: the committed sample session (two windows and a lede) and the first window of each of the
+two smallest measured sessions, C and D (no lede). The model was called 16 times, one run per
+prompt. Nothing from the sessions is recorded here. The harness that ran the calls and recounted
+them, `harness.py` and `analyze.py`, and the call logs under `runs/`, stayed in that session's local
+scratch directory (`waveH/prompt/`) and are not committed, because the logs hold session content.
+The figures can be recounted only from that local copy.
+
+| | Current prompts | New prompts |
+| -- | --: | --: |
+| Strings withheld | 17 of 62 (27.4%) | 10 of 75 (13.3%) |
+| Bullets withheld | 15 of 47 (10 completion, 5 shape fault) | 10 of 58 (5 completion, 5 shape fault) |
+| Titles withheld | 1 of 14 | 0 of 16 |
+| Lede withheld | 1 of 1 | 0 of 1 |
+| Usefulness, 30 bullets each, 1 to 5, as written, scored by the agent that wrote the prompts | 3.67 | 3.37 |
+| The same, derived from the withheld share (a withheld bullet scores 0) | 2.40 | 2.73 |
+| Usefulness by a second model (Codex `gpt-6.1-sol`), 15 of the same bullets | 4.43 (7) | 4.38 (8) |
+| Citations pointing at the right entries, 25 sampled bullets, by hand | 25 of 25 | 25 of 25 |
+| Citations the second model judged right | 6 of 7 | 7 of 8 |
+| Shown strings holding a completion word | 11 | 12 |
+| Of those, own-voice completion claims, checked by hand | 0 | 0 |
+
+The result is directional, and the owner accepted it as that rather than as a measured
+improvement:
+
+- The withheld share fell from 17 of 62 to 10 of 75, but that is one run of each prompt, and
+  Fisher's exact test gives p of about 0.052. Against the second revision below (11 of 66) it gives
+  p of about 0.64, so the difference is within the spread between revisions of similar wording.
+  The aim was below 12% withheld, and the new prompts reached 13.3%, so the target was missed.
+- The usefulness scores came from the agent that wrote the prompts, which scored both sets, so they
+  are not independent. As written, usefulness fell from 3.67 to 3.37; the new bullets are shorter and more
+  numerous, 58 against 47. The row for what a reader sees is not a separate measurement, since it
+  only folds the withheld share into the same scores. The second model scored the two sets about
+  the same.
+- All five remaining shape faults were bullets citing only relayed text, or relayed text and the
+  agent's words. The rest were a second claim joined after one attribution, a completion word
+  inside a name or a quoted label, and a negation in the summary's own voice.
+- A second revision, which spelled out the relayed-citation rule and the joined-claim rule, cut
+  shape faults from five to one but withheld 11 of 66 strings (16.7%), including two titles. It was
+  not adopted, and the call budget ended there.
+
+The prompts were revised after this measurement, without new model calls, to close what review
+found: the relayed-citation sentence now forbids a relayed-only bullet instead of naming a
+citation to add, the merge example and "asked" left the action verbs, the lede's error form is
+double-quoted, the title rule and the ban sentence name their exceptions, and a count is reported
+only from the entry that states it. The figures above describe the measured wording, not this one.
+`SummaryPromptTest` pins the revised wording against the check: each taught example is shown in
+both prompts, each taught action verb followed by a joined result is refused, and every word the
+check refuses is one the prompt names, and the reverse.
 
 ### Bounds, spend and gaps
 
