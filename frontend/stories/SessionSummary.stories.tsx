@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { seeInContext } from './citation';
 import { useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { App } from '../src/App';
@@ -156,9 +157,7 @@ export const Ready: Story = {
       summary.querySelectorAll('a:not([data-next-outline-entry]), strong, em, code, img'),
     ).toHaveLength(0);
     // A chip opens Full activity at its entry.
-    await userEvent.click(
-      within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }),
-    );
+    await seeInContext(within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }));
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'c1')));
     await expect(summaryPosts()).toHaveLength(0);
     for (const width of [1280, 400])
@@ -180,9 +179,7 @@ export const ChipLandsOnScreenWithFullActivityClosed: Story = {
         .querySelector('[data-next-full-activity-trigger]')
         ?.getAttribute('aria-expanded'),
     ).toBe('false');
-    await userEvent.click(
-      within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }),
-    );
+    await seeInContext(within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }));
     const row = await waitFor(() => {
       const node = entryRow(canvasElement, 'c1');
       expect(document.activeElement).toBe(node);
@@ -197,6 +194,37 @@ export const ChipLandsOnScreenWithFullActivityClosed: Story = {
       },
       { timeout: 3000 },
     );
+  },
+};
+
+/* Hovering a citation shows the cited entry's own words in a card, and nothing moves. The card's last line is
+   the only way to Full activity: it closes the card and lands on the row. */
+export const CitationCardShowsTheEntry: Story = {
+  render: () => <SummaryPage summary={storedSummary()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const citation = within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ });
+    await expect(document.querySelector('[data-next-citation-card]')).toBeNull();
+    await userEvent.hover(citation);
+    const shown = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-next-citation-card]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(shown.querySelector('[data-next-citation-snippet]')?.textContent ?? '').not.toBe(
+      '',
+    );
+    await expect(shown).toHaveTextContent('#2.1');
+    // Seeing the entry did not open Full activity or move focus to it.
+    await expect(
+      canvasElement
+        .querySelector('[data-next-full-activity-trigger]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('false');
+    await userEvent.click(within(shown).getByText('See in context of the session'));
+    await waitFor(() => expect(document.querySelector('[data-next-citation-card]')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'c1')));
   },
 };
 
@@ -1053,7 +1081,7 @@ export const ColdReopenCitesAnOlderPage: Story = {
       'Open an older entry the page has not read yet, cited for “You asked for retry with backoff on the webhook handler.”, in Full activity',
     );
     await expect(entryRow(canvasElement, 'p1')).toBeNull();
-    await userEvent.click(chip);
+    await seeInContext(chip);
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'p1')));
     await expect(region.querySelector('[data-next-outline-missing]')).toBeNull();
   },
@@ -1078,7 +1106,7 @@ export const CitationThatCannotLoad: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
-    await userEvent.click(
+    await seeInContext(
       within(summary).getByRole('link', {
         name: /^Open an older entry the page has not read yet, cited for “You asked about a missing entry\.”/,
       }),
@@ -1224,7 +1252,7 @@ export const SampleDrawsAStoredSummary: Story = {
     const chip = summary.querySelector<HTMLElement>(
       `[data-next-summary-phase="0:0"] [data-next-outline-entry="${SAMPLE_PHASE_START}"]`,
     ) as HTMLElement;
-    await userEvent.click(chip);
+    await seeInContext(chip);
     await waitFor(() =>
       expect(document.activeElement).toBe(entryRow(canvasElement, SAMPLE_PHASE_START)),
     );

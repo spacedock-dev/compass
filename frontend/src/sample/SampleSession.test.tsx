@@ -156,6 +156,9 @@ describe('the sample session', () => {
     await act(async () => {
       fireEvent.click(jump);
     });
+    await act(async () => {
+      fireEvent.click(document.querySelector('[data-next-citation-context]') as HTMLElement);
+    });
     expect(held()).toBe('');
     const cited = [...document.querySelectorAll('[data-next-cited]')];
     expect(cited.length).toBeGreaterThanOrEqual(2);

@@ -1,7 +1,7 @@
 import type { ProjectContext } from '../api/types';
 import { act } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { check, fact, mountDrift, press } from './testing';
+import { check, fact, jumpTo, mountDrift, press } from './testing';
 
 /* The session's activity list reads newest first. The numbers are the oldest-first ones every "#<n>" and
    every citation names, so the column reads from the highest down to #1 and a reader opens on what just
@@ -196,7 +196,7 @@ describe('the session activity list', () => {
     await page.settle();
     await page.settle();
     expect(document.querySelectorAll('[data-check-run]')).toHaveLength(1);
-    await press(document.querySelector('[data-next-cockpit-action="finding-jump"]'));
+    await jumpTo(document.querySelector('[data-next-cockpit-action="finding-jump"]'));
     const row = document.querySelector('[data-next-entry-id="c4"]');
     expect(row?.closest('[data-check-run]')).toBeNull();
     expect(document.querySelectorAll('[data-check-run]')).toHaveLength(2);

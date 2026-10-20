@@ -124,6 +124,12 @@ export const press = async (button: Element | null): Promise<void> => {
   });
 };
 
+/* A citation opens its card and jumps only from the card's "See in context of the session". */
+export const jumpTo = async (citation: Element | null): Promise<void> => {
+  await press(citation);
+  await press(document.querySelector('[data-next-citation-context]'));
+};
+
 export const textOf = (selector: string): string =>
   (document.querySelector(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim();
 

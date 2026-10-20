@@ -4,6 +4,7 @@ import { parseOutline } from '../api/outline';
 import { useControls } from '../controls';
 import { entriesHeld } from '../drift/citations';
 import { afterPanelSettles } from '../drift/panelSettle';
+import { CitationLink } from '../drift/CitationLink';
 import { landOnEntry } from '../drift/jumpToEntry';
 import { useDrift } from '../drift/context';
 import { SampleMark } from '../sample/SampleMark';
@@ -64,15 +65,30 @@ export function EntryChip({
       : outside
         ? UNNUMBERED_BEFORE
         : UNNUMBERED_OLDER;
-  const chip = (
+  const label = `Open ${n ? `entry #${n}` : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
+  const marks = {
+    'data-next-outline-entry': id,
+    'data-next-cockpit-action': 'finding-jump',
+    ...(outside ? { 'data-next-entry-outside': '' } : {}),
+    ...(n ? {} : { 'data-next-entry-unnumbered': '' }),
+  };
+  const tone = outside ? ' text-muted-foreground opacity-70' : '';
+  const chip = cite ? (
+    <CitationLink
+      id={id}
+      className={tone}
+      aria-label={label}
+      onJump={() => onOpen(id, n)}
+      {...marks}
+    >
+      {word}
+    </CitationLink>
+  ) : (
     <a
       href="#"
-      className={`text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1 font-[family-name:var(--mono)] text-label rounded-control min-h-0 min-w-0${outside ? ' text-muted-foreground opacity-70' : ''}`}
-      aria-label={`Open ${n ? `entry #${n}` : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`}
-      data-next-outline-entry={id}
-      data-next-cockpit-action="finding-jump"
-      {...(outside ? { 'data-next-entry-outside': '' } : {})}
-      {...(n ? {} : { 'data-next-entry-unnumbered': '' })}
+      className={`text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1 font-[family-name:var(--mono)] text-label rounded-control min-h-0 min-w-0${tone}`}
+      aria-label={label}
+      {...marks}
       onClick={(event) => {
         event.preventDefault();
         onOpen(id, n);

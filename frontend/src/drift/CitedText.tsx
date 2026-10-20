@@ -1,5 +1,6 @@
 import { Fragment, useContext, type ReactNode } from 'react';
 import { DriftContext } from './context';
+import { CitationLink } from './CitationLink';
 import { jumpToEntry } from './jumpToEntry';
 
 /* Compass's own sentences name entries as "#12" or "#2.1". Where the page holds and numbers the entry, the
@@ -21,19 +22,15 @@ export function CitedText({ text }: { readonly text: string }): ReactNode {
     if (!id) continue;
     if (match.index > at) parts.push(text.slice(at, match.index));
     parts.push(
-      <a
+      <CitationLink
         key={`${String(match.index)}:${n}`}
-        href="#"
-        className="min-h-0 min-w-0 rounded-control font-[family-name:var(--mono)] text-label text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1"
-        aria-label={`Show entry #${n} in Full activity`}
+        id={id}
+        aria-label={`Entry #${n}`}
         data-next-outline-entry={id}
-        onClick={(event) => {
-          event.preventDefault();
-          jumpToEntry(drift, id);
-        }}
+        onJump={() => jumpToEntry(drift, id)}
       >
         {`[${n}]`}
-      </a>,
+      </CitationLink>,
     );
     at = match.index + match[0].length;
   }

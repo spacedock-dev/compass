@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import {
   CHECK_DOES_NOT_SHOW_IT,
@@ -292,7 +293,7 @@ export const ANumberOpensFullActivityAtItsEntry: Story = {
     const goal = departures(shown)[0] as HTMLElement;
     await waitFor(() => expect(chips(goal)).toHaveLength(2));
     const second = chips(goal)[1] as HTMLElement;
-    await userEvent.click(second);
+    await seeInContext(second);
     const row = await waitFor(() => {
       const node = document.activeElement as HTMLElement;
       expect(node.dataset['nextEntryId']).toBe('c3');

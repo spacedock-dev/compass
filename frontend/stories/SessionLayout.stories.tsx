@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
@@ -464,7 +465,7 @@ export const CitationLoadsAnOlderEntry: Story = {
       await expect(document.activeElement).toBe(cited());
       await expect(scroll.calls.at(-1)).toEqual({ behavior: 'instant', block: 'center' });
       // The visible way back does the same.
-      await userEvent.click(cited());
+      await seeInContext(cited());
       await waitFor(() => expect(document.activeElement).toBe(row));
       await userEvent.click(within(row).getByRole('button', { name: 'Back to the finding' }));
       await expect(document.activeElement).toBe(cited());

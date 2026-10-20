@@ -59,6 +59,7 @@ import {
 import { datedClock } from '../observed/values';
 import type { SteerSlot } from './ReadingControl';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
+import { CitationLink } from './CitationLink';
 import { CitedText } from './CitedText';
 import { Why } from './Why';
 
@@ -120,20 +121,17 @@ function CitedEntries({
             className="m-0 min-w-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
           >
             {quote ? citedLine(entry) : citedKind(entry)}
-            <a
-              href="#"
-              className="ml-1.5 min-h-0 min-w-0 rounded-control font-[family-name:var(--mono)] text-label text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1"
+            <CitationLink
+              id={id}
+              className="ml-1.5"
               data-next-cockpit-action="finding-jump"
               data-next-finding={row.key}
               data-next-cite={id}
               aria-label={`Show ${where} in Full activity for ${named}`}
-              onClick={(event) => {
-                event.preventDefault();
-                chooseFinding(row.key, event.currentTarget, id);
-              }}
+              onJump={(origin) => chooseFinding(row.key, origin, id)}
             >
               {where.startsWith('#') ? `[${where.slice(1)}]` : `[${where}]`}
-            </a>
+            </CitationLink>
           </li>
         );
       })}

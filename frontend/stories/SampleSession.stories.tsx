@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { App } from '../src/App';
@@ -188,7 +189,7 @@ export const FindingTintsItsEvidence: Story = {
     await loaded(canvasElement);
     await expect(canvasElement.querySelectorAll('[data-next-cited]')).toHaveLength(0);
     const jump = canvasElement.querySelector('[data-next-finding="goal"]') as HTMLElement;
-    await userEvent.click(jump);
+    await seeInContext(jump);
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('[data-next-cited]').length).toBeGreaterThanOrEqual(2),
     );
@@ -393,7 +394,7 @@ function citationOpens(id: string): Story {
       ) as HTMLElement;
       await expect(chip).not.toBeNull();
       chip.scrollIntoView({ block: 'center', behavior: 'instant' });
-      await userEvent.click(chip);
+      await seeInContext(chip);
       const row = () =>
         canvasElement.querySelector(
           `[data-next-cockpit-work] [data-next-entry-id="${id}"]`,
@@ -434,7 +435,7 @@ export const FindingCitingTheOlderPageTintsIt: Story = {
     await loaded(canvasElement);
     const press = canvasElement.querySelector('[data-next-finding="goal"]') as HTMLElement;
     press.scrollIntoView({ block: 'center', behavior: 'instant' });
-    await userEvent.click(press);
+    await seeInContext(press);
     const row = () =>
       canvasElement.querySelector(
         `[data-next-cockpit-work] [data-next-entry-id="${OLDER_CITE}"][data-next-cited]`,

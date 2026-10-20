@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { seeInContext } from './citation';
 import { expect, userEvent, within, waitFor } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { ShowMore } from '../src/drift/ShowMore';
@@ -392,7 +393,7 @@ export const CitedEntriesAreTinted: Story = {
     const background = (node: HTMLElement) => getComputedStyle(node).backgroundColor;
     await expect(row()).not.toHaveAttribute('data-next-cited');
     const plain = background(row());
-    await userEvent.click(await canvas.findByRole('link', { name: /^Show #\d+/ }));
+    await seeInContext(await canvas.findByRole('link', { name: /^Show #\d+/ }));
     await waitFor(() => expect(row()).toHaveAttribute('data-next-cited'));
     await expect(background(row())).not.toBe(plain);
     await expect(getComputedStyle(row()).borderLeftWidth).toBe('3px');

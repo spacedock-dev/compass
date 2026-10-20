@@ -1,6 +1,6 @@
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { byAction, check, fact, json, mountDrift, press, textOf } from './testing';
+import { byAction, check, fact, json, jumpTo, mountDrift, press, textOf } from './testing';
 
 const ASSESSMENT = {
   revision_read: 3,
@@ -246,7 +246,7 @@ describe('a finding jump', () => {
     await page.settle();
     const rows = () => [...document.querySelectorAll<HTMLElement>('[data-next-entry-id]')];
     expect(rows().some((row) => row.hasAttribute('data-next-cited'))).toBe(false);
-    await press(byAction('finding-jump'));
+    await jumpTo(byAction('finding-jump'));
     const cited = rows().filter((row) => row.hasAttribute('data-next-cited'));
     expect(cited.length).toBeGreaterThan(0);
     for (const row of cited) {
@@ -264,7 +264,7 @@ describe('a finding jump', () => {
     const page = mountDrift({ session: stored(), facts: FACTS });
     await page.settle();
     await page.settle();
-    await press(byAction('finding-jump'));
+    await jumpTo(byAction('finding-jump'));
     expect(document.querySelector('[data-next-finding-entry]')).not.toBeNull();
     const original = page.state.data as { sessions: object[] };
     await page.poll({
@@ -298,7 +298,7 @@ describe('a finding jump', () => {
       ...original,
       sessions: [original.sessions[0], { ...original.sessions[0], sid: 's2' }],
     });
-    await press(byAction('finding-jump'));
+    await jumpTo(byAction('finding-jump'));
     expect(document.querySelector('[data-next-finding-entry]')).not.toBeNull();
     await page.go('#n=session:alpha%2Fapp:claude:s2');
     expect(document.querySelector('[data-next-finding-entry]')).toBeNull();
@@ -337,7 +337,7 @@ describe('a finding jump', () => {
     expect(
       document.querySelector('[data-next-entry-id="old"] [data-next-finding-entry]'),
     ).toBeNull();
-    await press(byAction('finding-jump'));
+    await jumpTo(byAction('finding-jump'));
     const row = document.querySelector('[data-next-entry-id="old"]');
     expect(row?.textContent).toContain('Cited for “Ship the queue” · #1');
     expect(row?.querySelector('[data-next-entry-flag="cited"]')).toBeNull();
@@ -352,7 +352,7 @@ describe('a finding jump', () => {
     await page.settle();
     await page.settle();
     const requests = [...page.state.requests];
-    await press(byAction('finding-jump'));
+    await jumpTo(byAction('finding-jump'));
     const entry = document.querySelector('[data-next-entry-id="c1"]');
     expect(entry?.textContent).toContain('Cited for “It stopped running the tests.” · #1');
     expect(document.activeElement).toBe(entry);
