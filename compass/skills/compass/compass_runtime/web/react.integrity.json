@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2063935,
+    "bytes": 2066547,
     "file": "react.html",
-    "sha256": "3b66cdb337a641b70b13c17e03c5c187400f1c9549418134794e1b7b46da77f2"
+    "sha256": "1ecb81955f4f1ea81bc5c96e6a65bcfa51ffdb83549cc76eeb95e9ed22785481"
   },
   "format": 1,
   "frontend": "react",
@@ -391,7 +391,7 @@
       },
       {
         "file": "frontend/src/controls/Disclosure.tsx",
-        "sha256": "92b8d15218003dff2e06edbc1004bccfa1d4be97a57e8fb3c4b361341ce5ef1c"
+        "sha256": "47489d993d1288f60ced683a635935c4f4fdd1c7158db763d659ea81ad8cce4b"
       },
       {
         "file": "frontend/src/controls/DraftField.tsx",
@@ -1123,7 +1123,7 @@
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
-        "sha256": "a03fb324ce06670d0bab7638f47fed6f2450e4116b467c10fdb94eeb4edeab5b"
+        "sha256": "e33725e59e5ff7ccbc44400ed764c81731ead62ca4275d210c93b5c7820ba605"
       },
       {
         "file": "frontend/src/sessions/WhatItDid.tsx",
@@ -1387,7 +1387,7 @@
       },
       {
         "file": "frontend/src/styles/tailwind.css",
-        "sha256": "83b6d7df6e5aa4ee1072b05b84f053e53e3807871e8b2d7412f0d0093e23d0dc"
+        "sha256": "6227b89c6087fa17902121400fecef48fc2013003fa6419f74c23580f00479f8"
       },
       {
         "file": "frontend/src/terminal/TerminalSurface.tsx",
@@ -1531,7 +1531,7 @@
       },
       {
         "file": "frontend/src/ui/accordion.tsx",
-        "sha256": "322c0648d633c551d23fba41b47abbae2eccca9024eb02c372a59130d7d327fa"
+        "sha256": "bcaa2cf517bed44059a1a633b1cb50eb65fe787e319508fcc3a3c2ed38b537b5"
       },
       {
         "file": "frontend/src/ui/alert.tsx",
