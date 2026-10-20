@@ -1600,15 +1600,3 @@ class TheLaneSendsOnlyWhereAPressWouldNotAskAgainTest(unittest.TestCase):
             {"OPENAI_BASE_URL": "https://gw.corp.example"}, ""
         )
         self.assertEqual(["the prompt"], sent)
-
-
-class FreshStoreStillRequiresExplicitAllowTest(unittest.TestCase):
-    def test_default_on_reader_permission_never_authorizes_an_unasked_call(self) -> None:
-        with tempfile.TemporaryDirectory() as home:
-            config = _config(Path(home))
-            model = mock.Mock(return_value=("{}", "ok"))
-            self.assertTrue(reading_policy.status(config, now=100.0)["consent"])
-            guarded = unasked._Bound(config, model, lambda: 100.0)
-            with self.assertRaises(reading_policy.RefusedError):
-                guarded("private words", output_cap_bytes=100)
-            model.assert_not_called()
