@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2047747,
+    "bytes": 2049619,
     "file": "react.html",
-    "sha256": "5ecebfc858ed8944c0bc46560dad4ced3b75c770cc0ded4e27e9c2106df0a29b"
+    "sha256": "754a07e947156f534de7a660fbed9056bd38c69e0a86c91812780c92c8b02e37"
   },
   "format": 1,
   "frontend": "react",
@@ -591,7 +591,7 @@
       },
       {
         "file": "frontend/src/drift/SteerBack.tsx",
-        "sha256": "ffdfd99ad75e5670dc701e5e99746e00ff7aaf047c5414e50f8cb7d2c678175d"
+        "sha256": "3cffe7a7357dc98f8afae896d2c4e95ce4ee51ccb3e233cd8e69c01e1380bd83"
       },
       {
         "file": "frontend/src/drift/UnaskedPermission.tsx",
