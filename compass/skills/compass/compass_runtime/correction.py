@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import time
+import unicodedata
 from typing import TYPE_CHECKING, Any
 
 from . import copied_corrections, reading, records
@@ -59,7 +60,10 @@ EXPLANATIONS_MAX = 2 + reading.MAX_OUTCOME_LINES
 # coming back would count as the reader's own words.
 HARNESSES = copied_corrections.HARNESSES
 
-TOO_LONG = "This correction would be longer than 2,000 characters. Shorten a line of your intent."
+# Names what the 2,000 bounds, the goal and lines, since the page counts the whole text to 4,216.
+TOO_LONG = (
+    "Your goal and lines would be longer than 2,000 characters. Shorten a line of your intent."
+)
 REASON_NOTHING = "nothing"
 REASON_TOO_LONG = "too-long"
 
@@ -78,35 +82,79 @@ _SAID = "said"
 
 Part = str | dict[str, str]
 
-# Line breaks `records.safe_text` leaves in place: C1 controls, NEL and the Unicode line and
-# paragraph separators, any of which can start a new line where the paste lands.
-_BREAKS = re.compile("[\x80-\x9f\u2028\u2029]+")
-# What could open the explanation and make it something else if the label were edited away: a
-# slash command, a shell escape, a heading, a quotation, a list item.
-_OPENERS = re.compile(r"^[\s/!#>*+\-]+")
+# Line breaks `records.safe_text` leaves in place (C1 controls, NEL and the Unicode line and
+# paragraph separators, any of which can start a new line where the paste lands) and the C0 set it
+# turns into spaces, made spaces here first so the opener strip below sees them as the spaces they
+# become.
+_BREAKS = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+# Invisible characters, dropped before anything else reads the text (review, 2026-10-20): a leading
+# BOM or word joiner hid an opener from the strip, and a run of tag characters rendered as nothing
+# while it still reached the agent. Every format character (Cf, which holds the BOM, U+2060-2064,
+# U+180E, the bidi controls and the tag block) except the two joiners some scripts spell words
+# with, and the variation selectors, which are marks rather than format characters.
+_JOINERS = frozenset({"\u200c", "\u200d"})
+_SELECTORS = re.compile("[\ufe00-\ufe0f\U000e0100-\U000e01ef]")
+# What could open the explanation and make it something else if the label were edited away, and
+# only that (review, 2026-10-20): a slash command, a shell escape, a quotation, a table row, a
+# heading, a list item and a fence. "#1234" and "-3 tests" are words and keep their first
+# character. Repeated, so "> /clear" loses both.
+_OPENERS = re.compile(r"^(?:\s+|[/!>|]+|#+(?=\s|$)|[-*+](?=\s|$)|\d+[.)](?=\s|$)|~{3,}|`{3,})")
+# A credential the shape filter misses because a word character or a hyphen is joined to its front
+# ("x-" and a key): `records.safe_text` anchors most shapes there, and the explanation is pasted
+# into the agent where the reading it came from was only shown. Tried from each joint of a token.
+_JOINED = re.compile(r"[A-Za-z0-9_-]*[-_][A-Za-z0-9_-]{7,}")
 # Each swapped for one look-alike character, so neutralising never lengthens the text: a backtick
 # opens code or a fence, an angle bracket a tag an agent may read as an instruction block, and an
-# `@` at a word's start a file mention Claude Code reads in.
+# `@` at a word's start a file mention Claude Code reads in. After the opener strip, so a swapped
+# character can never shield an opener behind it.
 _SWAPS = str.maketrans({"`": "'", "<": "\u2039", ">": "\u203a"})
 _MENTION = re.compile(r"(?<!\w)@")
+
+
+def _visible(text: str) -> str:
+    """The text with invisible characters dropped and every line break made a space."""
+    kept = "".join(c for c in text if c in _JOINERS or unicodedata.category(c) != "Cf")
+    return _BREAKS.sub(" ", _SELECTORS.sub("", kept))
+
+
+def _strip_openers(text: str) -> str:
+    while (stripped := _OPENERS.sub("", text, count=1)) != text:
+        text = stripped
+    return text
+
+
+def _redact_joined(text: str) -> str:
+    """`records.redact_secrets`, also tried behind each hyphen or underscore of a token."""
+
+    def one(match: re.Match[str]) -> str:
+        token = match.group(0)
+        for k, char in enumerate(token):
+            if char in "-_":
+                tail = token[k + 1 :]
+                if tail and (marked := records.redact_secrets(tail)) != tail:
+                    return token[: k + 1] + marked
+        return token
+
+    return _JOINED.sub(one, records.redact_secrets(text))
 
 
 def explanation(detail: object) -> str:
     """A stored reading's detail as the correction may carry it, or "" for none.
 
-    Through `records.safe_text`, the redact-and-clip path every stored reading string takes, and
-    then neutralised. A redaction marker that finishes past the bound withholds the explanation
-    rather than let it pass its room.
+    Invisible characters and openers go first, so nothing hides an opener and a key behind a
+    stripped "-" is whole when the redactor reads it; then `records.safe_text`, the redact-and-clip
+    path every stored reading string takes; then the look-alike swaps. A redaction marker that
+    finishes past the bound withholds the explanation rather than let it pass its room.
     """
     raw = detail if isinstance(detail, str) else ""
-    text = records.safe_text(raw, EXPLANATION_TEXT_CHARS)
-    # Cut, measured against the same text unbounded: a run of control characters collapses to one
-    # space, so the raw length would mark a whole sentence as cut.
-    whole = records.safe_text(raw, 2 * len(raw) + 64)
+    prepared = _redact_joined(_strip_openers(_visible(raw)))
+    text = records.safe_text(prepared, EXPLANATION_TEXT_CHARS)
+    # Cut, measured against the same text unbounded: a run of spaces collapses to one, so the raw
+    # length would mark a whole sentence as cut.
+    whole = records.safe_text(prepared, 2 * len(prepared) + 64)
     if len(whole) > len(text) and not text.endswith("…"):
         text = f"{text.rstrip()}…"
-    text = _MENTION.sub("\uff20", _BREAKS.sub(" ", text).translate(_SWAPS))
-    text = " ".join(_OPENERS.sub("", text).split())
+    text = " ".join(_MENTION.sub("\uff20", text.translate(_SWAPS)).split())
     if not text.strip("….' ") or len(text) > EXPLANATION_TEXT_CHARS + 1:
         return ""
     return text

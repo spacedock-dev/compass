@@ -2059,10 +2059,15 @@ bounded `detail` sentence a model wrote, on its own line labelled "Why Compass r
 drift:", so it reads as Compass's reading and never as the reader's words
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
 It is passed again through the redaction and bound every stored reading string takes (240
-characters and a closing ellipsis where cut), and neutralised so that a paste cannot become a command
-or a new instruction block: control characters and line separators become spaces, a backtick, an
-angle bracket and a word-initial `@` are each replaced by one look-alike character, and a leading
-`/`, `!`, `#`, `>` or list marker is removed. It remains model prose: a reader who pastes it hands
+characters and a closing ellipsis where cut), also behind each hyphen or underscore inside a token,
+because the shape filter misses a key joined to "x-", and neutralised so that a paste cannot become a
+command or a new instruction block: every invisible format character (Unicode category Cf, the
+byte-order mark, word joiners, bidi controls and the tag characters among them, but not the
+zero-width joiner and non-joiner) and every variation selector is dropped, control characters and
+line separators become spaces, a leading structural opener (`/`, `!`, `>`, `|`, a heading `#`, a
+list or ordered-list marker, a `~~~` or backtick fence) is removed before anything is swapped, and
+then a backtick, an angle bracket and a word-initial `@` are each replaced by one look-alike
+character. It remains model prose: a reader who pastes it hands
 the agent a sentence a model wrote about its session, and one who edits the correction past
 recognition sends that sentence as their own words. Each entry travels as its time and a
 placeholder holding its fact id, which the page replaces with the number its own list draws, or

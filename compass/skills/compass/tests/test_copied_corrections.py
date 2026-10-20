@@ -689,6 +689,28 @@ class CopiedRouteTest(_App):
         self.assertEqual((200, {"ok": True}), (status, answer))
         self.assertEqual(NOW, copies.load(self.config)[("claude", SHORT)].copies[0]["copied_at"])
 
+    def test_a_correction_at_the_cap_in_four_byte_characters_registers(self) -> None:
+        # Escaped by `json.dumps` as surrogate pairs, the widest JSON spells a character: 12 bytes
+        # each, four times the old shared body bound.
+        text = "\U0001f600" * copies.CORRECTION_CAP_CHARS
+        for wide in (text, "中" * copies.CORRECTION_CAP_CHARS):
+            with self.subTest(first=wide[0]), self.serving() as port:
+                self.assertEqual((200, {"ok": True}), self.post(port, self.body(text=wide)))
+        self.assertEqual(2, len(copies.load(self.config)[("claude", SHORT)].copies))
+
+    def test_the_body_bound_is_derived_from_the_cap(self) -> None:
+        widest = json.dumps(
+            {
+                "harness": "\U0001f600" * 64,
+                "sid": "\U0001f600" * 64,
+                "text": "\U0001f600" * copies.CORRECTION_CAP_CHARS,
+            }
+        ).encode()
+        self.assertLessEqual(len(widest), copies.COPY_BODY_CAP_BYTES)
+        self.assertEqual(
+            12 * (copies.CORRECTION_CAP_CHARS + 2 * 64) + 256, copies.COPY_BODY_CAP_BYTES
+        )
+
     def test_a_second_registration_answers_the_same_body_and_stores_nothing_new(self) -> None:
         with self.serving() as port:
             self.post(port, self.body())
@@ -732,7 +754,7 @@ class CopiedRouteTest(_App):
                     self.assertNotIn("registered", answer)
             self.assertEqual(
                 413,
-                self.post(port, None, declared=str(self.config.annotation_body_cap_bytes + 1))[0],
+                self.post(port, None, declared=str(copies.COPY_BODY_CAP_BYTES + 1))[0],
             )
             for bad in (
                 self.body(text=["x"]),

@@ -762,7 +762,9 @@ def _criterion(value: Any, cap: int) -> reading.Criterion | None:
         return None
     criterion: reading.Criterion = {
         "cites": tuple(records.safe_text(c, KEY_CAP_CHARS) for c in cites),
-        "detail": records.safe_text(value.get("detail"), cap),
+        # One over the cap: the producer marks a cut detail by appending "…" to `cap` characters,
+        # and loading at `cap` dropped that mark, so a cut sentence reloaded as a whole one.
+        "detail": records.safe_text(value.get("detail"), cap + 1),
         "clause": records.safe_text(value.get("clause"), cap),
         "why": why,
     }

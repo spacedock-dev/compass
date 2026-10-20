@@ -18,6 +18,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import build_sample_fixture
 import sanitize_session as ss
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -170,6 +171,15 @@ class SampleSessionFilesTest(unittest.TestCase):
         self.assertTrue(fixture["correction"]["ok"])
         criteria = rows[0]["annotation_assessment"]["criteria"]
         self.assertIn("departure", {row.get("result") for row in criteria.values()})
+
+    def test_the_fixture_correction_is_what_the_composer_composes_from_it(self) -> None:
+        # Served verbatim by the view-only page, so a composer change (each departure's
+        # explanation, owner 2026-10-20) reaches the demo only through a regeneration:
+        # `build_sample_fixture.py --recompose --out <fixture>`.
+        fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        self.assertEqual(build_sample_fixture.recompose_correction(fixture), fixture["correction"])
+        text = "".join(p for p in fixture["correction"]["parts"] if isinstance(p, str))
+        self.assertEqual(2, text.count("\n  Why Compass reads this as drift: "))
 
     def test_the_fixture_carries_the_stored_summary_and_every_record_page(self) -> None:
         fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))

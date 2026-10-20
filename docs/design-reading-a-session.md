@@ -4636,22 +4636,33 @@ Please continue from here.
   detail for the last two, and the first is not drift.
 - Missing or withheld, the line is the approved line unchanged. A detail that is empty, or empty
   once neutralised, adds nothing.
-- The path. The detail is passed again through `records.safe_text`, the redaction and bound every
-  stored reading string takes (240 characters, `RuntimeConfig.annotation_text_cap_chars`'s default,
-  with one closing "…" where cut, as the producer cuts). A redaction marker that would finish past
-  that bound withholds the explanation rather than pass its room. It is then neutralised so a paste
-  cannot become a command or a new instruction block: control characters, C1 controls and the
-  Unicode line and paragraph separators become spaces, so it is always one line; a backtick becomes
-  `'` (no code span or fence); `<` and `>` become `‹` and `›` (no tag an agent may read as an
-  instruction block); a word-initial `@` becomes `＠` (no file mention Claude Code reads in); and a
-  leading run of `/`, `!`, `#`, `>`, `*`, `+` or `-` is removed (no slash command, shell escape,
-  heading, quotation or list item, even where the reader edits the label away). Each swap is one
-  character for one, so neutralising never lengthens it. What it cannot remove is what a model
-  sentence says: SECURITY.md carries that residual.
+- The path, in this order (the order was corrected on review, 2026-10-20, because each earlier
+  step had hidden something from a later one). First every invisible character is dropped: each
+  Unicode format character (category Cf, which holds the byte-order mark, U+2060 to U+2064, U+180E,
+  the bidi controls and the tag characters U+E0000 to U+E007F) except the zero-width joiner and
+  non-joiner some scripts spell words with, and the variation selectors U+FE00 to U+FE0F and
+  U+E0100 to U+E01EF. C0 and C1 controls, NEL and the Unicode line and paragraph separators become
+  spaces, so it is always one line. Then a leading structural opener is removed, repeatedly, even
+  where the reader edits the label away: `/`, `!`, `>` or `|` at the start, `#` before a space, a
+  `-`, `*` or `+` list marker before a space, an ordered marker (digits then `.` or `)` then a
+  space), and a `~~~` or ```` ``` ```` fence. A word that only starts like one keeps its first
+  character: "-3 tests regressed" and "#1234 still open" are unchanged. Then the text is redacted,
+  by the shape filter and again behind each hyphen or underscore inside a token, because the filter
+  anchors most shapes at a word boundary and a key joined to "x-" or "-" published whole; and then
+  bounded through `records.safe_text`, the redaction and bound every stored reading string takes
+  (240 characters, `RuntimeConfig.annotation_text_cap_chars`'s default, with one closing "…" where
+  cut, as the producer cuts; the store loads a detail at one character over that cap so the mark
+  survives a reload). A redaction marker that would finish past that bound withholds the
+  explanation rather than pass its room. Last come the swaps, after the opener strip so a swapped
+  character can never shield an opener: a backtick becomes `'` (no code span or fence); `<` and `>`
+  become `‹` and `›` (no tag an agent may read as an instruction block); and a word-initial `@`
+  becomes `＠` (no file mention Claude Code reads in). Each swap is one character for one, so
+  neutralising never lengthens it. A detail with nothing visible left adds nothing. What it cannot
+  remove is what a model sentence says: SECURITY.md carries that residual.
 
 The cap. The lines keep item 7's 2,000 characters, counted as before without the explanations,
 with every placeholder at its widest; over it the consistent lines drop, last first, and then the
-correction is refused with the same sentence. The explanations get a fixed room on top, so adding
+correction is refused with a sentence. The explanations get a fixed room on top, so adding
 them never drops a line and never refuses a correction that composed before. The worst case is
 every explanation a correction can carry, each at its widest: the goal, six outcome lines and a
 contradicted claim make eight; each is the label's 36 characters (a line break, two spaces and
@@ -4659,8 +4670,16 @@ contradicted claim make eight; each is the label's 36 characters (a line break, 
 2,000 + 8 × 277 = 4,216. That is the hard bound: the page's editor, its counter, the copy route and
 the composer all hold 4,216 (`copied_corrections.CORRECTION_CAP_CHARS`, the page's
 `CORRECTION_CAP`), and `test_correction` composes that worst case to exactly 4,216 and refuses it at
-one more character of lines. Recompose and the stale rules are unchanged: the stamp is still the
-saved words' revision, the settlement, the reading's `read_at` and the cited entries, and an
+one more character of lines. The refusal names what is bounded: "Your goal and lines would be
+longer than 2,000 characters. Shorten a line of your intent.", since the counter beside it counts
+the whole text to 4,216. The copy route reads a body of up to `copied_corrections.COPY_BODY_CAP_BYTES`
+(twelve bytes a character for the text and both identity fields, the widest JSON spells a code
+point, and 256 for the object), not the 12,288 the other annotation routes share: at that bound
+4,216 CJK characters were refused, the page still said Copied, and the paste then counted as the
+reader's words. Recompose and the stale rules are unchanged but for one addition: the stamp is still
+the saved words' revision, the settlement, the reading's `read_at` and the cited entries, and marking
+the reading Not accurate now adds a fourth element, since marking moves none of the others and a
+held correction would otherwise still carry the withdrawn departure and its explanation. An
 explanation comes from the stored reading those already stamp, so it can change only when one of
 them does.
 

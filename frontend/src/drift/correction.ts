@@ -131,7 +131,9 @@ export function correctionParts(parts: unknown): CorrectionPart[] | null {
 
 /* What composition read, as this page holds it at the press: the saved words' revision, how far a Keep
    settled, and when the stored reading was read. A change in any of them means the text may claim what the
-   panel no longer does. */
+   panel no longer does. A reading marked Not accurate adds a fourth element, since marking changes none of
+   the three and a held correction would still carry the withdrawn departure and its explanation (review,
+   2026-10-20); it is added only when marked, so every other stamp is the legacy page's. */
 export function correctionStamp(annotation: Annotation | null | undefined): string {
   const assessment = annotation?.['assessment'];
   return JSON.stringify([
@@ -140,6 +142,7 @@ export function correctionStamp(annotation: Annotation | null | undefined): stri
     assessment && typeof assessment === 'object'
       ? nextNumber((assessment as Row)['read_at'])
       : null,
+    ...(annotation?.['not_accurate'] === true ? [true] : []),
   ]);
 }
 

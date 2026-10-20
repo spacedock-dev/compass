@@ -19,6 +19,10 @@ Four rewrites make the capture a stable sample rather than a snapshot of one aft
   summary first, as it is made when the finished session is opened, then the reading.
 - The one-line sentence that counted entries "about 3846h ago" counts them from the reading's own
   moment on that timeline, which is what the same words say when the reading is read on the day.
+- The correction is composed here by `correction.compose`, from the fixture's own row and record,
+  rather than kept from the capture, so it carries what the composer carries now (each departure's
+  explanation since the owner's ruling of 2026-10-20) and its times read in UTC, as the timeline
+  does. `--recompose` rewrites only that field of an existing fixture.
 - The digests that bind the capture's stores (the board's intent revision, the summary's prompt
   digest in its model stamp) are cut to 32 characters, so nothing in the file is a credential-length
   value.
@@ -48,6 +52,7 @@ SUMMARIZED_AFTER_LAST_RECORD = 30
 READ_AFTER_LAST_RECORD = 45
 GENERATED_AFTER_LAST_RECORD = 95
 DIGEST_CHARS = 32
+SKILL = Path(__file__).resolve().parents[1] / "compass" / "skills" / "compass"
 
 
 def fetch(base: str, path: str, body: dict[str, Any] | None = None) -> Any:
@@ -201,6 +206,41 @@ def capture_record(base: str, stem: str) -> tuple[dict[str, Any], dict[str, dict
     return pages[0], older
 
 
+def recompose_correction(fixture: dict[str, Any]) -> dict[str, Any]:
+    """What `POST /api/correction` composes from the fixture's own row and record.
+
+    The route's inputs as the fixture holds them: the Claude route judges lines, no line was
+    re-requested, and the typed goal's floor is when it was saved. The clock is UTC, the zone the
+    rest of the sample's times are written in.
+    """
+    if str(SKILL) not in sys.path:
+        sys.path.insert(0, str(SKILL))
+    from compass_runtime import correction  # noqa: PLC0415 - the skill runtime, on demand
+
+    row = fixture["board"]["sessions"][0]
+    context = fixture["context"]
+    semantic = context.get("semantic") or {}
+    work = (context.get("sources") or {}).get("work") or {}
+    scan: dict[str, Any] = next(
+        (
+            s
+            for s in work.get("tool_reports") or []
+            if s.get("harness") == row["harness"] and s.get("sid") == row["sid"]
+        ),
+        {},
+    )
+    floor = row.get("annotation_goal_source_at") or row.get("annotation_goal_saved_at")
+    return correction.compose(
+        row,
+        semantic.get("facts") or [],
+        floor=float(floor) if floor is not None else None,
+        lines_judged=True,
+        clock=lambda at: f"{datetime.fromtimestamp(at, UTC):%Y-%m-%d %H:%M}",
+        person_at=scan.get("last_user_at"),
+        line_requests={},
+    )
+
+
 def build(base: str, project: str, sid: str) -> dict[str, Any]:
     quote = urllib.parse.quote
     session = f"claude:{sid}"
@@ -209,7 +249,6 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
     context = fetch(base, f"/api/project-context?{stem}")
     prompts = fetch(base, f"/api/project-context?{stem}&prompts=1")
     record, older = capture_record(base, stem)
-    correction = fetch(base, "/api/correction", {"harness": "claude", "sid": sid})
     rows = [row for row in board["sessions"] if row["sid"] == sid]
     if len(rows) != 1:
         msg = f"expected exactly one session {sid}, found {len(rows)}"
@@ -223,7 +262,6 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
         "context": context,
         "prompts": prompts,
         "record": record,
-        "correction": correction,
     }
     if older:
         fixture["older"] = older
@@ -257,6 +295,7 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
     # and no notice recorded yet.
     fixture["board"]["reading"].update(consent=True, off=False, reason="", notices={})
     row["annotation_reading_count"] = 1
+    fixture["correction"] = recompose_correction(fixture)
     return fixture
 
 
@@ -264,12 +303,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--base-url", required=True)
-    parser.add_argument("--project", required=True)
-    parser.add_argument("--sid", required=True)
+    parser.add_argument("--base-url")
+    parser.add_argument("--project")
+    parser.add_argument("--sid")
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--recompose",
+        action="store_true",
+        help="rewrite only the correction of the fixture at --out, with no server",
+    )
     args = parser.parse_args(argv)
-    fixture = build(args.base_url.rstrip("/"), args.project, args.sid)
+    if args.recompose:
+        fixture = json.loads(args.out.read_text(encoding="utf-8"))
+        fixture["correction"] = recompose_correction(fixture)
+    else:
+        if not (args.base_url and args.project and args.sid):
+            parser.error("--base-url, --project and --sid are required to capture")
+        fixture = build(args.base_url.rstrip("/"), args.project, args.sid)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
         json.dumps(fixture, indent=1, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8"
