@@ -778,10 +778,12 @@ export function DriftVerdict() {
   if (!shape.criteria.length && !shape.departures.length) return null;
   const answer = driftAnswer(shape, entries, source.scan);
   const analysis = model.analysis;
-  const level = analysis && analysis.level !== 'not_enough' ? analysis.label : '';
+  const standing = analysis && analysis.level !== 'not_enough' ? analysis : null;
   const text = verdictLine({
     answer,
-    level,
+    level: standing?.label ?? '',
+    levelKey: standing?.level ?? '',
+    reason: standing?.reasons.first ?? '',
     byId: model.byId,
     midFlight: shape.scope === 'mid-flight',
   });

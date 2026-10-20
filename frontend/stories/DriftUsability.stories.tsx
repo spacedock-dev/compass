@@ -237,6 +237,53 @@ export const PauseInTheHeadAndThePopoverCloses: Story = {
   },
 };
 
+/* A Medium level with no departure (a contradicted claim, here) says why the level stands rather than
+   "Medium: Nothing found", which contradicted its own word. */
+const CONSISTENT_READING = {
+  annotation_assessment: {
+    ...DEPARTURE_READING,
+    criteria: {
+      goal: {
+        result: 'consistent with the evidence read',
+        cites: ['c2'],
+        detail: '',
+        clause: 'Ship the queue',
+      },
+      line_1: {
+        result: 'consistent with the evidence read',
+        cites: ['c2'],
+        detail: '',
+        clause: 'Tests pass',
+      },
+    },
+  },
+  annotation_reading_count: 1,
+};
+export const MediumWithNoDepartureSaysWhy: Story = {
+  ...scenario({
+    session: CONSISTENT_READING,
+    facts: [PERSON, PASSED, AGENT],
+    work: {
+      analysis_levels: [
+        { ...analysisRow('claude', 'medium'), reasons: ['claim-contradicted'], cites: ['m5'] },
+      ],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const verdict = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-verdict]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(verdict).toHaveTextContent(
+      /^Medium: No departure from your intent\. The record contradicts what the agent said/,
+    );
+    await expect(verdict.textContent).not.toContain('Nothing found');
+    await expect(verdict).toBeVisible();
+  },
+};
+
 /* Finding 20: "Copied" answers one press. It lapses back to Copy, and a box drawn again starts at Copy. */
 export const CopiedLapsesBackToCopy: Story = {
   ...scenario({
@@ -261,34 +308,83 @@ export const CopiedLapsesBackToCopy: Story = {
 
 /* Findings 8 and 17: a Sessions row leads with one state word and shows the project label alone, and its
    drift chip names a level: before this tab has read the project, the least a departure reads (a departure
-   reads Medium unless a fresh failed check makes it High), and the session header names the exact one. */
+   reads Medium unless a fresh failed check makes it High) with no meter, and once it has, the level the
+   session header names, from the same derivation. */
+const SESSIONS_NAV: { back?: () => void } = {};
 export const TheSessionsRowSaysTheLevel: Story = {
   ...scenario({
     initialView: 'sessions',
     session: TWO_DEPARTURES,
     facts: [PERSON, PASSED, AGENT],
     work: MEDIUM,
+    nav: SESSIONS_NAV,
   }),
   play: async ({ canvasElement }) => {
-    const row = await waitFor(() => {
-      const node = canvasElement.querySelector<HTMLElement>('article.next-operation-row');
-      expect(node).not.toBeNull();
-      return node as HTMLElement;
-    });
-    await expect(row.querySelector('[data-next-row-state]')).toHaveTextContent(/^(Working|Idle)$/);
-    await expect(row.querySelector('[data-next-row-state]')).toBeVisible();
-    await expect(row.textContent).not.toContain('Exact location not published');
-    await expect(row.textContent).not.toMatch(/NOW · |QUIET/);
-    await expect(row.querySelector('[data-next-session-drift-mark]')).toHaveTextContent(
+    const row = async () =>
+      waitFor(() => {
+        const node = canvasElement.querySelector<HTMLElement>('article.next-operation-row');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+    const first = await row();
+    // The scenario's session publishes `working`.
+    await expect(first.querySelector('[data-next-row-state]')).toHaveTextContent(/^Working$/);
+    await expect(first.querySelector('[data-next-row-state]')).toBeVisible();
+    await expect(first.textContent).not.toContain('Exact location not published');
+    await expect(first.textContent).not.toMatch(/NOW · |QUIET/);
+    await expect(first.querySelector('[data-next-session-drift-mark]')).toHaveTextContent(
       /^Drift: Medium or higher · /,
     );
-    await expect(row.querySelector('[data-next-row-drift-level="medium"]')).not.toBeNull();
-    await userEvent.click(row.querySelector('a.next-operation-route') as HTMLElement);
+    await expect(
+      first.querySelector('[data-next-row-drift-level="medium_or_higher"]'),
+    ).not.toBeNull();
+    await expect(first.querySelector('.next-session-drift-pill-meter')).toBeNull();
+    await userEvent.click(first.querySelector('a.next-operation-route') as HTMLElement);
     await card(canvasElement);
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-drift-pill]')).toHaveTextContent(
         'Drift: Medium',
       ),
     );
+    const pill = canvasElement.querySelector('[data-next-drift-pill] strong')?.textContent;
+    SESSIONS_NAV.back?.();
+    const back = await row();
+    await waitFor(() =>
+      expect(back.querySelector('[data-next-row-drift-level="medium"]')).not.toBeNull(),
+    );
+    await expect(back.querySelector('[data-next-session-drift-mark] strong')).toHaveTextContent(
+      pill ?? 'missing',
+    );
+    await expect(back.querySelector('.next-session-drift-pill-meter')).not.toBeNull();
+  },
+};
+
+/* A raise beside a reading that does not depart names no level: the chip once borrowed the consistent
+   reading's "None or low" once this tab held its analysis, beside a recorded departure. */
+const RAISE_NAV: { back?: () => void } = {};
+export const ARaiseAloneNamesNoLevel: Story = {
+  ...scenario({
+    initialView: 'sessions',
+    session: { ...CONSISTENT_READING, departures: [{ at: 900, revision: 3 }] },
+    facts: [PERSON, PASSED, AGENT],
+    work: {
+      analysis_levels: [{ ...analysisRow('claude', 'none_or_low'), reasons: [], cites: [] }],
+    },
+    nav: RAISE_NAV,
+  }),
+  play: async ({ canvasElement }) => {
+    const row = async () =>
+      waitFor(() => {
+        const node = canvasElement.querySelector<HTMLElement>('article.next-operation-row');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+    await userEvent.click((await row()).querySelector('a.next-operation-route') as HTMLElement);
+    await card(canvasElement);
+    RAISE_NAV.back?.();
+    const back = await row();
+    const mark = back.querySelector('[data-next-session-drift-mark]');
+    await expect(mark).toHaveTextContent(/^Drift · /);
+    await expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
   },
 };

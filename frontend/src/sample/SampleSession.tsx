@@ -64,7 +64,7 @@ function Held({ at }: { readonly at: HeldAt | null }) {
           ? 'absolute z-10 m-0 max-w-[min(28rem,calc(100%-16px))] rounded-card border border-solid border-[var(--amber)] bg-card px-[12px] py-[8px] text-[var(--amber)]'
           : 'm-0'
       }
-      style={at ? { top: at.top, left: at.left } : undefined}
+      style={at ?? undefined}
       data-sample-held
     >
       {at ? HELD_SENTENCE : ''}
@@ -89,7 +89,11 @@ export function SampleSession({ children }: { readonly children: ReactNode }) {
     const node = box.current;
     setHeld(
       node
-        ? heldPosition(control.getBoundingClientRect(), node.getBoundingClientRect())
+        ? heldPosition(
+            control.getBoundingClientRect(),
+            node.getBoundingClientRect(),
+            window.innerHeight,
+          )
         : { top: 0, left: 8 },
     );
     clearTimeout(timer.current);

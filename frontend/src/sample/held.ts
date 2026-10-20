@@ -31,15 +31,20 @@ export function heldControl(target: Element): Element {
   return target.closest(CONTROL) ?? target;
 }
 
-export interface HeldAt {
-  readonly top: number;
-  readonly left: number;
-}
+export type HeldAt =
+  | { readonly top: number; readonly left: number }
+  | { readonly bottom: number; readonly left: number };
 
-/* Under the control, its left edge kept inside the box so the sentence never runs off a narrow screen. */
+/* Under the control, its left edge kept inside the box so the sentence never runs off a narrow screen. A
+   control too near the viewport's foot gets the sentence above it instead: drawn below, it would be off
+   screen and lapse unseen. The room asked for is the sentence at its narrowest, wrapped onto three lines. */
 const HELD_WIDTH = 448;
-export function heldPosition(control: DOMRect, box: DOMRect): HeldAt {
+const HELD_ROOM = 80;
+export function heldPosition(control: DOMRect, box: DOMRect, viewport = Infinity): HeldAt {
   const width = Math.min(HELD_WIDTH, box.width - 16);
   const left = Math.max(8, Math.min(control.left - box.left, box.width - width - 8));
+  if (control.bottom + 6 + HELD_ROOM > viewport && control.top - 6 - HELD_ROOM >= 0) {
+    return { bottom: box.bottom - control.top + 6, left };
+  }
   return { top: control.bottom - box.top + 6, left };
 }

@@ -1,6 +1,8 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountSessions } from './testing';
+import { rowState } from './rows';
+import type { ObservedSession } from '../observed';
 
 const NOW = 5000;
 const board = (sessions: unknown[], extra: Record<string, unknown> = {}) => ({
@@ -171,11 +173,120 @@ describe('the groups', () => {
       ),
     );
     const mark = document.querySelector('[data-next-session-drift-mark]');
-    // This tab holds no analysis for the project, so the chip says what a departure is at least.
+    // This tab holds no analysis for the project, so the chip says what a departure is at least, and draws
+    // no meter, which would show Medium for what may be High.
     expect(mark?.textContent).toBe('Drift: Medium or higher · 4m ago');
     expect(
       mark?.querySelector('[data-next-row-drift-level]')?.getAttribute('data-next-row-drift-level'),
-    ).toBe('medium');
+    ).toBe('medium_or_higher');
+    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
+  });
+
+  describe('the chip and the session header name one level', () => {
+    const departing = {
+      harness: 'claude',
+      sid: 'read',
+      project: 'p',
+      project_key: '/p',
+      state: 'idle',
+      annotation_goal: 'Ship the queue',
+      annotation_line_1: 'Tests pass',
+      annotation_revision: 2,
+      annotation_assessment: {
+        read_at: NOW - 240,
+        revision_read: 2,
+        criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'x' } },
+      },
+    };
+    const context = (level: string) => ({
+      semantic: { facts: [] },
+      sources: {
+        work: {
+          tool_reports: [],
+          analysis_levels: [
+            {
+              harness: 'claude',
+              sid: 'read',
+              revision_read: 2,
+              read_at: NOW - 240,
+              computed_at: NOW - 240,
+              level,
+              reasons: ['departure'],
+              cites: ['f1'],
+            },
+          ],
+        },
+      },
+    });
+    const chip = () => document.querySelector('[data-next-session-drift-mark]');
+
+    it.each([
+      ['high', 'High'],
+      ['medium', 'Medium'],
+    ])('names %s on the chip once this tab holds the analysis', async (level, word) => {
+      const page = mountSessions({
+        hash: '#n=session:p:claude:read',
+        data: board([departing], { annotate: true }),
+        context: context(level),
+      });
+      await page.settle();
+      const pill = document.querySelector('[data-next-drift-pill] strong')?.textContent;
+      expect(pill).toBe(word);
+      await act(async () => {
+        page.router.navigate({ view: 'sessions' });
+      });
+      await page.settle();
+      expect(chip()?.querySelector('strong')?.textContent).toBe(pill);
+      expect(
+        chip()
+          ?.querySelector('[data-next-row-drift-level]')
+          ?.getAttribute('data-next-row-drift-level'),
+      ).toBe(level);
+    });
+
+    it('names no level for a raise beside a reading that does not depart', async () => {
+      const page = mountSessions({
+        hash: '#n=session:p:claude:read',
+        data: board(
+          [
+            {
+              ...departing,
+              departures: [{ at: NOW - 60, revision: 2 }],
+              annotation_assessment: {
+                read_at: NOW - 240,
+                revision_read: 2,
+                criteria: {
+                  goal: { result: 'consistent', cites: ['f1'], detail: '', clause: 'x' },
+                },
+              },
+            },
+          ],
+          { annotate: true },
+        ),
+        context: context('none_or_low'),
+      });
+      await page.settle();
+      await act(async () => {
+        page.router.navigate({ view: 'sessions' });
+      });
+      await page.settle();
+      expect(chip()?.textContent).toMatch(/^Drift · /);
+      expect(chip()?.querySelector('[data-next-row-drift-level]')).toBeNull();
+    });
+  });
+
+  it('shows Idle only for a published idle state', () => {
+    const session = (state: unknown) =>
+      ({
+        isEnded: false,
+        isNeeds: false,
+        askKnown: false,
+        isWorking: false,
+        isQuiet: state === 'idle',
+      }) as unknown as ObservedSession;
+    expect(rowState(session('idle'))).toBe('Idle');
+    expect(rowState(session(undefined))).toBe('State not published');
+    expect(rowState(session('dozing'))).toBe('State not published');
   });
 
   it('says annotations are off, and the goal cell says so too, when the payload does not publish them', async () => {

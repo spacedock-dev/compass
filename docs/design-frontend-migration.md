@@ -18,10 +18,11 @@ study first. The recorded answers the React page is held to are described in the
 ## Held to recorded answers
 
 2026-10-20, usability review: each Sessions row leads with one state word (Working, Waiting on
-you, Idle, Ended) in place of the SESSION label, `NOW · <state>` and the QUIET or ENDED tag; WHERE is
-the project label alone, without the hatched "Exact location not published"; and the drift chip
-names the level the session header shows ("Drift: Medium · 4m ago", or "Medium or higher" before
-this tab holds the project's analysis). `sessions.differential.test.tsx` now reads the recorded
+you, Idle, Ended, or State not published where the board publishes no known state) in place of the
+SESSION label, `NOW · <state>` and the QUIET or ENDED tag; WHERE is the project label alone, without
+the hatched "Exact location not published"; and the drift chip of a departing stored reading names
+the level the session header shows, from the same derivation ("Drift: Medium · 4m ago", or "Medium
+or higher" with no meter before this tab holds the project's analysis). A raise alone names no level. `sessions.differential.test.tsx` now reads the recorded
 legacy row with those three parts reworded as the page words them, and drops the state word and the
 chip's level from the React row before comparing; it counts ended rows from the recorded markup.
 The state word and the level are held by `SessionsView.test.tsx` and the Sessions stories. Golden

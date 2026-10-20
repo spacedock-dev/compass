@@ -1,16 +1,19 @@
 import { Card } from '../ui/card';
 import { buttonVariants } from '../ui/button';
 import { cn } from '../lib/utils';
-import { useMemo, type MouseEvent, type ReactNode } from 'react';
+import { useMemo, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
 import { gapNames, isRecord, isScanOnly, type Row } from '../observed';
-import { nextNumber, payloadSessions } from '../api/bootstrap';
-import { stableProjectKey } from '../api/identity';
-import { analysisRow } from '../drift/level';
+import { nextNumber } from '../api/bootstrap';
+import { contextKey } from '../api/identity';
+import { headerAnalysis } from '../drift/model';
+import { overlaid } from '../drift/overlay';
+import { driftCtxFor } from '../drift/state';
 import { PillMeter } from '../drift/DriftLevelView';
-import { LIVE_LEVEL_NAMES } from '../drift/sentences';
+import { identityOf } from '../intent/context';
+import { useHeldVersion } from '../intent/useIntent';
 import { fragmentForRoute, type RouteInput } from '../router/grammar';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
@@ -19,6 +22,7 @@ import {
   analysisAvailable,
   buildSessionsScreen,
   NOT_CHECKED,
+  readingDeparts,
   rowState,
   type SessionRow,
 } from './rows';
@@ -242,61 +246,69 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   );
 }
 
-/* The level the session page's header pill shows for this row's stored reading, where this tab holds it: the
-   project context's analysis row for that exact reading, over the revision it read and not marked
-   inaccurate. Without it, a departing reading is at least Medium (`levels.analysis_level`: a departure reads
-   Medium, and only a fresh failed check reads higher), so the chip says that much and no more. A row whose
-   drift is a raise alone names no level. */
+/* The level the chip names for this row. Only a stored reading that itself departs names one: a row whose
+   drift is a raise alone names no level, and a raise beside a consistent reading would otherwise borrow that
+   reading's "None or low". Where this tab holds the analysis row, the level is the one the session page's
+   header pill shows, from the same derivation (`headerAnalysis`), so the two cannot differ. Without it, a
+   departing reading is at least Medium (`levels.analysis_level`: a departure reads Medium, and only a fresh
+   failed check reads higher), so the chip says that much and draws no meter, which would show Medium for
+   what may be High. */
 function rowLevel(
-  contexts: Parameters<typeof analysisRow>[0],
-  data: Row | null,
-  source: Row | undefined,
-): { readonly level: string; readonly label: string } | null {
-  if (!source || source['annotation_not_accurate'] === true) return null;
-  const raw = source['annotation_assessment'];
-  if (!isRecord(raw)) return null;
-  const read = nextNumber(raw['revision_read']);
-  const current = nextNumber(source['annotation_revision']);
+  input: Parameters<typeof headerAnalysis>[0] | null,
+): { readonly level: string | null; readonly label: string } | null {
+  if (!input || !readingDeparts(input.session)) return null;
+  const shown = headerAnalysis(input);
+  if (shown) return { level: shown.level, label: shown.label };
+  const { session } = input;
+  if (session['annotation_not_accurate'] === true) return null;
+  /* A reading over words the reader has since replaced is the stale line's to describe, not a level's. */
+  const raw = session['annotation_assessment'];
+  const read = isRecord(raw) ? nextNumber(raw['revision_read']) : null;
+  const current = nextNumber(session['annotation_revision']);
   if (read === null || (current !== null && current !== read)) return null;
-  const project = String(source['project'] ?? '');
-  const projectKey = stableProjectKey({
-    label: project,
-    sessions: data
-      ? payloadSessions(data as never).rows.filter((one) => String(one.project ?? '') === project)
-      : [],
-  });
-  const held = analysisRow(contexts, projectKey, source);
-  const level = String(held?.['level'] || '');
-  if (
-    held &&
-    nextNumber(held['read_at']) === nextNumber(raw['read_at']) &&
-    nextNumber(held['revision_read']) === read &&
-    level !== 'not_enough' &&
-    Object.hasOwn(LIVE_LEVEL_NAMES, level)
-  ) {
-    return { level, label: LIVE_LEVEL_NAMES[level] as string };
-  }
-  const criteria = isRecord(raw['criteria']) ? raw['criteria'] : {};
-  const departs = Object.entries(criteria).some(
-    ([key, row]) => key !== 'claims' && isRecord(row) && row['result'] === 'departure',
-  );
-  return departs ? { level: 'medium', label: 'Medium or higher' } : null;
+  return { level: null, label: 'Medium or higher' };
 }
 
 function DriftMarkView({ row }: { readonly row: SessionRow }) {
+  const shell = useShell();
+  const ctx = driftCtxFor(shell);
+  // Redraws when the reader's held words change, so a drafted intent hides the level as the header does.
+  useHeldVersion(ctx.intent.held);
+  const overlay = useSyncExternalStore(ctx.drift.subscribe, ctx.drift.getOverlay);
   const contexts = useDisplayed((snapshot) => snapshot.contexts);
   const data = useDisplayed((snapshot) => snapshot.data) as Row | null;
+  const records = useDisplayed((snapshot) => snapshot.records);
+  const count = useDisplayed((snapshot) => snapshot.acceptedCount);
   const mark = row.drift;
-  if (!mark) return null;
-  const level = rowLevel(contexts, data, row.source);
+  const { source, projectKey } = row;
+  if (!mark || !source || !data) return mark ? <DriftMark mark={mark} level={null} /> : null;
+  const record = records.get(contextKey(projectKey, identityOf(source)));
+  const level = rowLevel({
+    session: source,
+    payload: overlaid(data, overlay, count),
+    projectKey,
+    contexts,
+    held: ctx.intent.held,
+    ...(record ? { record } : {}),
+  });
+  return <DriftMark mark={mark} level={level} />;
+}
+
+function DriftMark({
+  mark,
+  level,
+}: {
+  readonly mark: NonNullable<SessionRow['drift']>;
+  readonly level: ReturnType<typeof rowLevel>;
+}) {
   return (
     <span className="next-operation-drift" data-next-session-drift-mark>
       {level ? (
         <span
           className="inline-flex items-baseline gap-1.5"
-          data-next-row-drift-level={level.level}
+          data-next-row-drift-level={level.level ?? 'medium_or_higher'}
         >
-          <PillMeter level={level.level} />
+          {level.level ? <PillMeter level={level.level} /> : null}
           <span>
             Drift: <strong className="font-semibold text-foreground">{level.label}</strong>
           </span>

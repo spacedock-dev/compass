@@ -109,6 +109,8 @@ export interface Scenario {
   readonly keepsMarks?: boolean;
   /** What `POST /api/correction` answers, as `correction.compose` would for this session. */
   readonly correction?: Record<string, unknown>;
+  /** Filled in on mount: the browser's Back, which a story cannot press through the page's own links. */
+  readonly nav?: { back?: () => void };
 }
 
 export const fact = (
@@ -270,6 +272,11 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
         return json({});
       },
     });
+    if (scenario.nav)
+      scenario.nav.back = () => {
+        history.back();
+        history.flush();
+      };
     if (scenario.reading)
       scenario.reading.finish = async () => {
         job = null;

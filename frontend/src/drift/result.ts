@@ -466,8 +466,10 @@ const CHECK_GLYPHS = /[\u221a\u2611\u2705\u2713\u2714\u{10102}\u{1f5f8}\u{1f5f9}
 
 function bounded(text: string): string {
   const flat = text.replace(CHECK_GLYPHS, '[check mark]').replace(/\s+/g, ' ').trim();
-  if (flat.length <= QUOTE_MAX) return flat;
-  const cut = flat.slice(0, QUOTE_MAX);
+  // Counted in code points, so an emoji at the cut is kept whole rather than left as a lone surrogate.
+  const points = Array.from(flat);
+  if (points.length <= QUOTE_MAX) return flat;
+  const cut = points.slice(0, QUOTE_MAX).join('');
   const space = cut.lastIndexOf(' ');
   return `${(space > QUOTE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
@@ -507,12 +509,18 @@ function entryPhrase(entry: WorkEntry): string {
 export function verdictLine({
   answer,
   level,
+  levelKey = '',
+  reason = '',
   byId,
   midFlight,
 }: {
   readonly answer: Answer;
   /** The analysis level's word, or empty where no level stands for this reading. */
   readonly level: string;
+  /** The analysis level itself (`medium`, ...), which decides whether "Nothing found" may carry the word. */
+  readonly levelKey?: string;
+  /** The analysis level's own reason, said where nothing departs and the level still reads above None or low. */
+  readonly reason?: string;
   readonly byId: EntryIndex;
   /** A reading of a running session, which answers for the work so far. */
   readonly midFlight: boolean;
@@ -522,7 +530,16 @@ export function verdictLine({
     level ? `${level}${midFlight ? ' so far' : ''}: ${text}` : said(text);
   if (answer.kind === 'cant-tell') return said("Can't tell from what was read.");
   if (answer.kind === 'not-reached') return said('Not reached at this stop.');
-  if (answer.kind === 'nothing-found') return levelled('Nothing found against what it read.');
+  if (answer.kind === 'nothing-found') {
+    /* The server reads Medium or higher with no departure for a contradicted claim, or a pass followed by a
+       change (`levels.analysis_level`). "Medium: Nothing found" would contradict its own word, so the
+       sentence says why the level stands. */
+    if (level && levelKey && levelKey !== 'none_or_low') {
+      const why = reason || 'The level rests on what the analysis read, not on a departure.';
+      return `${level}${midFlight ? ' so far' : ''}: No departure from your intent. ${why}`;
+    }
+    return levelled('Nothing found against what it read.');
+  }
   if (answer.kind === 'failed-check') {
     const at = evidenceAt(answer.failed);
     return levelled(at !== null && at > 0 ? `A check failed at ${clock(at)}.` : 'A check failed.');

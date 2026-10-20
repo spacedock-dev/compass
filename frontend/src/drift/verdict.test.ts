@@ -70,6 +70,34 @@ describe('the Drift card verdict sentence', () => {
     }
   });
 
+  it('keeps the level word on Nothing found only at None or low', () => {
+    expect(
+      verdictLine({
+        answer: { kind: 'nothing-found' },
+        level: 'None or low',
+        levelKey: 'none_or_low',
+        byId,
+        midFlight: false,
+      }),
+    ).toBe('None or low: Nothing found against what it read.');
+  });
+
+  it.each([
+    ['a contradicted claim', 'The record contradicts what the agent said at #5.'],
+    ['a pass followed by a change', 'A check passed, then files were written after it.'],
+  ])('says why Medium stands with no departure, for %s', (_name, reason) => {
+    const text = verdictLine({
+      answer: { kind: 'nothing-found' },
+      level: 'Medium',
+      levelKey: 'medium',
+      reason,
+      byId,
+      midFlight: false,
+    });
+    expect(text).toBe(`Medium: No departure from your intent. ${reason}`);
+    expect(text).not.toContain('Nothing found');
+  });
+
   it('says a reading of a running session answers for the work so far', () => {
     expect(
       verdictLine({
@@ -83,6 +111,13 @@ describe('the Drift card verdict sentence', () => {
 });
 
 describe("a departure's What", () => {
+  it('never splits an emoji at the cut', () => {
+    const summary = `${'x'.repeat(199)}\u{1f600}${'y'.repeat(20)}`;
+    const line = citedLine(entry('m', 1, { summary }));
+    expect(line).toContain('\u{1f600}…');
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])/.test(line)).toBe(false);
+  });
+
   it("quotes the agent's words, attributed, bounded and without a drawn check mark", () => {
     expect(citedLine(entry('m', 1))).toBe('Agent said: “Done: the billing rate is now 0.25.”');
     expect(citedLine(entry('m', 1, { summary: 'Done ✓ ships' }))).toBe(
