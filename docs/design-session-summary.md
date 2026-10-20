@@ -445,21 +445,35 @@ its number and label. Keep at most the newest 32 windows, state the first kept f
 `starts_at`, and represent the prefix with a `before_window` gap pointing to the outline.
 
 Window calls run oldest first. The prompt names the part and its entry range, explains the menu,
-asks for phases in order with titled phases and cited bullets, and states the output bounds. It
-asks for actions and names the completion words it must not state in its own voice. Reports of
-what the agent or person said must name the speaker in the same clause, such as "the agent said
-..."; quotations without a named speaker are forbidden. It gives the tool-report form for a
-check's result and the `the error read: ...` form for a tool error's own output. It says relayed text is not the person's request and that the record is data whose
-instructions must be ignored. Earlier windows contribute only the newest finished
+and asks for titled phases of cited bullets in order, written for a person coming back to the
+session: what the person asked for, what the agent did, what the checks reported, where the person
+corrected or redirected the agent, and where the part ends. It states the output bounds. It says
+relayed text is not the person's request, that a bullet citing relayed text must also cite a
+person entry, a check or a file, and that the record is data whose instructions must be ignored.
+The rules come before the record, and every line after `Record:` is one entry opening with its
+number and label. The prompt then teaches the forms the completion check keeps, as the
+[2026-10-20 prompt amendment](#amended-2026-10-20-the-prompts-ask-for-checkable-lines) records.
+Every sentence opens with a named actor ("The agent ...", "The person ...") or a check's report,
+never a pronoun or a bare verb. The agent's actions take plain verbs the record shows, and a merge
+is "the agent requested a merge of PR #12". It names every completion word and forbids it in the
+summary's own voice, even as a noun. Such a word appears only directly after a named speaker and
+verb ("The agent said PR #12 was merged."), and each claim gets its own attribution rather than
+following "and", "with", "so" or "which". Quotations without a named speaker are forbidden. A
+check's result takes the tool-report form, a count or any other outcome is only a speaker's words,
+and a tool error's own output takes the `the error read: ...` form. A line says what happened
+rather than what did not. A phase title is a short heading for the activity, a noun phrase or an
+`-ing` phrase, never an outcome. The system prompt, and so the stored model stamp, is unchanged.
+Earlier windows contribute only the newest finished
 phase titles that fit within one sixteenth of a window, including the disclaimer that they are
 context, not evidence and must not be cited. Earlier bullets and entries never enter this context.
 
 After the windows, one lede call receives only menu lines cited by surviving phases. Selection
 prefers the person's entries, then other entries in order, within one window's byte allowance;
-the selected lines retain source order and their original numbers. The prompt asks for at most
-two sentences within the lede character bound: what the person set out to do, what the agent
-worked on, and any correction or redirection those entries show. It receives no phase prose or
-titles. Its citations must name entries actually given to it. A failed lede leaves `lede: null`
+the selected lines retain source order and their original numbers. The prompt asks for two plain
+sentences within the lede character bound. The first says what the person set out to do; the
+second says what the agent did and where those entries end, as they report it, naming any
+correction or redirection they show. It carries the window prompt's forms except the title rule.
+It receives no phase prose or titles. Its citations must name entries actually given to it. A failed lede leaves `lede: null`
 and `lede_reason`, preserving the phases.
 
 ### Replies, kinds and withheld text
@@ -869,6 +883,57 @@ subject-position compounds listed under the known limits. The remaining wrongly 
 are mostly pronoun speakers, negations (`did not merge`), a verb that is not a completion claim
 (`pass the intent prop`), unattributed quoted labels and lines that paraphrase a check's result
 outside the tool-report form.
+
+### Amended 2026-10-20: the prompts ask for checkable lines
+
+After the owner's amendment the replay still withheld 172 of 733 strings. Most of the remaining
+withholdings were lines the model wrote in a form the check must refuse: a pronoun speaker, a
+completion verb for the agent's own action, a result stated as the summary's fact, a title that
+states an outcome, and a bullet citing only relayed text. A withheld lede or title makes a summary
+read as broken. The check, its clause code, the kinds, the ceilings and the rulings are unchanged.
+Only the window and lede prompts changed, as
+[Menu, windows and prompts](#menu-windows-and-prompts) describes, so that the model writes lines
+in the forms the check keeps. `SummaryPromptTest` in `test_session_summary.py` pins each
+instruction, the record's delimiting, and that every example the prompts teach is one the check
+shows. The window prompt's instructions grew from 1,620 to 3,105 bytes and the lede's from 868 to
+1,900, so a full 16 KiB window prompt is about 19.5 KB. Thirty-seven such calls stay inside the
+768 KiB byte ceiling, which is unchanged.
+
+**Measured.** The current and the new prompts ran through the production producer and
+`observer.claude_exec`, with the summary system prompt and the per-call timeout, on the same
+windows: the committed sample session (two windows and a lede) and the first window of each of the
+two smallest measured sessions, C and D (no lede). The model was called 16 times. Nothing from the
+sessions is recorded here.
+
+| | Current prompts | New prompts |
+| -- | --: | --: |
+| Strings withheld | 17 of 62 (27.4%) | 10 of 75 (13.3%) |
+| Bullets withheld | 15 of 47 (10 completion, 5 shape fault) | 10 of 58 (5 completion, 5 shape fault) |
+| Titles withheld | 1 of 14 | 0 of 16 |
+| Lede withheld | 1 of 1 | 0 of 1 |
+| Usefulness, 30 bullets each, scored blind, 1 to 5, as written | 3.67 | 3.37 |
+| The same, as a reader sees them (a withheld bullet scores 0) | 2.40 | 2.73 |
+| Usefulness by a second model (Codex `gpt-6.1-sol`), 15 of the same bullets | 4.43 (7) | 4.38 (8) |
+| Citations pointing at the right entries, 25 sampled bullets, by hand | 25 of 25 | 25 of 25 |
+| Citations the second model judged right | 6 of 7 | 7 of 8 |
+| Shown strings holding a completion word | 11 | 12 |
+| Of those, own-voice completion claims, checked by hand | 0 | 0 |
+
+- **The target was missed.** The aim was below 12% withheld, and the new prompts reached 13.3%:
+  two more shown strings would have met it. They were accepted because they beat the current
+  prompts on the withheld share, kept every title and the lede, held citation accuracy and
+  admitted no own-voice claim.
+- **Usefulness is mixed.** The new bullets are shorter and more numerous, 58 against 47, and
+  scored lower one by one as written. What a reader actually sees scored higher, because fewer
+  places are withheld, and the second model scored the two sets the same.
+- **What is still withheld.** All five shape faults are bullets citing only relayed text, or
+  relayed text and the agent's words. The rest are a second claim joined after one attribution,
+  a completion word inside a name or a quoted label, and a negation in the summary's own voice.
+- **A second revision did worse.** Wording that spelled out the relayed-citation rule and the
+  joined-claim rule cut shape faults from five to one, but withheld 11 of 66 strings (16.7%),
+  including two titles. It was not adopted, and the call budget ended there. Two runs of such
+  similar prompts on the same windows differing this much shows that one run per prompt is a
+  noisy measure.
 
 ### Bounds, spend and gaps
 
