@@ -24,8 +24,9 @@ import {
   WITHHELD_LINES,
   withheldTitle,
 } from '../src/sessions/summary';
+import { OUTSIDE_WINDOW, UNNUMBERED_BEFORE, UNNUMBERED_OLDER } from '../src/sessions/WhatItDid';
 import { neverDone, noCheckMark } from './drift.checks';
-import { COVERAGE, claudeOutline } from './outline.scenario';
+import { COVERAGE, G, claudeOutline } from './outline.scenario';
 import {
   ABSENT,
   FIRST_PHASE,
@@ -1040,7 +1041,7 @@ export const ColdReopenCitesAnOlderPage: Story = {
       '[data-next-summary-phase="0:0"] [data-next-outline-entry="p1"]',
     ) as HTMLElement;
     await expect(chip).toHaveAccessibleName(
-      'Open the entry, cited for “You asked for retry with backoff on the webhook handler.”, in Full activity',
+      'Open an older entry the page has not read yet, cited for “You asked for retry with backoff on the webhook handler.”, in Full activity',
     );
     await expect(entryRow(canvasElement, 'p1')).toBeNull();
     await userEvent.click(chip);
@@ -1070,7 +1071,7 @@ export const CitationThatCannotLoad: Story = {
     const summary = await summaryOf(region);
     await userEvent.click(
       within(summary).getByRole('button', {
-        name: /^Open the entry, cited for “You asked about a missing entry\.”/,
+        name: /^Open an older entry the page has not read yet, cited for “You asked about a missing entry\.”/,
       }),
     );
     await waitFor(() =>
@@ -1460,7 +1461,223 @@ export const FailedSaysSoInWords: Story = {
         }),
       ).toBeVisible(),
     );
-    await expect(withheldRow).toHaveTextContent(/^Failed as the tool reported: Withheld:/);
+    // A withheld line carries no result label: "Failed as the tool reported: Withheld: ..." put a result on
+    // words nobody can see.
+    await expect(withheldRow).toBeUndefined();
+    const hidden = summary.querySelector('[data-next-summary-hidden]') as HTMLElement;
+    await expect(hidden.querySelector('[data-next-summary-hidden-line]')).toHaveTextContent(
+      /^1 line hidden: it was too long, and cutting it changed what it said\./,
+    );
+    await expect(hidden).not.toHaveTextContent(/Failed/);
+  },
+};
+
+/* An asked line whose words report the agent reads as the agent's, never "You said: The agent said ...". */
+export const AgentWordsOnAnAskedLine: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [
+            {
+              title: 'Agreeing the scope',
+              bullets: [
+                bullet('The agent said it also raised the billing rate.', 'asked', ['p1', 'a1']),
+              ],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const row = summary.querySelector('[data-next-summary-bullet="asked"]') as HTMLElement;
+    await expect(row.querySelector('[data-next-summary-text]')).toHaveTextContent(
+      'Said: it also raised the billing rate.',
+    );
+    await expect(row).not.toHaveTextContent(/You said/);
+    await waitFor(() =>
+      expect(
+        within(row).getAllByRole('button', {
+          name: /cited for “Said: it also raised the billing rate\.”/,
+        }),
+      ).toHaveLength(2),
+    );
+  },
+};
+
+/* A run of withheld lines in a phase is one muted line saying how many, why and which entries, with each line's
+   reason and citations one press away; a line kept between two runs splits them. */
+export const WithheldRunCollapses: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [
+            {
+              title: 'Adding retry to the webhook handler',
+              bullets: [
+                bullet({ withheld: true, reason: 'completion_claim' }, 'did', ['a1']),
+                bullet({ withheld: true, reason: 'completion_claim' }, 'failed', ['c1']),
+                bullet('Asked for retry with backoff on the webhook handler.', 'asked', ['p1']),
+                bullet({ withheld: true, reason: 'no_citation' }, 'did', []),
+              ],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const runs = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-hidden]')];
+    await expect(runs.map((run) => run.dataset['nextSummaryHidden'])).toEqual(['2', '1']);
+    const [first, second] = runs as [HTMLElement, HTMLElement];
+    await waitFor(() =>
+      expect(first.querySelector('[data-next-summary-hidden-line]')).toHaveTextContent(
+        '2 lines hidden: they said, in the summary’s own voice, that work was done or working. Entries #2 to #2.1.',
+      ),
+    );
+    await expect(second.querySelector('[data-next-summary-hidden-line]')).toHaveTextContent(
+      '1 line hidden: it cited no entry.',
+    );
+    // Muted, and no result label even on the withheld failed line.
+    await expect(first).not.toHaveTextContent(/^Failed/);
+    await expect(getComputedStyle(first).color).not.toBe('rgb(228, 136, 106)');
+    // Each hidden line's own reason and citations, reachable from the keyboard.
+    const why = within(first).getByRole('button', { name: 'Why each was hidden' });
+    why.focus();
+    await userEvent.keyboard('{Enter}');
+    const reasons = [...first.querySelectorAll<HTMLElement>('ol [data-next-summary-withheld]')];
+    await expect(reasons).toHaveLength(2);
+    await expect(why).toHaveAttribute('aria-expanded', 'true');
+    for (const reason of reasons) {
+      await waitFor(() => expect(reason).toBeVisible());
+      await expect(reason).toHaveTextContent(WITHHELD_LINES.completion_claim ?? '');
+    }
+    await waitFor(() =>
+      expect(
+        within(first).getByRole('button', { name: /^Open entry #2\.1, cited for a hidden line/ }),
+      ).toBeVisible(),
+    );
+    await expect(summary.querySelectorAll('[data-next-summary-bullet]')).toHaveLength(1);
+    for (const width of [1280, 400])
+      await atWidth(width, async () => {
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+      });
+  },
+};
+
+/* Full activity: where each entry came from is one press away in its head, not a sentence read out on every
+   row, and the header names the token rate's unit. */
+export const FullActivitySourceOnePressAway: Story = {
+  render: () => <SummaryPage summary={storedSummary()} session={{ rate_per_min: 44 }} />,
+  play: async ({ canvasElement }) => {
+    await card(canvasElement);
+    await userEvent.click(
+      await within(canvasElement).findByRole('button', { name: 'Full activity' }),
+    );
+    const entry = await waitFor(() => {
+      const node = entryRow(canvasElement, 'a1');
+      if (!node) throw new Error('no row yet');
+      return node as HTMLElement;
+    });
+    await expect(entry.querySelector('.next-visually-hidden.next-cockpit-work-source')).toBeNull();
+    const source = within(entry).getByRole('button', { name: 'Source of entry #2' });
+    await expect(source.closest('.next-cockpit-work-head')).not.toBeNull();
+    const panel = document.getElementById(source.getAttribute('aria-controls') ?? '');
+    await expect(panel?.hidden).toBe(true);
+    await userEvent.click(source);
+    await expect(source).toHaveAttribute('aria-expanded', 'true');
+    await waitFor(() => expect(panel).toBeVisible());
+    await expect(panel).toHaveTextContent('transcript · exact');
+    const identity = canvasElement.querySelector('.next-session-identity');
+    await expect(identity?.textContent ?? '').not.toMatch(/\d \/m\b/);
+  },
+};
+
+/* After the intent is saved, an entry before its window keeps its number on a chip, muted, with the reason, and
+   the header keeps the session's count: once they turned to the bare word "entry" and "4 entries" to "2". */
+export const SavedIntentKeepsEarlierNumbers: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary()}
+      session={{ annotation_window_start: G - 400, annotation_goal_saved_at: G - 400 }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const earlier = await waitFor(() => {
+      const chip = summary.querySelector<HTMLElement>('[data-next-outline-entry="a1"]');
+      if (!chip?.textContent?.startsWith('#')) throw new Error('no number yet');
+      return chip;
+    });
+    await expect(earlier).toHaveTextContent('#2');
+    await expect(earlier.hasAttribute('data-next-entry-outside')).toBe(true);
+    await expect(earlier.getAttribute('aria-label')).toContain(OUTSIDE_WINDOW);
+    const inside = summary.querySelector<HTMLElement>('[data-next-outline-entry="p2"]');
+    await expect(inside?.hasAttribute('data-next-entry-outside')).toBe(false);
+    for (const chip of summary.querySelectorAll('[data-next-outline-entry]'))
+      await expect(chip.textContent).not.toBe('entry');
+    await userEvent.hover(earlier);
+    await expect(await within(document.body).findByRole('tooltip')).toHaveTextContent(
+      OUTSIDE_WINDOW,
+    );
+    await expect(canvasElement.querySelector('.next-session-detail-meta')).toHaveTextContent(
+      /\b\d+ entries, \d+ since your intent’s start/,
+    );
+  },
+};
+
+/* A chip never reads as the bare word "entry". With counted numbers an entry before the intent's window has no
+   number to keep, and a message the page has not read yet has none until its page arrives: each chip says which. */
+export const UnnumberedChipsSayWhy: Story = {
+  render: () => (
+    <SummaryPage
+      counted
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [
+            {
+              ...FIRST_PHASE,
+              bullets: [
+                ...FIRST_PHASE.bullets,
+                bullet('Asked to start from the last release.', 'asked', ['p-unread']),
+              ],
+            },
+          ]),
+          block('p2', 'a2', 2, [SECOND_PHASE]),
+        ],
+      })}
+      session={{ annotation_window_start: G - 400, annotation_goal_saved_at: G - 400 }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const earlier = await waitFor(() => {
+      const chip = summary.querySelector<HTMLElement>('[data-next-outline-entry="a1"]');
+      if (!chip?.hasAttribute('data-next-entry-outside')) throw new Error('not outside yet');
+      return chip;
+    });
+    await expect(earlier).toHaveTextContent(UNNUMBERED_BEFORE);
+    await expect(earlier.getAttribute('aria-label')).toContain('before your intent’s start');
+    const unread = summary.querySelector<HTMLElement>('[data-next-outline-entry="p-unread"]');
+    await expect(unread).toHaveTextContent(UNNUMBERED_OLDER);
+    await expect(unread?.getAttribute('aria-label')).toContain('the page has not read yet');
+    for (const chip of region.querySelectorAll('[data-next-outline-entry]')) {
+      await expect(chip.textContent).not.toBe('entry');
+      if (!chip.textContent?.startsWith('#'))
+        await expect(chip.hasAttribute('data-next-entry-unnumbered')).toBe(true);
+    }
+    for (const width of [1280, 400])
+      await atWidth(width, async () => {
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+      });
   },
 };
 
@@ -1635,7 +1852,7 @@ export const MissingLineStaysInTheOutline: Story = {
       return node;
     });
     await userEvent.click(
-      within(outline).getAllByRole('button', { name: /^Open the entry/ })[0] as HTMLElement,
+      within(outline).getAllByRole('button', { name: /^Open an older entry/ })[0] as HTMLElement,
     );
     await waitFor(() =>
       expect(outline.querySelector('[data-next-outline-missing]')).not.toBeNull(),

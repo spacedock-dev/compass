@@ -119,6 +119,16 @@ function projectRecordedSessionAge(
   root.querySelector('.next-session-identity')?.append(` · Started about ${duration} ago`);
 }
 
+/* The page names the token rate's unit in the header ("44 tokens/min"), where the retired page wrote "44 /m"; the
+   recorded identity line is restated in those words before it is compared (docs/design-frontend-migration.md#held-to-recorded-answers). */
+function projectRecordedRateUnit(root: ParentNode): void {
+  const line = root.querySelector('.next-session-identity');
+  if (!line) return;
+  const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode())
+    node.nodeValue = (node.nodeValue ?? '').replace(/ \/m\b/g, ' tokens/min');
+}
+
 function legacySummary(
   payload: unknown,
   route: { project: string; harness?: string; session: string; from?: string },
@@ -129,6 +139,7 @@ function legacySummary(
   template.innerHTML = legacy.sessionHtml(payload, route);
   retractSessionCopies(template.content);
   projectRecordedSessionAge(template.content, payload as Record<string, unknown>, route);
+  projectRecordedRateUnit(template.content);
 
   return summarize(template.content);
 }

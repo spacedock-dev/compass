@@ -99,7 +99,17 @@ export function coverageNotes(coverage: OutlineCoverage | null, more: number): s
    stands for "not looked at". */
 export function blockCounts(block: OutlineBlock, coverage: OutlineCoverage | null): string[] {
   const counts = block.counts;
-  const parts = [plural(block.span.entries, 'entry', 'entries')];
+  /* The span below a block is "#1 to #5" in message numbers, and a check or file sits under a message as #2.1,
+     so a bare "8 entries" over "#1 to #5" read as a miscount. Messages are what the numbers count. */
+  const inner = coverage?.checksAndFiles === 'not_admitted' ? 0 : counts.checks + counts.files;
+  const messages = block.span.entries - inner;
+  const parts = [
+    coverage?.checksAndFiles === 'not_admitted' || messages <= 0
+      ? plural(block.span.entries, 'entry', 'entries')
+      : inner
+        ? `${plural(messages, 'message', 'messages')} with ${plural(inner, 'check or file', 'checks and files')} under them`
+        : plural(messages, 'message', 'messages'),
+  ];
   if (coverage?.agentReplies !== 'not_read' && counts.agentMessages)
     parts.push(plural(counts.agentMessages, 'agent reply', 'agent replies'));
   if (coverage?.checksAndFiles !== 'not_admitted') {
@@ -170,4 +180,13 @@ export function outlineStamp(revision: number | null, running: boolean, failed =
       ? `updated ${clock(revision)}`
       : '';
   return [at, running ? 'still running' : ''].filter(Boolean).join(' · ');
+}
+
+/* Why Full activity could not show a chip's entry. One from before the intent's start is not listed there by
+   design, so it is not said to have failed to load. */
+export function missingSentence(n: string | null, outside: boolean): string {
+  const what = n ? `entry #${n}` : 'that entry';
+  return outside
+    ? `Full activity lists entries from your intent’s start, so it does not show ${what}.`
+    : `Full activity does not show ${what}: it could not be loaded, or it sits in a folded run of checks.`;
 }

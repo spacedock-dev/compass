@@ -218,7 +218,11 @@ describe('a reader paging a session record', () => {
     await page.settle();
     await openActivity();
     await press(more());
-    await press(document.querySelector('[data-next-entry-id="p50"] button'));
+    await press(
+      document.querySelector(
+        '[data-next-entry-id="p50"] [data-next-cockpit-action="direction-add"]',
+      ),
+    );
     expect(document.body.textContent).toContain('Older direction in full');
     await page.poll(page.state.data);
     expect(document.body.textContent).toContain('Older direction in full');
@@ -236,7 +240,11 @@ describe('a reader paging a session record', () => {
     await page.settle();
     await openActivity();
     await press(more());
-    await press(document.querySelector('[data-next-entry-id="p50"] button'));
+    await press(
+      document.querySelector(
+        '[data-next-entry-id="p50"] [data-next-cockpit-action="direction-add"]',
+      ),
+    );
     expect(document.body.textContent).toContain('Older direction in full');
     await page.go('#n=intent');
     await page.go('#n=session:alpha%2Fapp:claude:s1');

@@ -41,7 +41,7 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'activity',
     title: 'Full activity: everything the session did',
-    body: 'Collapsed at the foot of the page. Every message the agent wrote, every check it ran and every file it wrote, numbered from #1 for the oldest. A number never moves, so an entry a summary line or a correction cites still points at it later. A check or file takes the number of the message it follows, such as #50.1.',
+    body: 'Collapsed at the foot of the page. Every message the agent wrote, every check it ran and every file it wrote since your intent’s start, numbered from #1 for the session’s oldest entry. A number never moves, so an entry a summary line or a correction cites still points at it later; one from before your intent’s start keeps its number, muted, because Analyze does not read it. A check or file takes the number of the message it follows, such as #50.1.',
   },
 ];
 

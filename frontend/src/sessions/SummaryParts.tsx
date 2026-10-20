@@ -14,7 +14,6 @@ import { ActionButton } from '../intent/ActionButton';
 import { SampleMark } from '../sample/SampleMark';
 import { useShell } from '../shell/context';
 import {
-  FAILED_MARK,
   FRESHNESS_UNKNOWN,
   LEDE_LAST,
   PLACE_LINES,
@@ -33,6 +32,9 @@ import {
   blockName,
   bulletWords,
   gapSentence,
+  hiddenRange,
+  hiddenKey,
+  hiddenSentence,
   outOfDateLine,
   partsKept,
   phaseId,
@@ -355,11 +357,7 @@ function ShownText({ value, cited }: { readonly value: Shown; readonly cited?: s
 
 /* The words a chip's name gives for the bullet it supports. */
 const spoken = (bullet: SummaryBullet): string =>
-  'text' in bullet.text
-    ? bulletWords(bullet.kind, bullet.text.text)
-    : bullet.kind === 'failed'
-      ? `${FAILED_MARK} a withheld line`
-      : 'a withheld line';
+  'text' in bullet.text ? bulletWords(bullet.kind, bullet.text.text) : 'a hidden line';
 
 const counted = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
 
@@ -428,9 +426,6 @@ function Bullet({
       className={`text-body [overflow-wrap:anywhere] ${failed ? 'text-destructive' : 'text-foreground'}`}
       data-next-summary-bullet={bullet.kind}
     >
-      {failed && !('text' in value) ? (
-        <span data-next-summary-failed-mark>{`${FAILED_MARK} `}</span>
-      ) : null}
       <ShownText value={value} cited="yes" />
       <Cites
         cites={bullet.cites}
@@ -439,6 +434,71 @@ function Bullet({
         reads={bullet.kind === 'said' || bullet.kind === 'asked'}
         chip={chip}
       />
+    </li>
+  );
+}
+
+/* A phase's bullets in order, each withheld run of them gathered into one. */
+function runs(
+  bullets: readonly SummaryBullet[],
+): { readonly at: number; readonly hidden: boolean; readonly bullets: SummaryBullet[] }[] {
+  const out: { at: number; hidden: boolean; bullets: SummaryBullet[] }[] = [];
+  bullets.forEach((bullet, at) => {
+    const hidden = !('text' in bullet.text);
+    const last = out.at(-1);
+    if (hidden && last?.hidden) last.bullets.push(bullet);
+    else out.push({ at, hidden, bullets: [bullet] });
+  });
+  return out;
+}
+
+const reasonOf = (bullet: SummaryBullet): string =>
+  'withheld' in bullet.text ? bullet.text.withheld : '';
+
+/* A run of withheld lines, said once and muted: how many, why, and the entries they cite, with each line's own
+   reason and citations one press away. No result label leads it: a withheld failed line once read "Failed as the
+   tool reported: Withheld: ...", a result put on words nobody can see. */
+function Hidden({
+  bullets,
+  name,
+  chip,
+}: {
+  readonly bullets: readonly SummaryBullet[];
+  readonly name: string;
+  readonly chip: (id: string, purpose: string) => ReactNode;
+}) {
+  const { model } = useDrift();
+  const reasons = bullets.map(reasonOf);
+  const range = hiddenRange(
+    bullets.flatMap((bullet) => bullet.cites),
+    model.labels,
+  );
+  return (
+    <li
+      className="text-body text-muted-foreground [overflow-wrap:anywhere]"
+      data-next-summary-hidden={bullets.length}
+    >
+      <span data-next-summary-hidden-line>{hiddenSentence(reasons, range)}</span>
+      <Why name={name} summary={bullets.length === 1 ? 'Why it was hidden' : 'Why each was hidden'}>
+        <ol className="m-0 flex flex-col gap-1 pl-5">
+          {bullets.map((bullet, n) => (
+            <li
+              key={String(n)}
+              className="text-label text-muted-foreground"
+              data-next-summary-withheld={reasonOf(bullet)}
+            >
+              {withheldSentence(reasonOf(bullet))}
+              <Cites
+                cites={bullet.cites}
+                cut={bullet.citesCut}
+                purpose="cited for a hidden line"
+                reads={bullet.kind === 'said' || bullet.kind === 'asked'}
+                chip={chip}
+              />
+            </li>
+          ))}
+        </ol>
+      </Why>
     </li>
   );
 }
@@ -621,9 +681,22 @@ export function SummaryView({
                   </h3>
                   <Mark marks={held} tour={place === toured} />
                   <ul className="m-0 flex flex-col gap-1.5 pl-5">
-                    {phase.bullets.map((bullet, n) => (
-                      <Bullet key={String(n)} bullet={bullet} chip={chip} />
-                    ))}
+                    {runs(phase.bullets).map((run) =>
+                      run.hidden ? (
+                        <Hidden
+                          key={String(run.at)}
+                          bullets={run.bullets}
+                          name={`summary-hidden:${place}:${hiddenKey(run.bullets, run.at)}`}
+                          chip={chip}
+                        />
+                      ) : (
+                        <Bullet
+                          key={String(run.at)}
+                          bullet={run.bullets[0] as SummaryBullet}
+                          chip={chip}
+                        />
+                      ),
+                    )}
                   </ul>
                   {phase.bulletsCut ? (
                     <Line>{`${String(phase.bulletsCut)} more ${phase.bulletsCut === 1 ? 'line was' : 'lines were'} cut from this phase.`}</Line>

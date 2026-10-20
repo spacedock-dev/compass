@@ -3,6 +3,7 @@ import type {
   LargestRead,
   StoredSummary,
   SummaryBlock,
+  SummaryBullet,
   SummaryGrant,
   SummaryJob,
   SummaryPlan,
@@ -154,6 +155,96 @@ export const WITHHELD_LINES: Readonly<Record<string, string>> = {
 };
 export const withheldSentence = (reason: string): string =>
   WITHHELD_LINES[reason] ?? 'Withheld: this line broke a rule a summary line must keep.';
+
+/* A run of withheld lines in a phase is one muted line, as the owner ruled on 2026-10-20: eleven "Withheld: ..."
+   lines in twelve made the sample's summary unreadable. Each reason is the table's above, said of one line or of
+   several; the rule that withholds them is unchanged, and each line's own reason stays one press away. */
+const HIDDEN_WHY: Readonly<Record<string, readonly [string, string]>> = {
+  completion_claim: [
+    'it said, in the summary’s own voice, that work was done or working',
+    'they said, in the summary’s own voice, that work was done or working',
+  ],
+  no_citation: ['it cited no entry', 'they cited no entry'],
+  shape_fault: [
+    'it was not in the shape a summary line must take',
+    'they were not in the shape a summary line must take',
+  ],
+  too_long_cut: [
+    'it was too long, and cutting it changed what it said',
+    'they were too long, and cutting them changed what they said',
+  ],
+};
+/* A run whose lines were withheld for different reasons names each reason with its count, so the one line still
+   says why: "each broke a rule a summary line must keep" once stood for a mix and said none of them. */
+const HIDDEN_PART: Readonly<Record<string, readonly [string, string]>> = {
+  completion_claim: [
+    'said, in the summary’s own voice, that work was done or working',
+    'said, in the summary’s own voice, that work was done or working',
+  ],
+  no_citation: ['cited no entry', 'cited no entry'],
+  shape_fault: [
+    'was not in the shape a summary line must take',
+    'were not in the shape a summary line must take',
+  ],
+  too_long_cut: [
+    'was too long, and cutting it changed what it said',
+    'were too long, and cutting them changed what they said',
+  ],
+};
+const HIDDEN_OTHER = [
+  'broke a rule a summary line must keep',
+  'broke a rule a summary line must keep',
+] as const;
+export function hiddenSentence(reasons: readonly string[], range: string): string {
+  const n = reasons.length;
+  const counts = new Map<string, number>();
+  for (const reason of reasons) {
+    const key = reason in HIDDEN_PART ? reason : '';
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const one = counts.size === 1 ? HIDDEN_WHY[[...counts.keys()][0] ?? ''] : undefined;
+  const why =
+    counts.size === 1
+      ? one
+        ? one[n === 1 ? 0 : 1]
+        : n === 1
+          ? 'it broke a rule a summary line must keep'
+          : 'they broke a rule a summary line must keep'
+      : [...counts]
+          .map(([reason, count]) => {
+            const part = HIDDEN_PART[reason] ?? HIDDEN_OTHER;
+            return `${String(count)} ${part[count === 1 ? 0 : 1]}`;
+          })
+          .join('; ');
+  return `${plural(n, 'line', 'lines')} hidden: ${why}.${range ? ` ${range}.` : ''}`;
+}
+
+/* A hidden run's open state is keyed by the entries its lines cite, not its place in the phase: a refreshed summary
+   that gains or drops a line shifts every later run, and a positional key opened a different run's reasons. A run
+   that cites nothing has nothing else to be known by, so it keeps its place. */
+export const hiddenKey = (bullets: readonly SummaryBullet[], at: number): string => {
+  const cites = [...new Set(bullets.flatMap((bullet) => bullet.cites))].sort();
+  return cites.length ? `cites:${cites.join('+')}` : `at:${String(at)}`;
+};
+
+/* "Entries #50.1 to #55" over the entries a run of hidden lines cites, in the activity list's order; "Entry #44"
+   for one; nothing where the page numbers none of them. */
+export function hiddenRange(cites: readonly string[], labels: ReadonlyMap<string, string>): string {
+  const known = [...new Set(cites.map((id) => labels.get(id)).filter((n): n is string => !!n))];
+  const sorted = known
+    .map((label) => ({ label, at: positionOf(label) }))
+    .filter((row): row is { label: string; at: Position } => row.at !== null)
+    .sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1]);
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  if (!first || !last) return '';
+  // An entry the page has not numbered is counted, so the range never reads as all the run cites.
+  const more = new Set(cites.filter((id) => !labels.has(id))).size;
+  const extra = more ? `, and ${String(more)} more` : '';
+  return first.label === last.label
+    ? `Entry #${first.label}${extra}`
+    : `Entries #${first.label} to #${last.label}${extra}`;
+}
 /* A withheld title says why, as a withheld line does. It once said only that it was withheld, on most phases, and
    a reader could not tell that "Revenue chart tooltip date fix" had been held for the word "fix": a title has no
    speaker, so the backstop holds every completion word in it
@@ -173,27 +264,53 @@ export const LEDE_LAST = 'The opening summary is written once every part has bee
    that ..."), and the label already names it, so the two are folded rather than stacked. Folded to a bare "Said"
    they read as a sentence with no subject ("Said the tooltip formats ..."), and an adverb the fold did not know
    left "Said: The agent also said ...". */
-const AGENT_SPEECH =
-  /^(?:the agent\s+(?:(?:also|then|later|again|first|finally|now)\s+)?)?said\b(?:\s+that\b)?[\s:,]*/i;
+/* One table of speech verbs for every speaker test, so a line naming the agent or the person with any of them is
+   read as that speaker's. Three tables once disagreed: "The agent reported ..." matched only the person's, and an
+   `asked` line credited it to the person ("You said: The agent reported ..."). */
+const SPEECH_VERB =
+  '(?:asked|said|reported|confirmed|requested|wanted|told|noted|explained|mentioned|suggested|proposed|stated|replied|answered|claimed|wrote)';
+const ADVERB = '(?:(?:also|then|later|again|first|finally|now)\\s+)?';
+const AGENT_NOUN =
+  "(?:the\\s+agent['’]s\\s+reply|the\\s+agent|agent|the\\s+assistant|assistant|claude)";
+const AGENT_SPEECH = new RegExp(
+  `^(?:${AGENT_NOUN}\\s+${ADVERB})?said\\b(?:\\s+that\\b)?[\\s:,]*`,
+  'i',
+);
 export function saidText(words: string): string {
   const flat = words.trim();
   const named = AGENT_SPEECH.exec(flat);
   const rest = named ? flat.slice(named[0].length) : flat;
   return rest ? `Said: ${rest}` : words;
 }
+/* The agent named as the speaker, as opposed to a bare "Said", which an `asked` line uses for the person too. */
+const AGENT_NAMED = new RegExp(`^${AGENT_NOUN}\\s+${ADVERB}${SPEECH_VERB}\\b`, 'i');
+/* The person named as the speaker; "You <verb>" already reads in the card's own voice for the person. */
+const PERSON_YOU = new RegExp(`^you\\s+${ADVERB}${SPEECH_VERB}\\b`, 'i');
+const PERSON_NAMED = new RegExp(
+  `^(?:you|the\\s+(?:person|user))\\s+${ADVERB}${SPEECH_VERB}\\b`,
+  'i',
+);
+/* The person in the third person, folded into the card's "You"; a bare leading "Asked" or "Said" is folded too. */
+const PERSON_THIRD = new RegExp(`^the\\s+(?:person|user)\\s+(${ADVERB}${SPEECH_VERB})\\b\\s*`, 'i');
+const BARE_SPEECH = /^(asked|said)\b\s*/i;
 
 /* An `asked` bullet reads as the person's words, as Full activity names them "You": the server admits it under
    the same speech licence as a `said` bullet, so text that opens with another verb ("Confirmed the parser is
-   fixed") would otherwise read in the summary's own voice. A leading "Asked", or the person named with a
-   speech verb, is folded into the card's own "You". */
-const PERSON_SPEECH =
-  /^(?:the\s+(?:person|user)\s+)?(asked|said|reported|confirmed|requested|wanted|told|noted|explained|mentioned|suggested|proposed|stated|replied|answered|claimed|wrote)\b\s*/i;
+   fixed") would otherwise read in the summary's own voice. */
 export function askedText(words: string): string {
   const flat = words.trim();
-  if (/^you\s+(?:asked|said)\b/i.test(flat)) return words;
-  const named = PERSON_SPEECH.exec(flat);
-  if (named && (named[0].toLowerCase().startsWith('the') || /^asked$/i.test(named[1] ?? '')))
-    return `You ${(named[1] ?? '').toLowerCase()} ${flat.slice(named[0].length)}`.trimEnd();
+  if (PERSON_YOU.test(flat)) return words;
+  /* The line names the agent as its speaker. An `asked` bullet cites the person and the agent, so it may report
+     either, and "You said: The agent said ..." credited the agent's words to the person. */
+  if (AGENT_NAMED.test(flat)) return saidText(words);
+  const named = PERSON_THIRD.exec(flat) ?? BARE_SPEECH.exec(flat);
+  if (named) {
+    const rest = flat.slice(named[0].length);
+    const verb = (named[1] ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    return rest.startsWith(':')
+      ? `You ${verb}: ${rest.slice(1).trimStart()}`.trimEnd()
+      : `You ${verb} ${rest}`.trimEnd();
+  }
   return `You said: ${words}`;
 }
 
@@ -206,8 +323,18 @@ const TOOL_REPORT = /\breported\s+failed,\s*as\s+the\s+tool\s+reported\b/i;
 
 /* What a bullet draws, and what its chips are named for: the speaker for words, the failure for a check. */
 export function bulletWords(kind: string, words: string): string {
+  const flat = words.trim();
+  /* A `said` line cites only the agent's words, so a line naming the person is the agent's report of them: it
+     keeps "Said:" and names the person as the card does, "you". */
+  if (kind === 'said' && PERSON_NAMED.test(flat)) {
+    const you = askedText(flat);
+    return `Said: ${(you[0] ?? '').toLowerCase()}${you.slice(1)}`;
+  }
   if (kind === 'said') return saidText(words);
   if (kind === 'asked') return askedText(words);
+  /* Work cited with words: a line that names its speaker is said as that speaker's, not in the summary's voice. */
+  if (kind === 'did' && AGENT_NAMED.test(flat)) return saidText(words);
+  if (kind === 'did' && PERSON_NAMED.test(flat)) return askedText(words);
   if (kind === 'failed') return `${TOOL_REPORT.test(words) ? FAILED_SHORT : FAILED_MARK} ${words}`;
   return words;
 }

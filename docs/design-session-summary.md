@@ -521,6 +521,21 @@ Admitted long text ends with an ellipsis and carries `cut`; if the cut creates a
 or leaves no text, it becomes a `too_long_cut` marker instead. Phase, bullet and citation list
 cuts report how many were dropped. A cut reply is marked on its block.
 
+### Amended 2026-10-20 (owner): withheld lines are shown collapsed
+
+The page draws a run of withheld bullets in a phase as one muted line: how many were hidden, why,
+in the reason table's words, and the range of entries they cite ("2 lines hidden: they said, in
+the summary's own voice, that work was done or working. Entries #50.1 to #55."). Each hidden
+line's own reason and citations stay one keyboard-reachable press away under "Why each was
+hidden". A kept bullet between two runs splits them. No result label leads a hidden line: the page
+once drew "Failed as the tool reported: Withheld: ...". A withheld phase title keeps its own muted
+marker. What the producer withholds, and why, is unchanged. The owner did not choose to merge
+departures that share evidence into one card.
+
+The page also names the speaker a bullet's words name. An `asked` bullet whose text opens with
+"The agent said" reads "Said: ...", not "You said: The agent said ...", and a `said` bullet that
+names the person reads "Said: you asked ...". The code-set kind and its citations are unchanged.
+
 ### No completion words
 
 The producer holds the summary's own voice to DEC-28 question 1 under the
@@ -1551,6 +1566,18 @@ output is sent because the source admits none. The notice names Claude Code/Anth
 configured destination (or that it is unknown), Turn off summaries and Turn summaries on. A wider
 content tier or changed destination shows it again. An unnamed destination has the same detection
 limit as a reading route: changes between two unnamed endpoints cannot be distinguished.
+
+Since 2026-10-20 the disclosure says those facts in plain words, with the destination first and
+the redaction fact after the list it covers: "Sends to
+Anthropic through your Claude Code, at most 16 KiB at a time: your messages, text relayed in your
+turn, the agent's replies, check names with their result (failed, passed or not recorded), and
+the paths of files written. Titles of earlier parts go along as context, and the entries a summary
+cites are sent again for its opening line. Everything is redacted first. No command, file or other
+tool output is sent." The usability review read "lede" and "the source admits none" as jargon, and
+read "No command output" as leaving file reads and fetched pages open, so the sentence names every
+tool kind. The sample
+session's fixture still carries the earlier wording, because it is rebuilt from a real server
+reading and never edited by hand.
 
 An independent stored off is honoured through restart and upgrade. While the master is not paused, grant presses answer
 `{"ok":true,"summaries": <the board summaries block>}` with 200 (503 on store failure), including

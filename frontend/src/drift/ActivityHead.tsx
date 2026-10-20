@@ -1,9 +1,23 @@
+import type { ReactNode } from 'react';
 import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { ActivityMarks } from './ActivityMarks';
 import { LAST_TURN_MARK, type WorkRow } from './workList';
 
-export function ActivityHead({ row }: { readonly row: WorkRow }) {
+/* `turnRange` is given by the list: null on every row of the last turn but its newest, which says the turn once,
+   with the numbers it spans. Left out, as a lone head is drawn, a turn row says it itself. */
+export function ActivityHead({
+  row,
+  turnRange,
+  source,
+}: {
+  readonly row: WorkRow;
+  readonly turnRange?: string | null;
+  /** The row's Source disclosure, drawn before its time. */
+  readonly source?: ReactNode;
+}) {
+  const turn = row.turn && turnRange !== null;
+  const turnWords = turnRange ? `${LAST_TURN_MARK.words}, ${turnRange}` : LAST_TURN_MARK.words;
   return (
     <div className="next-cockpit-work-head">
       <span className="next-cockpit-work-actor">{row.head.actor}</span>
@@ -33,19 +47,20 @@ export function ActivityHead({ row }: { readonly row: WorkRow }) {
             Cited
           </Badge>
         ) : null}
-        {row.turn ? (
+        {turn ? (
           <Tooltip>
             <TooltipTrigger
               render={<span />}
               role="img"
-              aria-label={LAST_TURN_MARK.words}
+              aria-label={turnWords}
               className="next-cockpit-work-turn text-muted-foreground tracking-[.07em]"
             >
-              {LAST_TURN_MARK.short}
+              {turnRange ? `${LAST_TURN_MARK.short}: ${turnRange}` : LAST_TURN_MARK.short}
             </TooltipTrigger>
-            <TooltipContent>{LAST_TURN_MARK.words}</TooltipContent>
+            <TooltipContent>{turnWords}</TooltipContent>
           </Tooltip>
         ) : null}
+        {source}
         <span className="next-cockpit-work-at">{row.at}</span>
       </span>
     </div>

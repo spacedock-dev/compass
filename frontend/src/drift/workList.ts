@@ -551,4 +551,85 @@ export function workList(input: WorkListInput): WorkList {
   };
 }
 
+/* What the list draws, apart from what the model says, so the comparison with the recorded answers still reads the
+   model's own words and order (docs/design-frontend-migration.md#activity-list-order). */
+
+/* The rows in number order: a check or file sits under the message whose number it carries. It was drawn where it
+   last ran, so #59.1 stood between #67 and #66. A row with no number keeps its place. */
+export function rowsByNumber(rows: readonly WorkRow[]): WorkRow[] {
+  const numbered = rows
+    .filter((row) => row.n !== null)
+    .sort((a, b) => labelOrder(String(a.n), String(b.n)));
+  let next = 0;
+  return rows.map((row) => (row.n === null ? row : (numbered[next++] as WorkRow)));
+}
+
+/* Newest first by message: a message and the checks and files numbered under it (#59, #59.1) are one group, and
+   the groups are reversed, so a message's checks stay under it. Reversing every row drew #59.1 above #59. A row with
+   no number is a group of its own. */
+export function newestFirst(rows: readonly WorkRow[]): WorkRow[] {
+  const groups: WorkRow[][] = [];
+  let major: string | null = null;
+  for (const row of rows) {
+    const next = row.n === null ? null : (String(row.n).split('.')[0] ?? null);
+    const last = groups.at(-1);
+    if (last && next !== null && next === major) last.push(row);
+    else groups.push([row]);
+    major = next;
+  }
+  return groups.reverse().flat();
+}
+
+/* The last turn said once, on its newest drawn row, with the numbers it spans: on every row it was the same tag
+   down the whole list. Chosen from the rows drawn outside a folded run, because the newest row of a turn is often
+   a passing check that folds, and a label inside a closed run is a label nobody sees. When every row of the turn
+   folds, the run holding its newest row carries the label on its trigger (`run`). */
+export function lastTurnLead(
+  rows: readonly WorkRow[],
+  folded?: readonly FoldedItem[],
+): {
+  readonly id: string;
+  readonly range: string;
+  readonly run: string | null;
+} | null {
+  const turn = rows.filter((row) => row.turn);
+  const newest = turn.at(-1);
+  if (!newest) return null;
+  const labels = turn
+    .map((row) => row.n)
+    .filter((n): n is string => n !== null)
+    .sort(labelOrder);
+  const first = labels[0];
+  const last = labels.at(-1);
+  const range = first && last && first !== last ? `#${first} to #${last}` : '';
+  if (!folded) return { id: newest.entry.id, range, run: null };
+  const drawn = new Set(folded.flatMap((item) => (item.kind === 'row' ? [item.row.entry.id] : [])));
+  const lead = turn.filter((row) => drawn.has(row.entry.id)).at(-1);
+  if (lead) return { id: lead.entry.id, range, run: null };
+  const run = folded.find(
+    (item) => item.kind === 'run' && item.rows.some((row) => row.entry.id === newest.entry.id),
+  );
+  return { id: newest.entry.id, range, run: run?.kind === 'run' ? run.last.entry.id : null };
+}
+
+/* Markdown emphasis an agent wrote ("**High**") drawn as the words it marks. Only paired asterisks: a lone `*` is
+   a glob and an underscore is part of a name. */
+export function plainEmphasis(text: string): string {
+  return text.replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, '$1');
+}
+
+/* A row's words as drawn. Emphasis is unwrapped only in an agent's prose or a model's paraphrase of it: a check
+   command, a file path and the person's own message are literal source text, where a pair of asterisks is a
+   glob, and a recursive glob in a check command once lost both of its pairs. */
+const LITERAL_TYPES = new Set(['tool_report', 'user_message']);
+export function rowWords(entry: {
+  readonly type: string;
+  readonly summary: string;
+  readonly modelDerived?: boolean;
+}): string {
+  const prose =
+    !LITERAL_TYPES.has(entry.type) && (entry.type === 'agent_message' || entry.modelDerived);
+  return prose ? plainEmphasis(entry.summary) : entry.summary;
+}
+
 export { WORK_AS_REPORTED };

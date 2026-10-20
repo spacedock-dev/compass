@@ -4,6 +4,9 @@ import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { REGION_IDS } from './announcer';
 import { BOARD, mountShell } from './testing';
+import { SAMPLE_FIXTURE } from '../sample/fixture';
+import { SAMPLE_FRAGMENT, SAMPLE_HARNESS, SAMPLE_PROJECT, SAMPLE_SID } from '../sample/ids';
+import { findSession, sessionTitle } from './derive';
 
 const primary = () => within(screen.getByRole('navigation', { name: 'Primary' }));
 const crumb = () =>
@@ -150,6 +153,22 @@ describe('the breadcrumb', () => {
     const page = mountShell({ hash: '#n=session:alpha%2Fapp:claude:shared-sid' });
     await page.settle();
     expect(crumb()).toBe('Sessions › Session');
+  });
+
+  it('names the sample session by its title, read from the sample’s own board, in the crumb and the tab', async () => {
+    const page = mountShell({ hash: SAMPLE_FRAGMENT, data: BOARD });
+    await page.settle();
+    const title = sessionTitle(
+      findSession(
+        SAMPLE_FIXTURE.board as never,
+        SAMPLE_PROJECT,
+        SAMPLE_HARNESS,
+        SAMPLE_SID,
+      ) as never,
+    );
+    expect(title).not.toBe('');
+    expect(crumb()).toBe(`Sessions › ${title}`);
+    expect(document.title.startsWith(`${title} — `)).toBe(true);
   });
 });
 

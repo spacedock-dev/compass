@@ -4,6 +4,8 @@ import {
   GAP_LINES,
   readSize,
   askedText,
+  hiddenKey,
+  hiddenSentence,
   bulletWords,
   SUMMARY_REASONS,
   WITHHELD_LINES,
@@ -246,6 +248,66 @@ describe('what the card says', () => {
       'You said: Confirmed the parser is fixed.',
     );
     expect(askedText('You asked for tests.')).toBe('You asked for tests.');
+  });
+  it('never credits the agent’s words to the person, or the person’s to the agent', () => {
+    // The sample's own line: an `asked` bullet whose text reports the agent read "You said: The agent said ...".
+    expect(askedText('The agent said it also raised the billing rate.')).toBe(
+      'Said: it also raised the billing rate.',
+    );
+    expect(bulletWords('asked', 'The agent also said it would first answer the question.')).toBe(
+      'Said: it would first answer the question.',
+    );
+    // A `said` bullet cites the agent alone: one naming the person stays the agent's report of them.
+    expect(bulletWords('said', 'The user asked for a walk on a new port.')).toBe(
+      'Said: you asked for a walk on a new port.',
+    );
+    // Work cited with words: a named speaker is said as that speaker's.
+    expect(bulletWords('did', 'The agent said it ran the suite twice.')).toBe(
+      'Said: it ran the suite twice.',
+    );
+    expect(bulletWords('did', 'The person asked to keep the diff small.')).toBe(
+      'You asked to keep the diff small.',
+    );
+    // Any speech verb, and any name for the agent, keeps the agent's words off the person.
+    for (const [line, want] of [
+      [
+        'The agent asked whether to keep the cache.',
+        'Said: The agent asked whether to keep the cache.',
+      ],
+      ['The agent reported that tests failed.', 'Said: The agent reported that tests failed.'],
+      ['The agent replied that it would wait.', 'Said: The agent replied that it would wait.'],
+      ['The assistant said it would wait.', 'Said: it would wait.'],
+      ['Claude also said it would wait.', 'Said: it would wait.'],
+      ["The agent's reply said the cache stays.", 'Said: the cache stays.'],
+    ] as const) {
+      expect(bulletWords('asked', line)).toBe(want);
+      expect(bulletWords('asked', line)).not.toMatch(/^You/);
+    }
+    // A line naming the person takes one speaker label, never two.
+    expect(bulletWords('said', 'You confirmed the parser is fixed.')).toBe(
+      'Said: you confirmed the parser is fixed.',
+    );
+    expect(bulletWords('said', 'You reported failed tests.')).toBe(
+      'Said: you reported failed tests.',
+    );
+    expect(bulletWords('did', 'You confirmed the parser is fixed.')).toBe(
+      'You confirmed the parser is fixed.',
+    );
+    expect(bulletWords('asked', 'You confirmed the parser is fixed.')).toBe(
+      'You confirmed the parser is fixed.',
+    );
+    expect(bulletWords('asked', 'The person also asked for a smaller diff.')).toBe(
+      'You also asked for a smaller diff.',
+    );
+    expect(bulletWords('said', 'The person also asked for a smaller diff.')).toBe(
+      'Said: you also asked for a smaller diff.',
+    );
+    expect(bulletWords('did', 'The agent reported that tests failed.')).toBe(
+      'Said: The agent reported that tests failed.',
+    );
+    // A bare "Said" on an asked line is still the person's.
+    expect(askedText('Said to keep going.')).toBe('You said to keep going.');
+    expect(askedText('Said: keep going.')).toBe('You said: keep going.');
   });
   it('points at the outline only where one is drawn, and says summaries are off everywhere', () => {
     expect(SUMMARY_NOT_CLAUDE('Gemini CLI', false)).not.toContain('outline');
@@ -498,5 +560,35 @@ describe('the focused summary plan before a start', () => {
       sources: { summary: { exists: true, state: 'ok', plan: { complete: true } } },
     });
     expect(focused?.plan ?? null).toBeNull();
+  });
+});
+
+describe('a run of hidden lines', () => {
+  it('says the reason once when every line shares it', () => {
+    expect(hiddenSentence(['no_citation', 'no_citation'], 'Entries #2 to #3')).toBe(
+      '2 lines hidden: they cited no entry. Entries #2 to #3.',
+    );
+  });
+  it('names each reason with its count when the lines were hidden for different ones', () => {
+    const line = hiddenSentence(['no_citation', 'too_long_cut', 'no_citation'], '');
+    expect(line).toBe(
+      '3 lines hidden: 2 cited no entry; 1 was too long, and cutting it changed what it said.',
+    );
+    expect(line).not.toContain('each broke a rule');
+    expect(hiddenSentence(['odd', 'other', 'shape_fault'], '')).toBe(
+      '3 lines hidden: 2 broke a rule a summary line must keep; 1 was not in the shape a summary line must take.',
+    );
+  });
+});
+
+describe('a hidden run’s open state', () => {
+  const hidden = (cites: string[]) =>
+    ({ kind: 'said', text: { withheld: 'no_citation' }, cites, citesCut: 0 }) as never;
+  it('is keyed by the entries its lines cite, so a shifted run keeps its own state', () => {
+    expect(hiddenKey([hidden(['b', 'a']), hidden(['a'])], 3)).toBe('cites:a+b');
+    expect(hiddenKey([hidden(['b', 'a'])], 7)).toBe(hiddenKey([hidden(['a', 'b'])], 2));
+  });
+  it('keeps its place only when it cites nothing', () => {
+    expect(hiddenKey([hidden([])], 4)).toBe('at:4');
   });
 });
