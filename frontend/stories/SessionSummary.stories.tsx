@@ -24,7 +24,7 @@ import {
   WITHHELD_LINES,
   withheldTitle,
 } from '../src/sessions/summary';
-import { OUTSIDE_WINDOW } from '../src/sessions/WhatItDid';
+import { OUTSIDE_WINDOW, UNNUMBERED_BEFORE, UNNUMBERED_OLDER } from '../src/sessions/WhatItDid';
 import { neverDone, noCheckMark } from './drift.checks';
 import { COVERAGE, G, claudeOutline } from './outline.scenario';
 import {
@@ -1041,7 +1041,7 @@ export const ColdReopenCitesAnOlderPage: Story = {
       '[data-next-summary-phase="0:0"] [data-next-outline-entry="p1"]',
     ) as HTMLElement;
     await expect(chip).toHaveAccessibleName(
-      'Open the entry, cited for “You asked for retry with backoff on the webhook handler.”, in Full activity',
+      'Open an older entry the page has not read yet, cited for “You asked for retry with backoff on the webhook handler.”, in Full activity',
     );
     await expect(entryRow(canvasElement, 'p1')).toBeNull();
     await userEvent.click(chip);
@@ -1071,7 +1071,7 @@ export const CitationThatCannotLoad: Story = {
     const summary = await summaryOf(region);
     await userEvent.click(
       within(summary).getByRole('button', {
-        name: /^Open the entry, cited for “You asked about a missing entry\.”/,
+        name: /^Open an older entry the page has not read yet, cited for “You asked about a missing entry\.”/,
       }),
     );
     await waitFor(() =>
@@ -1633,6 +1633,54 @@ export const SavedIntentKeepsEarlierNumbers: Story = {
   },
 };
 
+/* A chip never reads as the bare word "entry". With counted numbers an entry before the intent's window has no
+   number to keep, and a message the page has not read yet has none until its page arrives: each chip says which. */
+export const UnnumberedChipsSayWhy: Story = {
+  render: () => (
+    <SummaryPage
+      counted
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [
+            {
+              ...FIRST_PHASE,
+              bullets: [
+                ...FIRST_PHASE.bullets,
+                bullet('Asked to start from the last release.', 'asked', ['p-unread']),
+              ],
+            },
+          ]),
+          block('p2', 'a2', 2, [SECOND_PHASE]),
+        ],
+      })}
+      session={{ annotation_window_start: G - 400, annotation_goal_saved_at: G - 400 }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const earlier = await waitFor(() => {
+      const chip = summary.querySelector<HTMLElement>('[data-next-outline-entry="a1"]');
+      if (!chip?.hasAttribute('data-next-entry-outside')) throw new Error('not outside yet');
+      return chip;
+    });
+    await expect(earlier).toHaveTextContent(UNNUMBERED_BEFORE);
+    await expect(earlier.getAttribute('aria-label')).toContain('before your intent’s start');
+    const unread = summary.querySelector<HTMLElement>('[data-next-outline-entry="p-unread"]');
+    await expect(unread).toHaveTextContent(UNNUMBERED_OLDER);
+    await expect(unread?.getAttribute('aria-label')).toContain('the page has not read yet');
+    for (const chip of region.querySelectorAll('[data-next-outline-entry]')) {
+      await expect(chip.textContent).not.toBe('entry');
+      if (!chip.textContent?.startsWith('#'))
+        await expect(chip.hasAttribute('data-next-entry-unnumbered')).toBe(true);
+    }
+    for (const width of [1280, 400])
+      await atWidth(width, async () => {
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+      });
+  },
+};
+
 /* A summary citing a check under the source's own id, which the record does not carry: the bullet gets no
    chip that would read pages to the cap, says the citation cannot be opened from here, and the departure the
    check is evidence for is not placed where Compass cannot stand behind it. */
@@ -1804,7 +1852,7 @@ export const MissingLineStaysInTheOutline: Story = {
       return node;
     });
     await userEvent.click(
-      within(outline).getAllByRole('button', { name: /^Open the entry/ })[0] as HTMLElement,
+      within(outline).getAllByRole('button', { name: /^Open an older entry/ })[0] as HTMLElement,
     );
     await waitFor(() =>
       expect(outline.querySelector('[data-next-outline-missing]')).not.toBeNull(),

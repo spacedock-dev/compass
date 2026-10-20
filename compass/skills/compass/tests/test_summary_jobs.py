@@ -68,7 +68,7 @@ class SummaryDisclosureTest(unittest.TestCase):
             "Titles of earlier parts go along as context",
             "sent again for its opening line",
             "redacted",
-            "No command output is sent",
+            "No command, file or other tool output is sent",
             "Turn off summaries stops these calls",
         ):
             self.assertIn(fact, text)

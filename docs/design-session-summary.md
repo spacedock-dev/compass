@@ -1567,12 +1567,15 @@ configured destination (or that it is unknown), Turn off summaries and Turn summ
 content tier or changed destination shows it again. An unnamed destination has the same detection
 limit as a reading route: changes between two unnamed endpoints cannot be distinguished.
 
-Since 2026-10-20 the disclosure says those facts in plain words, in the same order: "Sends to
+Since 2026-10-20 the disclosure says those facts in plain words, with the destination first and
+the redaction fact after the list it covers: "Sends to
 Anthropic through your Claude Code, at most 16 KiB at a time: your messages, text relayed in your
 turn, the agent's replies, check names with their result (failed, passed or not recorded), and
 the paths of files written. Titles of earlier parts go along as context, and the entries a summary
-cites are sent again for its opening line. Everything is redacted first. No command output is
-sent." The usability review read "lede" and "the source admits none" as jargon. The sample
+cites are sent again for its opening line. Everything is redacted first. No command, file or other
+tool output is sent." The usability review read "lede" and "the source admits none" as jargon, and
+read "No command output" as leaving file reads and fetched pages open, so the sentence names every
+tool kind. The sample
 session's fixture still carries the earlier wording, because it is rebuilt from a real server
 reading and never edited by hand.
 

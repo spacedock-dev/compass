@@ -35,6 +35,11 @@ export const WHAT_IT_DID_PLACEHOLDER =
    does (docs/design-reader-state.md#the-inventory). An entry from before the intent's window keeps its number,
    muted, and says why Analyze does not read it. */
 export const OUTSIDE_WINDOW = 'Before your intent’s start; not read by Analyze';
+/* A chip never reads as the bare word "entry". An entry with no number says why it has none: counted numbers start
+   at the intent's window, so an earlier entry has none to keep, and a message the page has not read yet has none
+   until its record page arrives (the press reads for it). */
+export const UNNUMBERED_BEFORE = 'before your intent';
+export const UNNUMBERED_OLDER = 'older entry';
 export function EntryChip({
   id,
   purpose,
@@ -52,13 +57,14 @@ export function EntryChip({
       type="button"
       variant="quiet"
       className={`px-2 py-0 font-[family-name:var(--mono)] text-label${outside ? ' text-muted-foreground opacity-70' : ''}`}
-      aria-label={`Open ${n ? `entry #${n}` : 'the entry'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`}
+      aria-label={`Open ${n ? `entry #${n}` : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`}
       data-next-outline-entry={id}
       data-next-cockpit-action="finding-jump"
       {...(outside ? { 'data-next-entry-outside': '' } : {})}
+      {...(n ? {} : { 'data-next-entry-unnumbered': '' })}
       onClick={() => onOpen(id, n)}
     >
-      {n ? `#${n}` : 'entry'}
+      {n ? `#${n}` : outside ? UNNUMBERED_BEFORE : UNNUMBERED_OLDER}
     </Button>
   );
   if (!outside) return chip;

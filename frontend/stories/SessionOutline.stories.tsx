@@ -161,8 +161,10 @@ export const ColdPromptChipReadsOlderPages: Story = {
       return node;
     });
     await expect(chip).toHaveAccessibleName(
-      'Open the entry, where this part starts, in Full activity',
+      'Open an older entry the page has not read yet, where this part starts, in Full activity',
     );
+    // Never the bare word "entry": the chip says why it has no number yet.
+    await expect(chip).toHaveTextContent('older entry');
     await expect(entryRow(canvasElement, 'p1')).toBeNull();
     await userEvent.click(chip);
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'p1')));

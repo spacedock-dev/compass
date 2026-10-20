@@ -9,8 +9,9 @@ import {
   foldRuns,
   lastTurnLead,
   MARK_LEGEND,
-  plainEmphasis,
+  newestFirst,
   rowsByNumber,
+  rowWords,
   type WorkRow,
 } from '../src/drift/workList';
 import { TooltipProvider } from '../src/ui/tooltip';
@@ -159,41 +160,70 @@ export const NarrowHead: Story = {
   },
 };
 
-/* The list as Full activity draws it: in number order, so a check sits under the message whose number it carries
-   even when it last ran later; the last turn said once, on its newest row, with the numbers it spans; and an
-   agent's markdown emphasis drawn as the words it marks. */
-const row = (n: string, at: number, turn: boolean, summary = `entry ${n}`): WorkRow => ({
-  ...activityRow(at, { id: `e${n}`, summary }),
-  n,
-  turn,
-});
+/* The list as Full activity draws it: newest first by message, so a check sits under the message whose number it
+   carries even when it last ran later; the last turn said once, on its newest drawn row, with the numbers it spans;
+   and an agent's markdown emphasis drawn as the words it marks, while a check command keeps its `**` globs. */
+const row = (
+  n: string,
+  at: number,
+  turn: boolean,
+  summary = `entry ${n}`,
+  type = 'agent_message',
+): WorkRow => {
+  const base = activityRow(at, { id: `e${n}`, summary, type });
+  return {
+    ...base,
+    ...(type === 'tool_report' ? {} : { head: { actor: 'Agent', type: 'said' } }),
+    n,
+    turn,
+  };
+};
+function ListExample({ rows }: { rows: readonly WorkRow[] }) {
+  const [open, setOpen] = useState(false);
+  const ordered = rowsByNumber(rows);
+  const folded = foldRuns(newestFirst(ordered));
+  const lead = lastTurnLead(ordered, folded);
+  const draw = (item: WorkRow) => (
+    <div key={item.entry.id} data-story-entry={item.n} role="listitem">
+      <ActivityHead row={item} turnRange={lead?.id === item.entry.id ? lead.range : null} />
+      <p data-story-summary>{rowWords(item.entry)}</p>
+    </div>
+  );
+  return (
+    <TooltipProvider delay={0}>
+      <div role="list">
+        {folded.map((item) =>
+          item.kind === 'row' ? (
+            draw(item.row)
+          ) : (
+            <CheckRun
+              key={item.last.entry.id}
+              run={item}
+              turn={lead?.run === item.last.entry.id ? lead.range : null}
+              open={open}
+              onOpenChange={setOpen}
+            >
+              {item.rows.map(draw)}
+            </CheckRun>
+          ),
+        )}
+      </div>
+    </TooltipProvider>
+  );
+}
 const listed = [
   row('2', 1, false),
   row('3', 2, true, 'The risk is **High** until billing is reverted.'),
-  row('2.1', 3, true),
+  row('2.1', 3, true, 'ls src/**/lib/**', 'tool_report'),
   row('4', 4, true),
 ];
 export const NumberOrderAndOneLastTurn: Story = {
-  render: () => {
-    const ordered = rowsByNumber(listed);
-    const lead = lastTurnLead(ordered);
-    return (
-      <TooltipProvider delay={0}>
-        <div role="list">
-          {[...ordered].reverse().map((item) => (
-            <div key={item.entry.id} data-story-entry={item.n} role="listitem">
-              <ActivityHead row={item} turnRange={lead?.id === item.entry.id ? lead.range : null} />
-              <p data-story-summary>{plainEmphasis(item.entry.summary)}</p>
-            </div>
-          ))}
-        </div>
-      </TooltipProvider>
-    );
-  },
+  render: () => <ListExample rows={listed} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-story-entry]')];
-    await expect(rows.map((node) => node.dataset['storyEntry'])).toEqual(['4', '3', '2.1', '2']);
+    // Newest message first, and a check under the message whose number it carries.
+    await expect(rows.map((node) => node.dataset['storyEntry'])).toEqual(['4', '3', '2', '2.1']);
     const turns = canvas.getAllByLabelText(/^from the last turn/);
     await expect(turns).toHaveLength(1);
     await expect(turns[0]).toHaveTextContent('Last turn: #2.1 to #4');
@@ -203,6 +233,58 @@ export const NumberOrderAndOneLastTurn: Story = {
       await within(canvasElement.ownerDocument.body).findByRole('tooltip'),
     ).toHaveTextContent('from the last turn, #2.1 to #4');
     await expect(canvas.getByText('The risk is High until billing is reverted.')).toBeVisible();
-    await expect(canvasElement).not.toHaveTextContent('**');
+    // A check command is literal source text: its globs are not emphasis.
+    await expect(canvas.getByText('ls src/**/lib/**')).toBeVisible();
+  },
+};
+
+/* A turn whose newest rows are passing checks that fold: the label is said on a row the reader can see, never only
+   inside the closed run. */
+const foldedTurn = [
+  row('5', 1, false),
+  row('6', 2, true, 'Running the suite now.'),
+  row('6.1', 3, true, 'pytest tests/**/a.py tests/**/b.py', 'tool_report'),
+  row('6.2', 4, true, 'pnpm test', 'tool_report'),
+  row('6.3', 5, true, 'deny **/secrets/**', 'tool_report'),
+];
+export const LastTurnEndsInFoldedChecks: Story = {
+  render: () => <ListExample rows={foldedTurn} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const trigger = canvas.getByRole('button', { name: /3 checks/ });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    const turns = canvas.getAllByLabelText(/^from the last turn/);
+    await expect(turns).toHaveLength(1);
+    await expect(turns[0]).toBeVisible();
+    await expect(turns[0]).toHaveTextContent('Last turn: #6 to #6.3');
+    await expect(turns[0]?.closest('[data-story-entry]')?.getAttribute('data-story-entry')).toBe(
+      '6',
+    );
+    await userEvent.click(trigger);
+    await waitFor(() =>
+      expect(canvas.getByText('pytest tests/**/a.py tests/**/b.py')).toBeVisible(),
+    );
+    await expect(canvas.getByText('deny **/secrets/**')).toBeVisible();
+  },
+};
+
+/* Every row of the turn folds: the run's trigger says the turn, so the label is never shut inside it. */
+export const WholeTurnFolded: Story = {
+  render: () => (
+    <ListExample
+      rows={[
+        row('7', 1, false),
+        row('7.1', 2, true, 'pnpm lint', 'tool_report'),
+        row('7.2', 3, true, 'pnpm test', 'tool_report'),
+        row('7.3', 4, true, 'pnpm build', 'tool_report'),
+      ]}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const trigger = canvas.getByRole('button', { name: /3 checks/ });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger).toHaveTextContent('Last turn: #7.1 to #7.3');
+    await expect(trigger.querySelector('[data-check-run-turn]')).toBeVisible();
   },
 };

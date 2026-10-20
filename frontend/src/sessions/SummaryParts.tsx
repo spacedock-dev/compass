@@ -33,6 +33,7 @@ import {
   bulletWords,
   gapSentence,
   hiddenRange,
+  hiddenKey,
   hiddenSentence,
   outOfDateLine,
   partsKept,
@@ -685,7 +686,7 @@ export function SummaryView({
                         <Hidden
                           key={String(run.at)}
                           bullets={run.bullets}
-                          name={`summary-hidden:${place}:${String(run.at)}`}
+                          name={`summary-hidden:${place}:${hiddenKey(run.bullets, run.at)}`}
                           chip={chip}
                         />
                       ) : (

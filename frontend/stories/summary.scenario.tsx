@@ -284,6 +284,7 @@ export function SummaryPage({
   session = {},
   answer = defaultAnswer,
   outline = claudeOutline({}, true),
+  counted = false,
 }: {
   readonly grant?: Record<string, unknown> | null;
   readonly summary?: Record<string, unknown> | null;
@@ -292,6 +293,8 @@ export function SummaryPage({
   readonly session?: Record<string, unknown>;
   readonly answer?: SummaryScript['answer'];
   readonly outline?: Record<string, unknown>;
+  /** The record carries no fixed numbers, so the page counts its entries from the intent's window. */
+  readonly counted?: boolean;
 }) {
   const [shell] = useState(() => {
     script.grant =
@@ -313,7 +316,12 @@ export function SummaryPage({
     const history = fakeRouterEnvironment('#n=session:demo:claude:s1');
     let generation = G;
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-    const record = summaryRecord();
+    const record: { readonly ordinal: number | null }[] = counted
+      ? summaryRecord().map(({ ordinal_sub: _sub, ...row }: Record<string, unknown>) => ({
+          ...row,
+          ordinal: null,
+        }))
+      : summaryRecord();
     const shell = createShell({
       env: createFakeEnvironment({ clock: createFakeClock() }),
       router: createRouter(history.env),
@@ -424,7 +432,7 @@ export function SummaryPage({
           const older = url.includes('before=');
           const page = !paged
             ? record
-            : record.filter((row) => (older ? row.ordinal < 3 : row.ordinal >= 3));
+            : record.filter((row) => (older ? (row.ordinal ?? 0) < 3 : (row.ordinal ?? 0) >= 3));
           return json({
             state: 'ok',
             session: { harness: 'claude', sid: 's1' },

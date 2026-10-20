@@ -1,15 +1,19 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import { Icon } from '../ui/icons';
-import { RESULT_MARKS, type CheckRunModel } from './workList';
+import { LAST_TURN_MARK, RESULT_MARKS, type CheckRunModel } from './workList';
 
 export function CheckRun({
   run,
+  turn = null,
   open,
   onOpenChange,
   children,
 }: {
   readonly run: CheckRunModel;
+  /** The last turn's range when this run holds the turn's newest row and no row of the turn is drawn outside it,
+      so the label the turn is said by is not shut inside a closed run. */
+  readonly turn?: string | null;
   readonly open: boolean;
   readonly onOpenChange: NonNullable<ComponentProps<typeof Collapsible>['onOpenChange']>;
   readonly children: ReactNode;
@@ -36,6 +40,11 @@ export function CheckRun({
             </span>
           ))}
         <span>{run.range}</span>
+        {turn !== null ? (
+          <span className="next-cockpit-work-turn tracking-[.07em]" data-check-run-turn>
+            {turn ? `${LAST_TURN_MARK.short}: ${turn}` : LAST_TURN_MARK.short}
+          </span>
+        ) : null}
         <span className="ml-auto">{run.at}</span>
       </CollapsibleTrigger>
       <CollapsibleContent keepMounted hiddenUntilFound>

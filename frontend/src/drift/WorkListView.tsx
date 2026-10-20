@@ -7,7 +7,8 @@ import { missingCites, WORK_AS_REPORTED } from './sentences';
 import {
   foldRuns,
   lastTurnLead,
-  plainEmphasis,
+  newestFirst,
+  rowWords,
   rowsByNumber,
   workList,
   type CheckRunModel,
@@ -31,11 +32,13 @@ function HeldCheckRun({
   run,
   project,
   scope,
+  turn,
   children,
 }: {
   readonly run: CheckRunModel;
   readonly project: string;
   readonly scope: string;
+  readonly turn: string | null;
   readonly children: ReactNode;
 }) {
   const controls = useControls();
@@ -46,6 +49,7 @@ function HeldCheckRun({
   return (
     <CheckRun
       run={run}
+      turn={turn}
       open={open}
       onOpenChange={(value, details) => {
         if (details.reason === 'trigger-press') controls.noteToggle();
@@ -206,7 +210,8 @@ export function WorkListView() {
     (retained ?? firstNew ?? boundary)?.focus({ preventScroll: true });
   }, [record]);
   const ordered = rowsByNumber(list.rows);
-  const turnLead = lastTurnLead(ordered);
+  const folded = foldRuns(newestFirst(ordered), new Set(finding?.citedIds));
+  const turnLead = lastTurnLead(ordered, folded);
   const hasChecks = list.rows.some((row) => 'check' in row.head && row.head.check);
   const about = (
     <>
@@ -249,7 +254,7 @@ export function WorkListView() {
         {list.unnumbered ? <p className="next-cockpit-work-absent">{list.unnumbered}</p> : null}
         {list.rows.length ? (
           <div className="next-cockpit-work-rows" role="list">
-            {foldRuns([...ordered].reverse(), new Set(finding?.citedIds)).map((item) => {
+            {folded.map((item) => {
               const renderRow = (row: (typeof list.rows)[number]) => {
                 const { entry } = row;
                 const type = entry.type;
@@ -300,13 +305,9 @@ export function WorkListView() {
                       {/* A model's paraphrase takes the third treatment, not the mono of a string a source
                       published: the reader must be able to tell the record from an account of it. */}
                       {entry.modelDerived ? (
-                        <em className="next-cockpit-work-derived">
-                          {plainEmphasis(entry.summary)}
-                        </em>
+                        <em className="next-cockpit-work-derived">{rowWords(entry)}</em>
                       ) : (
-                        <span className="next-cockpit-work-summary">
-                          {plainEmphasis(entry.summary)}
-                        </span>
+                        <span className="next-cockpit-work-summary">{rowWords(entry)}</span>
                       )}
                       {row.add ? (
                         <DirectionActionButton
@@ -342,7 +343,12 @@ export function WorkListView() {
                 renderRow(item.row)
               ) : (
                 <div key={item.last.entry.id} role="listitem">
-                  <HeldCheckRun run={item} project={model.project} scope={model.key}>
+                  <HeldCheckRun
+                    run={item}
+                    project={model.project}
+                    scope={model.key}
+                    turn={turnLead?.run === item.last.entry.id ? turnLead.range : null}
+                  >
                     {item.rows.map(renderRow)}
                   </HeldCheckRun>
                 </div>
