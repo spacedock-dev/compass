@@ -241,7 +241,7 @@ class SessionSummaryTest(unittest.TestCase):
             ("Implemented the change and delivered it", "withheld", "asked"),
             ("Merged the change", "withheld", "did"),
             ("Ship the parser", "withheld", "said"),
-            ("Reviewed a list of fixes", "withheld", "did"),
+            ("Reviewed a list of fixes", "kept", "did"),
             ("The agent said the parser is fixed", "kept", "did"),
             ("The person reported it works", "kept", "asked"),
             ("According to the user who wrote the request, it is fixed", "withheld", "asked"),
@@ -270,7 +270,7 @@ class SessionSummaryTest(unittest.TestCase):
             ("Set the status to Verified", "kept", "did"),
             ("Changed the task to Complete", "kept", "did"),
             ("Switched the card to Done", "kept", "did"),
-            ("Moved the item to done", "withheld", "did"),
+            ("Moved the item to done", "kept", "did"),
             ("Created branch fix/parser-crash", "kept", "did"),
             ("Inspected hotfix_parser.py", "kept", "did"),
             ("Created feature/done-list", "kept", "said"),
@@ -294,7 +294,7 @@ class SessionSummaryTest(unittest.TestCase):
             ("The agent said it managed to fix the parser", "kept", "said"),
             ("Inspected the parser and read the failing test", "kept", "did"),
             ("The agent said file.py is fixed", "kept", "did"),
-            ('The agent said file."py" is fixed', "withheld", "did"),
+            ('The agent said file."py" is fixed', "kept", "did"),
             ("The agent said `parser.py` is fixed", "kept", "did"),
             ("The person asked the agent to fix the parser", "kept", "asked"),
             ("The agent asked the user to fix the parser.", "kept", "said"),
@@ -313,6 +313,721 @@ class SessionSummaryTest(unittest.TestCase):
         for text, verdict, kind in cases:
             with self.subTest(text=text, verdict=verdict, kind=kind):
                 self.assert_completion_verdict(text, verdict, kind)
+
+    def test_new_attributed_and_structural_forms_are_kept(self) -> None:
+        cases = [
+            ("Read the parser; Said it is fixed", "said"),
+            ("Said it got the tests to pass", "said"),
+            ("Agent reported #701 merged", "did"),
+            ("USER asked to merge the patch", "did"),
+            ("Person asked whether the repair was done", "did"),
+            ("Subagent said the patch is fixed", "did"),
+            ("Teammate reported the tests passed", "did"),
+            ("Reviewer stated the patch is verified", "did"),
+            ("Team lead said the report was delivered", "did"),
+            ("Team lead sent a request saying the report was delivered", "did"),
+            ("Agent sent a note saying the decoder is fixed", "did"),
+            ("The team lead reported the patch is fixed", "did"),
+            ("According to the agent, the decoder is fixed", "did"),
+            ("according to USER, the decoder is fixed", "did"),
+            ("The decoder is fixed, according to the reviewer", "did"),
+            ("All 12 checks passed, as the agent reported", "did"),
+            ("The decoder is fixed, as person said", "did"),
+            ("The decoder is fixed, as teammate stated", "did"),
+            ("The decoder is fixed, as the reviewer noted", "did"),
+            ("Ran lint and typecheck, and said all checks pass", "did"),
+            ("Inspected logs; reports the tests passed", "failed"),
+            ("Inspected logs; said: the tests passed", "did"),
+            ("Inspected logs then said the reading completed", "did"),
+            ("Paused after saying all checks passed", "did"),
+            ("Agent said it ran and user said it passed", "did"),
+            ("The agent said it ran and the person said it passed", "did"),
+            ("Agent reported an attempt, then person asked whether it was done", "did"),
+            ("Agent ran the tests; agent said both pass", "did"),
+            ("The person asked when it would be done", "did"),
+            ("The person asked when the agent would fix it", "did"),
+            ("The agent said that once the user fixed it they would tag", "did"),
+            ("The person asked whether to fix or revert", "did"),
+            ("The agent said that once the merge lands it will tag", "did"),
+            ("The agent asked if the change was fixed", "did"),
+            ("The person asked how to fix it", "did"),
+            ("The person asked why the build passed", "did"),
+            ("The person asked what was completed", "did"),
+            ("Said it got the checks to pass", "said"),
+            ("Asked whether it managed to fix the decoder", "asked"),
+            ("The agent said it brought the build to green", "did"),
+            ('The agent said module."py" is fixed', "did"),
+            ("Marked the issue as done", "did"),
+            ("Moved the ticket to done", "did"),
+            ("Moved ABC-17 to in progress", "did"),
+            ("Set the issue state to done", "did"),
+            ("Moved the ticket from todo to done", "did"),
+            ("Moved the issue to ready for merge", "did"),
+            ("92 Done, 2 Duplicate", "did"),
+            ("Reviewed a list of fixes", "did"),
+            ("Reviewed the fixes", "did"),
+            ("Reviewed the CI fix", "did"),
+            ("Scheduled a pass over the docs", "did"),
+            ("Inspected the merge state", "did"),
+            ("Inspected a merge conflict", "did"),
+            ("Read the work list", "did"),
+            ("Reviewed the work so far", "did"),
+            ("Reviewed their repair notes", "did"),
+            ("Reviewed 3 fixes", "did"),
+            ("Reviewed 1 fix", "did"),
+            ("Reviewed this fix", "did"),
+            ("Reviewed that work", "did"),
+            ("Reviewed these fixes", "did"),
+            ("Reviewed those passes", "did"),
+            ("Scheduled 1 pass over the docs", "did"),
+            ("Reviewed each merge conflict", "did"),
+            ("Inspected a ship model", "did"),
+        ]
+        for text, kind in cases:
+            with self.subTest(text=text, kind=kind):
+                self.assert_completion_verdict(text, "kept", kind)
+
+    def test_new_speaker_forms_do_not_license_other_subjects(self) -> None:
+        cases = [
+            "It said the decoder is fixed",
+            "They said the decoder is fixed",
+            "The tool said it passed",
+            "The check said it passed",
+            "The build reported the decoder is fixed",
+            "CI reported the tests passed",
+            "A reviewer said the decoder is fixed",
+            "The team said the decoder is fixed",
+            "The agent read that the decoder is fixed",
+            "Agent wrote a working decoder",
+            "User saw that the decoder is fixed",
+            "Team lead inspected the fixed decoder",
+            "Team lead delivered the report saying it would be filed",
+            "Agent fixed the decoder saying it ran",
+            "The tool sent a note saying the decoder is fixed",
+            "It sent a note saying the decoder is fixed",
+            "The build agent said the deploy succeeded",
+            "The CI agent reported the tests passed",
+            "A deploy user said the decoder is fixed",
+            "Their agent said the decoder works",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_according_and_postposed_attribution_stops_at_clause_edges(self) -> None:
+        cases = [
+            "The decoder is fixed, according to the tool",
+            "The decoder is fixed, according to it",
+            "The decoder is fixed, as the check reported",
+            "All checks passed, as the tool reported",
+            "Fixed the decoder; tests passed, as the agent reported",
+            "Fixed the decoder and tests passed, as the agent reported",
+            "The decoder is fixed, according to agent; the build is green",
+            "According to the agent, it ran, the decoder is fixed",
+            "According to the agent, it ran so the decoder is fixed",
+            "According to the agent, it ran which fixed the decoder",
+            "The decoder is fixed, as the agent reported the build is green",
+            "The decoder is fixed, according to the agent the build is green",
+            "The decoder is fixed, as the agent said, the build is green",
+            "The decoder is fixed, as the agent said when the build is green",
+            "The decoder is fixed, as the agent said whether the build is green",
+            "According to agent, it ran, according to user the build is green",
+            "The decoder is fixed, as agent reported said the build is green",
+            "The decoder is fixed, according to agent said the build is green",
+            "According to the agent who inspected it, the decoder is fixed",
+            "The decoder is fixed according to the agent",
+            "The decoder is fixed, according to the agent's plan",
+            "The decoder is fixed, according to the agent's log",
+            "The decoder is fixed, as the agent said it would be",
+            "The decoder is fixed, as the agent reported it would be",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_later_implicit_speech_does_not_license_verification_verbs(self) -> None:
+        cases = [
+            "Ran lint and confirmed the decoder is fixed",
+            "Ran lint; noted the decoder is fixed",
+            "Ran lint then explained the decoder works",
+            "Ran lint; mentioned the decoder is fixed",
+            "Ran lint; suggested the decoder is fixed",
+            "Ran lint; proposed the decoder is fixed",
+            "Ran lint; requested the decoder be fixed",
+            "Ran lint; wanted the decoder fixed",
+            "Ran lint; said it ran, the decoder is fixed",
+            "Ran lint; said it ran and the decoder is fixed",
+            "Ran lint; said it ran but the decoder is fixed",
+            "Ran lint; said it ran then the decoder is fixed",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_reported_subordinators_do_not_extend_other_clause_breaks(self) -> None:
+        cases = [
+            # A subordinator later in the reported words may modify the saying, which states the
+            # result in the summary's own voice; only one opening the reported words continues.
+            "The agent said nothing after the decoder was fixed",
+            "The agent said it waited until the person fixed it",
+            "The agent said it would hold until the tests pass",
+            "The agent said it paused before the merge landed",
+            "The agent said it paused since the work completed",
+            "The agent said it paused after the merge landed",
+            "The agent said it ran when the decoder was fixed",
+            "The person asked about the bug when the agent fixed it",
+            "The agent reported the logs once the decoder was fixed",
+            "The agent asked a question after the build went green",
+            "When it ran the decoder was fixed",
+            "Asked whether the decoder is fixed",
+            "The agent said it waited until it ran, the decoder is fixed",
+            "The agent asked whether it ran or stopped, the decoder is fixed",
+            "The agent said it ran or the decoder works",
+            "The agent said it ran because the decoder works",
+            "The agent said it ran therefore the decoder works",
+            "The agent said it ran thus the decoder works",
+            "The agent said it ran however the decoder works",
+            "The agent said it ran yet the decoder works",
+            "The agent said it ran while the decoder works",
+            "The agent said it ran although the decoder works",
+            "The agent said it ran though the decoder works",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_result_verbs_outside_reported_words_still_withhold(self) -> None:
+        cases = [
+            "Got the checks to pass and said so",
+            "Managed to fix it, the agent said",
+            "Brought the build to green",
+            "Made the tests pass then said so",
+            "Gotten the checks to pass; agent said so",
+            "Got the work done before the agent said so",
+            "Got the checks to pass; reported an attempt",
+            "The agent said it ran; got the decoder fixed",
+            "The agent said it ran and managed to fix it",
+            "Got the issue moved to done",
+            "Got the fix reviewed",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "said")
+
+    def test_quotes_do_not_supply_their_own_attribution(self) -> None:
+        cases = [
+            '"The decoder is fixed"',
+            '"Agent said the decoder is fixed"',
+            'Read "ok" the decoder is fixed',
+            'Agent read "ok" the decoder is fixed',
+            'It said "ok" the decoder is fixed',
+            'The tool said "ok" the decoder is fixed',
+            'Agent said "ok," the decoder is fixed',
+            'Agent said "ok;" the decoder is fixed',
+            'Agent said "ok." The decoder is fixed',
+            'Agent said "ok"; the decoder is fixed',
+            'Agent said "ok." Said the decoder is fixed',
+            'Agent said it ran; "Inspection" Said the decoder is fixed',
+            'According to agent, "it ran." The decoder is fixed',
+            'Ran lint; said "it ran." The decoder is fixed',
+            'Agent sent a note saying "it ran." The decoder is fixed',
+            # A free-standing quote ends the reported words; only an attached one continues them.
+            'The agent said "ok" the decoder is fixed',
+            'According to agent, "ok" the decoder is fixed',
+            'Ran lint; said "ok" the decoder is fixed',
+            'Agent said "hello" after the decoder was fixed.',
+            'The agent said "ok" after I verified the patch.',
+            'Agent said "hello" having fixed the decoder.',
+            'Agent said "hello" leaving the decoder working.',
+            'Agent said "hello" with all checks verified.',
+            'Agent said "hello" now that the PR is merged.',
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_tracker_structure_cannot_hide_prose_claims(self) -> None:
+        cases = [
+            "Marked the issue as fixed and verified",
+            "Moved the ticket to done the decoder is fixed",
+            "Set the issue state to the decoder is fixed",
+            "Moved the ticket to all fixed",
+            "Moved the ticket to fully fixed",
+            "Moved the ticket to is fixed",
+            "Moved the ticket to done and verified the decoder",
+            "Moved the ticket to done; the decoder is fixed",
+            "Moved the decoder to done",
+            "Changed the decoder state to done",
+            "92 Done the decoder works",
+            "92 passed",
+            "92 fixed",
+            "1 works",
+            "12 tests passed, 1 test failed",
+            "12 Passed, 1 Failed",
+            "12 Fixed, 1 Unchanged",
+            "Done, 2 Duplicate",
+            "Marked the ticket as `all fixed`",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_noun_structure_does_not_hide_predicates(self) -> None:
+        cases = [
+            "The change is a fix",
+            "The change was the fix",
+            "The decoder did work",
+            "The decoder did merge",
+            "The decoder does pass",
+            "The decoder did fix the bug",
+            "1 fixes the decoder",
+            "1 passes the check",
+            "This works",
+            "That fixes the decoder",
+            "These work",
+            "Those pass",
+            "Each works",
+            "Another fixes the decoder",
+            "The deploy was a success",
+            "The fix works",
+            "The decoder is fixed",
+            "The decoder is working",
+            "Tests passed",
+            "The build went green",
+            "Merged PR #705",
+            "Shipped the patch",
+            "Landed the change",
+            "Deployed the service",
+            "Verified the patch",
+            "The fix landed",
+            "The fix is verified",
+            "The repair was certified",
+            "The merge was allegedly validated",
+            "The deploy has been reviewed",
+            "The merge is ready",
+            "The fixes complete the change",
+            "Reviewed the fixed decoder",
+            "Reviewed the working decoder",
+            "Reviewed the passing tests",
+            "Reviewed the success report",
+            "Reviewed the done list",
+            "Reviewed the complete list",
+            "Reviewed the green build",
+            "Reviewed the verified patch",
+            "Reviewed the merge fixed decoder",
+            "Ran the merge",
+            "Did the deploy",
+            "Performed the merge of PR #705",
+            "Committed the merge",
+            "Executed the deploy, then stopped",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_subordinators_that_modify_the_saying_withhold(self) -> None:
+        cases = [
+            "The agent replied after the tests passed.",
+            "The reviewer replied once all tests passed.",
+            "Agent answered before the service deployed.",
+            "Paused; replied after all tests passed.",
+            "Read logs; reported after the release shipped.",
+            "The agent said when the decoder was fixed",
+            "The agent reported if the build went green",
+            "Asked whether to fix or the decoder is fixed",
+            "The person asked whether it ran or the build is green",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_borrowed_subjects_adverbs_and_contrasts_do_not_license_claims(self) -> None:
+        cases = [
+            # A later speech verb borrows its sentence's subject, which may be a tool.
+            "The suite ran and reported passed.",
+            "The build finished and said it is green",
+            "CI ran; reported the tests passed",
+            # A hyphenated or dotted speaker is a name, not a person.
+            "The user-agent reported tests passed.",
+            "Mail_agent said the decoder is fixed",
+            "The sub-agent said the decoder is fixed",
+            # An adverb is not a noun modifier: these are predicates.
+            "The patches fully fix the crash.",
+            "Their services already work.",
+            "The patches completely repair the decoder.",
+            "Our changes still work",
+            # Contrast and premise words end the reported words.
+            "The agent said nothing whereas all tests passed.",
+            "The agent said nothing despite all tests having passed.",
+            "The agent said nothing given that the tests passed.",
+            "The agent replied without mentioning that all tests passed.",
+            "The agent said it ran unless the decoder is fixed",
+            "The agent said nothing except that the build is green",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_light_verbs_and_predicates_do_not_hide_the_action(self) -> None:
+        cases = [
+            "Ran the deploy script",
+            "Ran the merge yesterday.",
+            "Did the deploy last night.",
+            "Performed the repair twice.",
+            "Executed the merge via GitHub.",
+            "Carried out the merge of PR #701.",
+            "Carried out the deploy to production.",
+            "Conducted the merge",
+            "The change is indeed a fix.",
+            "The patch is now clearly a fix.",
+            "The change constitutes a fix.",
+            "The patch represents the fix",
+            "The change proved a fix",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_activity_titles_keep_their_objects_and_do_not_license_ledes(self) -> None:
+        for text in [
+            "Merging PRs 701 and 702",
+            "Diagnosing and fixing PR #703 CI failures",
+            "Verifying adapters and opening patches",
+            "Implementing the refresh fix",
+            "Repairing the decoder",
+            "Shipping the library",
+            "Deploying the service",
+        ]:
+            with self.subTest(text=text):
+                model = Replies({"phases": [phase([1], title=text)]}, {"lede": text, "cites": [1]})
+                data = self.run_summary([entry(1, "agent")], model).as_dict()
+                self.assertEqual(text, data["blocks"][0]["phases"][0]["title"])
+                self.assertEqual("completion_claim", data["lede"]["reason"])
+
+    def test_activity_titles_do_not_hide_completed_or_intransitive_claims(self) -> None:
+        cases = [
+            "Working decoder",
+            "Passing tests",
+            "Succeeding build",
+            "Green build",
+            "Finished decoder",
+            "Fixed the decoder",
+            "Merged PR #704",
+            "Verified the fix",
+            "Confirmed the decoder works",
+            "Merging",
+            "Finishing quickly",
+            "Landing in production",
+            "Merging to main",
+            "Deploying",
+            "Merging PRs and fixed the decoder",
+            "Implementing the refresh fix; the decoder works",
+            "Shipping the library, tests passed",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                model = Replies({"phases": [phase([1], title=text)]})
+                data = self.run_summary([entry(1, "agent")], model).as_dict()
+                self.assertEqual(
+                    {"withheld": True, "reason": "completion_claim"},
+                    data["blocks"][0]["phases"][0]["title"],
+                )
+
+    def test_heading_nouns_are_kept_only_as_title_items(self) -> None:
+        kept = [
+            "Docs fix, stories review and increment 4",
+            "Type fixes and Storybook story",
+            "Merge, cleanup and scratch deletion",
+            "Merge and numbering follow-up (ABC-12)",
+            "Retry alignment fix (PR #12)",
+            "Review fixes and opening PR #13",
+        ]
+        withheld = [
+            "It fixes",
+            "Agent merges",
+            "This fixes",
+            "Everything fixes",
+            "Patch fixes crash",
+            "Fix merged",
+            "Merge done",
+            "Fix verified",
+            "Tests pass",
+            "Build works",
+            "Fixed fix",
+            "Docs fix landed",
+            "Fix is in",
+            "Decoder fix, tests passed",
+            "We did merge",
+            "We did deploy",
+            "PR701 did merge",
+            "PRs merge",
+            "Services deploy",
+            "Parser merges",
+            "Merging both PRs removed the conflict",
+            "Fixing the decoder eliminated the crash",
+            "Fixing the decoder broke nothing",
+            "Merging the PRs got the build back",
+        ]
+        for text, verdict in [(t, "kept") for t in kept] + [(t, "withheld") for t in withheld]:
+            with self.subTest(text=text, verdict=verdict):
+                model = Replies({"phases": [phase([1], title=text)]}, {"lede": text, "cites": [1]})
+                data = self.run_summary([entry(1, "agent")], model).as_dict()
+                expected = (
+                    text if verdict == "kept" else {"withheld": True, "reason": "completion_claim"}
+                )
+                self.assertEqual(expected, data["blocks"][0]["phases"][0]["title"])
+                # The lede gets no title licence.
+                self.assertEqual("completion_claim", data["lede"]["reason"])
+
+    def test_attributed_neighbours_do_not_hide_normalized_claims(self) -> None:
+        cases = [
+            "Agent said it ran; Fixed the decoder ✓",
+            "Agent said it ran; decoder fix\u0435d",
+            "Agent said it ran; ƒixed the decoder",
+            "Agent said it ran; decoder fi\u00adxed",
+            "Agent said it ran and\u200d decoder is fixed",
+            "Agent said it ran; \uff26\uff49\uff58\uff45\uff44 the decoder",
+            "Agent said it ran; fixed_and_verified",
+            "Agent said it ran; Fixed.Verified",
+            "Agent said it ran; works.Now",
+            "Agent said it ran; The decoder is `fixed`",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_each_speaker_and_strict_later_speech_verb_has_its_own_licence(self) -> None:
+        for speaker in ("agent", "user", "person", "subagent", "teammate", "reviewer", "team lead"):
+            for article in ("", "the "):
+                for form in (str.lower, str.upper):
+                    text = form(article + speaker) + " said the decoder is fixed"
+                    with self.subTest(text=text):
+                        self.assert_completion_verdict(text, "kept", "did")
+        for verb in (
+            "said",
+            "says",
+            "saying",
+            "reported",
+            "reports",
+            "reporting",
+            "stated",
+            "told",
+            "replied",
+            "answered",
+            "asked",
+            "claimed",
+        ):
+            for kind in ("did", "failed", None):
+                text = f"Inspected the logs; {verb} the decoder is fixed"
+                with self.subTest(text=text, kind=kind):
+                    self.assertFalse(self.summary.completion_claim(text, kind=kind))
+
+    def test_clipping_drops_new_postposed_attribution_and_activity_objects(self) -> None:
+        for text, cap, title in [
+            ("The decoder is fixed, according to the agent", 24, False),
+            ("The decoder is fixed, as the agent reported", 24, False),
+            ("Merging the changes", 8, True),
+        ]:
+            with self.subTest(text=text, cap=cap, title=title):
+                display = self.summary._display(text, cap, kind="did", title=title)
+                self.assertEqual("too_long_cut", display.reason)
+
+    def assert_title_verdict(self, text: str, verdict: str) -> None:
+        model = Replies({"phases": [phase([1], title=text)]})
+        data = self.run_summary([entry(1, "agent")], model).as_dict()
+        expected = text if verdict == "kept" else {"withheld": True, "reason": "completion_claim"}
+        self.assertEqual(expected, data["blocks"][0]["phases"][0]["title"])
+
+    def test_completion_nouns_are_licensed_only_as_objects(self) -> None:
+        withheld = [
+            "The merge went through",
+            "The deploy looks good",
+            "The fix holds",
+            "The merge ran clean",
+            "The deploy ok",
+            "The merge now",
+            "Each fix sticks",
+            "Their work paid off",
+            "The fix went in.",
+            "The patches often fix the crash",
+            "The changes soon merge",
+            "Some fix the decoder",
+            "Any fix the crash",
+            "The 2 work",
+            "Did all the work",
+            # A lone noun phrase is a subject when a colon or a later clause completes it.
+            "The fix: in",
+            "The merge, then nothing",
+            # After a verb that takes a clause, a following word may be the noun's verb.
+            "Confirmed the fix holds",
+            "Confirmed the fix improves",
+            "Saw the fix-up go in",
+            "Watched the fix go in",
+        ]
+        kept = [
+            "Reviewed the CI fix",
+            "Read a list of fixes",
+            "Agent checked the PR merge state",
+            "Widened the work-row number column in CSS",
+            "Removed only the sample work's files",
+            "Read the issue to scope the real work for the session",
+            "Asked to decide between a minor and a bug fix release",
+            "Said options come after the merge",
+        ]
+        for text, verdict in [(t, "withheld") for t in withheld] + [(t, "kept") for t in kept]:
+            with self.subTest(text=text, verdict=verdict):
+                self.assert_completion_verdict(text, verdict, "did")
+
+    def test_title_licences_need_an_object_or_a_list(self) -> None:
+        withheld = [
+            "Merging the PRs went fine",
+            "Fixing the parser holds",
+            "Deploying the build now",
+            "Merging PR 701 went through",
+            "Merging the PR was clean",
+            "Branches rebase and merge",
+            "Branches rebase, and merge",
+            "Deploy: live in production",
+            "Deploy, live in production",
+            "Patches cleanly fix",
+            "Both patches fix",
+            "Patches fix",
+            "Finishing now",
+            "Shipping today",
+            "Merging the PR unblocks deploys",
+        ]
+        kept = [
+            "Merging PRs 701 and 702",
+            "Merging PR 5 into main",
+            "Merging the three PRs in order",
+            "Fixing the view-only guard",
+            "Windows deferral, notarization and merge",
+            "CI failure on shard 3, rerun, and merge",
+            "Independent review and its fixes",
+        ]
+        for text, verdict in [(t, "withheld") for t in withheld] + [(t, "kept") for t in kept]:
+            with self.subTest(text=text, verdict=verdict):
+                self.assert_title_verdict(text, verdict)
+
+    def test_tracker_states_are_tracker_words(self) -> None:
+        withheld = [
+            "Changed the status as unit tests passed",
+            "Moved the ticket to closed build succeeded",
+            "Set the task to quickly fix",
+            "Marked the issue as clearly fixed",
+            "Set the status to everything done",
+            "The agent changed the state to build passing",
+            "The agent moved DRC-1 to parser works",
+            "Marked the item as passing",
+            "12 Pass, 1 Fail",
+            "12 Green, 0 Red",
+            "Moved the ticket to Done in the parser fixed",
+        ]
+        kept = [
+            "Marked the ticket as done",
+            "Set the task state to fixed",
+            "Moved the issue to Done in Linear",
+            "Marked the ticket as `Done` in Linear",
+            "Set the status to Verified on main",
+            "Marked the ticket as done in Linear",
+        ]
+        for text, verdict in [(t, "withheld") for t in withheld] + [(t, "kept") for t in kept]:
+            with self.subTest(text=text, verdict=verdict):
+                self.assert_completion_verdict(text, verdict, "did")
+
+    def test_quote_placement_does_not_attribute_the_summarys_words(self) -> None:
+        cases = [
+            'The agent said:"ok" the decoder is fixed',
+            'The agent said"ok" the decoder is fixed',
+            '"The decoder is fixed." It ran, according to the agent',
+            '"Tests passed." The agent checked logs, as the user noted',
+            "Tests passed. It ran, according to the agent",
+            'The agent "never" said the decoder is fixed',
+            'Team "CI" lead said the decoder is fixed',
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_tools_and_logs_do_not_lend_a_speaker(self) -> None:
+        cases = [
+            "Ran the test suite, which reported all checks passed",
+            "The agent ran the check, which reported the tests passed",
+            "Automated checks ran and reported passed",
+            "Shared CI ran and reported the tests passed",
+            "Seeded tests ran and said all passed",
+            "The agent's suite ran and reported passed",
+            "The agent read a log line saying all tests passed",
+            "The agent ran a check saying the build is green",
+            "Fixed the decoder, according to the agent. Said the build is green",
+            "Pytest ran and reported passed",
+            "Ran pytest without saying it passed",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_attributed_conditions_and_file_names_stay_shown(self) -> None:
+        cases = [
+            "Inspected fix_the_parser.py",
+            "Ran test_it_works.py",
+            "The agent said it would wait before merging",
+            "The agent said to rebase before merging",
+            "The user asked the agent to stop if the tests pass",
+            "The agent suggested waiting unless the deploy succeeds",
+            "The agent said it would hold before any merge",
+            "Agent commented on DRC-12 saying the parser is fixed",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "kept", "did")
+        # A past result after the subordinator is still the summary's own.
+        for text in (
+            "The agent said it would merge if the tests passed",
+            "The agent said it would hold until the deploy succeeded",
+            "The agent said nothing if the build is green",
+        ):
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_a_speaker_after_punctuation_or_a_name_is_a_tool(self) -> None:
+        cases = [
+            "The build_ agent said the deploy succeeded",
+            "A_ reviewer said the decoder is fixed",
+            "The tools' agent said the deploy succeeded",
+            "The user- agent reported tests passed",
+            "The build/ agent said the deploy succeeded",
+            "The decoder is fixed, according to the `CI` agent",
+            "Lint+agent said tests pass",
+            "Build#agent said tests pass",
+            "Build @agent said tests pass",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_participles_and_absolute_phrases_end_reported_words(self) -> None:
+        cases = [
+            "Agent said hi having fixed the parser",
+            "The agent said hi having fixed the parser",
+            "Agent replied with production deployed",
+            "The agent replied with production deployed",
+            "Agent said ok with everything merged",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+
+    def test_whether_alternatives_are_one_bare_word(self) -> None:
+        for text in (
+            "The person asked whether it ran or tests passed",
+            "The person asked whether it failed or is fixed",
+            "The person asked whether to revert or merged it",
+            "The person asked whether to revert or merge",
+        ):
+            with self.subTest(text=text):
+                self.assert_completion_verdict(text, "withheld", "did")
+        self.assert_completion_verdict("The person asked whether to fix or revert", "kept", "did")
 
     def test_check_mark_glyphs_are_withheld_in_every_voice(self) -> None:
         cases = [
@@ -398,7 +1113,6 @@ class SessionSummaryTest(unittest.TestCase):
             ("while joiner", "The agent said it ran while the parser works", "said"),
             ("exclamation end", "The agent said it ran! The parser works", "said"),
             ("question end", "The agent asked did it run? The parser works", "asked"),
-            ("implicit only first clause", "Read the parser; Said it is fixed", "said"),
             ("implicit comma", "Said it is fixed, it works", "said"),
             ("implicit must begin string", '"Inspection" Said it is fixed', "said"),
             ("postposed must be immediate", '"fixed" "inspection" the agent said', "said"),
@@ -421,7 +1135,6 @@ class SessionSummaryTest(unittest.TestCase):
             ("brought result", "Brought the build to green", "did"),
             ("made result", "Made the tests pass", "did"),
             ("gotten result", "Gotten the tests to pass", "did"),
-            ("result defeats implicit", "Said it got the tests to pass", "said"),
             ("result defeats tracker", "Got it marked the ticket as Done", "did"),
             ("result defeats name", "Got branch fix-parser", "did"),
             ("unreported pass", "Tests passed", "did"),
