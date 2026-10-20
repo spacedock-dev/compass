@@ -84,7 +84,7 @@ describe('the sample session', () => {
   it('holds every press that would edit, save or run, and says why', async () => {
     await mountSample();
     const remove = [...document.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Remove',
+      (button) => button.getAttribute('aria-label')?.startsWith('Remove') === true,
     ) as HTMLElement;
     const lines = () => document.querySelectorAll('[data-next-cockpit-held-line]').length;
     const before = lines();

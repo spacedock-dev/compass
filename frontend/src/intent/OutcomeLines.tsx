@@ -112,7 +112,9 @@ function DirectionLineView() {
             onPress={() => void saveDirection(ctx, session)}
           />
           <ActionButton
-            weight="none"
+            weight="secondary"
+            className="border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
+            icon="remove"
             label="Remove"
             action="direction-cancel"
             focusKey={`direction-cancel:${key}`}
@@ -223,7 +225,8 @@ function LineRow({
       {used ? (
         <ActionButton
           weight="secondary"
-          className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start"
+          className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
+          icon="remove"
           label="Remove"
           action="held-line-remove"
           arg={String(index)}
@@ -321,6 +324,7 @@ export function AddOutcomeLine() {
   return (
     <ActionButton
       label="+ Add a line"
+      className="border-dashed font-bold text-label px-3"
       action="held-line-add"
       arg="lines"
       inert={draft.length >= OUTCOME_LINES_MAX}

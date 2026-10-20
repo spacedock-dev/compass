@@ -10,9 +10,11 @@ import {
   PiCheckCircle,
   PiCircle,
   PiClockCounterClockwise,
+  PiCompass,
   PiInfo,
   PiListChecks,
   PiWarning,
+  PiX,
   PiXCircle,
 } from 'react-icons/pi';
 
@@ -24,7 +26,9 @@ export type IconName =
   | 'earlier-failed'
   | 'checks'
   | 'info'
-  | 'expand';
+  | 'expand'
+  | 'remove'
+  | 'compass';
 
 const ICONS = {
   unrecorded: PiCircle,
@@ -35,6 +39,8 @@ const ICONS = {
   checks: PiListChecks,
   info: PiInfo,
   expand: PiCaretRight,
+  remove: PiX,
+  compass: PiCompass,
 } as const;
 
 export function Icon({ name, ...props }: { readonly name: IconName } & IconBaseProps) {

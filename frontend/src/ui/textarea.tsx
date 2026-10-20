@@ -14,10 +14,10 @@ export type TextareaProps = ComponentProps<'textarea'> & {
 
 const surfaces = {
   intent:
-    'min-h-[56px] p-[7px] bg-card text-[var(--ink-value)] leading-[1.55] in-[[data-next-cockpit-drafted]]:bg-muted in-[.next-cockpit-held-line]:min-h-[44px]',
-  memo: 'min-h-[5rem] p-[8px] bg-muted text-foreground leading-[1.5]',
-  draft: 'p-[8px] bg-muted text-foreground leading-[1.5]',
-  correction: 'min-h-[120px] p-[7px] bg-card text-[var(--ink-value)] leading-[1.55]',
+    'min-h-[56px] p-[7px] bg-background text-[var(--ink-value)] leading-[1.55] in-[[data-next-cockpit-drafted]]:bg-muted in-[.next-cockpit-held-line]:min-h-[44px]',
+  memo: 'min-h-[5rem] p-[8px] bg-background text-foreground leading-[1.5]',
+  draft: 'p-[8px] bg-background text-foreground leading-[1.5]',
+  correction: 'min-h-[120px] p-[7px] bg-background text-[var(--ink-value)] leading-[1.55]',
 };
 
 export function Textarea({ className, appearance = 'intent', ...props }: TextareaProps) {

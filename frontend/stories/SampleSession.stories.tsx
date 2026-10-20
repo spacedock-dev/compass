@@ -206,7 +206,7 @@ export const EditsAreHeldAndSteerBackIsShown: Story = {
     await loaded(canvasElement);
     await userEvent.click(
       [...canvasElement.querySelectorAll('button')].find(
-        (button) => button.textContent?.trim() === 'Remove',
+        (button) => button.getAttribute('aria-label')?.startsWith('Remove') === true,
       ) as HTMLElement,
     );
     await expect(canvasElement.querySelector('[data-sample-held]')).toHaveTextContent(HELD);

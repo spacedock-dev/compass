@@ -196,12 +196,14 @@ body {
   overflow-wrap: anywhere;
 }
 
-.next-crumb:hover {
+.next-crumb:hover,
+.next-breadcrumb [aria-current='page'] {
   color: var(--ink);
 }
 
 .next-running {
   color: var(--ink2);
+  font-family: var(--mono);
 }
 
 .next-gate {

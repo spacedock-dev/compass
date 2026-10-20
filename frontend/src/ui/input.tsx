@@ -17,7 +17,7 @@ export function Input({ className, type, ...props }: ComponentProps<'input'>) {
       data-slot="input"
       className={cn(
         fieldBase,
-        'inline-block w-full bg-card text-foreground p-[8px] leading-[1.55]',
+        'inline-block w-full bg-background text-foreground p-[8px] leading-[1.55]',
         className,
       )}
       {...props}
