@@ -489,7 +489,12 @@ def build_runtime(
         irreversible_enabled=not args.no_irreversible and not args.no_events,
         dismissals_enabled=not args.no_dismiss,
         annotations_enabled=not args.no_annotations,
-        unasked_enabled=args.unasked_readings and not args.no_observer_model,
+        # The lane reads typed goals, which `--no-annotations` turns off, and the
+        # Codex toggle is refused there: publishing either would draw a control
+        # that can never work.
+        unasked_enabled=args.unasked_readings
+        and not args.no_observer_model
+        and not args.no_annotations,
         ask_enabled=not args.no_ask,
         reach_enabled=not args.no_reach,
         reach_url=args.reach_url,

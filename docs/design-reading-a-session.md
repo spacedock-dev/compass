@@ -1225,19 +1225,30 @@ Codex requires a deliberate provider grant bound to the current destination. Wit
 the session's Drift card shows “Allow Codex to run unasked checks”, or the opposite to revoke it,
 and Attention names sessions with typed goals waiting for that permission and links to their Drift
 cards. The disclosure names the words, provider, destination and capacity used; the grant covers
-all sessions routed to that provider at that destination. Claude Code needs no separate toggle.
-With the flag off neither control nor cue is shown.
+all sessions routed to that provider at that destination. Claude Code needs no separate toggle,
+but its Drift card names it and lists what each check sends: a reader who turned the flag on when
+only a Codex grant could start a check would otherwise begin sending words to Anthropic with no
+sign of it. A stored Codex grant keeps its revoke switch on every session page, whichever provider
+checks that session today. The cue's "none of them has been checked yet" is derived from each
+listed session's `departure_checked`. With the flag off, or under `--no-annotations` (which turns
+the flag off), neither control nor cue is shown.
 
 `reading_policy.set_unasked_grant` writes only this explicit words-only coverage. It is a separate
 `unasked_grant: bool` body on the existing reading POST, with session identity, provider, model,
 words destination and the normal explicit-press guards. It starts no analysis. It refuses paused
-or disabled runs, stale routes or destinations, a session Claude Code would check
-(`no-grant-needed`), non-loopback clients and document navigations. Pause followed by Resume
+or disabled runs, non-loopback clients and document navigations. A grant is also refused for a
+stale provider, model or destination and for a session Claude Code would check
+(`no-grant-needed`); a revoke is not, and deletes the Codex grant whatever today's route is, since
+a grant that could be revoked only while Codex held the route would return with it. Pause followed by Resume
 clears the grant, so a reader who paused grants it again on purpose. Analyze,
 legacy `allow: true` presses and Resume never grant it. Revocation cancels this daemon's running
 call and refuses the next send; Pause stops both providers, and `--no-observer-model` still wins.
-Already-sent words cannot be recalled. A cancelled call that spent capacity keeps a withdrawn
-check row for the caps, without a finding or a completed-check claim. A revoke removes the grant rather than writing the zero
+Already-sent words cannot be recalled. A cancelled call, or one that started and failed, keeps a
+withdrawn check row for the caps, without a finding or a completed-check claim; without it a
+signed-out Claude Code CLI was started again on every state change. A withdrawn row is no later
+check for a standing raise's follow-up. The cancel test and the departure write share one lock, so
+a revoke lands before the write or after it, and a revoke after the write still suppresses the
+notification. A revoke removes the grant rather than writing the zero
 that older stores interpret as the master pause.
 
 ### The alternative that was rejected

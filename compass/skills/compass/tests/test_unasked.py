@@ -107,7 +107,9 @@ class _Harness:
 
         def produce(_config: Any, row: Any, *_args: Any, **_kwargs: Any) -> Any:
             self.readings.append(str(row.get("sid")))
-            return (self.assessment, "", True)
+            # A withheld reading spent nothing, as `reading.produce` answers;
+            # a spent failure is `AFailedCallStillSpendsTheCapsTest`'s case.
+            return (self.assessment, "", self.assessment is not None)
 
         def popup(title: str, message: str) -> str:
             self.popups.append((title, message))
@@ -236,6 +238,16 @@ class TheSwitchIsTheWholeGateTest(unittest.TestCase):
                 # would reach from this key alone.
                 self.assertNotIn("unasked_routes", payload)
                 self.assertIs(False, diagnostics.diagnose(application)["unasked"]["enabled"])
+
+    def test_no_annotations_turns_the_lane_off(self) -> None:
+        # The lane reads typed goals and the Codex toggle is refused without
+        # annotations, so publishing either would draw a control that never works.
+        application = self._serving("--unasked-readings", "--no-annotations")
+        self.assertIsNone(application.unasked_lane)
+        self.assertFalse(application.config.unasked_enabled)
+        payload = application.collect(show_all=False)
+        self.assertNotIn("unasked", payload)
+        self.assertNotIn("unasked_routes", payload)
 
     def test_the_switch_alone_still_attaches_the_lane(self) -> None:
         # The control for the test above, so its refusal is the off switch's
@@ -1238,6 +1250,64 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class AFailedCallStillSpendsTheCapsTest(unittest.TestCase):
+    """A model call that started and failed is charged like any other.
+
+    Before Claude Code could run the lane without a grant, a call could not
+    start without a Codex Allow this build does not write, so this was
+    unreachable. A signed-out or rate-limited CLI then started again on every
+    state change: reproduced at 199 calls with 0 recorded against a session cap
+    of 3 and a day cap of 12.
+    """
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def _failing(self, **changes: Any) -> _Harness:
+        harness = _Harness(
+            _config(self.root, unasked_session_floor_sec=0.0, **changes),
+            None,
+        )
+
+        def produce(_config: Any, row: Any, *_args: Any, **_kwargs: Any) -> Any:
+            harness.readings.append(str(row.get("sid")))
+            return None, reading.WITHHELD_MODEL_FAILED, True
+
+        harness.lane.produce = produce
+        return harness
+
+    def _flip(self, harness: _Harness, sid: str, *, at: float) -> None:
+        entries = [_annotation(sid)]
+        harness.lane.consider(harness.state, [_row(sid, "working")], entries, now=at)
+        harness.lane.consider(harness.state, [_row(sid, "idle")], entries, now=at)
+
+    def test_the_session_cap_stops_a_model_that_keeps_failing(self) -> None:
+        harness = self._failing(unasked_session_cap=3)
+        for n in range(20):
+            self._flip(harness, "s-1", at=5_000.0 + n)
+        self.assertEqual(3, len(harness.readings))
+        stored = departures.load(harness.config)
+        self.assertEqual(3, departures.counts(stored, "claude", "s-1", since=0)[0])
+        # Charged, and not a check: nothing claims the session was read.
+        self.assertFalse(departures.checked(stored, "claude", "s-1", has_words=True))
+        self.assertEqual([], harness.popups)
+
+    def test_the_day_cap_stops_a_model_that_keeps_failing(self) -> None:
+        harness = self._failing(unasked_daily_cap=4)
+        for n in range(20):
+            self._flip(harness, f"s-{n}", at=5_000.0 + n)
+        self.assertEqual(4, len(harness.readings))
+
+    def test_a_withheld_call_that_spent_nothing_is_still_not_charged(self) -> None:
+        # The control: only a spent call is charged.
+        harness = self._failing(unasked_session_cap=3)
+        harness.lane.produce = lambda *_a, **_k: (None, reading.WITHHELD_MODEL_UNAVAILABLE, False)
+        self._flip(harness, "s-1", at=5_000.0)
+        self.assertEqual((), departures.load(harness.config))
+
+
 class TheUnaskedLaneUsesTheSessionProviderTest(unittest.TestCase):
     def test_a_claude_session_uses_its_accepted_producer_through_the_guarded_seam(self) -> None:
         with tempfile.TemporaryDirectory() as home:
@@ -1279,6 +1349,26 @@ class TheUnaskedLaneUsesTheSessionProviderTest(unittest.TestCase):
             stored = departures.load(harness.config)
             self.assertEqual((1, 1), departures.counts(stored, "claude", "s-1", since=0))
             self.assertFalse(departures.checked(stored, "claude", "s-1", has_words=True))
+            self.assertEqual([], departures.published(stored, "claude", "s-1"))
+
+    def test_a_revoke_after_the_reading_returns_still_publishes_nothing(self) -> None:
+        # `stop` landing between the model's answer and the write: the write
+        # and the cancel test share the lock, so only the spend is kept.
+        with tempfile.TemporaryDirectory() as home:
+            harness = _Harness(_config(Path(home)), _assessment(reading.RESULT_DEPARTURE))
+            departures_of = harness.lane._departures
+
+            def revoked_between(*args: Any) -> Any:
+                found = departures_of(*args)
+                harness.lane.stop()
+                return found
+
+            with mock.patch.object(harness.lane, "_departures", side_effect=revoked_between):
+                harness.consider([_row(state="working")])
+                harness.consider([_row(state="idle")])
+            self.assertEqual([], harness.popups)
+            stored = departures.load(harness.config)
+            self.assertEqual((1, 1), departures.counts(stored, "claude", "s-1", since=0))
             self.assertEqual([], departures.published(stored, "claude", "s-1"))
 
 

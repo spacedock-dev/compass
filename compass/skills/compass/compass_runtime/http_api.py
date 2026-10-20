@@ -2218,6 +2218,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if application.unasked_lane is None:
             self._reject(503)
             return
+        if not allowed:
+            self._unasked_revoke()
+            return
         route = runtime_reading_route.resolve(harness, config=application.config, unasked=True)
         reason = (
             route["reason"]
@@ -2228,9 +2231,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if payload.get("provider") != route["provider"]
             else "destination-changed"
             if payload.get("words_destination") != route["words_destination"]
+            else "model-changed"
+            if payload.get("model", route["model"]) != route["model"]
             else ""
         )
         if reason:
+            # The page refreshes on this answer, and a memoized snapshot would
+            # redraw the stale route it pressed against.
+            application.state.snapshot.clear()
             self._send(
                 self._reading_json({"ok": False, "produced": False, "reason": reason}),
                 "application/json",
@@ -2239,16 +2247,40 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         answer = reading_policy.set_unasked_grant(
             application.config,
-            allowed,
+            True,
             now=application.clock(),
             provider=route["provider"],
             destination=route["words_destination"],
             destinations=runtime_reading_route.destinations(),
         )
+        self._unasked_grant_reply(answer)
+
+    def _unasked_revoke(self) -> None:
+        """Delete the stored Codex grant whatever today's route is.
+
+        The route and destination checks guard a grant only. A revoke that had to
+        match today's route could not be made once Claude Code took the route,
+        and the stored grant would take effect again the day Codex returned.
+        """
+        application = self.server.application
+        codex = runtime_reading_route.CODEX
+        destinations = runtime_reading_route.destinations()
+        answer = reading_policy.set_unasked_grant(
+            application.config,
+            False,
+            now=application.clock(),
+            provider=codex,
+            destination=destinations.get(codex, ""),
+            destinations=destinations,
+        )
+        if answer["reason"] in {"", "daily-cap"} and application.unasked_lane is not None:
+            application.unasked_lane.stop(codex)
+        self._unasked_grant_reply(answer)
+
+    def _unasked_grant_reply(self, answer: reading_policy.Status) -> None:
+        application = self.server.application
         # The reader-requested cap is not the lane's bound, so a spent day still saves.
         accepted = answer["reason"] in {"", "daily-cap"}
-        if accepted and not allowed:
-            application.unasked_lane.stop(route["provider"])
         application.state.snapshot.clear()
         self._send(
             self._reading_json({"ok": accepted, "produced": False, "reading": answer}),

@@ -129,3 +129,70 @@ class UnaskedGrantHTTPTest(unittest.TestCase):
             status, body = self._post(port, self._body(harness="claude", provider="claude"))
         self.assertEqual(409, status, body)
         self.assertEqual("no-grant-needed", json.loads(body)["reason"])
+
+
+class UnaskedGrantRouteDriftTest(UnaskedGrantHTTPTest):
+    """A grant must match today's route; a revoke must not have to."""
+
+    def test_a_revoke_through_a_claude_routed_session_deletes_the_codex_grant(self) -> None:
+        config, state = self._runtime(unasked_enabled=True)
+        reading_policy.store_path(config).unlink()
+        app = self._app(config, state, "claude")
+        app.unasked_lane = mock.Mock()
+        with (
+            named_machine(),
+            mock.patch.object(
+                shutil, "which", side_effect=lambda name: "/bin/codex" if name == "codex" else None
+            ),
+            self._serving(app) as port,
+        ):
+            # Codex-only machine: the Claude Code session falls back to Codex.
+            status, body = self._post(port, self._body(harness="claude"))
+            self.assertEqual(200, status, body)
+            self.assertTrue(json.loads(body)["reading"]["words"]["codex"])
+        with (
+            named_machine(),
+            mock.patch.object(shutil, "which", side_effect=lambda name: f"/bin/{name}"),
+            self._serving(app) as port,
+        ):
+            # Claude Code is now on PATH and takes the route.
+            status, body = self._post(
+                port, self._body(harness="claude", provider="", unasked_grant=False)
+            )
+        self.assertEqual(200, status, body)
+        self.assertFalse(json.loads(body)["reading"]["words"]["codex"])
+        app.unasked_lane.stop.assert_called_once_with("codex")
+
+    def test_a_grant_for_another_model_is_refused_and_the_snapshot_cleared(self) -> None:
+        config, state = self._runtime(unasked_enabled=True)
+        reading_policy.store_path(config).unlink()
+        app = self._app(config, state, "codex")
+        app.unasked_lane = mock.Mock()
+        with (
+            named_machine(),
+            mock.patch.object(shutil, "which", return_value="/bin/codex"),
+            mock.patch.object(app.state.snapshot, "clear", wraps=app.state.snapshot.clear) as clear,
+            self._serving(app) as port,
+        ):
+            status, body = self._post(port, self._body(model="not-the-route-model"))
+        self.assertEqual(409, status, body)
+        self.assertEqual("model-changed", json.loads(body)["reason"])
+        clear.assert_called_once_with()
+        self.assertFalse(
+            reading_policy.status(config, now=100.0, destinations={"codex": "OpenAI"})["words"][
+                "codex"
+            ]
+        )
+
+    def test_without_annotations_the_toggle_is_refused(self) -> None:
+        config, state = self._runtime(unasked_enabled=True, annotations_enabled=False)
+        reading_policy.store_path(config).unlink()
+        app = self._app(config, state, "codex")
+        app.unasked_lane = mock.Mock()
+        with (
+            named_machine(),
+            mock.patch.object(shutil, "which", return_value="/bin/codex"),
+            self._serving(app) as port,
+        ):
+            status, body = self._post(port, self._body())
+        self.assertEqual(503, status, body)

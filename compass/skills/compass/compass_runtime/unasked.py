@@ -371,19 +371,10 @@ class Lane:
         )
         with self._call_lock:
             cancelled = self._cancelled
-        if cancelled:
-            if _spent:
-                # Revoking a result must not refund a call that already spent capacity.
-                # A withdrawn row counts toward the caps without claiming a completed check.
-                checked = self._check(
-                    assessment or {"revision_read": entry["revisions"][-1]["n"], "cutoff": ""},
-                    row,
-                    now,
-                )
-                checked["withdrawn"] = True
-                departures.record(self.config, [checked], diagnostic_sink=self.diagnostic_sink)
+        if (cancelled or assessment is None) and _spent:
+            self._record_withdrawn(assessment, row, entry, now)
             return
-        if assessment is None:
+        if cancelled or assessment is None:
             # A withheld reading spent nothing: `produce` refuses before the
             # subprocess. Recording a check here would count a spend that did
             # not happen against the reader's cap.
@@ -393,17 +384,35 @@ class Lane:
         # spent a subprocess either way and that is what the caps bound. A check
         # that raised nothing is one row with an empty constraint, which is also
         # what lets the board say THIS session was looked at.
-        landed = departures.record(
-            self.config,
-            raised or [self._check(assessment, row, now)],
-            diagnostic_sink=self.diagnostic_sink,
-        )
-        if not raised:
-            # The ruling refuses to tell the reader unasked that nothing
-            # departed: an unasked reassurance is the output the evidence-floor
-            # ruling called most damaging. The board says it on return, where
-            # they came looking.
-            return
+        #
+        # The cancel test and the write share `_call_lock` so a revoke or Pause
+        # lands wholly before the write (only the spend is kept) or wholly after
+        # it. A test outside the lock let `stop` fall between the two and still
+        # publish the finding.
+        with self._call_lock:
+            cancelled = self._cancelled
+            landed = (
+                False
+                if cancelled
+                else departures.record(
+                    self.config,
+                    raised or [self._check(assessment, row, now)],
+                    diagnostic_sink=self.diagnostic_sink,
+                )
+            )
+        if cancelled:
+            self._record_withdrawn(assessment, row, entry, now)
+        elif raised:
+            # Only a departure is announced. The ruling refuses to tell the
+            # reader unasked that nothing departed: an unasked reassurance is
+            # the output the evidence-floor ruling called most damaging. The
+            # board says it on return, where they came looking.
+            self._announce(row, raised, landed=landed, now=now)
+
+    def _announce(
+        self, row: Mapping[str, Any], raised: list[departures.Check], *, landed: bool, now: float
+    ) -> None:
+        """Raise a recorded departure unless it did not land or the reader has since said stop."""
         if not landed:
             # Raised nowhere rather than raised and unreviewable. A banner
             # saying a departure was found, over a board that has no record of
@@ -415,7 +424,38 @@ class Lane:
                 self.diagnostic_sink,
             )
             return
+        with self._call_lock:
+            cancelled = self._cancelled
+        if cancelled:
+            # Revoked after the write: the finding stays on the board, which is
+            # where the reader reviews it, but nothing interrupts them after
+            # they said stop.
+            return
         self._raise(row, raised, now)
+
+    def _record_withdrawn(
+        self,
+        assessment: Mapping[str, Any] | None,
+        row: Mapping[str, Any],
+        entry: annotation_store.Annotation,
+        now: float,
+    ) -> None:
+        """Charge a spent call that produced no check: cancelled, or a model that failed.
+
+        A failed call is charged as well as a cancelled one. Before the Claude
+        Code route the lane could not start a call without a Codex grant, so a
+        call that started and failed was unreachable; now a signed-out or
+        rate-limited CLI is started again on every state change, measured at
+        199 calls against a session cap of 3 when nothing was recorded. A
+        withdrawn row counts toward both caps and claims no completed check.
+        """
+        checked = self._check(
+            assessment or {"revision_read": entry["revisions"][-1]["n"], "cutoff": ""},
+            row,
+            now,
+        )
+        checked["withdrawn"] = True
+        departures.record(self.config, [checked], diagnostic_sink=self.diagnostic_sink)
 
     def stop(self, provider: str = "") -> None:
         """Stop this daemon's current unasked call on revoke or Pause model calls."""

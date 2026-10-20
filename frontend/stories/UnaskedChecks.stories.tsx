@@ -145,11 +145,51 @@ const claudeRoute = routeOf('claude', {
   fallback: false,
 });
 export const ClaudeNeedsNoToggle: Story = {
-  args: { scenario: { payload: { unasked: true, unasked_routes: { claude: claudeRoute } } } },
+  args: {
+    scenario: {
+      payload: {
+        unasked: true,
+        unasked_routes: { claude: claudeRoute },
+        // No stored Codex grant, so nothing is left to revoke.
+        reading: { consent: true, off: false, reason: '', words: { codex: false } },
+      },
+    },
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('region', { name: 'Drift' });
     await expect(canvas.queryByRole('switch', { name: off })).toBeNull();
+    // Named, with what each check sends, so a reader who turned the lane on sees where words go.
+    const notice = await canvas.findByRole('region', { name: 'Unasked checks by Claude Code' });
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveTextContent('Claude Code checks this session');
+    await expect(notice).toHaveTextContent('Your saved words.');
+  },
+};
+
+const revokingAfterMove = readingScenario([]);
+export const RevokeAfterClaudeTookTheRoute: Story = {
+  args: {
+    scenario: {
+      reading: revokingAfterMove,
+      payload: {
+        unasked: true,
+        unasked_routes: { claude: claudeRoute },
+        reading: { consent: true, off: false, reason: '', words: { codex: true } },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const toggle = await canvas.findByRole('switch', { name: on });
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(canvas.getByText(/though it does not check this session/)).toBeVisible();
+    await userEvent.click(toggle);
+    await expect(revokingAfterMove.posts).toHaveLength(1);
+    await expect(revokingAfterMove.posts[0]).toMatchObject({
+      unasked_grant: false,
+      provider: 'codex',
+    });
   },
 };
 
@@ -177,6 +217,20 @@ export const AttentionCueWaiting: Story = {
       name: 'Unasked checks waiting for permission',
     });
     await expect(cue).toHaveTextContent('Codex needs your permission first');
+    await expect(cue).toHaveTextContent('none of them has been checked yet');
     await expect(within(cue).getByRole('link', { name: 'Synthetic session' })).toBeVisible();
+  },
+};
+
+export const AttentionCueAfterARevoke: Story = {
+  args: { scenario: scenario({ initialView: 'attention', session: { departure_checked: true } }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cue = await canvas.findByRole('region', {
+      name: 'Unasked checks waiting for permission',
+    });
+    // Checked before the revoke, so the cue may not say nothing was checked.
+    await expect(cue).toHaveTextContent('they are not being checked now');
+    await expect(cue).not.toHaveTextContent('none of them has been checked');
   },
 };

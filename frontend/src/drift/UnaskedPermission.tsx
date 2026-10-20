@@ -55,11 +55,18 @@ export function UnaskedPermission({
   const route = unaskedRoute(current, session);
   const [message, setMessage] = useState('');
   const pending = useDisplayed((snapshot) => snapshot.pending.includes('unasked-grant:codex'));
-  if (current['unasked'] !== true || route?.['provider'] !== 'codex') return null;
+  if (current['unasked'] !== true) return null;
+  const provider = route?.['provider'];
   const allowed = granted(current);
+  /* A stored Codex grant keeps its revoke switch on every session page, whichever provider checks this session
+     today: a grant that could be revoked only while Codex held the route would take effect again the day Codex
+     returned, with no control left to stop it. */
+  if (provider !== 'codex' && !allowed)
+    return provider === 'claude' && route ? <ClaudeUnasked route={route} /> : null;
+  const codexRoute = provider === 'codex' ? route : null;
   const refusal = unaskedRefusal(current);
   const blocked = Boolean(refusal);
-  const parts = route['disclosure_parts'];
+  const parts = codexRoute?.['disclosure_parts'];
   const change = async () => {
     const identity = exactIdentity(session);
     if (!identity || blocked) return;
@@ -75,8 +82,8 @@ export function UnaskedPermission({
           {
             ...identity,
             provider: 'codex',
-            model: String(route['model'] ?? ''),
-            words_destination: String(route['words_destination'] ?? ''),
+            model: String(codexRoute?.['model'] ?? ''),
+            words_destination: String(codexRoute?.['words_destination'] ?? ''),
             unasked_grant: !allowed,
             press: true,
             observer_model: 1,
@@ -108,39 +115,59 @@ export function UnaskedPermission({
   };
   const labelId = `unasked-grant-${String(session['harness'] ?? '')}-${String(session['sid'] ?? '')}`;
   return (
-    <section aria-label="Unasked checks" className="next-session-drift-check">
+    <>
+      {provider === 'claude' && route ? <ClaudeUnasked route={route} /> : null}
+      <section aria-label="Unasked checks" className="next-session-drift-check">
+        <p className="next-cockpit-reading-why">
+          {!codexRoute
+            ? 'Codex still has your permission to run unasked checks, though it does not check this session. Turn the switch off to revoke it.'
+            : allowed
+              ? 'Codex has permission to check this session while you are away. Turn the switch off to revoke it.'
+              : typedGoal(session)
+                ? blocked
+                  ? 'Unasked checks of this session are waiting for your permission.'
+                  : 'Unasked checks of this session are waiting for your permission. Turn on the switch below to let Codex check it against your goal while you are away.'
+                : 'Codex needs your permission for unasked checks. Save a typed goal for this session to give those checks something to read against.'}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="native"
+            type="button"
+            className="next-session-drift-switch"
+            role="switch"
+            aria-checked={allowed}
+            aria-labelledby={labelId}
+            disabled={blocked || pending}
+            onClick={() => void change()}
+          >
+            <span className="next-session-drift-track" aria-hidden="true">
+              <span />
+            </span>
+          </Button>
+          <span id={labelId}>Allow Codex to run unasked checks</span>
+        </div>
+        {blocked ? <p className="next-cockpit-reading-why">{refusal}</p> : null}
+        <p className="next-cockpit-reading-why">
+          This permission covers every session Codex reads at this destination.
+        </p>
+        {Array.isArray(parts) ? <DisclosureParts parts={parts.map(String)} /> : null}
+        {message ? <p role="status">{message}</p> : null}
+      </section>
+    </>
+  );
+}
+
+/* Claude Code needs no grant, so nothing here asks; but a reader who turned on unasked checks when only a Codex
+   Allow could start one would otherwise begin sending words to a second provider with no sign of it. */
+function ClaudeUnasked({ route }: { readonly route: Row }) {
+  const parts = route['disclosure_parts'];
+  return (
+    <section aria-label="Unasked checks by Claude Code" className="next-session-drift-check">
       <p className="next-cockpit-reading-why">
-        {allowed
-          ? 'Codex has permission to check this session while you are away. Turn the switch off to revoke it.'
-          : typedGoal(session)
-            ? blocked
-              ? 'Unasked checks of this session are waiting for your permission.'
-              : 'Unasked checks of this session are waiting for your permission. Turn on the switch below to let Codex check it against your goal while you are away.'
-            : 'Codex needs your permission for unasked checks. Save a typed goal for this session to give those checks something to read against.'}
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="native"
-          type="button"
-          className="next-session-drift-switch"
-          role="switch"
-          aria-checked={allowed}
-          aria-labelledby={labelId}
-          disabled={blocked || pending}
-          onClick={() => void change()}
-        >
-          <span className="next-session-drift-track" aria-hidden="true">
-            <span />
-          </span>
-        </Button>
-        <span id={labelId}>Allow Codex to run unasked checks</span>
-      </div>
-      {blocked ? <p className="next-cockpit-reading-why">{refusal}</p> : null}
-      <p className="next-cockpit-reading-why">
-        This permission covers every session Codex reads at this destination.
+        Claude Code checks this session against your typed goal while you are away. It needs no
+        separate permission. Pause model calls stops it. Each check sends:
       </p>
       {Array.isArray(parts) ? <DisclosureParts parts={parts.map(String)} /> : null}
-      {message ? <p role="status">{message}</p> : null}
     </section>
   );
 }
@@ -159,6 +186,10 @@ export function UnaskedAttentionCue({ payload }: { readonly payload: Row }) {
       unaskedRoute(current, session as unknown as Row)?.['provider'] === 'codex',
   );
   if (!waiting.length) return null;
+  // Derived from the rows listed: a session checked before a revoke has been checked.
+  const never = waiting.every(
+    (session) => (session as unknown as Row)['departure_checked'] !== true,
+  );
   return (
     <section
       aria-label="Unasked checks waiting for permission"
@@ -170,8 +201,9 @@ export function UnaskedAttentionCue({ payload }: { readonly payload: Row }) {
       </div>
       <p>
         Compass is set to check these sessions against the goal you typed while you are away, and
-        Codex runs those checks. Codex needs your permission first, so nothing has been checked yet.
-        Open a session below and use “Allow Codex to run unasked checks” in its Drift card.
+        Codex runs those checks. Codex needs your permission first, so{' '}
+        {never ? 'none of them has been checked yet.' : 'they are not being checked now.'} Open a
+        session below and use “Allow Codex to run unasked checks” in its Drift card.
       </p>
       {refusal ? <p>{refusal}</p> : null}
       <ul>
