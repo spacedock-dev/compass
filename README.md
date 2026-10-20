@@ -177,17 +177,20 @@ The dashboard opens on Sessions. The tabs run Sessions, Projects, Attention and 
 Projects groups sessions by the label their harness publishes, and each project opens a cockpit
 with a Scope rail and a persistent Where this project stands briefing,
 and Now, Course, Decisions and Console tabs. Each session's own page is one column: an Intent card where you
-type the goal you are holding that session to and optionally an expected outcome, a What the session
-has done card, and a Drift card where you check it for drift with one press and read back what has
-been raised about that session and what became of the raise. What the session has done shows
+type the goal you are holding that session to and optionally an expected outcome, a Drift card where
+you check it for drift with one press and read back what has been raised about that session and what
+became of the raise, and a What the session has done card. What the session has done shows
 Compass's own outline of a Claude Code or Codex record, made with no model call, and on Claude Code a
-model-written summary in phases whose every line cites the entries it rests on.
+model-written summary: an opening paragraph, then phases folded closed, each with its lines and the
+entries they cite one press away. A phase that holds evidence for a departure, or has failed lines,
+says so on its heading.
 Sessions keeps an orientation paragraph and how-to visible after a session has been checked.
 The paragraph explains analysis when annotations are on, the store is readable and a reading
 route names a provider; otherwise it explains how to inspect a session. Every goal
 cell, including saved words, opens its session at Intent.
-A finding can jump to the entries it cites in Full activity, marked with its words and their
-current numbers, loading an older entry first when it is not listed yet. Departure citations retain the neutral "Cited" tag. A current result has no rerun
+A citation is a bracketed number such as [41]. Hovering or focusing it shows the cited entry's own
+words in a card, and "See in context of the session" opens Full activity on that entry, marked with
+its words and its current number, loading an older entry first when it is not listed yet. Departure citations retain the neutral "Cited" tag. A current result has no rerun
 button; new work or changed intent gives one "Analyze again" with that reason.
 Console collects delegation, waiting requests,
 capacity and browser-local tripwires. The terminal bridge and semantic history remain prototypes;

@@ -124,6 +124,23 @@ and a collapsed Full activity section. The session page's More disclosure is ret
 control, sentence and limit in it given a new home, so DEC-27's principle that a privacy promise or
 an honest limit moves and is never deleted still holds.
 
+### Phases fold, and a citation shows its entry
+
+The owner and design lead settled on 2026-10-20 that What the session has done is the high-level
+play-by-play, and the page order puts it after the Drift card. The lede stays open. Each phase is an
+accordion closed by default, so the list of lines with their citations is one press away rather
+than the whole page. What a reader should know before opening a phase sits on its heading, outside
+the fold and right-aligned as pills: one for each departure the phase holds evidence for, which goes to
+that card, and a red count of its failed lines. A phase with nothing to say has no pill. The open
+state is the reader's own, kept in the disclosure store under the session and the phase's place.
+
+A citation is a bracketed number. Hovering or focusing it shows the cited entry's own words in a
+card with "See in context of the session", which closes the card and lands on the row in Full
+activity. Pressing the number opens the card and does not scroll, because a press that moved the
+reader across the page every time read as disconnected. Compass's own sentences that name an entry,
+such as "Departure evidence at [41]" and the list of entries an analysis read, draw the number the same
+way. A model's own words keep every `#` they were written with.
+
 ## What this amends, by name
 
 | Earlier ruling | What changes | What stays |

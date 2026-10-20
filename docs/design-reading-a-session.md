@@ -1222,7 +1222,7 @@ delivery records, one-flight slot, fifteen-minute floor and caps (three per sess
 day) remain. Only departures are raised. The preconditions for changing the default remain unmet.
 
 Codex requires a deliberate provider grant bound to the current destination. With the flag on,
-the session's Drift card shows “Allow Codex to run unasked checks”, or the opposite to revoke it,
+the session's Drift card shows "Allow Codex to run unasked checks", or the opposite to revoke it,
 and Attention names sessions with typed goals waiting for that permission and links to their Drift
 cards. The disclosure names the words, provider, destination and capacity used; the grant covers
 all sessions routed to that provider at that destination. Claude Code needs no separate toggle,

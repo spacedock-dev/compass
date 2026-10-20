@@ -205,8 +205,8 @@ reassurance, because an unasked "this looks fine" is the output the evidence-flo
 most damaging and it is worth nothing to someone who is not at the desk. It sends a check only
 with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and other
 harnesses prefer Claude Code, falling back only when the preferred provider is unavailable or
-unqualified. Codex needs permission for the current destination from “Allow Codex to run unasked
-checks” in the session’s Drift card; Attention points to it when saved typed goals are waiting.
+unqualified. Codex needs permission for the current destination from "Allow Codex to run unasked
+checks" in the session's Drift card; Attention points to it when saved typed goals are waiting.
 Claude Code needs no separate grant. Revoking Codex permission, Pause model calls and
 `--no-observer-model` stop checks; Analyze and Resume never grant them. It stops at a per-session
 and a per-day limit, and a spent limit is stated rather than passed over, because a session nobody

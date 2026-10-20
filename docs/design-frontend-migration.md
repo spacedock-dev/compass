@@ -763,6 +763,29 @@ the obsolete current-result run button removed from the recorded side. Dedicated
 cover every added button, missing citations, renumbering, focus, scrolling and zero non-GET requests
 or launches, including while ordinary GET polling continues.
 
+### The redesign pass (2026-10-20)
+
+Decisions taken while bringing the page in line with the redesign mockup, each with what it replaced.
+
+- Steer back is the primary press whenever a departure stands, including on a session waiting for the
+  reader. The earlier rule kept it secondary there so the awaited answer came first (the Blocked
+  Session story pinned it); the owner ruled that Steer back leads. Update intent instead sits left of it,
+  dashed and sized to its text.
+- The shell sets a 44px minimum size on every link in `#app`. On a citation that stretched each
+  bullet's line height and the gap between numbers, so citations opt out with `min-h-0 min-w-0`. An
+  arbitrary `[min-inline-size:0]` utility was tried first and did not take effect in the built
+  sheet, while the physical-property utilities did.
+- Entry numbers in Compass's own sentences are citation links through one component (`CitedText`),
+  applied only to text Compass wrote. Applying it to a model's words would link "PRs #9325". The
+  Intent card's own `#n` source labels stay text: a link inside a form label would take clicks meant for
+  the field.
+- The citation card uses Base UI's preview card. Storybook's dependency pre-bundle list needs
+  `@base-ui/react/preview-card` named, because the card imports a CommonJS shim the bundler does not
+  discover on its own, and every story that imports it fails without the entry.
+- The Drift card now precedes What the session has done, so the sample tour's numbered marks were
+  reordered to match, and a popover at the foot of the page is drawn above its control when there is no
+  room below, which a story asserts either way.
+
 ### The first analysis click budget
 
 [DEC-27](design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)

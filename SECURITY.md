@@ -1237,7 +1237,7 @@ bounds requests through the HTTP route, not a hostile owner editing their own fi
 Legacy explicit Allows remain per provider, bound to the disclosed destination and content tier.
 An explicit Allow covers every session routed to that provider.
 They govern Codex unasked checks, which require a stored words-only Allow covering today's
-destination. The Drift card's “Allow Codex to run unasked checks” toggle deliberately writes or
+destination. The Drift card's "Allow Codex to run unasked checks" toggle deliberately writes or
 revokes it through a separate `unasked_grant` body on `POST /api/reading`. It requires the startup
 flag, a current provider and destination, a loopback non-navigation press, and refuses while paused
 (409 with `model-calls-paused`, the pause kept) or under `--no-observer-model` (503). It adds no route. Revocation deletes coverage without pausing requested readings.
