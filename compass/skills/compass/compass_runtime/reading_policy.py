@@ -832,6 +832,11 @@ class GuardedModel:
         # Passed through, so the refusal names the CLI this press would have used.
         self.unavailable_reason: str | None = getattr(model, "unavailable_reason", None)
 
+    def failure_reason(self) -> str:
+        """The wrapped model's own account of its last failed call, or "" for none."""
+        failure = getattr(self.model, "failure_reason", None)
+        return str(failure()) if callable(failure) else ""
+
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         available = getattr(self.model, "available", None)
         if available is not None and not available():

@@ -3735,7 +3735,19 @@ class ClaudeTranscriptTurnStopTest(RuntimeTestCase):
         }
         row = self.row_at(stop + 120, rows)
         self.assertIsNone(row["turn_end_at"])
-        self.assertEqual(reading.WITHHELD_IDLE_UNKNOWN, self.press(row, stop + 120)["reason"])
+        # Owner, 2026-10-20: pressable, read up to its last entry as a running session is, and
+        # never as a turn that finished.
+        self.assertIs(True, self.press(row, stop + 120)["ok"])
+        self.assertEqual(
+            (reading.SCOPE_MID_FLIGHT, ""),
+            reading.eligibility(
+                row,
+                latest_revision_at=0.0,
+                now=stop + 120,
+                settle_sec=8.0,
+                admit_turn_stop=True,
+            ),
+        )
 
     def test_a_summary_written_for_pre_tool_use_hooks_is_not_a_turn_stop(self) -> None:
         """Verifier S2 (ui3): Claude Code 2.1.287's own reader knows a `stop_hook_summary` with

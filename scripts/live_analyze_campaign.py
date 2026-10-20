@@ -46,10 +46,13 @@ class LiveTransport:
     ) -> tuple[str, str]:
         from compass_runtime import supervise  # noqa: PLC0415 - exact production default seam
 
+        # The reading model passes its own failure sink since 2026-10-20. It is never forwarded:
+        # the campaign keeps its own receipts, so its calls write no stderr file and a failure
+        # reads as the unlabelled one.
+        del on_diagnostic
         if (
             runner not in (None, supervise.run)
             or binary_resolver not in (None, shutil.which)
-            or on_diagnostic is not None
             # Only the reading's own call reaches this wrapper. A summary call names its own
             # prompt and timeout, and the Analyze campaign must never carry one.
             or system_prompt is not None

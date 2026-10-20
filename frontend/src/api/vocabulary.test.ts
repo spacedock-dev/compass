@@ -10,9 +10,11 @@ import { describe, expect, it } from 'vitest';
 import { ASSESSMENT_KEYS } from '../drift/shape';
 import {
   BLOCKER_LINES,
+  CORRECTION_CAP,
   CRITERION_KEYS,
   REASON_LINES,
   RESULTS,
+  SCOPE_TEXT_IDLE,
   SILENT_REASONS,
   STORED_WHY,
 } from '../drift/sentences';
@@ -43,6 +45,8 @@ interface Vocabulary {
   readonly promptChosen: string;
   readonly maxOutcomeLines: number;
   readonly turnStopHarnesses: string[];
+  readonly scopeTextMidFlightIdle: string;
+  readonly correctionCapChars: number;
   readonly levelReasons: string[];
   readonly annotationFields: string[];
   readonly unsafeChars: { readonly codePoints: [number, number][] };
@@ -153,6 +157,14 @@ describe('the goal and the annotation', () => {
 
   it('admits the turn stop for the harnesses the server does', () => {
     expect(sorted(READING_TURN_STOP_HARNESSES)).toEqual(sorted(vocabulary.turnStopHarnesses));
+  });
+
+  it('knows an idle reading by the sentence the producer stores', () => {
+    expect(SCOPE_TEXT_IDLE).toBe(vocabulary.scopeTextMidFlightIdle);
+  });
+
+  it('caps the correction where the copy route does', () => {
+    expect(CORRECTION_CAP).toBe(vocabulary.correctionCapChars);
   });
 });
 

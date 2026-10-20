@@ -475,10 +475,23 @@ SCOPE_TEXT_LAST_TURN_TRANSCRIPT = (
 )
 
 
+# The mid-flight sentence for a reader's press on an idle Claude Code session whose last turn has
+# no recorded finish (owner, 2026-10-20, ruling 3 on the usability review): read up to its last
+# recorded entry as a running one is, and never called running, finished or final. Chosen at
+# production, as the transcript sentence above is, and admitted on read-back only beside
+# `SCOPE_MID_FLIGHT`. The page adds the local time of the last entry read beside it.
+SCOPE_TEXT_MID_FLIGHT_IDLE = (
+    "The session was idle and its last turn was not recorded as finished, so this covers the "
+    "work up to the last recorded entry. It is not a reading of how the turn or the session ended."
+)
+
+
 def scope_texts(scope: str) -> tuple[str, ...]:
     """Every sentence a stored reading of `scope` may carry, the default first."""
     if scope == SCOPE_LAST_TURN:
         return (SCOPE_TEXT[scope], SCOPE_TEXT_LAST_TURN_TRANSCRIPT)
+    if scope == SCOPE_MID_FLIGHT:
+        return (SCOPE_TEXT[scope], SCOPE_TEXT_MID_FLIGHT_IDLE)
     return (SCOPE_TEXT[scope],)
 
 
@@ -507,6 +520,20 @@ WITHHELD_NO_RECORD_READER = "no-record-reader"
 WITHHELD_MODEL_UNAVAILABLE = "model-unavailable"
 WITHHELD_CLAUDE_UNAVAILABLE = "claude-unavailable"
 WITHHELD_MODEL_FAILED = "model-failed"
+# A failed call that names its cause (owner's guiding rule, 2026-10-20: the reader must be able to
+# act on it). One token per closed label `observer._claude_failure_reason` gives, never the CLI's
+# own words: SECURITY.md keeps raw stderr off every surface, so each sentence is Compass's account
+# of a label. `WITHHELD_CLAUDE_FAILED` is a Claude Code call with no label; Codex has no
+# diagnostic, so its failure has one unlabelled sentence of its own.
+WITHHELD_CLAUDE_FAILED = "claude-failed"
+WITHHELD_CODEX_FAILED = "codex-failed"
+WITHHELD_CLAUDE_TIMED_OUT = "claude-timed-out"
+WITHHELD_CLAUDE_LOGIN = "claude-not-logged-in"
+WITHHELD_CLAUDE_AUTH = "claude-auth-rejected"
+WITHHELD_CLAUDE_LIMIT = "claude-rate-limited"
+WITHHELD_CLAUDE_MODEL = "claude-model-unavailable"
+WITHHELD_CLAUDE_NETWORK = "claude-network-error"
+WITHHELD_CLAUDE_OPTION = "claude-option-refused"
 WITHHELD_NOTHING_TYPED = "nothing-typed"
 WITHHELD_DISCARDED = "discarded"
 WITHHELD_INTERRUPTED = "interrupted"
@@ -595,8 +622,49 @@ WITHHELD = {
         "The Claude Code CLI was not found on this machine when the check started, so no "
         "reading was made and nothing was spent."
     ),
+    # The job's own failure, with no model answer to name: an exception inside the job. A call
+    # that returned an error says whose it was, below.
     WITHHELD_MODEL_FAILED: (
-        "The reading did not complete. Nothing was produced, and a fresh press is the only retry."
+        "Analyze failed before it returned a result. Nothing was saved; press Analyze drift to "
+        "try again."
+    ),
+    WITHHELD_CLAUDE_FAILED: (
+        "Analyze failed: Claude Code returned an error. Nothing was saved; press Analyze drift to "
+        "try again."
+    ),
+    WITHHELD_CODEX_FAILED: (
+        "Analyze failed: Codex returned an error. Nothing was saved; press Analyze drift to try "
+        "again."
+    ),
+    WITHHELD_CLAUDE_TIMED_OUT: (
+        "Analyze failed: Claude Code did not answer within "
+        f"{observer.OBSERVER_READING_TIMEOUT_SEC} seconds. Nothing was saved; press Analyze drift "
+        "to try again."
+    ),
+    WITHHELD_CLAUDE_LOGIN: (
+        "Analyze failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then "
+        "press Analyze drift again."
+    ),
+    WITHHELD_CLAUDE_AUTH: (
+        "Analyze failed: Claude Code said its authentication was rejected. Nothing was saved. Fix "
+        "that, then press Analyze drift again."
+    ),
+    WITHHELD_CLAUDE_LIMIT: (
+        "Analyze failed: Claude Code said a usage or rate limit was reached. Nothing was saved. "
+        "Press Analyze drift again once the limit lifts."
+    ),
+    WITHHELD_CLAUDE_MODEL: (
+        "Analyze failed: Claude Code said the model Compass asked for is not available. Nothing "
+        "was saved. Fix that, then press Analyze drift again."
+    ),
+    WITHHELD_CLAUDE_NETWORK: (
+        "Analyze failed: Claude Code said it could not reach the network. Nothing was saved. Fix "
+        "that, then press Analyze drift again."
+    ),
+    WITHHELD_CLAUDE_OPTION: (
+        "Analyze failed: Claude Code did not accept an option Compass passed it, which usually "
+        "means Claude Code needs updating. Nothing was saved. Fix that, then press Analyze drift "
+        "again."
     ),
     # Recorded at the next start for a job whose spend was committed when the
     # dashboard stopped (DRC-4686, Q2). The attempt counts because it was
@@ -672,7 +740,39 @@ LEGACY_WITHHELD = {
         "The Codex CLI was not found on this machine, so no reading was made. A reading "
         "is produced by a codex subprocess whatever harness the session runs on."
     ): WITHHELD_MODEL_UNAVAILABLE,
+    # Before 2026-10-20 every failed call stored this one sentence, which hid its cause. The cause
+    # was not recorded, so it reads as the job's own failure.
+    (
+        "The reading did not complete. Nothing was produced, and a fresh press is the only retry."
+    ): WITHHELD_MODEL_FAILED,
 }
+
+# `observer._claude_failure_reason`'s labels, and its timeout category, to the sentence each
+# names. An unknown label, or none, is `WITHHELD_CLAUDE_FAILED`; no diagnostic at all is
+# `WITHHELD_MODEL_FAILED`, because every call that started the CLI records one, so its absence is a
+# failure inside Compass before the CLI ran (the design record's 2026-10-20 amendment keeps
+# `model-failed` for that).
+CLAUDE_FAILURES = {
+    "login-required": WITHHELD_CLAUDE_LOGIN,
+    "authentication-rejected": WITHHELD_CLAUDE_AUTH,
+    "rate-limited": WITHHELD_CLAUDE_LIMIT,
+    "model-unavailable": WITHHELD_CLAUDE_MODEL,
+    "network-error": WITHHELD_CLAUDE_NETWORK,
+    "cli-option-error": WITHHELD_CLAUDE_OPTION,
+    "timeout": WITHHELD_CLAUDE_TIMED_OUT,
+}
+
+
+def claude_failure(diagnostic: Mapping[str, Any] | None) -> str:
+    """The withheld token a failed Claude Code call's diagnostic names."""
+    if not isinstance(diagnostic, dict):
+        return WITHHELD_MODEL_FAILED
+    for key in ("reason", "exception_kind"):
+        token = CLAUDE_FAILURES.get(str(diagnostic.get(key) or ""))
+        if token:
+            return token
+    return WITHHELD_CLAUDE_FAILED
+
 
 # Two sentences that must never read alike, and the reason they are constants
 # rather than inline strings is that the assertion comparing them needs
@@ -1828,13 +1928,20 @@ def end_kind(row: Mapping[str, Any]) -> str:
     return "unobservable" if row.get("acquisition") == "scan-only" else "idle-unknown"
 
 
-def eligibility(
+# The idle endings a reader's press on a `TURN_STOP_HARNESSES` session reads mid-flight (owner,
+# 2026-10-20, ruling 3): no recorded finish, no observed end, so the record up to its last entry is
+# all there is, and refusing left a finished-looking session that could never be checked.
+IDLE_PRESS_KINDS = ("idle-unknown", "unobservable")
+
+
+def eligibility(  # noqa: PLR0911 - one return per ending it can read
     row: Mapping[str, Any],
     *,
     latest_revision_at: float,
     now: float,
     settle_sec: float,
     admit_turn_stop: bool = False,
+    admit_idle: bool | None = None,
 ) -> tuple[str, str]:
     """(scope, withheld reason), exactly one of which is set.
 
@@ -1855,12 +1962,21 @@ def eligibility(
     through the last turn and a goal saved after the stop does not withhold it,
     so `latest_revision_at` is not compared here. It still is for a session
     end: words typed after an end stay hindsight.
+
+    The same press admits an idle row with no observed stop or end
+    (`IDLE_PRESS_KINDS`): an interrupted turn, or one that went quiet mid-turn,
+    is read up to its last recorded entry at the mid-flight scope, the way a
+    running one is (owner, 2026-10-20). Never final, so a goal saved later does
+    not withhold it either. `admit_idle` None follows `admit_turn_stop`; only a
+    replay of cases recorded under the earlier rule passes False.
     """
     kind = end_kind(row)
     if kind == "running":
         return SCOPE_MID_FLIGHT, ""
     if kind == "turn-stop" and admit_turn_stop:
         return _last_turn(row, now=now, settle_sec=settle_sec)
+    if kind in IDLE_PRESS_KINDS and (admit_turn_stop if admit_idle is None else admit_idle):
+        return SCOPE_MID_FLIGHT, ""
     if kind != "session-end":
         return "", kind
     ended = _number(row.get("ended_at"))
@@ -1897,19 +2013,12 @@ PRESS_WITHHELD = (
 )
 
 
-# The press-time "Why it can't read" sentences that differ from the job-time
+# The press-time "Why Analyze is off" sentences that differ from the job-time
 # `WITHHELD` default (owner, 2026-10-02): each says what opens a reading, or
 # what the reader can do, and none promises an end Compass may never see. The
 # page cannot link `HOW_TO_USE.md`, which the installed plugin does not ship,
 # so a sentence names its section in words.
 _HOW_TO_LIVE = 'How to use: "Make the board live rather than polled"'
-_IDLE_CLAUDE = (
-    "Claude Code records a turn as finished when its Stop hooks run, and this session's "
-    "transcript has no such record after its last message. The turn may still be running a "
-    "long tool, waiting on a permission, or interrupted, or Claude Code has no Stop hooks "
-    f"registered ({_HOW_TO_LIVE}). Analyze opens while the session works, and once a finished "
-    "turn is recorded."
-)
 _IDLE_CODEX = (
     "This Codex session is idle. Compass reads a Codex session only while a turn runs, "
     "because no Codex session end is observed for a final reading to rest on. Analyze opens "
@@ -1953,8 +2062,6 @@ def withheld_sentence(reason: str, row: Mapping[str, Any]) -> str:
     """
     if reason == WITHHELD_IDLE_UNKNOWN:
         harness = str(row.get("harness") or "")
-        if harness == "claude":
-            return _IDLE_CLAUDE
         if harness == "codex":
             return _IDLE_CODEX
         if harness:
@@ -3696,6 +3803,7 @@ def _readable(
     discarded: bool = False,
     read_lines: bool = False,
     admit_turn_stop: bool = False,
+    admit_idle: bool | None = None,
 ) -> tuple[str, tuple[str, ...], str, str]:
     """(goal, lines, scope, withheld). A withheld reason means stop here.
 
@@ -3729,6 +3837,7 @@ def _readable(
         now=now,
         settle_sec=config.reading_settle_sec,
         admit_turn_stop=admit_turn_stop,
+        admit_idle=admit_idle,
     )
     return goal, lines, scope, withheld
 
@@ -3768,6 +3877,7 @@ def produce(  # noqa: PLR0913
     tool_output: ToolOutput | None = None,
     read_lines: bool = False,
     admit_turn_stop: bool = False,
+    admit_idle: bool | None = None,
     on_phase: Callable[[str], None] | None = None,
     record_withheld: str = "",
     read_agent_words: bool = False,
@@ -3824,6 +3934,7 @@ def produce(  # noqa: PLR0913
         discarded=discarded,
         read_lines=read_lines,
         admit_turn_stop=admit_turn_stop,
+        admit_idle=admit_idle,
     )
     if withheld:
         return None, withheld, False
@@ -4005,6 +4116,8 @@ def _scope_text(scope: str, row: Mapping[str, Any]) -> str:
     stop = observed_stop(row) if scope == SCOPE_LAST_TURN else None
     if stop is not None and stop[1] == STOP_TRANSCRIPT:
         return SCOPE_TEXT_LAST_TURN_TRANSCRIPT
+    if scope == SCOPE_MID_FLIGHT and end_kind(row) in IDLE_PRESS_KINDS:
+        return SCOPE_TEXT_MID_FLIGHT_IDLE
     return SCOPE_TEXT[scope]
 
 
@@ -4052,7 +4165,9 @@ def _call_failed(model: Callable[..., tuple[str, str]], status: str) -> tuple[st
     if status in _STATUS_FAILURES:
         return _STATUS_FAILURES[status]
     if status != "ok":
-        return WITHHELD_MODEL_FAILED, True
+        failure = getattr(model, "failure_reason", None)
+        reason = failure() if callable(failure) else ""
+        return (reason if reason in WITHHELD else WITHHELD_MODEL_FAILED), True
     return None
 
 
@@ -4115,6 +4230,10 @@ class CodexReadingModel:
 
     unavailable_reason = WITHHELD_MODEL_UNAVAILABLE
 
+    def failure_reason(self) -> str:
+        """A failed Codex call: its stderr is discarded, so no cause is known."""
+        return WITHHELD_CODEX_FAILED
+
     def __init__(
         self,
         config: RuntimeConfig,
@@ -4172,9 +4291,12 @@ class ClaudeReadingModel:
         # A reading job's seam: told the moment the CLI exists, which is when
         # it starts waiting on the provider and what DRC-4693 cancels.
         self.on_spawn = on_spawn
+        # The last call's diagnostic: closed labels and counts, never the CLI's words.
+        self.diagnostic: dict[str, Any] | None = None
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         """The model's reply and a status of `ok`, `unavailable` or `failed`."""
+        self.diagnostic = None
         return observer.claude_exec(
             self.config,
             prompt,
@@ -4182,7 +4304,15 @@ class ClaudeReadingModel:
             runner=self.runner,
             binary_resolver=self.binary_resolver,
             on_spawn=self.on_spawn,
+            on_diagnostic=self._diagnosed,
         )
+
+    def _diagnosed(self, diagnostic: dict[str, Any]) -> None:
+        self.diagnostic = diagnostic
+
+    def failure_reason(self) -> str:
+        """Why the last call failed, as a withheld token (`claude_failure`)."""
+        return claude_failure(self.diagnostic)
 
     def available(self) -> bool:
         """A missing executable is known before reserving a reading attempt."""

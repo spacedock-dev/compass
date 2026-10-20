@@ -79,6 +79,7 @@
     "passed flag": "passed, as the tool reported",
     "passed summary": "passed, per its summary line"
   },
+  "correctionCapChars": 5140,
   "criterionKeys": [
     "result",
     "cites",
@@ -126,6 +127,7 @@
     "not shown by the record",
     "not reached at this stop"
   ],
+  "scopeTextMidFlightIdle": "The session was idle and its last turn was not recorded as finished, so this covers the work up to the last recorded entry. It is not a reading of how the turn or the session ended.",
   "titles": {
     "asking": {
       "": "An agent is asking you",

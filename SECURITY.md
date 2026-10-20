@@ -195,8 +195,8 @@ The posture rests on two invariants:
    gave, for review before it becomes an outcome line, and `POST /api/correction` hands back Steer
    back's correction, which is the goal and outcome lines you saved, each line's state and the
    times of the entries it rests on, and since 2026-10-04 the first sentence of an agent message
-   whose claim the record contradicts or does not show, the title the activity list already
-   publishes. Each runs a collection to read the session, and that
+   whose claim the record contradicts or does not show, or, since 2026-10-20, at which a departure
+   is cited, the title the activity list already publishes. Each runs a collection to read the session, and that
    collection may rewrite `semantic-work-history.json` as any collection does. [Analyze drift, Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections)
    owns the bounds of both.
    One `GET` reads wider than the rest, and is named here for that reason rather than for the
@@ -1691,10 +1691,19 @@ probe below can only say what reached its stub.
 
 Stdout goes to an owner-only temp file under the state directory, never a pipe, and at most `annotation_text_cap_chars * 8` bytes of
 it are read. The file's 1 MiB bound allows one 0.01 s slice of writes and a write already in flight at the kill, as
-[Observer model calls](#observer-model-calls) describes, with the measured overshoot. Stderr is
-discarded. The timeout is the reading's **180 seconds**, as on the Codex lane. The directory and the
-file are removed on every path, including a timeout or an OS error, and only once the CLI and
-anything it started have been killed and reaped. An absent or relative
+[Observer model calls](#observer-model-calls) describes, with the measured overshoot. Since
+2026-10-20 stderr goes to a second owner-only temp file beside it, under its own file-size bound,
+so a failed call can name its cause: after a nonzero exit at most the first 8 KiB of each stream is
+matched against a fixed list and only the closed label survives (`login-required`, `rate-limited`
+and the others `observer._claude_failure_reason` names, or the `timeout` category). The reader sees
+Compass's own sentence for that label, such as "Claude Code said it is not logged in"; no word of
+the CLI's output is stored, served or logged, and an unmatched failure says only that Claude Code
+returned an error. The timeout is the reading's **180 seconds**, as on the Codex lane. The
+directory and both files are removed on every path Compass itself runs to the end of, including a
+timeout or an OS error, and only once the CLI and anything it started have been killed and reaped.
+A hard kill of Compass (SIGKILL, a power loss) runs no cleanup and can leave both files behind,
+owner-only; the next start removes any such file in `state_dir` older than a day, which no live
+call reaches, so a second instance's call in flight keeps its own. An absent or relative
 `shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
 receives: redacted, then clipped to 16 KiB. The same remembered answer, now per provider, and the
 same rolling cap apply.
@@ -2001,7 +2010,7 @@ unknown session answer one `409 not-running` body, so the route says nothing abo
 exist. It writes no consent and reserves nothing.
 
 The copied-correction route. `POST /api/correction/copied` names a session
-and the exact text the reader copied, at most 4,216 characters, and the server records its digest:
+and the exact text the reader copied, at most 5,140 characters, and the server records its digest:
 a SHA-256 of the text after one normalisation, applied to both sides, which is what Claude Code
 2.1.283 was measured doing to a paste: CRLF and CR become LF, a tab becomes four spaces, and
 whitespace is trimmed at both ends. The store holds the digest, the moment of the copy and where the
@@ -2073,11 +2082,17 @@ list or ordered-list marker, a `~~~` or backtick fence) is removed before anythi
 then a backtick, an angle bracket and a word-initial `@` are each replaced by one look-alike
 character. It remains model prose: a reader who pastes it hands
 the agent a sentence a model wrote about its session, and one who edits the correction past
-recognition sends that sentence as their own words. Each entry travels as its time and a
-placeholder holding its fact id, which the page replaces with the number its own list draws, or
-drops. A reply's lines are at most 2,000 characters however the page numbers them, and each of at
-most eight explanations has 277 more, so a reply is at most 4,216 characters and is never
-truncated: lines over their 2,000 drop the consistent ones and then answer a refusal sentence. It stores nothing of
+recognition sends that sentence as their own words. A third exception since the owner's second
+ruling of 2026-10-20: a departed goal or outcome line cited at one of the agent's messages quotes
+that message's published title, the same first sentence of at most 112 characters, passed through
+exactly the redaction and neutralising the explanation takes, so the agent can find the moment
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)).
+A command, a check name, a path and tool output are still never quoted. Each entry travels as its
+time, drawn in the zone the page sends (`utc_offset_minutes`, refused unless a whole offset within
+16 hours of UTC, and the server's own clock when absent), and a placeholder holding its fact id,
+which the page draws as nothing. A reply's lines are at most 2,000 characters, each of at most
+eight explanations has 277 more and each of at most seven quotes 132 more, so a reply is at most
+5,140 characters and is never truncated: lines over their 2,000 drop the consistent ones and then answer a refusal sentence. It stores nothing of
 its own: it reads, and the collection it runs to read the session may rewrite the semantic history
 store, as `POST /api/direction`'s does. It is guarded as `POST /api/direction` is, reads Claude Code sessions only, and answers one body for an
 unknown session, another harness, and a session with nothing to steer from alike. The reader edits

@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { entryNumbers } from '../intent/work';
 import { useDrift } from './context';
 import { correctionStale, correctionStamp, failedChecks } from './correction';
 import { composeCorrection, correctionDraft } from './steerActions';
@@ -52,9 +51,7 @@ export function useFollowCorrection(offered: boolean): void {
     /* The old box stays drawn while the request is out, so a key typed into it lands in it rather than
        nowhere. Freeze its last rendering before this record can renumber the old server parts. */
     held.recomposeText =
-      typeof held.shownText === 'string'
-        ? held.shownText
-        : correctionDraft(held, source, () => entryNumbers(model.session, source, model.payload));
+      typeof held.shownText === 'string' ? held.shownText : correctionDraft(held);
     held.recomposing = true;
     if (identity) void composeCorrection(ctx, identity, correctionStamp(model.annotation), held);
   });

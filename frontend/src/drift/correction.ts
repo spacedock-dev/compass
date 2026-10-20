@@ -2,7 +2,17 @@ import { nextNumber } from '../api/bootstrap';
 import { annotationLines, type Annotation } from '../intent/annotation';
 import { laterDirections, type WorkEntry, type WorkSource } from '../intent/work';
 import type { Row } from '../observed';
-import { CORRECTION_CAP, CLAIMS, DEPARTURE, STEER_HARNESSES, UNSUPPORTED } from './sentences';
+import {
+  CORRECTION_CAP,
+  CLAIMS,
+  DEPARTURE,
+  STEER_HARNESSES,
+  STEER_LEAVES_MARKED,
+  STEER_LEAVES_OLDER,
+  STEER_OFF_MARKED,
+  STEER_OFF_OLDER,
+  UNSUPPORTED,
+} from './sentences';
 import { failedChecksAfterPerson } from './result';
 import { fmtDur } from './route';
 import { evidenceAt, type Shape } from './shape';
@@ -100,22 +110,33 @@ export function correctionFit(
   return { value: edit.head + run + edit.tail, caret: edit.head.length + run.length };
 }
 
-/* The parts with "#n" filled from the list's own numbers: every number drawn reads "(entry #n in Compass's
-   activity list)", and an entry the list does not number keeps only its time, which the server already
-   wrote. The server counts every placeholder at its widest, so the text stays within the cap. The first
-   number alone used to carry "in Compass" and the rest were a bare "(#n)", which an agent that had never seen
-   Compass could not place (owner, 2026-10-14). */
-export function correctionText(
-  parts: readonly CorrectionPart[] | null | undefined,
-  numbers: ReadonlyMap<string, string>,
-): string {
-  return (parts || [])
-    .map((part) => {
-      if (typeof part === 'string') return part;
-      const n = numbers.get(String(part?.entry || ''));
-      return n === undefined ? '' : ` (entry #${String(n)} in Compass's activity list)`;
-    })
-    .join('');
+/* The parts as text: a placeholder is drawn as nothing. It read "(entry #n in Compass's activity list)" until
+   the owner's ruling of 2026-10-20, which dropped it because the agent the text is pasted into never saw that
+   list; the server now writes the reader's local time and, at the agent's own message, its words
+   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)).
+   Placeholders stay in the parts, where `correctionStale` reads the cited ids. */
+export function correctionText(parts: readonly CorrectionPart[] | null | undefined): string {
+  return (parts || []).map((part) => (typeof part === 'string' ? part : '')).join('');
+}
+
+/* The reader's zone, minutes east of UTC, which the server draws the correction's times in rather than its own
+   clock's: the page shows every other time in this zone. */
+export function readerUtcOffset(at: Date = new Date()): number {
+  return 0 - at.getTimezoneOffset() || 0;
+}
+
+/* The reader's named zone, sent beside the offset so the server draws each time by that zone's own rules, as
+   `clock()` does, and a daylight-saving change between two cited times leaves the correction and the page
+   agreeing. Undefined where the browser names none; the offset is then the server's fallback. */
+export function readerTimeZone(
+  resolve: () => string | undefined = () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string | undefined {
+  try {
+    const zone = resolve();
+    return typeof zone === 'string' && zone ? zone : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function correctionParts(parts: unknown): CorrectionPart[] | null {
@@ -272,6 +293,27 @@ export function steerOffer(input: {
     );
   const failed = failedChecks(session, entries, source.scan).length > 0;
   return departed || claimed || failed ? { departed, claimed, failed } : null;
+}
+
+/* Why Steer back does not carry the departures the result lists, or "" where it does or the harness never
+   offers it: the reading was marked inaccurate, or it read an earlier version of the intent. `steerOffer`
+   keeps both rules; this only says them where the reader is looking. */
+export function steerWithheld(input: {
+  readonly session: Row;
+  readonly annotation: Annotation | null | undefined;
+  readonly shape: Shape | null;
+  readonly offer: SteerOffer | null;
+}): string {
+  const { session, annotation, shape, offer } = input;
+  if (!STEER_HARNESSES.includes(String(session['harness'] || ''))) return '';
+  if (!annotation || !shape || shape.malformed || !shape.departures.length) return '';
+  if (offer?.departed) return '';
+  const marked = annotation['not_accurate'] === true;
+  const older =
+    shape.revisionRead !== null && shape.revisionRead !== nextNumber(annotation['revision']);
+  if (!marked && !older) return '';
+  if (offer) return marked ? STEER_LEAVES_MARKED : STEER_LEAVES_OLDER;
+  return marked ? STEER_OFF_MARKED : STEER_OFF_OLDER;
 }
 
 /* The direction Update intent instead offers: the later direction a surviving departure cites, else the

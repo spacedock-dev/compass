@@ -66,10 +66,13 @@ describe('Steer back', () => {
     await press(byAction('steer-back'));
     await page.settle();
     expect(corrections(page)).toHaveLength(1);
-    expect(corrections(page)[0]?.body).toEqual({ harness: 'claude', sid: 's1' });
-    expect(box()?.value).toBe(
-      "Your last check failed (entry #1 in Compass's activity list). Fix it, then say so.",
-    );
+    expect(corrections(page)[0]?.body).toEqual({
+      harness: 'claude',
+      sid: 's1',
+      utc_offset_minutes: 0 - new Date().getTimezoneOffset() || 0,
+      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+    expect(box()?.value).toBe('Your last check failed. Fix it, then say so.');
     expect(byAction('steer-back')?.getAttribute('aria-expanded')).toBe('true');
     expect(textOf('[data-next-steer-box]')).toContain('Compass never sends this.');
     // Every request so far was a read or the one composition: nothing reached the session.
@@ -105,9 +108,9 @@ describe('Steer back', () => {
     await act(async () => {
       fireEvent.input(field);
     });
-    expect(textOf('[data-next-correction-count]')).toBe('1000/4216');
+    expect(textOf('[data-next-correction-count]')).toBe('1000/5140');
     const before = field.value;
-    field.value = `${before}${'x'.repeat(3500)}`;
+    field.value = `${before}${'x'.repeat(4500)}`;
     await act(async () => {
       fireEvent.input(field);
     });
@@ -123,15 +126,13 @@ describe('Steer back', () => {
     await page.settle();
     await press(byAction('correction-copy'));
     await page.settle();
-    expect(page.written).toEqual([
-      "Your last check failed (entry #1 in Compass's activity list). Fix it, then say so.",
-    ]);
+    expect(page.written).toEqual(['Your last check failed. Fix it, then say so.']);
     const recorded = corrections(page).filter((r) => r.path === '/api/correction/copied');
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.body).toEqual({
       harness: 'claude',
       sid: 's1',
-      text: "Your last check failed (entry #1 in Compass's activity list). Fix it, then say so.",
+      text: 'Your last check failed. Fix it, then say so.',
     });
     expect(textOf('[data-next-correction-cue]')).toBe('Copied');
     await page.poll({ ...(page.state.data as object), generated: 1100 });

@@ -1284,8 +1284,19 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
             settle_sec=8.0,
         )
 
+    def test_an_idle_claude_code_session_with_no_recorded_finish_can_be_pressed(self) -> None:
+        # Owner, 2026-10-20: an interrupted turn, or one that went quiet mid-turn, is read up to
+        # its last recorded entry, as a running one is.
+        for acquisition in ("event", "scan-only", None):
+            row = {"harness": "claude", "state": "idle", "acquisition": acquisition}
+            with self.subTest(acquisition=acquisition):
+                self.assertEqual(
+                    {"ok": True, "reason": None, "until": None, "sentence": None},
+                    self._press(row),
+                )
+
     def test_an_idle_session_with_no_stop_and_no_end_is_refused_before_the_press(self) -> None:
-        row = {"harness": "claude", "state": "idle", "acquisition": "event"}
+        row = {"harness": "antigravity", "state": "idle", "acquisition": "event"}
         self.assertEqual(
             {
                 "ok": False,
@@ -1309,15 +1320,28 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
         for sentence in reading.WITHHELD.values():
             self.assertNotIn("finishes a turn", sentence)
 
-    def test_a_claude_code_session_with_no_recorded_turn_end_says_why_and_what_opens_it(
+    def test_an_idle_claude_code_reading_says_it_is_not_a_reading_of_how_the_turn_ended(
         self,
     ) -> None:
-        sentence = reading.withheld_sentence(
-            reading.WITHHELD_IDLE_UNKNOWN, {"harness": "claude", "state": "idle"}
+        row = {"harness": "claude", "state": "idle", "acquisition": "event"}
+        text = reading._scope_text(reading.SCOPE_MID_FLIGHT, row)
+        self.assertEqual(reading.SCOPE_TEXT_MID_FLIGHT_IDLE, text)
+        self.assertIn("not recorded as finished", text)
+        self.assertIn("last recorded entry", text)
+        self.assertNotIn("still running", text)
+        self.assertIn(text, reading.scope_texts(reading.SCOPE_MID_FLIGHT))
+        working = {**row, "state": "working"}
+        self.assertEqual(
+            reading.SCOPE_TEXT[reading.SCOPE_MID_FLIGHT],
+            reading._scope_text(reading.SCOPE_MID_FLIGHT, working),
         )
-        self.assertIn("Stop hooks", sentence)
-        self.assertIn("Make the board live rather than polled", sentence)
-        self.assertIn("once a finished turn is recorded", sentence)
+
+    def test_the_unasked_lane_still_withholds_an_idle_session_with_no_finish(self) -> None:
+        row = {"harness": "claude", "state": "idle", "acquisition": "event"}
+        self.assertEqual(
+            ("", reading.WITHHELD_IDLE_UNKNOWN),
+            reading.eligibility(row, latest_revision_at=0.0, now=self.END, settle_sec=8.0),
+        )
 
     def test_an_idle_session_another_harness_runs_is_told_what_lets_it_be_read(self) -> None:
         unreached = reading.withheld_sentence(
@@ -2098,8 +2122,57 @@ class WhatAClaudeCodeReadingCostsAndProduces(unittest.TestCase):
         )
         assessment, why, spent = self._produce(model)
         self.assertIsNone(assessment)
-        self.assertEqual(reading.WITHHELD_MODEL_FAILED, why)
+        self.assertEqual(reading.WITHHELD_CLAUDE_FAILED, why)
         self.assertTrue(spent)
+
+    def test_a_failed_claude_code_call_names_the_cause_it_reported_and_never_its_words(
+        self,
+    ) -> None:
+        planted = "Not logged in · Please run /login INJECTED-STDERR /Users/someone/secret"
+        for stream in ("stdout", "stderr"):
+            with self.subTest(stream=stream):
+
+                def run(command: list[str], *, _stream: str = stream, **kwargs: Any) -> Any:
+                    kwargs[_stream].write(planted.encode())
+                    return subprocess.CompletedProcess(command, 1)
+
+                model = reading.ClaudeReadingModel(
+                    cast("Any", self.config),
+                    runner=run,
+                    binary_resolver=lambda _name: "/bin/claude",
+                )
+                assessment, why, spent = self._produce(model)
+                self.assertIsNone(assessment)
+                self.assertEqual(reading.WITHHELD_CLAUDE_LOGIN, why)
+                self.assertTrue(spent)
+                sentence = reading.WITHHELD[why]
+                self.assertTrue(sentence.startswith("Analyze failed: Claude Code said"))
+                for leaked in ("INJECTED-STDERR", "/Users/", "/login"):
+                    self.assertNotIn(leaked, sentence)
+
+    def test_every_claude_failure_label_has_a_sentence_and_an_unknown_one_is_generic(
+        self,
+    ) -> None:
+        for label, token in reading.CLAUDE_FAILURES.items():
+            with self.subTest(label=label):
+                key = "exception_kind" if label == "timeout" else "reason"
+                self.assertEqual(token, reading.claude_failure({key: label}))
+                self.assertTrue(reading.WITHHELD[token].startswith("Analyze failed: Claude Code"))
+        for nothing in ({}, {"reason": "unknown"}, {"reason": "planted words"}):
+            self.assertEqual(reading.WITHHELD_CLAUDE_FAILED, reading.claude_failure(nothing))
+        self.assertEqual(reading.WITHHELD_MODEL_FAILED, reading.claude_failure(None))
+
+    def test_a_failure_inside_compass_before_claude_code_starts_is_not_blamed_on_it(
+        self,
+    ) -> None:
+        run = mock.Mock()
+        model = reading.ClaudeReadingModel(
+            cast("Any", self.config), runner=run, binary_resolver=lambda _name: "/bin/claude"
+        )
+        with mock.patch.object(observer, "reading_workdir_root", return_value=None):
+            self.assertEqual(("", "failed"), model("p", output_cap_bytes=10))
+        run.assert_not_called()
+        self.assertEqual(reading.WITHHELD_MODEL_FAILED, model.failure_reason())
 
     def test_a_relative_claude_code_is_not_available_so_nothing_is_reserved(self) -> None:
         for relative in ("claude", "./claude", "bin/claude"):

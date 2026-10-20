@@ -1743,6 +1743,43 @@ class ClaudeExecTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, state_dir, True)
         return dataclasses.replace(make_config(), state_dir=state_dir)
 
+    def test_a_start_sweeps_scratch_a_hard_kill_left_and_spares_a_call_in_flight(self) -> None:
+        config = self._config()
+        state = Path(config.state_dir)
+        now = time.time()
+        stale = now - config.reading_scratch_stale_sec - 60
+        names = {
+            "reading-claude-abc.txt": stale,
+            "reading-claude-error-abc.txt": stale,
+            "reading-claude-live.txt": now,
+            "reading-claude-error-live.txt": now - 300,
+            "compass-history.json": stale,
+            "reading-claude-abc.json": stale,
+        }
+        for name, at in names.items():
+            (state / name).write_text("raw stderr words")
+            os.utime(state / name, (at, at))
+        folder = state / "reading-claude-dir.txt"
+        folder.mkdir()
+        os.utime(folder, (stale, stale))
+        self.assertEqual(2, observer.sweep_claude_scratch(config, now=now))
+        self.assertEqual(
+            {
+                "reading-claude-live.txt",
+                "reading-claude-error-live.txt",
+                "compass-history.json",
+                "reading-claude-abc.json",
+                "reading-claude-dir.txt",
+            },
+            set(os.listdir(state)),
+        )
+        missing = dataclasses.replace(config, state_dir=state / "absent")
+        self.assertEqual(0, observer.sweep_claude_scratch(missing))
+
+    def test_the_server_sweeps_reading_scratch_before_it_serves(self) -> None:
+        source = inspect.getsource(cli)
+        self.assertIn("observer.sweep_claude_scratch(config)", source)
+
     def _run(
         self,
         *,

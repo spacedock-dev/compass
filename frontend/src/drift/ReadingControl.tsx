@@ -2,7 +2,7 @@ import { SampleBeside } from '../sample/SampleMark';
 import { Card } from '../ui/card';
 import { useEffect, type ReactNode } from 'react';
 import { nextNumber } from '../api/bootstrap';
-import { useFocusKey } from '../controls';
+import { disclosureKey, useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { endedAt, readHint, type Row } from '../observed';
 import { PROMPT_SOURCES } from '../sessions/intent';
@@ -26,6 +26,7 @@ import {
   JOB_TITLE,
   READINGS_OFF,
   MODEL_PAUSE_EXPLANATION,
+  WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
 import { ModelNotice, DisclosureParts } from './ModelNotice';
@@ -298,6 +299,14 @@ export function ReadingControl({
         focusKey={off ? `reading-on:${key}` : `reading:${key}`}
         fallbackKey={`reading:${key}`}
         onPress={() => {
+          /* A press on an Analyze the board refused opens its "Why Analyze is off", so the press shows the
+             reason rather than nothing: the short line beside it was already drawn. */
+          if (!off && inert && pressed) {
+            ctx.shell.controls.disclosures.set(
+              disclosureKey({ project: model.project, scope: key, name: `reading-why:${key}` }),
+              true,
+            );
+          }
           if (off) void readingOn(ctx, identity);
           else if (identity) {
             void askForReading(ctx, identity, {
@@ -330,7 +339,7 @@ export function ReadingControl({
       {inert && pressed ? (
         <Why
           name={`reading-why:${key}`}
-          summary="Why it can't read"
+          summary={WHY_OFF}
           body={String(pressed['sentence'] || '')}
         />
       ) : null}

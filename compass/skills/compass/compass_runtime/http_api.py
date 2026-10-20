@@ -2922,6 +2922,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not all(isinstance(part, str) and part for part in (harness, sid)):
             self._reject(400)
             return
+        clock = correction.request_clock(payload)
+        if clock is None:
+            self._reject(400)
+            return
         row = self._session_row(str(harness), str(sid)) if harness in correction.HARNESSES else None
         # An unknown session and another harness answer what a session with nothing to steer
         # from does, so a refusal says nothing about which sessions exist.
@@ -2941,6 +2945,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             answer = correction.compose(
                 row,
                 _facts_of(context),
+                clock=clock,
                 person_at=_scan_of(context, str(harness), str(sid)).get("last_user_at"),
                 floor=annotation_store.direction_floor(entry, row),
                 line_requests=runtime_reading.line_request_floors(

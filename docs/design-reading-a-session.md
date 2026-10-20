@@ -3168,6 +3168,30 @@ it: off by default, at most three readings per session, twelve a day, and 900 se
 it. This does not change the scorer's rule of 2026-10-01, which vouches for a recorded case
 only at a matched stamp, and it infers nothing from the last assistant message.
 
+#### Amended 2026-10-20 (owner): an idle session with no recorded finish is read up to its last entry
+
+A fresh-eyes usability review found that a Claude Code session whose last turn had no recorded
+finish (an interrupted turn, or one that went quiet mid-turn) could never be analyzed once it was
+idle, and the only reason the page gave, "Analyze opens while this session runs.", would never come
+true for a session nobody resumes. The owner ruled on 2026-10-20 that Analyze drift is allowed on
+such a session: it is read up to its last recorded entry, the way a running session is.
+
+- `reading.eligibility` admits an idle row with no observed stop and no observed end
+  (`reading.IDLE_PRESS_KINDS`: `idle-unknown`, and `unobservable` for a scan-only row) on the same
+  reader's press that admits a turn stop, for a harness in `TURN_STOP_HARNESSES` only. The scope is
+  `mid-flight`, never `last-turn` or `final`: nothing in the record says the turn ended, so no
+  verdict on how it ended may rest on it, and a goal saved later does not withhold it. No entry is
+  cut, because there is no stop to cut at.
+- The stored sentence is `reading.SCOPE_TEXT_MID_FLIGHT_IDLE`, admitted on read-back beside the
+  running one, and the page draws it in the result as "Read up to the last recorded entry at HH:MM;
+  the last turn was not recorded as finished.", the time being the reading's `evidence_through` in
+  the reader's own zone. The answer still leads with "So far:".
+- The unasked lane is unchanged: it never sets `admit_turn_stop`, so it withholds an idle row as it
+  did. A running session, a turn stop, a session end and every other harness keep their rules.
+- The Claude Code press line and Why sentence for an idle row are gone, since the board no longer
+  refuses one. Every line the board can still publish states the condition that holds, a press on a
+  refused Analyze opens its disclosure, and the disclosure is named "Why Analyze is off".
+
 ### What the background build decided, 2026-09-24
 
 DRC-4686 built the background half of item 5; Cancel is DRC-4693. The owner's calls are on the
@@ -3232,6 +3256,24 @@ issue, and the rest were made within them.
 - A finished step is a filled mark and never a check mark. Item 6's rule is about results, but a
   check shape beside a reading is close enough to its reason that the design's check circle was
   not copied.
+
+#### Amended 2026-10-20: a failed analysis names its cause
+
+The usability review's first press failed because the Claude Code CLI was signed out, and the page
+said only "The reading did not complete. Nothing was produced, and a fresh press is the only retry."
+A failed Claude Code call now records the closed label `observer._claude_failure_reason` already
+reads from at most 8 KiB of the CLI's output after a nonzero exit, or its `timeout` category, and
+stores one sentence per label (`reading.CLAUDE_FAILURES`), such as "Analyze failed: Claude Code said
+it is not logged in. Nothing was saved. Fix that, then press Analyze drift again." A call with no
+label, or an unknown one, stores "Analyze failed: Claude Code returned an error. Nothing was saved;
+press Analyze drift to try again." Codex discards its stderr and has its own unlabelled sentence, and
+a job that failed inside Compass keeps `model-failed`, reworded the same way. That includes a
+Claude Code job that failed before the CLI started, such as no private working directory, which
+records no diagnostic (`reading.claude_failure` reads its absence as `model-failed`). No word of the CLI's
+output is stored or shown: quoting a first line of stderr, as the review suggested, would carry text
+SECURITY.md keeps off every surface, and a closed label says the same thing for every cause the list
+knows. The sentence stored before this change maps to `model-failed` on read-back
+(`reading.LEGACY_WITHHELD`). Each failure still counts as the spent attempt it was.
 
 #### Amended 2026-10-01: a press the board says cannot read starts no job
 
@@ -4749,6 +4791,66 @@ A copied correction coming back (item 9) is unchanged. An exact paste is Compass
 explanation in it is never the reader's evidence or a later direction. An edited paste is the
 reader's own words, and the model sentence inside it travels with them, as the quoted claim already
 did.
+
+### Amended 2026-10-20 (owner): local time and quoted words
+
+The usability review pasted a correction and found three things an agent could not use: it cited
+"entry #5 in Compass's activity list", a list the agent never saw; its times were the server's clock
+(01:15) while the page showed the reader's (09:15); and nothing in it let the agent find the moment
+it was being steered from. The owner ruled on 2026-10-20: the correction uses the reader's local
+time, drops "(entry #N in Compass's activity list)", and quotes the agent's own words. The rest of the
+approved template, and the explanation line of the
+[earlier amendment that day](#amended-2026-10-20-owner-the-correction-carries-the-explanation),
+stay as they are.
+
+- **Local time.** The page sends `time_zone`, the reader's IANA zone name from `Intl`, and
+  `utc_offset_minutes`, the reader's zone in minutes east of UTC, with `POST /api/correction`, and
+  the composer draws every time in that zone (`correction.zone_clock`), with a date where the moment
+  is not the reader's today. A name in `zoneinfo.available_timezones()` is preferred, so each time
+  takes the zone's own rules as the page's `clock()` does, and a daylight-saving change between two
+  cited times no longer draws one an hour off (review, 2026-10-20). A name this machine does not
+  know, or a Python without a time zone database, falls back to the offset, which is one for every
+  time in the text and keeps that one-hour gap across a change. A `time_zone` that is not text, or an
+  offset that is not a whole number of minutes within 16 hours of UTC, is refused with 400. With
+  neither the server's own clock is used, as before, so an older page still composes. The page's
+  labels beside Steer back ("from the check at") and on an idle reading ("Read up to the last
+  recorded entry at") name the date on the same rule (`datedClock`), so they and the copied text
+  name the same moment.
+- **No entry numbers.** A placeholder is drawn as nothing. It stays in the parts, because the page
+  reads the cited ids from it to tell when a held correction is stale (item 11 is otherwise
+  unchanged), and it adds no width.
+- **The agent's own words.** Where a departed goal or a departed outcome line is cited at one of
+  the agent's messages, the line quotes that message's published title, the first sentence the
+  activity list shows: `The session departed from my goal at 09:15, where you said "Done: the
+  billing rate is now 0.25 in src/billing/invoice.ts".` The title is neutralised exactly as the
+  explanation is (`correction.neutralised`: invisible characters, openers, redaction behind joints,
+  `records.safe_text`, the look-alike swaps), bounded at the title's own 112 characters and one
+  "…", and its closing stop is dropped as the claim line drops it. A check, a write or the reader's
+  own message is never quoted: a command is not the agent's words, and the planted-command tests
+  keep it out. The claim line already quotes its title, and a consistent line stands on a tool's
+  report, so neither carries a quote.
+- **The cap.** The quotes get a budget of their own on the explanations' terms, so no correction that
+  composed before is refused or loses a line: the lines are measured without the quotes and with
+  each placeholder at nothing. A quote is the label `, where you said "` (18 characters), 112 of
+  title, the "…" and the closing quotation mark, 132 in all, and seven can appear (the goal and six
+  outcome lines). The cap is 2,000 + 8 × 277 + 7 × 132 = 5,140, held in one place
+  (`copied_corrections.CORRECTION_CAP_CHARS`) and mirrored by the page's `CORRECTION_CAP` and the
+  vocabulary fixture; `test_correction` composes the worst case to exactly 5,140 and refuses it at
+  one more character of lines.
+- **Where Steer back stands.** While departures are listed, Steer back stays beside them, labelled
+  "from the check at HH:MM" with the reading's `read_at` in the reader's zone, including when the
+  session has gone idle and while a later direction's question stands (the question keeps the
+  primary press, and Update intent instead is not offered there, since the question's Add is the
+  same act). Copying sends nothing. Two withholds stay: a reading marked inaccurate, and one of an
+  earlier version of the intent. There the departures say so in one line instead of the button
+  going missing. Those two are the implementer's reading of the earlier rules (`steerOffer` and
+  `steerWithheld` in `frontend/src/drift/correction.ts`, and `correction._current_rows` on the
+  server), not part of the owner's ruling of 2026-10-20, which reads unqualified: "Steer back stays
+  available while departures are listed." They are kept as the cautious side, because a correction
+  pasted into the agent would then argue from a reading the reader has rejected or from words
+  they have since replaced. The owner is asked to confirm them. If the owner does not, Steer back is
+  offered there too, with that one line beside it, and the server compose stops demoting those
+  rows.
 
 ### What the result build decided, 2026-09-28
 

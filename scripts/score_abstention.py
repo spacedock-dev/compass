@@ -1075,6 +1075,10 @@ def score_case(  # noqa: PLR0913 - one keyword per thing a case decides
                 # As the route passes it: a reader's press on a harness that
                 # may be read at a turn stop, and nowhere else.
                 admit_turn_stop=harness in reading.TURN_STOP_HARNESSES,
+                # Not the idle admission of 2026-10-20: these cases were marked under the
+                # earlier rule, which withheld an idle session with no recorded finish, and
+                # re-scoping the check is the owner's decision, not this replay's.
+                admit_idle=False,
                 **source_kwargs,
             )
         except abstention_ledger.SpendCapError:

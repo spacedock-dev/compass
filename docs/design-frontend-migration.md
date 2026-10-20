@@ -41,6 +41,22 @@ cut is still held to the recorded answer at the recorded cap; the page's own cap
 `SteerBack.test.tsx` and the Steer back correction stories. The composition refusal sentence names
 4,216 where the frozen page named 2,000. Golden files are unchanged.
 
+2026-10-20, second ruling: the correction drops Compass entry numbers, draws its times in the
+reader's zone and quotes the agent's own words
+([the amendment](design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)),
+so the cap rose again, to 5,140. A placeholder is now drawn as nothing, where the retired page drew
+"(#n in Compass)" and "(#n)". `correction.differential.test.ts` compares the recorded correction text
+through `recordedWithoutNumbers`, which removes the recorded numbers, in place of the
+`recordedNumbering` projection of 2026-10-14; the recorded cap is still passed as `RECORDED_CAP`.
+On the same day the owner allowed Analyze drift on an idle Claude Code session with no recorded turn
+finish, so Claude Code lost its own idle press line ("Last turn isn't recorded as finished. Run
+another turn to open Analyze." on the retired page). `route.differential.test.ts` maps that recorded
+line to the line every harness gets for an idle row. The same row now gets a line before the press,
+"Reads the session up to its last recorded entry; its last turn was not recorded as finished.",
+where the retired page's `nextObservedReadHint` returned nothing. `observed.differential.test.ts`
+holds every other row to the recording and asserts the recording was empty for that one; the line
+itself is asserted in `observed.test.ts`. Golden files are unchanged.
+
 2026-10-20: unasked checks keep their opt-in flag and gain a destination-bound Codex grant
 in the Drift card, with an Attention cue linking sessions waiting for it. Claude Code needs no
 separate toggle. The page reads who the lane reaches from `unasked_routes`, never from
@@ -648,8 +664,9 @@ three lines; at 760 px and below the earlier compact spacing and one-line fields
 primary control remain in the 375 by 667 first view. The field chrome reference table records the card's
 background, border, radius and padding for the wide Intent panel; nothing else in it changes.
 The ended-session note appears beside the Goal field before typing. Claude's idle session without
- an observed stop says "Analyze opens while this session runs." The route and browser projections
-replace only the former refusal sentence. Recorded-side projections adapt those placements and
+ an observed stop is analyzed up to its last recorded entry since 2026-10-20, so it carries no
+refusal; the route projection maps the retired page's refusal sentence to the line every harness
+gets for an idle row. Recorded-side projections adapt those placements and
 controls; field values, evidence and requests remain asserted.
 The idle drafted panel has a 90-word ceiling outside field values and closed bodies; the browser
 first-view proof checks the viewport, the control set, a one-button mutation and the limit paths.

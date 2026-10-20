@@ -176,6 +176,15 @@ export const READ_SCOPE: Readonly<Record<string, string>> = {
   'last-turn': 'Everything up to the last finished turn.',
   withdrawn: 'The session end this analysis relied on is no longer reported.',
 };
+/* `reading.SCOPE_TEXT_MID_FLIGHT_IDLE`, the stored sentence of a press on an idle Claude Code session whose
+   last turn has no recorded finish (owner, 2026-10-20). Recognised by its words, because its scope token is
+   the running session's, and drawn as the reading's own line with the local time of the last entry it read. */
+export const SCOPE_TEXT_IDLE =
+  'The session was idle and its last turn was not recorded as finished, so this covers the work up to the last recorded entry. It is not a reading of how the turn or the session ended.';
+export const readIdle = (at: string): string =>
+  at
+    ? `Read up to the last recorded entry at ${at}; the last turn was not recorded as finished.`
+    : 'Read up to the last recorded entry; the last turn was not recorded as finished.';
 export const READING_FINISHED = 'The analysis finished. Its result is in the Drift section.';
 
 export const STEER_BY_HAND = 'Raised to you and nowhere else.';
@@ -201,8 +210,10 @@ export const PRESS_LINES: Readonly<Record<string, string>> = {
   'revision-after-end': 'Your intent was saved after this session ended.',
 };
 export const PRESS_CODEX = 'Codex sessions can be analyzed only while a turn is running.';
-export const PRESS_CLAUDE = 'Analyze opens while this session runs.';
 export const PRESS_EVENTS = 'Analyze opens while this session runs or once it ends.';
+/* The disclosure under a refused Analyze, which holds the server's whole sentence. Its old name, "Why it can't
+   read", answered a question the reader had not asked; the reader wants to know why the button is off. */
+export const WHY_OFF = 'Why Analyze is off';
 
 export const FLIP_HOLD_MS = 10_000;
 export const FLIP_SAY_EVERY_MS = 60_000;
@@ -221,11 +232,27 @@ export const WORK_AS_REPORTED = 'Results are as the tool reported; not inspected
 
 /* The copy route's cap (`copied_corrections.CORRECTION_CAP_CHARS`): the lines' own 2,000 and room for eight
    explanations of 277 each, since the owner's ruling of 2026-10-20 that a departure carries its explanation
-   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)). */
-export const CORRECTION_CAP = 4216;
+   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)),
+   and room for seven quotes of the agent's own words of 132 each since the owner's second ruling that day
+   ([local time and quoted words](../../../docs/design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)):
+   2,000 + 8 × 277 + 7 × 132. */
+export const CORRECTION_CAP = 5140;
 /* The label the server writes before a departure's explanation (`correction.EXPLANATION_LABEL`). */
 export const CORRECTION_WHY_LABEL = 'Why Compass reads this as drift: ';
 export const STEER_HARNESSES: readonly string[] = ['claude'];
+/* Beside Steer back while it steers from a check, which can be older than the session's latest work: the
+   time the check read the session, on the reader's clock (owner, 2026-10-20). */
+export const steerFrom = (at: string): string => `from the check at ${at}`;
+/* Beside departures Steer back will not carry, so the button is never simply missing (owner, 2026-10-20). The
+   rules are unchanged: a reading marked inaccurate, or one of an earlier version of the intent, sets no
+   correction. With a failed check still offering one, the line says the departures are left out of it. */
+export const STEER_OFF_MARKED = 'Steer back is off because you marked this analysis inaccurate.';
+export const STEER_OFF_OLDER =
+  'Steer back is off because this analysis read an earlier version of your intent. Analyze again to steer back from it.';
+export const STEER_LEAVES_MARKED =
+  'Steer back leaves these departures out because you marked this analysis inaccurate.';
+export const STEER_LEAVES_OLDER =
+  'Steer back leaves these departures out because this analysis read an earlier version of your intent.';
 export const CORRECTION_HINT = 'Compass never sends this. Copy it and paste it into the session.';
 export const CORRECTION_NOTHING = 'Nothing recorded now gives a correction to steer back from.';
 export const CORRECTION_FAILED = 'Could not compose a correction. Press Steer back again to retry.';
@@ -233,7 +260,7 @@ export const CORRECTION_OLDER =
   'This was composed from an older record. Recompose replaces your edit with a correction from the record as it stands.';
 export const CORRECTION_EDIT_REFUSED = 'This edit is unavailable here. Your text is kept.';
 export const CORRECTION_COMPOSITION_REFUSED =
-  'This composition would exceed 4,216 characters and was not kept.';
+  'This composition would exceed 5,140 characters and was not kept.';
 export const CORRECTION_UNDO_UNAVAILABLE =
   'The previous text was restored. Undo is unavailable for this refused edit.';
 export const CORRECTION_PAINT_PAUSED =

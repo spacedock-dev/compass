@@ -54,6 +54,7 @@ VOCABULARY = FIXTURES.parent / "vocabulary.json"
 sys.path.insert(0, str(SKILL))
 from compass_runtime import aggregate as runtime_aggregate  # noqa: E402 - skill runtime path
 from compass_runtime import annotations as annotation_store  # noqa: E402 - skill runtime path
+from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
 from compass_runtime import observation as observation_module  # noqa: E402 - skill runtime path
@@ -1729,6 +1730,8 @@ def vocabulary() -> dict[str, Any]:
         "promptChosen": reading.PROMPT_CHOSEN,
         "maxOutcomeLines": reading.MAX_OUTCOME_LINES,
         "turnStopHarnesses": list(reading.TURN_STOP_HARNESSES),
+        "scopeTextMidFlightIdle": reading.SCOPE_TEXT_MID_FLIGHT_IDLE,
+        "correctionCapChars": runtime_copied_corrections.CORRECTION_CAP_CHARS,
         "levelReasons": list(runtime_levels.REASONS),
         "annotationFields": sorted(annotation_store.published(None)),
         "unsafeChars": {
