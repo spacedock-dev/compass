@@ -659,22 +659,33 @@ shape and reason tokens are unchanged.
 - **Speakers without an article, and the team lead.** `agent`, `user`, `person`, `subagent`,
   `teammate`, `reviewer` and `team lead` may have `the` or no article, in any case. `Agent reported
   the patch merged` is admitted; `The tool reported the patch merged` is withheld. A bare speaker
-  directly after another word is a tool's name, so `The build agent said the deploy succeeded`
-  and `The CI agent reported the tests passed` are withheld, as is a speaker joined to another
-  word (`The user-agent reported tests passed`). Pronouns and arbitrary nouns cannot speak for a
-  person. The existing error-speaker form still speaks for
-  tool errors. A named speaker may also introduce words with a `saying` gerund: `Team lead sent
-  a request saying the report was delivered`; `Team lead delivered the report` stays withheld.
+  counts only at the start of a clause, after a clause break, or after a joiner or preposition
+  (`and`, `then`, `as`, `to`, `that`, `when` and the like). After any other word or character it is
+  a tool's name: `The build agent said the deploy succeeded`, `The user-agent reported tests
+  passed`, `The build_ agent said`, `Lint+agent said`, `Build @agent said` and `The tools' agent
+  said` are withheld. A possessive is not a speaker (`The agent's suite ran and reported passed`),
+  and no speaker pattern reaches across quoted words (`The agent "never" said the decoder is
+  fixed`, `Team "CI" lead said`, ``according to the `CI` agent``). Pronouns and arbitrary nouns
+  cannot speak for a person. The existing error-speaker form still speaks for tool errors. A
+  `saying` gerund carries a speaker's words only after that speaker sent, left, wrote or posted a
+  note, message, comment, reply or request, or commented on something: `Team lead sent a request
+  saying the report was delivered` is admitted; `The agent read a log line saying all tests
+  passed` and `The agent ran a check saying the build is green` quote the log and the check and
+  are withheld.
 - **According to, and postposed reports.** `According to the agent, the decoder is fixed` and
   `The decoder is fixed, according to the agent` are admitted. So is `All checks passed, as the
   reviewer reported`, with `said`, `reported`, `stated` or `noted` in the postfix. A prefix covers
   only the clause after its comma; a postfix covers only the clause directly before its comma,
-  back to the previous break, and must end its sentence. `The decoder is fixed, according to the
-  agent's plan` and `The decoder is fixed, as the agent said it would be` state the result in the
+  back to the previous break, never past the start of its own sentence or a closing quote, and must
+  end its sentence. `"Tests passed." The agent checked logs, as the user noted` and `Tests passed.
+  It ran, according to the agent` are withheld. `The decoder is fixed, according to the agent's
+  plan` and `The decoder is fixed, as the agent said it would be` state the result in the
   summary's voice and are withheld.
   `Fixed the decoder; tests passed, as the agent reported` and `Tests passed, as the tool reported`
   stay withheld. Words after a postfix need their own attribution and a real break before any
-  implicit subject; the postfix's end supplies neither.
+  implicit subject; the postfix's end supplies neither, and no later clause of the bullet borrows
+  an unstated subject once a postfix has appeared (`Fixed the decoder, according to the agent.
+  Said the build is green` is withheld).
 - **A later clause with its own speech verb.** After a joiner or punctuation break, a clause may
   open with `said`, `says`, `saying`, `reported`, `reports`, `reporting`, `stated`, `told`,
   `replied`, `answered`, `asked` or `claimed`. `Ran lint, and said the checks pass` and `Paused
@@ -682,116 +693,181 @@ shape and reason tokens are unchanged.
   withheld. `confirmed`, `noted`, `explained`, `mentioned`, `suggested`, `proposed`, `requested`
   and `wanted` receive no new implicit licence. Only the first clause of a code-set `said` or
   `asked` bullet retains the wider set; an initial `Said the decoder is fixed` in a title, lede
-  or `did` bullet stays withheld. The later clause borrows its sentence's subject (a sentence
-  ends at `.`, `!`, `?` or `;`), so that sentence must open with a named speaker or with a
-  past-tense verb whose unstated subject is the bullet's own: `The suite ran and reported passed`
-  and `CI ran; reported the tests passed` quote a tool and are withheld.
+  or `did` bullet stays withheld. The later clause borrows its sentence's subject, and only after
+  `and`, `then`, a comma, a sentence end or `after`. `which`, `without`, `before` and the other
+  subordinators lend the object's voice instead: `Ran the test suite, which reported all checks
+  passed` and `Ran pytest without saying it passed` are withheld. A sentence ends where a clause
+  break ends one (`.`, `!` or `?` before a space or a letter, `;`, a line end or a Unicode
+  terminator), except inside a name such as `items.json`. The sentence must open with a named
+  speaker or with a past-tense verb whose unstated subject is the bullet's own: `The suite ran and
+  reported passed` and `CI ran; reported the tests passed` quote a tool and are withheld. An `-ed`
+  word followed by a noun and then another verb is an adjective on a tool's name, not that verb:
+  `Automated checks ran and reported passed` and `Shared CI ran and reported the tests passed`
+  are withheld, while `Inspected logs then said the reading completed` is admitted.
 - **Subordinators that open reported words.** A subordinator stays inside an attributed span
   only when it opens the reported words: any of `when`, `whether`, `if`, `once`, `until`, `after`,
   `before`, `since`, `how`, `why` and `what` after `that` (`The agent said that once the merge
   lands it will tag`); `whether` directly after any speech verb and an optional named listener
   (`The person asked the agent whether it works`); and `when`, `if`, `how`, `why` or `what`
-  directly after `asked` (`The person asked when it would be done`). `or` after such a `whether`
-  continues the words when the alternative is one or two words before a break (`The person asked
-  whether to fix or revert`); a longer alternative can be a claim of its own (`asked whether to
-  fix or the decoder is fixed`) and is withheld. Elsewhere a subordinator may modify the saying
-  instead, so it still ends the licence: `The agent replied after the tests passed`, `The agent
-  said when the parser was fixed`, `The agent said nothing after the parser was fixed` and `The
-  agent said it would hold until the tests pass` are withheld. `The agent said it ran, so the
-  decoder is fixed` is withheld. Every other break still ends attribution, including
-  punctuation, `and`, `but`, `then`, `because`, `which`, `therefore`, `thus`, `however`, `yet`,
-  `while`, `although` and `though`. The contrast and premise words `whereas`, `despite`,
-  `given`, `without`, `unless`, `except` and `considering` became breaks too, because `The agent
-  said nothing whereas all tests passed` states the result in the summary's voice; that hole
-  predated the amendment. A named subject directly after a subordinator belongs to the
-  reported words; an otherwise later speaker without its own verb still ends them.
+  directly after `asked` (`The person asked when it would be done`). `or` after `whether to
+  <verb>` continues the words only when the alternative is one bare word that is not a
+  completion word, optionally after `to`, followed by the end or a break (`The person asked
+  whether to fix or revert`). `asked whether it ran or tests passed`, `asked whether it failed or
+  is fixed`, `asked whether to revert or merged it` and `asked whether to fix or the decoder is
+  fixed` are withheld.
+  A condition or time limit inside a reported plan or request is part of it. When the reported
+  words before the subordinator hold an infinitive, a modal verb or open with a gerund, `if` and
+  `unless` stay inside them, and so do `before`, `until`, `once`, `when` and `after` when what
+  follows has no finite verb of its own (a gerund, or a noun phrase such as `any merge`). In both
+  cases no past or participle completion form may follow. `The agent said it would wait before
+  merging`, `The agent said to rebase before merging`, `The user asked the agent to stop if the
+  tests pass` and `The agent suggested waiting unless the deploy succeeds` are admitted; `The
+  agent said it would merge if the tests passed` and `The agent said it would hold until the
+  tests pass` are withheld. Elsewhere a subordinator may modify the saying instead, so it still
+  ends the licence: `The agent replied after the tests passed`, `The agent said when the parser
+  was fixed` and `The agent said nothing after the parser was fixed` are withheld. `The agent
+  said it ran, so the decoder is fixed` is withheld. Every other break still ends attribution,
+  including punctuation, `and`, `but`, `then`, `because`, `which`, `therefore`, `thus`,
+  `however`, `yet`, `while`, `although` and `though`. The contrast and premise words `whereas`,
+  `despite`, `given`, `without`, `except` and `considering`, and `unless` outside a plan, became
+  breaks too, because `The agent said nothing whereas all tests passed` states the result in the
+  summary's voice; that hole predated the amendment. A named subject directly after a
+  subordinator belongs to the reported words; an otherwise later speaker without its own verb
+  still ends them. So do a participle (`having`, `managing`, `leaving`) not preceded by `that`, an
+  opening `with`, `using` or `without`, and a `with` or `using` phrase holding a past completion
+  form: `Agent said hi having fixed the parser`, `Agent replied with production deployed` and
+  `Agent said ok with everything merged` are withheld, with or without the article.
 - **Result verbs within reported words.** `Said it got the checks to pass` in a code-set `said`
   bullet is admitted, as is `The agent said it managed to fix it`. `Got the checks to pass and
   said so` and `Managed to fix it, the agent said` stay withheld. An unquoted trailing speaker
   without the prescribed `according to` or `as` structure does not turn preceding prose into
   reported speech. A result verb outside reported words still defeats a name, state or noun
   exception; `got.py` remains a name.
-- **Closed quotes within reported words.** A quote attached to a word, as in `The agent said
-  file."py" is fixed`, does not revoke attribution when the sentence continues. A free-standing
-  quote still ends the reported words, because the words after it may be the summary's own:
-  `The agent said "ok" the decoder is fixed` and `Agent said "hello" having fixed the parser` are
-  withheld. `Read "ok" the decoder is fixed` remains withheld, because a quote supplies no
-  attribution. Punctuation at the end of the quoted words still ends their licence, and an
-  immediately following unquoted completion verb remains unlicensed.
+- **Closed quotes within reported words.** A quote inside a word, as in `The agent said
+  file."py" is fixed`, does not revoke attribution when the sentence continues. A quote after a
+  space, a speech verb, a colon or another quote stands alone and ends the reported words, because
+  the words after it may be the summary's own: `The agent said "ok" the decoder is fixed`, `The
+  agent said:"ok" the decoder is fixed`, `The agent said"ok" the decoder is fixed` and `Agent said
+  "hello" having fixed the parser` are withheld. `Read "ok" the decoder is fixed` remains withheld,
+  because a quote supplies no attribution. Punctuation at the end of the quoted words still ends
+  their licence, and an immediately following unquoted completion verb remains unlicensed.
 - **Lowercase tracker states and counts of states.** The full tracker structure still requires
-  a move/set/change/mark/switch verb, a tracker object or issue key, and `to` or `as`. It now admits
-  `Marked the issue as done`, `Moved ABC-17 to in progress` and `Set the issue state to done`.
-  A state has at most three words and ends its clause. Filler words and a completion word before
-  the last state word cannot hide prose: `Marked the issue as fixed and verified` and `Moved
-  the ticket to done the decoder is fixed` stay withheld. A complete comma-separated list of at
-  least two counts with capitalized single-word labels, such as `92 Done, 2 Duplicate`, is also
-  admitted. Past and progressive completion forms in those count labels still refuse the list:
-  `12 Passed, 1 Failed` stays withheld. A lone count or lowercase count label gets no state licence.
+  a move/set/change/mark/switch verb, a tracker object or issue key, and `to` or `as`. A
+  capitalized or backticked state keeps the first build's form. A lowercase state must be a
+  tracker's own word: `done`, `todo`, `to do`, `backlog`, `triage`, `in progress`, `in review`,
+  `on hold`, `blocked`, `canceled`, `duplicate`, `fixed`, `verified`, `open`, `closed`,
+  `reopened`, `resolved` or `ready for <word>`, ending its clause. `Marked the issue as done`,
+  `Moved ABC-17 to in progress` and `Set the task state to fixed` are admitted; `Set the task to
+  quickly fix`, `Marked the issue as clearly fixed`, `Marked the item as passing`, `Changed the
+  status as unit tests passed` and `Moved the ticket to closed build succeeded` are withheld. A
+  single-word or backticked state may name where it lives with `in`, `on`, `under` or `within`
+  (`Moved the issue to Done in Linear`, `Set the status to Verified on main`); a completion word
+  in that place phrase is still unlicensed. Filler words and a completion word before the last
+  state word cannot hide prose: `Marked the issue as fixed and verified` and `Moved the ticket to
+  done the decoder is fixed` stay withheld. A complete comma-separated list of at least two
+  counts with capitalized single-word labels, such as `92 Done, 2 Duplicate`, is also admitted.
+  `Done` is the only completion word such a label may be: `12 Passed, 1 Failed`, `12 Pass, 1
+  Fail` and `12 Green, 0 Red` count results and stay withheld. A lone count or lowercase count
+  label gets no state licence.
 - **Nouns and activity titles.** A determiner (`a`, `an`, `the`, `this`, `that`, `these`, `those`,
-  `its`, `their`, `our`, `each`, `every`, `another` or a numeral), at most two modifiers, and a
-  base or plural noun form of `fix`, `work`, `pass`, `merge`, `deploy`, `repair` or `ship`, followed
-  by a non-verb or the end of the clause, may name an object. `Reviewed the CI fix` and
-  `Inspected a ship model` are admitted; `The change is a fix` and `The fix works` stay withheld.
-  `any`, `no` and `some` also count as determiners, and a hyphenated modifier is one word (`the
-  sync-docs pass`). An adverb is never a modifier, so `The patches fully fix the crash` and
-  `Their services already work` remain predicates and are withheld.
+  `its`, `their`, `our`, `each`, `every`, `another`, `no` or a numeral), at most two modifiers, and
+  a base or plural noun form of `fix`, `work`, `pass`, `merge`, `deploy`, `repair` or `ship` may
+  name an object, and only in object position. The phrase must follow a verb (a past or `-ing`
+  form, a listed irregular verb, or an infinitive after `to`) or a preposition, with at most an
+  adverb such as `only` between. After it may come the end of the clause, a preposition or `so
+  far`, or one head noun (`the merge state`, `their repair notes`); a hyphenated or possessive
+  compound may take one more (`the work-row number column in CSS`, `the sample work's files`).
+  The head may not be a verb, adverb or adjective from a fixed list (`went`, `holds`, `now`,
+  `ok` and the like), an `-ed`, `-ing` or completion word, or a plural followed by more words.
+  After a verb that takes a clause (`confirmed`, `checked`, `saw`, `found`, `noted` and the like)
+  the head must be a known compound head such as `state`, `conflict` or `list`. `Reviewed the CI
+  fix`, `Read a list of fixes`, `Agent checked the PR merge state` and `Inspected a ship model` are
+  admitted; `Confirmed the fix holds`, `Watched the fix go in` and `The change is a fix` are
+  withheld. A determiner phrase opening a clause is a subject: `The fix holds`, `The merge went
+  through`, `Their work paid off`, `Each fix sticks` and `Some fix the decoder` are withheld.
+  The one exception is a clause that is only a noun phrase with a singular determiner and no
+  plural, numeric or adverb modifier, after earlier words and not before a colon or dash (`after
+  the merge`, `between a minor and a bug fix release`); `The fix: in` and `The merge, then
+  nothing` are withheld. `some` and `any` never license a noun.
   A noun after a light verb (`do`, `ran`, `performed`, `executed`, `committed`, `conducted`,
-  `carried out`) gets no licence, because it is the action itself: `Ran the merge`, `Did the
-  deploy last night` and `Carried out the merge of PR #701` stay withheld. Telling a head noun
-  from a modifier after one failed on trailing words, so `Ran the deploy script` is withheld too.
-  A copula or verb of being anywhere earlier in the clause (`is indeed a fix`, `constitutes a
-  fix`), or a following copula or auxiliary (`The repair was certified`), also prevents a noun
-  licence. Determiner and numeral agreement keeps `This works`, `Those pass`
-  and `1 fixes the decoder` out; a numeric `works` stays ambiguous and withheld. Auxiliaries and
-  modal verbs cannot be modifiers. Neither
-  `success`, `done`, `complete`, `green` nor verification forms become nouns here. In titles only,
-  a clause opening with a transitive completion verb in `-ing` form followed by an object names
-  an activity: `Merging PRs 701 and 702` is admitted; `Merged PR #701`, `Working decoder`,
-  `Passing tests` and `Finishing quickly` stay withheld, and so does an activity followed by a
-  result (`Fixing the parser eliminated the crash`, `Merging both PRs removed the conflict`). The
-  title flag is passed only at the title call site, so the same activity wording in a lede still
-  refuses. A title clause may also end on a bare `fix` or `repair` noun after at most two words
-  that are not a completion word, pronoun, copula, auxiliary or speaker, or consist of `merge` or
-  `deploy` alone, because those two are also intransitive verbs (`PRs merge`, `We did merge`):
-  `Docs fix, stories review and increment 4`, `Type fixes and Storybook story` and `Merge and
-  numbering follow-up` are admitted; `It fixes`, `Agent merges`, `Patch fixes crash`, `Fix merged`
-  and `Tests pass` are withheld. `pass` and `work` get no heading licence, because `Tests pass`
-  and `Build works` read as results.
+  `carried out`, with an optional adverb between) gets no licence, because it is the action
+  itself: `Ran the merge`, `Did all the work` and `Carried out the merge of PR #701` stay
+  withheld. A copula or verb of being anywhere earlier in the clause (`is indeed a fix`,
+  `constitutes a fix`), or a following copula or auxiliary (`The repair was certified`), also
+  prevents a noun licence. Determiner and numeral agreement keeps `This works`, `Those pass` and
+  `1 fixes the decoder` out. Neither `success`, `done`, `complete`, `green` nor verification forms
+  become nouns here.
+  In titles only, a clause opening with a transitive completion verb in `-ing` form followed by
+  an object names an activity: `Merging PRs 701 and 702`, `Merging PR 5 into main` and `Fixing
+  the view-only guard` are admitted. Only the object and prepositional or numeric material may
+  follow; a verb, adverb, copula, result or listed predicate word anywhere after it, or an `-s`
+  word with more words after it, refuses the licence: `Merged PR #701`, `Working decoder`,
+  `Finishing now`, `Shipping today`, `Merging the PRs went fine`, `Merging the PR was clean`,
+  `Deploying the build now`, `Merging the PR unblocks deploys` and `Fixing the parser eliminated
+  the crash` stay withheld. The title flag is passed only at the title call site, so the same
+  activity wording in a lede still refuses. A title clause may also end on a bare `fix` or
+  `repair` noun after at most two words that are not a completion word, pronoun, quantifier,
+  adverb, copula, auxiliary or speaker, or consist of `merge` or `deploy` alone. This heading
+  licence holds only when every break in the title is a comma, `and` or a parenthesis and no
+  item opens on a predicate word, so `Deploy: live in production` and `Deploy, live in production`
+  are withheld. A plural word directly before a bare `fix` or `repair` is a subject (`Patches
+  fix`, `Both patches fix`, `Patches cleanly fix`), except as the one modifier of an item in a list
+  (`Docs fix, stories review and increment 4`). A bare `merge` or `deploy` must open the title,
+  follow a comma, or end a list of three or more (`Windows deferral, notarization and merge`);
+  `Branches rebase and merge` and `Branches rebase, and merge` are withheld. `Type fixes and
+  Storybook story` and `Merge and numbering follow-up` are admitted; `It fixes`, `Agent merges`,
+  `Patch fixes crash`, `Fix merged` and `Tests pass` are withheld. `pass` and `work` get no heading
+  licence, because `Tests pass` and `Build works` read as results.
+- **Names.** An underscore-joined file name with a common source extension is a name whatever its
+  words, so `Inspected fix_the_parser.py` and `Ran test_it_works.py` are admitted. A completion
+  word inside any other underscore identifier still needs a licence (`Agent said it ran;
+  fixed_and_verified` is withheld).
 - **Each joined clause may carry attribution.** `Agent said it ran and user said it passed` and
   `The agent reported an attempt, then the person asked whether it was done` are admitted.
   `Agent said it ran and the decoder is fixed` stays withheld: the joiner ends the first licence
   and the second clause supplies none.
 
 The existing glyph, Unicode normalization, mixed-script and look-alike refusals still apply before
-these exceptions. The whole redacted string, the cleaned string and the clipped prefix are each
-checked; losing an attribution or the object of an activity heading to clipping withholds the slot.
-Citation relevance remains outside this check.
+these exceptions. Runs of spaces and tabs are collapsed after an underscore is read as a space, so
+`The build_ agent` meets the speaker guard as `The build agent`. The whole redacted string, the
+cleaned string and the clipped prefix are each checked; losing an attribution or the object of an
+activity heading to clipping withholds the slot. Citation relevance remains outside this check.
 
 Known limits of this amendment, each failing closed: a pronoun speaker (`It said the checks
 pass`) is withheld even when the pronoun means the agent, so the prompts' instruction to name the
 speaker in the same clause still matters; a past-tense verb list cannot tell a noun such as
 `Speed` from a verb at a sentence start; nouns coordinated inside reported words split at `and`
 (`The agent said Codex and AGY had both finished` is withheld); and a second reported clause
-opened by `and that` or `, that` gets no licence. One hole predates the amendment and remains:
-an absolute or participle phrase attached to a speech verb (`The agent replied with production
-deployed`, `replied using a working parser`) is read as reported words.
+opened by `and that` or `, that` gets no licence. A completion noun inside a subject is withheld
+even when it only modifies another noun (`polled PR #624 until its merge state read CLEAN`, `the
+numbering problem the fix leaves alone`, `until a deploy key exists`). The verb, adverb and
+compound-head lists are finite, so a predicate the lists miss after a noun in object position
+can still pass as a head noun; the check is a backstop for the prompts, not a parser.
 
 **Measured.** A replay ran every displayed string of the measurement's four real Claude Code
 summaries and the sample lane's recorded summary (733 strings: 581 bullets, 147 titles and five
-ledes) through the check before and after this amendment. Withheld strings fell from 243 to 169
-(33.2% to 23.1%): bullets from 200 to 150, titles from 38 to 15 and ledes from five to four. No
-string the earlier check showed was withheld by the new one. A random sample of 80 of the 243
-earlier withholdings was labelled by hand: 62 were wrongly withheld (attributed speech, names,
-states, negations or non-completion uses), 11 were own-voice claims and seven were merge
-actions in the summary's voice. An independent second labelling of 30 of them by a different
-model agreed on every withhold-or-show verdict and differed only on whether one merge line was an
-action or a claim. After the amendment 32 of the 80 are still wrongly withheld (40%, down from
-77.5%), and all 18 own-voice and action lines are still withheld. Two adversarial review passes
-by a second model found 38 own-voice strings that an earlier draft of these rules admitted; each
-is now withheld and pinned in the tests, alongside more than 200 adversarial cases grouped by
-refusal family. The remaining wrongly withheld lines are mostly pronoun speakers, negations
-(`did not merge`), a verb that is not a completion claim (`pass the intent prop`), unattributed
-quoted labels and lines that paraphrase a check's result outside the tool-report form.
+ledes) through the check before and after this amendment. Withheld strings fell from 243 to 172
+(33.2% to 23.5%): bullets from 200 to 153, titles from 38 to 15 and ledes from five to four.
+Within this replay, no string the earlier check showed was withheld by the new one. Outside it,
+the new check does withhold strings the earlier one showed, each a claim in the summary's voice
+that the earlier check missed (`The agent said nothing whereas all tests passed`, `The agent
+replied with production deployed`). A random sample of 80 of the 243 earlier withholdings was labelled by hand:
+62 were wrongly withheld (attributed speech, names, states, negations or non-completion uses), 11
+were own-voice claims and seven were merge actions in the summary's voice. An independent second
+labelling of 30 of them by a different model agreed on every withhold-or-show verdict and
+differed only on whether one merge line was an action or a claim. After the amendment 33 of the
+80 are still wrongly withheld (41.3%, down from 77.5%), and all 18 own-voice and action lines are
+still withheld. Two adversarial review passes by a second model found 38 own-voice strings that
+an earlier draft of these rules admitted, and a later review of the first build of this amendment
+found more than 80 in nine families (subject-position nouns, title licences, free-form states,
+quote placement, borrowed subjects, punctuation before a speaker, participles and the `whether`
+alternative) plus nine strings the first build wrongly withheld. Each is now withheld or shown as
+reviewed and pinned in the tests, alongside the earlier adversarial cases grouped by refusal
+family. Closing those holes withheld three real lines the first build showed: the three
+subject-position compounds listed under the known limits. The remaining wrongly withheld lines
+are mostly pronoun speakers, negations (`did not merge`), a verb that is not a completion claim
+(`pass the intent prop`), unattributed quoted labels and lines that paraphrase a check's result
+outside the tool-report form.
 
 ### Bounds, spend and gaps
 

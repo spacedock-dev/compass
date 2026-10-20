@@ -7,6 +7,7 @@ prompt, timeout and rolling admission; this module bounds and accounts for one s
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import re
 import unicodedata
@@ -465,10 +466,42 @@ _SPEECH_VERBS = (
     "confirmed|explained|mentioned|suggested|proposed|requested|wanted"
 )
 _SPEECH_WORDS = rf"(?:{_SPEECH_VERBS})"
-# Real summaries drop the article ("Agent reported ..."), but a bare speaker after another word
-# is a tool's name, not a person's: "the build agent said", "the CI agent reported".
+# Real summaries drop the article ("Agent reported ..."), but a bare speaker after anything other
+# than a clause break, a joiner or a preposition is a tool's name, not a person's: "the build
+# agent said", "Lint+agent said", "the tools' agent said". A possessive speaker is not one.
 _PEOPLE = r"(?:agent|person|user|subagent|teammate|reviewer|team\s+lead)"
-_PERSON = r"(?<!a )(?<!an )(?:the\s+|(?<!\w\s)(?<![-./_]))" + _PEOPLE
+_BARE_AFTER = (
+    "and",
+    "then",
+    "but",
+    "so",
+    "or",
+    "as",
+    "to",
+    "by",
+    "with",
+    "from",
+    "for",
+    "that",
+    "when",
+    "if",
+    "once",
+    "after",
+    "before",
+    "while",
+    "until",
+    "since",
+    "because",
+    "whether",
+)
+_BARE = (
+    "(?:"
+    + "|".join(rf"(?<=\b{word}\s)" for word in _BARE_AFTER)
+    + r"|(?<![^\s.!?;:,(\[{])(?<![^\s.!?;:,(\[{]\s))"
+)
+_PERSON = r"(?<!a )(?<!an )(?:the\s+|" + _BARE + ")" + _PEOPLE + r"(?!['\u2019])"
+# Ending reported words needs no such care: any mention of a speaker ends them.
+_ANY_PERSON = r"(?:the\s+)?" + _PEOPLE
 _STRICT_SPEECH = re.compile(
     r"\b(?:said|says|saying|reported|reports|reporting|stated|told|replied|answered|asked|claimed)\b",
     re.IGNORECASE,
@@ -495,7 +528,7 @@ _ATTRIBUTION = (
     rf"(?:{_PERSON}{_ADVERB}\s+{_SPEECH_WORDS}|{_ERROR}{_ADVERB}\s+(?:read|reads|said|says))\b"
 )
 _SPEECH = re.compile(r"\b" + _SPEECH_WORDS + r"\b", re.IGNORECASE)
-_SPEAKER = re.compile(r"\b" + _PERSON + r"\b", re.IGNORECASE)
+_ANY_SPEAKER = re.compile(r"\b" + _ANY_PERSON + r"\b", re.IGNORECASE)
 # Reported words may open with their own subject or object: "the person said the agent fixed it",
 # "the agent told the user ...". Only a speaker later in them ends the licence.
 _COMPLEMENT_SPEAKER = re.compile(r"\s*(?:that\s+)?" + _PERSON + r"\b", re.IGNORECASE)
@@ -553,18 +586,26 @@ _SUBORDINATE_SUBJECT = re.compile(
 _THAT_OPENING = re.compile(r"\s*that\s*", re.IGNORECASE)
 _LISTENER_OPENING = re.compile(r"\s*(?:" + _PERSON + r"\s*)?", re.IGNORECASE)
 _ASKING = re.compile(r"\b(?:asked|asks|asking)$", re.IGNORECASE)
-_SHORT_ALTERNATIVE = re.compile(r"\s*(?:[\w#-]+\s*){1,2}(?=$|[^\w\s#-])")
-_STATE_WORD = r"(?!(?:and|or|but|so|then|is|are|was|were)\b)[a-z]\w*"
+_STATE_WORD = r"(?!(?i:and|or|but|so|then|is|are|was|were)\b)[A-Z]\w*"
+# A lowercase state is a tracker's own word, not free prose: "Set the task to quickly fix" and
+# "Moved the ticket to closed build succeeded" are claims.
+_LOWER_STATE = (
+    r"(?:done|todo|to\s+do|backlog|triage|in\s+progress|in\s+review|on\s+hold|blocked|"
+    r"canceled|cancelled|duplicate|fixed|verified|open|closed|reopened|resolved|"
+    r"ready(?:\s+for\s+[^\W\d_]+)?)"
+)
+# A state may name where it lives: "Moved the issue to Done in Linear".
+_STATE_PLACE = r"\s+(?:in|on|under|within)\s+"
 _TRACKER_STATE = re.compile(
-    r"\b(?:moved|set|changed|marked|switched)\s+"
-    r"(?:(?:(?:the|a|an)\s+)?(?:issue|ticket|card|task|status|state|item)"
-    r"(?:\s+(?:status|state))?|[A-Z][A-Z0-9]*-\d+)"
-    rf"(?:\s+from\s+(?P<prior>{_STATE_WORD}))?"
-    r"\s+(?:to|as)\s+"
-    rf"(?P<state>`{_STATE_WORD}(?:\s+{_STATE_WORD}){{0,2}}`"
-    rf"|{_STATE_WORD}(?:\s+{_STATE_WORD}){{0,2}})"
-    rf"(?=\s*(?:$|{_CLAUSE_BREAK.pattern}))",
-    re.IGNORECASE,
+    r"(?i:\b(?:moved|set|changed|marked|switched)\s+)"
+    r"(?:(?i:(?:(?:the|a|an)\s+)?(?:issue|ticket|card|task|status|state|item)"
+    r"(?:\s+(?:status|state))?)|[A-Z][A-Z0-9]*-\d+)"
+    rf"(?:(?i:\s+from\s+)(?P<prior>{_STATE_WORD}|(?i:{_LOWER_STATE})(?=\s+(?i:to|as)\b)))?"
+    r"(?i:\s+(?:to|as)\s+)"
+    rf"(?P<state>{_STATE_WORD}(?=(?i:\s+(?:in|on|under|within)\s+))"
+    rf"|{_STATE_WORD}(?:(?:\s+(?i:for|in|to|of|on))?\s+{_STATE_WORD}){{1,2}}(?=\s*$)"
+    rf"|{_STATE_WORD}|`[A-Za-z]\w*(?: [A-Za-z]\w*){{0,2}}`"
+    rf"|(?i:{_LOWER_STATE})(?=\s*$|{_STATE_PLACE}|\s*(?:{_CLAUSE_BREAK.pattern})))"
 )
 _STATE_COUNTS = re.compile(r"\s*\d+\s+[A-Z][a-z]*(?:\s*,\s*\d+\s+[A-Z][a-z]*)+\s*\.?\s*")
 _NOUN = r"(?:fix(?:es)?|works?|pass(?:es)?|merges?|deploys?|repairs?|ships?)"
@@ -582,7 +623,8 @@ _NOUN_PHRASE = re.compile(
 # yesterday"), so a light verb gives no noun licence at all.
 _LIGHT_VERB = re.compile(
     r"\b(?:do|does|did|doing|ran|run|runs|running|performed|performs|executed|executes|"
-    r"committed|commits|conducted|conducts|(?:carried|carries|carry|carrying)\s+out)\s*$",
+    r"committed|commits|conducted|conducts|(?:carried|carries|carry|carrying)\s+out)\s+"
+    r"(?:(?:only|just|also|even|all|both|\w+ly)\s+)?$",
     re.IGNORECASE,
 )
 # A copula or a verb of being anywhere earlier in the clause makes the noun its predicate:
@@ -604,20 +646,41 @@ _ACTIVITY = re.compile(
     r"(?!\w+ly\b)(?:[^\W\d_]\w*|#?\d+))",
     re.IGNORECASE,
 )
+# Words that end a predicate rather than a noun phrase: irregular verbs, adverbs and adjectives
+# ("The fix went in", "The deploy ok", "Merging the PRs went fine", "Shipping today").
+_PREDICATE_WORDS = (
+    r"\w+ly|now|today|tonight|tomorrow|yesterday|soon|again|already|still|also|just|fine|ok|"
+    r"okay|good|well|clean|live|through|there|here|too|yet|first|then|out|up|off|back|"
+    r"is|are|was|were|be|been|being|has|have|had|do|does|did|done|will|would|can|could|should|"
+    r"must|may|might|went|ran|held|stuck|came|got|made|kept|broke|fell|paid|stood|sat|took|"
+    r"holds|sticks|stays|looks|runs|goes|works|passes|lands|succeeds|behaves|builds|compiles|"
+    r"loads|starts|renders|returns|helps|applies|matters|seems|appears|remains|lasts|counts|"
+    r"caught|brought|thought|bought|fought|taught|became|grew|knew|won|beat|hit|lost|spent|"
+    r"felt|meant|went|goes|gone|go|come|stick|stay|hold|take|get|look|seem"
+)
+_PREDICATE_WORD = re.compile(r"(?<![\w-])(?:" + _PREDICATE_WORDS + r")(?![\w-])", re.IGNORECASE)
 # A title clause that ends on a bare noun is a heading item ("Docs fix", "Merge", "Type fixes").
 # "fix" and "repair" need an object as verbs, so a modifier may precede them; "merge" and
 # "deploy" are also intransitive ("PRs merge", "We did merge"), so they must stand alone. "pass"
-# and "works" are left out because "Tests pass" and "Build works" read as results.
+# and "works" are left out because "Tests pass" and "Build works" read as results. Quantifiers
+# and adverbs make a subject and its verb ("Both patches fix", "Patches cleanly fix").
 _HEADING_NOUN = re.compile(
-    r"\s*(?:(?:(?!(?:"
+    r"\s*(?:(?P<mods>(?:(?!(?:"
     + _COMPLETION.pattern
-    + r"|it|this|that|they|these|those|everything|all|now|is|are|was|were|be|been|"
+    + r"|it|this|that|they|these|those|everything|all|both|some|any|many|several|each|every|no|"
+    r"few|most|more|much|is|are|was|were|be|been|"
     r"do|does|did|will|would|can|could|should|must|may|might|has|have|had|to|we|i|you|he|"
     r"she|"
     + _PEOPLE
-    + r")\b)[\w#.-]+\s+){0,2}(?P<noun>fix|fixes|repair|repairs)|(?P<bare>merge|deploy))\s*",
+    + "|"
+    + _PREDICATE_WORDS
+    + r")\b)[\w#.-]+\s+){0,2})(?P<noun>fix|fixes|repair|repairs)|(?P<bare>merge|deploy))\s*",
     re.IGNORECASE,
 )
+# Only list separators may join heading items; a colon, a dash or "after" makes a sentence of
+# them ("Deploy: live in production").
+_LIST_BREAKS = frozenset({"", ",", "and", "(", ")"})
+_ALONE_BREAKS = _LIST_BREAKS | {"or", ";", ".", "after", "before", "until", "since", "once", "when"}
 # A result after the activity ("Fixing the parser eliminated the crash") says it happened.
 _ACTIVITY_RESULT = re.compile(
     r"\b(?:\w+ed|broke|took|left|kept|cut|put|beat|won|gave|held|ran|sent|got|made|brought|"
@@ -626,6 +689,42 @@ _ACTIVITY_RESULT = re.compile(
 )
 _IDENTIFIER = re.compile(r"\b\w+(?:[_.]\w+)+\b")
 _EXTENSION = re.compile(r"[a-z0-9]{1,4}")
+_FILE_EXTENSIONS = frozenset(
+    [
+        "py",
+        "pyi",
+        "js",
+        "mjs",
+        "cjs",
+        "ts",
+        "tsx",
+        "jsx",
+        "json",
+        "md",
+        "yaml",
+        "yml",
+        "toml",
+        "txt",
+        "html",
+        "css",
+        "scss",
+        "sh",
+        "rs",
+        "go",
+        "java",
+        "rb",
+        "c",
+        "h",
+        "cpp",
+        "sql",
+        "lock",
+        "cfg",
+        "ini",
+        "xml",
+        "csv",
+        "log",
+    ]
+)
 # A slash alone does not make a name: "Fixed/verified the parser" is prose. A slashed token is a
 # name only with another joiner or a digit in it, or after a noun that introduces a name.
 _SLASHED = re.compile(r"\b[\w.-]+(?:/[\w.-]+)+\b")
@@ -656,16 +755,112 @@ def _implicit_speech(text: str, *, broad: bool, later: bool) -> re.Match[str] | 
     return pattern.match(visible, _skip(text, 0)) if broad or later else None
 
 
-def _clauses(text: str, *, implicit: bool = False) -> list[tuple[str, bool, bool]]:
-    visible = _unquoted(text)
+_QUOTE_MARKS = frozenset('"“”`')
+
+
+def _quote_free(text: str, match: re.Match[str]) -> bool:
+    # Quoted words are blanked before matching, so a speaker pattern could span them: `The agent
+    # "never" said`, `Team "CI" lead said`, `according to the \`CI\` agent`.
+    return not _QUOTE_MARKS.intersection(text[match.start() : match.end()])
+
+
+def _found(pattern: re.Pattern[str], text: str, visible: str) -> list[re.Match[str]]:
+    return [match for match in pattern.finditer(visible) if _quote_free(text, match)]
+
+
+_SENTENCE_END = re.compile(
+    r"[.!?](?=\s|$|[^\W\d_])|[.!?]['\u2019\"\u201d](?=\s|$)"
+    r"|[;\n\r\v\f\x85\u2028\u2029\u3002\uff61\u061b\u061f\u06d4\u0964\u0965\u203c\u203d\u2047-\u2049]"
+)
+
+
+def _sentence_start(text: str, at: int, *, quotes: bool) -> int:
+    names = _name_spans(text)
+    starts = [
+        match.end() for match in _SENTENCE_END.finditer(text, 0, at) if not _contains(names, match)
+    ]
+    if quotes:
+        starts.extend(
+            quote.end()
+            for quote in _QUOTED.finditer(text, 0, at)
+            if _closed(quote[0]) and quote.end() <= at
+        )
+    return max(starts, default=0)
+
+
+# Only these joiners lend the sentence's subject to a later speech verb. "which" and "without"
+# lend the object's ("Ran the suite, which reported all checks passed" quotes a tool).
+_BORROWING = frozenset({"", "and", "then", ",", ";", ".", "!", "?", "after"})
+# A condition inside a reported plan or request is part of it ("asked the agent to stop if the
+# tests pass", "said it would wait before merging"). A temporal clause with its own subject may
+# state the result in the summary's voice ("said it would hold until the tests pass").
+_CONDITIONS = frozenset({"if", "unless"})
+_TEMPORAL = frozenset({"before", "until", "once", "when", "after"})
+_GERUND = r"\s*(?!(?:no|some|any|every)thing\b|during\b)[^\W\d_]{2,}ing\b"
+_DETERMINERS = r"\b(?:a|an|the|any|each|every|this|that|its|their|our|no)"
+_PLAN = re.compile(
+    r"\b(?:to\s+[^\W\d_]+|would|will|should|could|can|may|might|must|shall)\b|^" + _GERUND,
+    re.IGNORECASE,
+)
+
+
+def _past_completion(segment: str) -> bool:
+    return any(
+        word[0].lower().endswith("ed") or word[0].lower() == "done"
+        for word in _COMPLETION.finditer(segment)
+    )
+
+
+def _kept_condition(text: str, following: int, reported: str, joiner: str) -> bool:
+    if not _PLAN.search(reported):
+        return False
+    stop = _CLAUSE_BREAK.search(text, following)
+    segment = text[following : stop.start() if stop else len(text)]
+    # Without a finite verb of its own the temporal words are a phrase of the plan: "before
+    # merging", "before any merge". "until the tests pass" has one.
+    if joiner in _TEMPORAL and not (
+        re.match(_GERUND, segment, re.IGNORECASE)
+        or (
+            not _PREDICATE_WORD.search(segment)
+            and all(
+                re.search(_DETERMINERS + r"\s+$", segment[: word.start()], re.IGNORECASE)
+                for word in _COMPLETION.finditer(segment)
+            )
+        )
+    ):
+        return False
+    return not _past_completion(segment)
+
+
+# The alternative after "whether to <verb> or" is one bare word ("fix or revert"); anything
+# longer, or a completion word, can be a claim of its own ("whether it failed or is fixed").
+_WHETHER_TO = re.compile(r"\bwhether\s+to\s+[^\W\d_]+\s*$", re.IGNORECASE)
+_SHORT_ALTERNATIVE = re.compile(r"\s*(?:to\s+)?(?P<word>[^\W\d_]+)\s*", re.IGNORECASE)
+
+
+def _short_alternative(text: str, following: int) -> bool:
+    match = _SHORT_ALTERNATIVE.match(text, following)
+    if not match or _COMPLETION.fullmatch(match["word"]):
+        return False
+    return match.end() == len(text) or bool(_CLAUSE_BREAK.match(text, match.end()))
+
+
+def _attached(text: str, quote: re.Match[str]) -> bool:
+    # Only a quote inside a word continues reported words (`said file."py" is fixed`); after a
+    # speech verb, a colon or another quote it stands alone (`said:"ok" the decoder is fixed`).
+    before = text[: quote.start()]
+    return bool(re.search(r"[\w./-]$", before)) and not re.search(
+        r"\b" + _SPEECH_WORDS + r"$", before, re.IGNORECASE
+    )
+
+
+def _breaks(text: str, visible: str, postfixes: Sequence[re.Match[str]]) -> list[tuple[int, int]]:
     quotes = list(_QUOTED.finditer(text))
-    postfixes = list(_POSTPOSED.finditer(visible))
-    postfix_ends = {postfix.end() for postfix in postfixes}
     quoted = [quote.span() for quote in quotes]
     names = _name_spans(text)
     # "then" is a joiner and an adverb, and "as" a joiner and a tracker word: "the agent then
     # said" and "marked the ticket as Done" are each one phrase.
-    speakers = [match.span() for match in _ATTRIBUTED.finditer(visible)]
+    speakers = [match.span() for match in _found(_ATTRIBUTED, text, visible)]
     speakers.extend(match.span() for match in _TRACKER_STATE.finditer(text))
     speakers.extend(match.span() for match in postfixes)
     breaks = [
@@ -674,9 +869,16 @@ def _clauses(text: str, *, implicit: bool = False) -> list[tuple[str, bool, bool
         if not _contains(quoted, match)
         and not _contains(names, match)
         and not _contains(speakers, match)
-        and not (match[0] == ":" and _SPOKEN_COLON.search(visible, 0, match.start()))
+        and not (
+            match[0] == ":"
+            and any(
+                _quote_free(text, colon)
+                for colon in [_SPOKEN_COLON.search(visible, 0, match.start())]
+                if colon
+            )
+        )
     ]
-    breaks.extend((end, end) for end in postfix_ends)
+    breaks.extend((postfix.end(), postfix.end()) for postfix in postfixes)
     for quote in quotes:
         end = quote.end()
         name = quote[0][0] == "`" and any(
@@ -689,71 +891,126 @@ def _clauses(text: str, *, implicit: bool = False) -> list[tuple[str, bool, bool
             and not _TRAILING_SPEAKER.match(text, end)
         ):
             breaks.append((end, end))
-    clauses: list[tuple[str, bool, bool]] = []
+    return sorted(breaks)
+
+
+def _reported_join(
+    text: str,
+    current: str,
+    speech: re.Match[str] | None,
+    reported: str,
+    joiner: str,
+    following: int,
+) -> bool:
+    # Whether the reported words run on past the break that ends `current`.
+    return (
+        (joiner in _SUBORDINATORS and _opens_reported(current, speech, joiner))
+        or (
+            joiner in _CONDITIONS | _TEMPORAL and _kept_condition(text, following, reported, joiner)
+        )
+        or (
+            joiner == "or"
+            and bool(_WHETHER_TO.search(_unquoted(current)))
+            and _short_alternative(text, following)
+        )
+    )
+
+
+def _quote_continues(text: str, end: int, *, licensed: bool) -> bool:
+    # Unquoted words after a closed quote are not the quoted speaker's. Inside a speaker's
+    # reported words a quote attached to a word continues them (`the agent said file."py"
+    # is fixed`); a free-standing one does not (`said "hello" having fixed the parser`).
+    # Outside reported words, the joined words are unlicensed either way.
+    quote = next(q for q in _QUOTED.finditer(text) if q.end() == end)
+    continuation = (
+        _attached(text, quote)
+        and not re.search(r"[.!?,;:]\s*$", quote[0][1:-1])
+        and not re.match(r"\s*(?:" + _COMPLETION.pattern + r")\b", text[end:], re.IGNORECASE)
+    )
+    return not licensed or continuation
+
+
+def _clauses(text: str, *, implicit: bool = False) -> list[tuple[str, bool, bool, str]]:
+    visible = _unquoted(text)
+    postfixes = _found(_POSTPOSED, text, visible)
+    postfix_ends = {postfix.end() for postfix in postfixes}
+    clauses: list[tuple[str, bool, bool, str]] = []
     start = 0
     later = False
-    for end, following in sorted(breaks):
+    opener = ""
+    for end, following in _breaks(text, visible, postfixes):
         current = text[start:end]
+        borrow = later and opener in _BORROWING and _implied_subject(text, start)
         spoken = _attributed_spans(current, _unquoted(current))
-        speech = _implicit_speech(
-            current, broad=implicit and not clauses, later=later and _implied_subject(text, start)
-        )
+        speech = _implicit_speech(current, broad=implicit and not clauses, later=borrow)
         if speech:
             spoken.append((speech.end(), _reported_end(_unquoted(current), speech.end())))
-        licensed = any(begin <= len(current) - 1 < stop for begin, stop in spoken)
+        covering = [begin for begin, stop in spoken if begin <= len(current) - 1 < stop]
         joiner = text[end:following].lower()
         according = _ACCORDING.match(current + text[end:following])
-        if joiner == ":" and speech and speech.end() == len(current.rstrip()):
-            continue
-        if licensed and (
-            (joiner in _SUBORDINATORS and _opens_reported(current, speech, joiner))
-            # The alternative after "whether ... or" is a short choice ("fix or revert"); a
-            # longer one can be a claim of its own ("whether to fix or the parser is fixed").
+        if according and not _quote_free(current + text[end:following], according):
+            according = None
+        if (
+            (joiner == ":" and speech and speech.end() == len(current.rstrip()))
             or (
-                joiner == "or"
-                and re.search(r"\bwhether\b", _unquoted(current), re.IGNORECASE)
-                and _SHORT_ALTERNATIVE.match(text, following)
+                covering
+                and _reported_join(
+                    text, current, speech, _unquoted(current)[min(covering) :], joiner, following
+                )
+            )
+            or (according and according.end() == len(current) + following - end)
+            or (
+                end == following
+                and end not in postfix_ends
+                and _quote_continues(text, end, licensed=bool(covering))
             )
         ):
             continue
-        if according and according.end() == len(current) + following - end:
-            continue
-        # Unquoted words after a closed quote are not the quoted speaker's. Inside a speaker's
-        # reported words a quote attached to a word continues them (`the agent said file."py"
-        # is fixed`); a free-standing one does not (`said "hello" having fixed the parser`).
-        # Outside reported words, the joined words are unlicensed either way.
-        if end == following and end not in postfix_ends:
-            quote = next(q for q in quotes if q.end() == end)
-            attached = quote.start() > 0 and not text[quote.start() - 1].isspace()
-            continuation = (
-                attached
-                and not re.search(r"[.!?,;:]\s*$", quote[0][1:-1])
-                and not re.match(
-                    r"\s*(?:" + _COMPLETION.pattern + r")\b", text[end:], re.IGNORECASE
-                )
-            )
-            if not licensed or continuation:
-                continue
-        clauses.append((current, later, later and _implied_subject(text, start)))
+        clauses.append((current, later, borrow, opener))
         # Revoking a quote or postfix does not supply an implicit subject to its suffix.
         later = end < following
+        opener = joiner.strip()
         start = max(start, following)
-    clauses.append((text[start:], later, later and _implied_subject(text, start)))
+    borrow = later and opener in _BORROWING and _implied_subject(text, start)
+    clauses.append((text[start:], later, borrow, opener))
     return clauses
 
 
 # A later clause opening with a speech verb borrows its sentence's subject, which must be a named
 # speaker or the bullet's own unstated one: "The suite ran and reported passed" quotes a tool.
+_PAST_VERBS = (
+    "ran|read|wrote|made|got|sent|found|took|began|saw|put|set|left|kept|built|held|told|said|"
+    "asked|went|came|did|tried|brought|shut|split"
+)
 _SENTENCE_SUBJECT = re.compile(
-    r"\s*(?:" + _PERSON + r"\b|(?:[a-z]{2,}ed|ran|read|wrote|made|got|sent|found|took|began|saw|"
-    r"put|set|left|kept|built|held|told|said|asked|went|came|did|tried|brought|shut|split)\b)",
+    r"\s*(?:" + _PERSON + r"\b|(?P<verb>[a-z]{2,}ed|" + _PAST_VERBS + r")\b)", re.IGNORECASE
+)
+_LATER_VERB = re.compile(r"\b(?:[a-z]{2,}ed|" + _PAST_VERBS + r")\b", re.IGNORECASE)
+_DETERMINER = re.compile(
+    r"\s*(?:the|a|an|this|that|these|those|its|their|our|his|her|my|your|all|both|each|every|"
+    r"some|any|no|it|them|\d+)\b",
     re.IGNORECASE,
 )
 
 
 def _implied_subject(text: str, at: int) -> bool:
-    sentences = [match.end() for match in re.finditer(r"[.!?;]\s+", text[:at])]
-    return bool(_SENTENCE_SUBJECT.match(text, sentences[-1] if sentences else 0))
+    # A postposed attribution leaves the bullet's own speaker unclear for what follows it.
+    if any(postfix.end() <= at for postfix in _found(_POSTPOSED, text, _unquoted(text))):
+        return False
+    # The break that opens the clause is not its sentence's start: "Inspected the logs; said".
+    begin = _skip(text, _sentence_start(text, len(text[:at].rstrip()) - 1, quotes=False))
+    subject = _SENTENCE_SUBJECT.match(text, begin)
+    if not subject:
+        return False
+    verb = subject["verb"]
+    # "Automated checks ran and reported passed": an -ed word before a noun and a later verb is
+    # an adjective on a tool's name, not the bullet's unstated verb.
+    return not (
+        verb
+        and verb.lower().endswith("ed")
+        and not _DETERMINER.match(text, subject.end())
+        and _LATER_VERB.search(text, subject.end(), at)
+    )
 
 
 def _opens_reported(current: str, speech: re.Match[str] | None, joiner: str) -> bool:
@@ -761,7 +1018,7 @@ def _opens_reported(current: str, speech: re.Match[str] | None, joiner: str) -> 
     # that once it lands"), "whether" after any speech verb, and a question word after "asked".
     # Elsewhere it may modify the saying ("the agent replied after the tests passed", "said
     # nothing after the parser was fixed"), which states the result in the summary's voice.
-    verbs = list(_ATTRIBUTED.finditer(_unquoted(current)))
+    verbs = _found(_ATTRIBUTED, current, _unquoted(current))
     if speech:
         verbs.append(speech)
     for verb in verbs:
@@ -775,15 +1032,45 @@ def _opens_reported(current: str, speech: re.Match[str] | None, joiner: str) -> 
     return False
 
 
+# A participle or an absolute phrase after the saying is not what was said: "said hi having
+# fixed the parser", "replied with production deployed".
+_PARTICIPLE = re.compile(r"\b(?:having|managing|leaving)\b", re.IGNORECASE)
+_ABSOLUTE = re.compile(r"\s*(?:with|using|without)\b", re.IGNORECASE)
+
+
 def _reported_end(visible: str, begin: int) -> int:
+    if _ABSOLUTE.match(visible, begin):
+        return begin
+    limit = len(visible)
+    # "said ok with everything merged": a with-phrase holding a past result is the summary's.
+    for absolute in re.finditer(r"\b(?:with|using)\b", visible[:limit]):
+        if absolute.start() > begin and _past_completion(visible[absolute.end() :]):
+            limit = absolute.start()
+            break
+    for participle in _PARTICIPLE.finditer(visible, begin):
+        if not re.search(r"\bthat\b", visible[begin : participle.start()], re.IGNORECASE):
+            limit = participle.start()
+            break
     # A later speaker without a verb of their own starts words the first speaker did not say
     # ("the person asked about the bug the agent fixed"), unless a subordinator introduces them.
     opening = _COMPLEMENT_SPEAKER.match(visible, begin)
-    for later in _SPEAKER.finditer(visible, opening.end() if opening else begin):
+    for later in _ANY_SPEAKER.finditer(visible, opening.end() if opening else begin, limit):
         prefix = visible[begin : later.start()]
         if not _SUBORDINATE_SUBJECT.search(prefix):
             return later.start()
-    return len(visible)
+    return limit
+
+
+# A gerund carries a speaker's words only after the speaker sent a message: "Agent sent a note
+# saying ...". "The agent read a log line saying ..." quotes the log.
+_SAYING = re.compile(
+    r"\s*"
+    + _PERSON
+    + _ADVERB
+    + r"\s+(?:(?:sent|left|wrote|posted)\s+(?:(?:a|an|the)\s+)?(?:[\w-]+\s+)?"
+    r"(?:note|message|comment|reply|request)|commented(?:\s+on\s+[\w#./-]+)?)\s+saying\b",
+    re.IGNORECASE,
+)
 
 
 def _attributed_spans(text: str, visible: str) -> list[tuple[int, int]]:
@@ -794,16 +1081,19 @@ def _attributed_spans(text: str, visible: str) -> list[tuple[int, int]]:
         if trailing:
             spans.append(quote.span())
             postposed.add(trailing.end())
-    postfixes = list(_POSTPOSED.finditer(visible))
-    spans.extend((0, postfix.start()) for postfix in postfixes)
+    postfixes = _found(_POSTPOSED, text, visible)
+    # A postposed attribution covers its own sentence only.
+    spans.extend(
+        (_sentence_start(text, postfix.start(), quotes=True), postfix.start())
+        for postfix in postfixes
+    )
     according = _ACCORDING.match(visible)
-    if according:
+    if according and _quote_free(text, according):
         spans.append((according.end(), len(text)))
-    speaker = _SPEAKER.match(visible, _skip(text, 0))
-    gerund = re.search(r"\bsaying\b", visible, re.IGNORECASE) if speaker else None
-    if gerund:
-        spans.append((gerund.end(), _reported_end(visible, gerund.end())))
-    for speech in _ATTRIBUTED.finditer(visible):
+    saying = _SAYING.match(visible)
+    if saying and _quote_free(text, saying):
+        spans.append((saying.end(), _reported_end(visible, saying.end())))
+    for speech in _found(_ATTRIBUTED, text, visible):
         if speech.end() in postposed or _contains([p.span() for p in postfixes], speech):
             continue
         spans.append((speech.end(), _reported_end(visible, speech.end())))
@@ -815,6 +1105,9 @@ def _named(token: str) -> bool:
     # "all-fixed", "it.is.fixed") is a claim, and a dotted token needs a file extension, an
     # underscore or a digit, or "Parser.fixed" and "works.Now" would pass as names.
     parts = [part for part in re.split(r"[-_./]+", token) if part]
+    # An underscore-joined file name is a name whatever its words: "fix_the_parser.py".
+    if "_" in token and "." in token and token.rsplit(".", 1)[-1].lower() in _FILE_EXTENSIONS:
+        return True
     if any(part.lower() in _FILLER for part in parts) or all(
         _COMPLETION.fullmatch(part) for part in parts
     ):
@@ -854,7 +1147,152 @@ def _state_spans(text: str, visible: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _noun_spans(text: str) -> list[tuple[int, int]]:
+# A noun licence needs object position: after a verb or a preposition ("Reviewed the CI fix",
+# "a list of fixes"). A determiner phrase opening a clause is a subject ("The fix holds", "The
+# merge went through", "Their work paid off").
+_OBJECT_TAKER = re.compile(
+    r"(?:\b(?:of|for|over|on|in|into|to|from|with|at|by|about|across|against|between|under|"
+    r"within|through|via|per|read|saw|found|wrote|began|chose|drew|took|sent|built|left|kept|"
+    r"held|led|met|set|put|cut|gave)|\bto\s+[^\W\d_]+|[^\W\d_]{2,}ed|[^\W\d_]{3,}ing)\s+"
+    r"(?:(?:only|just|also|even|all|both|\w+ly)\s+)?$",
+    re.IGNORECASE,
+)
+_PREPOSITION = (
+    r"(?:of|for|over|on|in|into|to|from|with|at|by|about|across|against|between|under|within|"
+    r"via|per)"
+)
+_AFTER_OBJECT = re.compile(r"\s*$|\s+(?:so\s+far\b|" + _PREPOSITION + r"\b)", re.IGNORECASE)
+# One head noun may follow ("the merge state", "their repair notes"); a plural one only at the
+# end, since "the fix applies to main" is a predicate.
+_HEAD_NOUN = re.compile(
+    r"\s+(?P<head>[^\W\d_][\w-]*)(?:\s*$|(?P<more>\s+" + _PREPOSITION + r"\b))", re.IGNORECASE
+)
+_HEAD_WORD = re.compile(r"\s+(?P<head>[^\W\d_][\w-]*)")
+_QUANTIFIERS = frozenset({"some", "any"})
+# After a verb that takes a clause, a word after the noun may be its verb: "Confirmed the fix
+# holds", "Checked the merge improves". Only a preposition or the clause end may follow.
+_COMPOUND_HEADS = frozenset(
+    [
+        "state",
+        "status",
+        "conflict",
+        "conflicts",
+        "queue",
+        "request",
+        "requests",
+        "commit",
+        "commits",
+        "window",
+        "key",
+        "button",
+        "step",
+        "job",
+        "jobs",
+        "script",
+        "list",
+        "notes",
+        "note",
+        "plan",
+        "model",
+        "branch",
+        "check",
+        "checks",
+        "order",
+        "target",
+        "tool",
+        "message",
+        "log",
+        "logs",
+        "comment",
+        "comments",
+        "rule",
+        "rules",
+        "gate",
+        "path",
+        "flow",
+        "command",
+        "mode",
+        "option",
+        "base",
+    ]
+)
+_CLAUSAL_VERB = re.compile(
+    r"\b(?:confirm|check|ensur|found|find|saw|see|notic|not|show|prov|expect|assum|believ|"
+    r"thought|knew|know|observ|reali[sz]|judg|deem|consider|says?|said|told|"
+    r"(?:made|make|making)\s+sure)\w*\s+(?:(?:only|just|also|even|all|both|\w+ly)\s+)?$",
+    re.IGNORECASE,
+)
+_SINGULAR = frozenset({"a", "an", "the", "this", "that", "its", "their", "our"})
+
+
+def _head_noun(head: str) -> bool:
+    word = head.lower()
+    return not (
+        _PREDICATE_WORD.fullmatch(head)
+        or _COMPLETION.fullmatch(head)
+        or word.endswith(("ed", "ing"))
+    )
+
+
+def _object_position(visible: str, match: re.Match[str], *, alone: bool) -> bool:
+    before = visible[: match.start()]
+    if not before.strip():
+        return alone and _alone_phrase(visible, match)
+    if not _OBJECT_TAKER.search(before):
+        return False
+    return _object_phrase(visible, match, clausal=bool(_CLAUSAL_VERB.search(before)))
+
+
+def _alone_phrase(visible: str, match: re.Match[str]) -> bool:
+    # A clause of one noun phrase and nothing else names a thing: "after the merge", "a bug
+    # fix release". A singular determiner before an -s word is a subject and its verb.
+    head = _HEAD_NOUN.match(visible, match.end())
+    rest = visible[match.end() :]
+    words = match[0].split()
+    # Any plural, numeric or adverb modifier allows a verb reading: "The changes soon merge".
+    loose = any(
+        w.isdecimal() or w.lower().endswith("s") or _PREDICATE_WORD.fullmatch(w)
+        for w in words[1:-1]
+    )
+    return (
+        words[0].lower() in _SINGULAR
+        and not loose
+        and (
+            not rest.strip()
+            or bool(
+                head
+                and not head["more"]
+                and _head_noun(head["head"])
+                and not head["head"].lower().endswith("s")
+            )
+        )
+    )
+
+
+def _object_phrase(visible: str, match: re.Match[str], *, clausal: bool) -> bool:
+    end = match.end()
+    # A compound or possessive modifier may take one more head word: "the work-row number
+    # column", "the sample work's files".
+    compound = re.match(r"-[\w-]+|['\u2019]s\b", visible[end:])
+    if compound:
+        end += compound.end()
+    for _ in range(2 if compound else 1):
+        if _AFTER_OBJECT.match(visible, end):
+            return True
+        head = _HEAD_WORD.match(visible, end)
+        if not head or not _head_noun(head["head"]):
+            return False
+        word = head["head"].lower()
+        if clausal and word not in _COMPOUND_HEADS:
+            return False
+        end = head.end()
+        # A plural head only at the end: "the fix applies to main" is a predicate.
+        if word.endswith("s") and not word.endswith("ss") and visible[end:].strip():
+            return False
+    return bool(_AFTER_OBJECT.match(visible, end))
+
+
+def _noun_spans(text: str, *, alone: bool = True) -> list[tuple[int, int]]:
     spans = []
     visible = _unquoted(text)
     for match in _NOUN_PHRASE.finditer(visible):
@@ -881,9 +1319,11 @@ def _noun_spans(text: str) -> list[tuple[int, int]]:
         if (
             not ambiguous
             and not predicate
+            and determiner not in _QUANTIFIERS
             and not _COPULA.search(visible, 0, match.start())
             and not _NOUN_PREDICATE.match(visible, match.end())
             and not _LIGHT_VERB.search(visible, 0, match.start())
+            and _object_position(visible, match, alone=alone)
         ):
             spans.append(match.span("noun"))
     return spans
@@ -893,19 +1333,66 @@ def _contains(spans: Sequence[tuple[int, int]], match: re.Match[str]) -> bool:
     return any(start <= match.start() and match.end() <= end for start, end in spans)
 
 
-def _clause_claim(text: str, *, implicit: bool, spoken: bool, title: bool) -> bool:
+def _activity_span(visible: str) -> tuple[int, int] | None:
+    activity = _ACTIVITY.match(visible)
+    if not activity:
+        return None
+    rest = activity.start("object")
+    # Only the object and prepositional or numeric material may follow the activity: "Merging
+    # PR 5 into main", never "Merging the PR was clean" or "Deploying the build now".
+    if _ACTIVITY_RESULT.search(visible, rest) or _PREDICATE_WORD.search(visible, rest):
+        return None
+    # An -s word with more after it is a verb ("Merging the PR unblocks deploys"); a plural
+    # noun ends the object or comes before a number or a preposition ("Merging PRs 701").
+    words = re.findall(r"[\w#'-]+", visible[rest:])
+    for word, after in itertools.pairwise(words):
+        lower = word.lower()
+        if (
+            lower.endswith("s")
+            and not lower.endswith("ss")
+            and not re.fullmatch(r"#?\d+|" + _PREPOSITION, after, re.IGNORECASE)
+        ):
+            return None
+    return activity.start(), rest
+
+
+def _heading_span(visible: str, *, bare: bool, listed: bool) -> tuple[int, int] | None:
+    heading = _HEADING_NOUN.fullmatch(visible)
+    if not heading:
+        return None
+    if heading["bare"]:
+        return heading.span("bare") if bare else None
+    mods = heading["mods"].split()
+    # "Docs fix" is a list item; "Patches fix" alone, or "Retry patches fix", is a subject and verb.
+    plural = bool(mods) and mods[-1].lower().endswith("s") and not mods[-1].lower().endswith("ss")
+    if plural and heading["noun"].lower() in {"fix", "repair"} and not (len(mods) == 1 and listed):
+        return None
+    return heading.span("noun")
+
+
+def _clause_claim(
+    text: str,
+    *,
+    implicit: bool,
+    spoken: bool,
+    title: bool = False,
+    heading: bool = False,
+    bare: bool = False,
+    listed: bool = False,
+    alone: bool = True,
+) -> bool:
     visible = _unquoted(text)
     attributed = _attributed_spans(text, visible)
     speech = _implicit_speech(text, broad=implicit, later=spoken)
     if speech:
         attributed.append((speech.end(), _reported_end(visible, speech.end())))
-    limited = _name_spans(text) + _state_spans(text, visible) + _noun_spans(text)
-    activity = _ACTIVITY.match(visible) if title else None
-    if activity and not _ACTIVITY_RESULT.search(visible, activity.end("object")):
-        limited.append((activity.start(), activity.start("object")))
-    heading = _HEADING_NOUN.fullmatch(visible) if title else None
-    if heading:
-        limited.append(heading.span("noun") if heading["noun"] else heading.span("bare"))
+    limited = _name_spans(text) + _state_spans(text, visible) + _noun_spans(text, alone=alone)
+    activity = _activity_span(visible) if title else None
+    if activity:
+        limited.append(activity)
+    item = _heading_span(visible, bare=bare, listed=listed) if heading else None
+    if item:
+        limited.append(item)
     return any(
         not _contains(attributed, word)
         and (_RESULT_VERB.search(visible, 0, word.start()) or not _contains(limited, word))
@@ -935,23 +1422,49 @@ def completion_claim(text: str, *, kind: str | None = None, title: bool = False)
         c for c in unicodedata.normalize("NFKC", text) if unicodedata.category(c) != "Cf"
     )
     folded = _LOOSE_UNDERSCORE.sub(" ", folded.translate(_LATIN_LOOKALIKES))
+    # A folded underscore leaves two spaces, which hid "The build_ agent" from the speaker guard.
+    folded = re.sub(r"[ \t]{2,}", " ", folded)
     if _mixed_script(folded) or _CHECK_GLYPH.search(folded):
         return True
-    if _STATE_COUNTS.fullmatch(folded) and not any(
-        word[0].lower().endswith(("ed", "ing")) for word in _COMPLETION.finditer(folded)
+    # "92 Done, 2 Duplicate" counts tracker states; "12 Pass, 1 Fail" counts results.
+    if _STATE_COUNTS.fullmatch(folded) and all(
+        word[0].lower() == "done" for word in _COMPLETION.finditer(folded)
     ):
         return False
+    clauses = _clauses(_without_tool_reports(folded), implicit=kind in {"said", "asked"})
+    # A list item that opens on a predicate word ("Deploy, live in production") makes the
+    # heading a sentence.
+    listed = title and all(
+        opener in _LIST_BREAKS and not _PREDICATE_WORD.match(clause.strip())
+        for clause, _, _, opener in clauses
+    )
+    items = sum(1 for clause, _, _, _ in clauses if clause.strip())
     return any(
         _clause_claim(
             clause,
             implicit=index == 0 and kind in {"said", "asked"},
             spoken=spoken,
             title=title and (index == 0 or later),
+            heading=listed and (index == 0 or later),
+            # A bare "merge" opens the title or follows a comma: "Branches rebase and merge"
+            # is a subject and two verbs.
+            bare=index == 0 or opener == "," or (opener == "and" and _after_comma(clauses, index)),
+            listed=items > 1,
+            # A noun phrase standing alone after other words names a thing ("after the merge"),
+            # unless a colon or dash makes it a subject ("The fix: in", "The merge, then nothing").
+            alone=any(clause.strip() for clause, _, _, _ in clauses[:index])
+            and opener in _ALONE_BREAKS
+            and (index + 1 == len(clauses) or clauses[index + 1][3] in _ALONE_BREAKS),
         )
-        for index, (clause, later, spoken) in enumerate(
-            _clauses(_without_tool_reports(folded), implicit=kind in {"said", "asked"})
-        )
+        for index, (clause, later, spoken, opener) in enumerate(clauses)
     )
+
+
+def _after_comma(clauses: Sequence[tuple[str, bool, bool, str]], index: int) -> bool:
+    # The last item of a list of three or more: "Windows deferral, notarization and merge".
+    # "Branches rebase, and merge" has a subject and two verbs.
+    items = [clause for clause, _, _, _ in clauses[:index] if clause.strip()]
+    return len(items) > 1 and any(opener == "," for _, _, _, opener in clauses[:index])
 
 
 def _display(text: str, chars: int, *, kind: str | None = None, title: bool = False) -> Display:
