@@ -220,7 +220,9 @@ export const EditsAreHeldAndSteerBackIsShown: Story = {
       area.value.startsWith('Back to my goal:'),
     ) as HTMLTextAreaElement;
     await expect(box.value).not.toContain('{{clock:');
-    await expect(box.value).toMatch(/departed from my goal at \d\d:\d\d, where you said "/);
+    await expect(box.value).toMatch(
+      /departed from my goal at (\d{4}-\d\d-\d\d )?\d\d:\d\d, where you said "/,
+    );
   },
 };
 

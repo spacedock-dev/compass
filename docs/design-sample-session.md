@@ -140,7 +140,7 @@ sample was captured:
   sample's 75,130 bytes to the bound is at most about 233 KB of page, which leaves the rest of the
   400 KiB to the code that ships beside it.
 
-This sample's fixture is 132,994 bytes of compact JSON, and the page built with it 2,041,319 bytes. `frontend/build/page-size.test.mjs` checks
+This sample's fixture is 132,994 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
 
