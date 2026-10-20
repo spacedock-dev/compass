@@ -214,6 +214,13 @@ export const EditsAreHeldAndSteerBackIsShown: Story = {
       canvasElement.querySelector('[data-next-cockpit-action="steer-back"]') as HTMLElement,
     );
     await waitFor(() => expect(canvas.getByText(/Back to my goal:/)).toBeVisible());
+    // The stored correction keeps its times as moments; the reader sees them on their own clock, the
+    // clock the departure's cited message is drawn on beside it, with the agent's words quoted.
+    const box = [...canvasElement.querySelectorAll('textarea')].find((area) =>
+      area.value.startsWith('Back to my goal:'),
+    ) as HTMLTextAreaElement;
+    await expect(box.value).not.toContain('{{clock:');
+    await expect(box.value).toMatch(/departed from my goal at \d\d:\d\d, where you said "/);
   },
 };
 

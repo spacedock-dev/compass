@@ -22,10 +22,11 @@ without knowing the project, which is why this session was picked over the other
 for the summary work ([the README](../sample-session/README.md#why-this-session-and-why-this-stretch)
 says more).
 
-On the page the stored summary has six phases in two parts, three of them marked as holding the
+On the page the stored summary has seven phases in two parts, three of them marked as holding the
 evidence for a departure; the reading finds two departures, on the goal and on the outcome line, and
-the drift level reads Medium from them. Steer back composes a correction that names the entry the
-departure rests on by number.
+the drift level reads Medium from them. Steer back composes a correction that gives each departure's
+time on the reader's clock, quotes the agent's words at that moment and carries the reading's
+explanation, with no entry numbers.
 
 ### Rejected: the first sample
 
@@ -84,11 +85,19 @@ Rewrites make the capture a stable sample and not a snapshot of one afternoon:
 - Every time within six hours of the capture moves to just after the session's last record, so
   "1m ago" reads the same on any day. The sample's clock (`sampleClock` in `sampleShell.ts`) starts
   at that moment and runs on from it. The summary is placed 30 seconds after the last record, as it
-  is made when the finished session is opened, and the reading 45 seconds after it.
+  is made when the finished session is opened, the reading 45 seconds after it and the settling of
+  the later directions 60 seconds after it. The reading and the settle are placed rather than
+  shifted, because a reading may be kept from an earlier capture than the summary's.
 - The reading's sentence counting how old its entries are ("The oldest is from about 3846h ago") is
   counted from the reading's place on that timeline instead, "about 1h ago".
 - The board's permissions read as a store with no stored off: readings and summaries on, nothing
-  refused and no notice recorded yet, with one reading and the stored summary's three calls counted.
+  refused and no notice records kept, with no notice due because both kinds of call were made, and
+  with one reading and the stored summary's three calls counted.
+- The correction keeps each time as its moment, `{{clock:<seconds>}}`, and the sample's server draws
+  it on the reader's clock. The composer writes the reader's local time (owner, 2026-10-20), and a
+  correction drawn in the capture's zone, UTC, would name 11:23 beside a cited message the page
+  draws at 19:23 for a reader eight hours east. Rejected: storing it in UTC with a note, because the
+  reader copies the text into a session, where the note does not travel.
 
 The board's digest of the store the reading was saved in, and the summary prompt's digest in the
 summary's model stamp, are cut to 32 characters, so nothing in the file is a credential-length value
@@ -131,7 +140,7 @@ sample was captured:
   sample's 75,130 bytes to the bound is at most about 233 KB of page, which leaves the rest of the
   400 KiB to the code that ships beside it.
 
-This sample's fixture is 128,297 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
+This sample's fixture is 132,994 bytes of compact JSON, and the page built with it 2,041,319 bytes. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
 
@@ -142,7 +151,8 @@ Two layers hold it, and either alone is enough.
 The server layer is `createSampleFetch`. A read answers from the fixture. Composing a correction
 answers the correction `correction.compose` makes from the fixture's own row and record (the builder
 writes it with `--recompose`, and `test_sample_session_files` fails while the stored one differs, so
-the demo shows each departure's explanation the real composer carries), and recording that it was
+the demo shows each departure's explanation the real composer carries), with each kept moment drawn
+on the reader's clock by `datedClock`, the page's copy of the composer's rule, and recording that it was
 copied is accepted and goes nowhere. Every other write is refused with a 403 and a sentence saying this is a sample, the summary's
 start, cancel and delete included.
 
@@ -203,8 +213,9 @@ was added.
   should show.
 - Several of the summary's lines are withheld, and say so in their place, because this session is
   about merging pull requests and closing issues and the summary may not say that in its own voice.
-  The opening summary is withheld for the same reason. That is the ruled backstop at work, not a fault
-  in the capture, and the sample shows it as any session would.
+  Seven of 35 lines are withheld, including the whole last phase, which holds the steer; the opening
+  summary and every phase title are shown. That is the ruled backstop at work, not a fault in the
+  capture, and the sample shows it as any session would.
 - The fixture is the shape of the page's payloads on the day it was captured. A payload change the
   page cannot parse fails the sample's tests, and a change it can parse leaves the sample as it was.
 - Times in the session are shifted by one fixed offset, a whole number of days plus a time of day, so

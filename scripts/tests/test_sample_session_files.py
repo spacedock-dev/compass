@@ -180,6 +180,21 @@ class SampleSessionFilesTest(unittest.TestCase):
         self.assertEqual(build_sample_fixture.recompose_correction(fixture), fixture["correction"])
         text = "".join(p for p in fixture["correction"]["parts"] if isinstance(p, str))
         self.assertEqual(2, text.count("\n  Why Compass reads this as drift: "))
+        # The owner's second ruling of 2026-10-20: the agent's own words, no Compass entry numbers,
+        # and every time kept as its moment, for the sample's server to draw on the reader's clock.
+        self.assertIn(', where you said "', text)
+        self.assertNotIn("entry #", text)
+        self.assertRegex(text, r"departed from my goal at \{\{clock:\d+\.\d+\}\}")
+        self.assertNotRegex(re.sub(r"\{\{clock:\d+\.\d+\}\}", "", text), r"\d\d:\d\d")
+
+    def test_the_fixture_discloses_in_the_servers_current_words(self) -> None:
+        # Rebuilt from a real server, so a disclosure change reaches the sample only through a
+        # capture; the board's sentence is the one the server writes today.
+        sys.path.insert(0, str(build_sample_fixture.SKILL))
+        from compass_runtime import summary_jobs  # noqa: PLC0415 - the skill runtime, on demand
+
+        grant = json.loads(FIXTURE.read_text(encoding="utf-8"))["board"]["summaries"]
+        self.assertEqual(summary_jobs.disclosure(grant["destination"]), grant["disclosure"])
 
     def test_the_fixture_carries_the_stored_summary_and_every_record_page(self) -> None:
         fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))

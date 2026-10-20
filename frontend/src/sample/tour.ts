@@ -21,7 +21,7 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'phase',
     title: 'A phase that holds a departure',
-    body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold it: the milestone stood with issues still open, and at the end, short of closing every issue, the agent reported a blocker, and the person replied that the open issue stays and is to be finished.',
+    body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold it: the agent reports the milestone at 97.3% with issues still open; short of closing every issue, it says the walk found a blocker so the milestone can’t close yet; and at the end the person replies that the open issue stays and is to be finished.',
   },
   {
     id: 'departure',
@@ -31,7 +31,7 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'steer',
     title: 'Steer back',
-    body: 'A correction written from your own goal and expected outcome, naming the entries by number. Copy it and paste it into the session yourself. Compass never sends anything into a session.',
+    body: 'A correction written from your own goal and expected outcome. For each departure it gives the time on your clock, the agent’s own words at that moment so the agent can find it, and why Compass reads it as drift. Copy it and paste it into the session yourself. Compass never sends anything into a session.',
   },
   {
     id: 'sent',

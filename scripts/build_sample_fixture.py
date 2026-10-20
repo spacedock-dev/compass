@@ -11,18 +11,21 @@ against an isolated home, so nothing about a real machine or session can reach t
     build_sample_fixture.py --base-url http://127.0.0.1:4712 --project acme/dashboard \
         --sid f7352072 --out frontend/src/sample/session.fixture.json
 
-Four rewrites make the capture a stable sample rather than a snapshot of one afternoon:
+These rewrites make the capture a stable sample rather than a snapshot of one afternoon:
 
 - The session id becomes `sample`, the id the page reserves for it.
 - Every time within six hours of the capture moves to just after the session's last record, so "5m
   ago" reads the same on any day, and the stored summary and reading sit where they were made: the
-  summary first, as it is made when the finished session is opened, then the reading.
+  summary first, as it is made when the finished session is opened, then the reading, then the
+  settling of the later directions.
 - The one-line sentence that counted entries "about 3846h ago" counts them from the reading's own
   moment on that timeline, which is what the same words say when the reading is read on the day.
 - The correction is composed here by `correction.compose`, from the fixture's own row and record,
   rather than kept from the capture, so it carries what the composer carries now (each departure's
-  explanation since the owner's ruling of 2026-10-20) and its times read in UTC, as the timeline
-  does. `--recompose` rewrites only that field of an existing fixture.
+  explanation, the agent's quoted words and no entry numbers since the owner's rulings of
+  2026-10-20). Its times are kept as moments, which the sample's own server draws on the reader's
+  local clock as the real route does. `--recompose` rewrites only that field of an existing
+  fixture.
 - The digests that bind the capture's stores (the board's intent revision, the summary's prompt
   digest in its model stamp) are cut to 32 characters, so nothing in the file is a credential-length
   value.
@@ -50,6 +53,10 @@ RECORD_MAX_PAGES = 20
 OLDER_CURSOR = "older-{}"
 SUMMARIZED_AFTER_LAST_RECORD = 30
 READ_AFTER_LAST_RECORD = 45
+SETTLED_AFTER_LAST_RECORD = 60
+# A correction's time, kept as its moment for the sample's server to draw (`recompose_correction`).
+# `frontend/src/sample/sampleFetch.ts` reads the same shape.
+CLOCK_MARK = "{{{{clock:{at}}}}}"
 GENERATED_AFTER_LAST_RECORD = 95
 DIGEST_CHARS = 32
 SKILL = Path(__file__).resolve().parents[1] / "compass" / "skills" / "compass"
@@ -172,6 +179,29 @@ def place_summary(fixture: dict[str, Any], made_at: float) -> None:
         )
 
 
+def place_reading(fixture: dict[str, Any], last: float) -> None:
+    """Put the stored reading, and the settling of the later directions, on the sample's timeline.
+
+    The reading may be kept from an earlier capture than the summary's (the README says when), so
+    every moment of it is placed here rather than trusted to the six-hour shift: its read time in
+    the row and in both focused answers' levels, its stamp, its age sentence, and the settle that
+    followed it in the run that made it.
+    """
+    row = fixture["board"]["sessions"][0]
+    assessment = row["annotation_assessment"]
+    assessment["read_at"] = last + READ_AFTER_LAST_RECORD
+    assessment["stamp"] = (
+        f"{assessment['stamp'].split(' · ')[0]} · read at "
+        f"{datetime.fromtimestamp(assessment['read_at'], UTC):%H:%M}"
+    )
+    assessment["cutoff"] = cutoff_on_timeline(assessment)
+    for answer in (fixture["context"], fixture["prompts"]):
+        for level in answer["sources"]["work"].get("analysis_levels", []):
+            level["read_at"] = assessment["read_at"]
+    if row.get("annotation_settled_at") is not None:
+        row["annotation_settled_at"] = last + SETTLED_AFTER_LAST_RECORD
+
+
 def capture_record(base: str, stem: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """The newest record page and every older one, to the record's start.
 
@@ -210,8 +240,11 @@ def recompose_correction(fixture: dict[str, Any]) -> dict[str, Any]:
     """What `POST /api/correction` composes from the fixture's own row and record.
 
     The route's inputs as the fixture holds them: the Claude route judges lines, no line was
-    re-requested, and the typed goal's floor is when it was saved. The clock is UTC, the zone the
-    rest of the sample's times are written in.
+    re-requested, and the typed goal's floor is when it was saved. Each time is stored as a
+    `CLOCK_MARK` holding its moment rather than drawn: the route writes the reader's local time
+    (owner, 2026-10-20), and a stored text drawn in one zone would name 11:23 beside a page that
+    says 19:23. The sample's server draws each mark on the reader's clock, by the rule
+    `correction.zone_clock` draws by (`createSampleFetch`).
     """
     if str(SKILL) not in sys.path:
         sys.path.insert(0, str(SKILL))
@@ -235,7 +268,7 @@ def recompose_correction(fixture: dict[str, Any]) -> dict[str, Any]:
         semantic.get("facts") or [],
         floor=float(floor) if floor is not None else None,
         lines_judged=True,
-        clock=lambda at: f"{datetime.fromtimestamp(at, UTC):%Y-%m-%d %H:%M}",
+        clock=lambda at: CLOCK_MARK.format(at=repr(float(at))),
         person_at=scan.get("last_user_at"),
         line_requests={},
     )
@@ -268,15 +301,7 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
     fixture = shift_numbers(fixture, captured, delta)
     fixture = rename(fixture, sid, SAMPLE_SID)
     row = fixture["board"]["sessions"][0]
-    assessment = row["annotation_assessment"]
-    assessment["read_at"] = last + READ_AFTER_LAST_RECORD
-    assessment["stamp"] = (
-        f"{assessment['stamp'].split(' · ')[0]} · read at "
-        f"{datetime.fromtimestamp(assessment['read_at'], UTC):%H:%M}"
-    )
-    assessment["cutoff"] = cutoff_on_timeline(assessment)
-    for level in fixture["context"]["sources"]["work"].get("analysis_levels", []):
-        level["read_at"] = assessment["read_at"]
+    place_reading(fixture, last)
     # The server wrote the turn's elapsed time from the wall clock ("154d 22h"); it is the time from
     # the first prompt to the moment the sample is frozen at.
     # A finished session publishes no turn.
@@ -294,6 +319,11 @@ def build(base: str, project: str, sid: str) -> dict[str, Any]:
     # sample is shown as this build reads a store with no stored off: readings on, nothing refused,
     # and no notice recorded yet.
     fixture["board"]["reading"].update(consent=True, off=False, reason="", notices={})
+    # The stored reading was made, so its notice was shown then, as the summary's was; a capture
+    # whose reading was kept from an earlier run would otherwise say the notice is still due.
+    for route in (fixture["board"].get("reading_routes") or {}).values():
+        if isinstance(route, dict) and "notice_due" in route:
+            route["notice_due"] = False
     row["annotation_reading_count"] = 1
     fixture["correction"] = recompose_correction(fixture)
     return fixture

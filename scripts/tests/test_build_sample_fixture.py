@@ -92,6 +92,41 @@ class SummaryAndCutoffTest(unittest.TestCase):
         bf.place_summary(fixture, 1000.0)
         self.assertEqual(2, fixture["board"]["summaries"]["used"])
 
+    def test_a_kept_reading_and_its_settle_are_placed_after_the_summary(self) -> None:
+        # A reading kept from an earlier capture carries that day's moments, months past the six-hour
+        # shift, in the row and in both focused answers' levels.
+        earlier = CAPTURED + 40 * 86400
+        level = {"read_at": earlier}
+        fixture: dict[str, Any] = {
+            "board": {
+                "sessions": [
+                    {
+                        "annotation_settled_at": earlier + 150,
+                        "annotation_assessment": {
+                            "read_at": earlier,
+                            "stamp": "claude-sonnet-5-5 · read at 16:13",
+                            "window_start": 1000.0 - 600,
+                            "coverage": {"tail_start": 0},
+                            "cutoff": "Read it. The oldest is from about 3846h ago.",
+                        },
+                    }
+                ]
+            },
+            "context": {"sources": {"work": {"analysis_levels": [dict(level)]}}},
+            "prompts": {"sources": {"work": {"analysis_levels": [dict(level)]}}},
+        }
+        bf.place_reading(fixture, 1000.0)
+        row = fixture["board"]["sessions"][0]
+        read_at = 1000.0 + bf.READ_AFTER_LAST_RECORD
+        self.assertEqual(read_at, row["annotation_assessment"]["read_at"])
+        self.assertEqual("claude-sonnet-5-5 · read at 00:17", row["annotation_assessment"]["stamp"])
+        for answer in (fixture["context"], fixture["prompts"]):
+            self.assertEqual(read_at, answer["sources"]["work"]["analysis_levels"][0]["read_at"])
+        self.assertEqual(1000.0 + bf.SETTLED_AFTER_LAST_RECORD, row["annotation_settled_at"])
+        self.assertLess(bf.SUMMARIZED_AFTER_LAST_RECORD, bf.READ_AFTER_LAST_RECORD)
+        self.assertLess(bf.READ_AFTER_LAST_RECORD, bf.SETTLED_AFTER_LAST_RECORD)
+        self.assertLess(bf.SETTLED_AFTER_LAST_RECORD, bf.GENERATED_AFTER_LAST_RECORD)
+
     def test_the_oldest_entry_is_aged_from_the_reading_not_the_capture(self) -> None:
         assessment = {
             "read_at": 10_000.0,
