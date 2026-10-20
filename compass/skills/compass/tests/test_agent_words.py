@@ -757,6 +757,7 @@ class TheUnaskedLaneSendsNothingTheAgentSaidTest(words_tests._Collected):
         self.session.save(self.board.path)
 
     def test_the_unasked_lanes_prompt_holds_no_agent_words(self) -> None:
+        self.config = dataclasses.replace(self.config, unasked_enabled=True)
         self.annotate()
         reading_policy.set_consent(self.config, True, now=1_000.0, provider="codex", destination="")
         lane = unasked.Lane(
@@ -900,7 +901,11 @@ class AnAllowGivenBeforeTheAgentsMessagesDoesNotCoverThemTest(unittest.TestCase)
             mock.patch.object(reading_policy, "status", status),
             mock.patch.object(reading_route, "destination", lambda *_a, **_k: "OpenAI"),
         ):
-            model = unasked._Bound(self.config, lambda *_a, **_k: ("{}", "ok"), lambda: NOW)
+            model = unasked._Bound(
+                dataclasses.replace(self.config, unasked_enabled=True),
+                lambda *_a, **_k: ("{}", "ok"),
+                lambda: NOW,
+            )
             # An Allow from before the bump still covers the lane, which sends no agent words.
             self.assertEqual(("{}", "ok"), model("prompt", output_cap_bytes=10))
         self.assertEqual([reading_policy.WORDS_CONTENT_VERSION], seen)

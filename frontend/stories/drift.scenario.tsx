@@ -97,6 +97,7 @@ export interface Scenario {
   readonly session?: Record<string, unknown>;
   /** A session with no saved words: the first prompt is drafted into the goal box and nothing is stored. */
   readonly unsaved?: boolean;
+  readonly initialView?: 'attention';
   readonly payload?: Record<string, unknown>;
   readonly facts?: readonly unknown[];
   readonly work?: Record<string, unknown>;
@@ -172,7 +173,9 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
   const [shell] = useState(() => {
     const harness = scenario.harness ?? 'claude';
     const clock = createFakeClock();
-    const history = fakeRouterEnvironment(`#n=session:demo:${harness}:s1`);
+    const history = fakeRouterEnvironment(
+      scenario.initialView === 'attention' ? '#n=attention' : `#n=session:demo:${harness}:s1`,
+    );
     let generation = 1000;
     let marked: boolean | null = null;
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -192,6 +195,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
           const index = scenario.reading.posts.length;
           scenario.reading.posts.push(body);
+          if (typeof body['unasked_grant'] === 'boolean') {
+            reading = { ...POLICY, words: { codex: body['unasked_grant'] } };
+            return json({ ok: true, produced: false, reading });
+          }
           if (body['consent'] === 'off') {
             reading = { consent: false, off: true, reason: 'model-calls-paused' };
             return json({ ok: true, reading });

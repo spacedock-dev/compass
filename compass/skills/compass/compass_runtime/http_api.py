@@ -2171,13 +2171,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(refusal)
             return
         if payload.get("consent") == "off":
-            answer = reading_policy.set_consent(config, False, now=application.clock())
-            # Pause model calls also stops session summaries, including a call already running
-            # (docs/design-session-summary.md#job-and-grant-contract); a lock failure leaves
-            # the next part's recheck to refuse.
-            with contextlib.suppress(OSError, ValueError):
-                summary_jobs.stop_running(application, "model-calls-paused")
-            self._reading_permission_reply(answer, off=True)
+            self._pause_model_calls()
             return
         if payload.get("consent") == "on":
             answer = reading_policy.resume(config, now=application.clock())
@@ -2187,7 +2181,80 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not isinstance(harness, str) or not isinstance(sid, str) or not harness or not sid:
             self._reject(400)
             return
+        if "unasked_grant" in payload:
+            self._unasked_grant(harness, payload)
+            return
         self._reading_press(harness, sid, payload)
+
+    def _pause_model_calls(self) -> None:
+        application = self.server.application
+        answer = reading_policy.set_consent(application.config, False, now=application.clock())
+        # And an unasked check already running (owner, 2026-10-20).
+        if application.unasked_lane is not None:
+            application.unasked_lane.stop()
+        # Pause model calls also stops session summaries, including a call already running
+        # (docs/design-session-summary.md#job-and-grant-contract); a lock failure leaves
+        # the next part's recheck to refuse.
+        with contextlib.suppress(OSError, ValueError):
+            summary_jobs.stop_running(application, "model-calls-paused")
+        self._reading_permission_reply(answer, off=True)
+
+    def _unasked_grant(self, harness: str, payload: dict[str, Any]) -> None:
+        """The Drift card's "Allow Codex to run unasked checks" toggle, and its revoke.
+
+        A body variant of this route rather than a route of its own, so it is
+        held by the same navigation, origin and press refusals. Only Codex takes
+        a grant: the Claude Code producer runs unasked checks under the owner's
+        acceptance with no grant of its own (owner, 2026-10-20). The grant binds
+        to the destination the page showed, read from the lane's own route, and
+        is refused while model calls are paused rather than lifting the pause.
+        [DEC-18](docs/design-reading-a-session.md#amended-2026-10-20-unasked-checks-remain-reachable)
+        """
+        application = self.server.application
+        allowed = payload["unasked_grant"]
+        if not isinstance(allowed, bool):
+            self._reject(400)
+            return
+        if application.unasked_lane is None:
+            self._reject(503)
+            return
+        route = runtime_reading_route.resolve(harness, config=application.config, unasked=True)
+        reason = (
+            route["reason"]
+            if not route["provider"]
+            else "no-grant-needed"
+            if route["provider"] != runtime_reading_route.CODEX
+            else "provider-changed"
+            if payload.get("provider") != route["provider"]
+            else "destination-changed"
+            if payload.get("words_destination") != route["words_destination"]
+            else ""
+        )
+        if reason:
+            self._send(
+                self._reading_json({"ok": False, "produced": False, "reason": reason}),
+                "application/json",
+                409,
+            )
+            return
+        answer = reading_policy.set_unasked_grant(
+            application.config,
+            allowed,
+            now=application.clock(),
+            provider=route["provider"],
+            destination=route["words_destination"],
+            destinations=runtime_reading_route.destinations(),
+        )
+        # The reader-requested cap is not the lane's bound, so a spent day still saves.
+        accepted = answer["reason"] in {"", "daily-cap"}
+        if accepted and not allowed:
+            application.unasked_lane.stop(route["provider"])
+        application.state.snapshot.clear()
+        self._send(
+            self._reading_json({"ok": accepted, "produced": False, "reading": answer}),
+            "application/json",
+            200 if accepted else 409 if answer["off"] else 503,
+        )
 
     def _reading_press(self, harness: str, sid: str, payload: dict[str, Any]) -> None:
         """An admitted press on one session: Keep's settlement, route, permission, job."""
@@ -2317,12 +2384,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _reading_permission(
         self, payload: dict[str, Any], route: runtime_reading_route.Route
     ) -> reading_policy.Status:
-        """The stored answer this press rests on. A press never writes one.
+        """The stored answer this Analyze press rests on. Analyze never writes one.
 
         An `allow: true` from an older page or a local client is read as a plain
         press: writing an Allow would lift Pause model calls without Resume model
-        calls and grant the unasked lane to the provider named, which no reader
-        press turns on (owner, 2026-10-19). While a pause is stored the answer
+        calls and grant the unasked lane to the provider named. Only the explicit unasked
+        toggle grants it (owner, 2026-10-20). While a pause is stored the answer
         carries `model-calls-paused`, so the press is refused before any charge.
         Every provider's destination is computed by the one
         `reading_route.destination` the board publishes from, so the reply's

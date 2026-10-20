@@ -104,8 +104,9 @@ and stays paused until you resume."
 
 The master pause still posts `{consent: "off", press: true, observer_model: 1}`.
 Resume posts the same guard fields with `consent: "on"`, without a session or provider.
-It clears the stored pause (`reading_policy.resume`) and writes no Allow, so it never covers
-the unasked lane, which still needs an explicit Allow and DEC-18's preconditions.
+It clears the stored pause (`reading_policy.resume`) and writes no Allow, so it grants no Codex
+unasked permission. The unasked lane still needs DEC-18's flag and preconditions, plus that explicit
+grant for Codex. Claude Code resumes under its existing acceptance when the flag is on.
 Under the startup refusal Resume answers `run-disabled` and writes nothing, so the stored
 pause outlives a run started with `--no-observer-model`.
 The earlier explicit `allow: true` request remains accepted for older pages, including
@@ -1034,8 +1035,16 @@ records their admission and publication shapes. No new session field is added.
 - Legacy `providers`, `words`, `rebind` and `tool_output` keep their old explicit-Allow coverage,
   narrower words coverage, rebinding explanations and explicit tool-output grants. They do not
   describe default-on admission. The current page still reads them; the frontend lane must remove
-  those uses for reader-started calls. The unasked lane keeps requiring explicit `providers`
-  coverage and never adopts default-on admission. `tool-output-consent-required` and
+  those uses for reader-started calls. Codex unasked checks require explicit `words.codex`
+  coverage at the current destination; Claude Code uses the owner's acceptance without a separate
+  grant. `unasked_routes[harness]`, published only while the lane is attached, is the route an
+  unasked check of that harness takes, and its `disclosure_parts` is the words-only disclosure,
+  excluding tool output, agent messages and outcome lines. The explicit toggle posts
+  `unasked_grant: bool` with the session identity, provider, model, `words_destination`, `press: true`
+  and `observer_model: 1` to the existing reading route, returning `{ok, produced: false, reading}`, or `{ok: false, reason}` with 409 for a stale route.
+  It does not Analyze or lift Pause. It is refused while disabled/paused, without the startup flag,
+  or with stale provider/destination or unsafe fetch metadata. Attention derives its waiting cue
+  from typed-goal sessions whose `unasked_routes` entry is Codex, without current `words` coverage; no session field is added. `tool-output-consent-required` and
   `consent-required` no longer occur on the reading route. The client-contract fixture `reading-consent-required` is
   replaced by `reading-off` (a press after Pause model calls), since a fresh store no longer refuses.
 

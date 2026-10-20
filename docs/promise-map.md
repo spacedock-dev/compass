@@ -203,9 +203,12 @@ without being asked, which is off by default and the only thing here that spends
 with nobody watching. Where it stops is the part worth reading: it raises a departure and never a
 reassurance, because an unasked "this looks fine" is the output the evidence-floor ruling called
 most damaging and it is worth nothing to someone who is not at the desk. It sends a check only
-under an explicit Codex permission for where the words go now. The current page cannot grant that
-permission, so the lane sends nothing unless a permission saved by an earlier build still covers the
-current destination. It stops at a per-session
+with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and other
+harnesses prefer Claude Code, falling back only when the preferred provider is unavailable or
+unqualified. Codex needs permission for the current destination from “Allow Codex to run unasked
+checks” in the session’s Drift card; Attention points to it when saved typed goals are waiting.
+Claude Code needs no separate grant. Revoking Codex permission, Pause model calls and
+`--no-observer-model` stop checks; Analyze and Resume never grant them. It stops at a per-session
 and a per-day limit, and a spent limit is stated rather than passed over, because a session nobody
 checked and a session checked and found clean are the two things you cannot tell apart from an empty
 board. The sentence is about your words rather than about the machine's history, so a check whose

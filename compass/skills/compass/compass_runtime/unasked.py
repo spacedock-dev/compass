@@ -15,7 +15,7 @@ halves today. Keeping it here is what stops the application growing an edge to
 
 ## Why it never runs on the collection thread
 
-Each reading is a `codex` subprocess at `reasoning_effort=max`. `consider` is
+Each reading is a Claude Code or Codex subprocess. `consider` is
 called from inside a collection, does only dictionary work, and hands the
 reading to a worker, exactly as `quota.request_fetch` hands a network read to
 one. A collection that blocked on this would freeze every connected dashboard
@@ -42,7 +42,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from . import annotations as annotation_store
-from . import departures, notifications, reading_policy, reading_route
+from . import departures, notifications, reading_policy, reading_route, supervise
 from . import io as runtime_io
 from . import project_context as runtime_project_context
 from . import reading as runtime_reading
@@ -69,51 +69,32 @@ DAY_SEC = departures.DAY_SEC
 # cover (consent F5, ui5). A diagnostic line rather than a check row: nothing
 # was spent, so nothing counts against the caps, and the board already says
 # the session was not checked.
-UNCOVERED = (
-    "was not sent, because no Allow for Codex covers where its words would go now; "
-    "a press on that session asks first"
-)
+UNCOVERED = "was not sent"
 
 
-class UncoveredError(Exception):
-    """A send the reader's Allow does not cover, refused before the call."""
-
-
-class _Bound:
-    """The lane's Codex model, sending only where a press would not ask again.
-
-    The lane spends the reader's words with nobody at the desk, so it may send
-    only what a press would send without a new Allow: the same binding, from
-    the same `reading_route.destination` the board and the press read, asked
-    at the seam before each call. No charge is made against the reading
-    budget; the lane's own caps bound it, as before.
-    """
+class _Bound(reading_policy.GuardedModel):
+    """Words-only unasked admission through the same seam as requested readings."""
 
     def __init__(
         self,
         config: RuntimeConfig,
         model: Callable[..., tuple[str, str]],
         clock: Callable[[], float],
+        *,
+        provider: str = reading_route.CODEX,
+        destination: str | None = None,
     ) -> None:
-        self.config = config
-        self.model = model
-        self.clock = clock
-        self.unavailable_reason: str | None = getattr(model, "unavailable_reason", None)
-
-    def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
-        where = reading_route.destination(reading_route.CODEX)
-        answer = reading_policy.status(
-            self.config,
-            now=self.clock(),
-            provider=reading_route.CODEX,
-            destinations={reading_route.CODEX: where},
-            # The lane never sends what the agent said, so an Allow given
-            # before the disclosure named it still covers the lane.
+        where = reading_route.destination(provider) if destination is None else destination
+        super().__init__(
+            config,
+            model,
+            clock,
+            provider=provider,
+            destination=where,
+            resolve_destination=lambda: reading_route.destination(provider),
             content=reading_policy.WORDS_CONTENT_VERSION,
+            unasked=True,
         )
-        if not answer["providers"].get(reading_route.CODEX, False):
-            raise UncoveredError
-        return self.model(prompt, output_cap_bytes=output_cap_bytes)
 
 
 def _spawn(work: Callable[[], None]) -> None:
@@ -154,6 +135,10 @@ class Lane:
         self.produce = produce or runtime_reading.produce
         self.facts_for = facts_for or self._facts
         self.spawn = spawn
+        self._call_lock = threading.Lock()
+        self._group: supervise.Group | None = None
+        self._provider = ""
+        self._cancelled = False
 
     def consider(
         self,
@@ -332,15 +317,19 @@ class Lane:
         """One reading, off the collection thread, and the raise it may earn."""
         try:
             self._read_and_raise(state, row, entry, now)
-        except UncoveredError:
+        except reading_policy.RefusedError as exc:
             runtime_io.diag(
-                f"Compass: an unasked check of {key} {UNCOVERED}.", self.diagnostic_sink
+                f"Compass: an unasked check of {key} {UNCOVERED}: {exc.answer['reason']}.",
+                self.diagnostic_sink,
             )
         except Exception as exc:  # noqa: BLE001 (a bad reading must not kill the lane)
             runtime_io.diag(
                 f"Compass: unasked reading failed for {key}: {exc}", self.diagnostic_sink
             )
         finally:
+            with self._call_lock:
+                self._group = None
+                self._provider = ""
             self._release(state, key)
 
     def _read_and_raise(
@@ -350,6 +339,21 @@ class Lane:
         entry: annotation_store.Annotation,
         now: float,
     ) -> None:
+        route = reading_route.resolve(
+            str(row.get("harness") or ""), config=self.config, unasked=True
+        )
+        provider = route["provider"]
+        if not provider:
+            return
+        with self._call_lock:
+            self._provider = provider
+            self._cancelled = False
+        model_type = (
+            runtime_reading.ClaudeReadingModel
+            if provider == reading_route.CLAUDE
+            else runtime_reading.CodexReadingModel
+        )
+        model = model_type(self.config, on_spawn=self._on_spawn)
         assessment, _why, _spent = self.produce(
             self.config,
             row,
@@ -357,8 +361,28 @@ class Lane:
             self.facts_for(state, row, now),
             now=now,
             stamp_text=f"unasked check at {time.strftime('%H:%M', time.localtime(now))}",
-            model=_Bound(self.config, runtime_reading.CodexReadingModel(self.config), self.clock),
+            model=_Bound(
+                self.config,
+                model,
+                self.clock,
+                provider=provider,
+                destination=route["words_destination"],
+            ),
         )
+        with self._call_lock:
+            cancelled = self._cancelled
+        if cancelled:
+            if _spent:
+                # Revoking a result must not refund a call that already spent capacity.
+                # A withdrawn row counts toward the caps without claiming a completed check.
+                checked = self._check(
+                    assessment or {"revision_read": entry["revisions"][-1]["n"], "cutoff": ""},
+                    row,
+                    now,
+                )
+                checked["withdrawn"] = True
+                departures.record(self.config, [checked], diagnostic_sink=self.diagnostic_sink)
+            return
         if assessment is None:
             # A withheld reading spent nothing: `produce` refuses before the
             # subprocess. Recording a check here would count a spend that did
@@ -393,10 +417,27 @@ class Lane:
             return
         self._raise(row, raised, now)
 
+    def stop(self, provider: str = "") -> None:
+        """Stop this daemon's current unasked call on revoke or Pause model calls."""
+        with self._call_lock:
+            if provider and provider != self._provider:
+                return
+            self._cancelled = True
+            group = self._group
+        if group is not None:
+            group.cancel()
+
+    def _on_spawn(self, group: supervise.Group) -> None:
+        with self._call_lock:
+            self._group = group
+            cancelled = self._cancelled
+        if cancelled:
+            group.cancel()
+
     def _check(
-        self, assessment: runtime_reading.Assessment, row: Mapping[str, Any], now: float
+        self, assessment: Mapping[str, Any], row: Mapping[str, Any], now: float
     ) -> departures.Check:
-        """The row for a reading that raised nothing: the spend, and its baseline."""
+        """The spend and baseline of a check with no published departure."""
         return {
             "harness": str(row.get("harness") or ""),
             "sid": str(row.get("sid") or ""),

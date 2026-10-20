@@ -1140,8 +1140,8 @@ The bounds, all of which hold together:
     Analyze drift (its consent step goes), Claude Code tool output on such a reading (included by
     default), and a Codex goal summary (on by default). Such a call runs without a prior question.
   - What it does not cover: unasked drift checks. No reader action starts them, so they stay off by
-    default behind `--unasked-readings` and DEC-18's preconditions, and with the setting unanswered
-    they make no invocation.
+    default behind `--unasked-readings` and DEC-18's preconditions. Codex also requires an explicit
+    grant for the current destination; Claude Code uses the owner's acceptance without a separate grant.
   - The notice. The first call of each kind on this machine shows a non-blocking notice naming
     what is sent (the words, and tool output where it is included) and to which provider and
     destination, with a one-press off switch beside it. A changed destination or a wider content tier
@@ -1190,10 +1190,10 @@ The bounds, all of which hold together:
   `--no-harness-usage` is an alias for that rollback. The explicit off state
   survives daemon respawn.
   The off switch refuses the unasked lane as well: with it set,
-  `--unasked-readings` attaches no lane, starts no Codex reading, and the page reports the lane off.
+  `--unasked-readings` attaches no lane, starts no reading, and the page reports the lane off.
 
 A violation of any of those is a security bug: an invocation with the setting off, an invocation
-with the setting unanswered for an unasked check, a reader-started call whose first run of its kind shows no
+with the Codex grant unanswered for an unasked check, a reader-started call whose first run of its kind shows no
 notice, an invocation carrying unredacted text, a credential read that this section does not name, tool access
 beyond the documented CLI boundary, or an unbounded or untimed call.
 
@@ -1236,12 +1236,15 @@ bounds requests through the HTTP route, not a hostile owner editing their own fi
 
 Legacy explicit Allows remain per provider, bound to the disclosed destination and content tier.
 An explicit Allow covers every session routed to that provider.
-They govern unasked checks, which still require a stored Allow covering today's destination; a
-fresh store does not authorize them. This build has no way to grant one: no reader press writes an
-Allow, an `allow: true` from an older page is read as a plain press, and Pause model calls followed
-by Resume model calls clears a stored one. Only an Allow an earlier build stored covers the lane. The board's `providers`, `words`, `rebind` and `tool_output`
-fields retain that explicit-coverage meaning during the page migration. Reader-started calls use
-the off switch and notices instead.
+They govern Codex unasked checks, which require a stored words-only Allow covering today's
+destination. The Drift card's “Allow Codex to run unasked checks” toggle deliberately writes or
+revokes it through a separate `unasked_grant` body on `POST /api/reading`. It requires the startup
+flag, a current provider and destination, a loopback non-navigation press, and refuses while paused
+(409 with `model-calls-paused`, the pause kept) or under `--no-observer-model` (503). It adds no route. Revocation deletes coverage without pausing requested readings.
+Analyze, an older page's `allow: true`, and Resume never write it. Pause followed by Resume clears
+it. Claude Code unasked checks use the owner's acceptance and need no separate stored grant.
+The board's `providers`, `words`, `rebind` and `tool_output` retain their explicit-coverage meaning;
+reader-started calls use the off switch and notices instead.
 
 The destination is resolved again at a reading job's reservation. If it moved after the press,
 the job refuses `destination-changed` before spending or sending. The CLI reads its own settings
@@ -1551,8 +1554,9 @@ owner's acceptance opened the gate on 2026-10-02.** `annotations.CLAUDE_ABSTENTI
 [acceptance record](docs/abstention/claude-acceptance.json) lists each with its verdict
 ([DEC-21](docs/design-reading-a-session.md#amended-2026-10-02-claude-code-is-accepted)).
 `reading_route` selects it for a Claude Code session when an absolute `claude` is on PATH, and for
-another harness's session only when `codex` is not. The unasked lane and goal summaries never
-invoke it. Outside the runtime, only the qualification scorer and the drift replay check's
+another harness's session only when `codex` is not. The unasked lane resolves with Claude Code
+first on a harness that has no producer of its own (owner, 2026-10-20), and sends through
+`reading_policy.GuardedModel`. Goal summaries never invoke it. Outside the runtime, only the qualification scorer and the drift replay check's
 owner-authorized Analyze tier build one, both through the scorer's verified, pinned copy of the CLI,
 and a test holds that list. Set back to `not-run`, the gate is read before the CLI is looked for, so no route,
 fallback or forged request can invoke it.
@@ -2906,25 +2910,39 @@ model happens because somebody pressed a control and saw a disclosure first. Thi
 because the operator passed a flag, so the flag's own help text is where that disclosure lives.
 
 What it sends is less than `POST /api/reading` sends, on the same path: the goal you typed, and the
-observed record the reading is allowed to read, to a `codex` subprocess running on your own machine
-under your own capacity. That record carries your messages in the session whole, up to 1,000
+observed record the reading is allowed to read, through a supervised Claude Code or Codex CLI on
+your machine under your capacity. Claude Code reads Claude Code sessions; Codex reads Codex
+sessions. On other harnesses the lane prefers Claude Code, where a pressed reading prefers Codex.
+If the preferred provider is unavailable or unqualified on this machine, the other serves. A
+failed launch never tries a second provider. That record carries your messages in the session whole, up to 1,000
 characters each where the prompt has room, as a pressed reading's does. It never sends what the
 agent said: a pressed reading of a Claude Code session carries the agent's own messages since
 2026-10-03 (Observer model calls), and the lane leaves them out, entry and words alike. Your expected outcome lines are never sent by it, and a session with lines
 and no goal is not read by it at all (item 12 of
 [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)).
-Nothing new leaves the machine that did not already leave it when you pressed the control by hand,
-because the lane retains the explicit Allow binding before each send (consent F5,
-ui5): with no Codex Allow on record, after "Pause model calls", or once the Codex destination is
-no longer the one the Allow was given for, the check is skipped, nothing is spent, and the skip is
-written to the dashboard's diagnostic log. It does not charge the reading budget; its own caps
-below bound it. What is new is that nobody is there at the moment it goes.
+The lane uses `reading_policy.GuardedModel`, the same guarded model seam as a requested reading.
+It sends no tool output, outcome lines or agent messages. Claude Code runs under the owner's
+2026-10-02 acceptance and needs no separate grant. Codex sends only with a stored Allow for the
+current destination, checked again at the seam. With no grant, after Pause model calls, under the
+model off switch, or after a destination change, nothing is sent and the skip is logged. The
+session's Drift card shows the grant and a toggle to allow or revoke it, with the words and
+destination disclosed beside it. Attention points to that toggle when a session with a typed goal
+is waiting for permission. The grant covers every session routed to Codex at that destination;
+Analyze and Resume cannot grant it. A revoke cancels this daemon's in-flight Codex check and
+refuses subsequent sends; Pause does the same for either provider. A call already sent cannot be
+unsent. A cancelled call that spent capacity keeps a withdrawn check row for the caps without
+publishing a finding or claiming a completed check. The lane does not charge Analyze's budget;
+its own caps below bound it.
+
+Start with `--unasked-readings` to enable the lane. Without that flag neither the toggle nor the
+Attention cue appears. The flag remains off by default; the delivery and qualification preconditions
+for changing that default are unchanged.
 
 It is bounded three ways, and the bounds are the posture rather than a preference. One reading runs
 at a time for the whole board, so a board where forty annotated sessions cross a state boundary
-together starts one subprocess and not forty. A per-session floor holds a second reading of the same
+together starts one subprocess and not forty. A fifteen-minute per-session floor holds a second reading of the same
 session off, because a session can cross a boundary repeatedly inside a minute. And two counts of CHECKS RUN, per session and rolling
-per day, stop the lane entirely once spent. Counting only what was raised was tried and is wrong: a
+per day (three per session, twelve per rolling day), stop the lane entirely once spent. Counting only what was raised was tried and is wrong: a
 board whose sessions are all healthy raises nothing, so nothing advances the count and the lane runs
 forever. Measured on that version, five sessions ran 480 subprocesses in a simulated day against a
 daily cap of 12. A spent count is stated on the board

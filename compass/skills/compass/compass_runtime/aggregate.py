@@ -1194,6 +1194,24 @@ class Application:
         # draws nothing rather than a panel that never fills.
         return {
             **({"unasked": True} if self.unasked_lane is not None else {}),
+            # Who an unasked check of each harness would reach, which is not the
+            # Analyze route on a harness with no producer of its own (owner,
+            # 2026-10-20). The page shows the Codex toggle from this, never from
+            # `reading_routes`, so it asks only where the lane would send.
+            **(
+                {
+                    "unasked_routes": {
+                        harness: {**route, "disclosure_parts": reading_route.unasked_parts(route)}
+                        for harness, route in reading_route.resolve_all(
+                            (str(row.get("harness") or "") for row in rows),
+                            config=self.config,
+                            unasked=True,
+                        ).items()
+                    }
+                }
+                if self.unasked_lane is not None
+                else {}
+            ),
             "unasked_off_reason": "run-disabled"
             if self.config.model_calls_disabled
             else "not-requested",

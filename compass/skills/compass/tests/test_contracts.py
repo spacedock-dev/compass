@@ -1140,6 +1140,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_policy",
             "compass_runtime.reading_route",
             "compass_runtime.state",
+            # Revoke and Pause cancel only this lane's supervised child.
+            "compass_runtime.supervise",
         },
         # The CLI is the assembly point, so it may import any runtime module.
         "compass_runtime.cli": {

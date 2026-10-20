@@ -18,6 +18,7 @@ import type {
   ReadingCancelReceipt,
   ReadingReceipt,
   ReadingRequest,
+  UnaskedGrantRequest,
   SessionIdentity,
   SessionRecord,
   SummaryReceipt,
@@ -199,7 +200,7 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       body: SessionIdentity & { readonly fact_ids: readonly string[] },
       signal?: AbortSignal,
     ) => post<DirectionBatchReceipt>('/api/direction', body, signal),
-    postReading: (body: ReadingRequest, signal?: AbortSignal) =>
+    postReading: (body: ReadingRequest | UnaskedGrantRequest, signal?: AbortSignal) =>
       post<ReadingReceipt>('/api/reading', body, signal),
     postReadingCancel: (
       body: SessionIdentity & {
