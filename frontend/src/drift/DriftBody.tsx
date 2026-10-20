@@ -3,7 +3,7 @@ import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
 import { nextNumber } from '../api/bootstrap';
 import { endedAt } from '../observed';
-import { clock } from '../observed/values';
+import { datedClock } from '../observed/values';
 import { directionsOpen, intentKey, intentUnsaved } from '../intent/derive';
 import type { DirectionReading } from '../intent/directions';
 import { useDisplayed } from '../shell/context';
@@ -100,7 +100,8 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
   const departed = Boolean(offer?.departed);
   const noReader = annotate ? routeRefusal(payload, session) : '';
   const readAt = nextNumber(model.raw?.['read_at']);
-  const from = fromCheck && readAt !== null && readAt > 0 ? steerFrom(clock(readAt)) : '';
+  const from =
+    fromCheck && readAt !== null && readAt > 0 ? steerFrom(datedClock(readAt, now / 1000)) : '';
   const slotted: SteerSlot | null = offer
     ? {
         lead: departed && !hasQuestion,

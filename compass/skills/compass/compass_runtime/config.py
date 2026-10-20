@@ -649,6 +649,11 @@ class RuntimeConfig:
     # is at-least-once and reorderable and a reading composed on the instant
     # of the end can be contradicted by a `turn_started` already in flight.
     reading_settle_sec: float
+    # How old a Claude Code reading's output or stderr file in `state_dir` must be before a starting
+    # run removes it as left by a hard kill (review, 2026-10-20). Every call is bounded by its
+    # timeout, 180 s for a reading, and a second instance may share the directory mid-call, so the
+    # bound is a day: far past any live call, and still short of leaving raw stderr for long.
+    reading_scratch_stale_sec: float
 
 
 def resolve_store_roots(
@@ -1035,6 +1040,7 @@ def build_runtime_config(
         observer_block_cap_chars=200,
         observer_model_context_chars=8_192,
         reading_settle_sec=8.0,
+        reading_scratch_stale_sec=86_400.0,
     )
 
 

@@ -320,6 +320,15 @@ describe('a turn stop is the hook’s, or the transcript’s named as the transc
     );
     expect(readHint({ harness: 'codex', state: 'idle', finished_at: 4 })).toBe('');
   });
+
+  it('says an idle Claude Code session with no recorded finish is read up to its last entry', () => {
+    const line =
+      'Reads the session up to its last recorded entry; its last turn was not recorded as finished.';
+    expect(readHint({ harness: 'claude', state: 'idle' })).toBe(line);
+    expect(readHint({ harness: 'claude', state: 'idle', acquisition: 'scan-only' })).toBe(line);
+    // Another harness is still withheld there, so it is told nothing about what would be read.
+    expect(readHint({ harness: 'codex', state: 'idle' })).toBe('');
+  });
 });
 
 describe('an unreadable payload is an empty model, never an exception', () => {

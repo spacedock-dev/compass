@@ -106,6 +106,16 @@ export function clock(stamp: number): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+/* `clock`, with the date in front where the moment is not the reader's today: the rule the copied correction's
+   `correction.zone_clock` draws by, so a label beside Steer back and the text it copies name the same moment, and
+   an old reading never reads as today's (review, 2026-10-20). */
+export function datedClock(stamp: number, now: number = Date.now() / 1000): string {
+  const date = new Date(stamp * 1000);
+  if (date.toDateString() === new Date(now * 1000).toDateString()) return clock(stamp);
+  const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return `${day} ${clock(stamp)}`;
+}
+
 /* Whether the row's `field` quotes a correction the reader copied from Compass, which is never
    presented as their words. The server places each field on the message it quotes (the quoted_as
    list), so this reads its answer. */

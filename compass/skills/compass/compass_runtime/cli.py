@@ -26,6 +26,7 @@ from compass_runtime import (
     lifecycle,
     notifications,
     observation,
+    observer,
     reading_policy,
     summary_store,
     unasked,
@@ -871,6 +872,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if page_bytes is None:
         return 1
     lifecycle.sweep_stale_states(config)
+    observer.sweep_claude_scratch(config)
     log_file = lifecycle.log_path(config, args.port)
     if args.daemon and not lifecycle.prepare_daemon_home(config, log_file):
         # Reported already; the message has to reach the terminal that asked,

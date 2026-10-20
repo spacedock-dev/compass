@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { clock } from '../observed/values';
+import { datedClock } from '../observed/values';
 import { byAction, check, fact, json, mountDrift, textOf } from './testing';
 import { STEER_OFF_MARKED, STEER_OFF_OLDER } from './sentences';
-import { readerUtcOffset } from './correction';
+import { readerTimeZone, readerUtcOffset } from './correction';
 
 /* Owner, 2026-10-20: Steer back stays beside the departures it steers from, labelled with the check's time,
    including while a later direction stands; and where the rules withhold it, the departures say why. */
@@ -48,7 +48,8 @@ describe('Steer back from a check', () => {
     await page.settle();
     await page.settle();
     expect(byAction('steer-back')).not.toBeNull();
-    expect(textOf('[data-next-steer-from]')).toBe(`from the check at ${clock(1000)}`);
+    // The page's own clock says the check was today, so the hours stand alone (`datedClock` below for a date).
+    expect(textOf('[data-next-steer-from]')).toBe(`from the check at ${datedClock(1000, 1000)}`);
     expect(document.querySelector('[data-next-steer-off]')).toBeNull();
   });
 
@@ -91,7 +92,10 @@ describe('Steer back from a check', () => {
     (byAction('steer-back') as HTMLElement).click();
     await page.settle();
     const sent = page.state.requests.find((r) => r.path === '/api/correction');
-    expect(sent?.body).toMatchObject({ utc_offset_minutes: readerUtcOffset() });
+    expect(sent?.body).toMatchObject({
+      utc_offset_minutes: readerUtcOffset(),
+      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
   });
 });
 
@@ -100,5 +104,27 @@ describe('the reader’s zone', () => {
     expect(readerUtcOffset({ getTimezoneOffset: () => -480 } as Date)).toBe(480);
     expect(readerUtcOffset({ getTimezoneOffset: () => 300 } as Date)).toBe(-300);
     expect(Object.is(readerUtcOffset({ getTimezoneOffset: () => 0 } as Date), 0)).toBe(true);
+  });
+
+  it('names the zone where the browser does, and nothing where it cannot', () => {
+    expect(readerTimeZone(() => 'Europe/Berlin')).toBe('Europe/Berlin');
+    expect(readerTimeZone(() => '')).toBeUndefined();
+    expect(readerTimeZone(() => undefined)).toBeUndefined();
+    expect(
+      readerTimeZone(() => {
+        throw new Error('no Intl');
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe('a dated clock', () => {
+  it('is the hours alone today and leads with the date on any other day', () => {
+    const now = new Date(2026, 9, 20, 15, 0).getTime() / 1000;
+    expect(datedClock(new Date(2026, 9, 20, 9, 5).getTime() / 1000, now)).toBe('09:05');
+    expect(datedClock(new Date(2026, 9, 19, 23, 59).getTime() / 1000, now)).toBe(
+      '2026-10-19 23:59',
+    );
+    expect(datedClock(new Date(2025, 0, 2, 7, 1).getTime() / 1000, now)).toBe('2025-01-02 07:01');
   });
 });

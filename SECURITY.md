@@ -1699,8 +1699,11 @@ and the others `observer._claude_failure_reason` names, or the `timeout` categor
 Compass's own sentence for that label, such as "Claude Code said it is not logged in"; no word of
 the CLI's output is stored, served or logged, and an unmatched failure says only that Claude Code
 returned an error. The timeout is the reading's **180 seconds**, as on the Codex lane. The
-directory and both files are removed on every path, including a timeout or an OS error, and only once the CLI and
-anything it started have been killed and reaped. An absent or relative
+directory and both files are removed on every path Compass itself runs to the end of, including a
+timeout or an OS error, and only once the CLI and anything it started have been killed and reaped.
+A hard kill of Compass (SIGKILL, a power loss) runs no cleanup and can leave both files behind,
+owner-only; the next start removes any such file in `state_dir` older than a day, which no live
+call reaches, so a second instance's call in flight keeps its own. An absent or relative
 `shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
 receives: redacted, then clipped to 16 KiB. The same remembered answer, now per provider, and the
 same rolling cap apply.
@@ -2007,7 +2010,7 @@ unknown session answer one `409 not-running` body, so the route says nothing abo
 exist. It writes no consent and reserves nothing.
 
 The copied-correction route. `POST /api/correction/copied` names a session
-and the exact text the reader copied, at most 4,216 characters, and the server records its digest:
+and the exact text the reader copied, at most 5,140 characters, and the server records its digest:
 a SHA-256 of the text after one normalisation, applied to both sides, which is what Claude Code
 2.1.283 was measured doing to a paste: CRLF and CR become LF, a tab becomes four spaces, and
 whitespace is trimmed at both ends. The store holds the digest, the moment of the copy and where the

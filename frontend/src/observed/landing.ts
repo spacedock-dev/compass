@@ -171,19 +171,23 @@ export function landingOf(
 }
 
 /* What an analysis will read, said before the press, from the same end kind HOW IT LANDED shows so the
-   two cannot disagree. Empty where the server would withhold whatever was pressed: no end observed, or a
-   turn stop on a harness it does not read there. A running session is read mid-flight and says so, so a
-   press on it never reads as a final one. */
+   two cannot disagree. Empty where the server would withhold whatever was pressed: an idle row with no
+   stop or end, or a turn stop, on a harness it does not read there. A running session is read mid-flight
+   and says so, so a press on it never reads as a final one. An idle Claude Code row with no recorded stop
+   or end is read the same way up to its last recorded entry (owner, 2026-10-20), and says that too. */
 export function readHint(source: Row): string {
   const ended = endedAt(source) !== null;
   const stopped = source['state'] === 'idle' ? sessionStop(source) : null;
   const kind = landingOf(source, ended, stopped).endKind;
   if (kind === 'running') return 'Reads the work so far; the session is still running.';
+  const turnStops = READING_TURN_STOP_HARNESSES.includes(String(source['harness'] || ''));
+  if ((kind === 'idle-unknown' || kind === 'unobservable') && turnStops)
+    return 'Reads the session up to its last recorded entry; its last turn was not recorded as finished.';
   const cutoff =
     kind === 'session-end'
       ? 'its end'
       : kind === 'turn-stop'
-        ? READING_TURN_STOP_HARNESSES.includes(String(source['harness'] || ''))
+        ? turnStops
           ? 'its last turn'
           : ''
         : '';

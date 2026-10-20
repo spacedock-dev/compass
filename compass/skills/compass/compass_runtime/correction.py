@@ -35,9 +35,11 @@ React page ports the same rules under `frontend/src/drift/`.
 from __future__ import annotations
 
 import datetime
+import functools
 import re
 import time
 import unicodedata
+import zoneinfo
 from typing import TYPE_CHECKING, Any
 
 from . import copied_corrections, reading, records
@@ -75,6 +77,11 @@ QUOTES_MAX = 1 + reading.MAX_OUTCOME_LINES
 # The reader's zone as the page sends it, minutes east of UTC. Bounded to the offsets civil time
 # uses (UTC-12 to UTC+14), with a margin, so a request cannot ask for a date the clock cannot draw.
 UTC_OFFSET_MAX_MINUTES = 16 * 60
+# The reader's named zone as the page sends it (`Intl` `timeZone`), preferred over the offset so
+# each time takes that zone's own rules, as the page's clock does, and a daylight-saving change
+# between two cited times does not draw one of them an hour off (review, 2026-10-20). IANA names
+# are under 32 characters; the bound only keeps a request from making the lookup read a long one.
+TIME_ZONE_MAX_CHARS = 64
 # Claude Code only, as the copy route is: a correction offered where a paste cannot be recognised
 # coming back would count as the reader's own words.
 HARNESSES = copied_corrections.HARNESSES
@@ -124,6 +131,11 @@ _JOINED = re.compile(r"[A-Za-z0-9_-]*[-_][A-Za-z0-9_-]{7,}")
 # character can never shield an opener behind it.
 _SWAPS = str.maketrans({"`": "'", "<": "\u2039", ">": "\u203a"})
 _MENTION = re.compile(r"(?<!\w)@")
+# A double quotation mark inside quoted words, swapped for its single look-alike: the correction
+# wraps the agent's words in ASCII double quotes and the reader pastes it as their own message, so
+# a `"` in them would close the quotation early and carry on in the reader's voice (review,
+# 2026-10-20). Curly ones too, because they read as the same delimiter.
+_QUOTE_SWAPS = str.maketrans({'"': "'", "\u201c": "\u2018", "\u201d": "\u2019"})
 
 
 def _visible(text: str) -> str:
@@ -197,16 +209,39 @@ def utc_offset(value: object) -> int | None:
     return value if abs(value) <= UTC_OFFSET_MAX_MINUTES else None
 
 
-def zone_clock(
-    offset_minutes: int, *, now: Callable[[], float] = time.time
-) -> Callable[[float], str]:
-    """`clock_text` on the reader's clock, `offset_minutes` east of UTC.
+@functools.cache
+def _zone_names() -> frozenset[str]:
+    # Empty where this Python has no time zone database (Windows without `tzdata`), and then every
+    # name falls back to the offset.
+    return frozenset(zoneinfo.available_timezones())
 
-    One offset for every time in the text, the reader's now: a correction cites the session's
-    recent work, and a daylight-saving change between two of its times is the one case it draws
-    an hour off. The server never guesses a zone; it draws the one the page sent.
+
+def time_zone(value: object) -> zoneinfo.ZoneInfo | None:
+    """A request's `time_zone`, or None where this machine does not know that name.
+
+    Only a name in `zoneinfo.available_timezones()` is opened, so a request cannot make the lookup
+    read a path of its choosing.
     """
-    zone = datetime.timezone(datetime.timedelta(minutes=offset_minutes))
+    if not isinstance(value, str) or len(value) > TIME_ZONE_MAX_CHARS or value not in _zone_names():
+        return None
+    try:
+        return zoneinfo.ZoneInfo(value)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError, OSError):
+        return None
+
+
+def zone_clock(
+    zone: int | datetime.tzinfo, *, now: Callable[[], float] = time.time
+) -> Callable[[float], str]:
+    """`clock_text` on the reader's clock: a named zone, or minutes east of UTC.
+
+    A named zone draws each time by its own rules, as the page does. An offset is one for every
+    time in the text, the reader's now, so a daylight-saving change between two of its times draws
+    one an hour off; it is the fallback for a page that sends no name this machine knows. The
+    server never guesses a zone; it draws the one the page sent.
+    """
+    if isinstance(zone, int):
+        zone = datetime.timezone(datetime.timedelta(minutes=zone))
 
     def clock(at: float) -> str:
         then = datetime.datetime.fromtimestamp(at, zone)
@@ -214,6 +249,25 @@ def zone_clock(
         return then.strftime("%H:%M" if then.date() == today.date() else "%Y-%m-%d %H:%M")
 
     return clock
+
+
+def request_clock(payload: Mapping[str, Any]) -> Callable[[float], str] | None:
+    """The clock a correction request asks for, or None where it must be refused with 400.
+
+    The reader's zone, which the page knows and the server must not guess (owner, 2026-10-20).
+    The named zone first; a name this machine does not know falls back to the offset rather than
+    refusing a reader whose browser knows a newer zone than this Python's database. An offset that
+    is not whole minutes in bounds, or a zone that is not text, is refused rather than drawn in a
+    zone the request did not ask for. Neither sent, this machine's clock.
+    """
+    offset = utc_offset(payload.get("utc_offset_minutes"))
+    if "utc_offset_minutes" in payload and offset is None:
+        return None
+    if "time_zone" in payload and not isinstance(payload.get("time_zone"), str):
+        return None
+    named = time_zone(payload.get("time_zone"))
+    zone = named if named is not None else offset
+    return clock_text if zone is None else zone_clock(zone)
 
 
 def _placeholder(fact: Mapping[str, Any]) -> dict[str, str]:
@@ -225,7 +279,8 @@ def _quote(fact: Mapping[str, Any]) -> list[Part]:
     if fact.get("type") != reading.AGENT_MESSAGE_TYPE:
         return []
     # Its closing stop dropped, as the claim line drops it: the sentence around it keeps its own.
-    text = neutralised(fact.get("summary"), QUOTE_TEXT_CHARS).rstrip(".").rstrip()
+    text = neutralised(fact.get("summary"), QUOTE_TEXT_CHARS).translate(_QUOTE_SWAPS)
+    text = text.rstrip(".").rstrip()
     # Marked rather than written as text, so the lines can be measured without it (`_joined`).
     return [{"quote": f'{QUOTE_LABEL}{text}"'}] if text else []
 
@@ -614,7 +669,7 @@ def _claim_line(
     sentence's own clause.
     """
     result, fact, record = claim
-    title = reading.claim_title(fact).rstrip(".").strip()
+    title = reading.claim_title(fact).translate(_QUOTE_SWAPS).rstrip(".").strip()
     quoted = len(title.split()) > 2 and not title.startswith(("http://", "https://"))
     label = f'You said "{title}"' if quoted else "Your claim"
     said: list[Part] = [f"{label} at {at(fact)}", _placeholder(fact)]

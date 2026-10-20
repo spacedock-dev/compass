@@ -218,10 +218,10 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       post<SummaryReceipt>('/api/summary/cancel', body, signal),
     postSummaryDelete: (body: SessionIdentity, signal?: AbortSignal) =>
       post<SummaryReceipt>('/api/summary/delete', body, signal),
-    /* `utc_offset_minutes` is the reader's zone, which the correction's times are drawn in; without it the
-       server falls back to its own clock. */
+    /* `time_zone` is the reader's named zone, which the correction's times are drawn in; `utc_offset_minutes`
+       is the fallback where the server does not know that name, and without either it uses its own clock. */
     postCorrection: (
-      body: SessionIdentity & { readonly utc_offset_minutes?: number },
+      body: SessionIdentity & { readonly utc_offset_minutes?: number; readonly time_zone?: string },
       signal?: AbortSignal,
     ) => post<CorrectionReceipt>('/api/correction', body, signal),
     postCorrectionCopied: (

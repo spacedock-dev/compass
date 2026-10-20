@@ -36,7 +36,11 @@ through `recordedWithoutNumbers`, which removes the recorded numbers, in place o
 On the same day the owner allowed Analyze drift on an idle Claude Code session with no recorded turn
 finish, so Claude Code lost its own idle press line ("Last turn isn't recorded as finished. Run
 another turn to open Analyze." on the retired page). `route.differential.test.ts` maps that recorded
-line to the line every harness gets for an idle row. Golden files are unchanged.
+line to the line every harness gets for an idle row. The same row now gets a line before the press,
+"Reads the session up to its last recorded entry; its last turn was not recorded as finished.",
+where the retired page's `nextObservedReadHint` returned nothing. `observed.differential.test.ts`
+holds every other row to the recording and asserts the recording was empty for that one; the line
+itself is asserted in `observed.test.ts`. Golden files are unchanged.
 
 2026-10-20: unasked checks keep their opt-in flag and gain a destination-bound Codex grant
 in the Drift card, with an Attention cue linking sessions waiting for it. Claude Code needs no

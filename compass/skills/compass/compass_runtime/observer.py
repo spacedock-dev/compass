@@ -706,12 +706,12 @@ def prepare_claude_exec(
             os.makedirs(config.state_dir, mode=0o700, exist_ok=True)
             workdir = tempfile.mkdtemp(prefix="reading-claude-cwd-", dir=root)
             descriptor, output_path = tempfile.mkstemp(
-                prefix="reading-claude-", suffix=".txt", dir=config.state_dir
+                prefix=CLAUDE_SCRATCH_PREFIX, suffix=".txt", dir=config.state_dir
             )
             output = os.fdopen(descriptor, "wb")
             if on_diagnostic is not None:
                 error_descriptor, error_path = tempfile.mkstemp(
-                    prefix="reading-claude-error-", suffix=".txt", dir=config.state_dir
+                    prefix=f"{CLAUDE_SCRATCH_PREFIX}error-", suffix=".txt", dir=config.state_dir
                 )
                 error_output = os.fdopen(error_descriptor, "wb")
         except (KeyError, OSError) as error:
@@ -741,6 +741,38 @@ def prepare_claude_exec(
             finally:
                 if workdir:
                     shutil.rmtree(workdir, ignore_errors=True)
+
+
+CLAUDE_SCRATCH_PREFIX = "reading-claude-"
+
+
+def sweep_claude_scratch(config: RuntimeConfig, *, now: float | None = None) -> int:
+    """Remove the reading output and stderr files a hard kill left in `state_dir`.
+
+    `prepare_claude_exec` removes both on every path it runs to the end of; a SIGKILL or a power
+    loss runs none, and the stderr file holds the CLI's raw words. Only regular files of this
+    prefix older than `reading_scratch_stale_sec` go, so a call in flight in another instance
+    sharing the directory keeps its files. Returns how many were removed.
+    """
+    cutoff = (time.time() if now is None else now) - config.reading_scratch_stale_sec
+    removed = 0
+    try:
+        entries = list(os.scandir(config.state_dir))
+    except OSError:
+        return 0
+    for entry in entries:
+        if not (entry.name.startswith(CLAUDE_SCRATCH_PREFIX) and entry.name.endswith(".txt")):
+            continue
+        try:
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            if entry.stat(follow_symlinks=False).st_mtime >= cutoff:
+                continue
+            os.unlink(entry.path)
+        except OSError:
+            continue
+        removed += 1
+    return removed
 
 
 def _cleanup_claude_output(output: BinaryIO | None, descriptor: int, path: str) -> None:

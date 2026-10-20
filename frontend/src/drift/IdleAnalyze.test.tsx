@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clock } from '../observed/values';
+import { datedClock } from '../observed/values';
 import { byAction, fact, mountDrift, press, textOf } from './testing';
 import { SCOPE_TEXT_IDLE, WHY_OFF } from './sentences';
 
@@ -35,7 +35,7 @@ describe('an idle session analyzed up to its last recorded entry', () => {
     await page.settle();
     await page.settle();
     expect(textOf('[data-next-reading-idle]')).toBe(
-      `Read up to the last recorded entry at ${clock(900)}; the last turn was not recorded as finished.`,
+      `Read up to the last recorded entry at ${datedClock(900)}; the last turn was not recorded as finished.`,
     );
     expect(textOf('[data-next-result-heading]')).toContain('So far:');
   });

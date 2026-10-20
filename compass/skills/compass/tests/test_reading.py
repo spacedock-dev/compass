@@ -2158,8 +2158,21 @@ class WhatAClaudeCodeReadingCostsAndProduces(unittest.TestCase):
                 key = "exception_kind" if label == "timeout" else "reason"
                 self.assertEqual(token, reading.claude_failure({key: label}))
                 self.assertTrue(reading.WITHHELD[token].startswith("Analyze failed: Claude Code"))
-        for nothing in (None, {}, {"reason": "unknown"}, {"reason": "planted words"}):
+        for nothing in ({}, {"reason": "unknown"}, {"reason": "planted words"}):
             self.assertEqual(reading.WITHHELD_CLAUDE_FAILED, reading.claude_failure(nothing))
+        self.assertEqual(reading.WITHHELD_MODEL_FAILED, reading.claude_failure(None))
+
+    def test_a_failure_inside_compass_before_claude_code_starts_is_not_blamed_on_it(
+        self,
+    ) -> None:
+        run = mock.Mock()
+        model = reading.ClaudeReadingModel(
+            cast("Any", self.config), runner=run, binary_resolver=lambda _name: "/bin/claude"
+        )
+        with mock.patch.object(observer, "reading_workdir_root", return_value=None):
+            self.assertEqual(("", "failed"), model("p", output_cap_bytes=10))
+        run.assert_not_called()
+        self.assertEqual(reading.WITHHELD_MODEL_FAILED, model.failure_reason())
 
     def test_a_relative_claude_code_is_not_available_so_nothing_is_reserved(self) -> None:
         for relative in ("claude", "./claude", "bin/claude"):

@@ -70,6 +70,7 @@ describe('Steer back', () => {
       harness: 'claude',
       sid: 's1',
       utc_offset_minutes: 0 - new Date().getTimezoneOffset() || 0,
+      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
     expect(box()?.value).toBe('Your last check failed. Fix it, then say so.');
     expect(byAction('steer-back')?.getAttribute('aria-expanded')).toBe('true');

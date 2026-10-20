@@ -748,7 +748,10 @@ LEGACY_WITHHELD = {
 }
 
 # `observer._claude_failure_reason`'s labels, and its timeout category, to the sentence each
-# names. An unknown label, or none, is `WITHHELD_CLAUDE_FAILED`.
+# names. An unknown label, or none, is `WITHHELD_CLAUDE_FAILED`; no diagnostic at all is
+# `WITHHELD_MODEL_FAILED`, because every call that started the CLI records one, so its absence is a
+# failure inside Compass before the CLI ran (the design record's 2026-10-20 amendment keeps
+# `model-failed` for that).
 CLAUDE_FAILURES = {
     "login-required": WITHHELD_CLAUDE_LOGIN,
     "authentication-rejected": WITHHELD_CLAUDE_AUTH,
@@ -763,7 +766,7 @@ CLAUDE_FAILURES = {
 def claude_failure(diagnostic: Mapping[str, Any] | None) -> str:
     """The withheld token a failed Claude Code call's diagnostic names."""
     if not isinstance(diagnostic, dict):
-        return WITHHELD_CLAUDE_FAILED
+        return WITHHELD_MODEL_FAILED
     for key in ("reason", "exception_kind"):
         token = CLAUDE_FAILURES.get(str(diagnostic.get(key) or ""))
         if token:

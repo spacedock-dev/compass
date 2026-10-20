@@ -102,7 +102,14 @@ describe('the helpers a view calls agree with their legacy twins', () => {
           canonical(sessionStop(row)),
         ),
       ).toBeNull();
-      expect(readHint(row)).toBe(legacy.call('nextObservedReadHint', row));
+      /* Departure, 2026-10-20: the owner admitted Analyze drift on an idle Claude Code row with no recorded
+         stop or end, where the retired page said nothing (docs/design-frontend-migration.md, Held to recorded
+         answers). That row's hint is asserted in observed.test.ts; every other row is held to the recording. */
+      const admitted =
+        readHint(row) ===
+        'Reads the session up to its last recorded entry; its last turn was not recorded as finished.';
+      if (admitted) expect(legacy.call('nextObservedReadHint', row)).toBe('');
+      else expect(readHint(row)).toBe(legacy.call('nextObservedReadHint', row));
     }
   });
 

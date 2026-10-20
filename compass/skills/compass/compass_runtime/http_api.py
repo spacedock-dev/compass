@@ -2922,14 +2922,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not all(isinstance(part, str) and part for part in (harness, sid)):
             self._reject(400)
             return
-        # The reader's zone, which the page knows and the server must not guess (owner,
-        # 2026-10-20): absent, the times fall back to this machine's clock; present and not a
-        # whole offset in bounds, the request is refused rather than drawn in a zone it did not ask.
-        offset = correction.utc_offset(payload.get("utc_offset_minutes"))
-        if "utc_offset_minutes" in payload and offset is None:
+        clock = correction.request_clock(payload)
+        if clock is None:
             self._reject(400)
             return
-        clock = correction.clock_text if offset is None else correction.zone_clock(offset)
         row = self._session_row(str(harness), str(sid)) if harness in correction.HARNESSES else None
         # An unknown session and another harness answer what a session with nothing to steer
         # from does, so a refusal says nothing about which sessions exist.

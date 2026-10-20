@@ -11,6 +11,7 @@ import {
   correctionStale,
   correctionStamp,
   correctionText,
+  readerTimeZone,
   readerUtcOffset,
   type HeldCorrection,
 } from './correction';
@@ -30,6 +31,11 @@ function bounded(ctx: DriftCtx): { readonly signal: AbortSignal; done(): void } 
   const controller = new AbortController();
   const handle = ctx.shell.clock.setTimeout(() => controller.abort(), COMPOSE_BOUND_MS);
   return { signal: controller.signal, done: () => ctx.shell.clock.clearTimeout(handle) };
+}
+
+function zoneField(): { readonly time_zone?: string } {
+  const zone = readerTimeZone();
+  return zone ? { time_zone: zone } : {};
 }
 
 function sourceFor(ctx: DriftCtx, session: Row) {
@@ -90,7 +96,7 @@ export async function composeCorrection(
   try {
     const reply = answered(
       await ctx.shell.runtime.client.postCorrection(
-        { ...identity, utc_offset_minutes: readerUtcOffset() },
+        { ...identity, utc_offset_minutes: readerUtcOffset(), ...zoneField() },
         request.signal,
       ),
     );

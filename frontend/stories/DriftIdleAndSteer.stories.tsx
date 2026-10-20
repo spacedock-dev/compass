@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { clock } from '../src/observed/values';
+import { clock, datedClock } from '../src/observed/values';
 import { readerUtcOffset } from '../src/drift/correction';
 import {
   PRESS_CODEX,
@@ -61,6 +61,12 @@ export const AnalyzeOpensOnAnIdleSessionWithNoRecordedFinish: Story = {
     await expect(analyze).not.toHaveAttribute('aria-disabled');
     await expect(canvasElement.textContent).not.toContain('Analyze opens while this session runs.');
     await expect(canvasElement.textContent).not.toContain(WHY_OFF);
+    // Before the press, it says what it will read, as a running session's does.
+    await expect(
+      await canvas.findByText(
+        /^Reads the session up to its last recorded entry; its last turn was not recorded as finished\./,
+      ),
+    ).toBeVisible();
   },
 };
 
@@ -76,8 +82,10 @@ export const AnIdleReadingSaysHowFarItRead: Story = {
       return node;
     });
     await expect(line).toHaveTextContent(
-      `Read up to the last recorded entry at ${clock(900)}; the last turn was not recorded as finished.`,
+      `Read up to the last recorded entry at ${datedClock(900)}; the last turn was not recorded as finished.`,
     );
+    // The entry is from another day, so its date is named, as the copied correction names it.
+    await expect(line.textContent).toMatch(/at \d{4}-\d\d-\d\d \d\d:\d\d;/);
     await expect(canvasElement.querySelector('[data-next-result-heading]')).toHaveTextContent(
       /^So far:/,
     );
@@ -156,7 +164,10 @@ export const SteerBackFromAnIdleSession: Story = {
     correctionPosts.length = 0;
     const canvas = within(canvasElement);
     const steer = await canvas.findByRole('button', { name: 'Steer back' });
-    await expect(await canvas.findByText(`from the check at ${clock(1000)}`)).toBeVisible();
+    // The scenario's own clock reads 1000 s, so the check was today on the page's clock.
+    await expect(
+      await canvas.findByText(`from the check at ${datedClock(1000, 1000)}`),
+    ).toBeVisible();
     await userEvent.click(steer);
     const box = (await canvas.findByLabelText('Correction to copy')) as HTMLTextAreaElement;
     await expect(box.value).toContain(

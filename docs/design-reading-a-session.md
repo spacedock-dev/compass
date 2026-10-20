@@ -3267,7 +3267,9 @@ stores one sentence per label (`reading.CLAUDE_FAILURES`), such as "Analyze fail
 it is not logged in. Nothing was saved. Fix that, then press Analyze drift again." A call with no
 label, or an unknown one, stores "Analyze failed: Claude Code returned an error. Nothing was saved;
 press Analyze drift to try again." Codex discards its stderr and has its own unlabelled sentence, and
-a job that failed inside Compass keeps `model-failed`, reworded the same way. No word of the CLI's
+a job that failed inside Compass keeps `model-failed`, reworded the same way. That includes a
+Claude Code job that failed before the CLI started, such as no private working directory, which
+records no diagnostic (`reading.claude_failure` reads its absence as `model-failed`). No word of the CLI's
 output is stored or shown: quoting a first line of stderr, as the review suggested, would carry text
 SECURITY.md keeps off every surface, and a closed label says the same thing for every cause the list
 knows. The sentence stored before this change maps to `model-failed` on read-back
@@ -4801,12 +4803,19 @@ approved template, and the explanation line of the
 [earlier amendment that day](#amended-2026-10-20-owner-the-correction-carries-the-explanation),
 stay as they are.
 
-- **Local time.** The page sends `utc_offset_minutes`, the reader's zone in minutes east of UTC, with
-  `POST /api/correction`, and the composer draws every time in it (`correction.zone_clock`), with a
-  date where the moment is not the reader's today. A value that is not a whole number of minutes
-  within 16 hours of UTC is refused with 400. With no value the server's own clock is used, as
-  before, so an older page still composes. One offset serves every time in the text, the reader's
-  now; a daylight-saving change between two of them is the one case it draws an hour off.
+- **Local time.** The page sends `time_zone`, the reader's IANA zone name from `Intl`, and
+  `utc_offset_minutes`, the reader's zone in minutes east of UTC, with `POST /api/correction`, and
+  the composer draws every time in that zone (`correction.zone_clock`), with a date where the moment
+  is not the reader's today. A name in `zoneinfo.available_timezones()` is preferred, so each time
+  takes the zone's own rules as the page's `clock()` does, and a daylight-saving change between two
+  cited times no longer draws one an hour off (review, 2026-10-20). A name this machine does not
+  know, or a Python without a time zone database, falls back to the offset, which is one for every
+  time in the text and keeps that one-hour gap across a change. A `time_zone` that is not text, or an
+  offset that is not a whole number of minutes within 16 hours of UTC, is refused with 400. With
+  neither the server's own clock is used, as before, so an older page still composes. The page's
+  labels beside Steer back ("from the check at") and on an idle reading ("Read up to the last
+  recorded entry at") name the date on the same rule (`datedClock`), so they and the copied text
+  name the same moment.
 - **No entry numbers.** A placeholder is drawn as nothing. It stays in the parts, because the page
   reads the cited ids from it to tell when a held correction is stale (item 11 is otherwise
   unchanged), and it adds no width.
@@ -4832,9 +4841,16 @@ stay as they are.
   "from the check at HH:MM" with the reading's `read_at` in the reader's zone, including when the
   session has gone idle and while a later direction's question stands (the question keeps the
   primary press, and Update intent instead is not offered there, since the question's Add is the
-  same act). Copying sends nothing. Where the existing rules withhold it, a reading marked
-  inaccurate or one of an earlier version of the intent, the departures say so in one line instead
-  of the button going missing.
+  same act). Copying sends nothing. Two withholds stay: a reading marked inaccurate, and one of an
+  earlier version of the intent. There the departures say so in one line instead of the button
+  going missing. Those two are the implementer's reading of the earlier rules (`steerOffer` and
+  `steerWithheld` in `frontend/src/drift/correction.ts`, and `correction._current_rows` on the
+  server), not part of the owner's ruling of 2026-10-20, which reads unqualified: "Steer back stays
+  available while departures are listed." They are kept as the cautious side, because a correction
+  pasted into the agent would then argue from a reading the reader has rejected or from words
+  they have since replaced. The owner is asked to confirm them. If the owner does not, Steer back is
+  offered there too, with that one line beside it, and the server compose stops demoting those
+  rows.
 
 ### What the result build decided, 2026-09-28
 

@@ -125,6 +125,20 @@ export function readerUtcOffset(at: Date = new Date()): number {
   return 0 - at.getTimezoneOffset() || 0;
 }
 
+/* The reader's named zone, sent beside the offset so the server draws each time by that zone's own rules, as
+   `clock()` does, and a daylight-saving change between two cited times leaves the correction and the page
+   agreeing. Undefined where the browser names none; the offset is then the server's fallback. */
+export function readerTimeZone(
+  resolve: () => string | undefined = () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string | undefined {
+  try {
+    const zone = resolve();
+    return typeof zone === 'string' && zone ? zone : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function correctionParts(parts: unknown): CorrectionPart[] | null {
   return Array.isArray(parts) &&
     parts.every(

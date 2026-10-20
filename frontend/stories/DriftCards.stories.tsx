@@ -706,7 +706,9 @@ export const PendingLaterDirection: Story = {
     const steer = await within(drift).findByRole('button', { name: 'Steer back' });
     await expect(steer).toHaveAttribute('data-variant', 'default');
     await expect(steer.closest('[data-next-result-steer]')).not.toBeNull();
-    await expect(within(drift).getByText(/^from the check at \d\d:\d\d$/)).toBeVisible();
+    await expect(
+      within(drift).getByText(/^from the check at (\d{4}-\d\d-\d\d )?\d\d:\d\d$/),
+    ).toBeVisible();
     await expect(within(drift).queryByRole('button', { name: 'Update intent instead' })).toBeNull();
     await neverDone(shown);
   },

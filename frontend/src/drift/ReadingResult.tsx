@@ -52,7 +52,7 @@ import {
   SCOPE_TEXT_IDLE,
   unloadedCites,
 } from './sentences';
-import { clock } from '../observed/values';
+import { datedClock } from '../observed/values';
 import type { SteerSlot } from './ReadingControl';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
 import { Why } from './Why';
@@ -527,7 +527,7 @@ function intentLabel(label: string, lines: number): string {
 function idleLine(shape: Shape, raw: Readonly<Record<string, unknown>>): string {
   if (shape.scope !== 'mid-flight' || shape.scopeText !== SCOPE_TEXT_IDLE) return '';
   const through = nextNumber(raw['evidence_through']);
-  return readIdle(through !== null && through > 0 ? clock(through) : '');
+  return readIdle(through !== null && through > 0 ? datedClock(through) : '');
 }
 
 /* What it read, one click away: the model, the intent it read against (which revision, when and where it came

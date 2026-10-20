@@ -2135,6 +2135,9 @@ def _read_cases(  # noqa: C901, PLR0913 - native pipeline with explicit isolated
                 # them out would measure a producer the board no longer ships.
                 read_agent_words=True,
                 admit_turn_stop=True,
+                # Not the idle admission of 2026-10-20: the blind marks were written under the
+                # earlier rule, which withheld an idle session with no recorded finish.
+                admit_idle=False,
             )
             calls += 1 if model.sent else 0
             entry = {
