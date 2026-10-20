@@ -457,7 +457,7 @@ export const CitationLoadsAnOlderEntry: Story = {
       /* Once the entry is held, the finding names it by its number instead of offering to load it, and the
          way back lands on that number. */
       const cited = () =>
-        canvas.getByRole('button', {
+        canvas.getByRole('link', {
           name: /^Show #\d+(\.\d+)? in Full activity for Goal: Synthetic goal$/,
         });
       await userEvent.keyboard('{Escape}');

@@ -142,7 +142,7 @@ describe('Steer back', () => {
     await act(async () => {
       fireEvent.input(field);
     });
-    expect(textOf('[data-next-correction-cue]')).toBe('Copy');
+    expect(textOf('[data-next-correction-cue]')).toBe('Copy correction');
   });
 
   it('writes one copy for one press however it is pressed', async () => {

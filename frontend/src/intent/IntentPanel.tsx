@@ -170,19 +170,21 @@ export function IntentPanel({
           id="next-session-drift"
           aria-labelledby="next-session-drift-heading"
         >
-          <header className="next-session-drift-head max-[760px]:py-0">
-            <div className="next-session-drift-titles flex flex-wrap items-baseline gap-x-2">
-              <h2 id="next-session-drift-heading" className="next-session-drift-heading">
-                Drift
-              </h2>
-              {stamp}
-              <p className="next-session-drift-sub basis-full text-body">{DRIFT_SUBTITLE}</p>
+          <header className="next-session-drift-head flex-col items-stretch max-[760px]:py-0">
+            <div className="next-session-drift-titles flex flex-col">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h2 id="next-session-drift-heading" className="next-session-drift-heading">
+                  Drift
+                </h2>
+                {stamp}
+              </div>
+              <p className="next-session-drift-sub text-body">{DRIFT_SUBTITLE}</p>
             </div>
             {/* The live monitor and what it does, in the head of the card it controls now that More is retired:
                 placement only, its value and default are unchanged. What it does is the switch's own helper
                 text, not a line of the card (usability review, 2026-10-20). Pause model calls sits beside it.
                 [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */}
-            <div className="flex flex-wrap items-start justify-end gap-x-4 gap-y-2 max-[760px]:justify-start">
+            <div className="flex flex-wrap items-start justify-start gap-x-4 gap-y-2">
               {actions}
               <LiveMonitorSwitch />
             </div>

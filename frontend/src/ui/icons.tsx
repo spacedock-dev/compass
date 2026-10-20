@@ -11,6 +11,7 @@ import {
   PiCircle,
   PiClockCounterClockwise,
   PiCompass,
+  PiCopy,
   PiInfo,
   PiListChecks,
   PiWarning,
@@ -28,7 +29,8 @@ export type IconName =
   | 'info'
   | 'expand'
   | 'remove'
-  | 'compass';
+  | 'compass'
+  | 'copy';
 
 const ICONS = {
   unrecorded: PiCircle,
@@ -41,6 +43,7 @@ const ICONS = {
   expand: PiCaretRight,
   remove: PiX,
   compass: PiCompass,
+  copy: PiCopy,
 } as const;
 
 export function Icon({ name, ...props }: { readonly name: IconName } & IconBaseProps) {

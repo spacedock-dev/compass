@@ -392,7 +392,7 @@ export const CitedEntriesAreTinted: Story = {
     const background = (node: HTMLElement) => getComputedStyle(node).backgroundColor;
     await expect(row()).not.toHaveAttribute('data-next-cited');
     const plain = background(row());
-    await userEvent.click(await canvas.findByRole('button', { name: /^Show #\d+/ }));
+    await userEvent.click(await canvas.findByRole('link', { name: /^Show #\d+/ }));
     await waitFor(() => expect(row()).toHaveAttribute('data-next-cited'));
     await expect(background(row())).not.toBe(plain);
     await expect(getComputedStyle(row()).borderLeftWidth).toBe('3px');

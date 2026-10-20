@@ -90,7 +90,7 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     const whats = [...drift.querySelectorAll<HTMLElement>('[data-next-departure-what]')];
     await expect(whats).toHaveLength(2);
     for (const what of whats) {
-      await expect(what).toHaveTextContent(/#\d+/);
+      await expect(what).toHaveTextContent(/\[\d+\]/);
       await expect(within(what).getByText(`Agent said: “${SAID}”`)).toBeVisible();
     }
     // Said once, inside Evidence and What the analysis read, not between the verdict and the cards.
@@ -299,10 +299,10 @@ export const CopiedLapsesBackToCopy: Story = {
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
     await userEvent.click(await within(drift).findByRole('button', { name: 'Steer back' }));
-    const copy = await within(drift).findByRole('button', { name: 'Copy' });
+    const copy = await within(drift).findByRole('button', { name: 'Copy correction' });
     await userEvent.click(copy);
     await waitFor(() => expect(copy).toHaveTextContent('Copied'));
-    await waitFor(() => expect(copy).toHaveTextContent(/^Copy$/), { timeout: 4000 });
+    await waitFor(() => expect(copy).toHaveTextContent(/^Copy correction$/), { timeout: 4000 });
   },
 };
 

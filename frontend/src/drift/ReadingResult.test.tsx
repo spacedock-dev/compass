@@ -227,12 +227,12 @@ describe('a finding jump', () => {
     await page.settle();
     const jumps = [...document.querySelectorAll('[data-next-finding]')];
     expect(
-      screen.queryByRole('button', {
+      screen.queryByRole('link', {
         name: 'Show #1 in Full activity for Goal: Ship the queue',
       }),
     ).toBe(jumps[0]);
     expect(
-      screen.queryByRole('button', {
+      screen.queryByRole('link', {
         name: 'Show #2 in Full activity for Expected outcome line 1: Tests pass',
       }),
     ).toBe(jumps[1]);

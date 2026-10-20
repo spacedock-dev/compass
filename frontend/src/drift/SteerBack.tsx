@@ -3,6 +3,7 @@ import { Card } from '../ui/card';
 import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
+import { Icon } from '../ui/icons';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useFocusKey } from '../controls';
 import { openPendingDirection } from '../intent/api';
@@ -75,6 +76,8 @@ export function UpdateIntentButton({ factId }: { readonly factId: string }) {
     <DirectionActionButton
       feedbackKey={`update-intent:${model.key}`}
       weight="secondary"
+      fit
+      className="border-dashed font-bold text-label px-3"
       label="Update intent instead"
       busyLabel="Opening…"
       pendingKey={`update-intent:${model.key}`}
@@ -146,7 +149,11 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
     [attach, focusRef],
   );
   const label =
-    held.cue === 'copied' ? 'Copied' : held.cue === 'failed' ? 'Copy unavailable' : 'Copy';
+    held.cue === 'copied'
+      ? 'Copied'
+      : held.cue === 'failed'
+        ? 'Copy unavailable'
+        : 'Copy correction';
   const stale = Boolean(held.stale);
   return (
     <Card variant="steer-box" className="next-cockpit-steer-box" data-next-steer-box>
@@ -169,6 +176,7 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
       <div className="next-cockpit-steer-tools">
         <Button
           type="button"
+          className="gap-2 border-[var(--accent)] font-bold text-[color:var(--accent)] text-label px-3"
           data-next-cockpit-action="correction-copy"
           data-next-copy-correction={key}
           data-next-focus={`correction-copy:${key}`}
@@ -178,6 +186,7 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
             if (identity) void copyCorrection(ctx, identity);
           }}
         >
+          <Icon name="copy" />
           {label}
         </Button>
         <span className="next-cockpit-held-count" data-next-correction-count>

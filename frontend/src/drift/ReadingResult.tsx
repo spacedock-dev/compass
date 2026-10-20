@@ -66,6 +66,8 @@ import { Why } from './Why';
 
 const LABEL =
   'm-0 text-label font-semibold uppercase tracking-[.07em] text-[var(--ink-label)] [font-family:var(--mono)]';
+const LABEL_CLAY =
+  'm-0 text-label font-semibold uppercase tracking-[.07em] text-[var(--clay)] [font-family:var(--mono)]';
 const QUIET = 'm-0 max-w-[var(--measure)] text-body leading-[1.5] text-muted-foreground';
 const NO_DETAIL = 'No explanation was retained for this assessment.';
 
@@ -107,29 +109,30 @@ function CitedEntries({
   const loadable = row.unloaded > 0 && record?.status === 'loaded' && !record.reachedStart;
   const named = row.clause ? `${jumpName(row.key)}: ${row.clause}` : jumpName(row.key);
   const chips = held.length ? (
-    <ul className="m-0 flex list-none flex-col gap-1 p-0" data-next-cited-entries={row.key}>
+    <ul className="m-0 flex list-none flex-col gap-2 p-0" data-next-cited-entries={row.key}>
       {held.map((entry) => {
         const id = String(entry.id || '');
         const where = resultWhere(entry, model.numbers) || 'Entry';
         return (
           <li
             key={id}
-            className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5"
+            className="m-0 min-w-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
           >
-            <Button
-              type="button"
-              className="min-h-[44px] px-2.5 py-1 font-[family-name:var(--mono)] text-label"
+            {quote ? citedLine(entry) : citedKind(entry)}
+            <a
+              href="#"
+              className="ml-1.5 min-h-0 min-w-0 rounded-control font-[family-name:var(--mono)] text-label text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1"
               data-next-cockpit-action="finding-jump"
               data-next-finding={row.key}
               data-next-cite={id}
               aria-label={`Show ${where} in Full activity for ${named}`}
-              onClick={(event) => chooseFinding(row.key, event.currentTarget, id)}
+              onClick={(event) => {
+                event.preventDefault();
+                chooseFinding(row.key, event.currentTarget, id);
+              }}
             >
-              {where}
-            </Button>
-            <span className="min-w-0 text-body leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
-              {quote ? citedLine(entry) : citedKind(entry)}
-            </span>
+              {where.startsWith('#') ? `[${where.slice(1)}]` : `[${where}]`}
+            </a>
           </li>
         );
       })}
@@ -246,7 +249,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
       <span className="next-cockpit-result-glyph" aria-hidden="true" />
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <div className="flex flex-col gap-0.5">
-          <p className={`${LABEL} text-[var(--clay)]`} data-next-departure-label>
+          <p className={LABEL_CLAY} data-next-departure-label>
             {`Departure · ${constraintName(row.key, outcomes)}`}
           </p>
           <h4
@@ -263,7 +266,9 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
         </div>
         <div className="flex max-w-[45rem] flex-col gap-0.5" data-next-departure-why>
           <p className={LABEL}>Why Compass reads this as drift</p>
-          <p className="next-cockpit-reading-detail m-0">{detail || NO_DETAIL}</p>
+          <p className="next-cockpit-reading-detail m-0 text-foreground not-italic">
+            {detail || NO_DETAIL}
+          </p>
         </div>
         {row.coverage ? <p className={QUIET}>{row.coverage}</p> : null}
         <DepartureSummaryLine row={row.key} />

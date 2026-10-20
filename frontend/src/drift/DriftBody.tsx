@@ -105,17 +105,19 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     ? {
         lead: departed && !hasQuestion,
         button: (
-          <>
-            <SteerButton
-              primary={!hasQuestion && steerPrimary(offer, Boolean(noReader), primary)}
-              from={from}
-            />
+          <div className="flex flex-wrap items-center gap-3">
             {departed && !hasQuestion ? (
               <UpdateIntentButton
                 factId={offeredDirection(annotation, model.entries, session, shape, model.draft)}
               />
             ) : null}
-          </>
+            <SteerButton
+              primary={
+                !hasQuestion && (departed || steerPrimary(offer, Boolean(noReader), primary))
+              }
+              from={from}
+            />
+          </div>
         ),
         box: (
           <>

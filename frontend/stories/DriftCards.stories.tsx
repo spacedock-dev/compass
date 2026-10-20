@@ -116,12 +116,13 @@ async function citesResolvably(root: HTMLElement, constraint: string, clause: st
   const found = chips(root);
   await expect(found.length).toBeGreaterThan(0);
   for (const chip of found) {
-    const number = chip.textContent ?? '';
-    await expect(number).toMatch(/^#\d+(\.\d+)?$/);
+    const cite = chip.textContent ?? '';
+    await expect(cite).toMatch(/^\[\d+(\.\d+)?\]$/);
+    const number = `#${cite.slice(1, -1)}`;
     await expect(chip).toHaveAccessibleName(
       `Show ${number} in Full activity for ${clause ? `${constraint}: ${clause}` : constraint}`,
     );
-    await expect(chip.nextElementSibling?.textContent).toMatch(
+    await expect(chip.previousSibling?.textContent).toMatch(
       /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|You said: “.+”|(Failed|Passed|Recorded) check: .+|File write: .+)$/,
     );
     const row = document.querySelector<HTMLElement>(
@@ -156,8 +157,9 @@ async function departureCard(
   /* Said once, in Evidence: "Departs; evidence #n" beside the label and What said it a third time. */
   await expect(node.querySelector('[data-next-departure-status]')).toBeNull();
   await expect(
-    node.querySelector('[data-next-departure-what] [data-next-cite]')?.nextElementSibling,
-  ).not.toHaveTextContent(/^Departs/);
+    node.querySelector('[data-next-departure-what] [data-next-cite]')?.previousSibling
+      ?.textContent ?? '',
+  ).not.toMatch(/^Departs/);
   await expect(
     [...node.querySelectorAll('.ctl-disclosure')].map((part) => part.textContent).join(' '),
   ).toMatch(/Departs; evidence #\d+/);
@@ -294,7 +296,7 @@ export const ANumberOpensFullActivityAtItsEntry: Story = {
       expect(node.dataset['nextEntryId']).toBe('c3');
       return node;
     });
-    await expect(row).toHaveTextContent(second.textContent ?? '');
+    await expect(row).toHaveTextContent(`#${(second.textContent ?? '').slice(1, -1)}`);
     await expect(document.querySelectorAll('[data-next-cited]').length).toBe(2);
     await userEvent.click(within(row).getByRole('button', { name: 'Back to the finding' }));
     await waitFor(() => expect(document.activeElement).toBe(second));
@@ -542,7 +544,7 @@ export const AgentDoneIsNeverDrawnInTheResult: Story = {
     });
     await citesResolvably(goal, 'Goal', 'Ship the queue');
     await expect(chips(goal)).toHaveLength(1);
-    await expect(chips(goal)[0]?.nextElementSibling).toHaveTextContent(/^Agent message$/);
+    await expect(chips(goal)[0]?.previousSibling?.textContent).toBe('Agent message');
     // The entry is in the record: Full activity, outside the result, still carries the agent's words.
     await expect(document.querySelector('[data-next-entry-id="m2"]')?.textContent ?? '').toContain(
       'the queue ships',
@@ -777,8 +779,7 @@ export const MalformedReading: Story = {
   },
 };
 
-/* A session blocked on the reader: the departure card stands, Steer back is offered and is not primary, because
-   the answer the session waits for comes first. */
+/* A session blocked on the reader: the departure card stands and Steer back leads it (owner, 2026-10-20). */
 export const BlockedSessionSteerBackIsNotPrimary: Story = {
   ...scenario({
     session: {
@@ -792,8 +793,7 @@ export const BlockedSessionSteerBackIsNotPrimary: Story = {
     const shown = await result(drift);
     await waitFor(() => expect(departures(shown)).toHaveLength(1));
     const steer = await within(drift).findByRole('button', { name: 'Steer back' });
-    await expect(steer).not.toHaveAttribute('data-variant', 'primary');
-    await expect(primaries(drift)).toEqual([]);
+    await expect(steer).toHaveAttribute('data-variant', 'primary');
     await neverDone(shown);
   },
 };
