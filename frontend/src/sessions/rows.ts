@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { stableProjectKey } from '../api/identity';
 import type { RouteInput } from '../router/grammar';
 import {
   durationSince,
@@ -106,6 +107,25 @@ export interface DriftRecord {
   readonly subject: 'This raise' | 'This reading';
 }
 
+/** The stored reading itself departs: an intent line found a departure and cites what it rests on. */
+export function readingDeparts(source: Row | undefined): boolean {
+  const raw = source?.['annotation_assessment'];
+  if (!isRecord(raw) || !Object.keys(raw).every((key) => READING_ASSESSMENT_KEYS.includes(key)))
+    return false;
+  const criteria = isRecord(raw['criteria']) ? raw['criteria'] : {};
+  return Object.keys(criteria)
+    .filter((key) => readingNamesConstraint(key) && key !== READING_CLAIMS)
+    .some((key) => {
+      const criterion = criteria[key];
+      return (
+        isRecord(criterion) &&
+        criterion['result'] === 'departure' &&
+        Array.isArray(criterion['cites']) &&
+        criterion['cites'].some((cite) => typeof cite === 'string' && cite.trim())
+      );
+    });
+}
+
 export function drift(source: Row | undefined, context: SessionsContext): DriftRecord[] {
   if (!context.annotate || !source) return [];
   const rows: DriftRecord[] = (
@@ -118,27 +138,13 @@ export function drift(source: Row | undefined, context: SessionsContext): DriftR
       subject: 'This raise' as const,
     }));
   const raw = source['annotation_assessment'];
-  if (isRecord(raw) && Object.keys(raw).every((key) => READING_ASSESSMENT_KEYS.includes(key))) {
-    const criteria = isRecord(raw['criteria']) ? raw['criteria'] : {};
-    const departed = Object.keys(criteria)
-      .filter((key) => readingNamesConstraint(key) && key !== READING_CLAIMS)
-      .some((key) => {
-        const criterion = criteria[key];
-        return (
-          isRecord(criterion) &&
-          criterion['result'] === 'departure' &&
-          Array.isArray(criterion['cites']) &&
-          criterion['cites'].some((cite) => typeof cite === 'string' && cite.trim())
-        );
-      });
-    // A contradicted claim is not drift from the intent.
-    if (departed)
-      rows.push({
-        at: nextNumber(raw['read_at']),
-        revision: nextNumber(raw['revision_read']),
-        subject: 'This reading',
-      });
-  }
+  // A contradicted claim is not drift from the intent.
+  if (isRecord(raw) && readingDeparts(source))
+    rows.push({
+      at: nextNumber(raw['read_at']),
+      revision: nextNumber(raw['revision_read']),
+      subject: 'This reading',
+    });
   return rows;
 }
 
@@ -254,6 +260,8 @@ export interface SessionRow {
   readonly source: Row | undefined;
   readonly route: RouteInput & { readonly view: 'session' };
   readonly harnessLabel: string;
+  /** The project's stable key, which the drift context rows are held under. */
+  readonly projectKey: string;
   readonly goal: GoalCell;
   readonly drift: DriftMark | null;
   /** "ended <duration> ago", or empty. */
@@ -303,6 +311,18 @@ export function buildSessionsScreen(
   const asks = operationsAsks(payload, rows);
   const labels = harnessLabels(payload);
   const groups = groupSessions(model, sources, context);
+  const projectKeys = new Map<string, string>();
+  const projectKey = (project: string): string => {
+    let key = projectKeys.get(project);
+    if (key === undefined) {
+      key = stableProjectKey({
+        label: project,
+        sessions: rows.filter((one) => String(one['project'] ?? '') === project),
+      });
+      projectKeys.set(project, key);
+    }
+    return key;
+  };
   const seen = new Map<string, number>();
   const unique = (session: ObservedSession): string => {
     const base = `${sessionKey(session)}\u0000${session.project}`;
@@ -326,6 +346,7 @@ export function buildSessionsScreen(
         session: session.sid,
       },
       harnessLabel: labels.get(session.harness) || session.harness,
+      projectKey: projectKey(String(source?.['project'] ?? '')),
       goal: goalCell(source, context, source && chosenFor ? chosenFor(source) : null),
       drift: driftMark(source, context),
       endedSince: since ? `ended ${since} ago` : '',
@@ -344,4 +365,15 @@ export function buildSessionsScreen(
     active: groups.active.map((session) => row(session, false)),
     history: groups.history.map((session) => row(session, true)),
   };
+}
+
+/* One state word leads each row (usability review, 2026-10-20): the row once said "NOW · IDLE" and "QUIET"
+   under "Active now", three words for one fact that read as a contradiction. Ended outranks the rest because
+   an ended session waits on nobody. */
+export function rowState(session: ObservedSession): string {
+  if (session.isEnded) return 'Ended';
+  if (session.isNeeds || session.askKnown) return 'Waiting on you';
+  if (session.isWorking) return 'Working';
+  // Only a published idle reads Idle: a missing or unknown state is not observed quiet.
+  return session.isQuiet ? 'Idle' : 'State not published';
 }

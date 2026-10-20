@@ -4,6 +4,7 @@ import { useFocusKey } from '../controls';
 import { useShell } from '../shell/context';
 import { LIVE_HARNESSES, useLiveMonitor } from './liveMonitor';
 import { LIVE_MONITOR } from './sentences';
+import { LIVE_HINT } from '../drift/sentences';
 import { usePanel } from './useIntent';
 
 /* Drawn in the Drift card's head; placement only: its value still decides whether the live level, nudge and
@@ -22,27 +23,37 @@ export function LiveMonitorSwitch() {
     return null;
   }
   return (
-    <div className="next-session-drift-monitor">
-      <span id="next-session-drift-monitor-label">{LIVE_MONITOR}</span>
-      <Button
-        variant="native"
-        ref={ref}
-        type="button"
-        className="next-session-drift-switch"
-        role="switch"
-        aria-checked={on}
-        aria-labelledby="next-session-drift-monitor-label"
-        data-next-cockpit-action="live-monitor"
-        data-next-focus={`live-monitor:${key}`}
-        onClick={(event) => {
-          event.preventDefault();
-          set(!on);
-        }}
+    <div className="flex max-w-[22rem] flex-col items-end gap-1 max-[760px]:items-start">
+      <div className="next-session-drift-monitor">
+        <span id="next-session-drift-monitor-label">{LIVE_MONITOR}</span>
+        <Button
+          variant="native"
+          ref={ref}
+          type="button"
+          className="next-session-drift-switch"
+          role="switch"
+          aria-checked={on}
+          aria-labelledby="next-session-drift-monitor-label"
+          aria-describedby="next-session-drift-monitor-hint"
+          data-next-cockpit-action="live-monitor"
+          data-next-focus={`live-monitor:${key}`}
+          onClick={(event) => {
+            event.preventDefault();
+            set(!on);
+          }}
+        >
+          <span className="next-session-drift-track" aria-hidden="true">
+            <span />
+          </span>
+        </Button>
+      </div>
+      <p
+        id="next-session-drift-monitor-hint"
+        className="m-0 text-right text-label leading-[1.4] text-muted-foreground max-[760px]:text-left"
+        data-next-live-hint
       >
-        <span className="next-session-drift-track" aria-hidden="true">
-          <span />
-        </span>
-      </Button>
+        {LIVE_HINT}
+      </p>
     </div>
   );
 }

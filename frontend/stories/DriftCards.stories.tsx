@@ -110,8 +110,8 @@ const primaries = (root: HTMLElement) => [
 ];
 
 /* Each number on a finding is the activity list's own: a button named for the number, the constraint and the
-   reader's words, with the kind of entry Compass names beside it and never the entry's own text, and a row in
-   Full activity that carries the same number. */
+   reader's words, with the kind of entry Compass names beside it (on a departure card, the entry's own words,
+   attributed), and a row in Full activity that carries the same number. */
 async function citesResolvably(root: HTMLElement, constraint: string, clause: string) {
   const found = chips(root);
   await expect(found.length).toBeGreaterThan(0);
@@ -122,7 +122,7 @@ async function citesResolvably(root: HTMLElement, constraint: string, clause: st
       `Show ${number} in Full activity for ${clause ? `${constraint}: ${clause}` : constraint}`,
     );
     await expect(chip.nextElementSibling?.textContent).toMatch(
-      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry)$/,
+      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|You said: “.+”|(Failed|Passed|Recorded) check: .+|File write: .+)$/,
     );
     const row = document.querySelector<HTMLElement>(
       `[data-next-entry-id="${CSS.escape(chip.dataset['nextCite'] ?? '')}"]`,
@@ -153,9 +153,14 @@ async function departureCard(
   const what = node.querySelector('[data-next-departure-what]') as HTMLElement;
   await expect(what.firstElementChild).toHaveTextContent('What');
   await citesResolvably(what, constraint, clause);
-  await expect(node.querySelector('[data-next-departure-status]')).toHaveTextContent(
-    /^Departs; evidence #\d+/,
-  );
+  /* Said once, in Evidence: "Departs; evidence #n" beside the label and What said it a third time. */
+  await expect(node.querySelector('[data-next-departure-status]')).toBeNull();
+  await expect(
+    node.querySelector('[data-next-departure-what] [data-next-cite]')?.nextElementSibling,
+  ).not.toHaveTextContent(/^Departs/);
+  await expect(
+    [...node.querySelectorAll('.ctl-disclosure')].map((part) => part.textContent).join(' '),
+  ).toMatch(/Departs; evidence #\d+/);
 }
 
 async function stamp(root: HTMLElement) {

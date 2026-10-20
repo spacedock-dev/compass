@@ -118,7 +118,14 @@ export interface ModelInput {
   readonly liveOn: boolean;
 }
 
-export function buildModel(input: ModelInput): DriftModel {
+/* What the stored reading stands on, read once for the session page and for the Sessions row's chip, so the
+   chip cannot name a level the header does not show. */
+type ReadingInput = Pick<
+  ModelInput,
+  'record' | 'session' | 'payload' | 'projectKey' | 'contexts' | 'held'
+>;
+
+function readingParts(input: ReadingInput) {
   const { session, payload, contexts, held } = input;
   const annotate = annotateOn(payload);
   /* With the store off the page draws no words of the reader's and no stored reading, whatever the row carries. */
@@ -164,17 +171,6 @@ export function buildModel(input: ModelInput): DriftModel {
       )
     : null;
   const generated = nextNumber(payload['generated']) ?? 0;
-  const estimate = liveEstimate({
-    on: input.liveOn,
-    harness,
-    contexts,
-    projectKey: input.projectKey,
-    session,
-    annotation,
-    work: source,
-    payload,
-    generated,
-  });
   const analysis =
     annotate && raw && shape
       ? analysisLevel({
@@ -188,10 +184,76 @@ export function buildModel(input: ModelInput): DriftModel {
           generated,
         })
       : null;
+  const drafted = intentDrafted(draftInput);
+  return {
+    annotate,
+    annotation,
+    draftInput,
+    source,
+    entries,
+    numbers,
+    harness,
+    draft,
+    raw,
+    limit,
+    unsettled,
+    shape,
+    generated,
+    analysis,
+    drafted,
+  };
+}
+
+/* The stored reading's level as the header pill shows it: never "Not enough recorded yet" and never over a
+   drafted intent. */
+function shownAnalysis(analysis: DriftLevel | null, drafted: boolean): DriftLevel | null {
+  return analysis &&
+    analysis.level !== 'not_enough' &&
+    !drafted &&
+    LEVEL_SCALE.includes(analysis.level)
+    ? analysis
+    : null;
+}
+
+/** The analysis level the session page's header pill would show for this session, or null. */
+export function headerAnalysis(input: ReadingInput): DriftLevel | null {
+  const parts = readingParts(input);
+  return shownAnalysis(parts.analysis, parts.drafted);
+}
+
+export function buildModel(input: ModelInput): DriftModel {
+  const { session, payload, contexts } = input;
+  const {
+    annotate,
+    annotation,
+    draftInput,
+    source,
+    entries,
+    numbers,
+    harness,
+    draft,
+    raw,
+    limit,
+    unsettled,
+    shape,
+    generated,
+    analysis,
+    drafted,
+  } = readingParts(input);
+  const estimate = liveEstimate({
+    on: input.liveOn,
+    harness,
+    contexts,
+    projectKey: input.projectKey,
+    session,
+    annotation,
+    work: source,
+    payload,
+    generated,
+  });
   /* The analysis level is unaffected by the switch, so its pill shows whichever way the switch is set. */
   const shown: DriftLevel | { readonly save: true } | null =
     analysis && analysis.level !== 'not_enough' ? analysis : (estimate ?? analysis);
-  const drafted = intentDrafted(draftInput);
   const pill =
     shown && 'level' in shown && !drafted && LEVEL_SCALE.includes(shown.level) ? shown : null;
   return {

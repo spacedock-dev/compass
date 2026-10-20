@@ -42,40 +42,82 @@ export const DISCLOSURE_ID = 'next-cockpit-reading-disclosure';
 export { DisclosureParts } from './ModelNotice';
 
 /* The attempt count beside the control, worded the same in every state: short to the eye, and the whole
-   sentence to a screen reader, which the short form is hidden from. */
+   sentence to a screen reader, which the short form is hidden from. The store counts drift checks alone
+   (`readings`), so it says so: "model requests" read 2 beside four model calls once summaries also ran
+   (usability review, 2026-10-20). */
 export function ReadingCount({ count }: { readonly count: number }) {
-  const short = `${String(count)} model request${count === 1 ? '' : 's'}`;
+  const short = `${String(count)} drift check${count === 1 ? '' : 's'} requested`;
   return (
     <p className="next-cockpit-reading-count">
       <span aria-hidden="true">{short}</span>
-      <span className="next-visually-hidden">{`${short} recorded for this session.`}</span>
+      <span className="next-visually-hidden">{`${short} for this session.`}</span>
     </p>
   );
 }
 
-/* Pause model calls, drawn while readings are on. It sits in the notice and in the "What is sent" popover
-   beside what it stops, and where neither is drawn (a running job, no reader, a route with no disclosure)
-   under the control instead, so the off switch is never only in a part the page did not draw.
+/* Pause model calls, drawn while readings are on. It sits in the Drift card's head in every state
+   (`DriftHeadPause`), and in the notice and the "What is sent" popover beside what it stops, so the off
+   switch is never only in a part the page did not draw.
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
-export function TurnOff() {
+export function TurnOff({
+  closes = '',
+  head = false,
+}: {
+  /** The popover this copy sits in, closed by the press so it does not stay open over a changed card. */
+  readonly closes?: string;
+  /** The Drift header's copy: the button alone, with its own focus key beside the other copies. */
+  readonly head?: boolean;
+}) {
   const { ctx, model } = useDrift();
   const off = readingsOff(model.payload);
   if (!off && !readingsOn(model.payload)) return null;
   const action = off ? 'reading-on' : 'reading-off';
+  const button = (
+    <ActionButton
+      weight="secondary"
+      label={off ? 'Resume model calls' : 'Pause model calls'}
+      busyLabel={off ? 'Resuming…' : 'Pausing…'}
+      pendingKey={`${action}:${model.key}`}
+      action={action}
+      focusKey={head ? `${action}-head:${model.key}` : `${action}:${model.key}`}
+      {...(head ? { describes: MODEL_PAUSE_ID } : {})}
+      onPress={() => {
+        if (closes) {
+          ctx.shell.controls.disclosures.set(
+            disclosureKey({ project: model.project, scope: model.key, name: closes }),
+            false,
+          );
+        }
+        void (off ? readingOn : readingOff)(ctx, model.identity);
+      }}
+    />
+  );
+  if (head) {
+    return (
+      <>
+        {button}
+        <span id={MODEL_PAUSE_ID} className="next-visually-hidden">
+          {MODEL_PAUSE_EXPLANATION}
+        </span>
+      </>
+    );
+  }
   return (
     <>
-      <ActionButton
-        weight="secondary"
-        label={off ? 'Resume model calls' : 'Pause model calls'}
-        busyLabel={off ? 'Resuming…' : 'Pausing…'}
-        pendingKey={`${action}:${model.key}`}
-        action={action}
-        focusKey={`${action}:${model.key}`}
-        onPress={() => void (off ? readingOn : readingOff)(ctx, model.identity)}
-      />
+      {button}
       <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p>
     </>
   );
+}
+
+const MODEL_PAUSE_ID = 'next-session-drift-pause-why';
+
+/* Pause model calls in the Drift card's head, in every state where calls can be paused or resumed: after an
+   analysis it was only inside the "What is sent" popover, two presses away from a reader looking for the off
+   switch (usability review, 2026-10-20). The copies beside the notice and in the popover stay where they
+   explain what they stop. */
+export function DriftHeadPause() {
+  return <TurnOff head />;
 }
 
 /* Each step's state comes from where the published phase sits among them. A finished step is a filled mark,
@@ -197,7 +239,7 @@ export function ReadingControl({
   const provider = route?.['provider'] ? String(route['provider']) : '';
   const off = readingsOff(payload);
   const busyKey = `reading:${key}`;
-  const enabled = (off || !reason) && !pending;
+  const enabled = !off && !reason && !pending;
   const count = nextNumber(annotation?.['reading_count']) || 0;
   const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
   const parts = disclosureParts(route, provider, disclosure);
@@ -221,7 +263,6 @@ export function ReadingControl({
       : '';
   const readLine = hint && !again ? `${hint} ${BACKGROUND}` : '';
   const job = readingJob(payload, session);
-  const hasNotice = Boolean(sessionNotice(request, job)) && !off;
   /* Only from a published annotation: with the store off there is no count to read, and "0 requests" would be
      a default standing in for one. */
   const counted = annotation ? <ReadingCount count={count} /> : null;
@@ -250,7 +291,6 @@ export function ReadingControl({
         {counted}
         {off ? said(READINGS_OFF) : null}
         <ReadingNotice />
-        {hasNotice ? null : <TurnOff />}
       </>
     );
   }
@@ -278,45 +318,43 @@ export function ReadingControl({
         {said(answered === noReader ? '' : answered)}
         {counted}
         {aboutWhy}
-        <TurnOff />
       </>
     );
   }
   const described = off ? REFUSED_ID : reason ? REFUSED_ID : disclosure ? DISCLOSURE_ID : '';
-  const label = off ? 'Resume model calls' : again ? 'Analyze again' : 'Analyze drift';
-  /* A current result keeps its one Analyze; resuming permission does not start another analysis, so Resume
-     model calls is drawn whenever calls are paused, even where Analyze is not offered. */
-  const press =
-    showRun || off ? (
-      <ActionButton
-        weight={primary && provider && !inert ? 'primary' : 'secondary'}
-        label={label}
-        busyLabel={off ? 'Resuming…' : 'Starting…'}
-        pendingKey={off ? `reading-on:${key}` : busyKey}
-        inert={!enabled}
-        describes={described}
-        action={off ? 'reading-on' : 'reading-ask'}
-        focusKey={off ? `reading-on:${key}` : `reading:${key}`}
-        fallbackKey={`reading:${key}`}
-        onPress={() => {
-          /* A press on an Analyze the board refused opens its "Why Analyze is off", so the press shows the
-             reason rather than nothing: the short line beside it was already drawn. */
-          if (!off && inert && pressed) {
-            ctx.shell.controls.disclosures.set(
-              disclosureKey({ project: model.project, scope: key, name: `reading-why:${key}` }),
-              true,
-            );
-          }
-          if (off) void readingOn(ctx, identity);
-          else if (identity) {
-            void askForReading(ctx, identity, {
-              route,
-              revision: nextNumber(annotation?.['revision']) || 0,
-            });
-          }
-        }}
-      />
-    ) : null;
+  const label = again ? 'Check again' : 'Analyze drift';
+  /* A current result keeps its one Analyze. Resume model calls is the Drift card head's, drawn whenever calls
+     are paused, so Analyze stays in its place, refused, rather than becoming a second Resume beside it. */
+  const press = showRun ? (
+    <ActionButton
+      weight={primary && provider && !inert && !off ? 'primary' : 'secondary'}
+      label={label}
+      busyLabel="Starting…"
+      pendingKey={busyKey}
+      inert={!enabled}
+      describes={described}
+      action="reading-ask"
+      focusKey={`reading:${key}`}
+      fallbackKey={`reading:${key}`}
+      onPress={() => {
+        /* A press on an Analyze the board refused opens its "Why Analyze is off", so the press shows the
+           reason rather than nothing: the short line beside it was already drawn. */
+        if (!off && inert && pressed) {
+          ctx.shell.controls.disclosures.set(
+            disclosureKey({ project: model.project, scope: key, name: `reading-why:${key}` }),
+            true,
+          );
+        }
+        if (off) return;
+        if (identity) {
+          void askForReading(ctx, identity, {
+            route,
+            revision: nextNumber(annotation?.['revision']) || 0,
+          });
+        }
+      }}
+    />
+  ) : null;
   /* The announcement and the description are one node while a refusal stands. Printing the stored message and
      the reason separately rendered the same sentence twice, adjacent and identical, where the contract is that
      it renders exactly once. The press is still announced, because this node carries `role="status"` when it
@@ -386,13 +424,10 @@ export function ReadingControl({
     >
       {partsList}
       {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
-      {off ? null : <TurnOff />}
+      {off ? null : <TurnOff closes="reading-sent" />}
     </Why>
   ) : (
-    <>
-      {aboutWhy}
-      {hasNotice || off ? null : <TurnOff />}
-    </>
+    aboutWhy
   );
   return (
     <>
@@ -463,32 +498,17 @@ export function ReadingNotice() {
   );
 }
 
-/* Resume changes permission alone, so it stays available while an earlier analysis unwinds.
-   The direction question owns its job box and Cancel; this slot adds neither again. */
+/* Why the question's Keep sends nothing while calls are paused. Resume is the Drift card head's, which stays
+   available while an earlier analysis unwinds. The direction question owns its job box and Cancel; this slot
+   adds neither again. */
 export function ReadingsOffAsk({ refusedId }: { readonly refusedId: boolean }) {
   const { ctx, model } = useDrift();
-  const { key, identity } = model;
+  const { key } = model;
   const request = ctx.intent.held.requests.get(key);
   const id = refusedId ? REFUSED_ID : undefined;
   const answered = request?.message && !request.refusal ? String(request.message) : '';
   return (
     <>
-      <div className="next-cockpit-reading-ask">
-        <ActionButton
-          weight="secondary"
-          label="Resume model calls"
-          busyLabel="Resuming…"
-          pendingKey={`reading-on:${key}`}
-          inert={Boolean(request?.pending)}
-          {...(id ? { describes: id } : {})}
-          action="reading-on"
-          focusKey={`reading-on:${key}`}
-          fallbackKey={`reading:${key}`}
-          onPress={() => {
-            void readingOn(ctx, identity);
-          }}
-        />
-      </div>
       <p className="next-cockpit-reading-why">{MODEL_PAUSE_EXPLANATION}</p>
       <p className="next-cockpit-reading-why" id={id} {...absenceAttr(READINGS_OFF)}>
         {READINGS_OFF}

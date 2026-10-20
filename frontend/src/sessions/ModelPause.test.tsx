@@ -19,6 +19,13 @@ beforeEach(() => {
   });
 });
 
+/* The copy inside "What is sent", which these tests open: the Drift card head holds another
+   (usability review, 2026-10-20). */
+const popoverPause = async (): Promise<HTMLElement> =>
+  (await screen.findAllByRole('button', { name: 'Pause model calls' })).find(
+    (button) => !button.matches('[data-next-focus^="reading-off-head:"]'),
+  ) as HTMLElement;
+
 describe('the summaries switch is nested under Pause model calls', () => {
   it.each([true, false])('keeps the summaries answer %s through pause and resume', async (off) => {
     render(
@@ -32,7 +39,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole('button', { name: 'Pause model calls' }));
+      fireEvent.click(await popoverPause());
     });
     const region = await screen.findByRole('region', { name: 'What the session has done' });
     const label = off ? 'Turn summaries on' : 'Turn off summaries';
@@ -78,7 +85,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole('button', { name: 'Pause model calls' }));
+      fireEvent.click(await popoverPause());
     });
     const region = await screen.findByRole('region', { name: 'What the session has done' });
     await waitFor(() =>
@@ -134,7 +141,7 @@ describe('the summaries switch is nested under Pause model calls', () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole('button', { name: 'Pause model calls' }));
+      fireEvent.click(await popoverPause());
     });
     await waitFor(() => expect(within(region).getByText('Model calls are paused')).toBeVisible());
     /* The server cleared every notice with the pause; the tab does not keep drawing one. */

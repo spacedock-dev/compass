@@ -227,6 +227,19 @@ export function rememberShown(held: HeldCorrection, text: string): void {
   held.shownText = text;
 }
 
+/* "Copied" answers one press and is not a state of the text: it held across navigation and read as if the
+   words on screen were already in the clipboard (usability review, 2026-10-20). The box takes it back when
+   drawn again and a moment after the press. "Copy unavailable" stays until the next press: it says what to
+   do. */
+export const COPIED_MS = 2000;
+
+export function lapseCopied(ctx: DriftCtx, key: string): void {
+  const held = ctx.drift.corrections.get(key);
+  if (held?.cue !== 'copied') return;
+  held.cue = '';
+  ctx.drift.notify();
+}
+
 /* "Updates are paused while you edit this correction": said while a board that arrived waits behind a focused,
    edited box, and taken back the moment the reader leaves it. A composition or a pointer on its way to a
    control also waits, but neither is the reader editing in place, so neither says it. */

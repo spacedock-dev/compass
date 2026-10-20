@@ -504,11 +504,16 @@ export function promptMenu(input: DraftInput): PromptMenu {
   };
 }
 
+export const DRAFT_FIRST_UNSAVED = 'Draft from your first prompt, not saved';
+export const DRAFT_LATEST_UNSAVED = 'Draft from your latest prompt, not saved';
+
 export type IntentStatus =
   | 'Saving…'
   | 'Not confirmed'
   | 'Not saved'
   | 'Unsaved changes'
+  | typeof DRAFT_FIRST_UNSAVED
+  | typeof DRAFT_LATEST_UNSAVED
   | 'Saved'
   | '';
 
@@ -532,7 +537,16 @@ export function intentStatus(
   const changes = intentChanges(input);
   /* Only what Save intent would write. An undoable-only box (a draft emptied over a goal-less session, or the
      stored goal typed back over a choice) writes nothing, and "Unsaved changes" beside an inert Save misled. */
-  if (changes.any || changes.adoptable) return 'Unsaved changes';
+  if (changes.any || changes.chosen) return 'Unsaved changes';
+  /* A goal drafted from the prompt is Compass's suggestion, not an edit: "Unsaved changes" on opening a
+     session, before the reader typed anything, read as work of theirs at risk (usability review,
+     2026-10-20). It still says it is not saved, because Save intent is what adopts it. */
+  if (changes.adoptable) {
+    const drafted = intentDraft(input);
+    if (drafted?.source === 'first-prompt') return DRAFT_FIRST_UNSAVED;
+    if (drafted?.source === 'latest-prompt') return DRAFT_LATEST_UNSAVED;
+    return 'Unsaved changes';
+  }
   const discarded = annotationDiscarded(input.annotation);
   const saved =
     !discarded &&

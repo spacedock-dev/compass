@@ -1,16 +1,31 @@
 import { Card } from '../ui/card';
 import { buttonVariants } from '../ui/button';
 import { cn } from '../lib/utils';
-import { useMemo, type MouseEvent, type ReactNode } from 'react';
+import { useMemo, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, isScanOnly, type Row } from '../observed';
+import { gapNames, isRecord, isScanOnly, type Row } from '../observed';
+import { nextNumber } from '../api/bootstrap';
+import { contextKey } from '../api/identity';
+import { headerAnalysis } from '../drift/model';
+import { overlaid } from '../drift/overlay';
+import { driftCtxFor } from '../drift/state';
+import { PillMeter } from '../drift/DriftLevelView';
+import { identityOf } from '../intent/context';
+import { useHeldVersion } from '../intent/useIntent';
 import { fragmentForRoute, type RouteInput } from '../router/grammar';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
 import { useDisplayed, useNavigate, useShell } from '../shell/context';
-import { analysisAvailable, buildSessionsScreen, NOT_CHECKED, type SessionRow } from './rows';
+import {
+  analysisAvailable,
+  buildSessionsScreen,
+  NOT_CHECKED,
+  readingDeparts,
+  rowState,
+  type SessionRow,
+} from './rows';
 import { sessionInstruction, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
 import {
@@ -156,9 +171,15 @@ function Identity({ row }: { readonly row: SessionRow }) {
   const { session, source, history } = row;
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
+  const state = rowState(session);
   return (
     <span className="next-operation-identity">
-      <small className="next-operation-local-label">SESSION</small>
+      <span
+        className={`m-0 block text-label font-semibold uppercase tracking-[.07em] [font-family:var(--mono)] ${state === 'Waiting on you' ? 'text-[var(--amber)]' : state === 'Working' ? 'text-foreground' : 'text-[var(--ink-label)]'}`}
+        data-next-row-state={state}
+      >
+        {state}
+      </span>
       <span className="next-operation-harness">{row.harnessLabel}</span>
       <RouteAnchor
         route={row.route}
@@ -225,12 +246,76 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   );
 }
 
+/* The level the chip names for this row. Only a stored reading that itself departs names one: a row whose
+   drift is a raise alone names no level, and a raise beside a consistent reading would otherwise borrow that
+   reading's "None or low". Where this tab holds the analysis row, the level is the one the session page's
+   header pill shows, from the same derivation (`headerAnalysis`), so the two cannot differ. Without it, a
+   departing reading is at least Medium (`levels.analysis_level`: a departure reads Medium, and only a fresh
+   failed check reads higher), so the chip says that much and draws no meter, which would show Medium for
+   what may be High. */
+function rowLevel(
+  input: Parameters<typeof headerAnalysis>[0] | null,
+): { readonly level: string | null; readonly label: string } | null {
+  if (!input || !readingDeparts(input.session)) return null;
+  const shown = headerAnalysis(input);
+  if (shown) return { level: shown.level, label: shown.label };
+  const { session } = input;
+  if (session['annotation_not_accurate'] === true) return null;
+  /* A reading over words the reader has since replaced is the stale line's to describe, not a level's. */
+  const raw = session['annotation_assessment'];
+  const read = isRecord(raw) ? nextNumber(raw['revision_read']) : null;
+  const current = nextNumber(session['annotation_revision']);
+  if (read === null || (current !== null && current !== read)) return null;
+  return { level: null, label: 'Medium or higher' };
+}
+
 function DriftMarkView({ row }: { readonly row: SessionRow }) {
+  const shell = useShell();
+  const ctx = driftCtxFor(shell);
+  // Redraws when the reader's held words change, so a drafted intent hides the level as the header does.
+  useHeldVersion(ctx.intent.held);
+  const overlay = useSyncExternalStore(ctx.drift.subscribe, ctx.drift.getOverlay);
+  const contexts = useDisplayed((snapshot) => snapshot.contexts);
+  const data = useDisplayed((snapshot) => snapshot.data) as Row | null;
+  const records = useDisplayed((snapshot) => snapshot.records);
+  const count = useDisplayed((snapshot) => snapshot.acceptedCount);
   const mark = row.drift;
-  if (!mark) return null;
+  const { source, projectKey } = row;
+  if (!mark || !source || !data) return mark ? <DriftMark mark={mark} level={null} /> : null;
+  const record = records.get(contextKey(projectKey, identityOf(source)));
+  const level = rowLevel({
+    session: source,
+    payload: overlaid(data, overlay, count),
+    projectKey,
+    contexts,
+    held: ctx.intent.held,
+    ...(record ? { record } : {}),
+  });
+  return <DriftMark mark={mark} level={level} />;
+}
+
+function DriftMark({
+  mark,
+  level,
+}: {
+  readonly mark: NonNullable<SessionRow['drift']>;
+  readonly level: ReturnType<typeof rowLevel>;
+}) {
   return (
     <span className="next-operation-drift" data-next-session-drift-mark>
-      <strong>Drift</strong>
+      {level ? (
+        <span
+          className="inline-flex items-baseline gap-1.5"
+          data-next-row-drift-level={level.level ?? 'medium_or_higher'}
+        >
+          {level.level ? <PillMeter level={level.level} /> : null}
+          <span>
+            Drift: <strong className="font-semibold text-foreground">{level.label}</strong>
+          </span>
+        </span>
+      ) : (
+        <strong>Drift</strong>
+      )}
       {` · ${mark.age}`}
       {mark.someUnknown ? <small>Some recorded departure ages are unknown</small> : null}
       {mark.stale.map((line) => (
@@ -242,9 +327,7 @@ function DriftMarkView({ row }: { readonly row: SessionRow }) {
 
 function RowView({ row }: { readonly row: SessionRow }) {
   const { session, history } = row;
-  const nowKind = session.isEnded
-    ? 'NOW · ENDED'
-    : `NOW · ${session.state.replaceAll('_', ' ').toUpperCase()}`;
+  const nowKind = 'NOW';
   const outcome = session.outcomeKnown ? (
     <span className={`next-operation-outcome next-operation-outcome--${session.tone}`}>
       {`${session.outcomeGlyph} ${session.outcomeText}`}
@@ -259,8 +342,6 @@ function RowView({ row }: { readonly row: SessionRow }) {
       </span>
     </span>
   ) : null;
-  const stateTag = session.isEnded ? 'ENDED' : session.isQuiet ? 'QUIET' : '';
-  const tag = stateTag ? <span className="next-operation-state">{stateTag}</span> : null;
   const now = (
     <ObservedFact
       kind="now"
@@ -280,13 +361,9 @@ function RowView({ row }: { readonly row: SessionRow }) {
       {...(history ? { 'data-next-operation-history': 'true' } : {})}
     >
       <Identity row={row} />
-      <ObservedFact
-        kind="where"
-        label="WHERE · PROJECT LABEL"
-        text={session.whereText}
-        known={session.whereKnown}
-        note={session.project}
-      />
+      {/* The project label alone: "Exact location not published" sat hatched on every row and read as an
+          error, for a location no harness publishes here. */}
+      <Fact kind="where" label="PROJECT" value={session.project} />
       <GoalCellView row={row} />
       {history ? (
         <>
@@ -294,7 +371,8 @@ function RowView({ row }: { readonly row: SessionRow }) {
             {now}
             {outcome}
           </div>
-          {tag}
+          {/* The state cell's place in the history grid; the state itself leads the row. */}
+          <span className="next-operation-state" aria-hidden="true" />
         </>
       ) : (
         <>
@@ -313,12 +391,7 @@ function RowView({ row }: { readonly row: SessionRow }) {
             note={session.blockNote}
             tone={session.isNeeds || session.askKnown ? 'blocked' : 'clear'}
           />
-          {stateTag || outcome ? (
-            <div className="next-operation-end-note">
-              {tag}
-              {outcome}
-            </div>
-          ) : null}
+          {outcome ? <div className="next-operation-end-note">{outcome}</div> : null}
         </>
       )}
       <DriftMarkView row={row} />
@@ -365,11 +438,11 @@ function Group({
       </header>
       <div className="next-operations-columns" aria-hidden="true">
         <span>SESSION</span>
-        <span>WHERE</span>
+        <span>PROJECT</span>
         <span>GOAL</span>
         <span>NOW</span>
         {kind === 'history' ? (
-          <span>STATE</span>
+          <span />
         ) : (
           <>
             <span>NEXT</span>

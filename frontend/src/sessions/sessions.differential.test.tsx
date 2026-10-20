@@ -86,9 +86,10 @@ function summarize(source: Element | DocumentFragment): Summary {
   };
 }
 
-function legacySummary(payload: unknown): Summary {
+function legacySummary(payload: unknown, raw?: (html: string) => void): Summary {
   const template = document.createElement('template');
   template.innerHTML = legacy.sessionsHtml(payload);
+  raw?.(template.innerHTML);
   retractSessionCopies(template.content);
   const header = template.content.querySelector('.next-operations-header');
   header?.querySelector(':scope > span')?.remove();
@@ -123,6 +124,28 @@ function legacySummary(payload: unknown): Summary {
   ).length;
   const active = template.content.querySelector('[data-next-fleet-fact="active"] strong');
   if (active) active.textContent = String(counted);
+  /* Deviation (2026-10-20, docs/design-frontend-migration.md#held-to-recorded-answers): each row leads with
+     one state word in place of the SESSION label, NOW · <state> and the QUIET or ENDED tag, and WHERE is the
+     project label alone, without "Exact location not published". The state word is compared in
+     SessionsView.test; here the legacy row is read as the page now words the rest. */
+  template.content
+    .querySelectorAll('.next-operation-identity > .next-operation-local-label')
+    .forEach((node) => node.remove());
+  template.content.querySelectorAll('[data-next-operation-fact="now"] > small').forEach((node) => {
+    node.textContent = 'NOW';
+  });
+  template.content.querySelectorAll('.next-operation-state').forEach((node) => {
+    node.textContent = '';
+  });
+  template.content.querySelectorAll('[data-next-operation-fact="where"]').forEach((node) => {
+    const project = node.querySelector('em')?.textContent ?? '';
+    node.innerHTML = '';
+    const label = document.createElement('small');
+    label.textContent = 'PROJECT';
+    const value = document.createElement('strong');
+    value.textContent = project;
+    node.append(label, value);
+  });
   return summarize(template.content);
 }
 
@@ -131,8 +154,25 @@ async function reactSummary(payload: unknown): Promise<Summary> {
   await page.settle();
   const root = page.container.querySelector('[data-next-view-body="sessions"]');
   if (!root) throw new Error('The Sessions screen did not draw.');
-  const result = summarize(root);
+  const states = [...root.querySelectorAll('[data-next-row-state]')].map(norm);
+  const levels = [...root.querySelectorAll('[data-next-row-drift-level]')].map(norm);
+  const drawn = summarize(root);
   page.unmount();
+  /* The departures above: the state word is not in the legacy row, and the drift chip's level is a word the
+     legacy chip never had (SessionsView.test holds both). */
+  const result: Summary = {
+    ...drawn,
+    groups: drawn.groups.map((group) => ({
+      ...group,
+      rows: group.rows.map((row) => {
+        let text = row.text;
+        const state = states.find((word) => text.startsWith(word));
+        if (state) text = text.slice(state.length).trimStart();
+        for (const level of levels) text = text.replace(level, 'Drift');
+        return { ...row, text };
+      }),
+    })),
+  };
   return result;
 }
 
@@ -191,10 +231,15 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
       annotationsOff: 0,
     };
     for (let seed = 1; seed <= SEEDS; seed += 1) {
-      const text = JSON.stringify(legacySummary(genPayload(seed, { wellFormed: true })));
+      let html = '';
+      const text = JSON.stringify(
+        legacySummary(genPayload(seed, { wellFormed: true }), (drawn) => {
+          html = drawn;
+        }),
+      );
       seen.active += (text.match(/"kind":"active"/g) ?? []).length;
       seen.history += (text.match(/"kind":"history"/g) ?? []).length;
-      seen.ended += (text.match(/NOW · ENDED/g) ?? []).length;
+      seen.ended += (html.match(/NOW · ENDED/g) ?? []).length;
       seen.asked += (text.match(/BLOCKED · /g) ?? []).length;
       seen.drift += (text.match(/Drift · /g) ?? []).length;
       seen.shared += (text.match(/share this display label/g) ?? []).length;

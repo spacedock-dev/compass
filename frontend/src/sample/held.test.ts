@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isHeld } from './held';
+import { heldPosition, isHeld } from './held';
 
 const html = (markup: string): Element => {
   document.body.innerHTML = markup;
@@ -101,5 +101,19 @@ describe('which controls the view-only sample holds', () => {
     ['plain text', '<div><p data-target>Words</p></div>'],
   ])('lets %s work', (_name, markup) => {
     expect(isHeld(html(markup))).toBe(false);
+  });
+});
+
+describe('where the view-only sentence is drawn', () => {
+  const rect = (top: number, height: number, left = 0, width = 800) =>
+    ({ top, bottom: top + height, left, width, height, right: left + width }) as DOMRect;
+  it('sits under a control with room below it', () => {
+    expect(heldPosition(rect(100, 30, 40), rect(0, 2000), 900)).toEqual({ top: 136, left: 40 });
+  });
+  it('flips above a control at the foot of the viewport, so it is seen before it lapses', () => {
+    expect(heldPosition(rect(860, 30, 40), rect(0, 2000), 900)).toEqual({
+      bottom: 2000 - 860 + 6,
+      left: 40,
+    });
   });
 });

@@ -14,6 +14,8 @@ import {
   intentDrafted,
   intentKey,
   intentStatus,
+  DRAFT_FIRST_UNSAVED,
+  DRAFT_LATEST_UNSAVED,
   noDraftWhy,
 } from './derive';
 import { undoChanges } from './edit';
@@ -173,7 +175,7 @@ export function IntentSection() {
         <span className="ms-auto flex flex-wrap items-baseline gap-x-3 gap-y-1">
           {status ? (
             <span
-              className={`[font-family:var(--mono)] text-label ${status === 'Saved' ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
+              className={`[font-family:var(--mono)] text-label ${status === 'Saved' || status === DRAFT_FIRST_UNSAVED || status === DRAFT_LATEST_UNSAVED ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
               data-next-intent-status
             >
               {status}

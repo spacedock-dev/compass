@@ -72,7 +72,7 @@ describe('a stored reading', () => {
       document.querySelector('[data-next-entry="2"] [data-next-entry-flag="cited"]'),
     ).toBeNull();
     expect(byAction('reading-ask')).toBeNull();
-    expect(textOf('[data-next-result]')).toContain('1 model request');
+    expect(textOf('[data-next-result]')).toContain('1 drift check requested');
     // Under the cap the budget is not mentioned anywhere.
     expect(document.body.textContent).not.toMatch(/left today/);
     expect(document.querySelector('[data-next-reading-cap]')).toBeNull();

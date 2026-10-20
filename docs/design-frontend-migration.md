@@ -32,6 +32,20 @@ header names the token rate's unit ("44 tokens/min" where the retired page wrote
 once an intent is saved, with the entries since the intent's start beside it, and a chip for an
 entry before that start keeps its number, muted. Golden files are unchanged.
 
+2026-10-20, usability review: each Sessions row leads with one state word (Working, Waiting on
+you, Idle, Ended, or State not published where the board publishes no known state) in place of the
+SESSION label, `NOW · <state>` and the QUIET or ENDED tag; WHERE is the project label alone, without
+the hatched "Exact location not published"; and the drift chip of a departing stored reading names
+the level the session header shows, from the same derivation ("Drift: Medium · 4m ago", or "Medium
+or higher" with no meter before this tab holds the project's analysis). A raise alone names no level. `sessions.differential.test.tsx` now reads the recorded
+legacy row with those three parts reworded as the page words them, and drops the state word and the
+chip's level from the React row before comparing; it counts ended rows from the recorded markup.
+The state word and the level are held by `SessionsView.test.tsx` and the Sessions stories. Golden
+files are unchanged. The Drift card's answer-first layout
+([the amendment](design-reading-a-session.md#amended-2026-10-20-the-answer-first-and-what-quotes-the-entry))
+changed no differential comparison: `coverageLine`, `resultStale` and `evidenceRows` keep their
+recorded answers, and the page draws new fields beside them.
+
 2026-10-20: the owner ruled that Steer back's correction carries each departure's explanation
 ([the amendment](design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)),
 and the correction's cap rose from 2,000 to 4,216 characters to hold them. The retired page was

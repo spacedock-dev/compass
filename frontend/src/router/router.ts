@@ -63,8 +63,13 @@ export function createRouter(env: RouterEnvironment = browserRouterEnvironment()
     if (env.getHash() !== fragment) env.replaceHash(fragment);
     // `navigate` already drew the route its own hash write announces.
     if (fragment === fragmentForRoute(route)) return;
+    const moved = routeIdentity(parsed) !== routeIdentity(route);
     route = parsed;
     notify();
+    /* Back, Forward and a typed address open a new page too: they kept the old page's scroll, so a session
+       opened mid-card (usability review, 2026-10-20). The fragment is the route, so there is no anchor
+       in it to keep. */
+    if (moved) env.scrollToTop();
   }
 
   return {

@@ -358,16 +358,26 @@ export const MoreIsRetired: Story = {
     await expect(within(head).getByRole('switch', { name: 'Live monitor' })).toBeVisible();
     await expect(within(head).getByText(DRIFT_SUBTITLE)).toBeVisible();
     await expect(within(head).getByText(LIVE_HINT)).toBeVisible();
+    // What the monitor does is the switch's own helper text.
+    await expect(
+      within(head).getByRole('switch', { name: 'Live monitor' }),
+    ).toHaveAccessibleDescription(LIVE_HINT);
     await expect(inDrift.getByText(/^Delegated work: 2 recorded launches/)).toBeVisible();
     await expect(
       inDrift.getByText(/^Is the work this session launched still running\?/),
     ).toBeVisible();
     await expect(inDrift.getByRole('button', { name: 'Analyze drift' })).toBeVisible();
-    await expect(inDrift.queryByRole('button', { name: 'Pause model calls' })).toBeNull();
+    // Pause model calls stands in the card's head in every state, and beside what it stops in What is sent.
+    await expect(within(head).getByRole('button', { name: 'Pause model calls' })).toBeVisible();
     await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
-    const off = await within(document.body).findByRole('button', { name: 'Pause model calls' });
+    const off = await waitFor(() => {
+      const found = within(document.body)
+        .getAllByRole('button', { name: 'Pause model calls' })
+        .find((node) => node.closest('[data-slot="popover-content"]'));
+      expect(found).toBeDefined();
+      return found as HTMLElement;
+    });
     await waitFor(() => expect(off).toBeVisible());
-    await expect(off.closest('[data-slot="popover-content"]')).not.toBeNull();
     await userEvent.keyboard('{Escape}');
   },
 };

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode, type SyntheticEvent } from 'react';
-import { isHeld } from './held';
+import { heldControl, isHeld } from './held';
 
 /* The sample is view only. Nothing it can send reaches a server (`sampleFetch` refuses every write), and
    this stops the press itself, so a reader sees one sentence about why rather than an error from a request
@@ -11,7 +11,8 @@ export function ViewOnly({
   onHeld,
 }: {
   readonly children: ReactNode;
-  readonly onHeld: () => void;
+  /** The control whose press was held, so the sentence is drawn beside it. */
+  readonly onHeld: (control: Element) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const hold = (event: Event | SyntheticEvent) => {
@@ -19,7 +20,7 @@ export function ViewOnly({
     if (!target || !isHeld(target)) return;
     event.preventDefault();
     event.stopPropagation();
-    onHeld();
+    onHeld(heldControl(target));
   };
   /* The browser's own `beforeinput`, which is what typing, pasting and deleting raise. React's `onBeforeInput`
      is a different, older event, so typing is held here, on the node, in the capture phase. */

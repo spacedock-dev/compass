@@ -226,7 +226,12 @@ export const ResultUnderADeparture: Story = {
     await expect(level).toHaveTextContent(
       /Analysis last run \d\d:\d\d · intent against cited checks and messages\./,
     );
-    await expect(level).toHaveTextContent(/pytest -q failed .* at #\d+/);
+    /* The level's reason is said under What the analysis read, with the rest of what it read, not between
+       the meter and the answer (usability review, 2026-10-20). */
+    await expect(level).not.toHaveTextContent(/pytest -q failed .* at #\d+/);
+    await expect(
+      card.querySelector('[data-next-read-section="session"]')?.textContent ?? '',
+    ).toMatch(/pytest -q failed .* at #\d+/);
     await expect(level).not.toHaveTextContent('Live estimate');
     await within(result).findByRole('heading', { name: new RegExp(`^${RESULT_DEPARTS}`) });
     await expect(
@@ -276,8 +281,10 @@ export const StaleResult: Story = {
       return node as HTMLElement;
     });
     await expect(within(stale).getByText('New work since this analysis.')).toBeVisible();
-    const again = within(stale).getByRole('button', { name: 'Analyze again' });
-    await expect(within(card).getAllByRole('button', { name: /^Analyze/ })).toEqual([again]);
+    const again = within(stale).getByRole('button', { name: 'Check again' });
+    await expect(within(card).getAllByRole('button', { name: /^(Analyze|Check again)/ })).toEqual([
+      again,
+    ]);
     // Said inside the reading's folded account, so it is in the page and not in view.
     await expect(
       within(card).getByText('1 check, 1 message arrived since this analysis.'),
@@ -462,15 +469,29 @@ export const ModelCallsPausedUntilResume: Story = {
     await expect(
       await within(card).findByText('Model calls are paused. Nothing is sent until you resume.'),
     ).toBeVisible();
-    await expect(within(card).queryByRole('button', { name: /^Analyze/ })).toBeNull();
+    /* Analyze stays in its place, refused; Resume is the Drift card head's alone (usability review,
+       2026-10-20). */
+    await expect(within(card).getByRole('button', { name: 'Analyze drift' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await expect(within(card).getAllByRole('button', { name: 'Resume model calls' })).toHaveLength(
+      1,
+    );
     const on = within(card).getByRole('button', { name: 'Resume model calls' });
     await expect(on).toBeVisible();
+    await expect(card.querySelector('header')?.contains(on)).toBe(true);
     await expect(card).toHaveTextContent(
       'Compass stops sending session text to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.',
     );
     await expect(offReading.posts).toHaveLength(0);
     await userEvent.click(on);
-    await within(card).findByRole('button', { name: 'Analyze drift' });
+    await waitFor(() =>
+      expect(within(card).getByRole('button', { name: 'Analyze drift' })).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    );
     await expect(card.querySelector('[data-next-analyzing]')).toBeNull();
     await expect(offReading.posts).toHaveLength(1);
     await expect(offReading.posts[0]).toEqual({ consent: 'on', press: true, observer_model: 1 });

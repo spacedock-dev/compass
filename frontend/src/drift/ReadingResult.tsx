@@ -16,18 +16,22 @@ import { evidenceRows } from './level';
 import {
   arrivedLine,
   citedKind,
+  citedLine,
   claimsDrawn,
   constraintName,
-  coverageLine,
+  coverageLimits,
   driftAnswer,
+  goalSourceLine,
   resultStale,
   resultState,
   resultStatus,
   resultWhere,
   resultWork,
+  verdictLine,
   type Answer,
 } from './result';
 import { fmtDur } from './route';
+import { clock } from '../observed';
 import {
   CLAIMS,
   CLAUSE_UNRETAINED,
@@ -73,11 +77,20 @@ function jumpName(key: string): string {
 }
 
 /* The cited entries of one finding, each as its number in the activity list and the kind of entry Compass
-   names. Never the entry's own summary: for a message that is the agent's or the person's text, and an agent's
-   "Done" drawn here would stand inside the result. A number opens Full activity at that entry; an entry the
-   page does not hold yet keeps the press that reads older pages for it. The shape demotes a departure with no
-   held citation, so a departure always reaches at least one number. */
-function CitedEntries({ row }: { readonly row: Criterion }) {
+   names, or on a departure card what it says, attributed ('Agent said: "…"'), so the line the departure is
+   about is in view and reads as the agent's words, never as the result's. A number opens
+   Full activity at that entry; an entry the page does not hold yet keeps the press that reads older pages for
+   it. The shape demotes a departure with no held citation, so a departure always reaches at least one
+   number. */
+function CitedEntries({
+  row,
+  quote = false,
+}: {
+  readonly row: Criterion;
+  /** A departure's What: each entry's own words, attributed. Elsewhere the kind alone, so a line read as
+   * consistent never stands beside the agent's "Done". */
+  readonly quote?: boolean;
+}) {
   const { model, chooseFinding, jumpMissing } = useDrift();
   const record = useDisplayed((snapshot) =>
     snapshot.records.get(contextKey(model.projectKey, model.identity)),
@@ -115,7 +128,7 @@ function CitedEntries({ row }: { readonly row: Criterion }) {
               {where}
             </Button>
             <span className="min-w-0 text-body leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
-              {citedKind(entry)}
+              {quote ? citedLine(entry) : citedKind(entry)}
             </span>
           </li>
         );
@@ -153,48 +166,63 @@ function CitedEntries({ row }: { readonly row: Criterion }) {
   );
 }
 
-function Tail({ row }: { readonly row: Criterion }) {
-  return row.limit ? (
-    <span className="next-cockpit-reading-limit">{`limit · ${row.limit}`}</span>
-  ) : (
-    <>
-      {row.evidence.map((line, index) => (
-        <span key={index} className="next-cockpit-reading-evidence">
-          {line}
-        </span>
-      ))}
-    </>
-  );
+/* The shape labels a line in capitals ("GOAL FROM YOUR PROMPT"); Evidence heads with it in a sentence's case. */
+function sentenceCase(label: string): string {
+  const lower = label.toLowerCase();
+  return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
 }
 
-/* The line's label, its full status, its why, the source tag, the limit and each cited entry's own record, one
-   click away under "Evidence", as before the cards: moved, never dropped. The why stays here because the reason
-   for Can't tell stays inside Evidence (owner, 2026-10-14). */
+/* The line's label, its full status, its why, the limit and each cited entry's own record, one click away
+   under "Evidence", as before the cards: moved, never dropped. The record-type tag ("agent_message ·
+   timestamped …") is the source's, so it sits under Source rather than beside the heading it ran into
+   (usability review, 2026-10-20). The why stays here because the reason for Can't tell stays inside Evidence
+   (owner, 2026-10-14). */
 function EvidenceMore({
   row,
   status,
   rows,
+  quoted = false,
 }: {
   readonly row: Criterion;
   readonly status: string;
   readonly rows: boolean;
+  /** What already quotes each cited entry's words, so its record here leaves them out. */
+  readonly quoted?: boolean;
 }) {
   const { model } = useDrift();
   const full = resultStatus(row, model.numbers, model.byId);
+  const listed = rows ? evidenceRows(row.citedIds, model.numbers, model.byId) : [];
   return (
     <Why name={`result-evidence:${row.key}`} summary="Evidence">
-      <span className="next-cockpit-reading-name">{row.label}</span>
+      <p
+        className="m-0 text-body font-semibold leading-[1.45] text-foreground"
+        data-next-evidence-head
+      >
+        {sentenceCase(row.label)}
+      </p>
       {full === status ? null : <span className="next-cockpit-reading-evidence">{full}</span>}
       {row.why ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
       {row.result === NOT_REACHED && row.detail ? (
         <p className="next-cockpit-reading-detail">{row.detail}</p>
       ) : null}
-      <Tail row={row} />
-      {rows ? (
+      {row.limit ? (
+        <span className="next-cockpit-reading-limit">{`limit · ${row.limit}`}</span>
+      ) : null}
+      {listed.length ? (
         <EvidenceList
-          rows={evidenceRows(row.citedIds, model.numbers, model.byId)}
+          rows={listed}
           scope={row.key}
+          sources={row.limit ? [] : row.evidence}
+          quoted={quoted}
         />
+      ) : !row.limit && row.evidence.length ? (
+        <Why name={`result-source:${row.key}`} summary="Source">
+          {row.evidence.map((line, index) => (
+            <p key={index} className="next-cockpit-reading-evidence">
+              {line}
+            </p>
+          ))}
+        </Why>
       ) : null}
     </Why>
   );
@@ -205,7 +233,6 @@ function EvidenceMore({
    as the cited entries, and Why as the reading's stored `detail`, the one string a model wrote. */
 function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly outcomes: number }) {
   const { model } = useDrift();
-  const status = resultStatus(row, model.numbers, model.byId, true);
   const detail = String(row.detail || '').trim();
   const head = `departure-head:${model.key}:${row.key}`;
   return (
@@ -232,21 +259,16 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
         </div>
         <div className="flex max-w-[45rem] flex-col gap-1" data-next-departure-what>
           <p className={LABEL}>What</p>
-          <CitedEntries row={row} />
+          <CitedEntries row={row} quote />
         </div>
         <div className="flex max-w-[45rem] flex-col gap-0.5" data-next-departure-why>
           <p className={LABEL}>Why Compass reads this as drift</p>
           <p className="next-cockpit-reading-detail m-0">{detail || NO_DETAIL}</p>
         </div>
-        <p
-          className="m-0 text-label text-[var(--ink-label)] [font-family:var(--mono)]"
-          data-next-departure-status
-        >
-          {status}
-        </p>
         {row.coverage ? <p className={QUIET}>{row.coverage}</p> : null}
         <DepartureSummaryLine row={row.key} />
-        <EvidenceMore row={row} status={status} rows />
+        {/* "Departs; evidence #5" says again what the label and What say, so it is said once, in Evidence. */}
+        <EvidenceMore row={row} status="" rows quoted />
       </div>
     </article>
   );
@@ -567,9 +589,16 @@ function Baseline({
           .filter(Boolean)
           .join(' · ');
   const lines = shape.readClauses.filter(([label]) => intentLabel(label, 0) !== 'Goal').length;
+  /* The entry range the level read and the level's own reason ("Departure evidence: #5.") are about what
+     the analysis read, so they are said here and not between the meter and the answer (usability review,
+     2026-10-20). */
+  const level = model.analysis;
   const session = [
     idleLine(shape, raw) || READ_SCOPE[shape.scope] || shape.scopeText,
     ...readSentences(shape.cutoff),
+    level?.range ? `Entries read: ${level.range}.` : '',
+    level?.reasons?.first ?? '',
+    goalSourceLine(shape),
     arrived,
   ].filter(Boolean);
   return (
@@ -651,7 +680,7 @@ export function ReadingResult({
     shape.criteria.length || shape.departures.length
       ? driftAnswer(shape, entries, source.scan)
       : null;
-  const coverage = coverageLine(shape);
+  const coverage = coverageLimits(shape);
   const idle = idleLine(shape, raw);
   /* From the reading rather than from the live row. A reading describes the moment it was taken. */
   const arrived = arrivedLine(annotation, entries);
@@ -691,7 +720,11 @@ export function ReadingResult({
           className="next-cockpit-result-stale"
           data-next-result-stale={stale.kind}
         >
-          <p className="next-cockpit-result-stale-head">{stale.head}</p>
+          <p className="next-cockpit-result-stale-head">
+            {stale.before !== null
+              ? `This check is from before your ${clock(stale.before)} message.`
+              : stale.head}
+          </p>
           {stale.superseded ? (
             <p className="next-cockpit-reading-stale">{stale.superseded}</p>
           ) : null}
@@ -774,5 +807,36 @@ export function ReadingResult({
         <Baseline shape={shape} raw={raw} arrived={arrived} />
       </div>
     </div>
+  );
+}
+
+/* The Drift card's answer in one sentence, first under its heading (usability review, 2026-10-20: the level,
+   the count and what they rest on were spread over the meter, the answer and each card). Drawn from the
+   stored reading the result below draws, and only while that result stands: not over a running analysis, an
+   unreadable reading, or one the reader marked inaccurate. */
+export function DriftVerdict() {
+  const { model } = useDrift();
+  const { shape, raw, annotation, entries, source, job, annotate } = model;
+  if (!annotate || !shape || shape.malformed || !raw || !annotation || job) return null;
+  if (annotation['not_accurate'] === true) return null;
+  if (!shape.criteria.length && !shape.departures.length) return null;
+  const answer = driftAnswer(shape, entries, source.scan);
+  const analysis = model.analysis;
+  const standing = analysis && analysis.level !== 'not_enough' ? analysis : null;
+  const text = verdictLine({
+    answer,
+    level: standing?.label ?? '',
+    levelKey: standing?.level ?? '',
+    reason: standing?.reasons.first ?? '',
+    byId: model.byId,
+    midFlight: shape.scope === 'mid-flight',
+  });
+  return (
+    <p
+      className="mx-4 my-0 max-w-[var(--measure)] text-value font-semibold leading-[1.45] text-foreground"
+      data-next-drift-verdict
+    >
+      {text}
+    </p>
   );
 }

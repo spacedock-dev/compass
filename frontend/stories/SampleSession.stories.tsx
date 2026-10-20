@@ -311,10 +311,16 @@ function pressIsHeld(fixture: keyof typeof VARIANTS, name: RegExp, opener?: stri
       await userEvent.click(press);
       const status = canvasElement.querySelector('[data-sample-held]') as HTMLElement;
       await expect(status).toHaveTextContent(HELD);
-      // Seen where the press was: the sentence once sat in the banner, thousands of pixels above.
+      // Seen where the press was: the sentence once sat in the banner, thousands of pixels above, and
+      // then at the foot of the viewport over the Copy button. It is drawn just under the press now.
       const box = status.getBoundingClientRect();
+      const pressed = press.getBoundingClientRect();
       await expect(box.top).toBeGreaterThanOrEqual(0);
       await expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
+      await expect(box.top).toBeGreaterThanOrEqual(pressed.bottom);
+      await expect(box.top - pressed.bottom).toBeLessThan(16);
+      await expect(box.left).toBeGreaterThanOrEqual(0);
+      await expect(box.right).toBeLessThanOrEqual(document.documentElement.clientWidth);
       await expect(canvasElement.querySelector('[data-next-summary]')).not.toBeNull();
     },
   };
@@ -331,6 +337,39 @@ export const SummarizeAgainIsHeld = pressIsHeld('changed', /^Summarize again$/);
 export const CancelSummaryIsHeld = pressIsHeld('running', /^Cancel$/);
 export const TurnSummariesOnIsHeld = pressIsHeld('summariesOff', /^Turn summaries on$/);
 export const ResumeModelCallsIsHeld = pressIsHeld('paused', /^Resume model calls$/, 'What is sent');
+
+/* A press at the foot of the viewport gets its sentence above it: drawn below, it was off screen and lapsed
+   unseen. */
+export const HeldAtTheFootIsDrawnAboveThePress: Story = {
+  render: () => <WithFixture fixture={VARIANTS['shipped'] ?? SAMPLE_FIXTURE} />,
+  play: async ({ canvasElement }) => {
+    await loaded(canvasElement);
+    const press = await waitFor(
+      () => {
+        const found = [...canvasElement.ownerDocument.querySelectorAll('button')].find(
+          (button) =>
+            /^Delete summary$/.test(button.textContent?.trim() ?? '') &&
+            getComputedStyle(button).pointerEvents !== 'none',
+        );
+        expect(found).toBeDefined();
+        return found as HTMLElement;
+      },
+      { timeout: 10000 },
+    );
+    press.scrollIntoView({ block: 'end', behavior: 'instant' });
+    await settle();
+    const pressed = press.getBoundingClientRect();
+    await expect(pressed.bottom + 86).toBeGreaterThan(window.innerHeight);
+    await userEvent.click(press);
+    const status = canvasElement.querySelector('[data-sample-held]') as HTMLElement;
+    await expect(status).toHaveTextContent(HELD);
+    const box = status.getBoundingClientRect();
+    await expect(box.top).toBeGreaterThanOrEqual(0);
+    await expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
+    await expect(box.bottom).toBeLessThanOrEqual(pressed.top);
+    await expect(pressed.top - box.bottom).toBeLessThan(16);
+  },
+};
 
 /* A citation anywhere in the session opens in Full activity. The record arrives in two pages, newest first,
    and the board's context holds only the newest page's messages, so the earliest citation is found only by

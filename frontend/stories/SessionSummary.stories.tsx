@@ -741,8 +741,15 @@ export const PauseStopsARunningSummary: Story = {
     await stateOf(region, 'working');
     const drift = within(canvasElement).getByRole('region', { name: 'Drift' });
     await userEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
+    // The copy inside What is sent; the Drift card head holds another.
     await userEvent.click(
-      await within(document.body).findByRole('button', { name: 'Pause model calls' }),
+      await waitFor(() => {
+        const found = within(document.body)
+          .getAllByRole('button', { name: 'Pause model calls' })
+          .find((node) => node.closest('[data-slot="popover-content"]'));
+        expect(found).toBeDefined();
+        return found as HTMLElement;
+      }),
     );
     await waitFor(() =>
       expect(script.summary?.['job']).toMatchObject({

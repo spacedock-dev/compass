@@ -16,6 +16,7 @@ import {
   DriftPill,
   DriftProvider,
   DriftStamp,
+  DriftHeadPause,
   DeparturesSection,
   ReadingCapBanner,
   WorkListView,
@@ -372,6 +373,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
               />
             }
             stamp={<DriftStamp />}
+            actions={<DriftHeadPause />}
             drift={<DriftBody primary={!(observed.isNeeds || observed.askKnown)} />}
           >
             <DelegatedWork session={session} generated={generated} />

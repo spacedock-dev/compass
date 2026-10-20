@@ -238,8 +238,12 @@ describe('notices and the durable off switch', () => {
     await page.settle();
     await press(byAction('reading-ask'));
     await page.settle();
-    expect(document.querySelector('[data-next-reading-notice]')).not.toBeNull();
-    expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
+    const shown = document.querySelector('[data-next-reading-notice]');
+    expect(shown).not.toBeNull();
+    /* One beside the notice and the Drift card head's, which is drawn in every state. */
+    expect(shown?.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-next-focus^="reading-off-head:"]')).toHaveLength(1);
   });
 
   it('offers one Resume control when the route has no disclosure', async () => {
@@ -346,7 +350,9 @@ describe('notices and the durable off switch', () => {
     });
     await page.settle();
     await page.settle();
-    expect(byAction('reading-ask')).toBeNull();
+    /* Analyze stays in its place, refused; Resume is the Drift card head's alone. */
+    expect(byAction('reading-ask')?.getAttribute('aria-disabled')).toBe('true');
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-on"]')).toHaveLength(1);
     expect(textOf('.next-session-drift-check')).toContain(
       'Model calls are paused. Nothing is sent until you resume.',
     );

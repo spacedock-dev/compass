@@ -5642,6 +5642,40 @@ what it stores and the page's evidence rules are as before.
 This supersedes the layout of [the 2026-10-06 amendment](#amended-2026-10-06-owner-assessment-explanations-and-recorded-signals)
 for a departure's explanation and citations, not what it shows.
 
+### Amended 2026-10-20: the answer first, and What quotes the entry
+
+A fresh-eyes usability review of the built page found that the Drift card buried its answer: the
+monitor's description, a range line, a goal-source note and a status line stood between the heading
+and the departures, and What gave "#5 Agent message" while the line the departure is about sat
+behind Evidence. Nothing about the reading changes; these are placement and wording.
+
+- One plain sentence leads the card: the analysis level's word, the count of departures and what
+  and when they rest on ("Medium: 2 departures, both at the agent's message at 09:15."), derived
+  from the stored reading and the entries it cites. "Can't tell" and "Not reached" carry no level
+  word, so the sentence never reassures where the reading could not settle. It is not drawn over a
+  running analysis, an unreadable reading or one marked inaccurate.
+- The level meter follows it in every state, including while a later direction's question stands.
+- What on a departure card gives each cited entry's own words, attributed and quoted ('Agent said:
+  "…"', 'You said: "…"', "Failed check: …"), bounded and on one line, with a check glyph said as
+  "[check mark]". This amends the 2026-10-19 amendment's "never the entry's own summary" for
+  departure cards only, on the strength of the attributed-speech ruling: quoted and attributed, an
+  agent's "Done" reads as the agent's. Quiet rows keep the entry's kind, so a line read as consistent
+  never stands beside the agent's own "Done". The owner may reverse this; the switch is one
+  argument (`CitedEntries` `quote`).
+- "Departs; evidence #n" is said once, inside Evidence. The analysis level's entry range and reason,
+  and the goal-source note ("The adopted source was found…"), are under What the analysis read. The
+  Live monitor's description is the switch's helper text.
+- Evidence heads with the line's label in a sentence's case, then "#n · Agent message · HH:MM", with
+  the record-type tag under Source and recorded times in the reader's local zone.
+- The count beside the control reads "N drift checks requested": the store counts readings alone,
+  and "model requests" read 2 beside four model calls once summaries also ran.
+- Pause model calls, or Resume model calls while paused, stands in the card's head in every state.
+  A press on the copy inside What is sent closes that popover. While paused, Analyze stays in its
+  place, refused, rather than becoming a second Resume.
+- A stale result's banner names the reader's message it predates ("This check is from before your
+  09:20 message."), and its one run control reads "Check again". A later direction's question still
+  owns the only run path while it stands, as DEC-27 rules.
+
 ## DEC-28: a model may summarize a session, and the summary is kept
 
 Decided by the owner on 2026-10-19. The ruling, what it amends, the alternatives it rejected, the
