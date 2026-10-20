@@ -62,7 +62,7 @@ function Footer() {
       <span className="next-cockpit-held-tools">
         <ActionButton
           label="Save intent"
-          className="border-[var(--accent)] text-[color:var(--accent)] font-bold px-4 aria-disabled:not-aria-busy:border-solid aria-disabled:not-aria-busy:bg-none aria-disabled:not-aria-busy:text-[color:var(--accent)] aria-disabled:not-aria-busy:opacity-60"
+          className="border-[var(--accent)] text-[color:var(--accent)] font-bold px-4 aria-disabled:not-aria-busy:border-solid aria-disabled:not-aria-busy:bg-none aria-disabled:not-aria-busy:text-[color:var(--accent)]"
           busyLabel="Saving…"
           pendingKey={`${key}:save`}
           action="held-save"
