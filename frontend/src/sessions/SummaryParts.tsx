@@ -388,12 +388,11 @@ function Cites({
   const unlinked = cites.length - linked.length;
   if (!cites.length && !cut) return null;
   return (
-    <span
-      className="ml-1 inline-flex flex-wrap items-center gap-x-1 align-baseline"
-      data-next-summary-cites
-    >
+    <span className="ml-0.5 [overflow-wrap:anywhere]" data-next-summary-cites>
       {linked.map((id) => (
-        <span key={id}>{chip(id, purpose)}</span>
+        <sup key={id} className="mr-px">
+          {chip(id, purpose)}
+        </sup>
       ))}
       {unlinked ? (
         <span className="text-label text-muted-foreground" data-next-summary-unlinked={unlinked}>

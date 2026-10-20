@@ -101,7 +101,7 @@ export const MatchedIdsFutureCase: Story = {
     await waitFor(() =>
       expect(first.querySelector('[data-next-outline-span]')).toHaveTextContent('Entries#1to#2.2'),
     );
-    const chip = await within(region).findByRole('button', {
+    const chip = await within(region).findByRole('link', {
       name: 'Open entry #2.1, the failed check, in Full activity',
     });
     await userEvent.click(chip);
@@ -129,7 +129,7 @@ export const ChipOpensFullActivity: Story = {
       'aria-expanded',
       'false',
     );
-    const chip = await within(region).findByRole('button', {
+    const chip = await within(region).findByRole('link', {
       name: 'Open entry #3, where this part starts, in Full activity',
     });
     await userEvent.click(chip);

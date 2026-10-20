@@ -42,7 +42,7 @@ describe('the lede of a stored summary', () => {
     });
     /* The message id reads older record pages, as the asked bullet's own chip does. */
     expect(
-      within(lede).getAllByRole('button', { name: /cited for the opening summary/ }),
+      within(lede).getAllByRole('link', { name: /cited for the opening summary/ }),
     ).toHaveLength(1);
     expect(lede.querySelector('[data-next-summary-unlinked]')?.textContent).toBe(
       '(1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.)',

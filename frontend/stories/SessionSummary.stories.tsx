@@ -111,7 +111,7 @@ async function attributed(summary: HTMLElement) {
       await expect(entry).not.toBeNull();
       if (kind === 'said') await expect(entry?.textContent).toMatch(/Agentsaid/);
       if (kind === 'asked') await expect(entry?.textContent).toMatch(/You/);
-      if (entry) await expect(chip.textContent).toMatch(/^#\d+(\.\d+)?$/);
+      if (entry) await expect(chip.textContent).toMatch(/^\[\d+(\.\d+)?\]$/);
     }
   }
 }
@@ -136,7 +136,7 @@ export const Ready: Story = {
       /^claude-sonnet-5-5 · summarized at \d\d:\d\d$/,
     );
     await waitFor(() =>
-      expect(summary.querySelector('[data-next-outline-entry="a1"]')).toHaveTextContent('#2'),
+      expect(summary.querySelector('[data-next-outline-entry="a1"]')).toHaveTextContent('[2]'),
     );
     await attributed(summary);
     // The model wrote "Reverting the test edit." for a `said` bullet: it is drawn as the agent's words.
@@ -152,10 +152,10 @@ export const Ready: Story = {
     await neverDone(region);
     await noCheckMark(region);
     // Plain text: no element a model's words could have made.
-    await expect(summary.querySelectorAll('a, strong, em, code, img')).toHaveLength(0);
+    await expect(summary.querySelectorAll('a:not([data-next-outline-entry]), strong, em, code, img')).toHaveLength(0);
     // A chip opens Full activity at its entry.
     await userEvent.click(
-      within(summary).getByRole('button', { name: /^Open entry #2\.1, cited for/ }),
+      within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }),
     );
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'c1')));
     await expect(summaryPosts()).toHaveLength(0);
@@ -179,7 +179,7 @@ export const ChipLandsOnScreenWithFullActivityClosed: Story = {
         ?.getAttribute('aria-expanded'),
     ).toBe('false');
     await userEvent.click(
-      within(summary).getByRole('button', { name: /^Open entry #2\.1, cited for/ }),
+      within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }),
     );
     const row = await waitFor(() => {
       const node = entryRow(canvasElement, 'c1');
@@ -1077,7 +1077,7 @@ export const CitationThatCannotLoad: Story = {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     await userEvent.click(
-      within(summary).getByRole('button', {
+      within(summary).getByRole('link', {
         name: /^Open an older entry the page has not read yet, cited for “You asked about a missing entry\.”/,
       }),
     );
@@ -1424,7 +1424,7 @@ export const AskedNamesThePerson: Story = {
     );
     await waitFor(() =>
       expect(
-        within(row).getByRole('button', {
+        within(row).getByRole('link', {
           name: /cited for “You said: Confirmed the parser change is in scope\.”/,
         }),
       ).toBeVisible(),
@@ -1463,7 +1463,7 @@ export const FailedSaysSoInWords: Story = {
     );
     await waitFor(() =>
       expect(
-        within(shownRow as HTMLElement).getByRole('button', {
+        within(shownRow as HTMLElement).getByRole('link', {
           name: /cited for “Failed as the tool reported: Ran pytest/,
         }),
       ).toBeVisible(),
@@ -1507,7 +1507,7 @@ export const AgentWordsOnAnAskedLine: Story = {
     await expect(row).not.toHaveTextContent(/You said/);
     await waitFor(() =>
       expect(
-        within(row).getAllByRole('button', {
+        within(row).getAllByRole('link', {
           name: /cited for “Said: it also raised the billing rate\.”/,
         }),
       ).toHaveLength(2),
@@ -1567,7 +1567,7 @@ export const WithheldRunCollapses: Story = {
     }
     await waitFor(() =>
       expect(
-        within(first).getByRole('button', { name: /^Open entry #2\.1, cited for a hidden line/ }),
+        within(first).getByRole('link', { name: /^Open entry #2\.1, cited for a hidden line/ }),
       ).toBeVisible(),
     );
     await expect(summary.querySelectorAll('[data-next-summary-bullet]')).toHaveLength(1);
@@ -1620,10 +1620,10 @@ export const SavedIntentKeepsEarlierNumbers: Story = {
     const summary = await summaryOf(region);
     const earlier = await waitFor(() => {
       const chip = summary.querySelector<HTMLElement>('[data-next-outline-entry="a1"]');
-      if (!chip?.textContent?.startsWith('#')) throw new Error('no number yet');
+      if (!chip?.textContent?.startsWith('[')) throw new Error('no number yet');
       return chip;
     });
-    await expect(earlier).toHaveTextContent('#2');
+    await expect(earlier).toHaveTextContent('[2]');
     await expect(earlier.hasAttribute('data-next-entry-outside')).toBe(true);
     await expect(earlier.getAttribute('aria-label')).toContain(OUTSIDE_WINDOW);
     const inside = summary.querySelector<HTMLElement>('[data-next-outline-entry="p2"]');
@@ -1678,7 +1678,7 @@ export const UnnumberedChipsSayWhy: Story = {
     await expect(unread?.getAttribute('aria-label')).toContain('the page has not read yet');
     for (const chip of region.querySelectorAll('[data-next-outline-entry]')) {
       await expect(chip.textContent).not.toBe('entry');
-      if (!chip.textContent?.startsWith('#'))
+      if (!/^[#[]/.test(chip.textContent ?? ''))
         await expect(chip.hasAttribute('data-next-entry-unnumbered')).toBe(true);
     }
     for (const width of [1280, 400])
@@ -1859,7 +1859,7 @@ export const MissingLineStaysInTheOutline: Story = {
       return node;
     });
     await userEvent.click(
-      within(outline).getAllByRole('button', { name: /^Open an older entry/ })[0] as HTMLElement,
+      within(outline).getAllByRole('link', { name: /^Open an older entry/ })[0] as HTMLElement,
     );
     await waitFor(() =>
       expect(outline.querySelector('[data-next-outline-missing]')).not.toBeNull(),

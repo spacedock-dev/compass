@@ -7,7 +7,6 @@ import { afterPanelSettles } from '../drift/panelSettle';
 import { useDrift } from '../drift/context';
 import { SampleMark } from '../sample/SampleMark';
 import { useDisplayed, useShell } from '../shell/context';
-import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Card } from '../ui/card';
 import { Disclosure, disclosureKey } from '../controls';
@@ -44,28 +43,34 @@ export function EntryChip({
   id,
   purpose,
   onOpen,
+  cite = false,
 }: {
   readonly id: string;
   readonly purpose: string;
   readonly onOpen: (id: string, n: string | null) => void;
+  /** A citation in a line of text: its number in brackets, as a footnote. Otherwise `#n` in running words. */
+  readonly cite?: boolean;
 }) {
   const { model } = useDrift();
   const n = model.labels.get(id) ?? null;
   const outside = model.outside.has(id);
+  const word = n ? (cite ? `[${n}]` : `#${n}`) : outside ? UNNUMBERED_BEFORE : UNNUMBERED_OLDER;
   const chip = (
-    <Button
-      type="button"
-      variant="quiet"
-      className={`px-2 py-0 font-[family-name:var(--mono)] text-label${outside ? ' text-muted-foreground opacity-70' : ''}`}
+    <a
+      href="#"
+      className={`text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1 font-[family-name:var(--mono)] text-label rounded-control px-0.5${outside ? ' text-muted-foreground opacity-70' : ''}`}
       aria-label={`Open ${n ? `entry #${n}` : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`}
       data-next-outline-entry={id}
       data-next-cockpit-action="finding-jump"
       {...(outside ? { 'data-next-entry-outside': '' } : {})}
       {...(n ? {} : { 'data-next-entry-unnumbered': '' })}
-      onClick={() => onOpen(id, n)}
+      onClick={(event) => {
+        event.preventDefault();
+        onOpen(id, n);
+      }}
     >
-      {n ? `#${n}` : outside ? UNNUMBERED_BEFORE : UNNUMBERED_OLDER}
-    </Button>
+      {word}
+    </a>
   );
   if (!outside) return chip;
   return (
@@ -338,7 +343,7 @@ export function WhatItDid({
                   : ''
               }
               chip={(id, purpose) => (
-                <EntryChip id={id} purpose={purpose} onOpen={open('summary')} />
+                <EntryChip id={id} purpose={purpose} onOpen={open('summary')} cite />
               )}
             />
             <Disclosure

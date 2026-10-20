@@ -16,7 +16,7 @@
 @source '../lib/**/*.{ts,tsx}';
 @source '../terminal/TerminalSurface.tsx';
 @source '../intent/{DirectionQuestion,GoalField,IntentPanel,IntentSection,OutcomeLines}.tsx';
-@source '../sessions/{SessionDetail,FullActivity,WhatItDid}.tsx';
+@source '../sessions/{SessionDetail,FullActivity,WhatItDid,SummaryParts}.tsx';
 @source '../steering/StageConditions.tsx';
 @source '../intent/PromptSelect.tsx';
 @source '../sample/**/*.{ts,tsx}';
@@ -63,6 +63,7 @@
   --color-border: var(--line);
   --color-input: var(--line);
   --color-ring: var(--accent);
+  --color-cite: var(--cite);
 }
 
 /* The page palette and five type steps stay present even when no utility names them. Semantic colours
@@ -89,6 +90,8 @@
   /* colour is observation; absence has none */
   --accent: #cfe884;
   --accent-dim: #93a757;
+  /* a citation link in running text: not the lime of an action, not the ink of the words around it */
+  --cite: #8fb8e6;
   --amber: #f0b95e;
   --clay: #e4886a;
   /* type: five steps, floor 13px, sentences 15px */

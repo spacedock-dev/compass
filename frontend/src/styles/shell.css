@@ -119,10 +119,8 @@ body {
 /* ===== CHROME ===== */
 #app {
   max-width: 1320px;
-  margin: 28px auto 44px;
-  padding: 0 26px 34px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-shell);
+  margin: 0 auto;
+  padding: 18px 26px 44px;
   background: var(--bg);
 }
 
@@ -329,7 +327,7 @@ body {
 
 @media (max-width: 760px) {
   #app {
-    padding: 24px 18px 48px;
+    padding: 18px 18px 48px;
   }
 
   .next-breadcrumb-current-separator {
