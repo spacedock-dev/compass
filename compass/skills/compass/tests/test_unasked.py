@@ -44,6 +44,18 @@ def _config(root: Path, **changes: Any) -> Any:
     return dataclasses.replace(config, **changes) if changes else config
 
 
+def _installed_providers(case: unittest.TestCase) -> None:
+    """Both provider binaries found, so a lane test never depends on the machine it runs on.
+
+    The reading route asks `shutil.which` whether `claude` or `codex` is installed. These
+    tests drive `Lane.consider` directly, so a machine with neither (CI) refused every
+    reading and counted none, while a desk with both passed.
+    """
+    patcher = mock.patch.object(shutil, "which", side_effect=lambda name, **_: f"/bin/{name}")
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 def _taking(seen: list[str]) -> Any:
     """A `reading.claim` stub that records the key and always grants."""
 
@@ -265,6 +277,7 @@ class ItEvaluatesOnAChangeAndNotPerCollectionTest(unittest.TestCase):
     """AC2. A working session generates nothing until something changes."""
 
     def setUp(self) -> None:
+        _installed_providers(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.harness = _Harness(_config(Path(self.temp.name)), _assessment("departure"))
@@ -1064,6 +1077,7 @@ class TheCapsBoundSpendAndNotFindingsTest(unittest.TestCase):
     """
 
     def setUp(self) -> None:
+        _installed_providers(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -1261,6 +1275,7 @@ class AFailedCallStillSpendsTheCapsTest(unittest.TestCase):
     """
 
     def setUp(self) -> None:
+        _installed_providers(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
