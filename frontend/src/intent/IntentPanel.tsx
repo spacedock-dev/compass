@@ -162,7 +162,6 @@ export function IntentPanel({
         data-next-session-panel="intent"
       >
         {annotating ? <IntentSection /> : null}
-        {summary}
         <Card
           variant="drift-panel"
           as="section"
@@ -197,6 +196,7 @@ export function IntentPanel({
           )}
           {children}
         </Card>
+        {summary}
       </div>
     </PanelContext>
   );

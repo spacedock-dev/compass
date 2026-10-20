@@ -247,7 +247,7 @@ function PageExample({
   );
 }
 
-const ORDER = ['Asked you', 'Intent', 'What the session has done', 'Drift', 'Full activity'];
+const ORDER = ['Asked you', 'Intent', 'Drift', 'What the session has done', 'Full activity'];
 
 /* The page's own regions, by role and accessible name, in document order. */
 function regions(root: HTMLElement): HTMLElement[] {
@@ -298,7 +298,7 @@ export const RegionsInOrder: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    const expected = ['Intent', 'What the session has done', 'Drift', 'Full activity'];
+    const expected = ['Intent', 'Drift', 'What the session has done', 'Full activity'];
     for (const width of [1280, 400]) {
       await atWidth(width, () => inOrderTopToBottom(canvasElement, expected));
     }
@@ -624,8 +624,8 @@ export const QuestionLeadsAndAnswersOnce: Story = {
     await waitFor(() =>
       expect(named(canvasElement)).toEqual([
         'Intent',
-        'What the session has done',
         'Drift',
+        'What the session has done',
         'Full activity',
       ]),
     );

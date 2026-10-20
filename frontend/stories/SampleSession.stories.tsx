@@ -327,8 +327,11 @@ function pressIsHeld(fixture: keyof typeof VARIANTS, name: RegExp, opener?: stri
       const pressed = press.getBoundingClientRect();
       await expect(box.top).toBeGreaterThanOrEqual(0);
       await expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
-      await expect(box.top).toBeGreaterThanOrEqual(pressed.bottom);
-      await expect(box.top - pressed.bottom).toBeLessThan(16);
+      /* Just under the press, or just above it where the press is too near the viewport's foot: the summary is
+         the last card on the page now, so its popover opens at the foot. */
+      const below = box.top >= pressed.bottom && box.top - pressed.bottom < 16;
+      const above = box.bottom <= pressed.top && pressed.top - box.bottom < 16;
+      await expect(below || above).toBe(true);
       await expect(box.left).toBeGreaterThanOrEqual(0);
       await expect(box.right).toBeLessThanOrEqual(document.documentElement.clientWidth);
       await expect(canvasElement.querySelector('[data-next-summary]')).not.toBeNull();
