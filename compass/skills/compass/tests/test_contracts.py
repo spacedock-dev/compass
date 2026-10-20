@@ -1146,6 +1146,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # The CLI is the assembly point, so it may import any runtime module.
         "compass_runtime.cli": {
+            # A starting run removes Claude reading output and stderr files that a
+            # hard kill left in the state directory.
+            "compass_runtime.observer",
             # `--forget` deletes the summary store.
             "compass_runtime.summary_store",
             # Startup-only development admission and inert fixture notifiers.
