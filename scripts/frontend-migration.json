@@ -1359,6 +1359,25 @@
       ],
       "contract": "The exact question, goal, activity-row or Update intent control holds its own refusal across polls until the next press or an intent edit; a persistent polite region announces it, and failure retains that control focus without filling an editor. Exact session keys keep another session's feedback.",
       "disposition": "store-held"
+    },
+    {
+      "name": "A Full activity row's Source sentence",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx"
+      ],
+      "contract": "Closed until the reader presses the row's Source toggle; kept open across redraws, a board refresh and a remount under the disclosure key entry-source:<entry id>, scoped by project and the activity list's scope. A plain button over the keyed disclosure store, not a Disclosure.",
+      "disposition": "stable-identity"
+    },
+    {
+      "name": "Why a run of hidden summary lines was hidden",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/sessions/summary.test.ts",
+        "frontend/stories/SessionSummary.stories.tsx"
+      ],
+      "contract": "Closed until opened; kept open across redraws and a refreshed summary under summary-hidden:<phase place>:cites:<cited entry ids>, so a shifted run does not open another run's reasons. A run that cites nothing is keyed by its place.",
+      "disposition": "stable-identity"
     }
   ],
   "storage": [
