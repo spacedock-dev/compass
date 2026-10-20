@@ -17,6 +17,15 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-20: the owner ruled that Steer back's correction carries each departure's explanation
+([the amendment](design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)),
+and the correction's cap rose from 2,000 to 4,216 characters to hold them. The retired page was
+recorded at 2,000. `correction.differential.test.ts` now passes that recorded cap, as
+`RECORDED_CAP`, to `correctionFit` when it compares the edit arithmetic with the recording, so the
+cut is still held to the recorded answer at the recorded cap; the page's own cap is asserted in
+`SteerBack.test.tsx` and the Steer back correction stories. The composition refusal sentence names
+4,216 where the frozen page named 2,000. Golden files are unchanged.
+
 2026-10-19: the owner renamed the master switch to Pause model calls / Resume model calls.
 The pause reason is `model-calls-paused`. Resume changes permission without starting Analyze.
 The summary switch stays visible and disabled while paused and keeps its saved answer through resume.

@@ -2887,7 +2887,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = -1
-        if not 0 <= length <= config.annotation_body_cap_bytes:
+        if not 0 <= length <= copied_corrections.COPY_BODY_CAP_BYTES:
             self._reject(413)
             return
         try:

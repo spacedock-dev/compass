@@ -219,7 +219,12 @@ export const WORK_HARNESSES: readonly string[] = ['claude', 'pi'];
 export const WORK_READ_FROM = 'Compass reads work results from Claude Code and Pi only.';
 export const WORK_AS_REPORTED = 'Results are as the tool reported; not inspected.';
 
-export const CORRECTION_CAP = 2000;
+/* The copy route's cap (`copied_corrections.CORRECTION_CAP_CHARS`): the lines' own 2,000 and room for eight
+   explanations of 277 each, since the owner's ruling of 2026-10-20 that a departure carries its explanation
+   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)). */
+export const CORRECTION_CAP = 4216;
+/* The label the server writes before a departure's explanation (`correction.EXPLANATION_LABEL`). */
+export const CORRECTION_WHY_LABEL = 'Why Compass reads this as drift: ';
 export const STEER_HARNESSES: readonly string[] = ['claude'];
 export const CORRECTION_HINT = 'Compass never sends this. Copy it and paste it into the session.';
 export const CORRECTION_NOTHING = 'Nothing recorded now gives a correction to steer back from.';
@@ -228,7 +233,7 @@ export const CORRECTION_OLDER =
   'This was composed from an older record. Recompose replaces your edit with a correction from the record as it stands.';
 export const CORRECTION_EDIT_REFUSED = 'This edit is unavailable here. Your text is kept.';
 export const CORRECTION_COMPOSITION_REFUSED =
-  'This composition would exceed 2,000 characters and was not kept.';
+  'This composition would exceed 4,216 characters and was not kept.';
 export const CORRECTION_UNDO_UNAVAILABLE =
   'The previous text was restored. Undo is unavailable for this refused edit.';
 export const CORRECTION_PAINT_PAUSED =

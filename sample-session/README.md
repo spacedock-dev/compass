@@ -108,6 +108,11 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   characters. The board's permissions are shown as a store with no stored off reads them: readings
   and summaries on, nothing refused and no notice recorded, with one reading and the stored summary's
   three calls counted.
+- **The correction is composed again.** The fixture's Steer back correction is what Compass's own
+  composer makes from the fixture's row and record, with its times in UTC like the rest of the
+  timeline, rather than the server's answer on the day. It carries each departure's explanation, and
+  `python3 scripts/build_sample_fixture.py --recompose --out frontend/src/sample/session.fixture.json`
+  composes it again after the composer changes. A test fails while the two differ.
 - **Pull request numbers moved once more.** The sanitizer keeps a number's length, which put the
   session's pull requests on #321 to #327 and a tracker link on #211, real and unrelated pull
   requests in this repository. Each was rewritten after sanitizing, in the transcript and the fixture

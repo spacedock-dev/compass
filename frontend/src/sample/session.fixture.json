@@ -2112,11 +2112,11 @@
    {
     "entry": "fact:8d9a97cc2010ab9e"
    },
-   ".\nWhere it stands against what I expect:\n- All the issues in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone are closed: departed at 2026-05-12 11:23",
+   ".\n  Why Compass reads this as drift: The milestone stood at 97.3% with DASH-3801 still open, the agent said the walk found a blocker so it can't close yet, and the session ended with PRs #9325 and #9327 still being merged.\nWhere it stands against what I expect:\n- All the issues in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone are closed: departed at 2026-05-12 11:23",
    {
     "entry": "fact:8d9a97cc2010ab9e"
    },
-   "\nPlease continue from here."
+   "\n  Why Compass reads this as drift: Not all milestone issues are closed: the milestone stands at 97.3% and DASH-3801 is not done, as the user confirmed.\nPlease continue from here."
   ]
  },
  "older": {

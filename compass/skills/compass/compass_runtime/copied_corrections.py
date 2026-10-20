@@ -40,8 +40,11 @@ if TYPE_CHECKING:
 
 SCHEMA_VERSION = 1
 
-# The most a correction may hold, which is the most item 7 of that ruling lets the box compose.
-CORRECTION_CAP_CHARS = 2000
+# The most a correction may hold, which is the most item 7 of that ruling lets the box compose:
+# its lines' own 2,000, and since the owner's ruling of 2026-10-20 room for eight explanations (the
+# goal, six outcome lines and a contradicted claim) of 277 each, the label's 36 and a stored
+# detail's 240 and its "…". `correction.py` holds the parts and `test_correction` the sum.
+CORRECTION_CAP_CHARS = 4216
 # The owner's bound, 2026-09-28: eight per session, the oldest dropped. It counts copies still
 # waiting for their message; a recognised message moves to `matches` and leaves this count.
 COPIES_PER_SESSION = 8
@@ -62,6 +65,12 @@ _OPENING_SCAN_CAP_BYTES = project_context.SEMANTIC_BACKFILL_MAX_BYTES
 # sessions of eight copies and 32 matches write 1,180,437 bytes, which overran the old 1 MiB.
 _READ_CAP_BYTES = 2 << 20
 _KEY_CAP_CHARS = 64
+# The copy route's own body bound, derived so no correction the box composes is refused for its
+# bytes (review, 2026-10-20): the shared 12,288 refused 4,216 CJK characters, the page still said
+# Copied, and the paste then counted as the reader's words. Twelve bytes a character is the widest
+# any JSON encoding spells one code point (an escaped surrogate pair), for the text and for both
+# identity fields at the widest this store keeps them, with room for the object around them.
+COPY_BODY_CAP_BYTES = 12 * (CORRECTION_CAP_CHARS + 2 * _KEY_CAP_CHARS) + 256
 _LOCK_WAIT_SECONDS = 10.0
 # Only Claude Code's messages are read for a digest, which is what item 9 rules.
 HARNESSES = frozenset({"claude"})

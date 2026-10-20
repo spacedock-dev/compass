@@ -140,8 +140,10 @@ that justifies it.
 Two layers hold it, and either alone is enough.
 
 The server layer is `createSampleFetch`. A read answers from the fixture. Composing a correction
-answers the correction the real server composed, and recording that it was copied is accepted and goes
-nowhere. Every other write is refused with a 403 and a sentence saying this is a sample, the summary's
+answers the correction `correction.compose` makes from the fixture's own row and record (the builder
+writes it with `--recompose`, and `test_sample_session_files` fails while the stored one differs, so
+the demo shows each departure's explanation the real composer carries), and recording that it was
+copied is accepted and goes nowhere. Every other write is refused with a 403 and a sentence saying this is a sample, the summary's
 start, cancel and delete included.
 
 The press layer is `ViewOnly`. It stops a press that would edit, save, allow or run, before it reaches

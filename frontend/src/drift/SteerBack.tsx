@@ -75,6 +75,15 @@ export function UpdateIntentButton({ factId }: { readonly factId: string }) {
   );
 }
 
+/* Tall enough to show the composed text without scrolling, up to a bound: with each departure's explanation
+   on its own line (owner, 2026-10-20) a two-departure correction ran past the six rows the box had, and its
+   closing request sat below the fold. Counted from the text the box opened with, so typing never resizes it. */
+const CORRECTION_ROWS_MIN = 6;
+const CORRECTION_ROWS_MAX = 16;
+function correctionRows(text: string): number {
+  return Math.min(CORRECTION_ROWS_MAX, Math.max(CORRECTION_ROWS_MIN, text.split('\n').length + 1));
+}
+
 function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
   const { ctx, model } = useDrift();
   const { key, identity } = model;
@@ -133,7 +142,7 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
         key={`${String(held.id)}\n${initial}`}
         ref={ref}
         id="next-cockpit-correction"
-        rows={6}
+        rows={correctionRows(initial)}
         defaultValue={initial}
         data-next-cockpit-correction-key={key}
         data-next-focus={`correction:${key}`}

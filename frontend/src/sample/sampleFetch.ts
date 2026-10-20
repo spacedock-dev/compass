@@ -2,7 +2,7 @@ import type { FetchLike } from '../api/client';
 import type { SampleFixture } from './fixture';
 
 /* The sample session's whole server. A read answers from the fixture, composing a Steer back correction
-   answers the correction the real server composed from the stored reading, and recording a copy of it is
+   answers the correction Compass's composer made from the stored reading, and recording a copy of it is
    accepted and goes nowhere. Anything else the page can send is refused, so a press that reaches the
    network by a path the view-only guard missed still changes nothing and says why. */
 const COMPOSE = '/api/correction';

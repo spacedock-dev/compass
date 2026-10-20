@@ -1092,6 +1092,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.correction": {
             "compass_runtime.copied_corrections",
             "compass_runtime.reading",
+            "compass_runtime.records",
         },
         "compass_runtime.copied_corrections": {
             "compass_runtime.config",

@@ -65,6 +65,11 @@ describe('the sample session server', () => {
     const copied = await read('/api/correction/copied', { method: 'POST', body: '{}' });
     expect(composed.body['ok']).toBe(true);
     expect(composed.body['parts']).toBeInstanceOf(Array);
+    // Each departure carries Compass's explanation on its own labelled line (owner, 2026-10-20).
+    const text = (composed.body['parts'] as unknown[])
+      .filter((part): part is string => typeof part === 'string')
+      .join('');
+    expect(text.match(/\n {2}Why Compass reads this as drift: /g)).toHaveLength(2);
     expect(copied.body).toEqual({ ok: true });
   });
 
