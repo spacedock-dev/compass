@@ -47,6 +47,11 @@ export function SteerButton({
         ref={ref}
         type="button"
         variant={primary ? 'primary' : 'default'}
+        className={
+          primary
+            ? 'border-[var(--accent)] bg-primary font-bold text-[color:var(--bg)] hover:border-[var(--accent)] hover:brightness-110 px-4'
+            : undefined
+        }
         data-next-cockpit-action="steer-back"
         aria-expanded={Boolean(held?.open)}
         data-next-focus={`steer-back:${model.key}`}
