@@ -157,7 +157,7 @@ export const LiveMonitorAtHigh: Story = {
       new RegExp(`^${LIVE_LEVEL_NAMES['high']}Live estimate · \\d\\d:\\d\\d`),
     );
     await within(level).findByRole('heading', { name: 'Recorded signals' });
-    await expect(level).toHaveTextContent(/pytest -q failed .* ago at #\d+/);
+    await expect(level).toHaveTextContent(/pytest -q failed .* ago at \[\d+\]/);
     await expect(level).toHaveTextContent('Result time not recorded.');
     await expect(within(card).getByText(NUDGE)).toBeVisible();
     await expect(within(card).queryByText(HARNESS_LIMIT)).toBeNull();
@@ -231,7 +231,7 @@ export const ResultUnderADeparture: Story = {
     await expect(level).not.toHaveTextContent(/pytest -q failed .* at #\d+/);
     await expect(
       card.querySelector('[data-next-read-section="session"]')?.textContent ?? '',
-    ).toMatch(/pytest -q failed .* at #\d+/);
+    ).toMatch(/pytest -q failed .* at \[\d+\]/);
     await expect(level).not.toHaveTextContent('Live estimate');
     await within(result).findByRole('heading', { name: new RegExp(`^${RESULT_DEPARTS}`) });
     await expect(
@@ -244,7 +244,7 @@ export const ResultUnderADeparture: Story = {
       .getAllByRole('listitem')
       .find((item) => item.textContent?.includes('Tests pass')) as HTMLElement;
     await expect(line).toHaveAttribute('data-next-result-state', 'consistent');
-    await expect(line).toHaveTextContent(/Consistent with #\d+/);
+    await expect(line).toHaveTextContent(/Consistent with \[\d+\]/);
     await expect(
       within(result).getByRole('heading', { name: 'Where the work went' }),
     ).toBeVisible();

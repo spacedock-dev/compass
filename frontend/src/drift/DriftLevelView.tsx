@@ -1,3 +1,4 @@
+import { CitedText } from './CitedText';
 import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Fragment } from 'react';
@@ -94,7 +95,7 @@ function SignalsView({ signals }: { readonly signals: Signals }) {
           <h3>Recorded signals</h3>
           {signals.lines.map((line) => (
             <p key={line} className="next-session-drift-reason">
-              {line}
+              <CitedText text={line} />
             </p>
           ))}
           <EvidenceList rows={signals.evidence} scope="signals" />
@@ -105,7 +106,7 @@ function SignalsView({ signals }: { readonly signals: Signals }) {
           <h3>Limits of this estimate</h3>
           {signals.limits.map((line) => (
             <p key={line} className="next-session-drift-reason">
-              {line}
+              <CitedText text={line} />
             </p>
           ))}
         </>
@@ -194,17 +195,25 @@ export function DriftLevelView() {
             <Scale level={level.level} />
           </Fragment>
         ) : null}
-        {detail ? <p className="next-session-drift-detail">{detail}</p> : null}
+        {detail ? (
+          <p className="next-session-drift-detail">
+            <CitedText text={detail} />
+          </p>
+        ) : null}
         {!running && !level.analysis && !readingStored(annotation) ? (
           <p className="next-session-drift-detail">No model assessment for this intent yet.</p>
         ) : null}
         {/* An analysis level's range and reason are said under What the analysis read, with the rest of
             what it read; a live estimate's stay beside it. */}
         {level.range && !running && !level.analysis ? (
-          <p className="next-session-drift-range">{level.range}</p>
+          <p className="next-session-drift-range">
+            <CitedText text={level.range} />
+          </p>
         ) : null}
         {!signals && reasons.first && !level.analysis ? (
-          <p className="next-session-drift-reason">{reasons.first}</p>
+          <p className="next-session-drift-reason">
+            <CitedText text={reasons.first} />
+          </p>
         ) : null}
         {!running && signals ? <SignalsView signals={signals} /> : null}
         {reasons.blockers.length ? (

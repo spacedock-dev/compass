@@ -98,7 +98,7 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     await expect(drift.querySelector('[data-next-reading-coverage]')).toBeNull();
     const read = drift.querySelector('[data-next-read-section="session"]') as HTMLElement;
     await expect(read.textContent).toContain('The adopted source was found.');
-    await expect(read.textContent).toMatch(/Entries read: #\d+/);
+    await expect(read.textContent).toMatch(/Entries read: \[\d+\]/);
     await expect(
       drift.querySelector('[data-next-drift-level] .next-session-drift-range'),
     ).toBeNull();
@@ -130,10 +130,10 @@ export const EvidenceReadsAsAHeadingThenTheEntry: Story = {
     });
     await expect(head.textContent).toMatch(/^[A-Z][a-z ]+$/);
     await expect(goal.querySelector('.next-cockpit-assessment-entry')).toHaveTextContent(
-      new RegExp(`^#\\d+ · Agent message · ${clock(650)}$`),
+      new RegExp(`^\\[\\d+\\] · Agent message · ${clock(650)}$`),
     );
     await expect(goal.textContent).not.toContain('UTC');
-    await expect(goal.textContent).toContain('Departs; evidence #');
+    await expect(goal.textContent).toContain('Departs; evidence [');
   },
 };
 

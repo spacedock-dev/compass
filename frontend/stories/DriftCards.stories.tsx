@@ -162,7 +162,7 @@ async function departureCard(
   ).not.toMatch(/^Departs/);
   await expect(
     [...node.querySelectorAll('.ctl-disclosure')].map((part) => part.textContent).join(' '),
-  ).toMatch(/Departs; evidence #\d+/);
+  ).toMatch(/Departs; evidence \[\d+\]/);
 }
 
 async function stamp(root: HTMLElement) {
@@ -256,7 +256,9 @@ export const TwoDeparturesACantTellAndAClaim: Story = {
     await reasonBehindEvidence(cantTell);
     const claim = quietRow(quiet, 'claims');
     await expect(claim).toHaveAttribute('data-next-result-state', 'unshown');
-    await expect(claim).toHaveTextContent(/What the agent said at #\d+ is not shown by the record/);
+    await expect(claim).toHaveTextContent(
+      /What the agent said at \[\d+\] is not shown by the record/,
+    );
     await citesResolvably(claim, 'What the agent claimed', '');
     await expect(claim.textContent).not.toContain('All green locally');
     // The quiet rows come after every card.
@@ -332,7 +334,7 @@ export const NotReachedAndConsistentWithACheck: Story = {
     await expect(getComputedStyle(quiet).borderTopStyle).toBe('none');
     const goal = quietRow(quiet, 'goal');
     await expect(goal).toHaveAttribute('data-next-result-state', 'consistent');
-    await expect(goal).toHaveTextContent(/^Consistent with #\d+(\.\d+)? · “Ship the queue”/);
+    await expect(goal).toHaveTextContent(/^Consistent with \[\d+(\.\d+)?\] · “Ship the queue”/);
     await citesResolvably(goal, 'Goal', 'Ship the queue');
     const line = quietRow(quiet, 'line_1');
     await expect(line).toHaveAttribute('data-next-result-state', 'not-reached');
@@ -363,7 +365,7 @@ export const ConsistentWithTheAgent: Story = {
       expect(node).not.toBeNull();
       return node;
     });
-    await expect(goal).toHaveTextContent(/^Consistent with what the agent said at #\d+/);
+    await expect(goal).toHaveTextContent(/^Consistent with what the agent said at \[\d+\]/);
     await citesResolvably(goal, 'Goal', 'Ship the queue');
     await expect(goal.textContent).not.toContain('All green locally');
     await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
@@ -391,7 +393,7 @@ export const ConsistentWithTheSession: Story = {
       return node;
     });
     await expect(goal).toHaveTextContent(
-      /^Consistent with what the session said at (#\d+(\.\d+)?|\d\d:\d\d)/,
+      /^Consistent with what the session said at (\[\d+(\.\d+)?\]|\d\d:\d\d)/,
     );
     await expect(goal.textContent).not.toContain('Queue worker started');
     await neverDone(shown);
@@ -467,7 +469,7 @@ export const ClaimContradicted: Story = {
     });
     await expect(claim).toHaveAttribute('data-next-result-state', 'departs');
     await expect(claim).toHaveTextContent(
-      /What the agent said at #\d+ is contradicted at #\d+(\.\d+)?/,
+      /What the agent said at \[\d+\] is contradicted at \[\d+(\.\d+)?\]/,
     );
     await expect(claim).toHaveTextContent('pytest failed after the agent said the tests pass.');
     await citesResolvably(claim, 'What the agent claimed', '');
@@ -510,7 +512,7 @@ const unexplained = (detail: string): Pick<Story, 'args' | 'play'> => ({
     });
     for (const entry of entries) {
       await waitFor(() => expect(entry).toBeVisible());
-      await expect(entry).toHaveTextContent(/^#\d+(\.\d+)? · /);
+      await expect(entry).toHaveTextContent(/^\[\d+(\.\d+)?\] · /);
     }
     await neverDone(shown);
   },
@@ -615,7 +617,9 @@ export const ClaimShownByTheRecord: Story = {
       return node;
     });
     await expect(claim).toHaveAttribute('data-next-result-state', 'consistent');
-    await expect(claim).toHaveTextContent(/What the agent said at #\d+ is shown at #\d+(\.\d+)?/);
+    await expect(claim).toHaveTextContent(
+      /What the agent said at \[\d+\] is shown at \[\d+(\.\d+)?\]/,
+    );
     await citesResolvably(claim, 'What the agent claimed', '');
     await neverDone(shown);
   },
@@ -647,7 +651,9 @@ export const ClaimNotShownIsASecondarySteerBack: Story = {
       expect(node).not.toBeNull();
       return node;
     });
-    await expect(claim).toHaveTextContent(/What the agent said at #\d+ is not shown by the record/);
+    await expect(claim).toHaveTextContent(
+      /What the agent said at \[\d+\] is not shown by the record/,
+    );
     await citesResolvably(claim, 'What the agent claimed', '');
     const steer = await within(drift).findByRole('button', { name: 'Steer back' });
     await expect(steer).not.toHaveAttribute('data-variant', 'primary');

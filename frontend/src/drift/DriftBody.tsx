@@ -42,6 +42,7 @@ import {
   UNKNOWN_KEY,
   WHY_OFF,
 } from './sentences';
+import { CitedText } from './CitedText';
 import { SteerBox, SteerButton, UpdateIntentButton } from './SteerBack';
 import { useFollowCorrection } from './useFollowCorrection';
 import { Why } from './Why';
@@ -201,7 +202,11 @@ function TriggerLine({ offer }: { readonly offer: SteerOffer }) {
     scan: model.source.scan,
     generated: model.generated,
   });
-  return text ? <p className="next-cockpit-reading-why">{text}</p> : null;
+  return text ? (
+    <p className="next-cockpit-reading-why">
+      <CitedText text={text} />
+    </p>
+  ) : null;
 }
 
 /* The question before the press, in the Analyze control's place while a later direction is unsettled: Keep is

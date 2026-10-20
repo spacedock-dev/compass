@@ -59,6 +59,7 @@ import {
 import { datedClock } from '../observed/values';
 import type { SteerSlot } from './ReadingControl';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
+import { CitedText } from './CitedText';
 import { Why } from './Why';
 
 /* Accent on a reading would read as "met", a claim about intent from partial evidence. The result keeps
@@ -203,7 +204,11 @@ function EvidenceMore({
       >
         {sentenceCase(row.label)}
       </p>
-      {full === status ? null : <span className="next-cockpit-reading-evidence">{full}</span>}
+      {full === status ? null : (
+        <span className="next-cockpit-reading-evidence">
+          <CitedText text={full} />
+        </span>
+      )}
       {row.why ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
       {row.result === NOT_REACHED && row.detail ? (
         <p className="next-cockpit-reading-detail">{row.detail}</p>
@@ -270,7 +275,11 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
             {detail || NO_DETAIL}
           </p>
         </div>
-        {row.coverage ? <p className={QUIET}>{row.coverage}</p> : null}
+        {row.coverage ? (
+          <p className={QUIET}>
+            <CitedText text={row.coverage} />
+          </p>
+        ) : null}
         <DepartureSummaryLine row={row.key} />
         {/* "Departs; evidence #5" says again what the label and What say, so it is said once, in Evidence. */}
         <EvidenceMore row={row} status="" rows quoted />
@@ -312,7 +321,9 @@ function QuietRow({
       <span className="next-cockpit-result-glyph" aria-hidden="true" />
       <span className="next-cockpit-result-body">
         <span className="m-0 text-body font-semibold leading-[1.45] text-foreground [overflow-wrap:anywhere]">
-          <em className="next-cockpit-reading-result">{status}</em>
+          <em className="next-cockpit-reading-result">
+            <CitedText text={status} />
+          </em>
           {claims ? null : (
             <>
               {' · '}
@@ -329,7 +340,11 @@ function QuietRow({
         {claimDeparts ? (
           <span className="next-cockpit-reading-detail">{detail || NO_DETAIL}</span>
         ) : null}
-        {row.coverage ? <span className="next-cockpit-reading-why">{row.coverage}</span> : null}
+        {row.coverage ? (
+          <span className="next-cockpit-reading-why">
+            <CitedText text={row.coverage} />
+          </span>
+        ) : null}
         <CitedEntries row={row} />
         <EvidenceMore row={row} status={status} rows={claimDeparts} />
       </span>
@@ -419,7 +434,9 @@ function ResultWorkView() {
               {group.folder || 'The working directory'}
             </span>
             <span>{`${String(group.files)} file${group.files === 1 ? '' : 's'}`}</span>
-            <span>{group.references}</span>
+            <span>
+              <CitedText text={group.references} />
+            </span>
           </li>
         ))}
       </ul>
@@ -648,7 +665,9 @@ function Baseline({
           <ReadSection name="session" title={READ_SESSION}>
             <ul className={READ_LIST}>
               {session.map((line) => (
-                <li key={line}>{line}</li>
+                <li key={line}>
+                  <CitedText text={line} />
+                </li>
               ))}
             </ul>
           </ReadSection>

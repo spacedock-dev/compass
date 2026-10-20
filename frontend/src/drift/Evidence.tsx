@@ -1,4 +1,5 @@
 import type { EvidenceRow } from './level';
+import { CitedText } from './CitedText';
 import { Why } from './Why';
 
 /* The cited entries' own rows: which entry, what it is and when, then what it says, who recorded it and the
@@ -21,7 +22,9 @@ export function EvidenceList({
     <ul className="next-cockpit-assessment-evidence">
       {rows.map((row) => (
         <li key={row.id}>
-          <p className="next-cockpit-assessment-entry">{row.shown.head}</p>
+          <p className="next-cockpit-assessment-entry">
+            <CitedText text={row.shown.head} />
+          </p>
           {!quoted && row.shown.summary ? (
             <p className="next-cockpit-reading-evidence">{row.shown.summary}</p>
           ) : null}

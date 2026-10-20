@@ -58,10 +58,10 @@ describe('a stored reading', () => {
     expect(textOf('.next-cockpit-result-headline')).toBe('Departs from your intent1 departure');
     const goal = document.querySelector('[data-next-result-goal]') as HTMLElement;
     expect(goal.getAttribute('data-next-result-state')).toBe('departs');
-    expect(goal.textContent).toContain('Departs; evidence #1');
+    expect(goal.textContent).toContain('Departs; evidence [1]');
     const line = document.querySelector('.next-cockpit-result-lines li') as HTMLElement;
     expect(line.getAttribute('data-next-result-state')).toBe('consistent');
-    expect(line.textContent).toContain('Consistent with #2');
+    expect(line.textContent).toContain('Consistent with [2]');
     expect(result.textContent).not.toMatch(/[✓✔]/);
     // The numbers it names are rows on screen, and the one it cites is flagged.
     expect(document.querySelector('[data-next-entry="1"]')).not.toBeNull();

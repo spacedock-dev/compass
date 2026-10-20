@@ -4,6 +4,7 @@ import { parseOutline } from '../api/outline';
 import { useControls } from '../controls';
 import { entriesHeld } from '../drift/citations';
 import { afterPanelSettles } from '../drift/panelSettle';
+import { landOnEntry } from '../drift/jumpToEntry';
 import { useDrift } from '../drift/context';
 import { SampleMark } from '../sample/SampleMark';
 import { useDisplayed, useShell } from '../shell/context';
@@ -197,7 +198,6 @@ function Block({
 
 /* Long enough for a smooth scroll over a long record to end; short enough that a reader's own scroll after it is
    not mistaken for the landing's. */
-const LAND_SETTLE_MS = 1500;
 
 /* The What the session has done card: a stable region between the Intent card and the Drift card. Until a
    summary exists it holds Compass's outline, one block per message of the reader's, read from the focused
@@ -282,33 +282,7 @@ export function WhatItDid({
       ? outlineStamp(entry?.revision ?? null, running, Boolean(entry?.error))
       : '';
 
-  const land = (id: string): boolean => {
-    const node = document.querySelector<HTMLElement>(
-      `[data-next-cockpit-work] [data-next-entry-id="${CSS.escape(id)}"]`,
-    );
-    if (!node) return false;
-    node.focus({ preventScroll: true });
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    node.scrollIntoView({ behavior: reduce ? 'instant' : 'smooth', block: 'center' });
-    if (!reduce) {
-      /* A smooth scroll runs against the page as it was when it started. Full activity opening or its rows
-         arriving under it moved the row after that, and the scroll ended with the row at the foot of the
-         screen or below it, so it is checked once where the scroll ends and placed again if it is off screen.
-         The check is dropped after a moment, so a scroll of the reader's own is never answered. */
-      const recheck = () => {
-        window.clearTimeout(drop);
-        const box = node.getBoundingClientRect();
-        if (box.top < 0 || box.bottom > window.innerHeight)
-          node.scrollIntoView({ behavior: 'instant', block: 'center' });
-      };
-      const drop = window.setTimeout(
-        () => window.removeEventListener('scrollend', recheck),
-        LAND_SETTLE_MS,
-      );
-      window.addEventListener('scrollend', recheck, { once: true });
-    }
-    return true;
-  };
+  const land = landOnEntry;
   const open = (from: 'summary' | 'outline') => (id: string, n: string | null) => {
     const press = {};
     latestPress.current = press;
