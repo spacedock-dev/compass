@@ -54,11 +54,19 @@ export function EntryChip({
   const { model } = useDrift();
   const n = model.labels.get(id) ?? null;
   const outside = model.outside.has(id);
-  const word = n ? (cite ? `[${n}]` : `#${n}`) : outside ? UNNUMBERED_BEFORE : UNNUMBERED_OLDER;
+  const word = n
+    ? cite
+      ? `[${n}]`
+      : `#${n}`
+    : cite
+      ? '[?]'
+      : outside
+        ? UNNUMBERED_BEFORE
+        : UNNUMBERED_OLDER;
   const chip = (
     <a
       href="#"
-      className={`text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1 font-[family-name:var(--mono)] text-label rounded-control px-0.5${outside ? ' text-muted-foreground opacity-70' : ''}`}
+      className={`text-cite no-underline hover:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1 font-[family-name:var(--mono)] text-label rounded-control${outside ? ' text-muted-foreground opacity-70' : ''}`}
       aria-label={`Open ${n ? `entry #${n}` : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`}
       data-next-outline-entry={id}
       data-next-cockpit-action="finding-jump"
@@ -239,6 +247,35 @@ export function WhatItDid({
   const latestPress = useRef<object | null>(null);
   const summary = useSummaryState(entry, running, harness);
   useOpenSummary(summary);
+  /* A summary's citations read as numbers, and a message the page has not read yet has none until its record
+     page arrives. The pages are read once for the cited messages so the numbers are there before a press. */
+  const stored = summary.stored;
+  const pending = stored
+    ? [
+        ...new Set(
+          stored.blocks.flatMap((block) =>
+            block.phases.flatMap((phase) =>
+              phase.bullets.flatMap((bullet) =>
+                (bullet.kind === 'said' || bullet.kind === 'asked' ? bullet.cites : []).filter(
+                  (id) => !model.byId.has(id),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ]
+    : [];
+  const prefetched = useRef('');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the joined ids are the trigger; the rest is read once per set.
+  useEffect(() => {
+    const key = `${model.projectKey}|${model.session}|${pending.join(',')}`;
+    if (!identity || !pending.length || prefetched.current === key) return;
+    prefetched.current = key;
+    const scope = { projectKey: model.projectKey, session: model.session, cited: pending };
+    void runtime.resolveRecord({ projectKey: model.projectKey, focus: identity }, (snapshot) =>
+      entriesHeld(snapshot, scope),
+    );
+  }, [runtime, identity, model.projectKey, model.session, pending.join(',')]);
   const stamp = summary.stored
     ? summaryHeader(summary)
     : outline?.state === 'ok'

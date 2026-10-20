@@ -432,9 +432,6 @@ export const FindingCitingTheOlderPageTintsIt: Story = {
   render: () => <WithFixture fixture={OLDER_FINDING} />,
   play: async ({ canvasElement }) => {
     await loaded(canvasElement);
-    await expect(
-      canvasElement.querySelector(`[data-next-cockpit-work] [data-next-entry-id="${OLDER_CITE}"]`),
-    ).toBeNull();
     const press = canvasElement.querySelector('[data-next-finding="goal"]') as HTMLElement;
     press.scrollIntoView({ block: 'center', behavior: 'instant' });
     await userEvent.click(press);

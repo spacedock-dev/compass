@@ -24,7 +24,7 @@ import {
   WITHHELD_LINES,
   withheldTitle,
 } from '../src/sessions/summary';
-import { OUTSIDE_WINDOW, UNNUMBERED_BEFORE, UNNUMBERED_OLDER } from '../src/sessions/WhatItDid';
+import { OUTSIDE_WINDOW } from '../src/sessions/WhatItDid';
 import { neverDone, noCheckMark } from './drift.checks';
 import { COVERAGE, G, claudeOutline } from './outline.scenario';
 import {
@@ -152,7 +152,9 @@ export const Ready: Story = {
     await neverDone(region);
     await noCheckMark(region);
     // Plain text: no element a model's words could have made.
-    await expect(summary.querySelectorAll('a:not([data-next-outline-entry]), strong, em, code, img')).toHaveLength(0);
+    await expect(
+      summary.querySelectorAll('a:not([data-next-outline-entry]), strong, em, code, img'),
+    ).toHaveLength(0);
     // A chip opens Full activity at its entry.
     await userEvent.click(
       within(summary).getByRole('link', { name: /^Open entry #2\.1, cited for/ }),
@@ -1671,10 +1673,10 @@ export const UnnumberedChipsSayWhy: Story = {
       if (!chip?.hasAttribute('data-next-entry-outside')) throw new Error('not outside yet');
       return chip;
     });
-    await expect(earlier).toHaveTextContent(UNNUMBERED_BEFORE);
+    await expect(earlier).toHaveTextContent('[?]');
     await expect(earlier.getAttribute('aria-label')).toContain('before your intent’s start');
     const unread = summary.querySelector<HTMLElement>('[data-next-outline-entry="p-unread"]');
-    await expect(unread).toHaveTextContent(UNNUMBERED_OLDER);
+    await expect(unread).toHaveTextContent('[?]');
     await expect(unread?.getAttribute('aria-label')).toContain('the page has not read yet');
     for (const chip of region.querySelectorAll('[data-next-outline-entry]')) {
       await expect(chip.textContent).not.toBe('entry');
