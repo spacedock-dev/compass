@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { seeInContext } from './citation';
+import { openPhases, seeInContext } from './citation';
 import { useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { App } from '../src/App';
@@ -1448,6 +1448,7 @@ export const AskedNamesThePerson: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
+    await openPhases(summary);
     const row = summary.querySelector('[data-next-summary-bullet="asked"]') as HTMLElement;
     await expect(row.querySelector('[data-next-summary-text]')).toHaveTextContent(
       'You said: Confirmed the parser change is in scope.',
@@ -1485,6 +1486,7 @@ export const FailedSaysSoInWords: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
+    await openPhases(summary);
     const [shownRow, withheldRow] = [
       ...summary.querySelectorAll<HTMLElement>('[data-next-summary-bullet="failed"]'),
     ];
@@ -1570,6 +1572,7 @@ export const WithheldRunCollapses: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
+    await openPhases(summary);
     const runs = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-hidden]')];
     await expect(runs.map((run) => run.dataset['nextSummaryHidden'])).toEqual(['2', '1']);
     const [first, second] = runs as [HTMLElement, HTMLElement];

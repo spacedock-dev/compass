@@ -7,6 +7,7 @@ import {
   type SummaryGrant,
   type SummaryJob,
 } from '../api/summary';
+import { Disclosure, disclosureKey } from '../controls';
 import { useDrift } from '../drift/context';
 import { ModelNotice } from '../drift/ModelNotice';
 import { Why } from '../drift/Why';
@@ -502,32 +503,50 @@ function Hidden({
   );
 }
 
+const PILL =
+  'inline-flex min-h-0 min-w-0 items-center rounded-full px-2.5 py-0.5 text-label font-semibold [font-family:var(--mono)]';
+
+/* What a phase holds that a reader should know before opening it, drawn on its heading and right-aligned: the
+   departures its entries are evidence for, each a pill that goes to the card, and a count of its failed lines.
+   They sit outside the accordion's trigger so they stay in view while the lines are folded away. */
 function Mark({
   marks,
+  failures,
   tour,
 }: {
   readonly marks: readonly DepartureMark[];
+  readonly failures: number;
   readonly tour: boolean;
 }) {
   const { model } = useDrift();
-  if (!marks.length) return null;
+  if (!marks.length && !failures) return null;
   return (
-    <p
-      className="m-0 flex flex-wrap items-center gap-x-2 text-label text-[var(--clay)]"
-      data-next-summary-holds
-    >
-      <span>{SUMMARY_HOLDS}</span>
-      {tour ? <SampleMark id="phase" /> : null}
-      {marks.map((mark) => (
-        <JumpButton
-          key={mark.key}
-          target={`departure-head:${model.key}:${mark.key}`}
-          label={`Departure · ${mark.name}`}
-          /* WCAG 2.5.3: the accessible name begins with the visible label. */
-          name={`Departure · ${mark.name}, go to the card`}
-        />
-      ))}
-    </p>
+    <>
+      {marks.length ? (
+        <span className="contents" data-next-summary-holds>
+          <span className="sr-only">{SUMMARY_HOLDS}</span>
+          {tour ? <SampleMark id="phase" /> : null}
+          {marks.map((mark) => (
+            <JumpButton
+              key={mark.key}
+              target={`departure-head:${model.key}:${mark.key}`}
+              label={`Departure · ${mark.name}`}
+              /* WCAG 2.5.3: the accessible name begins with the visible label. */
+              name={`Departure · ${mark.name}, go to the card`}
+              className={`${PILL} cursor-pointer border-0 bg-[var(--clay)] text-[color:var(--bg)] no-underline hover:brightness-110`}
+            />
+          ))}
+        </span>
+      ) : null}
+      {failures ? (
+        <span
+          className={`${PILL} border border-solid border-[var(--clay)] text-[var(--clay)]`}
+          data-next-summary-failures={failures}
+        >
+          {`${String(failures)} ${failures === 1 ? 'failure' : 'failures'}`}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -537,15 +556,17 @@ export function JumpButton({
   target,
   label,
   name,
+  className = 'cursor-pointer border-0 bg-transparent p-0 text-label text-[var(--clay)] underline',
 }: {
   readonly target: string;
   readonly label: string;
   readonly name: string;
+  readonly className?: string;
 }) {
   return (
     <button
       type="button"
-      className="cursor-pointer border-0 bg-transparent p-0 text-label text-[var(--clay)] underline"
+      className={className}
       aria-label={name}
       data-next-cockpit-action="finding-jump"
       data-next-summary-jump={target}
@@ -579,6 +600,7 @@ export function SummaryView({
   readonly startsAt: string;
 }) {
   const shell = useShell();
+  const { model } = useDrift();
   const marks = useSummaryMarks();
   const stored = state.stored;
   if (!stored) return null;
@@ -648,7 +670,7 @@ export function SummaryView({
         ) : (
           <div
             key={`${block.first}:${String(b)}`}
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-1"
             data-next-summary-block={b}
           >
             {block.phases.map((phase, p) => {
@@ -657,49 +679,65 @@ export function SummaryView({
               return (
                 <section
                   key={place}
-                  className="flex flex-col gap-1"
+                  className="flex flex-col gap-0"
                   data-next-summary-phase={place}
                   {...(held.length ? { 'data-next-summary-marked': '' } : {})}
                   aria-labelledby={phaseId(state.key, place)}
                 >
-                  <h3
-                    id={phaseId(state.key, place)}
-                    tabIndex={-1}
-                    className="m-0 text-body font-semibold text-foreground"
-                  >
-                    {'text' in phase.title ? (
-                      phase.title.text
-                    ) : (
-                      <span
-                        className="font-normal text-muted-foreground"
-                        data-next-summary-withheld={phase.title.withheld}
-                      >
-                        {withheldTitle(phase.title.withheld)}
-                      </span>
-                    )}
-                  </h3>
-                  <Mark marks={held} tour={place === toured} />
-                  <ul className="m-0 flex flex-col gap-1.5 pl-5">
-                    {runs(phase.bullets).map((run) =>
-                      run.hidden ? (
-                        <Hidden
-                          key={String(run.at)}
-                          bullets={run.bullets}
-                          name={`summary-hidden:${place}:${hiddenKey(run.bullets, run.at)}`}
-                          chip={chip}
-                        />
+                  <Disclosure
+                    disclosureKey={disclosureKey({
+                      project: model.project,
+                      scope: model.key,
+                      name: `summary-phase:${place}`,
+                    })}
+                    className="next-summary-phase [&_[data-slot=accordion-trigger]]:min-h-[34px] [&_[data-slot=accordion-trigger]]:font-semibold [&_[data-slot=accordion-trigger]]:text-foreground"
+                    headerProps={{
+                      render: <h3 className="m-0 text-body font-semibold text-foreground" />,
+                      id: phaseId(state.key, place),
+                      tabIndex: -1,
+                    }}
+                    summary={
+                      'text' in phase.title ? (
+                        phase.title.text
                       ) : (
-                        <Bullet
-                          key={String(run.at)}
-                          bullet={run.bullets[0] as SummaryBullet}
-                          chip={chip}
-                        />
-                      ),
-                    )}
-                  </ul>
-                  {phase.bulletsCut ? (
-                    <Line>{`${String(phase.bulletsCut)} more ${phase.bulletsCut === 1 ? 'line was' : 'lines were'} cut from this phase.`}</Line>
-                  ) : null}
+                        <span
+                          className="font-normal text-muted-foreground"
+                          data-next-summary-withheld={phase.title.withheld}
+                        >
+                          {withheldTitle(phase.title.withheld)}
+                        </span>
+                      )
+                    }
+                    aside={
+                      <Mark
+                        marks={held}
+                        failures={phase.bullets.filter((line) => line.kind === 'failed').length}
+                        tour={place === toured}
+                      />
+                    }
+                  >
+                    <ul className="m-0 flex flex-col gap-1.5 pl-5">
+                      {runs(phase.bullets).map((run) =>
+                        run.hidden ? (
+                          <Hidden
+                            key={String(run.at)}
+                            bullets={run.bullets}
+                            name={`summary-hidden:${place}:${hiddenKey(run.bullets, run.at)}`}
+                            chip={chip}
+                          />
+                        ) : (
+                          <Bullet
+                            key={String(run.at)}
+                            bullet={run.bullets[0] as SummaryBullet}
+                            chip={chip}
+                          />
+                        ),
+                      )}
+                    </ul>
+                    {phase.bulletsCut ? (
+                      <Line>{`${String(phase.bulletsCut)} more ${phase.bulletsCut === 1 ? 'line was' : 'lines were'} cut from this phase.`}</Line>
+                    ) : null}
+                  </Disclosure>
                 </section>
               );
             })}

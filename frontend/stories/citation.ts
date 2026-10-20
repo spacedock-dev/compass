@@ -8,3 +8,11 @@ export async function seeInContext(citation: HTMLElement): Promise<void> {
   );
   await userEvent.click(link);
 }
+
+/* The summary's phases are folded by default; a story that reads their lines opens them first. */
+export async function openPhases(summary: HTMLElement): Promise<void> {
+  for (const phase of summary.querySelectorAll<HTMLElement>('[data-next-summary-phase]')) {
+    const trigger = phase.querySelector<HTMLElement>('[data-slot="accordion-trigger"]');
+    if (trigger?.getAttribute('aria-expanded') === 'false') await userEvent.click(trigger);
+  }
+}

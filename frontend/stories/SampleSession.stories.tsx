@@ -456,6 +456,38 @@ export const FindingCitingTheOlderPageTintsIt: Story = {
   },
 };
 
+/* Each phase of the summary is folded by default; what it holds a reader should know about sits on its head,
+   outside the fold: the departures its entries are evidence for, and a count of its failed lines. */
+export const PhasesFoldAndMarkTheirHeads: Story = {
+  render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
+  play: async ({ canvasElement }) => {
+    await loaded(canvasElement);
+    const phases = [...canvasElement.querySelectorAll<HTMLElement>('[data-next-summary-phase]')];
+    await expect(phases.length).toBeGreaterThan(3);
+    for (const phase of phases) {
+      const trigger = phase.querySelector('[data-slot="accordion-trigger"]');
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      const line = phase.querySelector('[data-next-summary-bullet]');
+      if (line) await expect(line).not.toBeVisible();
+    }
+    const held = phases.find((phase) => phase.querySelector('[data-next-summary-holds]'));
+    await expect(held).toBeDefined();
+    const pills = within(held as HTMLElement).getAllByRole('button', {
+      name: /^Departure · .+, go to the card$/,
+    });
+    await expect(pills[0]).toBeVisible();
+    const failing = phases.find((phase) => phase.querySelector('[data-next-summary-failures]'));
+    await expect(failing?.querySelector('[data-next-summary-failures]')).toHaveTextContent(
+      /^\d+ failures?$/,
+    );
+    await expect(failing?.querySelector('[data-next-summary-failures]')).toBeVisible();
+    // Opening a phase shows its lines.
+    const trigger = failing?.querySelector('[data-slot="accordion-trigger"]') as HTMLElement;
+    await userEvent.click(trigger);
+    await waitFor(() => expect(failing?.querySelector('[data-next-summary-bullet]')).toBeVisible());
+  },
+};
+
 export const SessionsInvitesAReader: Story = {
   render: () => <SampleExample fragment="#n=sessions" />,
   play: async ({ canvasElement }) => {

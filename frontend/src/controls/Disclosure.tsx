@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useId,
+  type ComponentProps,
   type MouseEvent,
   type FocusEvent,
   type ReactNode,
@@ -29,6 +30,11 @@ export interface DisclosureProps {
   readonly summaryLabel?: string;
   /** Registers the summary with the focus lane. */
   readonly focusKey?: string;
+  /** Marks drawn on the summary's row, right-aligned and outside the trigger, so they stay in view while the
+   * panel is closed and may hold controls of their own. Accordion only. */
+  readonly aside?: ReactNode;
+  /** The heading drawn around the trigger, for a summary that is a heading of the page. Accordion only. */
+  readonly headerProps?: ComponentProps<typeof AccordionTrigger>['headerProps'];
   readonly children: ReactNode;
 }
 
@@ -48,6 +54,8 @@ function AccordionDisclosure({
   className,
   summaryLabel,
   focusKey,
+  aside,
+  headerProps,
   children,
 }: DisclosureProps) {
   const controls = useControls();
@@ -66,12 +74,28 @@ function AccordionDisclosure({
       }}
     >
       <AccordionItem value={disclosureKey}>
-        <AccordionTrigger
-          ref={triggerRef}
-          {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
-        >
-          {summary}
-        </AccordionTrigger>
+        {aside ? (
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <div className="min-w-0 flex-1">
+              <AccordionTrigger
+                ref={triggerRef}
+                {...(headerProps ? { headerProps } : {})}
+                {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
+              >
+                {summary}
+              </AccordionTrigger>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">{aside}</div>
+          </div>
+        ) : (
+          <AccordionTrigger
+            ref={triggerRef}
+            {...(headerProps ? { headerProps } : {})}
+            {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
+          >
+            {summary}
+          </AccordionTrigger>
+        )}
         <AccordionContent ref={panelRef} hiddenUntilFound>
           {children}
         </AccordionContent>
