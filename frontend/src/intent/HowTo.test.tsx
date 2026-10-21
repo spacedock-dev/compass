@@ -79,7 +79,10 @@ describe('the Intent how-to', () => {
         steer ? 'Steer back: available here.' : 'Steer back: Claude Code only.',
       );
       expect(popup.textContent).toContain('Compass never writes into sessions.');
-      expect(popup.textContent).toContain('Not enough recorded yet');
+      expect(popup.querySelector('[data-next-intent-howto-no-line]')?.textContent).toBe(
+        "With no expected outcome line: no level, and “Can't tell” unless your goal departs.",
+      );
+      expect(popup.textContent).not.toContain('Not enough recorded yet');
       expect(popup.querySelector('[data-next-intent-howto-settle]')?.textContent).toBe(
         "Readings settle a command's latest unpiped run, failed or passed with nothing written after it. A recorded write breaking a folder limit also departs.",
       );

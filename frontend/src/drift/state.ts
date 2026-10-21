@@ -216,8 +216,9 @@ export function createDriftState(shell: Shell) {
 
     /* The reading now standing for a session and the departures it carries: the departures the one before it
        carried that this one does not are returned for as long as it stands, and the next reading, whatever it
-       finds, takes the note down. Without a correction pasted between the two, that is every departure the
-       earlier one had and only when this one has none. With one, it is each departure the correction named that
+       finds, takes the note down. Without a correction pasted between the two, that is how many fewer
+       departures this one carries than the one before it, up to the ones it no longer finds: two to one names
+       one, and a clear to zero names every one. With one, it is each departure the correction named that
        this reading no longer finds, whether or not another stands: a steer that worked can leave the reading
        departing on something else, and the reader is told the first was met. The departures are the latest drawn
        for that reading, because the entries a departure cites may load after the first draw. Idempotent per
@@ -248,15 +249,16 @@ export function createDriftState(shell: Shell) {
       if (!now?.before) return null;
       const since = now.before.readAt;
       const corrections = pastedAt.filter((at) => at > since && at <= readAt).length;
-      const gone =
-        corrections > 0 || departures.length === 0
-          ? now.before.departures.filter(
-              (earlier) => !departures.some((later) => sameDeparture(earlier, later)),
-            ).length
-          : 0;
-      return gone > 0 && (departures.length === 0 || corrections > 0)
-        ? { readAt: since, count: gone, corrections }
-        : null;
+      const gone = now.before.departures.filter(
+        (earlier) => !departures.some((later) => sameDeparture(earlier, later)),
+      ).length;
+      /* With a correction between, every departure it named that no longer stands is named, standing ones
+         beside it or not. Without one, only the net fall is: a model words a finding differently from
+         reading to reading, so a departure that merely moved is no clear, and a reading that departs as
+         often as the one before it says nothing. A clear to zero is the fall of all of them. */
+      const count =
+        corrections > 0 ? gone : Math.min(gone, now.before.departures.length - departures.length);
+      return count > 0 ? { readAt: since, count, corrections } : null;
     },
 
     /* The flip ledger is bounded as the cue lanes are: past sixteen drawn sessions the oldest goes. */

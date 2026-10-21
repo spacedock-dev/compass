@@ -3630,23 +3630,42 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     return ([] if withdrawn else supporting), why
 
 
+def _bears_on(line: str, entry: LedgerEntry) -> bool:
+    """Whether a later check or write plainly bears on an outcome line.
+
+    A line that names a path, or claims the result of a kind of check, is borne on only by a check
+    that covers it (`covers_line`) or a write to a path it names. A line that does neither gives
+    no way to tell one piece of work from another, so any later work bears on it.
+    """
+    named = _path_tokens(line, files=True)
+    if not named and not any(_claims_result(line, kind) for kind in _LINE_KINDS):
+        return True
+    if entry.get("subject") == CHECK_SUBJECT:
+        return covers_line(line, _check_text(entry))
+    path = _check_text(entry).removeprefix("./")
+    return any(_same_path(path, folder) or _within(path, (folder,)) for folder in named)
+
+
 def _while_running(
     criterion: Criterion,
     name: str,
     by_id: Mapping[str, LedgerEntry],
     *,
     scope: str,
-    last_work_at: float,
+    work: Sequence[LedgerEntry],
+    open_call_at: float | None,
+    line_text: str,
 ) -> Criterion:
-    """A mid-flight departure on words alone, with work recorded after them, read as unfinished.
+    """A mid-flight departure on words alone, with work going on after them, read as unfinished.
 
     Only while the turn is open: what the words promised and the model found missing may be the
     very work the agent is doing, so the missing end is not a departure (the amendment is
     `docs/design-reading-a-session.md#amended-2026-10-21-a-running-turn-is-unfinished`).
-    A citation that shows work (a failed check, a write) is what the departure rests on and
-    stands, and so does a stall: no recorded check or write after the latest cited words means
-    nothing kept going. One-way like every demotion here, toward the result that raises no
-    level and no steer.
+    Work going on is a call still in flight, or a check or write recorded after the latest cited
+    words that bears on an outcome line (`_bears_on`). A citation that shows work (a failed check,
+    a write) is what the departure rests on and stands, and so does a stall: nothing in flight and
+    nothing recorded after the words means nothing kept going. One-way like every demotion here,
+    toward the result that raises no level and no steer.
     """
     if (
         scope != SCOPE_MID_FLIGHT
@@ -3660,7 +3679,15 @@ def _while_running(
     ):
         return criterion
     latest = max(_number(entry.get("at")) or 0.0 for entry in cited)
-    if last_work_at > latest > 0.0:
+    if latest <= 0.0:
+        return criterion
+    if open_call_at is not None and open_call_at > latest:
+        return {**criterion, "result": RESULT_NOT_REACHED}
+    if any(
+        (evidence_at(entry) or 0.0) > latest
+        and (not is_outcome_line(name) or _bears_on(line_text, entry))
+        for entry in work
+    ):
         return {**criterion, "result": RESULT_NOT_REACHED}
     return criterion
 
@@ -4225,6 +4252,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
     line_requests: Mapping[str, float] | None = None,
     uncitable: frozenset[str] = frozenset(),
     recorded: Recorded | None = None,
+    open_call_at: float | None = None,
 ) -> dict[str, Criterion]:
     """The model's tokens and indices, turned into what the page may render.
 
@@ -4258,16 +4286,13 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
         default=0.0,
     )
     by_id = {str(row["id"]): row for row in by_index.values()}
-    # The latest recorded check or write the reading was shown, for the mid-flight guard.
-    last_work_at = max(
-        (
-            evidence_at(entry) or 0.0
-            for entry in (*selection.entries, *selection.unread_checks, *selection.unread_failures)
-            if entry.get("type") == TOOL_REPORT_TYPE
-            and entry.get("subject") in (CHECK_SUBJECT, WRITE_SUBJECT)
-        ),
-        default=0.0,
-    )
+    # The recorded checks and writes the reading was shown, for the mid-flight guard.
+    work = [
+        entry
+        for entry in (*selection.entries, *selection.unread_checks, *selection.unread_failures)
+        if entry.get("type") == TOOL_REPORT_TYPE
+        and entry.get("subject") in (CHECK_SUBJECT, WRITE_SUBJECT)
+    ]
     texts = [line for line in lines if line.strip()]
     names = constraints_for(texts, claims=selection.asked_claims)
     # The claims question has no words of the reader's to caption it; the
@@ -4348,7 +4373,9 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
                 name,
                 by_id,
                 scope=scope,
-                last_work_at=last_work_at,
+                work=work,
+                open_call_at=open_call_at,
+                line_text=clauses[name],
             ),
         )
     return out
@@ -4448,6 +4475,7 @@ def produce(  # noqa: PLR0913
     record_coverage_lookup: Callable[[], Mapping[str, Any]] | None = None,
     final_source_lookup: FinalLookup | None = None,
     settled_through: Any = None,
+    open_call_lookup: Callable[[], float | None] | None = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -4483,6 +4511,11 @@ def produce(  # noqa: PLR0913
     `settled_through` is the reading route's, read from the entry the press just settled: the row it
     holds can predate a Keep the same press made, and a direction kept a moment ago must not stand
     under a departure (`settled_reader_words`). Absent, the row's own is read.
+
+    `open_call_lookup` is the reading route's, for the running-turn guard: when the newest call
+    the transcript has no result for was made. Asked only of a running session. The idle press
+    also reads mid-flight, but nothing is running there, so an unanswered call is an
+    interruption and no call in flight excuses a departure; only work recorded after the words can.
 
     `on_phase` is a reading job's, told `PHASE_CHECKING` once a reply arrived
     and never otherwise, so a published phase is one that really happened.
@@ -4596,6 +4629,13 @@ def produce(  # noqa: PLR0913
         scope=scope,
         line_requests=line_request_floors(latest, request_sources, harness, sid),
         recorded=recorded_from(facts, harness, sid, tool_output=tool_output),
+        open_call_at=(
+            open_call_lookup()
+            if open_call_lookup is not None
+            and scope == SCOPE_MID_FLIGHT
+            and end_kind(row) == "running"
+            else None
+        ),
         uncitable=settled_reader_words(
             facts,
             harness,

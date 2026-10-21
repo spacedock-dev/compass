@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2086847,
+    "bytes": 2088163,
     "file": "react.html",
-    "sha256": "e3485d6061dbbf9625c9ac8dad30adc2951e05db4fd5aa424ce0111b92fee578"
+    "sha256": "b2d8997123404467763870b2383b75c40bfc0a5e0a21ef21f621f227bf8e5398"
   },
   "format": 1,
   "frontend": "react",
@@ -599,7 +599,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "5171564da9a3e40a8548b14634826b3eb13b608cc119f4e6e6257b5da9195f18"
+        "sha256": "9a62f99076404ac51a6e0f4cfdc0355a194f2de82c8aab99036ce5c313ff8c88"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -687,7 +687,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "f9552bf2f0b2af900f294e0a768dc395073855c1659c8a123c3fc8fc96556fd3"
+        "sha256": "d6f604fc751ec7a3f44f10e426d021be88e59497f7153ee0b1acdaab785c07fa"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -703,7 +703,7 @@
       },
       {
         "file": "frontend/src/drift/state.ts",
-        "sha256": "22e063c23ae6f5841cf0d91cc7ba210c00d169061e92ca3bea9142ebe9d02208"
+        "sha256": "55a2dc72400e4e169a0b502e407330c7dfcfce7d5d914ab6c9fc72fd5099f076"
       },
       {
         "file": "frontend/src/drift/steerActions.ts",
@@ -755,7 +755,7 @@
       },
       {
         "file": "frontend/src/intent/HowTo.tsx",
-        "sha256": "0f9d200a44f47e69bde373f216fb25b421398fdae768a05d877bd395279b4dd3"
+        "sha256": "c39761cef534a10fd2cffc56821c45bd1d24e4bee4e7042e9d1f739cea569c82"
       },
       {
         "file": "frontend/src/intent/IntentLog.tsx",

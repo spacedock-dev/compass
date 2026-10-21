@@ -4838,6 +4838,51 @@ def claude_tool_reports(
     return entries, tally.scan
 
 
+def claude_open_call_at(config: RuntimeConfig, transcript_path: str) -> float | None:
+    """When the newest tool call the transcript's tail has no result for was made, or None.
+
+    Nothing records a call in flight until its result arrives, so a running turn's next step is
+    invisible to the checks and writes the observed record lists. This reads it from the transcript
+    itself, for the running-turn guard
+    (`docs/design-reading-a-session.md#amended-2026-10-21-a-running-turn-is-unfinished`).
+    A question put to the reader is not work going on, and a message the reader sent after a call
+    closes it: an interrupted call is never answered, and nothing is running then. Read at press
+    time and never stored.
+    """
+    open_calls: dict[str, float] = {}
+    for line in runtime_io.read_tail(config, transcript_path):
+        if not line.startswith("{"):
+            continue
+        record = _json_dict(line.encode("utf-8", "replace"))
+        if record is None or record.get("isSidechain") is True:
+            continue
+        kind = record.get("type")
+        blocks = records.as_list(records.message_dict(record).get("content"))
+        if kind == "assistant":
+            at = _record_timestamp(record)
+            for block in blocks:
+                if (
+                    at is not None
+                    and isinstance(block, dict)
+                    and block.get("type") == "tool_use"
+                    and block.get("name") not in claude_data.INPUT_TOOLS
+                ):
+                    open_calls[str(block.get("id"))] = at
+        elif kind == "user":
+            answered = [
+                block.get("tool_use_id")
+                for block in blocks
+                if isinstance(block, dict) and block.get("type") == "tool_result"
+            ]
+            for call_id in answered:
+                open_calls.pop(str(call_id), None)
+            if len(answered) < len(blocks) or isinstance(
+                records.message_dict(record).get("content"), str
+            ):
+                open_calls.clear()
+    return max(open_calls.values(), default=None)
+
+
 def _json_dict(raw: bytes) -> dict[str, Any] | None:
     try:
         record = json.loads(raw)

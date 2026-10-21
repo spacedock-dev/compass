@@ -11,6 +11,8 @@ const FACTS = [
   check('c1', 500, 'failed', { result_source: 'failed flag', summary: 'pytest -q' }),
 ];
 const REASON = 'It stopped running the tests.';
+const ANOTHER = check('c2', 520, 'failed', { result_source: 'failed flag', summary: 'ruff check' });
+const AGAIN = 'The coverage gate was held to 54 new exceptions.';
 const reading = (
   readAt: number,
   results: readonly string[],
@@ -101,6 +103,32 @@ describe('a departure the next reading clears', () => {
     expect(textOf(CLEARED)).toContain('no longer hold');
   });
 
+  it('is said for the one of two that went, with no correction pasted between', async () => {
+    const page = mountDrift({ facts: FACTS, session: {} });
+    await page.settle();
+    await page.poll(board(1000, ['departure', 'departure'], 1, 1100));
+    await page.settle();
+    // The goal's departure stands again with the same reason; the line's is gone, and one still stands.
+    await page.poll(board(1200, ['departure', 'not verifiable from available evidence'], 2, 1210));
+    await page.settle();
+    expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
+    expect(textOf(CLEARED)).toBe(`The departure from the ${clock(1000)} reading no longer holds.`);
+  });
+
+  it('counts the fall and never more, where a model worded the survivor differently', async () => {
+    const page = mountDrift({ facts: [...FACTS, ANOTHER], session: {} });
+    await page.settle();
+    await page.poll(board(1000, ['departure', 'departure'], 1, 1100));
+    await page.settle();
+    // Both earlier departures differ in wording and entry from the one standing: two ended on paper, but
+    // only one fewer departs, and that is all the page may say it watched.
+    await page.poll(
+      board(1200, ['departure', 'not verifiable from available evidence'], 2, 1210, AGAIN, ['c2']),
+    );
+    await page.settle();
+    expect(textOf(CLEARED)).toBe(`The departure from the ${clock(1000)} reading no longer holds.`);
+  });
+
   it('is not said where the earlier reading departs no more than the next, or never departed', async () => {
     const page = mountDrift({ facts: FACTS, session: {} });
     await page.settle();
@@ -186,8 +214,6 @@ describe('a departure the steer named, cleared by the reading after it', () => {
    addressed. The earlier departure is the one a later departure on the same line and the same reason, or on
    an entry it cited before, still is; a model words one finding differently from reading to reading, so a
    reading with no correction between is never told it replaced anything. */
-const ANOTHER = check('c2', 520, 'failed', { result_source: 'failed flag', summary: 'ruff check' });
-const AGAIN = 'The coverage gate was held to 54 new exceptions.';
 const second = (at: number) => pasted(at, 'paste-2');
 
 describe('a departure the steer named, replaced by a different one', () => {

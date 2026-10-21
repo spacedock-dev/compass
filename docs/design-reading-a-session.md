@@ -5888,7 +5888,14 @@ the level, the count and the cards cannot disagree.
   turn, because a running session's level can still move and a mid-flight reading covers only the work up
   to it. A state the board does not publish claims neither.
 - A departure that clears is named once, on the reading that no longer finds it ("The departure from
-  the 11:02 reading no longer holds."), with the count where there were several. The page holds the
+  the 11:02 reading no longer holds."), with the count where there were several, and where a reading
+  departs less often than the one before it, with the difference: two departures that become one name
+  the one that went. A departure that only moved (the same count, worded or cited differently, with no
+  correction pasted between) is no clear, because a model words one finding differently each time it
+  reads. The count is the smaller of the fall and the departures no longer found, so a reworded
+  survivor never overstates what the tab watched. A correction pasted between the two readings keeps
+  its own rule: each departure it named that no longer stands is named, with another standing or not.
+  The page holds the
   earlier reading's departure count in the tab and says nothing it did not watch, so a reload
   names nothing. Storing the earlier departures with the reading was rejected: it is a new published
   field declared in five places (the invariant above), it would name the clear for as long as the
@@ -5901,6 +5908,32 @@ prefer the live estimate to keep drawing beside such a reading; that is one expr
 `buildModel` and `DriftLevelView` (`analysis ?? estimate`), and the four behaviours above are
 asserted by `LevelNeedsDeparture.test.tsx`, `ClearedDeparture.test.tsx`, `verdict.test.ts` and the
 stories under "Drift / A level needs a departure".
+
+#### Clarified 2026-10-21: the edges of the departure-backed level
+
+Three cases the main rule left open, each said only where the page can show it is true.
+
+- A reading that stands with no level owns the level slot, so a live estimate the reader switched
+  on, with a level to draw, is hidden behind it. The card says so under the verdict ("The live
+  estimate is not drawn while this reading stands: it reads checks and file paths, never your
+  intent."), without naming the hidden level, because naming it would draw the Medium the rule
+  withholds. It says nothing with the switch off, with no live level to hide, or over a reading that
+  draws its own level.
+- An empty verdict early in a session says it is early. The answer must be the empty one ("Can't
+  tell from what was read.") over a line that names an expected outcome, the reading must not be of a
+  finished session, and the record must have been read from its start, because a start the page cannot
+  see would make "early" a default (the invariant `AGENTS.md` calls a structurally present default).
+  The span is the first entry the page holds to the end of what the reading read, and it is early
+  under ten minutes: a judgement, not a measurement, set where a session has usually not yet run a
+  check. It names that span ("Early: this reading covers only the first 8m of the session. Read again
+  once it has run its checks.").
+- The how-to, the skill and the promise map said "Not enough recorded yet" is normal until an expected
+  outcome line is added. The card no longer draws that level for a reading, so the sentence now says
+  what a reader sees: with no expected outcome line, no level, and "Can't tell" unless your goal departs.
+  "Not enough recorded yet" stays the live estimate's word.
+
+A departure that moved is deliberately not named as replaced where no correction was pasted; see the
+bullet on clearing above. The decision there was made before this clarification and is kept.
 
 ### Amended 2026-10-21: a running turn is unfinished
 
@@ -5917,23 +5950,44 @@ applies every other rule that way, so a departure that does not hold never reach
 The guard (`reading._while_running`, applied by `reading.resolve` after each constraint's own rules):
 at the mid-flight scope, a departure on an intent line whose every citation is words (the person's
 or the agent's own messages) is stored as `not reached at this stop`, with its explanation kept as
-what the record shows it waiting on, when a check or a write is recorded after the latest of those
-words. Everything the 2026-10-04 amendment says unfinished work does not excuse stands:
+what the record shows it waiting on, when work is going on after the latest of those words. Work is
+going on in two ways:
+
+- A call is still in flight. A call has no entry until its result arrives, so the press reads the
+  transcript itself for the newest call it has no result for (`project_context.claude_open_call_at`)
+  and passes its time to `resolve`. A question put to the reader is not work going on, and a message
+  the reader sent after a call closes it: an interrupted call is never answered, and nothing is
+  running then. Nothing is stored; the call is read at press time and used once.
+- A check or a write recorded after the words **bears on the line**. A goal has no narrower meaning
+  than the whole session, so any later check or write bears on it. An outcome line that names a path or
+  claims the result of a kind of check ("the tests pass") is borne on only by a check that covers it
+  (`covers_line`) or by a write to a path it names; a line that does neither cannot tell one piece of
+  work from another, so any later work bears on it. A lint pass beside "the tests pass", or a write to
+  a docs file beside a line about `src/probe.py`, leaves the departure standing.
+
+Everything the 2026-10-04 amendment says unfinished work does not excuse stands:
 
 - A citation that shows work, a failed check or a write, is what the departure rests on and the
-  guard leaves it. A failed relevant check is still a departure.
-- A stall stands: with no check or write recorded after the cited words, nothing kept going.
+  guard leaves it. A failed relevant check is still a departure, with a call in flight or not.
+- A stall stands: with nothing in flight and no check or write that bears on the line recorded after
+  the cited words, nothing kept going.
 - The claims row is untouched; a contradicted claim is not unfinished work.
 - A last-turn or final reading is untouched: the turn is over.
-- The idle press that reads mid-flight (an idle session with no recorded finish) is covered, as a
-  running session is, because both are read up to their last recorded entry.
+- The idle press that reads mid-flight (an idle session with no recorded finish) is covered by the
+  recorded half of the guard, as a running session is, because both are read up to their last
+  recorded entry. It is not covered by the in-flight half: the session is not running, so an
+  unanswered call there is an interruption, and `produce` asks for the call only of a running
+  session.
 
-What it cannot see. A tool call in flight has no entry until its result arrives, so the guard keys
-on work already recorded after the words and not on the call that is running. It is an assembly
-control, not a measurement of model accuracy: the case is a recorded shape (the agent said what it
-would do, kept working, and the model read the missing end as a departure), held by
-`AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture` in `test_reading.py` with its three
-negative controls. A message-only departure that is real still returns at the next reading, and
+What it cannot see. A call in flight is read from the tail of the transcript the press reads, so a
+call older than that tail, or one a subagent runs in a transcript of its own, is not seen; the
+subagent's launching call in the parent is. It is an assembly control, not a measurement of model
+accuracy: the case is a recorded shape (the agent said what it would do, kept working, and the model
+read the missing end as a departure), held by
+`AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture` in `test_reading.py` and by
+`test_running_turn_guard.py`, which builds a mid-call transcript in the recorded field shapes and
+reads it through `produce`. Eleven negative controls hold the other side: nine in the first class
+and two in the second. A message-only departure that is real still returns at the next reading, and
 at the session's end as a final one. A `not_reached` line raises no level and no Steer back (the
 2026-10-04 amendment), so the demotion errs the cautious way.
 

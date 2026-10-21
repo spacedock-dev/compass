@@ -24,7 +24,9 @@ import {
   constraintName,
   coverageLimits,
   driftAnswer,
+  earlyLine,
   goalSourceLine,
+  LIVE_HIDDEN,
   resultState,
   resultStatus,
   resultWhere,
@@ -43,6 +45,7 @@ import {
   CLAUSE_UNRETAINED,
   DEPARTURE,
   NOT_REACHED,
+  LEVEL_SCALE,
   READ_INTENT,
   READ_MODEL,
   READ_NEVER,
@@ -884,6 +887,17 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
     byId: model.byId,
     midFlight: shape.scope === 'mid-flight',
   });
+  /* The slot belongs to the reading: with no level drawn for it, a live estimate the reader switched on has
+     one to draw and does not, and the page says so rather than leave the switch looking broken. */
+  const estimate = model.estimate;
+  const hidesLive =
+    Boolean(analysis) &&
+    !standing &&
+    !model.drafted &&
+    estimate !== null &&
+    'level' in estimate &&
+    LEVEL_SCALE.includes(estimate.level);
+  const early = earlyLine(answer, shape, raw, entries);
   return (
     <>
       <p
@@ -895,6 +909,22 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
       >
         {text}
       </p>
+      {hidesLive ? (
+        <p
+          className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"
+          data-next-drift-live-hidden
+        >
+          {LIVE_HIDDEN}
+        </p>
+      ) : null}
+      {early ? (
+        <p
+          className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"
+          data-next-drift-early
+        >
+          {early}
+        </p>
+      ) : null}
       {cleared ? (
         <p
           className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"

@@ -118,6 +118,10 @@ export const CantTellOnEveryLineDrawsNoLevel: Story = {
     await expect(drift.querySelector('.next-session-drift-meter')).toBeNull();
     await expect(drift.textContent).not.toMatch(/\bMedium\b/);
     await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
+    // The switch is on and the estimate has a level, so the reader is told why it is not drawn.
+    await expect(drift.querySelector('[data-next-drift-live-hidden]')).toHaveTextContent(
+      'The live estimate is not drawn while this reading stands: it reads checks and file paths, never your intent.',
+    );
   },
 };
 
@@ -249,6 +253,75 @@ export const AClearedDepartureIsNamedOnceOnTheNextReading: Story = {
     await CLEARING.finish?.();
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull(),
+    );
+  },
+};
+
+/* Two departures, then one: the next reading no longer finds the line's, and the card says one went while the
+   other stands. A clear to zero was the only case named before; a reader watching "2 departures" become
+   "1 departure" had no word that the other had been met. */
+const PARTIAL_SESSION: Record<string, unknown> = {
+  ...READ({
+    goal: DEPARTS,
+    line_1: { ...DEPARTS, detail: 'It never ran the lint.', clause: 'Tests pass' },
+  }),
+  state: 'idle',
+};
+const PARTIAL = readingScenario([null]);
+export const APartialClearIsNamedOnTheNextReading: Story = {
+  ...scenario({
+    session: PARTIAL_SESSION,
+    facts: [PERSON, FAILED, PASSED, AGENT],
+    work: { analysis_levels: [{ ...analysisRow('claude', 'medium'), reasons: ['departure'] }] },
+    reading: PARTIAL,
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    await expect(await verdictOf(drift)).toHaveTextContent(/2 departures/);
+    await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
+    PARTIAL_SESSION['annotation_assessment'] = readAt(1100, {
+      goal: DEPARTS,
+      line_1: CANT_TELL,
+    });
+    await PARTIAL.finish?.();
+    const cleared = await waitFor(() => {
+      const node = canvasElement.querySelector<HTMLElement>('[data-next-drift-cleared]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(cleared).toHaveTextContent(
+      `The departure from the ${clock(1000)} reading no longer holds.`,
+    );
+    await expect(await verdictOf(drift)).toHaveTextContent(/1 departure\b/);
+  },
+};
+
+/* A reading of a session a few minutes old that could tell nothing: it says it is early, so the empty verdict
+   reads as too soon to say. */
+export const AnEmptyVerdictEarlyInASessionSaysItIsEarly: Story = {
+  ...scenario({
+    session: {
+      annotation_assessment: {
+        ...DEPARTURE_READING,
+        scope: 'mid-flight',
+        evidence_through: 700,
+        criteria: {
+          goal: { ...CANT_TELL, clause: 'Ship the queue' },
+          line_1: CANT_TELL,
+        },
+      },
+      annotation_reading_count: 1,
+    },
+    facts: [PERSON, PASSED],
+    work: { analysis_levels: [{ ...analysisRow('claude', 'not_enough'), reasons: [] }] },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    await expect(await verdictOf(drift)).toHaveTextContent("Can't tell from what was read.");
+    await waitFor(() =>
+      expect(drift.querySelector('[data-next-drift-early]')).toHaveTextContent(
+        'Early: this reading covers only the first 8m of the session. Read again once it has run its checks.',
+      ),
     );
   },
 };

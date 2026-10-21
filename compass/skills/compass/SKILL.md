@@ -139,7 +139,7 @@ reader is named. With no reader on this machine, the reason stands where the con
 page has at most one primary run control. No answer option is ever emphasised: a session blocked on
 you gives the primary to the terminal raise when one is offered, and otherwise nothing is primary
 while its question is open.
-`Not enough recorded yet` is normal until you add an expected outcome line. A link to a session
+With no expected outcome line: no level, and "Can't tell" unless your goal departs. A link to a session
 the board no longer holds names that session and says it is not in the current payload.
 
 The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention`, `#n=intent`,
@@ -521,8 +521,11 @@ result shows the analysis level (worked out again from the stored reading on eve
 stored, never on a row) with its time. A level above None or low is drawn only beside a departure the
 reading shows. With none, the card draws no level or bar, and the answer says what the reading did
 find and, where every line is consistent but the level is held back, why. The live estimate is not
-drawn beside a reading that stands. The header pill adds "so far" while the session runs. A
-departure that an earlier reading found and the next one does not is named once on that reading.
+drawn beside a reading that stands, and where the switch is on and it has a level to draw, the card
+says so. A reading that could tell nothing about a session only minutes old says it is early and to
+read again once the session has run its checks. The header pill adds "so far" while the session runs.
+A departure that an earlier reading found and the next one does not is named once on that reading,
+whether it was the only one or one of several: two departures that become one name the one that went.
 The answer follows: "Departs from your intent" with a count and
 each departure's own account under a departure, otherwise a failed check after your last message
 that a later pass of the same check, in the same directory, did not follow,
@@ -545,9 +548,12 @@ message on it, which it does only where the line claims that kind of check's res
 at a non-final stop has its own result and cited explanation under Evidence. It raises no
 departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
-counts as departure. While a turn is open, a departure that rests on messages alone, with a recorded
-check or write after them, is stored as not reached at this stop; a departure on a failed check or a
-write, or one with nothing recorded after it, stands. A line may depart, or read consistent, on one of the
+counts as departure. While a turn is open, a departure that rests on messages alone is stored as not
+reached at this stop when a call is still running, or when a check or write that bears on the line is
+recorded after them (a line that names a path or claims a check's result is borne on only by a check
+that covers it or a write to that path); a departure on a failed check or a write, or one with nothing
+running or recorded after it, stands. An idle session with no recorded finish reads the same way, but
+no call counts as running there: an unanswered call is an interruption. A line may depart, or read consistent, on one of the
 agent's messages, never beside a check that failed after your words, and the level never reads
 "None or low" on the agent's word alone. A departure resting on an agent message stops counting
 once that message leaves the transcript tail the board reads. A press that carries the agent's
