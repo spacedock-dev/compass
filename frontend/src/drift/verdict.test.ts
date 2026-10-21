@@ -205,9 +205,23 @@ describe('a departure titled by what happened', () => {
 
   it('names the kind of thing the cited entry is, never the constraint', () => {
     expect(departureTitle([write])).toBe('It changed src/a.ts');
-    expect(departureTitle([failed])).toBe('A check failed');
-    expect(departureTitle([said])).toBe('What the agent said departs from this');
+    expect(departureTitle([failed])).toBe(`A check failed at ${clock(910)}`);
+    expect(departureTitle([said])).toBe(`What the agent said at ${clock(920)} departs from this`);
     expect(departureTitle([])).toBe('');
+  });
+
+  it('does not cut a long written path mid-name', () => {
+    const long = entry('l', 930, {
+      type: 'tool_report',
+      subject: 'write',
+      summary:
+        'src/components/session/summary/deeply/nested/folder/structure/here/WidgetContainerView.tsx',
+    });
+    const title = departureTitle([long]);
+    expect(title).toContain('…/');
+    expect(title).not.toMatch(/…\/eeply/);
+    expect(title).toMatch(/…(?:\/[A-Za-z.]+)+$/);
+    expect(title.endsWith('WidgetContainerView.tsx')).toBe(true);
   });
 
   it('prefers a write or a check over a message, which only reports on one', () => {
@@ -221,10 +235,50 @@ describe('a departure titled by what happened', () => {
       by: 'person:me',
       summary: 'Ship the queue',
     });
-    expect(departureTitle([you])).toBe('Your own words depart from this');
+    expect(departureTitle([you])).toBe(`Your own words at ${clock(800)} depart from this`);
     expect(departureWhat([you])).toBe(`At ${clock(800)} you said “Ship the queue”.`);
-    expect(departureTitle([you, said])).toBe('What the agent said departs from this');
+    expect(departureTitle([you, said])).toBe(
+      `What the agent said at ${clock(920)} departs from this`,
+    );
     expect(departureWhat([you, said])).toContain('the agent said');
+  });
+
+  it('tells two departures apart without a model: by the entry and its time, then by the constraint', () => {
+    const later = entry('m2', 1500);
+    expect(departureTitle([said])).not.toBe(departureTitle([later]));
+    expect(departureTitle([failed])).not.toBe(
+      departureTitle([entry('c2', 1600, { ...failed, id: 'c2', at: 1600 })]),
+    );
+    // The same entry under two constraints still reads as two cards.
+    expect(departureTitle([said], 'Goal')).toBe(
+      `What the agent said at ${clock(920)} departs from the goal`,
+    );
+    expect(departureTitle([said], 'Expected outcome 2')).toBe(
+      `What the agent said at ${clock(920)} departs from expected outcome 2`,
+    );
+    expect(departureTitle([said], 'Expected outcome')).toBe(
+      `What the agent said at ${clock(920)} departs from the expected outcome`,
+    );
+    expect(departureTitle([said], 'What the agent claimed')).toBe(
+      `What the agent said at ${clock(920)} departs from what the agent claimed`,
+    );
+    // A time that was not recorded is left out, not drawn as zero.
+    expect(departureTitle([entry('n', 0)])).toBe('What the agent said departs from this');
+  });
+
+  it('keeps the end of a long path in the title and cuts a long URL in What at a separator', () => {
+    const path = `src/${'deeply/nested/'.repeat(8)}Widget.tsx`;
+    const title = departureTitle([
+      entry('w2', 900, { type: 'tool_report', subject: 'write', summary: path }),
+    ]);
+    expect(title.startsWith('It changed …/')).toBe(true);
+    expect(title.endsWith('/Widget.tsx')).toBe(true);
+    expect(title.length).toBeLessThanOrEqual('It changed '.length + 60);
+    const url = `https://example.test/${'segment/'.repeat(40)}end`;
+    const what = departureWhat([entry('u', 920, { summary: url })]);
+    const quoted = what.slice(what.indexOf('“') + 1, what.lastIndexOf('”'));
+    expect(quoted.endsWith('/…')).toBe(true);
+    expect(url.startsWith(quoted.slice(0, -1))).toBe(true);
   });
 
   it('says What as one sentence with the time, ending in a single stop', () => {

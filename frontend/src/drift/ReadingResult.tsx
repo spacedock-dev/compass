@@ -271,6 +271,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
     [...new Set(row.citedIds)]
       .map((id) => model.byId.get(id))
       .filter((entry): entry is WorkEntry => Boolean(entry)),
+    constraintName(row.key, outcomes),
   );
   return (
     <article

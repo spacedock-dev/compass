@@ -466,7 +466,7 @@ class _Rows:
                 if reading.check_supports(f, result, self.window, recorded_write=recorded)
                 and (not line or reading.bears_on_output(f))
             ]
-            return (_DEPARTED, standing[0]) if standing else (_NOT_SHOWN, None)
+            return (_DEPARTED, _headline(standing)) if standing else (_NOT_SHOWN, None)
         # "As the tool reported" is the only consistent form the template has, and on an
         # outcome line it is the only one the page lets stand (item 6).
         reported = [
@@ -607,6 +607,24 @@ def _current_rows(
     )
 
 
+def _headline(standing: list[dict[str, Any]]) -> dict[str, Any]:
+    """The entry a departure is dated and quoted by: the one its card's title names.
+
+    `departureTitle` in `frontend/src/drift/result.ts` ranks a write or a check above the agent's
+    message, which only reports on one, and takes the first cited otherwise. Taking the first cite
+    here dated the correction by a message while the card said the check.
+    """
+    for kind in (None, reading.AGENT_MESSAGE_TYPE):
+        for f in standing:
+            if (
+                f.get("subject") in {reading.CHECK_SUBJECT, reading.WRITE_SUBJECT}
+                if kind is None
+                else f.get("type") == kind
+            ):
+                return f
+    return standing[0]
+
+
 def _width(parts: list[Part]) -> int:
     """The text's width: a placeholder is drawn as nothing."""
     return sum(len(part) for part in parts if isinstance(part, str))
@@ -634,9 +652,13 @@ def _label(text: str) -> str:
     """A saved line as the label its state is joined to with a colon.
 
     Its own closing stop goes, or the join reads "...is edited.: the session says this is done".
-    An ellipsis is kept: it marks a cut, and the colon after it reads.
+    A question or exclamation mark goes with it, which reads as a stop before a colon the same way.
+    An ellipsis is kept, written "…" or "...": it marks a cut, and the colon after it reads.
     """
-    return text.rstrip().rstrip(".:;,").rstrip() or text
+    bare = text.rstrip()
+    if bare.endswith(("…", "...")):
+        return bare
+    return bare.rstrip(".:;,!?").rstrip() or text
 
 
 def _body(

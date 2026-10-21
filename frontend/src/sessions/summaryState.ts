@@ -41,6 +41,8 @@ export interface SummaryState {
   readonly deciding: boolean;
   /** That decision posts the open's one summary start. */
   readonly due: boolean;
+  /** A context read after the last start's answer says that start's job is over. */
+  readonly jobOver: boolean;
 }
 
 export function useSummaryState(
@@ -65,9 +67,15 @@ export function useSummaryState(
      summarized on this open ([answer 5](../../../docs/design-session-summary.md#the-ruling)). */
   const deciding = !held.opened && model.identity !== null && grant !== null && focused !== null;
   const due = deciding && autoStartDue({ grant, focused, harness: model.harness, ended, sample });
+  const jobOver =
+    held.jobAt > 0 &&
+    (context?.revision ?? 0) > held.jobAt &&
+    focused?.job != null &&
+    !jobActive(focused.job);
   return {
     deciding,
     due,
+    jobOver,
     identity: model.identity,
     key,
     harness: model.harness,
@@ -97,6 +105,12 @@ export function useOpenSummary(state: SummaryState): void {
     if (due) void startSummary(shell, identity, 'start', 'open');
     else summaryHeldFor(shell.runtime).patch(key, { opened: true });
   }, [deciding, due, identity, key, shell]);
+  /* The "written again" note describes a rerun while it runs. Once the context says that job is over it is
+     dropped, or the next start of any kind, even an update that appends, would draw it again. */
+  const { jobOver, held } = state;
+  useEffect(() => {
+    if (jobOver && held.rewritten) summaryHeldFor(shell.runtime).patch(key, { rewritten: false });
+  }, [jobOver, held.rewritten, key, shell]);
 }
 
 export function summaryHeader(state: SummaryState): string {

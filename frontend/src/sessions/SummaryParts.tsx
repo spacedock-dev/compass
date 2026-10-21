@@ -40,6 +40,7 @@ import {
   hiddenRange,
   hiddenKey,
   hiddenSentence,
+  ledeWords,
   outOfDateLine,
   partsKept,
   phaseId,
@@ -395,16 +396,25 @@ function incomplete(stored: StoredSummary, job: SummaryJob | null): boolean {
   );
 }
 
-function ShownText({ value, cited }: { readonly value: Shown; readonly cited?: string }) {
+function ShownText({
+  value,
+  cited,
+  subject,
+}: {
+  readonly value: Shown;
+  readonly cited?: string;
+  /** What was withheld, where it is not a line. */
+  readonly subject?: string;
+}) {
   if ('withheld' in value)
     return (
       <span className="text-muted-foreground" data-next-summary-withheld={value.withheld}>
-        {withheldSentence(value.withheld)}
+        {withheldSentence(value.withheld, subject)}
       </span>
     );
   return (
     <span className="[overflow-wrap:anywhere]" {...(cited ? { 'data-next-summary-text': '' } : {})}>
-      {value.text}
+      {subject === 'opening summary' ? ledeWords(value.text) : value.text}
     </span>
   );
 }
@@ -508,7 +518,7 @@ const reasonOf = (bullet: SummaryBullet): string =>
 
 /* A run of withheld lines, said once and muted: how many, why, and the entries they cite, with each line's own
    reason and citations one press away. No result label leads it: a withheld failed line once read "Failed as the
-   tool reported: Withheld: ...", a result put on words nobody can see. */
+   tool reported: Left out: ...", a result put on words nobody can see. */
 function Hidden({
   bullets,
   name,
@@ -749,7 +759,9 @@ export function SummaryView({
       >
         {SUMMARY_LABEL}
       </p>
-      {state.held.rewritten ? <Line data-next-summary-rewritten>{SUMMARY_REWRITTEN}</Line> : null}
+      {state.held.rewritten && running ? (
+        <Line data-next-summary-rewritten>{SUMMARY_REWRITTEN}</Line>
+      ) : null}
       {summaryNotes(stored, startsAt).map((note) => (
         <Line key={note} data-next-summary-note>
           {note}
@@ -757,7 +769,7 @@ export function SummaryView({
       ))}
       {lede ? (
         <p className="m-0 max-w-[45rem] text-body text-foreground" data-next-summary-lede>
-          <ShownText value={lede} cited="yes" />
+          <ShownText value={lede} cited="yes" subject="opening summary" />
           <Cites
             cites={stored.ledeCites}
             purpose={`cited for the opening summary${'text' in lede ? ` “${lede.text}”` : ''}`}
@@ -867,7 +879,7 @@ export function SummaryView({
             })}
             {block.withheldPhases ? (
               <Line data-next-summary-withheld="phase">
-                {`${String(block.withheldPhases)} ${block.withheldPhases === 1 ? 'phase was' : 'phases were'} withheld from ${blockName(stored, b)}: not in the shape a phase must take.`}
+                {`${String(block.withheldPhases)} ${block.withheldPhases === 1 ? 'phase was' : 'phases were'} left out of ${blockName(stored, b)}: ${block.withheldPhases === 1 ? 'it' : 'they'} could not be shown in a form Compass accepts.`}
               </Line>
             ) : null}
             {block.phasesCut ? (

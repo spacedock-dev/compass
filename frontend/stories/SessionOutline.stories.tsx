@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import serverCut from '../test/fixtures/server-cut-title.json';
 import {
   OUTLINE_FAILED,
   OUTLINE_LABEL,
@@ -418,12 +419,13 @@ export const AFixedRedTestIsNotAFailure: Story = {
 };
 
 /* The server cuts a prompt's title at its own bound, now back to a word with an ellipsis. The page shows it as
-   sent: no partial word, and no second ellipsis. */
+   sent: no partial word, and no second ellipsis. The title is `frontend/test/fixtures/server-cut-title.json`, which
+   `test_session_outline` checks against what the server makes from the fixture's prompt, so the story cannot keep
+   passing on a title the server no longer produces. */
 export const ServerCutTitleEndsAtAWord: Story = {
   render: () => {
     const { base, first, second } = twoBlocks();
-    const title =
-      'Implement Linear issue and then check that the launch-grant card no longer says allowed when this dashboard…';
+    const { title } = serverCut;
     return (
       <OutlinePage
         outline={{
@@ -444,8 +446,8 @@ export const ServerCutTitleEndsAtAWord: Story = {
     await expect(shown).toMatch(/\w…$/);
     await expect(shown).not.toMatch(/……/);
     // Every word shown is a whole word of the sentence the title was cut from.
-    const source =
-      'Implement Linear issue and then check that the launch-grant card no longer says allowed when this dashboard started after Turning';
+    const source = serverCut.prompt;
+    await expect(shown).toBe(serverCut.title);
     for (const word of shown.slice(0, -1).split(' ')) await expect(source).toContain(word);
   },
 };

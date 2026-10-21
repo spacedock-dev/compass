@@ -7,6 +7,7 @@ import {
   hiddenKey,
   hiddenSentence,
   isTestFailure,
+  ledeWords,
   bulletWords,
   SUMMARY_REASONS,
   WITHHELD_LINES,
@@ -19,7 +20,9 @@ import {
   SUMMARY_NOT_CLAUDE,
   SUMMARY_OFF,
   unlinkedSentence,
+  withheldSentence,
   withheldTitle,
+  WITHHELD_TITLES,
   summaryStamp,
 } from './summary';
 
@@ -370,9 +373,9 @@ describe('what the card says', () => {
     expect(SUMMARY_OFF).not.toContain('this session');
   });
   it('says why a phase title was withheld, as a withheld line does', () => {
-    expect(withheldTitle('completion_claim')).toMatch(/^Phase title withheld: it used a word/);
+    expect(withheldTitle('completion_claim')).toMatch(/^Phase title left out: it used a word/);
     expect(withheldTitle('completion_claim')).toContain('“fix”');
-    expect(withheldTitle('unknown')).toMatch(/^Phase title withheld: /);
+    expect(withheldTitle('unknown')).toMatch(/^Phase title left out: /);
   });
   it('words a failed check in text, not only in colour', () => {
     expect(bulletWords('failed', 'Ran pytest.')).toBe('Failed as the tool reported: Ran pytest.');
@@ -642,17 +645,82 @@ describe('a run of hidden lines', () => {
   });
   it('names each reason with its count when the lines were hidden for different ones', () => {
     const line = hiddenSentence(['no_citation', 'too_long_cut', 'no_citation'], '');
-    expect(line).toBe(
-      '3 lines hidden: 2 cited no entry; 1 was too long, and cutting it changed what it said.',
-    );
+    expect(line).toBe('3 lines hidden: 2 cited no entry; 1 was too long to show whole.');
     expect(line).not.toContain('each broke a rule');
     expect(hiddenSentence(['odd', 'other', 'shape_fault'], '')).toBe(
-      '3 lines hidden: 2 broke a rule a summary line must keep; 1 was not in the shape a summary line must take.',
+      '3 lines hidden: 2 were held back; 1 could not be shown in a form Compass accepts.',
     );
+  });
+  it('uses no jargon in any reason a line or a title was withheld for', () => {
+    const jargon =
+      /own voice|must take|must keep|summary line|phase must|changed what it (said|says)|shape a/i;
+    const said = [
+      ...Object.values(WITHHELD_LINES),
+      ...Object.values(WITHHELD_TITLES),
+      withheldSentence('unheard-of'),
+      withheldTitle('unheard-of'),
+      withheldSentence('completion_claim', 'opening summary'),
+      ...[
+        ['completion_claim'],
+        ['no_citation'],
+        ['shape_fault'],
+        ['too_long_cut'],
+        ['odd'],
+        ['no_citation', 'too_long_cut', 'shape_fault', 'completion_claim', 'odd'],
+      ].flatMap((reasons) => [
+        hiddenSentence(reasons, ''),
+        hiddenSentence([...reasons, ...reasons], ''),
+      ]),
+    ];
+    for (const line of said) expect(line).not.toMatch(jargon);
+  });
+  it('says a withheld opening summary as the opening summary, not as a line', () => {
+    expect(withheldSentence('completion_claim', 'opening summary')).toMatch(/opening summary/);
+    expect(withheldSentence('completion_claim', 'opening summary')).not.toMatch(/this line/);
+    expect(withheldSentence('completion_claim')).toMatch(/this line/);
+  });
+});
+
+describe('the opening paragraph names you, not the person', () => {
+  it('folds "the person" at the start of a sentence, with its verb, as a person bullet already is', () => {
+    expect(
+      ledeWords('The person asked for a retry. The agent added it. The user wants a test.'),
+    ).toBe('You asked for a retry. The agent added it. You want a test.');
+    expect(ledeWords('The person has a failing test and the agent waited for the person.')).toBe(
+      'You have a failing test and the agent waited for the person.',
+    );
+  });
+  it('folds only before a verb, never a noun, a clause or a comma', () => {
+    for (const text of [
+      'The user interface was redesigned.',
+      'The person who asked left.',
+      'The person, a reviewer, asked.',
+      'The user guide changed.',
+      'Done e.g. the person asked for X.',
+    ]) {
+      expect(ledeWords(text)).toBe(text);
+    }
+    expect(ledeWords('The person asked for X. The user guide changed.')).toBe(
+      'You asked for X. The user guide changed.',
+    );
+  });
+  it('leaves a possessive, a mention inside a sentence and a line with no person alone', () => {
+    const text = "The person's goal was a retry. The agent waited for the person to reply.";
+    expect(ledeWords(text)).toBe(text);
+    expect(ledeWords('The agent added a retry.')).toBe('The agent added a retry.');
   });
 });
 
 describe('the failure badge', () => {
+  it('still counts a real failure whose words contain "blocked" or "not allowed"', () => {
+    expect(isTestFailure('vitest reported failed: the test was blocked on a missing mock.')).toBe(
+      true,
+    );
+    expect(isTestFailure('pytest reported failed: expected not allowed value')).toBe(true);
+    expect(isTestFailure('pytest reported failed: operation not permitted in the sandbox')).toBe(
+      false,
+    );
+  });
   it('counts a failed test run, and no other failed check', () => {
     expect(isTestFailure('pnpm test:stories reported failed, as the tool reported.')).toBe(true);
     expect(isTestFailure('The agent ran pytest tests/test_webhook.py; it reported failed.')).toBe(
@@ -669,6 +737,25 @@ describe('the failure badge', () => {
     expect(
       isTestFailure('mypy compass/skills/compass/tests reported failed, as the tool reported.'),
     ).toBe(false);
+  });
+  it('counts a test run whatever it is called, and puts down a sandbox refusal however it is phrased', () => {
+    for (const run of [
+      'tox -e py312',
+      'nox -s tests',
+      'cargo nextest run',
+      'the test suite',
+      'py.test -x',
+    ])
+      expect(isTestFailure(`${run} reported failed, as the tool reported.`)).toBe(true);
+    for (const reason of [
+      'Operation not permitted',
+      'EACCES opening the socket',
+      'a read-only file system',
+      'the launch was blocked',
+      'failed to launch the browser',
+      'ECONNREFUSED 127.0.0.1',
+    ])
+      expect(isTestFailure(`vitest run reported failed: ${reason}.`)).toBe(false);
   });
   it('does not count a run the agent put down to its sandbox', () => {
     expect(

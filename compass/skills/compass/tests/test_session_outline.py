@@ -154,6 +154,78 @@ class SessionOutlineTest(unittest.TestCase):
         self.assertEqual(1, second["counts"]["checks_failed"])
         self.assertEqual(2, second["counts"]["checks"])
 
+    def test_a_failure_fixed_after_two_phases_counts_as_fixed_once(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Break it.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        transcript.prompt("Still broken.")
+        transcript.bash("pytest tests", "2 failed", is_error=True)
+        transcript.bash("pytest tests", "1 passed")
+        transcript.save(self.path)
+        first, second = self.outline.build(
+            self.source.read(self.config, str(self.path), "claude", "root"), self.config
+        )["blocks"]
+        self.assertEqual(
+            1, first["counts"]["checks_fixed"] + second["counts"]["checks_fixed"], (first, second)
+        )
+
+    def test_a_failure_after_a_fix_is_a_new_failure_in_the_next_phase(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Break it.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        transcript.bash("pytest tests", "1 passed")
+        transcript.prompt("Break it again.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        transcript.save(self.path)
+        first, second = self.outline.build(
+            self.source.read(self.config, str(self.path), "claude", "root"), self.config
+        )["blocks"]
+        self.assertEqual(
+            (0, 1), (first["counts"]["checks_failed"], first["counts"]["checks_fixed"])
+        )
+        self.assertEqual(["pytest tests"], [row["title"] for row in second["failures"]])
+
+    def test_a_failure_the_highlight_cap_dropped_is_listed_by_the_next_phase(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Run the checks.")
+        transcript.bash("pytest tests/test_a.py", "1 failed", is_error=True)
+        transcript.bash("pytest tests/test_b.py", "1 failed", is_error=True)
+        transcript.prompt("Run them again.")
+        transcript.bash("pytest tests/test_a.py", "1 failed", is_error=True)
+        transcript.bash("pytest tests/test_b.py", "1 failed", is_error=True)
+        transcript.save(self.path)
+        config = dataclasses.replace(self.config, session_outline_highlights=1)
+        first, second = self.outline.build(
+            self.source.read(config, str(self.path), "claude", "root"), config
+        )["blocks"]
+        self.assertEqual(["pytest tests/test_b.py"], [row["title"] for row in first["failures"]])
+        # The dropped one was never shown, so the next part still owes the reader a row for it.
+        self.assertEqual(["pytest tests/test_a.py"], [row["title"] for row in second["failures"]])
+
+    def test_the_server_cut_title_story_fixture_is_what_the_server_makes(self) -> None:
+        # The ServerCutTitleEndsAtAWord story draws this title; reverting the cut turns it red here.
+        fixture = json.loads(
+            (Path(__file__).parents[4] / "frontend/test/fixtures/server-cut-title.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        transcript = Transcript(self.root)
+        transcript.prompt(fixture["prompt"])
+        transcript.save(self.path)
+        page = self.source.read(self.config, str(self.path), "claude", "root")
+        (block,) = self.outline.build(page, self.config)["blocks"]
+        self.assertEqual(fixture["title"], block["prompt"]["title"])
+
+    def test_a_complete_title_of_exactly_the_bound_is_not_cut_again(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Fix " + "x" * 107 + ".")
+        transcript.save(self.path)
+        page = self.source.read(self.config, str(self.path), "claude", "root")
+        (block,) = self.outline.build(page, self.config)["blocks"]
+        title = block["prompt"]["title"]
+        self.assertEqual(112, len(title))
+        self.assertTrue(title.endswith("x."), title)
+
     def test_an_opening_failure_with_unread_work_after_it_is_unknown_not_failing(self) -> None:
         transcript = Transcript(self.root)
         transcript.prompt("Synthetic first request.")

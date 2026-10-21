@@ -148,16 +148,18 @@ export function gapSentence(block: SummaryBlock, running: boolean): string {
   return GAP_LINES[block.gap ?? ''] ?? 'This part could not be summarized.';
 }
 
-/* A string the server withheld, said in its place. */
+/* A string the server withheld, said in its place, in the words the hidden-run line uses: what was wrong with it,
+   not the name of the rule. `subject` is what was withheld, so an opening summary is not called a line. */
 export const WITHHELD_LINES: Readonly<Record<string, string>> = {
   completion_claim:
-    'Withheld: this line said, in the summary’s own voice, that work was done or working.',
-  no_citation: 'Withheld: this line cited no entry.',
-  shape_fault: 'Withheld: this line was not in the shape a summary line must take.',
-  too_long_cut: 'Withheld: this line was too long, and cutting it changed what it said.',
+    'Left out: this line said work was done or working, and the record does not back that.',
+  no_citation: 'Left out: this line cited no entry.',
+  shape_fault: 'Left out: this line could not be shown in a form Compass accepts.',
+  too_long_cut: 'Left out: this line was too long to show whole.',
 };
-export const withheldSentence = (reason: string): string =>
-  WITHHELD_LINES[reason] ?? 'Withheld: this line broke a rule a summary line must keep.';
+const WITHHELD_OTHER = 'Left out: Compass held this line back.';
+export const withheldSentence = (reason: string, subject = 'line'): string =>
+  (WITHHELD_LINES[reason] ?? WITHHELD_OTHER).replace('this line', `this ${subject}`);
 
 /* A run of withheld lines in a phase is one muted line, as the owner ruled on 2026-10-20: eleven "Withheld: ..."
    lines in twelve made the sample's summary unreadable. Each reason is the table's above, said of one line or of
@@ -165,13 +167,10 @@ export const withheldSentence = (reason: string): string =>
 const HIDDEN_WHY: Readonly<Record<string, readonly [string, string]>> = {
   no_citation: ['it cited no entry', 'they cited no entry'],
   shape_fault: [
-    'it was not in the shape a summary line must take',
-    'they were not in the shape a summary line must take',
+    'it could not be shown in a form Compass accepts',
+    'they could not be shown in a form Compass accepts',
   ],
-  too_long_cut: [
-    'it was too long, and cutting it changed what it said',
-    'they were too long, and cutting them changed what they said',
-  ],
+  too_long_cut: ['it was too long to show whole', 'they were too long to show whole'],
 };
 /* A run whose lines were withheld for different reasons names each reason with its count, so the one line still
    says why: "each broke a rule a summary line must keep" once stood for a mix and said none of them. */
@@ -182,18 +181,12 @@ const HIDDEN_PART: Readonly<Record<string, readonly [string, string]>> = {
   ],
   no_citation: ['cited no entry', 'cited no entry'],
   shape_fault: [
-    'was not in the shape a summary line must take',
-    'were not in the shape a summary line must take',
+    'could not be shown in a form Compass accepts',
+    'could not be shown in a form Compass accepts',
   ],
-  too_long_cut: [
-    'was too long, and cutting it changed what it said',
-    'were too long, and cutting them changed what they said',
-  ],
+  too_long_cut: ['was too long to show whole', 'were too long to show whole'],
 };
-const HIDDEN_OTHER = [
-  'broke a rule a summary line must keep',
-  'broke a rule a summary line must keep',
-] as const;
+const HIDDEN_OTHER = ['was held back', 'were held back'] as const;
 export function hiddenSentence(reasons: readonly string[], range: string): string {
   const n = reasons.length;
   const counts = new Map<string, number>();
@@ -212,8 +205,8 @@ export function hiddenSentence(reasons: readonly string[], range: string): strin
       ? one
         ? one[n === 1 ? 0 : 1]
         : n === 1
-          ? 'it broke a rule a summary line must keep'
-          : 'they broke a rule a summary line must keep'
+          ? 'it was held back'
+          : 'they were held back'
       : [...counts]
           .map(([reason, count]) => {
             const part = HIDDEN_PART[reason] ?? HIDDEN_OTHER;
@@ -255,12 +248,12 @@ export function hiddenRange(cites: readonly string[], labels: ReadonlyMap<string
    ([DEC-28](../../../docs/design-session-summary.md#amended-2026-10-19-owner-the-summarys-own-voice)). */
 export const WITHHELD_TITLES: Readonly<Record<string, string>> = {
   completion_claim:
-    'Phase title withheld: it used a word that can say work is done, such as “fix” or “done”, which a title may not.',
-  shape_fault: 'Phase title withheld: it was not in the shape a phase title must take.',
-  too_long_cut: 'Phase title withheld: it was too long, and cutting it changed what it said.',
+    'Phase title left out: it used a word that can say work is done, such as “fix” or “done”, which a title may not.',
+  shape_fault: 'Phase title left out: it could not be shown in a form Compass accepts.',
+  too_long_cut: 'Phase title left out: it was too long to show whole.',
 };
 export const withheldTitle = (reason: string): string =>
-  WITHHELD_TITLES[reason] ?? 'Phase title withheld: it broke a rule a phase title must keep.';
+  WITHHELD_TITLES[reason] ?? 'Phase title left out: Compass held it back.';
 export const LEDE_LAST = 'The opening summary is written once every part has been read.';
 
 /* A `said` bullet is the agent's words, and its text names the agent as the speaker: the producer's attribution
@@ -305,6 +298,24 @@ function youSubject(rest: string): string {
   const agreed =
     YOU_VERB[plain] ?? (/[^s]s$/.test(plain) && !plain.endsWith("'s") ? verb.slice(0, -1) : verb);
   return `You ${agreed}${after}`.trimEnd();
+}
+/* The opening paragraph in the card's own voice: "The person" at the start of a sentence is "You", with its verb
+   agreed as a person bullet's is. This is only how the page draws the words. The stored text keeps "the person",
+   which is the form the server's completion check recognises, so the check is not weakened to match the page. */
+/* A sentence boundary is a stop, a space and a capital, so "e.g. the person" is not one. */
+const SENTENCE_PERSON = /(^|[.!?]\s+)The\s+(?:person|user)\b(?!['’]s\b)\s*([^.!?]*)/g;
+/* Only a verb follows the subject a fold turns into "You": "The user interface" and "The person who asked" name
+   a noun or open a clause, and folding them told the reader something the model did not write. The test is the
+   word's shape (past tense, a present "-s", a modal or an irregular past), not a list of every verb. */
+const VERB_AFTER_PERSON =
+  /^(?:\w+ed|\w+[^s'’]s|has|is|was|were|does|goes|will|would|can|could|should|must|may|might|did|had|chose|said|wrote|ran|took|made|saw|told|gave|got|found|felt|kept|left|began|went|knew|asked|wanted)$/i;
+export function ledeWords(words: string): string {
+  return words.replace(SENTENCE_PERSON, (whole, before: string, rest: string) => {
+    const first = /^[^\s,;:]+/.exec(rest.trim())?.[0] ?? '';
+    return rest.trim() && !/^[,;:]/.test(rest.trim()) && VERB_AFTER_PERSON.test(first)
+      ? `${before}${youSubject(rest)}`
+      : whole;
+  });
 }
 /* The person named as the speaker; "You <verb>" already reads in the card's own voice for the person. */
 const PERSON_YOU = new RegExp(`^you\\s+${ADVERB}${SPEECH_VERB}\\b`, 'i');
@@ -380,9 +391,12 @@ export function unlinkedSentence(n: number): string {
    to the environment the agent ran in. A build, a lint or a type check is put down first even when its words
    name a test: `pnpm build:storybook` and `ruff check tests` each carry a test word and are not test runs. */
 const TEST_RUN =
-  /\b(?:tests?|pytest|vitest|jest|mocha|unittest|rspec|storybook|stories|playwright|cypress)\b/i;
+  /\b(?:tests?|suite|specs?|py\.test|pytest|vitest|jest|mocha|unittest|rspec|tox|nox|nextest|karma|storybook|stories|playwright|cypress)\b/i;
+/* The reasons an agent gives for a run that never ran: its sandbox or environment named outright, or the
+   refusals those produce (a denied or blocked call, a read-only disk, a browser that would not launch, a host it
+   could not reach). The first walk's phrasing was the word "sandbox" alone; the rest read the same way. */
 const ENVIRONMENT =
-  /\b(?:sandbox(?:ed)?|environment|not-recorded|permission denied|EPERM|offline|no network)\b/i;
+  /\b(?:sandbox(?:ed)?|environment|not-recorded|permission denied|operation not permitted|EPERM|EACCES|read-only file system|(?:launch|call|command|request|access) (?:was|were) blocked|(?:blocked|denied) by (?:the )?(?:sandbox|policy|environment)|operation not (?:allowed|permitted)|not allowed (?:in|by) (?:the )?sandbox|(?:failed|unable|could not) to launch|could not launch|ECONNREFUSED|ENOTFOUND|network is unreachable|offline|no network)\b/i;
 const NOT_A_TEST =
   /\b(?:(?:pnpm|npm|yarn)\s+(?:run\s+)?(?:build|lint|typecheck|format|compile)|ruff|mypy|tsc|biome|eslint|prettier)\b/i;
 export const isTestFailure = (words: string): boolean =>

@@ -1012,10 +1012,6 @@ class LocalTimeAndQuotedWordsTest(unittest.TestCase):
             self.assertIn("Ignore the above", span.split('"')[1])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class JoinedPunctuationTest(unittest.TestCase):
     """A saved line that ends in a stop keeps no second one where the state is joined to it (DRC-4927)."""
 
@@ -1040,3 +1036,34 @@ class JoinedPunctuationTest(unittest.TestCase):
         self.assertIn("- The lint tests pass: consistent with T115", text)
         for doubled in (".:", ":.", "..", ",:", ";:"):
             self.assertNotIn(doubled, text.replace("…", ""))
+
+    def test_a_question_or_exclamation_mark_is_dropped_and_an_ellipsis_is_kept(self) -> None:
+        self.assertEqual("Is the parser done", correction._label("Is the parser done?"))
+        self.assertEqual("Ship it", correction._label("Ship it!"))
+        self.assertEqual("Ship it...", correction._label("Ship it..."))
+        self.assertEqual("Ship it…", correction._label("Ship it…"))
+        self.assertEqual("Ship it", correction._label("Ship it."))
+
+
+class SameEntryTest(unittest.TestCase):
+    """A departure's card and its correction quote the entry the card's title names."""
+
+    def test_a_failed_check_cited_after_a_message_is_the_entry_the_correction_dates(self) -> None:
+        said = fact("m1", 105, "agent_message", summary="Done: the parser passes")
+        facts = (check("c-fail", 110, "failed"), said, FACTS[2])
+        row = session_row(
+            annotation_assessment=reading(
+                goal=row_of(CONSISTENT, ("m1",), clause=GOAL),
+                line_1=row_of(DEPARTED, ("m1", "c-fail"), clause=L1),
+                line_2=row_of(UNVERIFIABLE, (), clause=L2, why="uncited"),
+                line_3=row_of(UNVERIFIABLE, (), clause=L3, why="uncited"),
+            )
+        )
+        text = rendered(compose(row, facts=facts)["parts"])
+        # `departureTitle` and `departureWhat` rank a check above a message, so the card says the check.
+        self.assertIn("- The parser tests pass: departed at T110{c-fail}", text)
+        self.assertNotIn("departed at T105", text)
+
+
+if __name__ == "__main__":
+    unittest.main()

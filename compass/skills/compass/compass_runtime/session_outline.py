@@ -41,25 +41,50 @@ def _groups(
     return groups
 
 
-def _fixed(entries: Iterable[session_source.SourceEntry]) -> set[str]:
-    """Failed runs a later passing run of the same check followed: a red test that was fixed."""
+@dataclass
+class _Runs:
+    """How check runs relate across parts, read once over every entry the outline holds.
+
+    A failure is an episode: the failed runs of one check with no pass between them. A part says
+    an episode once, in the first part it failed in, so a failure that spans two parts is not
+    counted or listed twice, while a failure after a fix is a new episode and is.
+    """
+
+    # Failed runs a later passing run of the same check followed: a red test that was fixed.
+    fixed: set[str]
+    episode: dict[str, str]
+    # Episodes already counted fixed, or listed as still failing, by an earlier part.
+    counted: set[str]
+    listed: set[str]
+
+
+def _runs(entries: Iterable[session_source.SourceEntry]) -> _Runs:
+    ordered = [
+        (entry.subject, entry)
+        for entry in entries
+        if entry.kind == "check" and entry.subject is not None
+    ]
     passed: set[str] = set()
     fixed: set[str] = set()
-    for entry in reversed(list(entries)):
-        if entry.kind != "check" or entry.subject is None:
-            continue
+    for subject, entry in reversed(ordered):
         if entry.result == "passed":
-            passed.add(entry.subject)
-        elif entry.result == "failed" and entry.subject in passed:
+            passed.add(subject)
+        elif entry.result == "failed" and subject in passed:
             fixed.add(entry.fact_id)
-    return fixed
+    current: dict[str, str] = {}
+    episode: dict[str, str] = {}
+    for subject, entry in ordered:
+        if entry.result == "passed":
+            current.pop(subject, None)
+        elif entry.result == "failed":
+            episode[entry.fact_id] = current.setdefault(subject, entry.fact_id)
+    return _Runs(fixed, episode, set(), set())
 
 
 def _block(
     entries: Sequence[session_source.SourceEntry],
     highlights: int,
-    fixed: set[str],
-    listed: set[str],
+    runs: _Runs,
     *,
     opening: bool = False,
     partial: bool = False,
@@ -71,14 +96,29 @@ def _block(
     # One row per check, its newest failed run in the part: the same failure listed twice was two
     # runs of one check. A run that a later pass followed is fixed, not failing.
     latest = {entry.subject or entry.fact_id: entry for entry in checks if entry.result == "failed"}
-    unfixed = {key: entry for key, entry in latest.items() if entry.fact_id not in fixed}
+    unfixed = {key: entry for key, entry in latest.items() if entry.fact_id not in runs.fixed}
     # A failure in a part whose own tail or following work was not read may have been fixed there:
     # it is unknown, not failing, and nothing later in the outline can say which.
     unknown = unfixed if unread_after else {}
+
     # A check still red from an earlier part is the same failure, so only the part it first
     # failed in lists it. An unknown one is not listed, so a later part that fails it again is.
-    failures = [entry for key, entry in unfixed.items() if key not in unknown and key not in listed]
-    listed.update(key for key in unfixed if key not in unknown)
+    # What the highlight cap drops was never shown, so it is not marked listed either.
+    def episode(entry: session_source.SourceEntry) -> str:
+        return runs.episode.get(entry.fact_id, entry.fact_id)
+
+    fresh = [
+        entry
+        for key, entry in unfixed.items()
+        if key not in unknown and episode(entry) not in runs.listed
+    ]
+    failures = fresh
+    shown = failures[-highlights:] if highlights else []
+    runs.listed.update(episode(entry) for entry in shown)
+    # A failure that spans parts and was then fixed is counted fixed where it first failed.
+    mended = [entry for entry in latest.values() if entry.fact_id in runs.fixed]
+    new_mended = [entry for entry in mended if episode(entry) not in runs.counted]
+    runs.counted.update(episode(entry) for entry in new_mended)
 
     def check(entry: session_source.SourceEntry) -> dict[str, Any]:
         public = session_source.entry_for_page(entry)
@@ -100,13 +140,13 @@ def _block(
         "counts": {
             "checks": len(checks),
             "checks_failed": len(failures),
-            "checks_fixed": len(latest) - len(unfixed),
+            "checks_fixed": len(new_mended),
             "checks_unknown": len(unknown),
             "files": sum(entry.kind == "file" for entry in entries),
             "agent_messages": sum(entry.kind == "agent" for entry in entries),
             "subagent_entries": sum(entry.actor == "subagent" for entry in entries),
         },
-        "failures": [check(entry) for entry in failures[-highlights:]] if highlights else [],
+        "failures": [check(entry) for entry in shown],
         "folders": [
             {"folder": folder, "files": count}
             for folder, count in sorted(folders.items(), key=lambda row: (-row[1], row[0] or ""))[
@@ -137,8 +177,7 @@ def build(
     cap = max(0, config.session_outline_max_blocks)
     more = max(0, len(groups) - cap) if cap else len(groups) + (head is not None)
     highlights = max(0, config.session_outline_highlights)
-    fixed = _fixed([*(opening.entries if opening else ()), *page.entries])
-    listed: set[str] = set()
+    runs = _runs([*(opening.entries if opening else ()), *page.entries])
     blocks = (
         [
             *(
@@ -146,8 +185,7 @@ def build(
                     _block(
                         head.entries,
                         highlights,
-                        fixed,
-                        listed,
+                        runs,
                         opening=True,
                         partial=head.partial,
                         unread_after=head.partial or head.gap,
@@ -156,7 +194,7 @@ def build(
                 if head
                 else []
             ),
-            *(_block(group, highlights, fixed, listed) for group in groups[more:]),
+            *(_block(group, highlights, runs) for group in groups[more:]),
         ]
         if cap
         else []

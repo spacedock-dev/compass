@@ -638,14 +638,30 @@ function bounded(text: string, max: number = QUOTE_MAX): string {
      record, 2026-10-21). A quote of one unbroken word, a URL, is cut where it stands, since there is no
      whole word shorter than it to end on. */
   const space = cut.lastIndexOf(' ');
-  return `${(space > 0 ? cut.slice(0, space) : cut).trimEnd()}…`;
+  if (space > 0) return `${cut.slice(0, space).trimEnd()}…`;
+  /* An unbroken path or URL is cut after its last "/" rather than in the middle of a name, unless that would
+     keep less than a third of it. */
+  const slash = cut.lastIndexOf('/');
+  return `${slash >= max / 3 ? cut.slice(0, slash + 1) : cut}…`;
 }
 
-/* A departure's title, from what the cited entry is and never from the constraint it departs from: the goal's
-   whole sentence made every title the same. No model writes it: the stored reading keeps a `detail` and no
-   headline, so the title says only what the record itself shows, a write, a failed check or the agent's own
-   message. A write or a check outranks a message, which only reports on one. Empty where no cited entry is
-   held, and the card keeps the constraint's own words then. */
+/* A written path longer than the title allows keeps its end, which is the name that tells two files apart, and
+   gives up the directories in front of it. */
+function pathTail(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (Array.from(flat).length <= max || flat.includes(' ')) return bounded(flat, max);
+  const cut = flat.indexOf('/', flat.length - (max - 2));
+  const names = cut >= 0 ? flat.slice(cut) : flat.slice(-(max - 2));
+  return `…${names.startsWith('/') ? names : `/${names}`}`;
+}
+
+/* A departure's title, from what the cited entry is and the constraint it departs from, never from the
+   constraint's own sentence: the goal's whole sentence made every title the same. No model writes it: the stored
+   reading keeps a `detail` and no headline, so the title says only what the record itself shows, a write, a
+   failed check or the agent's own message, with the entry's time so two departures on two messages or two
+   checks read as two. A write or a check outranks a message, which only reports on one. The constraint's name
+   follows where it is given, so one entry cited under two constraints still reads as two cards. Empty where no
+   cited entry is held, and the card keeps the constraint's own words then. */
 const TITLE_WORDS = 60;
 function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
   return (
@@ -656,20 +672,29 @@ function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
   );
 }
 
-export function departureTitle(entries: readonly WorkEntry[]): string {
+/* A constraint as the card's label names it, in the middle of a sentence. */
+function constraintPhrase(name: string): string {
+  if (name === 'Goal' || name === 'Expected outcome') return `the ${name.toLowerCase()}`;
+  return name.charAt(0).toLowerCase() + name.slice(1);
+}
+
+export function departureTitle(entries: readonly WorkEntry[], constraint = ''): string {
   const entry = titledEntry(entries);
   if (!entry) return '';
+  const seen = nextNumber(entry.at);
+  const at = seen !== null && seen > 0 ? ` at ${clock(seen)}` : '';
+  const from = constraint ? constraintPhrase(constraint) : 'this';
   if (entry.subject === 'write') {
-    const path = bounded(String(entry.summary || ''), TITLE_WORDS);
-    return path ? `It changed ${path}` : 'It changed files';
+    const path = pathTail(String(entry.summary || ''), TITLE_WORDS);
+    return `${path ? `It changed ${path}` : 'It changed files'}${constraint ? ` against ${from}` : ''}`;
   }
   if (entry.subject === 'check') {
-    return entry.result === 'failed' ? 'A check failed' : 'A check ran';
+    return `${entry.result === 'failed' ? 'A check failed' : 'A check ran'}${at}${constraint ? ` against ${from}` : ''}`;
   }
-  if (agentMessage(entry)) return 'What the agent said departs from this';
+  if (agentMessage(entry)) return `What the agent said${at} departs from ${from}`;
   return personAuthored(entry)
-    ? 'Your own words depart from this'
-    : 'Something in the record departs from this';
+    ? `Your own words${at} depart from ${from}`
+    : `Something in the record${at} departs from ${from}`;
 }
 
 /* A departure's What, one plain sentence about the same entry the title names: when, who and what, ending in

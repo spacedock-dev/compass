@@ -65,10 +65,13 @@ export function normaliseSessionRecord(record, evidence = {}) {
           'Analyze opens while this session runs.',
         );
         if (driftCard)
-          value = value.replace(
-            'You gave a later direction at #1: "Keep the flag off by default."',
-            '1 later direction since saving your intent.',
-          );
+          value = value
+            .replace(
+              'You gave a later direction at #1: "Keep the flag off by default."',
+              '1 later direction since saving your intent.',
+            )
+            // The correction box is "Correction to paste" (2026-10-21, docs/design-frontend-migration.md#held-to-recorded-answers).
+            .replaceAll('Correction to copy', 'Correction to paste');
         if (sessionHeader && !(record?.attrs?.[3] || record?.ask || record?.answers?.length))
           value = value.replace(
             /(?:No resume command · )?(?:No terminal to raise|Terminal raise off)Why.*$/,
