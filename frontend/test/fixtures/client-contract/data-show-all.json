@@ -24,10 +24,18 @@
         "stored": "Discarded. Everything you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.",
         "stored_no_summary": "Discarded. Everything you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.",
         "summary_kept": "Discarded here, but this session's summary could not be deleted, so any summary stored for it is still stored. Delete summary removes it.",
+        "summary_stopped": "Discarded. Everything you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary, and the one being written was stopped. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.",
         "summary_unavailable": "Discarded here. The summary store could not be read, so Compass cannot say whether a summary of this session is stored, and none was deleted.",
+        "summary_unknown": "Discarded here. Everything you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. Compass could not tell what happened to this session's summary, so any summary stored for it may still be stored.",
         "unreadable": "What you asked of this session was discarded, so there is nothing left to read it against.",
         "untrusted": "Not discarded. Compass could not read compass-annotations.json, so nothing was saved and nothing was overwritten. Move or repair that file to save again.",
         "unwithdrawn": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them.",
+        "unwithdrawn_absent": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. This session had no stored summary.",
+        "unwithdrawn_deleted": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. Its summary was deleted.",
+        "unwithdrawn_kept": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. Its summary could not be deleted, so any summary stored for it is still stored. Delete summary removes it.",
+        "unwithdrawn_stopped": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. This session had no stored summary, and the one being written was stopped.",
+        "unwithdrawn_unavailable": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. The summary store could not be read, so Compass cannot say whether a summary of this session is stored, and none was deleted.",
+        "unwithdrawn_unknown": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. Compass could not tell what happened to its summary, so any summary stored for it may still be stored.",
         "unwritable": "Not discarded. The store could not be written, so the next collection reads what you asked of this session back and nothing raised against it was withdrawn.",
         "why": "Discarding everything deletes all you asked of this session, any reading of it, and this session's summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps your earlier saves."
       },
@@ -602,7 +610,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "20190",
+      "Content-Length": "22693",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.2"
