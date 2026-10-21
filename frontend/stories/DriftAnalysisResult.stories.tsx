@@ -217,6 +217,48 @@ export const MarkedInaccurate: Story = {
   },
 };
 
+/* The Live monitor is the reader's opt-in switch, and a live estimate must not take the marked reading's slot:
+   with it on and a live level row published, the message, Undo and Analyze again still stand. */
+export const MarkedInaccurateWithTheLiveMonitorOn: Story = {
+  ...scenario({
+    ...RESULT,
+    session: { ...RESULT.session, annotation_not_accurate: true },
+    work: {
+      analysis_levels: [analysisRow('claude')],
+      live_levels: [
+        {
+          harness: 'claude',
+          sid: 's1',
+          revision: 3,
+          computed_at: 990,
+          level: 'high',
+          reasons: ['failed-check'],
+          cites: ['c1'],
+          rose_at: '',
+          rose_from: '',
+        },
+      ],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const head = drift.querySelector('header') as HTMLElement;
+    await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
+    const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
+    await userEvent.click(monitor);
+    await waitFor(() => expect(monitor).toHaveAttribute('aria-checked', 'true'));
+    const notice = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
+    await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
+    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    await expect(drift.querySelector('[data-next-disowned]')).not.toBeNull();
+  },
+};
+
 /* "What was wrong?" is optional, one choice at a time, and kept in this tab only: nothing is sent. */
 export const MarkedInaccurateAsksWhatWasWrong: Story = {
   ...scenario({
