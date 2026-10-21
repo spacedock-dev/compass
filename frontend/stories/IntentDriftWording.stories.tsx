@@ -230,8 +230,7 @@ export const HowToSaysWhatAReadingCanSettleAndHowFarToTrustIt: Story = {
     const settle = popup.querySelector('[data-next-intent-howto-settle]') as HTMLElement;
     await expect(settle).toHaveTextContent("Readings settle a command's latest unpiped run");
     await expect(settle).toHaveTextContent('nothing written after it');
-    await expect(settle).toHaveTextContent('cannot settle a folder limit');
-    await expect(settle).toHaveTextContent('the live estimate weighs that');
+    await expect(settle).toHaveTextContent('A recorded write breaking a folder limit also departs');
     await expect(popup.querySelector('[data-next-intent-howto-accuracy]')).toHaveTextContent(
       "The Claude reader's accuracy check has not passed, and its latest correction is unmeasured, so read a level as an account of the evidence, not a measurement.",
     );

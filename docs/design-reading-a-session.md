@@ -1171,6 +1171,73 @@ ledger stay exactly as they were: nothing rewrites, rescores or deletes them. Th
 verdicts for any later run, and a later pass would be recorded as `passed` in its own change.
 Which sessions Claude Code reads is [DEC-21](#amended-2026-10-02-claude-code-is-accepted)'s.
 
+### Amended 2026-10-21: the record settles a line
+
+Six walks of the session page found a reading and the card beside it contradicting each other. "No
+file under frontend/e2e is edited" came back `Can't tell` while the same card listed `Where the work
+went: frontend/e2e · 1 file` and the outline counted 13 files written there. A finished session with
+passing tests and a printed pull request got `Can't tell` on every line. Lines read `Consistent with
+what the agent said at [6]` with no check cited, though the checks that ran are in the record. And
+every unsettled line read the same `Can't tell: what was read does not settle this`, with a claims row
+that never quoted the claim. This amendment changes two guards and the words of three rows. The
+prompt, what the reading sends and the shape contract's seven rules are unchanged.
+
+1. **A recorded write settles a line that names a folder.** `reading.folder_rules` reads a clause of
+   an outcome line only when it names a path with a slash in it, speaks of changing files, and says
+   which way: negated ("no file under X is edited", "X is left untouched") rules the folder out, and
+   limiting ("only files under X change", "nothing outside X is changed") allows only those folders.
+   A clause that mixes the two, says neither, or names no folder is left to the reading. A write the
+   record holds inside a ruled-out folder, or outside the only folders allowed, inside the reading's
+   window and after the line's own request, makes the line a departure whatever the reply said, even
+   for a line the prompt never put to the model. `reading._settled_by_record` stores it with the
+   fact ids of the first three such writes, a `detail` Compass composes from the count and the
+   reader's own folder words, and `why` `recorded-write`.
+2. **Only a departure.** No write found inside a folder says nothing: the listing is capped and the
+   window can be partial, so a line is never read as holding from a record's silence. This is the same
+   rule the claims row keeps for "not shown".
+3. **The token is what lets a write carry a verdict.** A written path shows a write and no result, so
+   item 8 of [DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) drops it
+   from a departure a model cited, and still does. `check_supports` takes it as a departure's
+   evidence only for a row stored `recorded-write`, which the producer sets and the model cannot, and
+   every reader of a stored reading passes the flag: the page, the level, the correction. `why`
+   otherwise names a rule that left a row without a verdict; this one token is on a verdict that
+   stands, and the closed set says so. A page that does not hold the write withdraws the row with a
+   sentence of its own.
+4. **A recorded pass is cited ahead of the agent's message.** A `consistent` that cites no check
+   gains the latest recorded passes that carry a `consistent` (`check_supports`) and plainly cover
+   the line: where the line names a path or a file, a check whose command names it too; where it names
+   none, a check of a kind the line speaks of (tests, lint, types, build). A pass of the same kind
+   on another target does not cover a line about this one. The check leads the citations and the
+   message stays, so the page reads `Consistent with #8, as the tool reported; not inspected` rather
+   than only what the agent said. A line about what the agent tells the reader keeps its message
+   alone, because a run does not show a report. The checks are read from the facts, so the guard works
+   where no grant sent them; nothing is added to what a reading sends.
+5. **Every `Can't tell` says its own reason, in view.** The design's form is `Can't tell · <line>` and
+   the reason under it. The reason is the rule that withdrew the row where one did, a limit of the
+   harness where that is the cause, the entries the reading read and found silent where it cited any,
+   and otherwise that no write, check or message it read speaks to the line. The generic "what was
+   read does not settle this" is gone. This supersedes the 2026-10-14 ruling that kept the reason
+   inside Evidence: the reader found it by opening a disclosure on each line, and Evidence now keeps
+   the entries and not the reason. Opening Evidence does not say it twice.
+6. **The claims row quotes the claim.** `What the agent claimed · "<claim>" is not shown by the
+   record`, as the design has it, where the claim is the title of the cited agent message, the way a
+   correction quotes it (`reading.claim_title`, its closing stop dropped). Under a claim the record
+   does not show the row says where the agent made it and that the record read is the board's recent
+   tail. "Claim to check at #13 · 4m ago" is gone from beside Steer back: it read as an instruction,
+   and the claims row already says which claim and where.
+7. **The how-to says it.** It had said a reading cannot settle a folder limit. It now says a recorded
+   write breaking one also departs, in no more words, since the popup is held to 150.
+
+What this cannot see. A write made by a shell command, such as a build, has no entry, as the live
+estimate's line already says, so a folder the line rules out can still be written without this
+guard noticing. The guards read a folder from a line's own words and nothing else: a folder a person
+means by a name with no slash in it is left to the reading. A path word such as "and/or" is read as a
+path only if it is not one of a short list of ordinary slash pairs, and a limiting line is the only
+kind a misread path can hurt, because a forbidden-folder rule needs a write under that exact path.
+The guards are held by `test_reading_record_guards.py` and the stories `A recorded write settles a
+line that rules out its folder`, `A model's departure on a write alone is still withdrawn` and `Every
+Can't tell line says its own reason`.
+
 ### Repeated calls
 
 A reading is produced only in response to a discrete reader action, asserted rather than assumed,
@@ -5480,14 +5547,15 @@ Four sentences, each at the place a reader relies on it. None adds a control.
 
 - The how-to popup says which lines a reading can settle and which it cannot. A command whose latest
   run, not piped into another command, fails settles a departure, and one that passes with nothing
-  written after it settles a consistent. A statement about the whole tree, such as a folder limit, is
-  not settled by a reading; the live estimate weighs it instead. The popup also carries the Claude
+  written after it settles a consistent. A statement about the whole tree, such as a folder limit, was
+  not settled by a reading and the live estimate weighed it; a recorded write that breaks one now
+  also departs ([the 2026-10-21 amendment](#amended-2026-10-21-the-record-settles-a-line)). The popup also carries the Claude
   reader's limit
   ([the DEC-21 amendment](#amended-2026-10-14-owner-the-page-says-the-claude-readers-accuracy-check-has-not-passed)).
   The 150-word ceiling above holds: the opened body now measures 146 words on Claude Code and Pi and
   150 on a harness with no reader, and the two additions were written to fit it.
 - The reason for "Can't tell" stays inside Evidence, as this design keeps evidence one click away
-  (owner, 2026-10-14). Its sentence for `check-does-not-show-it` no longer says "The check it cited":
+  (owner, 2026-10-14; superseded: [the reason is now in view](#amended-2026-10-21-the-record-settles-a-line)). Its sentence for `check-does-not-show-it` no longer says "The check it cited":
   the producer empties a reading's published cites whenever it withdraws a verdict, so the page
   cannot tell a check that does not show the line from a write, or nothing, that was cited. It reads
   "What it cited does not show this: a departure needs its latest run failing, and a consistent its
@@ -5675,8 +5743,9 @@ what it stores and the page's evidence rules are as before.
   citation is demoted to can't tell, so no card stands on nothing a reader can reach.
 - Every other line follows a divider as one quiet row, in the words `resultStatus` and `claimStatus`
   already used: not reached at this stop, consistent with a check, the agent or the session, can't
-  tell, nothing shown, and the claim states. The reason for can't tell stays inside Evidence, as the
-  2026-10-14 ruling keeps it; this amendment does not supersede that. A contradicted claim keeps its
+  tell, nothing shown, and the claim states. The reason for can't tell stayed inside Evidence, as the
+  2026-10-14 ruling kept it; [the 2026-10-21 amendment](#amended-2026-10-21-the-record-settles-a-line)
+  supersedes that. A contradicted claim keeps its
   explanation in view, or "No explanation was retained for this assessment." where none was stored,
   and its cited entries' records under Evidence. A claims row the shape withdraws is not
   drawn, as before, so a claim the page cannot place has no row of its own.

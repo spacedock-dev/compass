@@ -21,6 +21,7 @@ import {
   NOT_REACHED,
   OWN_WORDS_ONLY,
   RESULTS,
+  RECORDED_WRITE,
   STORED_WHY,
   UNCITED,
   UNSUPPORTED,
@@ -189,15 +190,28 @@ function subjectlessPiCheck(entry: WorkEntry): boolean {
 /* `reading.check_supports`, spelt for the entries the page holds: a check, on any harness, carries a verdict
    only as a run whose result arrived in the window, failed for a departure, passed, not before the last
    change and with no changing command after it for a consistent. A written path shows a write and no
-   result, so it carries neither, and a subjectless Pi result an older build stored carries none. */
+   result, so it carries neither, and a subjectless Pi result an older build stored carries none. The one
+   exception is a row the producer stored as `recorded-write`: the code, not the model, found that write
+   inside or outside a folder the line names, so it carries that departure and no other verdict. */
 export function checkSupports(
   entry: WorkEntry,
   result: string,
   windowStart: number | null,
+  recordedWrite = false,
 ): boolean {
   const report = String(entry.type || '') === 'tool_report';
   if (!report && entry.subject !== 'check') return !subjectlessPiCheck(entry);
-  if (entry.subject !== 'check') return false;
+  if (entry.subject !== 'check') {
+    const at = evidenceAt(entry);
+    return (
+      recordedWrite &&
+      result === DEPARTURE &&
+      entry.subject === 'write' &&
+      at !== null &&
+      at > 0 &&
+      !beforeWindow(entry, windowStart)
+    );
+  }
   const at = evidenceAt(entry);
   if (at === null || at <= 0 || (windowStart !== null && at < windowStart)) return false;
   if (result === DEPARTURE) return entry.result === 'failed';
@@ -333,7 +347,9 @@ export function criterion(
           entry.readIncomplete &&
           checkSupports({ ...entry, readIncomplete: false }, result, windowStart),
       );
-    const supporting = cited.filter((entry) => checkSupports(entry, result, windowStart));
+    const supporting = cited.filter((entry) =>
+      checkSupports(entry, result, windowStart, stored === RECORDED_WRITE),
+    );
     droppedCheck = supporting.length < cited.length;
     cited = supporting;
     if (!cited.length) {

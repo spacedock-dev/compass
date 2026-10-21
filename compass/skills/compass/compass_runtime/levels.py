@@ -477,6 +477,7 @@ class _LineTally:
             line_text=line_text or str(row.get("clause") or ""),
             scope=self.scope,
             requested_at=requested_at,
+            recorded_write=why == reading.WHY_RECORDED_WRITE,
         )
         if name == reading.CONSTRAINT_CLAIMS:
             # Its own two flags, never `departed`: a claim is not the intent.

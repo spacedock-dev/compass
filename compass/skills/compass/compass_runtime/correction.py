@@ -457,11 +457,13 @@ class _Rows:
         if result == reading.RESULT_DEPARTURE:
             # On a line a departure stands on work or on one of the agent's own messages,
             # which are evidence of what it said (owner ruling, 2026-10-03), as the page's
-            # rule 7 lets it. A consistent below keeps the tool's report alone.
+            # rule 7 lets it. A consistent below keeps the tool's report alone. A departure
+            # the record settled stands on the write it cites, which no check carries.
+            recorded = why == reading.WHY_RECORDED_WRITE
             standing = [
                 f
                 for f in timed
-                if reading.check_supports(f, result, self.window)
+                if reading.check_supports(f, result, self.window, recorded_write=recorded)
                 and (not line or reading.bears_on_output(f))
             ]
             return (_DEPARTED, standing[0]) if standing else (_NOT_SHOWN, None)

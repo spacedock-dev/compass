@@ -308,9 +308,10 @@ describe('the correction text, staleness and offer match the legacy page', () =>
       const dirB = offeredDirection(ann, entries, session as never, shape, intentDraft(input));
       if (dirA !== dirB) failures.push(`seed ${String(seed)} direction: ${String(dirA)} / ${dirB}`);
       if (offerB) {
-        /* Two deviations (2026-10-20, docs/design-frontend-migration.md#the-drift-card-analyze-and-steer-back):
-           a departure's trigger names its first cited entry, as its result row does, and a failed check says
-           whose check it was. The recorded side is given the same shape and wording. */
+        /* Three deviations (2026-10-20 and 2026-10-21, docs/design-frontend-migration.md#the-drift-card-analyze-and-steer-back):
+           a departure's trigger names its first cited entry, as its result row does, a failed check says
+           whose check it was, and a claim alone draws no trigger line, so the recorded side is asked with the
+           claim taken out of the offer. The recorded side is given the same shape and wording. */
         const recorded = legacyShape as { departures: { citedIds?: unknown[] }[] } | null;
         const firstCited = recorded && {
           ...recorded,
@@ -322,7 +323,7 @@ describe('the correction text, staleness and offer match the legacy page', () =>
         const triggerA = text(
           legacy.call<string>(
             'nextCockpitSteerTrigger',
-            offerA,
+            offerA && { ...offerA, claimed: false },
             firstCited,
             session,
             entries,

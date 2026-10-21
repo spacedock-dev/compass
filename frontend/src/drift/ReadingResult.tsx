@@ -15,8 +15,11 @@ import { EvidenceList } from './Evidence';
 import { evidenceRows } from './level';
 import {
   arrivedLine,
+  cantTellReason,
   citedKind,
   citedLine,
+  claimHeading,
+  claimReason,
   claimsDrawn,
   constraintName,
   coverageLimits,
@@ -32,6 +35,7 @@ import {
 import { fmtDur } from './route';
 import { clock } from '../observed';
 import {
+  CLAIM_LEAD,
   CLAIMS,
   clearedLine,
   CLAUSE_UNRETAINED,
@@ -184,15 +188,18 @@ function EvidenceMore({
   status,
   rows,
   quoted = false,
+  reasoned = false,
 }: {
   readonly row: Criterion;
   readonly status: string;
   readonly rows: boolean;
   /** What already quotes each cited entry's words, so its record here leaves them out. */
   readonly quoted?: boolean;
+  /** The row's own reason is drawn above, so neither it nor the generic status is said again here. */
+  readonly reasoned?: boolean;
 }) {
   const { model } = useDrift();
-  const full = resultStatus(row, model.numbers, model.byId);
+  const full = reasoned ? status : resultStatus(row, model.numbers, model.byId);
   const listed = rows ? evidenceRows(row.citedIds, model.numbers, model.byId) : [];
   return (
     <Why name={`result-evidence:${row.key}`} summary="Evidence">
@@ -207,11 +214,11 @@ function EvidenceMore({
           <CitedText text={full} />
         </span>
       )}
-      {row.why ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
+      {row.why && !reasoned ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
       {row.result === NOT_REACHED && row.detail ? (
         <p className="next-cockpit-reading-detail">{row.detail}</p>
       ) : null}
-      {row.limit ? (
+      {row.limit && !(reasoned && !row.why) ? (
         <span className="next-cockpit-reading-limit">{`limit · ${row.limit}`}</span>
       ) : null}
       {listed.length ? (
@@ -300,8 +307,18 @@ function QuietRow({
   readonly tag: 'li' | 'div';
 }) {
   const { model } = useDrift();
-  const status = resultStatus(row, model.numbers, model.byId, true);
+  const state = resultState(row);
   const claims = row.key === CLAIMS;
+  /* The design's two forms: `Can't tell · <line>` with the reason under it, and `What the agent claimed ·
+     "<claim>" is not shown by the record`. Each says its own reason in view, not behind Evidence. */
+  const cantTell = state === 'cant-tell';
+  const reason = cantTell ? cantTellReason(row, model.numbers) : claimReason(row, model.numbers);
+  const claim = claimHeading(row, model.numbers);
+  const status = claim
+    ? CLAIM_LEAD
+    : cantTell && !claims
+      ? RESULT_CANT_TELL
+      : resultStatus(row, model.numbers, model.byId, true);
   const claimDeparts = claims && row.result === DEPARTURE;
   const detail = claimDeparts ? String(row.detail || '').trim() : '';
   const Tag = tag;
@@ -322,7 +339,17 @@ function QuietRow({
           <em className="next-cockpit-reading-result">
             <CitedText text={status} />
           </em>
-          {claims ? null : (
+          {claim ? (
+            <>
+              {' · '}
+              <span className="next-cockpit-reading-clause font-normal" data-next-claim>
+                {`“${claim.claim}”`}
+              </span>{' '}
+              <span className="font-normal">
+                <CitedText text={claim.tail} />
+              </span>
+            </>
+          ) : claims ? null : (
             <>
               {' · '}
               <span
@@ -335,6 +362,11 @@ function QuietRow({
             </>
           )}
         </span>
+        {reason ? (
+          <span className="next-cockpit-reading-why" data-next-reason>
+            <CitedText text={reason} />
+          </span>
+        ) : null}
         {claimDeparts ? (
           <span className="next-cockpit-reading-detail">{detail || NO_DETAIL}</span>
         ) : null}
@@ -344,7 +376,12 @@ function QuietRow({
           </span>
         ) : null}
         <CitedEntries row={row} />
-        <EvidenceMore row={row} status={status} rows={claimDeparts} />
+        <EvidenceMore
+          row={row}
+          status={status}
+          rows={claimDeparts}
+          reasoned={cantTell || Boolean(claim)}
+        />
       </span>
     </Tag>
   );

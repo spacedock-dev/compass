@@ -64,7 +64,7 @@ export function IntentHowTo({
       <p>“Not enough recorded yet” is normal until you add an expected outcome line.</p>
       <p data-next-intent-howto-settle>
         Readings settle a command's latest unpiped run, failed or passed with nothing written after
-        it. They cannot settle a folder limit; the live estimate weighs that.
+        it. A recorded write breaking a folder limit also departs.
       </p>
       <p data-next-intent-howto-accuracy>{CLAUDE_READER_LIMIT}</p>
       {children}

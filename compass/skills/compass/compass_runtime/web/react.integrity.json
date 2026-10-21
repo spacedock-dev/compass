@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2071331,
+    "bytes": 2073591,
     "file": "react.html",
-    "sha256": "6c8042905ce23ed47dc837e3554c336f643dbf6b43ba4b862b5763b20687f86a"
+    "sha256": "997aa213183688df72ae331489357aa62eae7a077913d2b8785e66f26bbc044b"
   },
   "format": 1,
   "frontend": "react",
@@ -595,7 +595,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "ed52270e2809771df7db8cefbf32d5315eecf0a4e32276f1f71c175b2b665423"
+        "sha256": "32b7a8441e1406343543b8971e86ae7449c060ac4cc2a3bbc450cde619d0a430"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -631,7 +631,7 @@
       },
       {
         "file": "frontend/src/drift/correction.ts",
-        "sha256": "9749d01f6e3a524d0e93dc59693366732bb346bc363d93f0fadaa4fe0e9a91a7"
+        "sha256": "4da30d9afad838f21cd84947533d93b4b818ee3517b0207143798832e7957cc2"
       },
       {
         "file": "frontend/src/drift/drift.css",
@@ -683,7 +683,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "00b44d425d8c716ae297d9ba751a7966dceba6fe23c36db2d6f5d8fc423a39b8"
+        "sha256": "26cab8b980501a3d94fb98d5d336e0b86aa3c0873486ac111e6e830ed96c7089"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -691,11 +691,11 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "fa224eefee983095d64c679fd68123a323a097572f68440aac5d5f82c7f9e48f"
+        "sha256": "044ec4402ece2cee37a73014457fcab2b323175d63d50e552c7b79d1adbd74ec"
       },
       {
         "file": "frontend/src/drift/shape.ts",
-        "sha256": "69e64a2f58d2f76bf98d8598e23a75d2f044936ebd422a8c6ebcf3575790f9bb"
+        "sha256": "e4bebec41ddaf378688bb8ea20b95e1d3f1d9e087a63f52fd51ca33ae12e19f5"
       },
       {
         "file": "frontend/src/drift/state.ts",
@@ -751,7 +751,7 @@
       },
       {
         "file": "frontend/src/intent/HowTo.tsx",
-        "sha256": "5424f489ebbf4649733c1f3ca0a6dda30f965b12776b5f9eeab0a6d68d1e82fb"
+        "sha256": "0f9d200a44f47e69bde373f216fb25b421398fdae768a05d877bd395279b4dd3"
       },
       {
         "file": "frontend/src/intent/IntentLog.tsx",
