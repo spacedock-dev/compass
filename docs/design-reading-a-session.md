@@ -1131,10 +1131,10 @@ only user turns, so neither reached a later direction, an outline phase or the r
    had already shaped. Only the attachment's `text` blocks are read, never a pasted image's bytes.
 2. The answer is read from `toolUseResult.answers`, one line per answered question: the question's
    `header` (the agent's one-word label for what was asked), a colon, the answer, and the note the
-   reader attached in parentheses. A trailing `(Recommended)` comes off the answer first: it is the
+   reader attached in parentheses. A `(Recommended)` that ends the answer, or ends one choice of a comma-joined multiple-choice answer, comes off first: it is the
    agent's own label on the option it preferred, so quoting it, or sending it to a reading, would put
    the agent's advice in the reader's mouth (seen live as `Ruling: (b) Same folder in its checkout
-   (Recommended)`). A reader who typed the word inside their own sentence keeps it. The header keeps a bare option such as "Defer to a follow-up" from
+   (Recommended)`). A marker before a comma is the agent's. A reader who typed the word inside their own sentence keeps it. The header keeps a bare option such as "Defer to a follow-up" from
    standing alone as an instruction. The question's text and every option's `preview` are the
    agent's words and are never put in the reader's mouth. A question that timed out or was declined
    has no answer and gives no direction. Only the question tool's own result is read: a user record

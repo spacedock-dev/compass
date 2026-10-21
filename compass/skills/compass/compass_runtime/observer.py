@@ -1132,13 +1132,14 @@ def _absorbed_message(record: dict[str, Any], cap: int) -> dict[str, str] | None
 
 # The agent's own label on the option it preferred, appended to the option's label
 # ("Same folder in its checkout (Recommended)"). A reader who picks it gave the option, not the
-# agent's advice, so the marker comes off before the words are quoted or sent.
-_RECOMMENDED_MARKER = re.compile(r"\s*\(recommended\)\s*$", re.IGNORECASE)
+# agent's advice, so the marker comes off before the words are quoted or sent. A multiple-choice
+# answer is one comma-joined string, so the marker also ends every option before a comma.
+_RECOMMENDED_MARKER = re.compile(r"\s*\(recommended\)(?=\s*(?:,|$))", re.IGNORECASE)
 
 
 def _answer_text(answer: Any) -> str:
     if isinstance(answer, str):
-        return _RECOMMENDED_MARKER.sub("", answer.strip()).strip()
+        return _RECOMMENDED_MARKER.sub("", answer.strip()).strip(" ,")
     if isinstance(answer, list):
         return ", ".join(text for item in answer if (text := _answer_text(item)))
     return ""

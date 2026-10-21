@@ -337,6 +337,27 @@ class AnAnswerToTheAgentsQuestionIsTheReadersDirectionTest(_Case):
             f"Provenance: {CHOSEN}, Per-file sheets", event[project_context.READER_WORDS_FIELD]
         )
 
+    def test_the_marker_goes_from_every_choice_of_a_comma_joined_answer(self) -> None:
+        # The tool writes a multiple-choice answer as one comma-joined string, so a marker sits
+        # before a comma, not only at the end.
+        self.answer({QUESTION: f"{RECOMMENDED}, Per-file sheets (Recommended), Both"})
+        (event,) = [e for e in self.events() if e["title"] != FIRST]
+        self.assertEqual(
+            f"Provenance: {CHOSEN}, Per-file sheets, Both",
+            event[project_context.READER_WORDS_FIELD],
+        )
+        self.assertNotIn("Recommended", repr(event))
+
+    def test_a_marker_before_a_comma_is_the_agents_but_the_same_word_in_a_sentence_is_not(
+        self,
+    ) -> None:
+        self.assertEqual("A, B", observer._answer_text("A (Recommended), B"))
+        self.assertEqual("", observer._answer_text("(Recommended)"))
+        self.assertEqual(
+            "Recommended reading first, then",
+            observer._answer_text("Recommended reading first, then"),
+        )
+
     def test_only_the_trailing_marker_is_the_agents_and_a_reader_who_typed_it_keeps_the_word(
         self,
     ) -> None:
