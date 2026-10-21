@@ -59,10 +59,14 @@ READER_WORDS_FIELD = "reader_words"
 AGENT_WORDS_CAP_CHARS = 1_000
 AGENT_WORDS_FIELD = "agent_words"
 AGENT_WORDS_TOTAL_FIELD = "agent_words_total"
+# The title a message's fact id was hashed from, on an event whose published title is not it. Only a
+# paste whose tag shares a line with typed words has one, and it still carries the tag.
+ID_TITLE_FIELD = "id_title"
 # Every server-side-only words field, which no page route may publish.
 _SERVER_ONLY_FIELDS = frozenset(
     {
         READER_WORDS_FIELD,
+        ID_TITLE_FIELD,
         AGENT_WORDS_FIELD,
         AGENT_WORDS_TOTAL_FIELD,
         records.GOAL_SOURCE_CUT_FIELD,
@@ -504,11 +508,13 @@ def _instruction_event(
     title = _message_title(config, text, harness)
     if not title:
         return None
+    hashed = _unstripped_title(config, record, harness, title)
     event: dict[str, Any] = {
         "at": at,
         "kind": "steer",
         "phase": "user-role instruction",
         "title": title,
+        **({ID_TITLE_FIELD: hashed} if hashed else {}),
         READER_WORDS_FIELD: _message_words(config, text, harness),
         "source": message.get("source") or "timestamped non-meta user-role record",
         "harness": harness,
@@ -532,6 +538,26 @@ def _instruction_event(
             event["tag_source"] = "explicit user-role wording"
             break
     return event
+
+
+def _unstripped_title(
+    config: RuntimeConfig, record: dict[str, Any], harness: str, title: str
+) -> str:
+    """The title the message had before its paste tags came off, when that is not `title`, else "".
+
+    A fact id hashes the title (`_semantic_fact_from_event`), so a title the strip changed would
+    move the id a stored reading cites. A message with no paste tag costs one failed substring
+    test and never reaches the second parse. Claude Code writes a paste into a string content
+    (docs/captures/claude/paste-wrapper-shape-2.1.305-macos.jsonl), so that is all this reads.
+    """
+    content = records.message_dict(record).get("content")
+    if not isinstance(content, str) or "pasted_content" not in content:
+        return ""
+    held = observer.parse_reader_record(record, paste_tags=True)
+    if held is None:
+        return ""
+    before = _message_title(config, held["text"].strip(), harness)
+    return before if before and before != title else ""
 
 
 def _reader_stamp(record: dict[str, Any]) -> Any:
@@ -6874,6 +6900,11 @@ def _semantic_fact_from_event(
     # hashed as `safe_text` left it, and the `cued` redaction shape added that
     # day masks values it did not before, so a fact whose title held one (a
     # `DB_PASSWORD=…` in a prompt) gets a new id. The hash input is unchanged.
+    #
+    # Not moved by DRC-4920's paste-wrapper strip: a paste whose tag shares a line with typed
+    # words had a title that carried the tag, the strip took it off, and every reading stored
+    # before it cited an id that no longer existed (DRC-4935). `ID_TITLE_FIELD` holds the title
+    # as it was hashed, so those ids stay what they were while the published title is clean.
     record_id = source_event.get("record_id")
     fact_id = _semantic_id(
         "fact",
@@ -6884,7 +6915,7 @@ def _semantic_fact_from_event(
         source_event.get("workflow_binding"),
         source_event.get("entity"),
         source_event.get("lineage"),
-        source_event.get("title"),
+        source_event.get(ID_TITLE_FIELD) or source_event.get("title"),
         *((record_id,) if record_id not in (None, "") else ()),
     )
     fact: dict[str, Any] = {

@@ -984,7 +984,9 @@ def _redacted_message_content(value: Any, depth: int = 0) -> Any:
     return None
 
 
-def _message_from(role: Any, content: Any, harness: str, cap: int) -> dict[str, str] | None:
+def _message_from(
+    role: Any, content: Any, harness: str, cap: int, *, paste_tags: bool = False
+) -> dict[str, str] | None:
     """The (role, text) pair for one already-unwrapped message, or None.
 
     The one place the injected-shape rejection is applied, so every harness arm
@@ -992,6 +994,9 @@ def _message_from(role: Any, content: Any, harness: str, cap: int) -> dict[str, 
     would publish a harness's own machinery as the operator's goal on 51.6% of
     Codex rollouts and 62.5% of Claude sessions — a confident wrong answer where
     there is a silent sentinel today, which is the worse of the two failures.
+
+    `paste_tags` keeps the harness's paste tags in the words, for the one reader that needs the
+    text as it was before they were taken off (`project_context._instruction_event`'s fact id).
 
     `cap` is `observer_model_context_chars` and not `extract_text`'s own default,
     because the block half scans this text for an indicator ANYWHERE in it rather
@@ -1014,13 +1019,15 @@ def _message_from(role: Any, content: Any, harness: str, cap: int) -> dict[str, 
     # front — `strip_prompt_wrappers` is what makes `[Image #1] fix the build`
     # publishable as a goal rather than as a marker. A paste's tags come off first
     # (DRC-4920), so what a direction quotes is the pasted words, never the wrapper.
-    body = records.strip_prompt_wrappers(records.strip_paste_wrapper(text))
+    body = records.strip_prompt_wrappers(text if paste_tags else records.strip_paste_wrapper(text))
     if not body or records.injected_prompt(text, harness):
         return None
     return {"role": "user", "text": body}
 
 
-def _claude_message(record: dict[str, Any], record_type: str, cap: int) -> dict[str, str] | None:
+def _claude_message(
+    record: dict[str, Any], record_type: str, cap: int, *, paste_tags: bool = False
+) -> dict[str, str] | None:
     """One (role, text) pair from a Claude ``user``/``assistant`` record, or None.
 
     A subagent's transcript is interleaved into its parent's file, and a
@@ -1033,10 +1040,18 @@ def _claude_message(record: dict[str, Any], record_type: str, cap: int) -> dict[
     if record.get("isSidechain") or record.get("isMeta"):
         return None
     message = records.message_dict(record)
-    return _message_from(message.get("role") or record_type, message.get("content"), "claude", cap)
+    return _message_from(
+        message.get("role") or record_type,
+        message.get("content"),
+        "claude",
+        cap,
+        paste_tags=paste_tags,
+    )
 
 
-def _parse_message_record(record: Any, cap: int) -> dict[str, str] | None:
+def _parse_message_record(
+    record: Any, cap: int, *, paste_tags: bool = False
+) -> dict[str, str] | None:
     """One (role, text) pair from a JSONL message record, or None.
 
     Three record shapes, additively: ``type: "message"`` with a nested
@@ -1061,15 +1076,21 @@ def _parse_message_record(record: Any, cap: int) -> dict[str, str] | None:
     if record_type == "message":
         message = records.message_dict(record)
         return _message_from(
-            message.get("role"), message.get("content"), _SHARED_MESSAGE_HARNESS, cap
+            message.get("role"),
+            message.get("content"),
+            _SHARED_MESSAGE_HARNESS,
+            cap,
+            paste_tags=paste_tags,
         )
     if record_type in ("user", "assistant"):
-        return _claude_message(record, record_type, cap)
+        return _claude_message(record, record_type, cap, paste_tags=paste_tags)
     if record_type == "response_item":
         payload = records.as_dict(record.get("payload"))
         if payload.get("type") != "message":
             return None
-        return _message_from(payload.get("role"), payload.get("content"), "codex", cap)
+        return _message_from(
+            payload.get("role"), payload.get("content"), "codex", cap, paste_tags=paste_tags
+        )
     return None
 
 
@@ -1245,6 +1266,8 @@ def _answer_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
 def parse_reader_record(
     record: Any,
     cap: int = records.EXTRACT_TEXT_CAP_CHARS,
+    *,
+    paste_tags: bool = False,
 ) -> dict[str, str] | None:
     """`parse_message_record`, and the two records that carry the reader's words with no turn.
 
@@ -1253,7 +1276,7 @@ def parse_reader_record(
     agent took in mid-turn must not move a goal the reader set at the prompt. The two extra
     shapes carry a `source` label; an ordinary user turn carries none.
     """
-    message = _parse_message_record(record, cap)
+    message = _parse_message_record(record, cap, paste_tags=paste_tags)
     if message is not None or not isinstance(record, dict):
         return message
     return _absorbed_message(record, cap) or _answer_message(record, cap)
