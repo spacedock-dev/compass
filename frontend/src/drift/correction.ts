@@ -343,34 +343,24 @@ export function offeredDirection(
   return last ? String(last.id || '') : '';
 }
 
-/* Whose check failed, said: under "Not checked yet" a bare "Check failed at #2.2" read as the drift check having
-   failed. */
-export const CHECK_FAILED_TRIGGER = 'A check the agent ran failed';
-
 /* What put Steer back on offer, in one line: the entry, its number and its age. A claim alone puts no line
    here: "Claim to check at #13 · 4m ago" sat under Steer back with no explanation and read as an instruction
-   to the reader, and the claims row says which claim and where (redesign walk, 2026-10-21). */
+   to the reader, and the claims row says which claim and where (redesign walk, 2026-10-21). A failed check
+   alone draws none either: the page offers Steer back only with a departure, so that line was unreachable
+   (the page's rule: docs/design-frontend-migration.md#the-drift-card-analyze-and-steer-back). */
 export function steerTrigger(input: {
   readonly offer: SteerOffer | null;
   readonly shape: Shape | null;
-  readonly session: Row;
   readonly entries: readonly WorkEntry[];
   readonly numbers: ReadonlyMap<string, string>;
-  readonly scan: Row | null | undefined;
   readonly generated: number;
 }): string {
-  const { offer, shape, session, entries, numbers, scan } = input;
-  if (!offer) return '';
+  const { offer, shape, entries, numbers } = input;
+  if (!offer?.departed) return '';
   /* A departure's first cited entry, which its result row and its reason line name: taking the latest of all
      its citations named "#4" here beside "Departs; evidence #3" on the same card. */
-  const ids =
-    offer.departed && shape
-      ? shape.departures.flatMap((row) => (row.citedIds || []).slice(0, 1))
-      : [];
-  const candidates =
-    offer.failed && !ids.length
-      ? failedChecks(session, entries, scan)
-      : entries.filter((entry) => ids.includes(String(entry.id || '')));
+  const ids = shape ? shape.departures.flatMap((row) => (row.citedIds || []).slice(0, 1)) : [];
+  const candidates = entries.filter((entry) => ids.includes(String(entry.id || '')));
   const fact = candidates.reduce<WorkEntry | null>(
     (last, entry) => (!last || (evidenceAt(entry) || 0) > (evidenceAt(last) || 0) ? entry : last),
     null,
@@ -379,6 +369,5 @@ export function steerTrigger(input: {
   const at = evidenceAt(fact) || 0;
   const n = numbers.get(String(fact.id || ''));
   const age = at > 0 ? `${fmtDur(Math.max(0, input.generated - at))} ago` : 'time not recorded';
-  const trigger = offer.departed ? 'Departure evidence' : CHECK_FAILED_TRIGGER;
-  return `${trigger}${n !== undefined ? ` at #${String(n)}` : ''} · ${age}`;
+  return `Departure evidence${n !== undefined ? ` at #${String(n)}` : ''} · ${age}`;
 }

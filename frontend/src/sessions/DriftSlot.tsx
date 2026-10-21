@@ -10,8 +10,8 @@ import type { Row } from '../observed';
    drift, and keeps the heading a goal link puts focus on, so the one-step access from a Sessions row lands
    where the panel is.
 
-   `children` are what the session page composes beneath the panel's own sections: the delegated-work line
-   and the departures raised while the reader was away. They are drawn here once, never again by the panel. */
+   `children` are what the session page composes beneath the panel's own sections: the departures raised
+   while the reader was away. They are drawn here once, never again by the panel. */
 export function DriftSlot({
   session,
   payload,

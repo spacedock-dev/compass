@@ -201,6 +201,14 @@ DISCARD_STORED = (
     "more. The record that a check ran stays, because it is what bounds how often one may run. "
     + DISCARD_REOPEN
 )
+# A job was writing a summary when the discard came and nothing was stored yet: it was stopped,
+# which `absent` alone would leave unsaid under an armed sentence promising "one being written".
+DISCARD_STORED_STOPPED = (
+    "Discarded. Everything you asked of this session is gone, along with any "
+    "reading of it, and nothing raised against those words quotes them any more. This session "
+    "had no stored summary, and the one being written was stopped. The record that a check ran "
+    "stays, because it is what bounds how often one may run. " + DISCARD_REOPEN
+)
 DISCARD_STORED_NO_SUMMARY = (
     "Discarded. Everything you asked of this session is gone, along with any "
     "reading of it, and nothing raised against those words quotes them any more. This session "
@@ -219,6 +227,13 @@ DISCARD_SUMMARY_KEPT = (
 DISCARD_SUMMARY_UNAVAILABLE = (
     "Discarded here. The summary store could not be read, so Compass cannot say whether a summary "
     "of this session is stored, and none was deleted."
+)
+# The summary store answered with a token this build does not know. It cannot be read as gone or
+# as kept, so this says neither and offers no remedy it cannot promise.
+DISCARD_SUMMARY_UNKNOWN = (
+    "Discarded here. Everything you asked of this session is gone, along with any reading of it, "
+    "and nothing raised against those words quotes them any more. Compass could not tell what "
+    "happened to this session's summary, so any summary stored for it may still be stored."
 )
 DISCARD_REFUSED = (
     "Not discarded. The server refused, so what you asked of this session is still stored and "
@@ -263,6 +278,25 @@ DISCARD_UNWITHDRAWN = (
     "reading of it. The departure store could not be written, so anything raised against those "
     "words goes on quoting them."
 )
+# The departure store failing alone no longer hides the summary's half: the same sentence, then what
+# became of the summary in the words that case uses.
+DISCARD_UNWITHDRAWN_SUMMARY: Final[dict[str, str]] = {
+    "deleted": "Its summary was deleted.",
+    "absent": "This session had no stored summary.",
+    "stopped": "This session had no stored summary, and the one being written was stopped.",
+    "kept": (
+        "Its summary could not be deleted, so any summary stored for it is still stored. "
+        "Delete summary removes it."
+    ),
+    "unavailable": (
+        "The summary store could not be read, so Compass cannot say whether a summary of this "
+        "session is stored, and none was deleted."
+    ),
+    "unknown": (
+        "Compass could not tell what happened to its summary, so any summary stored for it may "
+        "still be stored."
+    ),
+}
 # What a discard leaves behind once its cue has lapsed (DRC-4565).
 #
 # The cue above is transient by construction and right to be: a thirty second
@@ -326,7 +360,13 @@ DISCARD_SENTENCES: Final[dict[str, str]] = {
     "armed": DISCARD_ARMED,
     "stored": DISCARD_STORED,
     "stored_no_summary": DISCARD_STORED_NO_SUMMARY,
+    "summary_stopped": DISCARD_STORED_STOPPED,
+    "summary_unknown": DISCARD_SUMMARY_UNKNOWN,
     "unwithdrawn": DISCARD_UNWITHDRAWN,
+    **{
+        f"unwithdrawn_{outcome}": f"{DISCARD_UNWITHDRAWN} {clause}"
+        for outcome, clause in DISCARD_UNWITHDRAWN_SUMMARY.items()
+    },
     "summary_kept": DISCARD_SUMMARY_KEPT,
     "summary_unavailable": DISCARD_SUMMARY_UNAVAILABLE,
     "refused": DISCARD_REFUSED,

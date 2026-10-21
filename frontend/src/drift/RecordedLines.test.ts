@@ -134,8 +134,22 @@ describe('the claims row quotes the claim', () => {
     claimReason(said(summary), numbers, entries as never, window);
 
   it('says where the agent made a claim that names no kind of check, and what was read', () => {
-    expect(claimReason(said('The PR is open.'), numbers)).toBe(
-      "Nothing in the record read backs this claim, which the agent made at #13. The record read is the board's recent tail.",
+    expect(claimReason(said('The PR is open.'), numbers, [], 100)).toBe(
+      "Nothing in the record read backs this claim, which the agent made at #13. The record read is the board's recent tail. No check was recorded in what was read.",
+    );
+  });
+
+  it('counts the checks a claim that names no kind sits beside, in the window only', () => {
+    const entries = [
+      check('pytest -q', 'passed', 600),
+      check('ruff check .', 'failed', 650),
+      check('mypy', 'passed', 50),
+    ];
+    expect(reason('The PR is open.', entries)).toBe(
+      "Nothing in the record read backs this claim, which the agent made at #13. The record read is the board's recent tail. 2 checks were recorded in what was read, and the analysis tied none to this claim.",
+    );
+    expect(reason('The PR is open.', [entries[0]])).toContain(
+      '1 check was recorded in what was read, and the analysis tied none to this claim.',
     );
   });
 
@@ -179,10 +193,8 @@ describe('the claims row quotes the claim', () => {
 describe('the line under Steer back', () => {
   const base = {
     shape: null,
-    session: {},
     entries: [{ id: 'm1', at: 900 }] as never,
     numbers: new Map([['m1', '13']]),
-    scan: null,
     generated: 1000,
   };
 

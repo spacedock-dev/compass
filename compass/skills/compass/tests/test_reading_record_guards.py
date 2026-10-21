@@ -349,6 +349,11 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
             ("ruff check .", "No lint rules are disabled"),
             ("pnpm build", "The build directory is not touched"),
             ("pnpm typecheck", "Type checks are described in the README"),
+            # A rule or an action that shares a result word is not a result either.
+            ("pytest -q", "No failing tests are removed"),
+            ("pnpm build", "The build must never fail on lint warnings"),
+            ("pytest -q", "The tests should pass before anything merges"),
+            ("ruff check .", "No lint errors are suppressed with ignore comments"),
         )
         for command, line in cases:
             with self.subTest(line):
@@ -372,6 +377,12 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
             ("pnpm build", "The build succeeds"),
             ("pnpm typecheck", "Type checks pass"),
             ("mypy", "mypy finds no errors"),
+            # A colon between the subject and its result, and a contracted negation.
+            ("pytest -q", "Tests: all passing"),
+            ("ruff check .", "Lint: clean"),
+            ("pytest -q", "The tests don't fail"),
+            ("ruff check .", "Lint doesn\u2019t fail anymore"),
+            ("pnpm build", "The build won't fail"),
         )
         for command, line in cases:
             with self.subTest(line):

@@ -417,7 +417,8 @@ class SummaryJobTest(_SummaryCase):
         )
         self.assertEqual(202, code)
         self.assertTrue(entered.wait(5))
-        self.assertEqual("absent", self.jobs.discard(self.application, "claude", "s1"))
+        # Nothing was stored and a job was: stopped, which `absent` alone would not say.
+        self.assertEqual("stopped", self.jobs.discard(self.application, "claude", "s1"))
         release.set()
         wait_job(self.application, "claude", "s1", timeout=5)
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
@@ -444,6 +445,7 @@ class SummaryJobTest(_SummaryCase):
         self.assertEqual("deleted", self.jobs.discard(self.application, "claude", "s1"))
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
         self.assertIsNotNone(summary_store.get(self.config, "claude", "s2"))
+        # Nothing stored and no job to stop: absent, never stopped.
         self.assertEqual("absent", self.jobs.discard(self.application, "claude", "s1"))
 
     def test_revoke_between_parts_keeps_finished_prefix_and_makes_no_next_call(self) -> None:

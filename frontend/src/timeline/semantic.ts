@@ -11,6 +11,8 @@
    unbound-contributor strip. The selection of which events appear in Active, All events and Decisions is
    ported whole, because that selection is what the reader's filter choice means. */
 
+import { stripPasteWrapper } from '../api/paste';
+
 export interface SessionRef {
   readonly harness: string;
   readonly sid: string;
@@ -155,7 +157,9 @@ function readFact(raw: unknown): Fact | null {
     at: finite(raw.at),
     order: Number(raw.at),
     type: text(raw.type),
-    summary: text(raw.summary),
+    /* A direction is the reader's words: the harness's paste tags are never part of them. */
+    summary:
+      text(raw.type) === 'user_message' ? stripPasteWrapper(text(raw.summary)) : text(raw.summary),
     stage: text(raw.stage),
     targetStage: text(raw.target_stage),
     sourceKind: text(raw.source_kind),
@@ -205,7 +209,7 @@ function readIntents(raw: unknown): Intent[] {
     .map((intent) => ({
       projectionId: text(intent.projection_id),
       order: Number(intent.at),
-      summary: text(intent.summary),
+      summary: stripPasteWrapper(text(intent.summary)),
       derivedFrom: text(intent.derived_from),
     }));
 }

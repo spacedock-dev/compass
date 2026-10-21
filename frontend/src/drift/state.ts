@@ -253,11 +253,16 @@ export function createDriftState(shell: Shell) {
         (earlier) => !departures.some((later) => sameDeparture(earlier, later)),
       ).length;
       /* With a correction between, every departure it named that no longer stands is named, standing ones
-         beside it or not. Without one, only the net fall is: a model words a finding differently from
-         reading to reading, so a departure that merely moved is no clear, and a reading that departs as
-         often as the one before it says nothing. A clear to zero is the fall of all of them. */
+         beside it or not. Without one, the net fall is, and so is a departure replaced one for one by a
+         different one, up to as many as now stand: a model words a finding differently from reading to
+         reading, so the page never says more ended than were watched to (the sameness rule above holds a
+         reworded survivor to its shared entry), and a reading that departs on exactly what it did says
+         nothing. */
+      const replaced = Math.min(gone, departures.length);
       const count =
-        corrections > 0 ? gone : Math.min(gone, now.before.departures.length - departures.length);
+        corrections > 0
+          ? gone
+          : Math.max(replaced, Math.min(gone, now.before.departures.length - departures.length));
       return count > 0 ? { readAt: since, count, corrections } : null;
     },
 

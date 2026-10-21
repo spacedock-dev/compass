@@ -243,14 +243,15 @@ describe('a departure the steer named, replaced by a different one', () => {
     expect(document.querySelector(CLEARED)).toBeNull();
   });
 
-  it('is not said of a reading no correction came between, whatever it found instead', async () => {
+  it('is said, without a correction, of a departure another replaced where none was pasted between', async () => {
     const page = mountDrift({ facts: [...FACTS, ANOTHER, pasted(900), pasted(1300)], session: {} });
     await page.settle();
     await page.poll(board(1000, DEPARTS, 1, 1090));
     await page.settle();
     await page.poll(board(1200, DEPARTS, 2, 1210, AGAIN, ['c2']));
     await page.settle();
-    expect(document.querySelector(CLEARED)).toBeNull();
+    expect(textOf(CLEARED)).toBe(`The departure from the ${clock(1000)} reading no longer holds.`);
+    expect(textOf(CLEARED)).not.toContain('correction');
   });
 
   it('counts only the departures that went, and says corrections when more than one was pasted', async () => {

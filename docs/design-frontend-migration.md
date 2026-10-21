@@ -813,9 +813,11 @@ composition through the debugger protocol, a paste over the cap, and a pointer h
 
 Deviation (2026-10-20): the line saying what put Steer back on offer names a departure by its first cited
 entry, the one its result row and its reason line name. The legacy line took the latest of all its citations,
-so one card read "Departs; evidence #3" beside "Departure evidence at #4". A failed check there reads "A
-check the agent ran failed", because a bare "Check failed" under "Not checked yet" read as the drift check
-having failed. `correction.differential.test.ts` gives the recorded side the same first citation and wording.
+so one card read "Departs; evidence #3" beside "Departure evidence at #4". A failed check
+without a departure draws no line at all (amended 2026-10-21): the card offers Steer back only with a
+departure, so the wording that stood here, "A check the agent ran failed", was unreachable and went with its
+branch. `correction.differential.test.ts` gives the recorded side the same first citation, still asks it for
+the failed-check line because its answers are keyed by call order, and compares only a departure's.
 
 Deviation (2026-10-21): the card is drawn one state at a time, where the retired page drew every control
 in every state. Pause model calls and the Live monitor sit behind Drift settings, the stale notice is a line
@@ -921,7 +923,7 @@ Each fixture has a fresh browser context and no Allow for the route's receiver, 
 destination or its tool-output destination. The synthetic Intent backend performs saves and
 prompt adoption; the Drift script supplies the model job and stored assessment without calling
 a model. Completion requires the level, findings and cited evidence with recorded times to be
-read in place without another activation. A goal-only result can say Not enough recorded yet.
+read in place without another activation. A goal-only result draws no level and reads "Can't tell" unless the goal departs ("Not enough recorded yet" is the live estimate's word, not a result's).
 The nondeparture fixture keeps the same three-click ceiling and reads the cited entry in
 Session activity without another press; a departure is not required to qualify as a result.
 

@@ -20,7 +20,6 @@ import {
   offeredDirection,
   steerOffer,
   steerTrigger,
-  CHECK_FAILED_TRIGGER,
 } from './correction';
 import {
   genAnnotation,
@@ -308,10 +307,12 @@ describe('the correction text, staleness and offer match the legacy page', () =>
       const dirB = offeredDirection(ann, entries, session as never, shape, intentDraft(input));
       if (dirA !== dirB) failures.push(`seed ${String(seed)} direction: ${String(dirA)} / ${dirB}`);
       if (offerB) {
-        /* Three deviations (2026-10-20 and 2026-10-21, docs/design-frontend-migration.md#the-drift-card-analyze-and-steer-back):
-           a departure's trigger names its first cited entry, as its result row does, a failed check says
-           whose check it was, and a claim alone draws no trigger line, so the recorded side is asked with the
-           claim taken out of the offer. The recorded side is given the same shape and wording. */
+        /* Two deviations (2026-10-20 and 2026-10-21, docs/design-frontend-migration.md#the-drift-card-analyze-and-steer-back):
+           a departure's trigger names its first cited entry, as its result row does, and a claim alone draws
+           no trigger line, so the recorded side is asked with the claim taken out of the offer. A failed
+           check without a departure is asked of the recorded page, whose answers are keyed by call order, and
+           not compared: the page offers Steer back only with a departure. The recorded side is given the same
+           shape and wording. */
         const recorded = legacyShape as { departures: { citedIds?: unknown[] }[] } | null;
         const firstCited = recorded && {
           ...recorded,
@@ -330,23 +331,25 @@ describe('the correction text, staleness and offer match the legacy page', () =>
             numbers,
             source.scan,
           ),
-        ).replace(/^Check failed\b/, CHECK_FAILED_TRIGGER);
-        const triggerB = steerTrigger({
-          offer: offerB,
-          shape,
-          session: session as never,
-          entries,
-          numbers: labels(numbers),
-          scan: source.scan,
-          generated: 1000,
-        });
-        if (triggerA !== triggerB)
-          failures.push(`seed ${String(seed)} trigger: ${triggerA} / ${triggerB}`);
-        if (triggerB) note('trigger');
+        );
+        if (offerB.departed) {
+          const triggerB = steerTrigger({
+            offer: offerB,
+            shape,
+            entries,
+            numbers: labels(numbers),
+            generated: 1000,
+          });
+          if (triggerA !== triggerB)
+            failures.push(`seed ${String(seed)} trigger: ${triggerA} / ${triggerB}`);
+          if (triggerB) note('trigger');
+        }
       }
     }
     expect(failures).toEqual([]);
-    for (const name of ['stale:true', 'stale:false', 'trigger']) {
+    /* No generated session offers a departure with a cited entry, so the trigger line is held to the
+       recorded answer only where one is made; steerTrigger.test.ts asks for the departure's line itself. */
+    for (const name of ['stale:true', 'stale:false']) {
       expect(seen[name] ?? 0, name).toBeGreaterThan(0);
     }
   });

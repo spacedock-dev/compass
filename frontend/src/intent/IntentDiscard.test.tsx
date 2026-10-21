@@ -15,6 +15,15 @@ const SENTENCES = {
   stored_no_summary: 'Discarded. There was no stored summary.',
   summary_kept: 'Discarded, but the summary is still stored. Delete summary removes it.',
   summary_unavailable: 'Discarded. The summary store could not be read.',
+  summary_stopped: 'Discarded. There was no stored summary, and the one being written was stopped.',
+  summary_unknown: 'Discarded. Compass could not tell what happened to the summary.',
+  unwithdrawn: 'Discarded here. The departure store could not be written.',
+  unwithdrawn_deleted: 'Discarded here. The departure store could not be written. Summary deleted.',
+  unwithdrawn_absent: 'Discarded here. The departure store could not be written. No summary.',
+  unwithdrawn_stopped: 'Discarded here. The departure store could not be written. Job stopped.',
+  unwithdrawn_kept: 'Discarded here. The departure store could not be written. Summary kept.',
+  unwithdrawn_unavailable: 'Discarded here. The departure store could not be written. Unreadable.',
+  unwithdrawn_unknown: 'Discarded here. The departure store could not be written. Unknown.',
   nothing: 'Nothing to discard.',
   already: 'Already discarded. The earlier record stands.',
   record: 'You discarded these words.',
@@ -265,7 +274,45 @@ describe('Discard everything', () => {
     ['absent', { summary: 'absent', removed: 2 }, 'stored_no_summary'],
     ['unavailable', { summary: 'unavailable', removed: 2 }, 'summary_unavailable'],
     ['unwritable', { summary: 'unwritable', removed: 2 }, 'summary_kept'],
+    ['a refusal from the store', { summary: 'refused', removed: 2 }, 'summary_kept'],
+    ['a job stopped with nothing stored', { summary: 'stopped', removed: 2 }, 'summary_stopped'],
+    ['a token this page does not know', { summary: 'queued', removed: 2 }, 'summary_unknown'],
     ['an older server that names neither', {}, 'stored'],
+    [
+      'the departure store failing, summary deleted',
+      { summary: 'deleted', withdrew: false, removed: 2 },
+      'unwithdrawn_deleted',
+    ],
+    [
+      'the departure store failing, no summary',
+      { summary: 'absent', withdrew: false, removed: 2 },
+      'unwithdrawn_absent',
+    ],
+    [
+      'the departure store failing, job stopped',
+      { summary: 'stopped', withdrew: false, removed: 2 },
+      'unwithdrawn_stopped',
+    ],
+    [
+      'the departure store failing, summary kept',
+      { summary: 'unwritable', withdrew: false, removed: 2 },
+      'unwithdrawn_kept',
+    ],
+    [
+      'the departure store failing, summary unread',
+      { summary: 'unavailable', withdrew: false, removed: 2 },
+      'unwithdrawn_unavailable',
+    ],
+    [
+      'the departure store failing, unknown token',
+      { summary: 'queued', withdrew: false, removed: 2 },
+      'unwithdrawn_unknown',
+    ],
+    [
+      'the departure store failing, an older server',
+      { withdrew: false, removed: 2 },
+      'unwithdrawn',
+    ],
   ] as const)('says what happened to the summary store: %s', async (_name, answer, sentence) => {
     const DISCARDED = { annotation_discarded_at: 1000, annotation_revision_count: 0 };
     const page = mount({

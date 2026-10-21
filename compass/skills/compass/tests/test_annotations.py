@@ -8,15 +8,17 @@ this store to. The two it cannot are named in the module docstring of
 from __future__ import annotations
 
 import ast
+import contextlib
 import dataclasses
 import json
 import os
 import pathlib
 import shutil
 import tempfile
+import threading
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from compass_runtime import aggregate, cli, departures, project_context, unasked
@@ -27,6 +29,9 @@ from compass_runtime.config import RuntimeConfig, build_runtime_config
 from compass_runtime.state import build_runtime_state
 
 from .support import SERVER_PATH, make_runtime
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class AnnotationStoreTest(unittest.TestCase):
@@ -919,12 +924,52 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         self.assertIn("summary could not be deleted", said)
         self.assertIn("Delete summary", said)
 
+    def test_a_half_landed_discard_still_says_what_became_of_the_summary(self) -> None:
+        """The departure store failing alone left the summary unsaid, and the page stood silent on it.
+
+        Each variant keeps the departure store's own claim and adds only the summary's outcome.
+        """
+        said = annotation_store.DISCARD_SENTENCES
+        expect = {
+            "deleted": "summary was deleted",
+            "absent": "no stored summary",
+            "stopped": "was stopped",
+            "kept": "still stored",
+            "unavailable": "could not be read",
+            "unknown": "could not tell",
+        }
+        for outcome, words in expect.items():
+            with self.subTest(outcome=outcome):
+                sentence = said[f"unwithdrawn_{outcome}"]
+                self.assertTrue(sentence.startswith(annotation_store.DISCARD_UNWITHDRAWN))
+                self.assertIn("goes on quoting them", sentence)
+                self.assertNotIn("quotes them any more", sentence)
+                self.assertIn(words, sentence)
+        # Only the outcomes that say a summary is, or may be, stored name the control that removes one.
+        self.assertIn("Delete summary", said["unwithdrawn_kept"])
+        self.assertNotIn("Delete summary", said["unwithdrawn_unavailable"])
+
+    def test_a_stopped_job_with_nothing_stored_says_so_and_claims_no_summary_went(self) -> None:
+        said = annotation_store.DISCARD_SENTENCES["summary_stopped"]
+        self.assertIn("no stored summary", said)
+        self.assertIn("was stopped", said)
+        self.assertNotIn("its summary", said.replace("this session's summary", ""))
+
+    def test_a_summary_answer_nobody_recognises_claims_neither_that_it_went_nor_that_it_stayed(
+        self,
+    ) -> None:
+        said = annotation_store.DISCARD_SENTENCES["summary_unknown"]
+        self.assertIn("could not tell", said)
+        self.assertNotIn("is gone, along with any reading of it and its summary", said)
+        self.assertNotIn("Delete summary", said)
+        self.assertIn("may still be stored", said)
+
     def test_no_discard_sentence_is_one_of_the_save_cues(self) -> None:
         """ "Saved as a new revision." after a deletion is DRC-4543 re-shipped."""
         said = set(annotation_store.DISCARD_SENTENCES.values())
 
         self.assertEqual(len(annotation_store.DISCARD_SENTENCES), len(said))
-        self.assertEqual(16, len(said))
+        self.assertEqual(24, len(said))
         self.assertNotIn("Saved as a new revision.", said)
         for sentence in said:
             with self.subTest(sentence=sentence[:32]):
@@ -955,49 +1000,102 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         config, discarding = make_runtime(state_home=home, state_dir=Path(home))
         return config, discarding, build_runtime_state(config, started=0.0)
 
+    def _discard_held_at_its_write(
+        self,
+        config: RuntimeConfig,
+        discarding: Any,
+        pause: str,
+        *,
+        sid: str,
+    ) -> tuple[threading.Thread, threading.Event, threading.Event, dict[str, int]]:
+        """A real discard on its own thread, held at the store lock by events and not by sleeps.
+
+        `pause` is `before` (held before it asks for the lock) or `inside` (holding it). The thread
+        is named so only it is held; every other caller of the store passes through untouched.
+        """
+        real = annotation_store._locked_store
+        reached, released = threading.Event(), threading.Event()
+        receipt: dict[str, int] = {}
+
+        @contextlib.contextmanager
+        def gated(*args: Any) -> Iterator[Any]:
+            held = threading.current_thread().name == "discarder"
+            if held and pause == "before":
+                reached.set()
+                self.assertTrue(released.wait(5))
+            with real(*args) as store:
+                if held and pause == "inside":
+                    reached.set()
+                    self.assertTrue(released.wait(5))
+                yield store
+
+        patch = mock.patch.object(annotation_store, "_locked_store", gated)
+        patch.start()
+        self.addCleanup(patch.stop)
+        thread = threading.Thread(
+            name="discarder",
+            target=lambda: annotation_store.clear(
+                config, discarding, "pi", sid, diagnostic_sink=lambda _line: None, receipt=receipt
+            ),
+        )
+        thread.start()
+        self.addCleanup(thread.join, 5)
+        return thread, reached, released, receipt
+
     def test_a_discard_decides_on_the_stored_revisions_and_not_on_this_dashboards_copy(
         self,
     ) -> None:
-        """DRC-4939. A save from another tab landed after this dashboard last read the file.
+        """DRC-4939. A save from another tab lands between this dashboard's read and its delete.
 
         The discard route chose whether to take the summary from `active`, the unlocked cached
         copy, so a save that this dashboard had not yet seen left words discarded and the
-        summary standing. The count of what went is taken under the lock, from the file.
+        summary standing. The count of what went is taken under the lock, from the file. The
+        discard is held on its own thread before it takes the lock, so the two saves really land
+        after the read it decided on and before its delete.
         """
         config, discarding, saving = self._two_dashboards()
         silent = lambda _line: None  # noqa: E731 - a sink with nothing to say
         self.assertEqual((), annotation_store.active(config, discarding))
+        thread, reached, released, receipt = self._discard_held_at_its_write(
+            config, discarding, "before", sid="raced"
+        )
+        self.assertTrue(reached.wait(5))
         for goal in ("First", "Second"):
             annotation_store.annotate(
                 config, saving, "pi", "raced", goal=goal, output="", diagnostic_sink=silent
             )
         self.assertEqual((), annotation_store.active(config, discarding))
+        released.set()
+        thread.join(5)
 
-        receipt: dict[str, int] = {}
-        outcome = annotation_store.clear(
-            config, discarding, "pi", "raced", diagnostic_sink=silent, receipt=receipt
-        )
-
-        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
         self.assertEqual(2, receipt["removed_revisions"])
         entry = annotation_store.find(annotation_store.refresh(config, saving), "pi", "raced")
         self.assertTrue(annotation_store.is_discarded(entry))
         self.assertEqual(2, annotation_store.discarded_revision(entry))
 
     def test_a_save_after_a_discard_is_a_new_revision_never_half_of_the_old_entry(self) -> None:
-        """DRC-4939. The two orders of a save and a discard each leave one whole state."""
+        """DRC-4939. A save that arrives while the discard holds the lock waits and lands after it."""
         config, discarding, saving = self._two_dashboards()
         silent = lambda _line: None  # noqa: E731 - a sink with nothing to say
         annotation_store.annotate(
             config, saving, "pi", "order", goal="Before", output="", diagnostic_sink=silent
         )
-        receipt: dict[str, int] = {}
-        annotation_store.clear(
-            config, discarding, "pi", "order", diagnostic_sink=silent, receipt=receipt
+        thread, reached, released, receipt = self._discard_held_at_its_write(
+            config, discarding, "inside", sid="order"
         )
-        annotation_store.annotate(
-            config, saving, "pi", "order", goal="After", output="", diagnostic_sink=silent
+        self.assertTrue(reached.wait(5))
+        saver = threading.Thread(
+            target=lambda: annotation_store.annotate(
+                config, saving, "pi", "order", goal="After", output="", diagnostic_sink=silent
+            )
         )
+        saver.start()
+        self.addCleanup(saver.join, 5)
+        # The save is on its way to the lock the discard holds, so it cannot have landed yet.
+        self.assertTrue(saver.is_alive())
+        released.set()
+        thread.join(5)
+        saver.join(5)
 
         entry = annotation_store.find(annotation_store.refresh(config, discarding), "pi", "order")
         self.assertEqual(1, receipt["removed_revisions"])

@@ -136,8 +136,8 @@ had been kept.
 - The summary is deleted only on a clear that landed over words that existed. A request
   over a session nothing was typed against, or one already discarded, deleted no words and leaves
   the summary alone: a summary does not depend on a saved intent, and a hand-made request must not
-  take it. The reply carries `summary`: `deleted`, `absent` (nothing was stored, or only a job was
-  running), a refusal token from the store (`unwritable`, `unavailable`), or `untouched` where the
+  take it. The reply carries `summary`: `deleted`, `absent` (nothing was stored), `stopped` (nothing was stored and a job was running, which the
+  discard stopped; amended 2026-10-21), a refusal token from the store (`unwritable`, `unavailable`), or `untouched` where the
   press owed it nothing. The field is always present, so one key has one meaning.
 - Whether words existed is decided by the annotation store under its lock, on the revisions it
   finds there, and not on the dashboard's cached copy, which a save from another tab can outrun. The
@@ -146,15 +146,18 @@ had been kept.
   the discard takes too, and one that lands after is a new revision over the discard record; neither
   leaves the summary standing under words that went.
 - The page's sentence follows the summary's own answer, one sentence each: `deleted` says the summary
-  went; `absent` says no summary was stored and does not claim one went; `unwritable` says it could
+  went; `absent` says no summary was stored and does not claim one went; `stopped` says that and that the one
+  being written was stopped; a `refused` write reads as `unwritable`, and a token the page does not know says
+  Compass could not tell, so a summary may still be stored, and claims neither that it went nor that it stayed; `unwritable` says it could
   not be deleted and names Delete summary; `unavailable` says the store could not be read, so whether
   one exists is unknown, and names no remedy. Where the old summary is gone or never was, the sentence
   adds that opening a finished session again writes a new one unless summaries are turned off (rule 5
   above). A `removed` of zero says nothing was discarded.
 - A summary that cannot be deleted leaves the annotation discarded and the summary standing.
   The page then says so and names Delete summary as the way to finish, rather than the categorical
-  sentence. When the departure store also failed to withdraw, that sentence wins, because it stops
-  a reader believing quotations went.
+  sentence. When the departure store also failed to withdraw, that sentence leads, because it stops
+  a reader believing quotations went, and the summary's own outcome follows it in the words that case uses
+  (amended 2026-10-21: the summary used to go unsaid there).
 - The form starts empty. A discarded session's goal box is not refilled with the drafted first
   prompt: one stray Save intent would bring back an intent the reader had just deleted. The prompt
   stays one press away under Use your prompt.
