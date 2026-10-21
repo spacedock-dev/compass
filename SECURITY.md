@@ -158,7 +158,8 @@ The posture rests on two invariants:
    Both write identifier-only progress markers in `state_dir/summary-jobs/` before any charge;
    startup reports a dead job as interrupted with its finished parts and never resumes it.
    Delete summary stops a running summary before a later reply can publish. Discard everything
-   neither stops a summary job nor removes a stored summary. A publication lock at `state_dir/summary-jobs.lock` serializes
+   does the same for the discarded session, under the reason `discarded`, and then deletes that
+   session's stored summary; it removes no other session's. A publication lock at `state_dir/summary-jobs.lock` serializes
    admission, save, cancel, deletion and grant changes across dashboards. The independent
    `summary_permission` row and `summary_spends` receipt/timestamp rows live in the permission
    SQLite file; neither reads or charges Analyze's `spends` or `spend_jobs` tables. A receipt is
@@ -167,8 +168,9 @@ The posture rests on two invariants:
    All three summary POST routes are loopback-only, enforce Host/Origin and fetch-site checks,
    and refuse document navigation before parsing a body or touching a store. The separate
    **summary store**, `compass-summaries.json` under the same home, holds model-written
-   summaries keyed by harness and session, without a saved intent. Discard everything does not
-   remove it. Its versioned closed schema admits the producer's summary (lede, blocks, spans,
+   summaries keyed by harness and session, without a saved intent. Discard everything removes the
+   discarded session's entry and no other (owner's ruling, 2026-10-21; it reversed the earlier rule
+   that the summary store survives). Its versioned closed schema admits the producer's summary (lede, blocks, spans,
    fingerprints, citations, withheld markers, cut counts, gaps, coverage and spend), made-at time,
    model stamp, last access time and word-free source comparison metadata. Unknown schemas,
    torn files and files above the 64 MiB aggregate read cap are unavailable, never partially read
@@ -2196,11 +2198,15 @@ Opening a stored summary makes no summary call or charge.
   non-blocking notice naming all the carriers above, Claude Code/Anthropic and the configured
   destination, and the off switch. A new destination or wider content tier repeats the notice.
   Each part rechecks grant, destination and content; this source sends no tool output and
-  cannot infer a tool-output grant. Turn off summaries, Delete summary and Cancel bar late
-  publication: a reply that returns after one of them is not stored.
+  cannot infer a tool-output grant. Turn off summaries, Delete summary, Discard everything and
+  Cancel bar late publication: a reply that returns after one of them is not stored. Delete summary
+  takes a second press, like Discard everything, and says what it removes before it does.
   `--no-observer-model` refuses every summary call at startup.
 - Storage. A store of its own under `COMPASS_HOME` (by default `~/.compass`), keyed by harness and
-  session and independent of any saved intent, so Discard everything does not remove it. Each field
+  session and independent of any saved intent, so a session with no saved words can have one. Discard
+  everything deletes the discarded session's summary, stopping one being written first, and only
+  after a clear that landed over words that existed; a clear over nothing typed leaves it. If that
+  delete fails the reply says so and the page names Delete summary as the way to finish. Each field
   is named and admitted. Strings are redacted on the way in and again on the way out, because any
   local process can rewrite the file. It has an aggregate byte bound and an eviction that can never
   push out a reader's saved words. Delete summary removes one session's summary, which the next
@@ -3023,7 +3029,8 @@ and the row is marked withdrawn, so nothing quoting the words you took back surv
 row is what the two caps above count and deleting it would refund the subprocess it spent.
 
 Discarding here means the `clear` field of a `POST /api/annotate` body, which deletes every
-revision. It is reachable from the board as `discard everything`, a control under the goal and the
+revision and, after a clear that landed over words that existed, the session's stored summary (the
+reply's `summary` field says `deleted`, `absent`, a refusal token, or `untouched`). It is reachable from the board as `discard everything`, a control under the goal and the
 expected outcome on the session page's drift block, offered only where a revision is stored and armed by one press before a second
 performs it. The board's own `clear` control beside the goal, and `remove` beside an outcome line,
 are a different act: each empties one box or drops one line, and the save that follows appends a

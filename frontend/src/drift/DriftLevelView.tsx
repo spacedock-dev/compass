@@ -9,7 +9,6 @@ import { routeRefusal } from './route';
 import {
   HARNESS_LIMIT,
   WORK_HARNESSES,
-  LEVEL_HIDDEN_MARKED,
   LEVEL_SCALE,
   LIVE_LEVEL_NAMES,
   LIVE_LINE,
@@ -17,6 +16,7 @@ import {
   NUDGE,
 } from './sentences';
 import { EvidenceList } from './Evidence';
+import { MarkedNotice } from './MarkedNotice';
 import { Why } from './Why';
 
 /* The level, its source and time, the meter, the source line and where it rose, then the nudge at High. No
@@ -132,6 +132,11 @@ export function DriftLevelView() {
   const found = analysis ?? measured;
   const liveOnly = harness === 'claude';
   const livePending = liveOnly && model.liveOn && !analysis;
+  /* A marked analysis contributes no level, and its message carries the Undo, so it comes before every branch
+     below: the live estimate, switched on, must not take the slot and leave the mark with no way back. */
+  if (!model.drafted && annotation?.['not_accurate'] === true && readingStored(annotation)) {
+    return <MarkedNotice />;
+  }
   const save = found && 'save' in found;
   if (livePending && (model.drafted || save)) {
     return (
@@ -147,15 +152,6 @@ export function DriftLevelView() {
   const level =
     found && 'level' in found && !(found.analysis && found.level === 'not_enough') ? found : null;
   if (model.drafted || !level || !level.label) {
-    /* A marked analysis contributes no level. Its slot says so, so the reader who marked it sees why the
-       meter is gone, where the meter was. */
-    if (!model.drafted && annotation?.['not_accurate'] === true && readingStored(annotation)) {
-      return (
-        <p className="next-session-drift-limit" data-next-drift-marked>
-          {LEVEL_HIDDEN_MARKED}
-        </p>
-      );
-    }
     /* Before any analysis there is no level, so none is drawn: "Not checked yet" over four empty segments
        labelled nothing. */
     return null;

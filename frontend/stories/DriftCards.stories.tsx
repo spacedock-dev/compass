@@ -3,7 +3,6 @@ import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import {
   CHECK_DOES_NOT_SHOW_IT,
-  LEVEL_HIDDEN_MARKED,
   READ_NEVER,
   READ_SUMMARY,
   READING_DEFINITION,
@@ -1013,12 +1012,10 @@ export const FooterMarkAsInaccurateAndUndo: Story = {
         'marked',
       ),
     );
-    await expect(within(footer).getByRole('status')).toHaveTextContent(RESULT_MARKED);
-    await expect(drift.querySelector('[data-next-drift-marked]')).toHaveTextContent(
-      LEVEL_HIDDEN_MARKED,
-    );
+    const notice = drift.querySelector<HTMLElement>('[data-next-drift-marked]') as HTMLElement;
+    await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
-    await userEvent.click(within(footer).getByRole('button', { name: RESULT_UNMARK }));
+    await userEvent.click(within(notice).getByRole('button', { name: RESULT_UNMARK }));
     await waitFor(() =>
       expect(footer.querySelector('[data-next-result-mark]')).toHaveAttribute(
         'data-next-result-mark',

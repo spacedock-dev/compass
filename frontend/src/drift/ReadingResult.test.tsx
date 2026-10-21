@@ -1,6 +1,17 @@
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { byAction, check, fact, json, jumpTo, mountDrift, press, textOf } from './testing';
+import { liveMonitorFor } from '../intent/liveMonitor';
+import {
+  byAction,
+  check,
+  contextRoute,
+  fact,
+  json,
+  jumpTo,
+  mountDrift,
+  press,
+  textOf,
+} from './testing';
 
 const ASSESSMENT = {
   revision_read: 3,
@@ -425,13 +436,17 @@ describe('Not accurate', () => {
     });
     expect(foot()?.getAttribute('data-next-result-mark')).toBe('marked');
     expect(byAction('not-accurate')?.textContent).toBe('Undo');
-    expect(textOf('[data-next-result-mark] [role="status"]')).toBe(
-      'Marked inaccurate. This analysis no longer sets the drift level or Steer back.',
+    // One message, where the level was, with Undo and Analyze again beside it; the foot says nothing more.
+    expect(textOf('[data-next-drift-marked] [role="status"]')).toBe(
+      'Marked inaccurate. This analysis no longer sets the drift level or Steer back, and its verdicts below are set aside.',
     );
+    expect(foot()?.textContent).toBe('');
+    expect(
+      document.querySelector('[data-next-drift-marked] [data-next-cockpit-action="reading-ask"]')
+        ?.textContent,
+    ).toBe('Analyze again');
+    expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
     expect(document.querySelector('[data-next-drift-level]')).toBeNull();
-    expect(textOf('[data-next-drift-marked]')).toBe(
-      'Drift level hidden because you marked this analysis inaccurate.',
-    );
     // Undo posts the mark back off.
     await press(byAction('not-accurate') as HTMLElement);
     await page.settle();
@@ -439,6 +454,42 @@ describe('Not accurate', () => {
       (r) => r.method === 'POST' && r.path === '/api/annotate',
     );
     expect(undo.at(-1)?.body).toMatchObject({ not_accurate: false, read_at: 1000 });
+  });
+});
+
+describe('A marked reading with the Live monitor on', () => {
+  const LIVE = {
+    harness: 'claude',
+    sid: 's1',
+    revision: 3,
+    computed_at: 990,
+    level: 'medium',
+    reasons: ['pass-then-write'],
+    cites: [],
+  };
+
+  it.each([
+    ['a live level row', [LIVE]],
+    ['no live level row', []],
+  ])('still says it is marked and keeps Undo and Analyze again with %s', async (_name, rows) => {
+    const page = mountDrift({
+      session: stored({ annotation_not_accurate: true }),
+      facts: FACTS,
+      routes: { '/api/project-context': contextRoute(FACTS, { live_levels: rows }) },
+    });
+    await page.settle();
+    await page.settle();
+    await act(async () => {
+      liveMonitorFor(page.shell).set({ harness: 'claude', sid: 's1' }, true);
+    });
+    await page.settle();
+    expect(document.querySelector('[data-next-drift-marked]')).not.toBeNull();
+    expect(byAction('not-accurate')?.textContent).toBe('Undo');
+    expect(
+      document.querySelector('[data-next-drift-marked] [data-next-cockpit-action="reading-ask"]')
+        ?.textContent,
+    ).toBe('Analyze again');
+    expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
   });
 });
 

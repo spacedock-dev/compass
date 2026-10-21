@@ -31,13 +31,18 @@ function buildPayload(
     annotate: true,
     annotate_cap: 240,
     intent_revision: 'r1',
+    /* The server's own sentences, as `annotations.DISCARD_SENTENCES` words them: this page draws them and
+       composes none, so a story that quotes them holds the page to what the server said it would remove and keep. */
     annotate_discard: {
-      why: 'Deletes the saved goal, outcome lines and readings for this session.',
-      armed: 'Press Confirm discard to delete every saved revision for this session.',
-      stored: 'Discarded.',
+      why: 'Discarding everything deletes every revision of what you asked of this session, any reading of it, and this session’s summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps every earlier revision.',
+      armed:
+        'Press it again to discard. Every revision of what you asked of this session will go, along with any reading of it and this session’s summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.',
+      stored:
+        'Discarded. Every revision of what you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run.',
       refused: 'Could not discard.',
       unwritable: 'Could not write discard.',
-      record: 'Discarded.',
+      record:
+        'What you asked of this session was discarded, along with any reading of it. None of it is kept here: this record says only that the act happened and when.',
     },
     projects: [{ project: 'alpha/app', project_key: '/repo/alpha', sessions: ['claude:s1'] }],
     sessions: [
@@ -193,6 +198,9 @@ function IntentCardHarness({ setup }: { readonly setup?: CardSetup }) {
       currentSession = { ...currentSession, ...patch };
       await instance.runtime.refresh();
     };
+    (window as unknown as { __advanceIntentClock?: (ms: number) => void }).__advanceIntentClock = (
+      ms,
+    ) => clock.advance(ms);
 
     return instance;
   });
@@ -855,6 +863,100 @@ export const StateSaved: Story = {
         .map((node) => node.textContent),
     ).toEqual([expect.stringMatching(/^Saved · reads from/), 'More']);
     await controlsTogether(card);
+  },
+};
+
+/* Discard everything says what it removes and what it keeps before the second press, and once, after it. The form
+   is left empty, not refilled from the session's first prompt, which stays one press away under Use your prompt. */
+export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
+  args: {
+    setup: {
+      session: {
+        annotation_goal: 'Keep the parser small and pure',
+        annotation_goal_why: '',
+        annotation_revision: 2,
+        annotation_revision_count: 2,
+        annotation_at: 1_760_000_500,
+        annotation_goal_saved_at: 1_760_000_500,
+      },
+      onAnnotate: async (body) => {
+        if (body['clear'] === true) {
+          await (
+            window as unknown as {
+              __updateIntentSession: (patch: Record<string, unknown>) => Promise<void>;
+            }
+          ).__updateIntentSession({
+            annotation_goal: '',
+            annotation_goal_why: 'Discarded with everything else you asked of this session.',
+            annotation_revision: 0,
+            annotation_revision_count: 0,
+            annotation_discarded_at: 1_760_001_000,
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            outcome: 'stored',
+            persisted: true,
+            withdrew: true,
+            summary: 'deleted',
+            discarded: 1_760_001_000,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const card = await page.findByRole('region', { name: 'Intent' });
+    const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
+    await userEvent.click(within(kept).getByRole('button', { name: 'More about these words' }));
+    const quiet = within(canvasElement);
+    await userEvent.click(
+      (await quiet.findAllByRole('button', { name: 'Discard everything' }))[0] as HTMLElement,
+    );
+    // Before the press: what goes, and what stays.
+    const why = await quiet.findByText(/^Discarding everything deletes every revision/);
+    for (const named of [
+      'any reading of it',
+      'this session’s summary',
+      'It keeps the record that a check ran',
+      'Session history',
+      '--forget',
+    ]) {
+      await expect(why).toHaveTextContent(named);
+    }
+    await userEvent.click(
+      (await quiet.findAllByRole('button', { name: 'Discard everything' }))[1] as HTMLElement,
+    );
+    const confirm = await quiet.findByRole('button', { name: 'Confirm discard' });
+    // The confirmation says the same of the summary, including one being written, and says when it lapses.
+    const armed = canvasElement.querySelector('#next-cockpit-discard-armed') as HTMLElement;
+    await expect(armed).toHaveTextContent('this session’s summary, including one being written');
+    await expect(armed).toHaveTextContent('this offer lapses in 30 seconds');
+    await expect(armed).not.toHaveTextContent('on its own');
+    (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
+      1_300,
+    );
+    await userEvent.click(confirm);
+    // After: one sentence naming what went and what stays, and a goal left empty.
+    const said = await waitFor(() => {
+      const node = card.querySelector<HTMLElement>(
+        '.next-cockpit-held-discard .next-cockpit-held-cue',
+      );
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(said).toHaveTextContent('along with any reading of it and its summary');
+    await expect(said).toHaveTextContent('The record that a check ran stays');
+    await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue('');
+    await expect(canvasElement.textContent).not.toContain('Draft from your first prompt');
+    await expect(canvasElement.textContent).not.toMatch(/\b0 drift checks? requested/);
+    // The record of the act is not said beside its own result as well.
+    await expect(canvasElement.textContent).not.toContain(
+      'None of it is kept here: this record says only',
+    );
   },
 };
 

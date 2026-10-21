@@ -6420,9 +6420,25 @@ class SummaryJobHTTPTest(unittest.TestCase):
                 handler.do_POST()
             handler._reject.assert_called_once_with(403)
 
-    def test_discard_everything_leaves_a_running_summary_and_its_store_alone(self) -> None:
-        # DEC-28 answer 3: a summary does not depend on saved intent and Discard everything
-        # does not remove it, so discarding the words neither stops nor erases the summary.
+    def discard(self) -> dict[str, Any]:
+        handler = self.handler("/api/annotate", b'{"harness":"claude","sid":"root","clear":true}')
+        handler.do_POST()
+        answer: dict[str, Any] = json.loads(handler._send.call_args.args[0])
+        return answer
+
+    def summarize_to_the_end(self) -> None:
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=Replies()),
+        ):
+            self.request_summary()
+            wait_job(self.application, "claude", "root", timeout=5)
+        self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
+
+    def test_discard_everything_stops_a_running_summary_and_deletes_the_store_entry(self) -> None:
+        # The owner's ruling of 2026-10-21 reverses the earlier rule that the summary survives:
+        # a discard stops the job as Delete summary does, then removes the saved summary, so the
+        # reply returning from the model cannot bring the text back.
         self.config = dataclasses.replace(self.config, annotations_enabled=True)
         self.application.config = self.config
         annotation_store.annotate(
@@ -6442,15 +6458,48 @@ class SummaryJobHTTPTest(unittest.TestCase):
             self.request_summary()
             self.assertTrue(entered.wait(5))
             try:
-                handler = self.handler(
-                    "/api/annotate", b'{"harness":"claude","sid":"root","clear":true}'
-                )
-                handler.do_POST()
+                answer = self.discard()
             finally:
                 release.set()
             wait_job(self.application, "claude", "root", timeout=5)
+        self.assertEqual("absent", answer["summary"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+        self.assertEqual("discarded", self.state.summary_jobs["claude:root"].reason)
+        self.assertEqual("cancelled", self.state.summary_jobs["claude:root"].state)
+
+    def test_discard_everything_deletes_a_saved_summary_and_says_so(self) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        self.summarize_to_the_end()
+        answer = self.discard()
+        self.assertEqual("deleted", answer["summary"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+
+    def test_a_discard_that_removed_no_words_leaves_the_summary_alone(self) -> None:
+        # Nothing typed means nothing was discarded, and a summary does not depend on saved intent,
+        # so a hand-made request must not take it.
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        self.summarize_to_the_end()
+        answer = self.discard()
+        self.assertEqual("untouched", answer["summary"])
         self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
-        self.assertEqual("complete", self.state.summary_jobs["claude:root"].state)
+
+    def test_a_discard_keeps_the_record_that_a_check_ran(self) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        answer = self.discard()
+        self.assertIsNotNone(answer["discarded"])
+        entry = annotation_store.find(
+            annotation_store.active(self.config, self.state), "claude", "root"
+        )
+        self.assertTrue(annotation_store.is_discarded(entry))
 
     def test_consent_route_does_not_touch_reading_or_goal_and_off_survives_restart(self) -> None:
         reading_policy.note(

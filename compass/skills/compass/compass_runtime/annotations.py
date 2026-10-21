@@ -151,10 +151,17 @@ DIRECTION_UNAVAILABLE = (
 # departure still quotes them verbatim on the wire. Naming both acts where the
 # reader meets them is what closes that belief, and SECURITY.md already says
 # the shorter name is the one printed on the button.
+#
+# It leads with what goes and what stays, because the walk found it explaining `Clear` and
+# saying nothing of the reading or the summary (DRC-4928). `Clear` is named last and only to
+# separate the two acts.
 DISCARD_WHY = (
-    "The clear beside the goal and the remove beside each outcome line empty them, and the save "
-    "after it keeps every earlier revision, so anything raised against those words goes on "
-    "quoting them. Discarding everything is the other act."
+    "Discarding everything deletes every revision of what you asked of this session, any reading "
+    "of it, and this session's summary, and nothing raised against those words quotes them any "
+    "more. It keeps the record that a check ran, which bounds how often one may run. Session "
+    "history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that "
+    "store. The clear beside the goal is the weaker act: the save after it keeps every earlier "
+    "revision."
 )
 # The confirmation, and it carries the whole scope rather than the fact that
 # there is one. It is the only sentence a reader sees before the act, so
@@ -165,9 +172,9 @@ DISCARD_WHY = (
 # read one recognises the other.
 DISCARD_ARMED = (
     "Press it again to discard. Every revision of what you asked of this session will go, along "
-    "with any reading of it, and nothing raised against those words will quote them any more; "
-    "the record that a check ran stays. Nothing has been deleted yet, and this offer lapses on "
-    "its own."
+    "with any reading of it and this session's summary, including one being written, and nothing "
+    "raised against those words will quote them any more; the record that a check ran stays. "
+    "Nothing has been deleted yet, and this offer lapses in 30 seconds."
 )
 # Categorical and with no count. Nothing measures how many raises were
 # withdrawn: `departures.withdraw` answers True whether it blanked five rows or
@@ -175,8 +182,15 @@ DISCARD_ARMED = (
 # first Measured Invariant's defect again.
 DISCARD_STORED = (
     "Discarded. Every revision of what you asked of this session is gone, along with any "
-    "reading of it, and nothing raised against those words quotes them any more. The record "
-    "that a check ran stays, because it is what bounds how often one may run."
+    "reading of it and its summary, and nothing raised against those words quotes them any "
+    "more. The record that a check ran stays, because it is what bounds how often one may run."
+)
+# The summary is the third store, and the one that can fail alone: the words and the readings
+# are gone by then and cannot be put back, so this says what is left and the control that
+# removes it. Nothing here claims the departure store, which `DISCARD_UNWITHDRAWN` speaks for.
+DISCARD_SUMMARY_KEPT = (
+    "Discarded here, but this session's summary could not be deleted and is still stored. "
+    "Delete summary removes it."
 )
 DISCARD_REFUSED = (
     "Not discarded. The server refused, so every revision is still stored and nothing raised "
@@ -276,6 +290,7 @@ DISCARD_SENTENCES: Final[dict[str, str]] = {
     "armed": DISCARD_ARMED,
     "stored": DISCARD_STORED,
     "unwithdrawn": DISCARD_UNWITHDRAWN,
+    "summary_kept": DISCARD_SUMMARY_KEPT,
     "refused": DISCARD_REFUSED,
     "unwritable": DISCARD_UNWRITABLE,
     "untrusted": DISCARD_UNTRUSTED,

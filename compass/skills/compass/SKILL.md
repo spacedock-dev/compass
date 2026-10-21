@@ -60,7 +60,7 @@ its observation time or says that time is unknown. Opening the log never derives
 
 Annotation off/loading/error withholds typed evidence while board sessions and other sources stay
 visible. Retained words, revisions and readings remain reachable after the session leaves the
-board. Discard removes your saved words, typed or adopted, and readings without removing independently labeled sources.
+board. Discard removes your saved words, typed or adopted, readings and the session's summary without removing independently labeled sources.
 An open log invalidates withdrawn words before loading their replacement, including a discard
 made in another tab. The annotation store keeps at most 256 records and sixteen revisions each;
 discard records are evicted before retained words, then oldest first. These limits do not apply
@@ -130,7 +130,7 @@ call; other harnesses keep no record it can page through and say so. On Claude C
 model-written summary in phases, each line citing the entries it rests on: a finished session is
 summarized when you open it, once Compass has observed its end (without one the card offers
 `Summarize` instead), a running one on `Summarize` or `Update summary`, and a stored summary
-opens without a call. `Delete summary` removes it, and a line that claims in its own voice that the
+opens without a call. `Delete summary` removes it after a second press, says what it removes before that press, and reports the deletion; and a line that claims in its own voice that the
 work is done is withheld. **Full activity** closes the page, collapsed until you open it: the agent's current
 activity, the session's numbered entries, the recorded request, tasks, subagents, token
 measurements and how the session landed. On a harness other than Claude Code or Pi the Drift section says "Compass
@@ -454,12 +454,14 @@ attempts and hand-overs, with no arithmetic between any of them. A count identif
 reading and settles nothing else, and where the away checks have never read the session the figure
 says it was not measured rather than reading zero. The goal's `Clear` in the Intent card empties that box, and
 the save after it keeps every earlier revision, so the raises quoting those words stay. Discarding
-the whole annotation withdraws them: the quotations go from the departure record too, and what
+the whole annotation withdraws them and deletes the session's summary, stopping one being written
+first: the quotations go from the departure record too, and what
 stays is the fact that a check ran and a record of the discard itself, holding when it happened
 and no text at all. That record is why a discarded session still has a line in the Intent log,
 and why the board never describes it as a session nobody typed against. That act is the `Discard everything` control, in the Intent card, behind the summary of the same name and offered only
 where a revision is stored; it takes two presses, and between them the board names what it will
-delete and what it will withdraw. That sentence is the control's own description, and it is
+delete (the revisions, any reading and the summary), what it will withdraw and what it keeps (the
+record that a check ran, and session history, which `--forget` clears), and when the offer lapses. That sentence is the control's own description, and it is
 written to the page's live region when the first press arms it, so it reaches a reader who is not
 looking at the screen. Beside each raised departure sits the raise that selects its tmux pane
 where available, whatever state the session is in; it does not bring the window forward or send
@@ -571,8 +573,9 @@ after it or new work arrived since, "Analyze again" when it is current. It is in
 The shared budget is not shown until it is spent; then a banner holds the top of the session page,
 naming the limit and the time the next analysis can run. "Mark as inaccurate" marks the reading with
 a token that is stored beside it and never sent or counted, and says so beside the control; that
-reading no longer sets the level or Steer back until you press Undo, and the level's slot says why
-it is empty. A later
+reading no longer sets the level or Steer back until you press Undo. One message where the level was
+says so, with Undo and Analyze again beside it, the reading's verdicts stay below it dimmed as disowned,
+and an optional "what was wrong" choice is kept in the tab only. A later
 direction alone offers no correction. A correction puts departures and failed checks first, dates
 a time from an earlier day, and asks for evidence where an outcome is not shown. Under each
 departure, and a contradicted claim, it carries the analysis's own explanation on an indented

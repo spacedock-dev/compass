@@ -8,7 +8,7 @@ import { fakeRouterEnvironment } from '../src/router/testing';
 import { SAMPLE_FIXTURE, SampleFixtureContext } from '../src/sample/fixture';
 import { SAMPLE_FRAGMENT } from '../src/sample/ids';
 import { createShell } from '../src/shell/createShell';
-import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
+import { createFakeClock, createFakeEnvironment, type FakeClock } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import {
   FRESHNESS_UNKNOWN,
@@ -1151,7 +1151,46 @@ export const LandsDuringAnEdit: Story = {
   },
 };
 
-/* Delete summary removes it and does not summarize the session again on this open. */
+const advance = (ms: number) => {
+  if (!script.shell) throw new Error('no shell yet');
+  (script.shell.clock as FakeClock).advance(ms);
+};
+const deletePosts = () => script.posts.filter((post) => post.path === '/api/summary/delete');
+
+/* The first press on Delete summary deletes nothing: it says what will go and what will not, and the offer
+   lapses on its own, said in seconds. */
+export const DeleteAsksFirst: Story = {
+  render: () => <SummaryPage summary={storedSummary()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await summaryOf(region);
+    await userEvent.click(within(region).getByRole('button', { name: 'Delete summary' }));
+    const confirm = await within(region).findByRole('button', { name: 'Confirm delete' });
+    await expect(deletePosts()).toEqual([]);
+    await expect(region.querySelector('[data-next-summary-delete-armed]')).toHaveTextContent(
+      'Nothing has been deleted yet, and this offer lapses in 30 seconds.',
+    );
+    await expect(confirm).toHaveAttribute('aria-describedby', 'next-summary-delete-armed');
+    // A press inside the dwell is another arm and never the deletion.
+    await userEvent.click(confirm);
+    await expect(deletePosts()).toEqual([]);
+    await expect(region.querySelector('[data-next-summary]')).not.toBeNull();
+    // Keep summary takes the offer back, and the next press arms again.
+    await userEvent.click(within(region).getByRole('button', { name: 'Keep summary' }));
+    await expect(within(region).getByRole('button', { name: 'Delete summary' })).toBeVisible();
+    await userEvent.click(within(region).getByRole('button', { name: 'Delete summary' }));
+    await within(region).findByRole('button', { name: 'Confirm delete' });
+    advance(31_000);
+    await waitFor(() =>
+      expect(within(region).queryByRole('button', { name: 'Confirm delete' })).toBeNull(),
+    );
+    await expect(within(region).getByRole('button', { name: 'Delete summary' })).toBeVisible();
+    await expect(deletePosts()).toEqual([]);
+  },
+};
+
+/* Delete summary removes it after a second press, says so with the time, and does not summarize the session
+   again on this open. */
 export const DeleteDoesNotRestart: Story = {
   render: () => <SummaryPage summary={storedSummary()} />,
   play: async ({ canvasElement }) => {
@@ -1162,11 +1201,25 @@ export const DeleteDoesNotRestart: Story = {
       return defaultAnswer(path, body);
     };
     await userEvent.click(within(region).getByRole('button', { name: 'Delete summary' }));
+    await within(region).findByRole('button', { name: 'Confirm delete' });
+    advance(1_300);
+    await userEvent.click(within(region).getByRole('button', { name: 'Confirm delete' }));
     await waitFor(() => expect(region.querySelector('[data-next-summary]')).toBeNull());
     await poll();
     await expect(script.posts).toEqual([
       { path: '/api/summary/delete', body: { harness: 'claude', sid: 's1' } },
     ]);
+    const line = await waitFor(() => {
+      const node = region.querySelector<HTMLElement>('[data-next-summary-deleted]');
+      if (!node) throw new Error('no result line yet');
+      return node;
+    });
+    await expect(line).toHaveTextContent(
+      /^Summary deleted at \d{2}:\d{2}\. Summarize writes a new one\.$/,
+    );
+    // Summarize is the way to a new one, and pressing it takes the line down.
+    await userEvent.click(within(region).getByRole('button', { name: 'Summarize' }));
+    await waitFor(() => expect(region.querySelector('[data-next-summary-deleted]')).toBeNull());
   },
 };
 

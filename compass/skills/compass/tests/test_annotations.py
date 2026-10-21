@@ -848,6 +848,7 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         # `_withdraw_raises` blanks the rows.
         self.assertIn("Every revision", said)
         self.assertIn("reading", said)
+        self.assertIn("summary", said)
         self.assertIn("quotes them any more", said)
         # And the row that survives on purpose, because it is what bounds the
         # lane's spend.
@@ -869,11 +870,15 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
 
         self.assertIn("Every revision", said)
         self.assertIn("reading", said)
+        # The summary goes too, and one being written goes with it (owner's ruling, 2026-10-21).
+        self.assertIn("summary, including one being written", said)
         self.assertIn("will quote them any more", said)
         self.assertIn("the record that a check ran stays", said.lower())
         # And it still says nothing has happened yet, which is what makes it a
         # confirmation rather than a receipt.
         self.assertIn("Nothing has been deleted yet", said)
+        # And says when the offer lapses, because "on its own" gave a reader no time to act in.
+        self.assertIn("lapses in 30 seconds", said)
 
     def test_the_half_landed_sentence_does_not_claim_the_quotations_went(self) -> None:
         """`departures.withdraw` can fail alone, and the entry is gone by then.
@@ -894,13 +899,23 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         self.assertIn("clear", said)
         self.assertIn("keeps every earlier revision", said)
         self.assertIn("Discarding everything", said)
+        # What goes and what stays, before the act: the summary goes, the check record and
+        # session history stay, and --forget is the way to clear that history.
+        for named in ("summary", "record that a check ran", "Session history", "--forget"):
+            self.assertIn(named, said)
+
+    def test_the_half_landed_summary_sentence_names_the_control_that_finishes_it(self) -> None:
+        said = annotation_store.DISCARD_SUMMARY_KEPT
+
+        self.assertIn("summary could not be deleted", said)
+        self.assertIn("Delete summary", said)
 
     def test_no_discard_sentence_is_one_of_the_save_cues(self) -> None:
         """ "Saved as a new revision." after a deletion is DRC-4543 re-shipped."""
         said = set(annotation_store.DISCARD_SENTENCES.values())
 
         self.assertEqual(len(annotation_store.DISCARD_SENTENCES), len(said))
-        self.assertEqual(12, len(said))
+        self.assertEqual(13, len(said))
         self.assertNotIn("Saved as a new revision.", said)
         for sentence in said:
             with self.subTest(sentence=sentence[:32]):

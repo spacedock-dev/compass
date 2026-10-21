@@ -559,3 +559,14 @@ export function placeDeparture(
 
 export const phaseId = (key: string, place: string) =>
   `summary-phase:${key}:${place.replace(':', '-')}`;
+
+/* What the first press on Delete summary says before anything is deleted, and what the second leaves. Said in
+   the page's own words and not the server's: the delete route answers a token, and the sentence claims nothing
+   about another store. The wait it names is `CUE_TTL_MS`, the lifetime every armed control here shares. */
+export const DELETE_LAPSE_SECONDS = 30;
+export function deleteArmed(receiver: string): string {
+  return `Press again to delete this summary from this machine. Nothing else is deleted. Summarize writes a new one, which sends the session to ${receiver} again. Nothing has been deleted yet, and this offer lapses in ${String(DELETE_LAPSE_SECONDS)} seconds.`;
+}
+export function summaryDeleted(time: string): string {
+  return `Summary deleted at ${time}. Summarize writes a new one.`;
+}

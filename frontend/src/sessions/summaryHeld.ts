@@ -24,6 +24,10 @@ export interface SessionSummaryHeld {
   readonly opened: boolean;
   /** That open's request is in flight. */
   readonly opening: boolean;
+  /** When the first press on Delete summary armed it, in the clock's milliseconds, or 0 while it is not armed. */
+  readonly deleteArmedAt: number;
+  /** When this tab last deleted the summary, in the clock's milliseconds, or 0: said until the next start. */
+  readonly deletedAt: number;
 }
 
 const EMPTY: SessionSummaryHeld = {
@@ -34,6 +38,8 @@ const EMPTY: SessionSummaryHeld = {
   failed: '',
   opened: false,
   opening: false,
+  deleteArmedAt: 0,
+  deletedAt: 0,
 };
 
 export interface SummaryHeldStore {

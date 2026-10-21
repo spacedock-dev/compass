@@ -505,6 +505,8 @@ export async function markNotAccurate(
   intent.held.notify();
   const on = !marked;
   drift.notAccurate.delete(key);
+  // Taking the mark back takes the choice with it: it described a reading the reader no longer disowns.
+  if (marked) drift.wrong.delete(key);
   let saved = false;
   try {
     const reply = answered(

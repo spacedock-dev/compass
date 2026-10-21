@@ -13,6 +13,7 @@ import { ModelNotice } from '../drift/ModelNotice';
 import { Why } from '../drift/Why';
 import { ActionButton } from '../intent/ActionButton';
 import { SampleMark } from '../sample/SampleMark';
+import { clock } from '../observed';
 import { useShell } from '../shell/context';
 import {
   FRESHNESS_UNKNOWN,
@@ -27,6 +28,8 @@ import {
   SUMMARY_RELEVANCE,
   SUMMARY_STARTING,
   SUMMARY_WORKING_KEEP,
+  deleteArmed,
+  summaryDeleted,
   withheldTitle,
   unlinkedSentence,
   blockName,
@@ -44,7 +47,13 @@ import {
   summaryNotes,
   withheldSentence,
 } from './summary';
-import { cancelSummary, deleteSummary, setSummaries, startSummary } from './summaryActions';
+import {
+  cancelSummary,
+  disarmDeleteSummary,
+  pressDeleteSummary,
+  setSummaries,
+  startSummary,
+} from './summaryActions';
 import { useSummaryMarks, type DepartureMark } from './summaryMarks';
 import type { SummaryState } from './summaryState';
 
@@ -127,9 +136,12 @@ const summariesOff = (grant: SummaryGrant): boolean =>
   grant.off || grant.reason === 'summaries-off';
 
 /* What is sent, one press away beside Summarize, with the off switch inside it, or the on switch while off. */
+const receiverOf = (grant: SummaryGrant): string =>
+  grant.provider === 'claude' ? 'Claude Code' : grant.provider;
+
 function Sent({ state }: { readonly state: SummaryState }) {
   if (!state.grant?.disclosure) return null;
-  const receiver = state.grant.provider === 'claude' ? 'Claude Code' : state.grant.provider;
+  const receiver = receiverOf(state.grant);
   return (
     <Why name="summary-sent" pop summary={`What is sent to ${receiver}`}>
       <p className="next-cockpit-reading-why">{state.grant.disclosure}</p>
@@ -303,6 +315,9 @@ export function SummaryControls({
   return (
     <div className="flex flex-col gap-2" data-next-summary-state="none">
       {notice}
+      {held.deletedAt > 0 ? (
+        <Line data-next-summary-deleted>{summaryDeleted(clock(held.deletedAt / 1000))}</Line>
+      ) : null}
       {why ? (
         <Line data-next-summary-reason={refusal?.reason ?? job?.reason ?? ''}>{why}</Line>
       ) : null}
@@ -582,6 +597,61 @@ export function JumpButton({
   );
 }
 
+/* Delete summary, quieter than the reading's own controls and in two presses. The first arms it and says what
+   goes and what stays with the sentence the second press acts on; Keep summary and Escape take the offer back. */
+const DELETE_ARMED_ID = 'next-summary-delete-armed';
+
+function DeleteSummary({ state }: { readonly state: SummaryState }) {
+  const shell = useShell();
+  const control = `summary-delete:${state.key}`;
+  const armed = state.held.deleteArmedAt > 0;
+  const sentence = state.grant ? deleteArmed(receiverOf(state.grant)) : '';
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2"
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !state.identity) return;
+        if (disarmDeleteSummary(shell, state.identity)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+    >
+      <ActionButton
+        weight={armed ? 'secondary' : 'quiet'}
+        tone="muted"
+        strongBorder={armed}
+        label={armed ? 'Confirm delete' : 'Delete summary'}
+        busyLabel="Deleting…"
+        pendingKey={control}
+        focusKey={control}
+        action="summary-delete"
+        describes={armed ? DELETE_ARMED_ID : ''}
+        onPress={(detail) => {
+          if (state.identity) pressDeleteSummary(shell, state.identity, detail, sentence);
+        }}
+      />
+      {armed ? (
+        <>
+          <ActionButton
+            weight="quiet"
+            tone="muted"
+            label="Keep summary"
+            focusKey={`${control}:keep`}
+            action="summary-delete-keep"
+            onPress={() => {
+              if (state.identity) disarmDeleteSummary(shell, state.identity);
+            }}
+          />
+          <Line id={DELETE_ARMED_ID} data-next-summary-delete-armed>
+            {sentence}
+          </Line>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 /* The summary itself: the lede, then each part's phases as headings with their bullets, a gap or a withheld
    string said where it stands. */
 export function SummaryView({
@@ -594,7 +664,6 @@ export function SummaryView({
   /** Where the summary starts, as the activity list numbers it, or empty. */
   readonly startsAt: string;
 }) {
-  const shell = useShell();
   const { model } = useDrift();
   const marks = useSummaryMarks();
   const stored = state.stored;
@@ -612,7 +681,6 @@ export function SummaryView({
       ),
     ),
   );
-  const control = `summary-delete:${state.key}`;
   /* The sample's tour notes the first phase that holds a departure, once. */
   const toured = stored.blocks.flatMap((block, b) =>
     block.gap
@@ -750,20 +818,9 @@ export function SummaryView({
       )}
       <Line>{SUMMARY_RELEVANCE}</Line>
       {state.grant && !running ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <ActionButton
-            weight="quiet"
-            tone="muted"
-            label="Delete summary"
-            busyLabel="Deleting…"
-            pendingKey={control}
-            focusKey={control}
-            action="summary-delete"
-            onPress={() => {
-              if (state.identity) void deleteSummary(shell, state.identity);
-            }}
-          />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Sent state={state} />
+          <DeleteSummary state={state} />
         </div>
       ) : null}
     </section>

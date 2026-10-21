@@ -150,6 +150,8 @@ export interface AnnotateReceipt {
   readonly revision_count?: number;
   readonly discarded?: boolean;
   readonly withdrew?: boolean;
+  /** What a discard did to the session's summary: `deleted`, `absent`, a refusal token, or `untouched`. */
+  readonly summary?: string;
 }
 
 export interface DirectionReceipt {

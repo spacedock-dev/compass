@@ -434,7 +434,8 @@ summaries and session summaries until **Resume model calls**. Compass stops send
 to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.
 An off saved before an upgrade stays paused. **Turn off summaries** stops session summaries alone;
 while paused, that control stays disabled with "Model calls are paused" beside it. Pause and Resume
-keep its saved answer, so summaries resume exactly as you left them. **Delete summary** removes one
+keep its saved answer, so summaries resume exactly as you left them. **Delete summary** takes two presses,
+says what it removes before the second, and reports the deletion with its time; it removes one
 session's saved summary, but it lasts until that finished session is opened again: opening it makes
 a new summary and sends its text once more, unless summaries are turned off or model calls are paused.
 Analyze allows 100 attempts in a rolling
@@ -464,8 +465,8 @@ same reason: `--no-annotations` is a switch for one run, not a statement about t
 session-end store goes with it, because both are the machine's memory of what it observed, and a
 session whose end was recorded then reads as quiet again. Nothing over the loopback port can delete
 history; this is the only way. It deletes nothing you typed: the goal and the expected outcome lines you wrote against a
-session, and any reading made against them, go when you discard that session's words on its
-session page. The one thing it takes out of that store is the record of a discard, which holds when the act
+session, any reading made against them, and that session's summary, go when you discard that
+session's words on its session page. The one thing it takes out of that store is the record of a discard, which holds when the act
 happened and no text, and is the machine's memory of something it did rather than anything you
 wrote. It also deletes `compass-copied-corrections.json`, the digests of corrections you copied
 from Compass, which hold no text either.
