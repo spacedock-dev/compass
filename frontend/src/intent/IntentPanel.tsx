@@ -41,7 +41,7 @@ export interface IntentPanelProps {
   readonly stamp?: ReactNode;
   /** What the Drift card header holds beside its title: its settings, and Resume while calls are paused. */
   readonly actions?: ReactNode;
-  /** What the session page composes beneath: the delegated-work line and the departures raised away. */
+  /** What the session page composes beneath: the departures raised away. */
   readonly children?: ReactNode;
 }
 

@@ -229,6 +229,9 @@ every reading built on top.
   "Marked inaccurate at 11:28 ⌄". *(a913471f #5)*
 - **Ask what was wrong,** in one optional step (a line, the level, the evidence). Today one press
   loses what the reader knows. *(a913471f #6)*
+  *Dropped, not shipped:* the choice was held in the tab, sent nowhere and outlived the reading it
+  described, so the page keeps no "what was wrong" step. The reason and the pointer are in
+  `docs/design-reader-state.md` (the Not accurate row).
 - **Offer `Analyze again` after marking.** That is when a reader most wants a second reading.
   *(a913471f #7)*
 - **Say it once, at the top, with `Undo` beside it.** Today two messages say the same thing, at the

@@ -1174,6 +1174,14 @@ only user turns, so neither reached a later direction, an outline phase or the r
 7. Codex has no queue record in the 1,082 rollouts read on 2026-10-21; a message sent while a call is pending is
    an ordinary user message there, which its reader already takes. Its `request_user_input` answer
    is unmeasured and is left as it was, as are the other harnesses.
+8. An answer an earlier build already read changes when this one reads it again, in two fields. Its
+   `fact_id` moves where the option carried the agent's `(Recommended)`, because the id hashes the title
+   and the title no longer ends in the marker, and its `intent_promoted` is false where it was true, because
+   an answer is no longer promotable on its own (item 3). A stored reading that cited the old id loses
+   that citation to the page's missing-entry rule, and session history, which dedupes on the id, holds the
+   answer under both ids for its fourteen days. Nothing maps the old id to the new: the paste amendment
+   rejected the same repair for the reason it gives, and an answer a reading cited is rare and recent.
+   A mid-turn message is unaffected, since its words never carried a marker.
 
 The parser digest the abstention packets are stamped with moves with this change, as the
 2026-10-01 amendment above allows for: `project_context.py` is one of its files.
@@ -5648,8 +5656,10 @@ verification walk.
 ### What it costs
 
 A reader who adds no outcome line never sees a level on the pill: the analysis answers the Goal
-only. The how-to says so, and says that one line gives a level. "Not enough recorded yet" is a
-valid result, not an error. A goal typed and saved after the end is still refused; a typed goal
+only. The how-to says so, and says that one line gives a level. The result then reads "Can't tell"
+unless the goal departs, which is a valid result and not an error (amended 2026-10-21: the card no
+longer draws "Not enough recorded yet" for a reading, see
+[a level needs a departure](#amended-2026-10-21-a-level-needs-a-departure)). A goal typed and saved after the end is still refused; a typed goal
 saved before the end remains eligible. The note in row 5 says so before the reader types. Removing
 the departure rows' Copy command retracts a clause of the
 promise map, and this ruling authorises it. The click budget that follows from the rows is in the
@@ -5659,9 +5669,10 @@ typed goal.
 ### Session first-view build, 2026-10-12
 
 The unblocked session header follows the goal and analysis panel, before Session activity; a blocked
-session retains its header raise and waiting panel above the goal. More has six groups at most:
-Live monitor with its explanation, saved-word caveats and Discard everything, Delegated work,
-Pause model calls, Saved with Clear, and settled or unread later directions. The privacy disclosure,
+session retains its header raise and waiting panel above the goal. More had six groups at most
+(amended 2026-10-21: Delegated work left, so five, and the groups themselves moved out of More, see
+[where everything in More went](#where-everything-in-more-went)):
+Live monitor with its explanation, saved-word caveats and Discard everything, Pause model calls, Saved with Clear, and settled or unread later directions. The privacy disclosure,
 model-request count and daily cap stay beside Analyze. The goal and primary fit at 1280 by 800 and
 375 by 667; 320 px and the 640 px layout representing 200% zoom retain wrapping and document scroll.
 
@@ -5891,9 +5902,11 @@ the level, the count and the cards cannot disagree.
   the 11:02 reading no longer holds."), with the count where there were several, and where a reading
   departs less often than the one before it, with the difference: two departures that become one name
   the one that went. A departure that only moved (the same count, worded or cited differently, with no
-  correction pasted between) is no clear, because a model words one finding differently each time it
-  reads. The count is the smaller of the fall and the departures no longer found, so a reworded
-  survivor never overstates what the tab watched. A correction pasted between the two readings keeps
+  correction pasted between) was no clear, because a model words one finding differently each time it
+  reads; amended 2026-10-21 (the edges of recognising a pasted correction, item 3), a departure replaced
+  by one that shares neither its reason nor a cited entry is named. Without a correction the count is
+  the larger of the fall and the departures replaced one for one, never more than were no longer found
+  or than now stand, so a reworded survivor never overstates what the tab watched. A correction pasted between the two readings keeps
   its own rule: each departure it named that no longer stands is named, with another standing or not.
   The page holds the
   earlier reading's departure count in the tab and says nothing it did not watch, so a reload
@@ -5932,8 +5945,8 @@ Three cases the main rule left open, each said only where the page can show it i
   what a reader sees: with no expected outcome line, no level, and "Can't tell" unless your goal departs.
   "Not enough recorded yet" stays the live estimate's word.
 
-A departure that moved is deliberately not named as replaced where no correction was pasted; see the
-bullet on clearing above. The decision there was made before this clarification and is kept.
+A departure that moved is named as replaced even where no correction was pasted, as the amendment on the
+edges of recognising a pasted correction records; the decision that stood here was reversed there.
 
 ### Amended 2026-10-21: a running turn is unfinished
 
@@ -5953,8 +5966,8 @@ or the agent's own messages) is stored as `not reached at this stop`, with its e
 what the record shows it waiting on, when work is going on after the latest of those words. Work is
 going on in two ways:
 
-- A call is still in flight. A call has no entry until its result arrives, so the press reads the
-  transcript itself for the newest call it has no result for (`project_context.claude_open_call_at`)
+- A call is still in flight, in a Claude Code session only. A call has no entry until its result
+  arrives, so the press reads the transcript itself for the newest call it has no result for (`project_context.claude_open_call_at`)
   and passes its time to `resolve`. A question put to the reader is not work going on, and a message
   the reader sent after a call closes it: an interrupted call is never answered, and nothing is
   running then. Nothing is stored; the call is read at press time and used once.
@@ -5979,7 +5992,10 @@ Everything the 2026-10-04 amendment says unfinished work does not excuse stands:
   unanswered call there is an interruption, and `produce` asks for the call only of a running
   session.
 
-What it cannot see. A call in flight is read from the tail of the transcript the press reads, so a
+What it cannot see. The in-flight half is Claude Code's alone: the press passes `produce` the lookup
+only for a Claude Code row with a transcript (`http_api`), and every other harness is held by the recorded
+half. Extending it was not done: each harness records an unanswered call differently or not at all, and a
+lookup that reads one wrongly would excuse a real departure. A call in flight is read from the tail of the transcript the press reads, so a
 call older than that tail, or one a subagent runs in a transcript of its own, is not seen; the
 subagent's launching call in the parent is. It is an assembly control, not a measurement of model
 accuracy: the case is a recorded shape (the agent said what it would do, kept working, and the model
@@ -6056,7 +6072,8 @@ stored before the strip, lost its departure.
    was rejected: it needs the stored reading to carry a second id per message, and the history store, which
    dedupes on the id, would hold the same message under both. A paste whose tag stands alone on its own
    line never moved, because a title skips a line that opens with `<`; the walked session was that shape,
-   so what its reading lost was the citation the rule above removes for a recognised paste, not an id. `AWrappedPastesFactIdIsTheOneItAlreadyHadTest`
+   so what its reading lost was the citation that [amendment's third item](#amended-2026-10-21-a-pasted-correction-is-compasss-words-and-a-kept-direction-is-no-evidence) removes for a
+   recognised paste, not an id. `AWrappedPastesFactIdIsTheOneItAlreadyHadTest`
    holds a stored reading that cites a wrapped paste through the strip.
 2. The page draws a message's words from one entry list, so the tags come off where the list is made
    (`workEntries`, for a user message only: an agent's words are its own text). The direction select's
@@ -6066,8 +6083,9 @@ stored before the strip, lost its departure.
    departure of the first that the second no longer finds is cleared, though the second departs on
    something else. A departure is the same one when it is on the same line and either gives the same reason
    or cites an entry the first cited; a model words one finding differently each time, so the reason alone
-   would call every re-read a replacement. With no correction between, the line is said only when the
-   reading carries none, as before. It reads "your correction" for one pasted between the two readings and
+   would call every re-read a replacement. With no correction between, the line is also said for a departure replaced one for
+   one by another that shares neither its reason nor a cited entry (amended 2026-10-21: it was said only when the
+   reading carried none), and counts no more than the departures that stand or went. It reads "your correction" for one pasted between the two readings and
    "your corrections" for more; a correction pasted before the first reading or after the second is not
    counted.
 4. The copied-flag test beside the kept-direction one now has a control that departs on the same words
@@ -6141,16 +6159,18 @@ unchanged.
     was moved under Not read and was still a fact about subagents with nothing for the reader to do.
 11. **A claim the record does not show says why for that claim.** A claim that names a kind of check (tests,
     lint, types, build) is explained from what the record read holds of that kind: none recorded, a run with
-    no recorded result, or a run the analysis did not tie to the claim. Only a claim that names no kind
-    keeps the sentence that says where the agent made it and that the record read is the board's recent
-    tail.
+    no recorded result, or a run the analysis did not tie to the claim. A claim that names no kind
+    says where the agent made it and that the record read is the board's recent tail, then how many checks
+    that record held in the window ("No check was recorded in what was read." or "2 checks were recorded in
+    what was read, and the analysis tied none to this claim."; amended 2026-10-21), so no two read the same
+    unless they sit beside the same record.
 12. **A fixed red test is not a failed check.** A failed run that a later pass of the same check followed,
     the same check being the server's own identity for it (the directory it ran in and its command line,
     published on each check as `check_id`), is a red test written first and fixed. The command line alone is
     not the identity: `pytest -q` passing in one package says nothing of it failing in another, and a check
     that carries no identity is never matched. It raises neither the failed-check verdict
-    nor Steer back's "A check the agent ran failed", the rule the session outline already holds for its
-    phases. The server's list is one run per check and never holds a fixed one; the page keeps the entries
+    nor Steer back's offer, which is made only with a departure, the rule the session outline already holds
+    for its phases. The server's list is one run per check and never holds a fixed one; the page keeps the entries
     of earlier loads, so it can.
 
 Rejected: a banner above the result for new work and a changed intent, which is what the walk objected to

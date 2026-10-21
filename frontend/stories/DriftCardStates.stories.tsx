@@ -152,7 +152,7 @@ export const ReRunning: Story = {
 };
 
 /* Result: one verdict line, then the departures, then Steer back, with a quiet footer. The result is said
-   once; the work list, the delegated-work line and the count are not between the verdict and the footer; What
+   once; the work list and the count are not between the verdict and the footer; What
    is sent is in one place. */
 export const Result: Story = {
   ...scenario({ session: STORED_READING, facts: READ_FACTS, work: HIGH }),

@@ -313,3 +313,51 @@ export const AReplacedDepartureAfterACorrectionIsNamed: Story = {
     );
   },
 };
+
+/* The same replacement with no correction pasted between the two readings: the card names the earlier
+   departure all the same, without saying a correction named it. A departure is the same one only on the same
+   line with the same reason or a shared cited entry, so a reading that departs on a different failed check
+   has not found the first again. */
+const UNCORRECTED_SESSION: Record<string, unknown> = {
+  annotation_assessment: DEPARTURE_READING,
+  annotation_reading_count: 1,
+  state: 'idle',
+};
+const UNCORRECTED = readingScenario([null]);
+export const AReplacedDepartureWithNoCorrectionIsNamed: Story = {
+  ...scenario({
+    session: UNCORRECTED_SESSION,
+    facts: [PERSON, FAILED, PASSED, LATER_FAILURE, AGENT],
+    work: { analysis_levels: [{ ...analysisRow('claude', 'medium'), reasons: ['departure'] }] },
+    reading: UNCORRECTED,
+  }),
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
+    UNCORRECTED_SESSION['annotation_assessment'] = {
+      ...DEPARTURE_READING,
+      read_at: 1100,
+      evidence_through: 1100,
+      criteria: {
+        goal: {
+          result: 'departure',
+          cites: ['c3'],
+          detail: 'The lint check failed after the first reading.',
+          clause: 'Ship the queue',
+        },
+        line_1: DEPARTURE_READING.criteria.line_1,
+      },
+    };
+    await UNCORRECTED.finish?.();
+    const cleared = await waitFor(() => {
+      const node = canvasElement.querySelector<HTMLElement>('[data-next-drift-cleared]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(cleared).toHaveTextContent(
+      `The departure from the ${clock(1000)} reading no longer holds.`,
+    );
+    await expect(cleared.textContent).not.toMatch(/correction/);
+    await expect(canvasElement.querySelectorAll('[data-next-departure]')).toHaveLength(1);
+  },
+};

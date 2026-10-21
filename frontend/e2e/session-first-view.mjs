@@ -223,10 +223,10 @@ try {
       .waitFor({ state: 'visible' });
     await page.getByText('9 of 10 left today', { exact: true }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: 'More', exact: true }).click();
-    await page.getByText(/Delegated work: 1 recorded launch/).waitFor({ state: 'visible' });
-    await page
-      .getByText(/Compass cannot see all work this session started/)
-      .waitFor({ state: 'visible' });
+    // The Drift card draws no Delegated work line (amended 2026-10-21): launches surface only in At risk.
+    if (await page.getByText(/Delegated work/).count()) {
+      throw new Error('More still draws a Delegated work line');
+    }
     await page.getByRole('button', { name: /Saved.*reads from/ }).click();
     await page
       .getByText(

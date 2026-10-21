@@ -620,26 +620,36 @@ def set_consent(application: reading_jobs.Application, allowed: bool) -> reading
     return answer
 
 
-def delete(
-    application: reading_jobs.Application, harness: str, sid: str, *, reason: str = "deleted"
-) -> str:
+def _delete(
+    application: reading_jobs.Application, harness: str, sid: str, reason: str
+) -> tuple[str, bool]:
+    stopped = False
     with _locked(application):
         # A stop that fails still deletes: `_stop` bars the in-memory job before it writes.
         with contextlib.suppress(OSError):
-            _stop(application, harness, sid, reason)
+            stopped = _stop(application, harness, sid, reason)
         outcome = summary_store.delete(application.config, harness, sid)
     _publish(application)
-    return outcome
+    return outcome, stopped
+
+
+def delete(
+    application: reading_jobs.Application, harness: str, sid: str, *, reason: str = "deleted"
+) -> str:
+    return _delete(application, harness, sid, reason)[0]
 
 
 def discard(application: reading_jobs.Application, harness: str, sid: str) -> str:
     """Discard everything's half of the act: stop a job in flight, then delete the summary.
 
     The same act as Delete summary under its own reason, so a job's reply returning after it
-    cannot recreate the text and the job reads as cancelled by the discard.
+    cannot recreate the text and the job reads as cancelled by the discard. Where nothing was stored
+    and a job was stopped the answer is `stopped` rather than `absent`, so the page can say the job
+    was stopped instead of leaving the armed sentence's "one being written" unconfirmed.
     The ruling is the 2026-10-21 amendment in docs/design-session-summary.md.
     """
-    return delete(application, harness, sid, reason="discarded")
+    outcome, stopped = _delete(application, harness, sid, "discarded")
+    return "stopped" if stopped and outcome == "absent" else outcome
 
 
 def recover(application: reading_jobs.Application, *, alive: Callable[[int], bool]) -> int:

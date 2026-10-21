@@ -6462,7 +6462,8 @@ class SummaryJobHTTPTest(unittest.TestCase):
             finally:
                 release.set()
             wait_job(self.application, "claude", "root", timeout=5)
-        self.assertEqual("absent", answer["summary"])
+        # Nothing was stored and a job was: the reply says the job was stopped, which `absent` cannot.
+        self.assertEqual("stopped", answer["summary"])
         self.assertIsNone(self.store.get(self.config, "claude", "root"))
         self.assertEqual("discarded", self.state.summary_jobs["claude:root"].reason)
         self.assertEqual("cancelled", self.state.summary_jobs["claude:root"].state)
@@ -6578,12 +6579,19 @@ class SummaryJobHTTPTest(unittest.TestCase):
         self.assertIn("still stored", said["summary_kept"])
         self.assertNotIn("still stored", said["summary_unavailable"])
         self.assertNotIn("Delete summary removes it", said["summary_unavailable"])
+        # A job stopped with nothing stored, and a token this build does not know, each say only that.
+        self.assertIn("was stopped", said["summary_stopped"])
+        self.assertNotIn("still stored", said["summary_stopped"])
+        self.assertIn("may still be stored", said["summary_unknown"])
+        self.assertNotIn(
+            "its summary", said["summary_unknown"].replace("this session's summary", "")
+        )
         # Reopening writes a new summary unless summaries are off: said wherever the store was
         # read and no summary stands, and not where one may still stand or the store is unreadable.
-        for name in ("stored", "stored_no_summary"):
+        for name in ("stored", "stored_no_summary", "summary_stopped"):
             with self.subTest(name=name):
                 self.assertIn("unless summaries are turned off", said[name])
-        for name in ("summary_kept", "summary_unavailable"):
+        for name in ("summary_kept", "summary_unavailable", "summary_unknown"):
             with self.subTest(name=name):
                 self.assertNotIn("unless summaries are turned off", said[name])
 

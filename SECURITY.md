@@ -3034,8 +3034,8 @@ Discarding here means the `clear` field of a `POST /api/annotate` body, which de
 revision and, after a clear that took at least one revision, the session's stored summary. The
 store counts what it took under its own lock (the reply's `removed` field, null on any other arm), so a
 save from another tab that the page had not yet seen is taken too and never leaves the summary
-standing. The reply's `summary` field says `deleted`, `absent`, a refusal token (`unwritable`,
-`unavailable`), or `untouched`, and the page's sentence claims only that outcome. It is reachable from the board as `discard everything`, a control under the goal and the
+standing. The reply's `summary` field says `deleted`, `absent`, `stopped` (nothing stored and a running job stopped), a
+refusal token (`unwritable`, `unavailable`), or `untouched`, and the page's sentence claims only that outcome. It is reachable from the board as `discard everything`, a control under the goal and the
 expected outcome on the session page's drift block, offered only where a revision is stored and armed by one press before a second
 performs it. The board's own `clear` control beside the goal, and `remove` beside an outcome line,
 are a different act: each empties one box or drops one line, and the save that follows appends a

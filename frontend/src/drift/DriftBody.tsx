@@ -190,10 +190,8 @@ function TriggerLine({ offer }: { readonly offer: SteerOffer }) {
   const text = steerTrigger({
     offer,
     shape: model.shape,
-    session: model.session,
     entries: model.entries,
     numbers: model.numbers,
-    scan: model.source.scan,
     generated: model.generated,
   });
   return text ? (

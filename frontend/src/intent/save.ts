@@ -452,8 +452,16 @@ const DISCARD_LANDED: ReadonlySet<string> = new Set([
   'discard-already',
   'discard-stored_no_summary',
   'discard-unwithdrawn',
+  'discard-unwithdrawn_deleted',
+  'discard-unwithdrawn_absent',
+  'discard-unwithdrawn_stopped',
+  'discard-unwithdrawn_kept',
+  'discard-unwithdrawn_unavailable',
+  'discard-unwithdrawn_unknown',
   'discard-summary_kept',
   'discard-summary_unavailable',
+  'discard-summary_stopped',
+  'discard-summary_unknown',
 ]);
 
 async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity): Promise<void> {
@@ -494,15 +502,35 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
        a null `discarded` stamp is words never typed, and a set one is a repeat over a discard record, which
        says so and, unlike the first, drops the drafts that a stale tab still holds over the discarded words.
 
-       The summary is a third store and says what happened to it in one of four ways, so the sentence names
-       only that: gone, never there, kept because the store could not be written, or unknown because it could
-       not be read. A server that predates the field leaves the plain sentence. The departure store's half
-       wins when both fail, because the sentence for it is the one that stops a reader believing the
-       quotations went; the summary stays on the page with its own Delete summary. */
+       The summary is a third store and says what happened to it, so the sentence names only that: gone, never
+       there, never there and a job stopped, kept because the store could not be written, unreadable, or not
+       known. A server that predates the field leaves the plain sentence. When the departure store fails too,
+       its sentence leads, because it is the one that stops a reader believing the quotations went, and
+       the summary's own words follow it. */
+    /* What the summary store answered, as the suffix of the server's own sentence: a refusal is a delete that
+       was not written, so a summary may still stand; a token this page does not know is said as unknown and
+       never as gone, which was the sentence it fell through to. An absent field is an older server's, which
+       leaves the plain sentence. */
+    const summaryAnswer = body.summary === undefined ? '' : String(body.summary);
+    const summarySuffix =
+      summaryAnswer === ''
+        ? ''
+        : ((
+            {
+              deleted: 'deleted',
+              absent: 'absent',
+              stopped: 'stopped',
+              unwritable: 'kept',
+              refused: 'kept',
+              unavailable: 'unavailable',
+            } as Record<string, string>
+          )[summaryAnswer] ?? 'unknown');
     const summaryKind: Record<string, string> = {
       absent: 'discard-stored_no_summary',
-      unwritable: 'discard-summary_kept',
+      stopped: 'discard-summary_stopped',
+      kept: 'discard-summary_kept',
       unavailable: 'discard-summary_unavailable',
+      unknown: 'discard-summary_unknown',
     };
     const kind =
       result === 'discard-stored' && body.removed === 0
@@ -510,9 +538,9 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
           ? 'discard-nothing'
           : 'discard-already'
         : result === 'discard-stored' && body.withdrew === false
-          ? 'discard-unwithdrawn'
+          ? `discard-unwithdrawn${summarySuffix ? `_${summarySuffix}` : ''}`
           : result === 'discard-stored'
-            ? (summaryKind[String(body.summary ?? '')] ?? result)
+            ? (summaryKind[summarySuffix] ?? result)
             : result;
     if (DISCARD_LANDED.has(kind)) {
       // The independent log may already hold these words, even if the next dashboard fetch fails.

@@ -265,6 +265,17 @@ class AnAnswerToTheAgentsQuestionIsTheReadersDirectionTest(_Case):
         self.assertEqual(observer.ANSWER_SOURCE, event["source"])
         self.assertGreater(event["at"], START.timestamp())
 
+    def test_it_opens_an_outline_phase_titled_with_the_answer_and_not_the_question(self) -> None:
+        self.answer({QUESTION: ANSWER})
+        self.session.write(str(self.root / "work" / "billing" / "src" / "a.py"))
+        self.session.save(self.board.path)
+        source = importlib.import_module("compass_runtime.session_source")
+        outline = importlib.import_module("compass_runtime.session_outline")
+        page = source.read(self.config, str(self.board.path), "claude", SHORT)
+        blocks = outline.build(page, self.config)["blocks"]
+        self.assertEqual([FIRST, f"Provenance: {ANSWER}"], [b["prompt"]["title"] for b in blocks])
+        self.assertNotIn(QUESTION, repr(blocks))
+
     def test_the_agents_own_question_is_not_put_in_the_readers_mouth(self) -> None:
         self.answer({QUESTION: ANSWER})
         (event,) = [e for e in self.events() if e["title"] != FIRST]
@@ -587,7 +598,6 @@ class TheCollectorReadsTheFieldsTheCaptureRecordsTest(unittest.TestCase):
         old = self.shapes()["queued-command-without-origin"]["entry"]["attachment"]
         self.assertNotIn("origin", old)
         self.assertNotIn("timestamp", old)
-        self.assertEqual("prompt" if "commandMode" in old else "", "prompt")
         counts = self.shapes()["origin-field"]["counts"]
         self.assertEqual("2.1.181", counts["newest_version_of_a_prompt_without_origin"])
         self.assertIn("2026-10-21", self.shapes()["origin-field"]["note"])

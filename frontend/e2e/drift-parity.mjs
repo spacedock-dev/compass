@@ -166,10 +166,6 @@ const summarizeCard = () => {
       else if (job || consent) (job || consent).after(row);
     }
   }
-  for (const selector of ['[data-next-delegated-work]', '[data-next-delegated-check]']) {
-    const node = copy(selector);
-    if (node) card.insertBefore(node, card.querySelector('.next-cockpit-departures'));
-  }
   for (const selector of ['.next-cockpit-conflict', '.next-session-drift-caveats']) {
     const node = copy(selector);
     if (node) card.insertBefore(node, card.querySelector('.next-cockpit-departures'));

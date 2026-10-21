@@ -185,8 +185,8 @@ function commandKinds(summary: string): ReadonlySet<CheckKind> {
 
 /* Why a claim the record does not show is not shown, said about that claim: the kinds of check its own words
    name, and what the record read holds of each (none, a run with no recorded result, or a run the analysis
-   did not tie to it). A claim that names no kind of check gets where the agent said it and what the record
-   read is, since "not shown" is about that and never about whether the thing happened. */
+   did not tie to it). A claim that names no kind of check gets where the agent said it, what the record read
+   is and how many checks it held, since "not shown" is about that and never about whether the thing happened. */
 export function claimReason(
   row: Criterion,
   numbers: Numbers,
@@ -196,10 +196,6 @@ export function claimReason(
   if (row.key !== CLAIMS || row.result !== UNSUPPORTED) return '';
   const claim = String(row.claimEntry?.summary || '');
   const named = CHECK_KINDS.filter((kind) => CLAIM_WORDS[kind].test(claim));
-  if (!named.length) {
-    const said = resultWhere(row.claimEntry, numbers);
-    return `Nothing in the record read backs this claim${said ? `, which the agent made at ${said}` : ''}. ${RESULT_CLAIM_TAIL}`;
-  }
   const checks = entries
     .filter(
       (entry) =>
@@ -208,6 +204,13 @@ export function claimReason(
         (windowStart === null || (nextNumber(entry.at) ?? 0) >= windowStart),
     )
     .map((entry) => ({ kinds: commandKinds(entry.summary), result: entry.result }));
+  if (!named.length) {
+    const said = resultWhere(row.claimEntry, numbers);
+    const beside = checks.length
+      ? `${checks.length} ${checks.length === 1 ? 'check was' : 'checks were'} recorded in what was read, and the analysis tied none to this claim.`
+      : 'No check was recorded in what was read.';
+    return `Nothing in the record read backs this claim${said ? `, which the agent made at ${said}` : ''}. ${RESULT_CLAIM_TAIL} ${beside}`;
+  }
   const none: string[] = [];
   const unrecorded: string[] = [];
   const clauses: string[] = [];

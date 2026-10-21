@@ -549,7 +549,8 @@ at a non-final stop has its own result and cited explanation under Evidence. It 
 departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
 counts as departure. While a turn is open, a departure that rests on messages alone is stored as not
-reached at this stop when a call is still running, or when a check or write that bears on the line is
+reached at this stop when a call is still running (a Claude Code session only: the call is read from
+its transcript, and no other harness has one to read), or when a check or write that bears on the line is
 recorded after them (a line that names a path or claims a check's result is borne on only by a check
 that covers it or a write to that path); a departure on a failed check or a write, or one with nothing
 running or recorded after it, stands. An idle session with no recorded finish reads the same way, but

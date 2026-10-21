@@ -4112,21 +4112,37 @@ _CHECK_WORDS = {
 
 # What a line says when it claims a check's outcome, rather than merely naming its subject. A pass
 # shows "the tests pass" and "no lint errors"; it says nothing about "the lint config is left alone"
-# or "tests are not deleted", which share the keyword and claim no result (DRC-4937).
+# or "tests are not deleted", which share the keyword and claim no result (DRC-4937). The negated
+# form has its own branch because `\b` cannot sit before the `n't` of "don't fail".
 _RESULT_CLAIM = re.compile(
     r"\b(?:pass(?:es|ed|ing)?|green|clean|ok|okay|succe(?:ed|eds|eded|ss|ssful|ssfully)"
     r"|compil(?:e|es|ed)"
     r"|(?:no|zero|without|0)\s+(?:\w+\s+){0,2}(?:errors?|failures?|failing|warnings?|violations?)"
-    r"|(?:n't|not|never)\s+fail(?:s|ed|ing)?)\b",
+    r"|(?:not|never)\s+fail(?:s|ed|ing)?)\b"
+    r"|\wn['\u2019]t\s+fail(?:s|ed|ing)?\b",
     re.IGNORECASE,
 )
-_CLAUSE_BREAK = re.compile(r"[.;:,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
+# A clause that says what was done to something states no result, even when it shares a word with
+# one: "no failing tests are removed". The action has to follow an auxiliary, so "the renamed tests
+# pass" still claims one. A modal is not listed: "the tests should pass" is how a reader writes the
+# outcome they expect, and a recorded pass of that kind is what shows it.
+_NOT_A_RESULT = re.compile(
+    r"\b(?:is|are|was|were|be|been|get|gets)\s+(?:(?:not|never|also|still|just)\s+)?"
+    r"(?:removed|deleted|disabled|skipped|suppressed|silenced|muted|ignored|renamed|touched"
+    r"|changed|edited|modified|added)\b",
+    re.IGNORECASE,
+)
+# No colon: "Tests: all passing" says its result after the colon, and splitting there left the
+# subject and the result in different clauses.
+_CLAUSE_BREAK = re.compile(r"[.;,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
 
 
 def _claims_result(text: str, kind: str) -> bool:
     """Whether one clause of the line speaks of this kind of check and says how it came out."""
     return any(
-        _LINE_KINDS[kind].search(clause) and _RESULT_CLAIM.search(clause)
+        _LINE_KINDS[kind].search(clause)
+        and _RESULT_CLAIM.search(clause)
+        and not _NOT_A_RESULT.search(clause)
         for clause in _CLAUSE_BREAK.split(text)
     )
 
