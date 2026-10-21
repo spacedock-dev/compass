@@ -556,16 +556,16 @@ the agent ran the same tool again before claiming, with no failure in that run o
 naming nothing after the tool but flags or `.`; the working directory is not recorded. A
 contradicted claim is said on its own row and sets no level by itself. An unshown claim blocks None or low without raising Medium.
 Neither is counted as a departure from your intent or held back by an unsettled later direction.
-A withdrawn claim draws no row. A claim alone offers Steer back as a secondary evidence request:
+A withdrawn claim draws no row. Steer back is offered only with a departure from your intent; the server still composes a correction from a claim or a failed check, as an evidence request:
 `Can you show evidence for "<its first sentence>" at 14:02?`, or, contradicted,
 `You said "<its first sentence>" at 14:02; the record shows otherwise at 14:05.`
 Short titles and bare URLs are not quoted in the correction. Times are your local clock, the
 correction names no Compass entry number, and a departure cited at one of the agent's messages
 quotes that message's first sentence ("where you said …"). While departures are listed, Steer back
 stays beside them, labelled "from the check at HH:MM", including once the session is idle; where
-a mark or a reading of earlier words withholds it, a line beside the departures says why. "Where the work went" groups the written files by folder. A
-current result offers no second run control. When your intent changed after it or new work arrived
-since, the result gives that reason with one "Analyze again". The request count stays beside it.
+a mark or a reading of earlier words withholds it, a line beside the departures says why. "Where the work went" groups the written files by folder, under What the analysis read. The
+card header carries one re-run control once a reading exists: "Check again" when your intent changed
+after it or new work arrived since, "Analyze again" when it is current. It is inert, not gone, where a press cannot run. The request count stays beside it.
 The shared budget is not shown until it is spent; then a banner holds the top of the session page,
 naming the limit and the time the next analysis can run. "Mark as inaccurate" marks the reading with
 a token that is stored beside it and never sent or counted, and says so beside the control; that
