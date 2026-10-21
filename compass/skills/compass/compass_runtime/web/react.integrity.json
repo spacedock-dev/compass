@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2081643,
+    "bytes": 2084035,
     "file": "react.html",
-    "sha256": "259c6ff72fbf4105aa2198b11c11591865f5056b76a609c1838e13f0ae560c94"
+    "sha256": "14b5376b591f6f7063ae25ccb84e4cb1d01d4dbe70b5fb3406341e03b95ddd68"
   },
   "format": 1,
   "frontend": "react",
@@ -555,7 +555,7 @@
       },
       {
         "file": "frontend/src/drift/DriftBody.tsx",
-        "sha256": "186c6fec38caa33f232af6d811bfbda4fcf2976f4225d5f927d5dc9a542eb9f5"
+        "sha256": "1f850b9f865188ccdb0c1ae2e5ff3a842b8f97a594073b08df3af0f76ca1ed53"
       },
       {
         "file": "frontend/src/drift/DriftHead.tsx",
@@ -599,7 +599,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "db359c949477915a263935e3ac9f6b7d1a515399e19c8ef1577a8bd88cc9ddc6"
+        "sha256": "4ead2689d47b2fb72525d3c0cb3ebc129279877fbd5055f3670df351e2eb09f4"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -607,7 +607,7 @@
       },
       {
         "file": "frontend/src/drift/SteerBack.tsx",
-        "sha256": "3cffe7a7357dc98f8afae896d2c4e95ce4ee51ccb3e233cd8e69c01e1380bd83"
+        "sha256": "da2583385871e1d80a56a3efd865ca1ed9d566b5e67d389b27fabfd0f35125a3"
       },
       {
         "file": "frontend/src/drift/UnaskedPermission.tsx",
@@ -687,7 +687,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "877416dc818f5e35c866e5b952476385da782b90f6d29dd7ff1ef00dd853682a"
+        "sha256": "ff6a5f5d0c46aa148b55f2d1644a48a3e79e5cc6986a8bfdc98eaf4007ee10da"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -695,7 +695,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "d6581ec5b13e5ebc9cedad3b84059b38653381235d7c1df99a898ea27bd3c569"
+        "sha256": "068a78a9de86cddef6a23eefe090efedb7fc0e40ac853251d1ea43c40ec8f1c1"
       },
       {
         "file": "frontend/src/drift/shape.ts",
