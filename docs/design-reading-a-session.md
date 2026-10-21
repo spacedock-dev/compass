@@ -6158,3 +6158,31 @@ presses, and two of the three edited a card above it.
   after `Make it the goal` are buttons beside the question.
 - **A source is a time.** A saved line reads "added from your 11:05 message", where it read "added from
   #7", a number the reader may never have been shown.
+
+### Amended 2026-10-21: departure cards and Steer back read as the design does
+
+A departure titled itself with the whole goal sentence, listed `You said` and `Agent said` quotes cut mid-word
+that often did not show the departure, and Steer back was an inline button beside a dashed twin over a box
+titled "Correction to copy". The correction joined a line ending in a stop to its state with a colon.
+
+- **The headline is what happened.** The stored reading keeps a `detail` and no headline, and no model is asked
+  for one, so the title is derived from the entry the departure cites: "It changed `<path>`" for a recorded
+  write, "A check failed" for a failed check, and for the agent's own message "What the agent said departs from
+  this". A write or a check outranks a message, which only reports on one. Where no cited entry is held the card
+  keeps the constraint's own words, as before. The title does not claim the entry is the departure; Why still
+  carries the reading's explanation.
+- **What is one sentence.** "At 11:25 the agent changed `<path>`." or "At 11:25 the agent said “…”.", about the
+  same entry, with each cited entry's number after it. A quote ends on a whole word before its ellipsis wherever
+  the cut falls; a single unbroken word longer than the bound, a URL, is still cut where it stands.
+- **Steer back is a section.** It follows the departures and the quiet rows: a heading, "Compass writes a
+  correction for you to paste into the session. It never types into the session itself.", the press with
+  Update intent instead as a quiet secondary, and the correction under them. The box is labelled "Correction to
+  paste" and says "Built from your saved intent and the reading at HH:MM", where it said "from the check at"
+  beside the button, because the correction is built from the reading and not from a check. This replaces the
+  wording of the earlier rulings above; copy, never send, is unchanged.
+- **The correction.** A saved line's own closing stop is dropped where its state is joined to it, so
+  "…is edited.: the session says this is done" reads "…is edited: the session says this is done"
+  (`correction._label`). The departure's time and, at the agent's own message, its words were already named.
+- **The counter follows the text.** The count belongs to the box it was typed in; a rebuilt correction draws its
+  own length rather than the previous box's.
+

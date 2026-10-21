@@ -324,6 +324,42 @@ describe('a correction the reader opened follows the record, honestly', () => {
     expect(corrections(page).filter((r) => r.path === '/api/correction')).toHaveLength(2);
   });
 
+  it('counts the rebuilt correction, not the one it replaced', async () => {
+    const LONGER = [
+      ...PARTS,
+      ' Then run the whole suite again and tell me which of its checks still fail.',
+    ];
+    let calls = 0;
+    const page = mountSteer({
+      routes: {
+        '/api/correction': () => json({ ok: true, parts: ++calls === 1 ? PARTS : LONGER }),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    await openAndLeave(page);
+    /* A typed edit makes the box the reader's and puts a count in the page's hands; Recompose then replaces
+       the text under a new key, and the count has to follow it. */
+    const field = box() as HTMLTextAreaElement;
+    field.value = `${field.value} extra`;
+    fireEvent.input(field);
+    const first = [...(box()?.value ?? '')].length;
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(first)}/5140`);
+    const moved = { ...ASSESSMENT, read_at: 1100 };
+    await page.poll({
+      ...driftBoard({ session: { ...session, annotation_assessment: moved } }),
+      generated: 1300,
+    });
+    await page.settle();
+    await act(async () => {
+      fireEvent.click(byAction('correction-recompose') as HTMLElement);
+    });
+    await page.settle();
+    const now = [...(box()?.value ?? '')].length;
+    expect(now).toBeGreaterThan(first);
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(now)}/5140`);
+  });
+
   it('asks once while the recomposition is out, however many boards arrive meanwhile', async () => {
     let calls = 0;
     const page = mountSteer({

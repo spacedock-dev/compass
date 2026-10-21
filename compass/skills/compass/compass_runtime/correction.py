@@ -630,13 +630,23 @@ def _joined(lines: list[list[Part]], *, quoted: bool) -> list[Part]:
     return parts
 
 
+def _label(text: str) -> str:
+    """A saved line as the label its state is joined to with a colon.
+
+    Its own closing stop goes, or the join reads "...is edited.: the session says this is done".
+    An ellipsis is kept: it marks a cut, and the colon after it reads.
+    """
+    return text.rstrip().rstrip(".:;,").rstrip() or text
+
+
 def _body(
     lines: list[tuple[int, str]], rows: _Rows | None, at: Callable[[Mapping[str, Any]], str]
 ) -> list[tuple[str, list[Part], str]]:
     """One bullet per saved line, with its state, the placeholder its time rests on and, for a
     departure, its stored explanation."""
     body: list[tuple[str, list[Part], str]] = []
-    for k, text in lines:
+    for k, saved in lines:
+        text = _label(saved)
         name = reading.outcome_line(k)
         if rows is not None and name not in rows.criteria and len(lines) == 1:
             name = reading.CONSTRAINT_OUTPUT

@@ -85,18 +85,18 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
         lead: !hasQuestion,
         button: (
           <div className="flex flex-wrap items-center gap-3">
+            <SteerButton primary={!hasQuestion} />
             {!hasQuestion ? (
               <UpdateIntentButton
                 factId={offeredDirection(annotation, model.entries, session, shape, model.draft)}
               />
             ) : null}
-            <SteerButton primary={!hasQuestion} from={from} />
           </div>
         ),
         box: (
           <>
             <TriggerLine offer={offer} />
-            <SteerBox />
+            <SteerBox from={from} />
           </>
         ),
       }

@@ -133,7 +133,7 @@ async function citesResolvably(root: HTMLElement, constraint: string, clause: st
       `Show ${number} in Full activity for ${clause ? `${constraint}: ${clause}` : constraint}`,
     );
     await expect(chip.previousSibling?.textContent).toMatch(
-      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|You said: “.+”|(Failed|Passed|Recorded) check: .+|File write: .+)$/,
+      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|At .+[.”]|\[\d+(\.\d+)?\]|You said: “.+”|(Failed|Passed|Recorded) check: .+|File write: .+)$/,
     );
     const row = document.querySelector<HTMLElement>(
       `[data-next-entry-id="${CSS.escape(chip.dataset['nextCite'] ?? '')}"]`,
@@ -156,8 +156,14 @@ async function departureCard(
   await expect(node.querySelector('[data-next-departure-label]')).toHaveTextContent(
     `Departure · ${label}`,
   );
-  await expect(within(node).getByRole('heading', { level: 4 })).toHaveTextContent(clause);
-  await expect(node).toHaveAccessibleName(clause);
+  /* The headline is what happened, derived from the cited entry (`departureTitle`), and never the constraint's
+     own sentence, which the label above it already names. */
+  const heading = within(node).getByRole('heading', { level: 4 });
+  await expect(heading.textContent).toMatch(
+    /^(It changed .+|A check failed|A check ran|What the agent said departs from this|Something in the record departs from this)$/,
+  );
+  await expect(heading.textContent).not.toBe(clause);
+  await expect(node).toHaveAccessibleName(heading.textContent ?? '');
   const why = node.querySelector('[data-next-departure-why]') as HTMLElement;
   await expect(why.firstElementChild).toHaveTextContent('Why Compass reads this as drift');
   await expect(why.lastElementChild).toHaveTextContent(detail);
@@ -870,7 +876,9 @@ export const PendingLaterDirection: Story = {
     await expect(steer).toHaveAttribute('data-variant', 'default');
     await expect(steer.closest('[data-next-result-steer]')).not.toBeNull();
     await expect(
-      within(drift).getByText(/^from the check at (\d{4}-\d\d-\d\d )?\d\d:\d\d$/),
+      within(steer.closest('[data-next-steer-section]') as HTMLElement).getByRole('heading', {
+        name: 'Steer back',
+      }),
     ).toBeVisible();
     await expect(within(drift).queryByRole('button', { name: 'Update intent instead' })).toBeNull();
     await neverDone(shown);

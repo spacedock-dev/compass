@@ -259,9 +259,13 @@ export const CORRECTION_CAP = 5140;
 /* The label the server writes before a departure's explanation (`correction.EXPLANATION_LABEL`). */
 export const CORRECTION_WHY_LABEL = 'Why Compass reads this as drift: ';
 export const STEER_HARNESSES: readonly string[] = ['claude'];
-/* Beside Steer back while it steers from a check, which can be older than the session's latest work: the
-   time the check read the session, on the reader's clock (owner, 2026-10-20). */
-export const steerFrom = (at: string): string => `from the check at ${at}`;
+/* Over the correction, since it steers from the stored reading, which can be older than the session's latest
+   work: the time that reading was read, on the reader's clock (owner, 2026-10-20). */
+export const steerFrom = (at: string): string =>
+  `Built from your saved intent and the reading at ${at}`;
+/* Under the Steer back heading, in the design's words. */
+export const STEER_PURPOSE =
+  'Compass writes a correction for you to paste into the session. It never types into the session itself.';
 /* Beside departures Steer back will not carry, so the button is never simply missing (owner, 2026-10-20). The
    rules are unchanged: a reading marked inaccurate, or one of an earlier version of the intent, sets no
    correction. With a failed check still offering one, the line says the departures are left out of it. */

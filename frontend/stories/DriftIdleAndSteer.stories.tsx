@@ -164,12 +164,14 @@ export const SteerBackFromAnIdleSession: Story = {
     correctionPosts.length = 0;
     const canvas = within(canvasElement);
     const steer = await canvas.findByRole('button', { name: 'Steer back' });
-    // The scenario's own clock reads 1000 s, so the check was today on the page's clock.
-    await expect(
-      await canvas.findByText(`from the check at ${datedClock(1000, 1000)}`),
-    ).toBeVisible();
     await userEvent.click(steer);
-    const box = (await canvas.findByLabelText('Correction to copy')) as HTMLTextAreaElement;
+    // The scenario's own clock reads 1000 s, so the reading was today on the page's clock.
+    await expect(
+      await canvas.findByText(
+        `Built from your saved intent and the reading at ${datedClock(1000, 1000)}`,
+      ),
+    ).toBeVisible();
+    const box = (await canvas.findByLabelText('Correction to paste')) as HTMLTextAreaElement;
     await expect(box.value).toContain(
       `The session departed from my goal at ${LOCAL}, where you said`,
     );

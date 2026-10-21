@@ -16,7 +16,8 @@ import {
   arrivedLine,
   cantTellReason,
   citedKind,
-  citedLine,
+  departureTitle,
+  departureWhat,
   claimHeading,
   claimReason,
   claimsDrawn,
@@ -64,6 +65,7 @@ import { ReadingCount, WhatIsSent, type SteerSlot } from './ReadingControl';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
 import { CitationLink } from './CitationLink';
 import { CitedText } from './CitedText';
+import { SteerSection } from './SteerBack';
 import { Why } from './Why';
 
 /* Accent on a reading would read as "met", a claim about intent from partial evidence. The result keeps
@@ -113,32 +115,47 @@ function CitedEntries({
      entry from before the current window keeps its way there. The sentence above stays window-bound. */
   const loadable = row.unloaded > 0 && record?.status === 'loaded' && !record.reachedStart;
   const named = row.clause ? `${jumpName(row.key)}: ${row.clause}` : jumpName(row.key);
+  const link = (entry: WorkEntry) => {
+    const id = String(entry.id || '');
+    const where = resultWhere(entry, model.numbers) || 'Entry';
+    return (
+      <CitationLink
+        key={id}
+        id={id}
+        className="ml-1.5"
+        data-next-cockpit-action="finding-jump"
+        data-next-finding={row.key}
+        data-next-cite={id}
+        aria-label={`Show ${where} in Full activity for ${named}`}
+        onJump={(origin) => chooseFinding(row.key, origin, id)}
+      >
+        {where.startsWith('#') ? `[${where.slice(1)}]` : `[${where}]`}
+      </CitationLink>
+    );
+  };
+  /* A departure's What is one sentence about what happened, with each cited entry's number after it. */
   const chips = held.length ? (
-    <ul className="m-0 flex list-none flex-col gap-2 p-0" data-next-cited-entries={row.key}>
-      {held.map((entry) => {
-        const id = String(entry.id || '');
-        const where = resultWhere(entry, model.numbers) || 'Entry';
-        return (
+    quote ? (
+      <p
+        className="m-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
+        data-next-cited-entries={row.key}
+      >
+        {departureWhat(held)}
+        {held.map(link)}
+      </p>
+    ) : (
+      <ul className="m-0 flex list-none flex-col gap-2 p-0" data-next-cited-entries={row.key}>
+        {held.map((entry) => (
           <li
-            key={id}
+            key={String(entry.id || '')}
             className="m-0 min-w-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
           >
-            {quote ? citedLine(entry) : citedKind(entry)}
-            <CitationLink
-              id={id}
-              className="ml-1.5"
-              data-next-cockpit-action="finding-jump"
-              data-next-finding={row.key}
-              data-next-cite={id}
-              aria-label={`Show ${where} in Full activity for ${named}`}
-              onJump={(origin) => chooseFinding(row.key, origin, id)}
-            >
-              {where.startsWith('#') ? `[${where.slice(1)}]` : `[${where}]`}
-            </CitationLink>
+            {citedKind(entry)}
+            {link(entry)}
           </li>
-        );
-      })}
-    </ul>
+        ))}
+      </ul>
+    )
   ) : null;
   /* Kept while its "could not be loaded" sentence stands, so the way back from that sentence has a place to
      land. */
@@ -241,12 +258,17 @@ function EvidenceMore({
 }
 
 /* One departure from the reader's intent, as its own card: which constraint, the constraint's own words as the
-   headline (no model writes one: [DEC-28](../../../docs/design-session-summary.md#the-ruling) answer 7), What
+   headline: what happened, derived from the cited entry because no model writes one ([DEC-28](../../../docs/design-session-summary.md#the-ruling) answer 7), What
    as the cited entries, and Why as the reading's stored `detail`, the one string a model wrote. */
 function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly outcomes: number }) {
   const { model } = useDrift();
   const detail = String(row.detail || '').trim();
   const head = `departure-head:${model.key}:${row.key}`;
+  const title = departureTitle(
+    [...new Set(row.citedIds)]
+      .map((id) => model.byId.get(id))
+      .filter((entry): entry is WorkEntry => Boolean(entry)),
+  );
   return (
     <article
       className="flex items-start gap-3 rounded-[10px] bg-[var(--raise)] px-[18px] py-4 max-[480px]:gap-2 max-[480px]:px-3"
@@ -264,9 +286,9 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
           <h4
             id={head}
             tabIndex={-1}
-            className={`m-0 text-body font-semibold leading-[1.45] [overflow-wrap:anywhere] ${row.clauseKnown ? 'text-foreground' : 'text-muted-foreground'}`}
+            className={`m-0 text-body font-semibold leading-[1.45] [overflow-wrap:anywhere] ${title || row.clauseKnown ? 'text-foreground' : 'text-muted-foreground'}`}
           >
-            {row.clauseKnown && row.clause ? row.clause : CLAUSE_UNRETAINED}
+            {title || (row.clauseKnown && row.clause ? row.clause : CLAUSE_UNRETAINED)}
           </h4>
         </div>
         <div className="flex max-w-[45rem] flex-col gap-1" data-next-departure-what>
@@ -757,8 +779,7 @@ export function ReadingResult({
   /* A current result keeps the disclosure and accounting without a second run control: the card header holds
      the one, in every state. A direction question owns the run path while it stands.
      [DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result) */
-  const leadSteer = !question && slotted?.lead ? slotted : null;
-  const foot = question ? null : again(slotted ? { ...slotted, button: null } : null);
+  const foot = question ? null : again(null);
   /* The verdict sentence above the level says the answer once; a heading here says it only where that
      sentence is not drawn, over a reading marked inaccurate. */
   const marked = annotation['not_accurate'] === true;
@@ -800,16 +821,6 @@ export function ReadingResult({
             {steerOff}
           </p>
         ) : null}
-        {/* While a later direction stands the question owns the primary press, and Steer back stays beside the
-          departures it steers from (owner, 2026-10-20). */}
-        {question && slotted ? (
-          <>
-            <div className="next-cockpit-reading-ask" data-next-result-steer>
-              {slotted.button}
-            </div>
-            {slotted.box}
-          </>
-        ) : null}
         {quiet ? (
           <div
             className={`flex flex-col gap-3 ${departures.length ? 'border-t border-[var(--rule)] pt-3' : ''}`}
@@ -830,12 +841,9 @@ export function ReadingResult({
             ))}
           </div>
         ) : null}
-        {/* Steer back after what it steers back from, as the design draws it. Offered only with a departure. */}
-        {leadSteer ? (
-          <div className="next-cockpit-reading-ask" data-next-result-primary>
-            {leadSteer.button}
-          </div>
-        ) : null}
+        {/* Steer back, its own section after the departures it steers from. While a later direction stands the
+          question owns the primary press and Steer back is the secondary beside it (owner, 2026-10-20). */}
+        {slotted ? <SteerSection buttons={slotted.button} box={slotted.box} /> : null}
       </div>
       {foot ? <div className="next-cockpit-result-press">{foot}</div> : null}
       <div
