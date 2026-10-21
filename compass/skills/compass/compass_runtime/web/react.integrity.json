@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2088159,
+    "bytes": 2088163,
     "file": "react.html",
-    "sha256": "8ee8c4a45426d43d40ed64acf69797ae59402eb98894c8d6cce63ca83a72e870"
+    "sha256": "b2d8997123404467763870b2383b75c40bfc0a5e0a21ef21f621f227bf8e5398"
   },
   "format": 1,
   "frontend": "react",
@@ -755,7 +755,7 @@
       },
       {
         "file": "frontend/src/intent/HowTo.tsx",
-        "sha256": "31d6043395671b12a192c53b03f1c408a1efd7c45c91c0f664a26db0744cbd50"
+        "sha256": "c39761cef534a10fd2cffc56821c45bd1d24e4bee4e7042e9d1f739cea569c82"
       },
       {
         "file": "frontend/src/intent/IntentLog.tsx",
