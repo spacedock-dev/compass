@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import dataclasses
 import errno
 import hashlib
 import ipaddress
@@ -2125,9 +2126,16 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(refusal)
             return
         if payload.get("consent") == "off":
-            self._reading_permission_reply(
-                reading_policy.set_consent(config, False, now=application.clock()), off=True
-            )
+            answer = reading_policy.set_consent(config, False, now=application.clock())
+            # The card words the launch grant from this flag, not from the store, so a withdrawal
+            # the store took must clear it too, or the card keeps claiming a grant that was
+            # withdrawn. Only on success: a refused revoke leaves the store's grant in place,
+            # and the card should keep saying so. The route's per-request read stays off the store.
+            if answer["reason"] != "store-unavailable":
+                application.config = application.state.config = dataclasses.replace(
+                    config, tool_output_pre_grant=False
+                )
+            self._reading_permission_reply(answer, off=True)
             return
         harness, sid = payload.get("harness"), payload.get("sid")
         if not isinstance(harness, str) or not isinstance(sid, str) or not harness or not sid:
