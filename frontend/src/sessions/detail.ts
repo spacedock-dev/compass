@@ -57,6 +57,15 @@ export function detailState(
     : null;
 }
 
+/* What a finished turn says in place of the collector's "awaiting your message": when it ended and that the
+   session now waits on the reader. Only an idle, unended session with a published stop time says it; any other
+   session keeps its own words, and a missing stamp claims nothing. */
+export function turnEndedSentence(session: Row): string | null {
+  if (session['state'] !== 'idle' || endedAt(session) !== null) return null;
+  const at = nextNumber(session['finished_at']);
+  return at !== null && at > 0 ? `Turn ended ${clock(at)} · waiting for you` : null;
+}
+
 /* The measured line under the title. An observed end supersedes the present-tense activity and duration
    phrases, since an ended session must not describe itself as awaiting input. The last two clauses are
    unconditional: every clause above is a reading, and these say what the readings cannot cover, so they
@@ -64,20 +73,19 @@ export function detailState(
    nothing where the record was not read. */
 export function sessionMeta(
   session: Row,
-  labels: ReadonlyMap<string, string>,
   generated: number | null,
   entries: number | null,
   /** The entries since the intent's window opened, where entries before it are also held. */
   since: number | null = null,
 ): string {
   const parts: string[] = [];
-  const harness = registryLabel(labels, session);
-  if (harness) parts.push(harness);
   const ended = durationSince(generated, endedAt(session));
   if (ended !== null) {
     parts.push(`ended ${ended} ago`);
   } else {
-    if (session['state_detail']) parts.push(String(session['state_detail']));
+    const turnEnd = turnEndedSentence(session);
+    if (turnEnd) parts.push(turnEnd);
+    else if (session['state_detail']) parts.push(String(session['state_detail']));
     const state = session['state'];
     if (state === 'needs_input') {
       const blocked = durationSince(generated, session['blocked_since']);

@@ -177,15 +177,16 @@ with one is never summarized on open.
 ## The marks
 
 Each mark is a numbered (i) beside the part it explains, in the order a reader meets the parts down
-the one-column page, which puts the Drift card before What the session has done (owner, 2026-10-20):
+the one-column page, which puts What the session has done before the Drift card as the design draws it
+(owner, 2026-10-21; it was the other way round from 2026-10-20):
 
 1. **Your intent**, on the Intent card.
-2. **A departure, and its evidence**, beside the goal departure's cited entries.
-3. **Steer back**.
-4. **What is sent, and Pause model calls**, beside the drift card's What is sent.
-5. **What the session has done**, beside the summary card's heading, outside it, so the card's name
+2. **What the session has done**, beside the summary card's heading, outside it, so the card's name
    stays the heading's words.
-6. **A phase that holds a departure**, on the first phase marked as holding one, once.
+3. **A phase that holds a departure**, on the first phase marked as holding one, once.
+4. **A departure, and its evidence**, beside the goal departure's cited entries.
+5. **Steer back**.
+6. **What is sent, and Pause model calls**, beside the drift card's What is sent.
 7. **Full activity**, beside its trigger.
 
 The first sample's tour noted the drift level and the analysis headline instead of the summary and

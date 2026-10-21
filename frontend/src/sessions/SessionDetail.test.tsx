@@ -65,6 +65,101 @@ describe('the worktree in the header', () => {
   });
 });
 
+const RATED = {
+  harnesses: [{ key: 'claude', label: 'Claude Code', reports_rate: true, discovered: true }],
+};
+const header = () => document.querySelector('.next-session-detail-header') as HTMLElement;
+
+describe('the header as one line', () => {
+  it('a working session names its token rate, its state, its activity and its turn in one row', async () => {
+    await open(
+      board(
+        [
+          {
+            ...ONE,
+            state: 'working',
+            blocked_since: undefined,
+            rate_per_min: 1450,
+            state_detail: 'running Bash',
+            turn: { elapsed_h: '54s' },
+          },
+        ],
+        RATED,
+      ),
+    );
+    const bar = header().querySelector('.next-session-detail-bar') as HTMLElement;
+    expect(bar.querySelector('.next-session-identity')).not.toBeNull();
+    expect(bar.querySelector('.next-session-detail-meta')).not.toBeNull();
+    expect(bar.textContent).toContain('1,450 tokens/min');
+    expect(bar.textContent).toContain('running Bash');
+  });
+  it('an idle session shows no token rate', async () => {
+    await open(
+      board([{ ...ONE, state: 'idle', blocked_since: undefined, rate_per_min: 4106 }], RATED),
+    );
+    expect(header().textContent).not.toContain('tokens/min');
+  });
+  it('an ended session shows no token rate', async () => {
+    await open(
+      board(
+        [
+          {
+            ...ONE,
+            state: 'working',
+            blocked_since: undefined,
+            rate_per_min: 4106,
+            ended_at: NOW - 30,
+          },
+        ],
+        RATED,
+      ),
+    );
+    expect(header().textContent).not.toContain('tokens/min');
+  });
+  it('a finished turn reads when it ended and that the session waits for the reader', async () => {
+    const finished = new Date(2030, 0, 2, 11, 0, 0).getTime() / 1000;
+    await open(
+      board(
+        [
+          {
+            ...ONE,
+            state: 'idle',
+            blocked_since: undefined,
+            finished_at: finished,
+            state_detail: 'awaiting your message',
+          },
+        ],
+        { generated: finished + 60 },
+      ),
+    );
+    expect(document.body.textContent).toContain('Turn ended 11:00 · waiting for you');
+    expect(document.body.textContent).not.toContain('idle · awaiting your message');
+  });
+});
+
+describe('a title that is only an identifier', () => {
+  it('falls back to the session goal instead of showing the key as the title', async () => {
+    await open(
+      board([
+        {
+          ...ONE,
+          title: 'DRC-4929',
+          state: 'idle',
+          blocked_since: undefined,
+          instruction: { label: 'asked', text: 'Fix the retry queue backoff', at: NOW - 60 },
+        },
+      ]),
+    );
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+      'Fix the retry queue backoff',
+    );
+  });
+  it('keeps a real title', async () => {
+    await open(board([{ ...ONE, title: 'Retry queue backoff' }]));
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Retry queue backoff');
+  });
+});
+
 async function open(
   data: unknown,
   options: {

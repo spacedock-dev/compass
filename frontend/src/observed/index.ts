@@ -30,7 +30,7 @@ export {
   type ObservedTotals,
 } from './model';
 export { type ObservedProject } from './project';
-export { labelOf, observeSession, type ObservedSession } from './session';
+export { labelOf, observeSession, pageTitleOf, type ObservedSession } from './session';
 export { selectObserved } from './select';
 export {
   ageSeconds,

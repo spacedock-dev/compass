@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { delegatedWork, observe, readHint, sessionStop } from './index';
+import { delegatedWork, observe, pageTitleOf, readHint, sessionStop } from './index';
 
 /* What the model says, written out, so the differential test against the legacy file is not the only
    oracle: the rules a reader depends on, each with the payload that proves it. */
@@ -342,4 +342,58 @@ describe('an unreadable payload is an empty model, never an exception', () => {
       expect(model.coverage.observed).toContain('0 of 0 sessions carry a subject');
     },
   );
+});
+
+describe('the session heading stands in for an identifier-only title', () => {
+  const row = (extra: Record<string, unknown>) => ({
+    harness: 'claude',
+    sid: 'abc12345',
+    title: 'DRC-4929',
+    ...extra,
+  });
+  it('prefers the first prompt to the last one', () => {
+    expect(
+      pageTitleOf(
+        row({
+          first_prompt: 'Fix the flaky http test',
+          first_prompt_at: 1,
+          last_prompt: 'ok go on',
+        }),
+      ),
+    ).toBe('Fix the flaky http test');
+  });
+  it('skips a copied first prompt', () => {
+    expect(
+      pageTitleOf(
+        row({
+          first_prompt: 'copied words',
+          copied_prompts: [{ quoted_as: ['first_prompt'] }],
+          last_prompt: 'later words',
+        }),
+      ),
+    ).toBe('later words');
+  });
+  it('skips a control first prompt', () => {
+    expect(
+      pageTitleOf(
+        row({ first_prompt: '/clear', first_prompt_control: true, last_prompt: 'later words' }),
+      ),
+    ).toBe('later words');
+  });
+  it('replaces a UUID title and a title equal to the sid', () => {
+    expect(
+      pageTitleOf(
+        row({ title: '3f2b8c1e-1111-4222-8333-444455556666', first_prompt: 'Real words' }),
+      ),
+    ).toBe('Real words');
+    expect(pageTitleOf(row({ title: 'abc12345', first_prompt: 'Real words' }))).toBe('Real words');
+  });
+  it('keeps a real title and cuts a long line at 120 characters', () => {
+    expect(pageTitleOf(row({ title: 'Ship the redesign', first_prompt: 'x' }))).toBe(
+      'Ship the redesign',
+    );
+    const long = pageTitleOf(row({ first_prompt: 'a'.repeat(200) }));
+    expect(long).toHaveLength(120);
+    expect(long.endsWith('…')).toBe(true);
+  });
 });
