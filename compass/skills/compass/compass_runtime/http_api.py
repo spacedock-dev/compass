@@ -3316,6 +3316,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
             entry["revisions"],
             _facts_of(context),
             settled_through=settled["through"] if (settled := entry.get("settled")) else None,
+            open_call_lookup=(
+                (
+                    lambda: runtime_project_context.claude_open_call_at(
+                        application.config, transcript
+                    )
+                )
+                if row.get("harness") == "claude" and transcript
+                else None
+            ),
             record_coverage_lookup=lambda: (
                 dict(reached)
                 if reached

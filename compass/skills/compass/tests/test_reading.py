@@ -3736,7 +3736,12 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
         return selection
 
     def resolved(
-        self, selection: reading.Selection, scope: str, cite: str = "m1"
+        self,
+        selection: reading.Selection,
+        scope: str,
+        cite: str = "m1",
+        *,
+        open_call_at: float | None = None,
     ) -> reading.Criterion:
         index = next(i for i, row in selection.by_index().items() if row["id"] == cite)
         parsed = reading.parse_reply(
@@ -3744,8 +3749,52 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
             reading.constraints_for(selection.lines, claims=selection.asked_claims),
         )
         return reading.resolve(
-            parsed, selection, goal="Fix the probe and push it.", detail_cap_chars=200, scope=scope
+            parsed,
+            selection,
+            goal="Fix the probe and push it.",
+            detail_cap_chars=200,
+            scope=scope,
+            open_call_at=open_call_at,
         )["goal"]
+
+    def line_selected(self, line: str, *later: dict[str, Any]) -> reading.Selection:
+        said = {
+            **AGENT_MESSAGE_FACT,
+            "summary": self.PLAN,
+            reading.AGENT_WORDS_FIELD: self.PLAN,
+            "at": 99.0,
+        }
+        ledger = reading.build_ledger(
+            [WORDS_FACT, said, *later], "claude", "s1", tool_output={}, read_agent_words=True
+        )
+        _prompt, selection = reading.build_prompt(
+            ledger, goal="Fix the probe and push it.", lines=(line,), max_bytes=16_384
+        )
+        return selection
+
+    def line_resolved(self, selection: reading.Selection) -> reading.Criterion:
+        index = next(i for i, row in selection.by_index().items() if row["id"] == "m1")
+        parsed = reading.parse_reply(
+            json.dumps({"line_1": {**self.WRONG, "cites": [index]}}),
+            reading.constraints_for(selection.lines, claims=selection.asked_claims),
+        )
+        return reading.resolve(
+            parsed,
+            selection,
+            goal="Fix the probe and push it.",
+            lines=selection.lines,
+            detail_cap_chars=200,
+            scope=reading.SCOPE_MID_FLIGHT,
+        )["line_1"]
+
+    @staticmethod
+    def write_fact(path: str, at: float) -> dict[str, Any]:
+        return {
+            **check_fact(fact_id=f"w-{path}", at=at),
+            "subject": "write",
+            "result": "",
+            "summary": path,
+        }
 
     def test_a_departure_on_words_alone_while_work_goes_on_reads_as_not_reached(self) -> None:
         after = (
@@ -3784,6 +3833,64 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
         selection = self.selected(failed, later)
         row = self.resolved(selection, reading.SCOPE_MID_FLIGHT, cite="c1")
         self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_call_in_flight_with_nothing_recorded_after_the_words_is_not_a_departure(
+        self,
+    ) -> None:
+        # A call with no entry yet is the work going on; the stall rule needs a quiet record.
+        row = self.resolved(self.selected(), reading.SCOPE_MID_FLIGHT, open_call_at=120.0)
+        self.assertEqual(reading.RESULT_NOT_REACHED, row["result"])
+        self.assertEqual(self.WRONG["detail"], row["detail"])
+
+    def test_a_call_opened_before_the_words_does_not_excuse_them(self) -> None:
+        row = self.resolved(self.selected(), reading.SCOPE_MID_FLIGHT, open_call_at=95.0)
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_call_in_flight_does_not_excuse_a_departure_resting_on_a_failed_check(self) -> None:
+        failed = check_fact(fact_id="c1", result="failed", at=98.0)
+        row = self.resolved(
+            self.selected(failed), reading.SCOPE_MID_FLIGHT, cite="c1", open_call_at=120.0
+        )
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_call_in_flight_changes_nothing_once_the_turn_is_over(self) -> None:
+        selection = self.selected()
+        for scope in (reading.SCOPE_LAST_TURN, reading.SCOPE_FINAL):
+            with self.subTest(scope=scope):
+                row = self.resolved(selection, scope, open_call_at=120.0)
+                self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_later_write_to_somewhere_the_line_does_not_name_does_not_excuse_it(self) -> None:
+        for line in ("The tests pass", "src/probe.py is fixed"):
+            with self.subTest(line=line):
+                selection = self.line_selected(line, self.write_fact("docs/notes.md", 120.0))
+                self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
+
+    def test_a_later_check_that_does_not_cover_the_line_does_not_excuse_it(self) -> None:
+        lint = check_fact(
+            fact_id="c9", result="passed", at=110.0, summary="ruff check src/other.py"
+        )
+        selection = self.line_selected("The tests pass", lint)
+        self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
+
+    def test_a_later_check_that_covers_the_line_excuses_it(self) -> None:
+        tests = check_fact(fact_id="c9", result="passed", at=110.0, summary="pytest -q")
+        selection = self.line_selected("The tests pass", tests)
+        self.assertEqual(reading.RESULT_NOT_REACHED, self.line_resolved(selection)["result"])
+
+    def test_a_later_write_to_the_path_the_line_names_excuses_it(self) -> None:
+        selection = self.line_selected(
+            "src/probe.py is fixed", self.write_fact("src/probe.py", 120.0)
+        )
+        self.assertEqual(reading.RESULT_NOT_REACHED, self.line_resolved(selection)["result"])
+
+    def test_a_line_that_names_nothing_a_check_or_write_could_show_keeps_any_later_work(
+        self,
+    ) -> None:
+        selection = self.line_selected(
+            "The probe is fixed", self.write_fact("docs/notes.md", 120.0)
+        )
+        self.assertEqual(reading.RESULT_NOT_REACHED, self.line_resolved(selection)["result"])
 
 
 class TheResolverTakesTheQuestionFromThePrompt(unittest.TestCase):
