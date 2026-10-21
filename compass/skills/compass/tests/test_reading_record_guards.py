@@ -339,6 +339,53 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
         )
         self.assertEqual(("m1",), row["cites"])
 
+    def test_a_line_that_only_shares_a_keyword_with_a_passing_check_is_not_covered(self) -> None:
+        # Each line says the word of a check kind it did not claim a result for: a rule about the
+        # config, a directory, a count of tests. None of them is shown by the run passing.
+        cases = (
+            ("ruff check .", "The lint config is left as it is"),
+            ("pytest -q", "Tests are not deleted"),
+            ("pytest -q", "The retry test file is renamed"),
+            ("ruff check .", "No lint rules are disabled"),
+            ("pnpm build", "The build directory is not touched"),
+            ("pnpm typecheck", "Type checks are described in the README"),
+        )
+        for command, line in cases:
+            with self.subTest(line):
+                row = self._line(
+                    [
+                        base.WORDS_FACT,
+                        self._passed(summary=command),
+                        base.AGENT_MESSAGE_FACT,
+                    ],
+                    line,
+                    [2],
+                )
+                self.assertEqual(("m1",), row["cites"])
+
+    def test_a_line_that_claims_the_checks_result_is_covered_by_a_pass_of_its_kind(self) -> None:
+        cases = (
+            ("pytest -q", "All the tests pass"),
+            ("pytest -q", "The suite is green"),
+            ("ruff check .", "Lint is clean"),
+            ("ruff check .", "No lint errors remain"),
+            ("pnpm build", "The build succeeds"),
+            ("pnpm typecheck", "Type checks pass"),
+            ("mypy", "mypy finds no errors"),
+        )
+        for command, line in cases:
+            with self.subTest(line):
+                row = self._line(
+                    [
+                        base.WORDS_FACT,
+                        self._passed(summary=command),
+                        base.AGENT_MESSAGE_FACT,
+                    ],
+                    line,
+                    [2],
+                )
+                self.assertEqual(("check-1", "m1"), row["cites"])
+
     def test_a_check_that_names_the_lines_own_target_covers_it(self) -> None:
         lint = self._passed(summary="ruff check compass/skills/compass/compass_runtime/reading.py")
         row = self._line(

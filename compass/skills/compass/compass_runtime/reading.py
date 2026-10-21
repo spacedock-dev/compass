@@ -4061,9 +4061,10 @@ def recorded_departure(
 
 
 # The words of a line that say which kind of check would show it, and the words of a check's own
-# command that say which kind it is. Deliberately small: a check covers a line when they share a
-# kind, or when the line names a path the check's command names. A line neither shape reaches is
-# left with the agent's message, which is the honest answer where no check plainly covers it.
+# command that say which kind it is. Deliberately small: a check covers a line when the line claims
+# that kind's result (`_claims_result`), or when it names a path the check's command names. A line
+# neither shape reaches is left with the agent's message, which is the honest answer where no
+# check plainly covers it.
 _LINE_KINDS = {
     "test": re.compile(r"\b(?:tests?|suite|specs?|pytest|vitest|jest|unittest)\b", re.IGNORECASE),
     "lint": re.compile(r"\b(?:lint(?:s|ed|er|ing)?|ruff|biome|eslint)\b", re.IGNORECASE),
@@ -4082,6 +4083,27 @@ _CHECK_WORDS = {
 }
 
 
+# What a line says when it claims a check's outcome, rather than merely naming its subject. A pass
+# shows "the tests pass" and "no lint errors"; it says nothing about "the lint config is left alone"
+# or "tests are not deleted", which share the keyword and claim no result (DRC-4937).
+_RESULT_CLAIM = re.compile(
+    r"\b(?:pass(?:es|ed|ing)?|green|clean|ok|okay|succe(?:ed|eds|eded|ss|ssful|ssfully)"
+    r"|compil(?:e|es|ed)"
+    r"|(?:no|zero|without|0)\s+(?:\w+\s+){0,2}(?:errors?|failures?|failing|warnings?|violations?)"
+    r"|(?:n't|not|never)\s+fail(?:s|ed|ing)?)\b",
+    re.IGNORECASE,
+)
+_CLAUSE_BREAK = re.compile(r"[.;:,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
+
+
+def _claims_result(text: str, kind: str) -> bool:
+    """Whether one clause of the line speaks of this kind of check and says how it came out."""
+    return any(
+        _LINE_KINDS[kind].search(clause) and _RESULT_CLAIM.search(clause)
+        for clause in _CLAUSE_BREAK.split(text)
+    )
+
+
 def _check_kinds(command: str) -> frozenset[str]:
     words = [os.path.basename(word) for word in command.split()]
     return frozenset(
@@ -4097,8 +4119,9 @@ def covers_line(text: str, command: str) -> bool:
     """Whether a check's command plainly covers an outcome line.
 
     A line that names a path is covered by a check that names it too; one that names none, by a
-    check of a kind the line speaks of (tests, lint, types, build). A pass of the same kind on a
-    different target does not cover a line about this one.
+    check of a kind the line claims a result for ("the tests pass", "lint is clean"). A line that
+    only shares the keyword ("the lint config is left alone") claims none, and a pass of the same
+    kind on a different target does not cover a line about this one.
     """
     named = _path_tokens(text, files=True)
     if named:
@@ -4106,7 +4129,7 @@ def covers_line(text: str, command: str) -> bool:
         targets = [word.rstrip("/").removeprefix("./") for word in words if "/" in word]
         targets += [word for word in words if _FILE_NAME.search(word)]
         return any(_same_path(path, target) for path in named for target in targets)
-    return any(_LINE_KINDS[kind].search(text) for kind in _check_kinds(command))
+    return any(_claims_result(text, kind) for kind in _check_kinds(command))
 
 
 def covering_checks(
