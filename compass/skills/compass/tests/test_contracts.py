@@ -1635,6 +1635,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.project_context",
             "compass_runtime.record_pages",
             "compass_runtime.records",
+            # Cuts a bounded prompt title back to a whole word for the outline (`transcripts.clip`).
+            "compass_runtime.transcripts",
         },
         # The summary store persists the producer's frozen result and compares it with a fresh
         # source read; it resolves the focused transcript itself and holds no model seam.
