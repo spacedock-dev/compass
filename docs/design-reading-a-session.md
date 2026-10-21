@@ -5929,7 +5929,7 @@ Three cases the main rule left open, each said only where the page can show it i
   once it has run its checks.").
 - The how-to, the skill and the promise map said "Not enough recorded yet" is normal until an expected
   outcome line is added. The card no longer draws that level for a reading, so the sentence now says
-  what a reader sees: with no expected outcome line a reading says "Can't tell" and draws no level.
+  what a reader sees: with no expected outcome line, no level, and "Can't tell" unless your goal departs.
   "Not enough recorded yet" stays the live estimate's word.
 
 A departure that moved is deliberately not named as replaced where no correction was pasted; see the

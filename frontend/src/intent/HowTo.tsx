@@ -62,7 +62,7 @@ export function IntentHowTo({
         data-next-intent-howto-limit
       >{`Drift level: ${WORK_HARNESSES.map(label).join(' and ')} sessions only. Analyze drift here: ${reader}${reader.endsWith('.') ? '' : '.'} Steer back: ${steer}. Compass never writes into sessions.`}</p>
       <p data-next-intent-howto-no-line>
-        Without an expected outcome line, a reading says “Can't tell” and draws no level.
+        With no expected outcome line: no level, and “Can't tell” unless your goal departs.
       </p>
       <p data-next-intent-howto-settle>
         Readings settle a command's latest unpiped run, failed or passed with nothing written after

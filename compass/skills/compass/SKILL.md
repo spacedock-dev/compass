@@ -139,7 +139,7 @@ reader is named. With no reader on this machine, the reason stands where the con
 page has at most one primary run control. No answer option is ever emphasised: a session blocked on
 you gives the primary to the terminal raise when one is offered, and otherwise nothing is primary
 while its question is open.
-With no expected outcome line, a reading says "Can't tell" and draws no level. A link to a session
+With no expected outcome line: no level, and "Can't tell" unless your goal departs. A link to a session
 the board no longer holds names that session and says it is not in the current payload.
 
 The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention`, `#n=intent`,

@@ -194,8 +194,9 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
         self.assertIn("intent-menu", reader_state)
 
     def test_what_a_goal_with_no_outcome_line_reads_is_the_pages(self) -> None:
-        # DRC-4922 stopped the card drawing "Not enough recorded yet" for a reading: it says "Can't
-        # tell" and draws no level. The how-to on the page, the skill and the promise map say the same.
+        # DRC-4922 stopped the card drawing "Not enough recorded yet" for a reading: it draws no level
+        # and says "Can't tell" unless the goal departs, because a departure on the goal row is answered
+        # before the missing outcome line is. The how-to on the page, the skill and the promise map say the same.
         root = SERVER_PATH.parents[3]
         for relative in (
             "compass/skills/compass/SKILL.md",
@@ -207,7 +208,8 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
                 self.assertNotIn("is normal until you add an expected outcome line", text)
                 self.assertRegex(
                     text,
-                    r"expected outcome line, a reading says [\"“]Can't tell[\"”] and draws no level",
+                    r"expected outcome line: no level, and "
+                    r"[\"“]Can't tell[\"”] unless your goal departs",
                 )
 
     def test_documented_store_paths_are_the_ones_searched(self) -> None:

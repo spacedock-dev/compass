@@ -167,3 +167,17 @@ describe('an empty verdict early in a session', () => {
     expect(document.querySelector(EARLY)).toBeNull();
   });
 });
+
+describe('a goal-only reading that departs', () => {
+  it('answers the departure and draws no level, so it does not say it cannot tell', async () => {
+    await open(
+      reading(['departure']),
+      { analysis_levels: [ANALYSIS('not_enough')], live_levels: [] },
+      false,
+      FAILED,
+    );
+    expect(document.querySelector('[data-next-drift-level]')).toBeNull();
+    expect(textOf('[data-next-drift-verdict]')).toMatch(/1 departure/);
+    expect(textOf('[data-next-drift-verdict]')).not.toMatch(/Can't tell/);
+  });
+});
