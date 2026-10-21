@@ -3,14 +3,13 @@ import { compatSessKey } from '../api/identity';
 import {
   Select,
   SelectTrigger,
-  SelectValue,
   SelectContent,
   SelectGroup,
   SelectLabel,
   SelectItem,
 } from '../ui/select';
 import { useFocusKey } from '../controls';
-import { goalKey, goalSourceLine, promptClip, promptMenu, promptChoices } from './derive';
+import { goalKey, promptClip, promptMenu, promptChoices } from './derive';
 import { choosePrompt } from './edit';
 import { closePromptMenu, loadPromptChoices } from './prompts';
 import { usePanel } from './useIntent';
@@ -33,11 +32,9 @@ export function PromptSelect() {
     promptChoices(ctx.held, input.contexts, session).map((choice) => [choice.factId, choice.text]),
   );
   const bounded = ctx.held.prompts.get(compatSessKey(session))?.bounded;
-  /* Beside "Typed · saved", the face said "Use your prompt", which read as the goal's source. The action is the
-     same; the face names it as a replacement for the reader's own words. The accessible name stays the action. */
-  const face = goalSourceLine(input).startsWith('Typed')
-    ? 'Replace with your prompt'
-    : 'Use your prompt';
+  /* The design's button, with one label whatever the box holds: the face used to change to "Replace with your
+     prompt", which made the control read as two. The chosen prompt shows in the goal and its source line. */
+  const face = 'Use your prompt';
   const [open, setOpen] = useState(false);
   const focusKey = `${goalKey(session)}:prompt`;
   const ref = useFocusKey<HTMLButtonElement>(ctx.shell.controls.focusLane, focusKey);
@@ -66,9 +63,9 @@ export function PromptSelect() {
           data-next-focus={focusKey}
           aria-label="Use your prompt"
           aria-busy={menu.pending}
-          title={menu.options.find((option) => option.value === menu.value)?.label ?? face}
+          title={face}
         >
-          <SelectValue placeholder={face} />
+          {face}
         </SelectTrigger>
         <SelectContent>
           <SelectGroup className="p-0">

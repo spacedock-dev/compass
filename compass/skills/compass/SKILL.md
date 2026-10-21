@@ -7,7 +7,7 @@ license: Apache-2.0 AND OFL-1.1
 # Compass
 
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-goal and press `Analyze drift`. The `How Intent and drift works` button explains the steps, the
+goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
 reading's limits and why an expected outcome line is needed for a drift level.
 New to it? `See a sample session (view only)`, above the Sessions list, opens an anonymized session
 that drifted, with a stored summary of what it did, its stored reading, the correction Compass
@@ -47,7 +47,7 @@ Pi relocation: `PI_CODING_AGENT_SESSION_DIR` is an authoritative direct session-
 
 The dark-only dashboard opens on **Sessions**, which keeps active work first and recent history
 below it. Its two counters show active now and working; exact requests and reported blocks are
-counted in Attention. One paragraph and the `How Intent and drift works` button stay visible
+counted in Attention. One paragraph and the `How Intent and drift works` entry in the Intent card's `More` menu stay visible
 after a session has been checked. The paragraph explains how to open a session. Where annotations
 are on, the store is readable and a reading route names a provider, it explains how to set a goal and
 analyze drift, adding that no session has been checked while that is true. **Projects**, one
@@ -308,16 +308,15 @@ counts until anything in it writes again; a subagent write counts. Marks live in
 
 You can record a goal and an expected outcome against one session, in your own words. The
 expected outcome starts with one optional empty line and holds up to six lines, each at most 240
-characters. The goal is one line of at most 240. Both are optional and set independently, and saving one
+characters. The goal is a three-row box of at most 240. Both are optional and set independently, and saving one
 leaves the other alone. Open the session's page: the fields are the first thing in its drift
 block, for a session with or without a project. The how-to beside Intent says what an analysis
 reads and that Compass never writes into the session. Each box shows how many of its 240 characters
-you have used as you type. Under the save, the Intent card holds the goal's `Clear` control and the saved reads-from line.
-After an outcome line is used,
-`Remove` and `Add a line` appear; Add adds another until there are six, where it stays
+you have used as you type. The Intent card shows the saved reads-from line beside its status word, and keeps `Clear` and `How Intent and drift works` in its `More` menu.
+Each outcome line has `Remove`, and `Add a line` sits beside `Save intent`, all drawn from the first view; Add adds another until there are six, where it stays
 on the page, refuses a seventh and says why (replace or merge a line instead). `Save intent` stays
-visible and saves the drafted goal or your edits. `Undo changes` appears after a goal edit or prompt
-choice. The list saves as a whole, and Escape puts the stored words back. Each saved line shows where it came from: typed, or added from an entry. A
+visible and saves the drafted goal or your edits. `Undo changes` is drawn beside it, inert until there is a goal edit or prompt
+choice to undo. The list saves as a whole, and Escape puts the stored words back. Each saved line shows where it came from: typed, or added from an entry. A
 reading reads each line on its own and shows one row per line.
 
 `POST /api/annotate` with a harness, a session id and `goal` or `lines` (a list of strings, the

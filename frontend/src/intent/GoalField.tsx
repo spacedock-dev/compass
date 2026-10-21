@@ -76,7 +76,7 @@ export function GoalField() {
       <HeldTextarea
         id={boxId}
         rows={3}
-        className="min-h-[44px] max-[760px]:h-[44px]"
+        className="min-h-[5.5rem]"
         maxLength={cap}
         memoryKey={key}
         focusKey={key}

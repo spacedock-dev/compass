@@ -148,11 +148,38 @@ function ArmedDiscard({ name, children }: { readonly name: string; readonly chil
   );
 }
 
+/* What became of discarded words stays on the card, outside the menu that holds the offer to discard. */
+export function CaveatNotes() {
+  const panel = usePanel();
+  const { input, session, payload } = panel;
+  const account = discardAccount(
+    input.annotation,
+    session['departures'],
+    publishedDiscard(payload),
+  );
+  const discard = discardView(panel);
+  if (!account.length && !discard?.landed) return null;
+  return (
+    <div className="next-session-drift-caveats">
+      {account.map((said) => (
+        <p key={said} className="next-cockpit-held-absent">
+          {said}
+        </p>
+      ))}
+      {discard?.landed ? (
+        <div className="next-cockpit-held-discard">
+          <small className="next-cockpit-held-cue">{discard.landed}</small>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DiscardBlock({ view }: { readonly view: DiscardView }) {
   const { ctx, session } = usePanel();
   const key = discardKey(session);
   const name = useKey('held-discard');
-  const { offer, armed, landed, warning, why } = view;
+  const { offer, armed, warning, why } = view;
   const button = (
     <ActionButton
       weight="secondary"
@@ -190,7 +217,6 @@ function DiscardBlock({ view }: { readonly view: DiscardView }) {
           </Disclosure>
         )
       ) : null}
-      {landed ? <small className="next-cockpit-held-cue">{landed}</small> : null}
     </div>
   );
 }
@@ -199,7 +225,7 @@ function DiscardBlock({ view }: { readonly view: DiscardView }) {
    do. The discard account stays in view, because it says what became of the reader's words. */
 export function Caveats() {
   const panel = usePanel();
-  const { input, session, payload } = panel;
+  const { input, session } = panel;
   const key = useKey('held-saved-about');
   const annotation = input.annotation;
   const ended = endedAt(session) !== null;
@@ -207,9 +233,8 @@ export function Caveats() {
     annotation?.['binding_why'] && (annotation['goal'] || annotationLines(annotation).length)
       ? String(annotation['binding_why'])
       : '';
-  const account = discardAccount(annotation, session['departures'], publishedDiscard(payload));
   const discard = discardView(panel);
-  if (!(ended || binding) && !account.length && !discard) return null;
+  if (!(ended || binding) && !discard?.offer) return null;
   return (
     <div className="next-session-drift-caveats">
       {ended || binding ? (
@@ -223,12 +248,7 @@ export function Caveats() {
           {binding ? <p className="next-cockpit-held-absent">{binding}</p> : null}
         </Disclosure>
       ) : null}
-      {account.map((said) => (
-        <p key={said} className="next-cockpit-held-absent">
-          {said}
-        </p>
-      ))}
-      {discard ? <DiscardBlock view={discard} /> : null}
+      {discard?.offer ? <DiscardBlock view={discard} /> : null}
     </div>
   );
 }

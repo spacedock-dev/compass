@@ -14,12 +14,11 @@ import {
   intentDrafted,
   intentKey,
   intentStatus,
-  DRAFT_FIRST_UNSAVED,
-  DRAFT_LATEST_UNSAVED,
+  DRAFT_UNSAVED,
   noDraftWhy,
 } from './derive';
 import { undoChanges } from './edit';
-import { Caveats, LaterDirections } from './Caveats';
+import { CaveatNotes, Caveats, LaterDirections } from './Caveats';
 import { ClearGoal, GoalField } from './GoalField';
 import { OutcomeLines, AddOutcomeLine } from './OutcomeLines';
 import { saveIntent } from './save';
@@ -27,8 +26,8 @@ import { ENDED_CAVEAT, INTENT_LEDE, INTENT_MEASURED } from './sentences';
 import { usePanel } from './useIntent';
 import { HowTo } from './HowTo';
 
-/* Save remains in view over an untouched prompt draft; Undo appears after a goal edit or a pending
-   prompt choice. Outcome-only edits retain native undo and Escape without adding a first-view control. */
+/* The three controls sit together on the left and are always drawn, as the design has them: Add a line, Save
+   intent, and Undo changes, inert until there is something to undo. */
 function Footer() {
   const { ctx, input, session, payload } = usePanel();
   const key = intentKey(session);
@@ -58,8 +57,8 @@ function Footer() {
   /* Undo is inert while its save is in flight: reverting the box would leave the words being sent unseen. */
   return (
     <div className="next-cockpit-held-footer">
-      <AddOutcomeLine />
       <span className="next-cockpit-held-tools">
+        <AddOutcomeLine />
         <ActionButton
           label="Save intent"
           className="border-[var(--accent)] text-[color:var(--accent)] font-bold px-4 aria-disabled:not-aria-busy:border-solid aria-disabled:not-aria-busy:bg-none aria-disabled:not-aria-busy:text-[color:var(--accent)]"
@@ -72,16 +71,14 @@ function Footer() {
           focusKey={`${key}:save`}
           onPress={() => void saveIntent(ctx, session)}
         />
-        {changes.goal || changes.pending ? (
-          <ActionButton
-            label="Undo changes"
-            action="held-undo"
-            arg="intent"
-            inert={!(changes.undoable && !saving)}
-            focusKey={`${key}:undo`}
-            onPress={() => undoChanges(ctx, input)}
-          />
-        ) : null}
+        <ActionButton
+          label="Undo changes"
+          action="held-undo"
+          arg="intent"
+          inert={!(changes.undoable && !saving)}
+          focusKey={`${key}:undo`}
+          onPress={() => undoChanges(ctx, input)}
+        />
       </span>
       {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
     </div>
@@ -117,24 +114,37 @@ export function SavedStamp() {
   );
 }
 
-/* What the retired session More held about the reader's words, under the save that makes them: the saved
-   stamp, the sentence saying drift is measured against these words, Clear, the caveats and Discard
-   everything, and the state of later directions. Each part draws nothing when it has nothing to say, so an
-   untouched intent adds only the one sentence.
+/* What the retired session More held about the reader's words, reduced to what the design has: the reading's
+   start beside the card, and one quiet menu for the rest (the sentence saying drift is measured against these
+   words, Clear, how Intent and drift works, the caveats, Discard everything and the state of later
+   directions). What became of discarded words stays in the card, because it says what became of the reader's
+   words. Each part draws nothing when it has nothing to say.
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
 function Kept() {
+  const { project, session } = usePanel();
+  const menu = disclosureKey({ project, scope: compatSessKey(session), name: 'intent-menu' });
   return (
     <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 border-t border-[var(--rule)] text-label text-muted-foreground [&_.next-session-drift-caveats]:contents [&_.next-cockpit-held-discard]:mt-0 [&_.next-cockpit-held-hint]:flex-initial [&_.next-cockpit-held-hint]:text-label"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label text-muted-foreground [&_.next-session-drift-caveats]:contents [&_.next-cockpit-held-discard]:mt-0 [&_.next-cockpit-held-hint]:flex-initial [&_.next-cockpit-held-hint]:text-label"
       data-next-intent-kept
     >
       <SavedStamp />
-      <ClearGoal />
-      <p className="next-cockpit-held-hint" data-next-intent-measured>
-        {INTENT_MEASURED}
-      </p>
-      <Caveats />
-      <LaterDirections />
+      <CaveatNotes />
+      <Disclosure
+        disclosureKey={menu}
+        summary="More"
+        summaryLabel="More about these words"
+        variant="popover"
+        focusKey={`intent-menu:${compatSessKey(session)}`}
+      >
+        <p className="next-cockpit-held-hint" data-next-intent-measured>
+          {INTENT_MEASURED}
+        </p>
+        <ClearGoal />
+        <Caveats />
+        <LaterDirections />
+        <HowTo />
+      </Disclosure>
     </div>
   );
 }
@@ -176,13 +186,12 @@ export function IntentSection() {
         <span className="ms-auto flex flex-wrap items-baseline gap-x-3 gap-y-1">
           {status ? (
             <span
-              className={`[font-family:var(--mono)] text-label ${status === 'Saved' || status === DRAFT_FIRST_UNSAVED || status === DRAFT_LATEST_UNSAVED ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
+              className={`[font-family:var(--mono)] text-label ${status === 'Saved' || status === DRAFT_UNSAVED ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
               data-next-intent-status
             >
               {status}
             </span>
           ) : null}
-          <HowTo />
         </span>
       </header>
       <p className="next-cockpit-held-lede text-muted-foreground" data-next-intent-lede>

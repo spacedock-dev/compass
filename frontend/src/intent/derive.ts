@@ -21,7 +21,6 @@ import type { Held, PromptChoice } from './held';
 import {
   ADOPT_CHANGED,
   ADOPT_REFUSED,
-  ANALYZE_READS_PROMPT,
   DIRECTION_CLIPPED,
   EXCERPT_READ_WHOLE,
   INTENT_EDITED,
@@ -504,16 +503,15 @@ export function promptMenu(input: DraftInput): PromptMenu {
   };
 }
 
-export const DRAFT_FIRST_UNSAVED = 'Draft from your first prompt, not saved';
-export const DRAFT_LATEST_UNSAVED = 'Draft from your latest prompt, not saved';
+/* One word, as the design's status is. Which prompt the draft came from is the goal's own source line. */
+export const DRAFT_UNSAVED = 'Draft';
 
 export type IntentStatus =
   | 'Saving…'
   | 'Not confirmed'
   | 'Not saved'
   | 'Unsaved changes'
-  | typeof DRAFT_FIRST_UNSAVED
-  | typeof DRAFT_LATEST_UNSAVED
+  | typeof DRAFT_UNSAVED
   | 'Saved'
   | '';
 
@@ -543,8 +541,9 @@ export function intentStatus(
      2026-10-20). It still says it is not saved, because Save intent is what adopts it. */
   if (changes.adoptable) {
     const drafted = intentDraft(input);
-    if (drafted?.source === 'first-prompt') return DRAFT_FIRST_UNSAVED;
-    if (drafted?.source === 'latest-prompt') return DRAFT_LATEST_UNSAVED;
+    if (drafted?.source === 'first-prompt' || drafted?.source === 'latest-prompt') {
+      return DRAFT_UNSAVED;
+    }
     return 'Unsaved changes';
   }
   const discarded = annotationDiscarded(input.annotation);
@@ -592,7 +591,8 @@ export function goalSourceLine(input: DraftInput): string {
             ? clockText(at)
             : 'chosen';
     const clipped = drafted.cut === true || drafted.text.endsWith('…');
-    return `From your prompt · ${which} · not saved. ${ANALYZE_READS_PROMPT}${clipped ? ` ${EXCERPT_READ_WHOLE}` : ''}`;
+    // The prompt-length sentence is under "What is sent", where a reader looks for what Analyze reads.
+    return `From your prompt · ${which} · not saved.${clipped ? ` ${EXCERPT_READ_WHOLE}` : ''}`;
   }
   const savedFromPrompt =
     !discarded && PROMPT_SOURCES.includes(String(annotation?.['goal_source'] || ''));

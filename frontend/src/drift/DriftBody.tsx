@@ -47,6 +47,7 @@ import { SteerBox, SteerButton, UpdateIntentButton } from './SteerBack';
 import { useFollowCorrection } from './useFollowCorrection';
 import { Why } from './Why';
 import { READING_NOT_A_VERIFICATION } from '../intent/logModel';
+import { ANALYZE_READS_PROMPT } from '../intent/sentences';
 
 /* The Drift section's body, in the page's order: the answer in one sentence, the level, the one control (or the question before it, or the
    result that stands in its place), what analysis does, what the session launched, and a reading this build
@@ -272,6 +273,9 @@ function QuestionWithAnalysis({
                   parts={disclosureParts(route, provider, disclosure)}
                   id={DISCLOSURE_ID}
                 />
+                <p className="next-cockpit-reading-why" data-next-reading-prompt-limit>
+                  {ANALYZE_READS_PROMPT}
+                </p>
                 <TurnOff closes="reading-sent" />
               </Why>
             ) : null}

@@ -29,12 +29,10 @@ describe('a goal-less session arrives with its first prompt drafted and nothing 
     const page = mountSession();
     await settle(page);
     expect(goalBox().value).toBe('Ship the queue worker');
-    expect(text('[data-next-cockpit-draft-marks]')).toBe(
-      'From your prompt · first · not saved. Analyze reads at most the first 1,000 characters of any prompt.',
-    );
+    expect(text('[data-next-cockpit-draft-marks]')).toBe('From your prompt · first · not saved.');
     // The draft is adopted by Save intent, which is live over it; nothing else is.
     expect(inert(control('held-save'))).toBe(false);
-    expect(control('held-undo')).toBeNull();
+    expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
     expect(page.posts()).toBe(0);
     expect(page.state.requests.filter((r) => r.method !== 'GET').length).toBe(0);
   });
@@ -323,7 +321,7 @@ describe('Undo changes', () => {
     expect(goalBox().value).toBe('Saved goal');
     expect(lineBoxes().map((box) => box.value)).toEqual(['A saved line']);
     expect(page.posts()).toBe(0);
-    expect(control('held-undo')).toBeNull();
+    expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('is Escape in the goal box, and Escape in a line puts the whole list back', async () => {
@@ -540,6 +538,6 @@ describe('the header status over a change Save intent would not write', () => {
     await settle(page);
     expect(text('[data-next-intent-status]')).toBe('Saved');
     expect(inert(control('held-save'))).toBe(true);
-    expect(control('held-undo')).toBeNull();
+    expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
   });
 });

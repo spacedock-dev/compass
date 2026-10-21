@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountDrift } from '../drift/testing';
 import { control, goalBox, lineBoxes, mountSession, text, type } from './panel.testing';
@@ -9,27 +9,35 @@ const settle = async (page: { settle: () => Promise<void> }) => {
 };
 
 describe('the first view of a session', () => {
-  it('offers one optional outcome field and reveals its tools after use', async () => {
+  it('offers one optional outcome field and draws its tools from the first view', async () => {
     const page = mountSession();
     await settle(page);
     expect(lineBoxes()).toHaveLength(1);
     expect(text('.next-cockpit-held-lines label')).toBe('Expected outcome · up to 6 lines');
-    expect(control('held-line-add')).toBeNull();
-    expect(control('held-line-remove')).toBeNull();
+    // Drawn before the reader types, as the design has them.
+    expect(control('held-line-add')).not.toBeNull();
+    expect(control('held-line-remove')).not.toBeNull();
     type(lineBoxes()[0] as HTMLTextAreaElement, 'A passing check');
     expect(control('held-line-add')).not.toBeNull();
     expect(control('held-line-remove')).not.toBeNull();
-    expect(control('held-undo')).toBeNull();
+    // An outcome edit is something Undo changes undoes, so it wakes.
+    expect(control('held-undo')?.getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('keeps Save visible, Clear in the Intent card and the monitor in the Drift card head', async () => {
     const page = mountSession();
     await settle(page);
     expect(control('held-save')).not.toBeNull();
-    expect(control('held-undo')).toBeNull();
+    expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
     expect(document.querySelector('[data-next-session-more]')).toBeNull();
     const intent = document.querySelector('[aria-labelledby="next-session-intent-heading"]');
-    expect(intent?.contains(control('held-clear'))).toBe(true);
+    // Clear is in the card's quiet menu, which holds it once the reader opens it.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'More about these words' }));
+    });
+    await page.settle();
+    expect(control('held-clear')).not.toBeNull();
+    expect(intent?.querySelector('.next-session-drift-head')).toBeNull();
     expect(
       document.querySelector('.next-session-drift-head')?.contains(control('live-monitor')),
     ).toBe(true);
@@ -39,7 +47,7 @@ describe('the first view of a session', () => {
     await act(async () => {
       fireEvent.click(control('held-undo') as Element);
     });
-    expect(control('held-undo')).toBeNull();
+    expect(control('held-undo')?.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('warns beside the goal before typing on an ended session', async () => {

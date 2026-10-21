@@ -5560,12 +5560,12 @@ that, and Full activity is collapsed at the foot of the page.) The switch's acce
 | Sessions breadcrumb | First view | First view |
 | Project link | First view | First view |
 | No terminal to raise: Why | First view | Blocked only |
-| How Intent and drift works | First view | First view |
+| How Intent and drift works | First view | The Intent card's More menu |
 | Use your prompt | First view | First view |
-| Clear | First view | More |
-| Remove line 1 | First view | After outcome use |
-| + Add a line | First view | After outcome use |
-| Undo changes | First view | After a goal edit |
+| Clear | First view | The Intent card's More menu |
+| Remove line 1 | First view | First view |
+| + Add a line | First view | First view |
+| Undo changes | First view | First view, inert until there is something to undo |
 | Save intent | First view | First view |
 | Live monitor | Below fold | More |
 | Analyze drift | Below fold | First view |
@@ -5624,9 +5624,9 @@ under the control where no popover is drawn (its place in the popover is asserte
 | Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
 | Delegated work, and the "still running?" check | Limit | The Drift card, under the reading and its control, where Analyze drift is (row 6e) |
 | Pause model calls | Control | The "What is sent" popover beside Analyze drift; under the control where no popover is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
-| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside Clear |
+| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside its More menu |
 | "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
-| Clear | Control | The Intent card, beside the saved stamp |
+| Clear | Control | The Intent card's More menu |
 | Later directions: unknown, none or settled, with "Nothing here decides…" | Disclosure and limit | The Intent card, last |
 
 The activity column becomes **Full activity**, collapsed at the foot of the page. It keeps CURRENT
@@ -5893,3 +5893,31 @@ closed summary shape and the harness table are in
 
 The owner also reversed [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)'s
 two-column layout for this milestone; see the amendment directly above.
+
+### Amended 2026-10-21: the Intent card follows the design
+
+The card the 2026-10-12 build left was a one-line goal, a select whose label changed, Undo and
+Add a line that appeared only after typing, a status of two sentences and a meta row of six
+parts. It now matches the design's form, and a save no longer shows the draft while it settles.
+
+- **A save keeps the reader's words on screen.** The held goal and lines are dropped after the
+  board refresh that follows the reply, not before it. Dropped first, the boxes read the drafted
+  prompt and empty outcome lines until the row arrived, about two seconds. The same order holds for
+  an adopted prompt. A story with a held refresh asserts it.
+- **The form.** The goal is a three-row box. `Use your prompt` is one button with one label that
+  opens "Your prompts in this session"; it no longer becomes `Replace with your prompt` or shows the
+  chosen prompt. `+ Add a line`, `Save intent` and `Undo changes` sit together on the left and are
+  drawn from the first view, the last two inert until there is something to write or undo, and each
+  line's `×` is drawn before the reader types.
+- **Status is a word.** `Saved`, `Unsaved changes`, `Draft` over a goal drafted from a prompt, and
+  the refusals `Not saved` and `Not confirmed`. Which prompt a draft came from is the goal's source
+  line, and `How Intent and drift works` is in the menu below.
+- **The goal's hint** no longer carries the prompt-length sentence. "Analyze reads at most the
+  first 1,000 characters of any prompt" is in What is sent, beside the parts a reading sends.
+- **The meta row** keeps the reading's start (`Saved · reads from 10:57`) and one quiet `More`
+  menu holding the measured sentence, `Clear`, `About these saved words`, `Discard everything`,
+  `Later directions` and the how-to. What became of discarded words stays on the card, because it
+  says what became of the reader's words.
+
+No differential test over the recorded answers changed. The on-demand browser proofs under
+`frontend/e2e` still carry the old card's text and were not run for this change.

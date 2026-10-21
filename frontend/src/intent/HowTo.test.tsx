@@ -6,12 +6,18 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
+async function openHowTo(page: { settle: () => Promise<void> }) {
+  fireEvent.click(screen.getByRole('button', { name: 'More about these words' }));
+  await page.settle();
+  fireEvent.click(screen.getByRole('button', { name: 'How Intent and drift works' }));
+  await page.settle();
+}
+
 describe('the Intent how-to', () => {
   it('keeps the popup keyed across session remounts without a first-use flag', async () => {
     const page = mountDrift();
     await page.settle();
-    fireEvent.click(screen.getByRole('button', { name: 'How Intent and drift works' }));
-    await page.settle();
+    await openHowTo(page);
     await act(async () => {
       page.router.navigate({ view: 'sessions' });
     });
@@ -50,11 +56,14 @@ describe('the Intent how-to', () => {
         },
       });
       await page.settle();
-      const button = screen.getByRole('button', { name: 'How Intent and drift works' });
-      expect(button.closest('header')?.querySelector('h2')?.textContent).toBe('Intent');
       expect(screen.queryByRole('button', { name: 'What analysis does' })).toBeNull();
-      fireEvent.click(button);
-      await page.settle();
+      // Not in the card's header, where the design has one word of status: in the quiet menu.
+      expect(
+        document
+          .querySelector('[aria-labelledby="next-session-intent-heading"] header')
+          ?.querySelector('[data-slot=popover]'),
+      ).toBeNull();
+      await openHowTo(page);
       const popup = screen.getByRole('dialog', { name: 'How Intent and drift works' });
       expect((popup.textContent ?? '').split(/\s+/).length).toBeLessThanOrEqual(150);
       expect(popup.textContent).toContain('1. Give the goal.');
