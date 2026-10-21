@@ -649,6 +649,7 @@ const TITLE_WORDS = 60;
 function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
   return (
     entries.find((entry) => entry.subject === 'write' || entry.subject === 'check') ??
+    entries.find(agentMessage) ??
     entries[0] ??
     null
   );
@@ -664,8 +665,9 @@ export function departureTitle(entries: readonly WorkEntry[]): string {
   if (entry.subject === 'check') {
     return entry.result === 'failed' ? 'A check failed' : 'A check ran';
   }
-  return agentMessage(entry)
-    ? 'What the agent said departs from this'
+  if (agentMessage(entry)) return 'What the agent said departs from this';
+  return personAuthored(entry)
+    ? 'Your own words depart from this'
     : 'Something in the record departs from this';
 }
 
@@ -688,6 +690,7 @@ export function departureWhat(entries: readonly WorkEntry[]): string {
   }
   if (agentMessage(entry))
     return `${when}the agent said ${words ? `“${words.replace(/\.+$/, '')}”` : 'something'}.`;
+  if (personAuthored(entry) && words) return `${when}you said “${words.replace(/\.+$/, '')}”.`;
   return `${when}${citedKind(entry).toLowerCase()} was recorded.`;
 }
 

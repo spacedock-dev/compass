@@ -354,8 +354,8 @@ export const ADepartureReadsAsWhatHappened: Story = {
   },
 };
 
-/* The counter reads the text in the box, after typing and after the box is closed and opened over a new
-   composition. */
+/* The counter reads the text in the box, after typing and when an open, untouched box is quietly rebuilt over
+   a record that moved: the box stays mounted and only its text changes, so the count has to follow the text. */
 export const TheCounterFollowsTheCorrection: Story = {
   ...scenario({
     session: session({
@@ -364,23 +364,35 @@ export const TheCounterFollowsTheCorrection: Story = {
     }),
     facts: [PERSON, FAILED, PASSED],
     correction: { ok: true, parts: composed(GOAL_WHY, LINE_WHY) },
+    board: {},
   }),
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     const shown = () => canvasElement.querySelector('[data-next-correction-count]');
     const length = (box: HTMLTextAreaElement) => String([...box.value].length);
-    let box = await openBox(canvasElement);
+    const field = () => canvas.getByLabelText('Correction to paste') as HTMLTextAreaElement;
+    const box = await openBox(canvasElement);
     await expect(shown()).toHaveTextContent(`${length(box)}/${String(CORRECTION_CAP)}`);
-    await userEvent.type(box, ' And then stop.');
-    await expect(shown()).toHaveTextContent(`${length(box)}/${String(CORRECTION_CAP)}`);
-    // A shorter composition after a close: the count is the new text's, not the typed one's.
-    const scripted = args.scenario;
-    await userEvent.click(canvas.getByRole('button', { name: 'Steer back' }));
-    (scripted as { correction?: unknown }).correction = { ok: true, parts: ['Back to my goal.'] };
-    await userEvent.click(canvas.getByRole('button', { name: 'Steer back' }));
-    box = (await canvas.findByLabelText('Correction to paste')) as HTMLTextAreaElement;
+    // Left open and untouched: the next board follows the record, and the shorter text is the box's now.
+    const before = length(box);
+    const scripted = args.scenario as {
+      correction?: unknown;
+      session?: { annotation_assessment?: Record<string, unknown> };
+      board?: { refresh?: () => Promise<void> };
+    };
+    scripted.correction = { ok: true, parts: ['Back to my goal.'] };
+    scripted.session = {
+      ...scripted.session,
+      annotation_assessment: {
+        ...scripted.session?.annotation_assessment,
+        read_at: 9_999,
+      },
+    };
+    await userEvent.tab();
+    await scripted.board?.refresh?.();
+    await waitFor(() => expect(length(field())).not.toBe(before));
     await waitFor(() =>
-      expect(shown()).toHaveTextContent(`${length(box)}/${String(CORRECTION_CAP)}`),
+      expect(shown()).toHaveTextContent(`${length(field())}/${String(CORRECTION_CAP)}`),
     );
   },
 };

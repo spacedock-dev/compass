@@ -215,6 +215,18 @@ describe('a departure titled by what happened', () => {
     expect(departureWhat([said, write])).toContain('src/a.ts');
   });
 
+  it("says what a departure on the reader's own words is, and lets the agent's message beside it title it", () => {
+    const you = entry('p', 800, {
+      type: 'user_message',
+      by: 'person:me',
+      summary: 'Ship the queue',
+    });
+    expect(departureTitle([you])).toBe('Your own words depart from this');
+    expect(departureWhat([you])).toBe(`At ${clock(800)} you said “Ship the queue”.`);
+    expect(departureTitle([you, said])).toBe('What the agent said departs from this');
+    expect(departureWhat([you, said])).toContain('the agent said');
+  });
+
   it('says What as one sentence with the time, ending in a single stop', () => {
     const line = departureWhat([said]);
     expect(line).toBe(`At ${clock(920)} the agent said “Done: the billing rate is now 0.25”.`);

@@ -115,6 +115,8 @@ export interface Scenario {
   readonly correctionPosts?: Record<string, unknown>[];
   /** Filled in on mount: the browser's Back, which a story cannot press through the page's own links. */
   readonly nav?: { back?: () => void };
+  /** Filled in on mount: one more board read, over the scenario as the story has since changed it. */
+  readonly board?: { refresh?: () => Promise<void> };
 }
 
 export const fact = (
@@ -293,6 +295,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
       scenario.nav.back = () => {
         history.back();
         history.flush();
+      };
+    if (scenario.board)
+      scenario.board.refresh = async () => {
+        await shell.runtime.refresh({ manual: true });
       };
     if (scenario.reading)
       scenario.reading.finish = async () => {

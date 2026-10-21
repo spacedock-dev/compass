@@ -338,21 +338,14 @@ describe('a correction the reader opened follows the record, honestly', () => {
     await page.settle();
     await page.settle();
     await openAndLeave(page);
-    /* A typed edit makes the box the reader's and puts a count in the page's hands; Recompose then replaces
-       the text under a new key, and the count has to follow it. */
-    const field = box() as HTMLTextAreaElement;
-    field.value = `${field.value} extra`;
-    fireEvent.input(field);
+    /* Untouched, the box follows the record and is rebuilt in place: it stays mounted and only its text is
+       re-keyed, so the count has to follow the new text and not the one it was first given. */
     const first = [...(box()?.value ?? '')].length;
     expect(textOf('[data-next-correction-count]')).toBe(`${String(first)}/5140`);
     const moved = { ...ASSESSMENT, read_at: 1100 };
     await page.poll({
       ...driftBoard({ session: { ...session, annotation_assessment: moved } }),
       generated: 1300,
-    });
-    await page.settle();
-    await act(async () => {
-      fireEvent.click(byAction('correction-recompose') as HTMLElement);
     });
     await page.settle();
     const now = [...(box()?.value ?? '')].length;
