@@ -83,6 +83,8 @@ export function sourceRules(text) {
     if (group.length > 1) group.forEach((row, index) => (row.ordinal = index + 1));
   return rows;
 }
+// The file-free key the used set is written in, so copies in different files compare equal.
+const ruleKey = (rule) => `${rule.context}|${selectorKey(rule.selector)}|${rule.declarations}`;
 export function ruleIdentity(file, rule) {
   // Two rules with the same context and selector in one file get an ordinal, so each keeps its own exception.
   const ordinal = rule.ordinal ? `|#${rule.ordinal}` : '';
@@ -128,15 +130,26 @@ export async function coverageProblems(root, record) {
     for (const proof of expected)
       if (!record.runs.includes(`${mode}|${proof}.mjs`))
         problems.push(`Missing coverage: ${mode}/${proof}`);
-  for (const file of budget.files) {
-    const text = await readFile(resolve(root, file), 'utf8');
+  // The used key omits the file, so an identical rule in two budget files shares one certificate.
+  // The record cannot say which copy rendered, so every copy is held to an exception instead.
+  const sheets = new Map();
+  for (const file of budget.files) sheets.set(file, await readFile(resolve(root, file), 'utf8'));
+  const owners = new Map();
+  for (const [file, text] of sheets)
+    for (const rule of sourceRules(text)) {
+      const key = ruleKey(rule);
+      owners.set(key, new Set([...(owners.get(key) ?? []), file]));
+    }
+  for (const [file, text] of sheets) {
     for (const rule of sourceRules(text)) {
       const identity = ruleIdentity(file, rule);
       identities.add(identity);
-      if (isCovered(rule, used, pseudo)) covered.add(identity);
+      const shared = owners.get(ruleKey(rule)).size > 1;
+      const certified = !shared && isCovered(rule, used, pseudo);
+      if (certified) covered.add(identity);
+      else if (!record.exceptions[identity])
+        problems.push(`${shared ? 'Duplicated rule' : 'Uncovered rule'}: ${identity}`);
     }
-    for (const rule of uncoveredRules(file, text, record))
-      problems.push(`Uncovered rule: ${ruleIdentity(file, rule)}`);
   }
   for (const [identity, reason] of Object.entries(record.exceptions)) {
     if (!identities.has(identity)) problems.push(`Stale exception: ${identity}`);

@@ -166,6 +166,27 @@ test('the current sheets retain no uncovered rule or unexplained exception', asy
   assert.deepEqual(await coverageProblems(root, record), []);
 });
 
+test('a dead duplicate of a real sheet in another budget file fails the coverage gate', async (t) => {
+  const repository = fileURLToPath(new URL('../../', import.meta.url));
+  const record = JSON.parse(
+    await readFile(new URL('../css-coverage.json', import.meta.url), 'utf8'),
+  );
+  const directory = join(repository, 'docs/screenshots');
+  await mkdir(directory, { recursive: true });
+  const root = await mkdtemp(join(directory, 'css-coverage-fixture-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'frontend'));
+  const text = await readFile(join(repository, 'frontend/src/styles/shell.css'), 'utf8');
+  await writeFile(join(root, 'frontend/shell.css'), text);
+  await writeFile(join(root, 'frontend/copy.css'), text);
+  await writeFile(
+    join(root, 'frontend/css-budget.json'),
+    JSON.stringify({ files: ['frontend/shell.css', 'frontend/copy.css'] }),
+  );
+  const problems = await coverageProblems(root, record);
+  assert.ok(problems.some((problem) => problem.startsWith('Duplicated rule: frontend/copy.css|')));
+  assert.ok(problems.some((problem) => problem.startsWith('Duplicated rule: frontend/shell.css|')));
+});
 test('a dead-rule mutation added to the current shell fails the coverage gate', async () => {
   const file = 'frontend/src/styles/shell.css';
   const root = fileURLToPath(new URL('../../', import.meta.url));

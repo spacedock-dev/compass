@@ -261,7 +261,7 @@ raise its own allowance.
 
 `pnpm test` includes the CSS coverage tests in `frontend/build/css-coverage.test.mjs`, which compare
 the current sheets with the recorded proof union. A retained rule outside that union needs an exact
-`file|context|selector` entry (with a `|#n` ordinal when the same file repeats that context and selector) in `frontend/css-coverage.json`'s `exceptions`, with a reason explaining
+`file|context|selector` entry in `frontend/css-coverage.json`'s `exceptions`, with a reason explaining
 why it belongs despite the missing fixture coverage. Delete exceptions when their rules disappear or
 become covered, and check the record with `pnpm test:css:coverage`. The
 [cleanup record](docs/design-shadcn-adoption.md#stylesheet-cleanup) owns collection and the method's limits.
