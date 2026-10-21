@@ -9,14 +9,19 @@ import { DirectionActionButton } from './DirectionActionButton';
 import {
   cancelDirection,
   replaceDirection,
-  saveDirection,
   typeDirection,
   adoptDirectionAsGoal,
 } from './directions';
 import { addLine, escapeLines, removeLine, typeLine } from './edit';
 import { HeldTextarea } from './HeldTextarea';
-import { DIRECTION_CLIPPED, LINES_FULL } from './sentences';
-import { entryNumbers } from './work';
+import {
+  DIRECTION_CLIPPED,
+  GOAL_DIRECTION,
+  INTENT_EDITED_ADD,
+  LINES_FULL,
+  RULE_HINT,
+} from './sentences';
+import { datedClock } from '../observed/values';
 import { usePanel } from './useIntent';
 
 /* The expected outcome, as a checklist of up to six lines. One draft per session, an array held beside the
@@ -41,7 +46,7 @@ export function DirectionGoalButton({
     <DirectionActionButton
       feedbackKey={focus}
       weight="secondary"
-      label="Use this as my goal"
+      label={GOAL_DIRECTION}
       pendingKey={`direction-goal:${key}`}
       busyLabel="Opening…"
       action="direction-goal"
@@ -56,7 +61,7 @@ export function DirectionGoalButton({
    arm of `/api/annotate`. Per session, beside the lines draft. */
 function DirectionLineView() {
   const boxId = useId();
-  const { ctx, input, session, source, cap, payload } = usePanel();
+  const { ctx, input, session, source, cap } = usePanel();
   const key = compatSessKey(session);
   const held = ctx.held.directions.get(key);
   const annotation = input.annotation;
@@ -64,13 +69,17 @@ function DirectionLineView() {
   if (!held || typeof held.text !== 'string') return null;
   /* From its fact id on every render, as every "#<n>" on the page is, and gone once its direction is no
      longer open. The panel drops it after the render that finds it so. */
-  const read = source.state === 'read' || source.state === 'empty';
-  const n = read ? (entryNumbers(session, source, payload).get(held.factId) ?? null) : held.n;
+  const entry = (source.all ?? source.entries).find((item) => item.id === held.factId);
+  const at = Number(entry?.at) || 0;
   const text = held.text;
   const why = directionWhy(held, input, cap);
-  const ready = !why && Boolean(text.trim()) && !held.pending;
   const full = annotationLines(annotation).length >= OUTCOME_LINES_MAX;
-  const from = n !== null ? `from #${String(n)} · not saved` : 'from your direction · not saved';
+  const from =
+    at > 0
+      ? `from your ${datedClock(at, ctx.shell.clock.now() / 1000)} message · not saved`
+      : 'from your direction · not saved';
+  /* The card's Save intent saves this line, so an unsaved edit is no reason to say "save first" here. */
+  const said = why === INTENT_EDITED_ADD ? '' : why;
   const cue = held.cue ? heldSentence(held.cue, null) : '';
   return (
     <li
@@ -99,18 +108,6 @@ function DirectionLineView() {
           {from}
         </Label>
         <span className="next-cockpit-direction-tools">
-          <ActionButton
-            weight="none"
-            label="Save"
-            busyLabel="Saving…"
-            reserve="Saving…"
-            pendingKey={`direction-save:${key}`}
-            inert={!ready}
-            describedBy={why ? 'next-cockpit-direction-why' : ''}
-            action="direction-save"
-            focusKey={`direction-save:${key}`}
-            onPress={() => void saveDirection(ctx, session)}
-          />
           <ActionButton
             weight="secondary"
             className="border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
@@ -144,12 +141,12 @@ function DirectionLineView() {
         className="next-cockpit-held-full"
         id="next-cockpit-direction-why"
         data-next-cockpit-direction-why
-        hidden={!why}
+        hidden={!said}
       >
-        {why}
+        {said}
       </p>
-      <p className="next-cockpit-held-hint">Write the rule, not the moment.</p>
-      {why || held.clipped ? <DirectionGoalButton factId={held.factId} scope="line" /> : null}
+      <p className="next-cockpit-held-hint">{RULE_HINT}</p>
+      {said || held.clipped ? <DirectionGoalButton factId={held.factId} scope="line" /> : null}
       {held.clipped ? <p className="next-cockpit-held-full">{DIRECTION_CLIPPED}</p> : null}
       {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
     </li>
@@ -165,7 +162,7 @@ function LineRow({
   readonly text: string;
   readonly boxId: string | undefined;
 }) {
-  const { ctx, input, session, cap, source, payload } = usePanel();
+  const { ctx, input, session, cap, source } = usePanel();
   const key = linesKey(session);
   const saved = annotationLines(input.annotation);
   /* Remove shares the box row so a saved outcome does not push Keep below the phone viewport.
@@ -216,7 +213,7 @@ function LineRow({
             data-next-cockpit-held-line-source={index}
             {...(line ? {} : { 'data-next-cockpit-held-line-source-stale': '' })}
           >
-            {lineSource(place, session, source, payload)}
+            {lineSource(place, source)}
           </span>
         ) : null}
       </div>

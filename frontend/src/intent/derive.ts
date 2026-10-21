@@ -1,6 +1,7 @@
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
 import { clock as clockText, isRecord, type Row } from '../observed';
+import { datedClock } from '../observed/values';
 import {
   openedWithControl,
   promptCandidate,
@@ -29,7 +30,7 @@ import {
   LINES_FULL,
   directionTooLong,
 } from './sentences';
-import { conflictCandidates, entryNumbers, type WorkEntry, type WorkSource } from './work';
+import { conflictCandidates, type WorkEntry, type WorkSource } from './work';
 
 /* What the Intent panel derives from the payload and from what the reader holds, as pure functions. Each
    one reads a `Held` and never writes it: the legacy page deleted a held choice from inside the function
@@ -339,25 +340,21 @@ export function noDraftWhy(session: Row, annotation: Annotation | null, payload:
     : '';
 }
 
-/* Where a saved line came from, named by the entry itself: "added from #12" where the list numbers it,
-   "added from your direction at 14:04" where it does not. With no record read, or the entry gone from it,
-   the kind of source alone. */
+/* Where a saved line came from, named by when the reader said it: "added from your 14:04 message". An entry
+   number is not used, because the reader may never have been shown the list that numbers it. With no record
+   read, or the entry gone from it, the kind of source alone. */
 export function lineSource(
   line: { readonly source: string; readonly sourceId: string } | null,
-  session: Row,
   source: Pick<WorkSource, 'state' | 'all' | 'entries'> | null,
-  payload: Row,
 ): string {
   const kind = line?.source === 'entry' ? 'added from an entry' : 'typed';
   if (!line || line.source !== 'entry' || !line.sourceId) return kind;
   if (!source || (source.state !== 'read' && source.state !== 'empty')) return kind;
-  const n = entryNumbers(session, source, payload).get(line.sourceId);
-  if (n !== undefined) return `added from #${String(n)}`;
   const entry = (source.all || source.entries || []).find(
     (item) => String(item.id || '') === line.sourceId,
   );
   const at = entry ? nextNumber(entry.at) : null;
-  return at !== null && at > 0 ? `added from your direction at ${clockText(at)}` : kind;
+  return at !== null && at > 0 ? `added from your ${datedClock(at)} message` : kind;
 }
 
 /* The later directions the question asks about, or none: only over words or a draft, and only from a record

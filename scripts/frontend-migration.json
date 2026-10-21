@@ -1017,7 +1017,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "A later direction opened by \"Add it to my intent\" or \"Update intent instead\", pending review",
+      "name": "A later direction opened by \"Add as a line\" or \"Update intent instead\", pending review",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/intent/IntentDirections.test.tsx",

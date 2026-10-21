@@ -34,7 +34,7 @@ const SEEDED = {
 };
 
 describe('the Intent surfaces start nothing on their own', () => {
-  it('sends no POST across a StrictMount, polls, an option list opening, a reconnect and route changes', async () => {
+  it('writes and asks nothing across a StrictMount, polls, an option list opening, a reconnect and route changes', async () => {
     const page = mountSession({ ...SEEDED, strict: true });
     await page.settle();
     await page.settle();
@@ -52,7 +52,14 @@ describe('the Intent surfaces start nothing on their own', () => {
     await page.go('#n=session:alpha%2Fapp:claude:s1');
     await page.back();
     await page.settle();
-    expect(page.state.requests.filter((request) => request.method !== 'GET')).toEqual([]);
+    /* The one POST drawing the question sends is the read of the open directions' words, so the question
+       quotes what each choice acts on. It writes nothing and starts no model: nothing else is sent. */
+    const sent = page.state.requests.filter((request) => request.method !== 'GET');
+    expect(sent.length).toBeGreaterThan(0);
+    for (const request of sent) {
+      expect(request.path).toBe('/api/direction');
+      expect(Object.keys(request.body ?? {}).sort()).toEqual(['fact_ids', 'harness', 'sid']);
+    }
     expect(page.written).toEqual([]);
     expect(page.gets('/api/annotations')).toBe(1);
   });
@@ -102,12 +109,12 @@ describe('the Intent surfaces start nothing on their own', () => {
       fireEvent.keyDown(save, { key: 'Enter' });
       fireEvent.click(save);
     });
-    expect(page.posts()).toBe(1);
+    expect(page.posts('/api/annotate')).toBe(1);
     // A poll, a refresh and a route change while it is open send nothing more and retry nothing.
     await page.poll({ ...(page.state.data as object), generated: 1100 });
     await page.go('#n=sessions');
     await page.go('#n=session:alpha%2Fapp:claude:s1');
-    expect(page.posts()).toBe(1);
+    expect(page.posts('/api/annotate')).toBe(1);
     expect(text('.next-cockpit-held-footer')).toBeTypeOf('string');
     expect(board).toBeTypeOf('function');
   });

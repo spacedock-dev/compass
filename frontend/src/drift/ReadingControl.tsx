@@ -26,7 +26,6 @@ import {
   JOB_NOTE_SO_FAR,
   JOB_TITLE,
   JOB_TITLE_AGAIN,
-  RERUN_AFTER_QUESTION,
   RERUN_CURRENT,
   RERUN_STALE,
   READINGS_OFF,
@@ -585,15 +584,7 @@ export function RunPress({
    ([DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)).
    Not drawn with no reader on this machine, where an inert press has nothing to refuse
    ([NUI-18](../../../docs/design-next-ui.md#nui-18-one-control-primitive-and-an-inert-control-stays-on-the-page)). */
-export function RerunControl({
-  board,
-  stale,
-  question,
-}: {
-  readonly board: Board;
-  readonly stale: boolean;
-  readonly question: boolean;
-}) {
+export function RerunControl({ board, stale }: { readonly board: Board; readonly stale: boolean }) {
   const { model } = useDrift();
   if (model.annotate && routeRefusal(model.payload, model.session)) return null;
   const key = model.key;
@@ -605,19 +596,11 @@ export function RerunControl({
         label={stale ? RERUN_STALE : RERUN_CURRENT}
         focusKey={`reading-again:${key}`}
         fallbackKey={`reading:${key}`}
-        blocked={Boolean(model.job) || question}
-        {...(question ? { describedBy: RERUN_AFTER_QUESTION_ID } : {})}
+        blocked={Boolean(model.job)}
       />
-      {question ? (
-        <span id={RERUN_AFTER_QUESTION_ID} className="next-visually-hidden">
-          {RERUN_AFTER_QUESTION}
-        </span>
-      ) : null}
     </>
   );
 }
-
-const RERUN_AFTER_QUESTION_ID = 'next-session-drift-rerun-why';
 
 /* Why the question's Keep sends nothing while calls are paused. Resume is the Drift card head's, which stays
    available while an earlier analysis unwinds. The direction question owns its job box and Cancel; this slot

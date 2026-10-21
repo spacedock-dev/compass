@@ -3,6 +3,7 @@ import { Label } from '../ui/label';
 import { useEffect, type ReactNode } from 'react';
 import { compatSessKey } from '../api/identity';
 import { useFocusKey } from '../controls';
+import { datedClock } from '../observed/values';
 import { clock } from '../observed';
 import { useDisplayed } from '../shell/context';
 import { DirectionActionButton } from './DirectionActionButton';
@@ -11,43 +12,39 @@ import {
   directionSelected,
   directionsOpen,
   editedRefusal,
-  intentDraft,
   intentKey,
   intentUnsaved,
-  PROMPT_CHOSEN,
 } from './derive';
-import { keepIntent, openDirection, type DirectionReading } from './directions';
+import { keepIntent, loadWholes, openDirection } from './directions';
 import { stripPasteWrapper } from './annotation';
 import { pickDirection } from './edit';
-import { ADD_DIRECTION, DIRECTION_CLIPPED, KEEP, KEEP_ANALYZE } from './sentences';
+import { ADD_DIRECTION, DIRECTION_CLIPPED, KEEP } from './sentences';
 import { entryNumbers, type WorkEntry } from './work';
 import { usePanel } from './useIntent';
 
-/* The question before the press: "You gave a later direction ...", asked in the Analyze control's place, so
-   the answer has one home and is asked before a reading is spent rather than after one was demoted. It asks
-   and never answers whether the direction conflicts: Compass does not write into a session, and deciding
-   that a later instruction contradicts a typed goal is a reading of two prose strings, which the reader
-   settles. The number comes from the entry list, and every unsettled later direction is drawn at its own
-   number, so the "#<n>" named is on screen; the sentence drops the number rather than naming one the list
-   did not give. */
+/* The question before the press: "Your 11:05 message adds: ...", with the message quoted whole, asked beside
+   the expected outcome so the answer has one home and is asked before a reading is spent. Each choice acts on
+   its first press, because the words each acts on are drawn here before any press (`loadWholes`): Add as a
+   line and Make it the goal open the rule in it for review, and Leave it settles what is shown. Analyze drift
+   stays beside them. It asks and never answers whether the direction conflicts: Compass does not write into a
+   session, and deciding that a later instruction contradicts a typed goal is a reading of two prose strings,
+   which the reader settles. A direction is named by the time it was said, never by an entry number the
+   reader has not been shown. */
 
 const REFUSED_ID = 'next-cockpit-reading-refused';
 
-function WholeList({
-  pending,
-  numbers,
-}: {
-  readonly pending: readonly WorkEntry[];
-  readonly numbers: ReadonlyMap<string, string>;
-}) {
+function WholeList({ pending }: { readonly pending: readonly WorkEntry[] }) {
   const { ctx, session } = usePanel();
   const key = compatSessKey(session);
   const held = ctx.held.wholes.get(key);
   /* Focusable by script alone, and named for the focus restore, so it keeps focus across the redraws while
      the reader reads. */
   const ref = useFocusKey<HTMLOListElement>(ctx.shell.controls.focusLane, `direction-whole:${key}`);
-  if (!held || !held.drawn.size) return null;
-  const items = pending.filter((entry) => held.drawn.has(String(entry.id || '')));
+  const now = ctx.shell.clock.now() / 1000;
+  const many = pending.length > 1;
+  const items = held?.drawn.size
+    ? pending.filter((entry) => held.drawn.has(String(entry.id || '')))
+    : pending;
   if (!items.length) return null;
   return (
     <ol
@@ -59,14 +56,15 @@ function WholeList({
     >
       {items.map((entry) => {
         const id = String(entry.id || '');
-        const opened = held.texts.get(id);
-        const n = numbers.get(id);
+        const opened = held?.texts.get(id);
         return (
           <li key={id} className="next-cockpit-direction-whole-item">
-            {n === undefined ? null : (
-              <span className="next-cockpit-source">{`#${String(n)}`}</span>
-            )}
-            <span className="next-cockpit-direction-whole-text">{opened?.text ?? ''}</span>
+            {many ? (
+              <span className="next-cockpit-source">{datedClock(Number(entry.at) || 0, now)}</span>
+            ) : null}
+            <span className="next-cockpit-direction-whole-text">
+              {opened?.text ?? stripPasteWrapper(String(entry.summary || ''))}
+            </span>
             {opened?.clipped ? <p className="next-cockpit-held-full">{DIRECTION_CLIPPED}</p> : null}
           </li>
         );
@@ -76,8 +74,6 @@ function WholeList({
 }
 
 export interface DirectionQuestionProps {
-  /** The Analyze step's side of Keep. Absent, Keep only settles and sends nothing to a model. */
-  readonly reading?: DirectionReading | null;
   /** The one primary action a question can have, while the session is not waiting on the reader. */
   readonly primary?: boolean;
   /** Controls the Analyze step draws beside Keep and Add (Pause model calls). */
@@ -89,7 +85,6 @@ export interface DirectionQuestionProps {
 }
 
 export function DirectionQuestion({
-  reading = null,
   primary = false,
   buttons,
   after,
@@ -110,35 +105,28 @@ export function DirectionQuestion({
   const keepPending = useDisplayed((snapshot) =>
     snapshot.pending.includes(`direction-keep:${key}`),
   );
+  const drawnIds = pending.map((entry) => String(entry.id || '')).join(',');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the open set is the trigger; the reads go through ctx.
+  useEffect(() => {
+    if (drawnIds) void loadWholes(ctx, session, projectKey);
+  }, [ctx, key, drawnIds]);
   if (!count) return null;
   const numbers = entryNumbers(session, source, payload);
   /* An unsaved edit outranks every other refusal: Keep would settle over words that are not on screen on any
      route, the no-reader one included. */
   const edited = intentUnsaved(input);
   const saving = ctx.shell.runtime.pending.has(`${intentKey(session)}:save`);
-  const reason = edited ? editedRefusal(saving) : (reading?.reason ?? '');
-  const job = reading?.job ?? false;
-  const analyze = Boolean(reading) && !reason && !job;
+  const reason = edited ? editedRefusal(saving) : '';
   const request = ctx.held.requests.get(key);
 
   const earliest = directionSelected(ctx.held, session, pending);
   if (!earliest) return null;
-  const draft = intentDraft(input);
-  const typed = String(input.annotation?.['goal'] || '').trim();
-  const since =
-    typed || !draft
-      ? 'since saving your intent'
-      : draft.source === 'first-prompt'
-        ? 'since your first prompt'
-        : draft.source === PROMPT_CHOSEN
-          ? 'since the prompt you chose'
-          : 'since your latest prompt';
   const n = numbers.get(String(earliest.id || ''));
-  const described = edited
-    ? REFUSED_ID
-    : reading?.disclosureId && analyze
-      ? reading.disclosureId
-      : '';
+  const described = edited ? REFUSED_ID : '';
+  const said =
+    count === 1
+      ? `Your ${datedClock(Number(earliest.at) || 0, ctx.shell.clock.now() / 1000)} message adds:`
+      : `${String(count)} later directions:`;
 
   return (
     <>
@@ -147,27 +135,11 @@ export function DirectionQuestion({
         className="next-cockpit-direction-question gap-3 max-[760px]:gap-0.5"
         data-next-cockpit-direction-question
       >
-        <p className="next-cockpit-direction-said">
-          {`${String(count)} later direction${count === 1 ? '' : 's'}`}
-          <span className="next-visually-hidden">{` ${since}`}</span>.
-        </p>
-        <WholeList pending={pending} numbers={numbers} />
+        <p className="next-cockpit-direction-said">{said}</p>
+        <WholeList pending={pending} />
         <div className="next-cockpit-reading-ask items-start [&>button]:flex-auto">
           <DirectionActionButton
-            feedbackKey={`direction-keep:${key}`}
             weight={primary ? 'primary' : 'secondary'}
-            label={analyze ? KEEP_ANALYZE : KEEP}
-            busyLabel="Keeping…"
-            pendingKey={`direction-keep:${key}`}
-            inert={!keepPending && (edited || Boolean(request?.pending))}
-            describes={described}
-            action="direction-keep"
-            focusKey={`direction-keep:${key}`}
-            fallbackKey={`reading:${key}`}
-            onPress={() => void keepIntent(ctx, session, projectKey, reading)}
-          />
-          <DirectionActionButton
-            weight="secondary"
             feedbackKey={`direction-add:${key}`}
             label={ADD_DIRECTION}
             busyLabel="Opening…"
@@ -180,6 +152,19 @@ export function DirectionQuestion({
             }
           />
           <DirectionGoalButton factId={String(earliest.id || '')} scope="question" />
+          <DirectionActionButton
+            feedbackKey={`direction-keep:${key}`}
+            weight="secondary"
+            label={KEEP}
+            busyLabel="Leaving…"
+            pendingKey={`direction-keep:${key}`}
+            inert={!keepPending && (edited || Boolean(request?.pending))}
+            describes={described}
+            action="direction-keep"
+            focusKey={`direction-keep:${key}`}
+            fallbackKey={`reading:${key}`}
+            onPress={() => void keepIntent(ctx, session, projectKey)}
+          />
           {buttons}
         </div>
         {count > 1 ? (

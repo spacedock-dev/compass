@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { expect, waitFor, within } from 'storybook/test';
 import { clock } from '../src/observed';
 import {
   analysisRow,
@@ -63,9 +63,8 @@ export const AWrappedDirectionIsQuotedWithoutItsWrapper: Story = {
   }),
   play: async ({ canvasElement }) => {
     const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    await within(drift).findByText(/1 later direction/);
+    await within(drift).findByText(/^Your \d\d:\d\d message adds:$/);
     await expect(drift.textContent).not.toMatch(WRAPPER);
-    await userEvent.click(await within(drift).findByRole('button', { name: /^Keep my intent/ }));
     const whole = await waitFor(() => {
       const node = drift.querySelector<HTMLElement>('[data-next-cockpit-direction-whole]');
       expect(node).not.toBeNull();

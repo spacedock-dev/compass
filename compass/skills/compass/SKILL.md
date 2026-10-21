@@ -415,22 +415,22 @@ on words that are not on screen; your edit stays in the box. No drift level or p
 an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from now`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time.
 
 A direction you gave after your intent (after the saved goal's words, or after the drafted prompt)
-is asked about before the press, in the control's place: "You gave a later direction at #n" names
-the selected entry by its number in the list (the newest is preselected; you can choose another), and
-every unsettled one is listed at its own number past the twenty-row bound. Nothing there decides whether it changes what you asked for: that is yours, and
-Compass does not write into the session either way. `Keep my intent and analyze` settles them
-through the newest one shown, adopting a draft in the same write, and starts the analysis. Of two
-or more, the first press shows each whole and settles nothing, and the next press settles what was
-shown. Keep starts the reading with the same notice and off switch as Analyze drift; where
-no analysis can start it reads
-`Keep my intent`, settles, and says no analysis was started. `Add it to my intent` opens the
-selected direction's whole text as a pending line under Expected outcome, marked "not
-saved", for you to edit, and its save settles through that direction only, so the question comes
-back for any later one: a line over 240 characters is refused rather than clipped, and at six
-lines you choose the line it replaces. "Use this as my goal" fills a draft, asks whether to keep
-standing outcome lines, and waits for Save intent. Add on an activity entry opens that listed
-direction too. The prompt menu resolves choices when opened. An unsettled direction at or before
-a stored reading demotes its intent rows; a later message labels the reading as preceding it.
+is asked about before the press, in the control's place: "Your 11:05 message adds:" quotes the
+selected message whole under the time you sent it (the newest is preselected; you can choose another),
+and of several every unsettled one is quoted under its own time past the twenty-row bound. Compass reads
+those words when the question is drawn, so each choice acts on its first press. Nothing there decides
+whether it changes what you asked for: that is yours, and Compass does not write into the session
+either way. `Leave it` settles them through the newest one shown, adopting a draft in the same write,
+says no analysis was started, and starts none; `Analyze drift` stays beside the choices and does not settle
+anything. `Add as a line` opens the selected direction's first sentence as a pending line under
+Expected outcome, marked "not saved", with the hint "Write the rule, not the moment.", for you to edit;
+the one `Save intent` saves it, after any unsaved goal or line words, and settles through that direction
+only, so the question comes back for any later one: a line over 240 characters is refused rather than
+clipped, and at six lines you choose the line it replaces. `Make it the goal` fills the goal with that
+first sentence and the same hint, asks whether to keep standing outcome lines with two buttons, and waits for
+Save intent. A saved line names when you said it ("added from your 11:05 message"). Add on an activity entry
+opens that listed direction too. The prompt menu resolves choices when opened. An unsettled direction at
+or before a stored reading demotes its intent rows; a later message labels the reading as preceding it.
 
 Delegated work names recorded launches and their clocks when present. Missing or partial
 attribution says Compass cannot see all the work; a missing count is not zero. An unpaired

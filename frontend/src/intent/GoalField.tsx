@@ -15,7 +15,7 @@ import {
 import { answerLines } from './directions';
 import { HeldTextarea } from './HeldTextarea';
 import { PromptSelect } from './PromptSelect';
-import { ENDED_CAVEAT } from './sentences';
+import { ENDED_CAVEAT, RULE_HINT } from './sentences';
 import { usePanel } from './useIntent';
 
 /* "Keep your standing outcome lines with this goal?": asked once when a direction became the goal, and Save
@@ -24,23 +24,23 @@ function LinesQuestion() {
   const { ctx, session } = usePanel();
   if (!directionLinesQuestion(ctx.held, session)) return null;
   return (
-    <>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-next-direction-lines-question>
       <p>Keep your standing outcome lines with this goal?</p>
       <ActionButton
-        weight="none"
+        weight="secondary"
         label="Keep outcome lines"
         action="direction-lines-keep"
         focusKey="direction-lines-keep"
         onPress={() => answerLines(ctx, session, 'keep')}
       />
       <ActionButton
-        weight="none"
+        weight="secondary"
         label="Clear outcome lines"
         action="direction-lines-clear"
         focusKey="direction-lines-clear"
         onPress={() => answerLines(ctx, session, 'clear')}
       />
-    </>
+    </div>
   );
 }
 
@@ -120,6 +120,9 @@ export function GoalField() {
         >
           {why}
         </p>
+      ) : null}
+      {held.chosen.get(key)?.direction ? (
+        <p className="next-cockpit-held-hint">{RULE_HINT}</p>
       ) : null}
       <LinesQuestion />
       {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}

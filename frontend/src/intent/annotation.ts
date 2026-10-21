@@ -179,6 +179,24 @@ export function stripPasteWrapper(text: string): string {
   return text.replace(PASTE_TAG, '').trim();
 }
 
+/* The rule in a direction: its first line, and within that its first sentence, so a message that goes on to
+   say what to do next ("run the targeted tests, and push") does not become a standing line or the goal. A
+   message with no sentence break is its own rule, whole. The reader edits what this offers; it is where
+   they start, never what is saved without them. */
+export function trimToRule(text: string): string {
+  const first = text.split(/\r?\n/).find((part) => part.trim()) ?? '';
+  const line = first.replace(/^\s*(?:\d+[.)]|[-*\u2022])\s+/, '').trim();
+  // A stop after an abbreviation or a bare opener ("Yes.") is not the end of a rule: a
+  // sentence under three words runs on to the next stop, or to the end of the line.
+  for (const stop of line.matchAll(/[.!?](?=\s|$)/g)) {
+    const head = line.slice(0, stop.index + 1);
+    if (/(?:^|\s)(?:e\.g|i\.e|vs|etc)\.$/i.test(head)) continue;
+    if (head.split(/\s+/).length < 3) continue;
+    return head;
+  }
+  return line;
+}
+
 /* The server's own cap on a typed box, published as `annotate_cap`, and 240 where it did not publish one. */
 export const HELD_CAP_DEFAULT = 240;
 

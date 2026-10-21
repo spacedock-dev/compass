@@ -134,9 +134,10 @@ export const ADOPT_REFUSED: Readonly<Record<string, string>> = {
 export const ADOPT_CHANGED =
   'The prompt or saved goal changed, or could not be saved. Review the goal before trying again.';
 
-export const KEEP_ANALYZE = 'Keep my intent and analyze';
-export const KEEP = 'Keep my intent';
-export const ADD_DIRECTION = 'Add it to my intent';
+export const KEEP = 'Leave it';
+export const ADD_DIRECTION = 'Add as a line';
+export const GOAL_DIRECTION = 'Make it the goal';
+export const RULE_HINT = 'Write the rule, not the moment.';
 export const KEEP_NO_ANALYSIS =
   'Kept your intent and settled the direction. No analysis was started.';
 export function keptDirections(count: number): string {
