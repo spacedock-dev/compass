@@ -516,7 +516,11 @@ board, so a reload or another tab shows the same analysis at the same step, and 
 starts nothing. The result, or why there is none, replaces the box when it is stored; an analysis
 a stop or restart cut short is recorded as an interrupted attempt. On a Claude Code session the
 result shows the analysis level (worked out again from the stored reading on every view, never
-stored, never on a row) with its time. Not enough recorded yet leaves a live level in view.
+stored, never on a row) with its time. A level above None or low is drawn only beside a departure the
+reading shows. With none, the card draws no level or bar, and the answer says what the reading did
+find and, where every line is consistent but the level is held back, why. The live estimate is not
+drawn beside a reading that stands. The header pill adds "so far" while the session runs. A
+departure that an earlier reading found and the next one does not is named once on that reading.
 The answer follows: "Departs from your intent" with a count and
 each departure's own account under a departure, otherwise a failed check after your last message,
 "Can't tell", "Not reached at this stop", or "Nothing found against what it read". Coverage beside it names a measured partial
@@ -535,7 +539,9 @@ not a check", "Not reached at this stop" or "Can't tell", never "Done". Unfinish
 at a non-final stop has its own result and cited explanation under Evidence. It raises no
 departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
-counts as departure. A line may depart, or read consistent, on one of the
+counts as departure. While a turn is open, a departure that rests on messages alone, with a recorded
+check or write after them, is stored as not reached at this stop; a departure on a failed check or a
+write, or one with nothing recorded after it, stands. A line may depart, or read consistent, on one of the
 agent's messages, never beside a check that failed after your words, and the level never reads
 "None or low" on the agent's word alone. A departure resting on an agent message stops counting
 once that message leaves the transcript tail the board reads. A press that carries the agent's
@@ -548,7 +554,7 @@ or file writes went unread), "is shown at #m" or "Can't tell", and is not
 drawn when there was no claim. A check that failed before the claim does not contradict it once
 the agent ran the same tool again before claiming, with no failure in that run or an earlier one of it,
 naming nothing after the tool but flags or `.`; the working directory is not recorded. A
-contradicted claim reads Medium. An unshown claim blocks None or low without raising Medium.
+contradicted claim is said on its own row and sets no level by itself. An unshown claim blocks None or low without raising Medium.
 Neither is counted as a departure from your intent or held back by an unsettled later direction.
 A withdrawn claim draws no row. A claim alone offers Steer back as a secondary evidence request:
 `Can you show evidence for "<its first sentence>" at 14:02?`, or, contradicted,

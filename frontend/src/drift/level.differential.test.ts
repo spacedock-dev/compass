@@ -8,6 +8,7 @@ import type { ContextEntry } from '../store/board';
 import { mulberry32, pick, type Rng } from './generate.test.helper';
 import { loadLegacyDrift } from './legacy.test.helper';
 import { analysisLevel, liveEstimate, readingStored, type DriftLevel, type Signals } from './level';
+import { BLOCKER_LINES, REASON_LINES } from './sentences';
 import { readingShape } from './shape';
 
 /* The live estimate and the analysis level, run next to the legacy page's over generated contexts. The two
@@ -364,8 +365,35 @@ describe('the live estimate and the analysis level read as the legacy page reads
         if (analysisB !== null) failures.push(`seed ${String(seed)} analysis: expected null`);
       } else if (!analysisB) {
         failures.push(`seed ${String(seed)} analysis: missing`);
+      } else if (
+        ['medium', 'high', 'extreme'].includes(String(analysisA['level'])) &&
+        shape.departures.length === 0
+      ) {
+        /* A named departure: the page draws no level above None or low beside a reading that shows no
+           departure, where the retired page drew the server's. The level is the one field held here; the
+           card says what the reading did find instead.
+           docs/design-frontend-migration.md#held-to-recorded-answers */
+        note('analysis:withheld-without-departure');
+        if (analysisB.level !== 'not_enough') {
+          failures.push(`seed ${String(seed)} analysis: ${analysisB.level} without a departure`);
+        }
       } else {
         note(`analysis:${analysisB.level}`);
+        /* A second named departure: where the page holds a server None or low to its own rows it says which
+           row held it, a sentence the retired page left out of the blockers. */
+        const theirBlockers = new Set<unknown>(
+          (analysisA['reasons'] as { blockers?: unknown[] } | undefined)?.blockers ?? [],
+        );
+        const pageBlockers = new Set<string | undefined>([
+          BLOCKER_LINES['line-not-shown-by-a-check'],
+          REASON_LINES['claim-not-shown']?.(''),
+        ]);
+        const reasons = {
+          ...analysisB.reasons,
+          blockers: analysisB.reasons.blockers.filter(
+            (line) => !(pageBlockers.has(line) && !theirBlockers.has(line)),
+          ),
+        };
         const found = firstDifference(
           canonical(analysisA),
           canonical({
@@ -378,7 +406,7 @@ describe('the live estimate and the analysis level read as the legacy page reads
             analysis: true,
             rose: '',
             range: analysisB.range,
-            reasons: analysisB.reasons,
+            reasons,
           }),
         );
         if (found) failures.push(`seed ${String(seed)} analysis: ${found}`);

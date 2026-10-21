@@ -237,8 +237,7 @@ export const PauseInTheHeadAndThePopoverCloses: Story = {
   },
 };
 
-/* A Medium level with no departure (a contradicted claim, here) says why the level stands rather than
-   "Medium: Nothing found", which contradicted its own word. */
+/* A reading that found nothing against the intent: its stories are in DriftLevelNeedsDeparture. */
 const CONSISTENT_READING = {
   annotation_assessment: {
     ...DEPARTURE_READING,
@@ -259,31 +258,6 @@ const CONSISTENT_READING = {
   },
   annotation_reading_count: 1,
 };
-export const MediumWithNoDepartureSaysWhy: Story = {
-  ...scenario({
-    session: CONSISTENT_READING,
-    facts: [PERSON, PASSED, AGENT],
-    work: {
-      analysis_levels: [
-        { ...analysisRow('claude', 'medium'), reasons: ['claim-contradicted'], cites: ['m5'] },
-      ],
-    },
-  }),
-  play: async ({ canvasElement }) => {
-    const drift = await card(canvasElement);
-    const verdict = await waitFor(() => {
-      const node = drift.querySelector<HTMLElement>('[data-next-drift-verdict]');
-      expect(node).not.toBeNull();
-      return node as HTMLElement;
-    });
-    await expect(verdict).toHaveTextContent(
-      /^Medium: No departure from your intent\. The record contradicts what the agent said/,
-    );
-    await expect(verdict.textContent).not.toContain('Nothing found');
-    await expect(verdict).toBeVisible();
-  },
-};
-
 /* Finding 20: "Copied" answers one press. It lapses back to Copy, and a box drawn again starts at Copy. */
 export const CopiedLapsesBackToCopy: Story = {
   ...scenario({

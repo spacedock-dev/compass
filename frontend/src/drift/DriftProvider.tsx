@@ -153,10 +153,21 @@ export function DriftProvider({
       )
       .finally(settle);
   };
+  /* The reading drawn now, noted in this tab's memory of what each reading carried. A reading the shape
+     refuses or the reader marked inaccurate is no reading to compare. */
+  const standing = readAt;
+  const cleared =
+    typeof standing === 'number' &&
+    model.shape &&
+    !model.shape.malformed &&
+    model.annotation?.['not_accurate'] !== true
+      ? ctx.drift.noteReading(key, standing, model.shape.departures.length)
+      : null;
   const value: DriftValue = {
     ctx,
     model,
     finding,
+    cleared,
     jump: finding ? chosen : null,
     jumpMissing: missing,
     chooseFinding,

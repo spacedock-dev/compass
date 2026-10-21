@@ -3564,6 +3564,41 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     return ([] if withdrawn else supporting), why
 
 
+def _while_running(
+    criterion: Criterion,
+    name: str,
+    by_id: Mapping[str, LedgerEntry],
+    *,
+    scope: str,
+    last_work_at: float,
+) -> Criterion:
+    """A mid-flight departure on words alone, with work recorded after them, read as unfinished.
+
+    Only while the turn is open: what the words promised and the model found missing may be the
+    very work the agent is doing, so the missing end is not a departure (the amendment is
+    `docs/design-reading-a-session.md#amended-2026-10-21-a-running-turn-is-unfinished`).
+    A citation that shows work (a failed check, a write) is what the departure rests on and
+    stands, and so does a stall: no recorded check or write after the latest cited words means
+    nothing kept going. One-way like every demotion here, toward the result that raises no
+    level and no steer.
+    """
+    if (
+        scope != SCOPE_MID_FLIGHT
+        or criterion.get("result") != RESULT_DEPARTURE
+        or name == CONSTRAINT_CLAIMS
+    ):
+        return criterion
+    cited = [by_id[key] for key in criterion["cites"] if key in by_id]
+    if not cited or any(
+        entry.get("type") == TOOL_REPORT_TYPE or entry.get("subject") for entry in cited
+    ):
+        return criterion
+    latest = max(_number(entry.get("at")) or 0.0 for entry in cited)
+    if last_work_at > latest > 0.0:
+        return {**criterion, "result": RESULT_NOT_REACHED}
+    return criterion
+
+
 def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     row: Mapping[str, Any],
     by_index: Mapping[int, LedgerEntry],
@@ -3738,6 +3773,17 @@ def resolve(
         ),
         default=0.0,
     )
+    by_id = {str(row["id"]): row for row in by_index.values()}
+    # The latest recorded check or write the reading was shown, for the mid-flight guard.
+    last_work_at = max(
+        (
+            evidence_at(entry) or 0.0
+            for entry in (*selection.entries, *selection.unread_checks, *selection.unread_failures)
+            if entry.get("type") == TOOL_REPORT_TYPE
+            and entry.get("subject") in (CHECK_SUBJECT, WRITE_SUBJECT)
+        ),
+        default=0.0,
+    )
     texts = [line for line in lines if line.strip()]
     names = constraints_for(texts, claims=selection.asked_claims)
     # The claims question has no words of the reader's to caption it; the
@@ -3774,22 +3820,28 @@ def resolve(
                 "why": WHY_CHECKS_NOT_READ if crowded else WHY_NOT_ASKED,
             }
             continue
-        out[name] = _resolve_one(
-            parsed.get(name) or {},
-            by_index,
-            name=name,
-            clause=clause,
-            detail_cap_chars=detail_cap_chars,
-            window_start=window_start,
-            unread_failures=selection.unread_failures,
-            failed_on_record=failed_on_record,
-            line_text=clauses[name],
-            latest_check_at=latest_check_at,
-            checks_unread=selection.checks_unsent
-            or bool(selection.unread_checks)
-            or bool(selection.unlisted),
+        out[name] = _while_running(
+            _resolve_one(
+                parsed.get(name) or {},
+                by_index,
+                name=name,
+                clause=clause,
+                detail_cap_chars=detail_cap_chars,
+                window_start=window_start,
+                unread_failures=selection.unread_failures,
+                failed_on_record=failed_on_record,
+                line_text=clauses[name],
+                latest_check_at=latest_check_at,
+                checks_unread=selection.checks_unsent
+                or bool(selection.unread_checks)
+                or bool(selection.unlisted),
+                scope=scope,
+                requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
+            ),
+            name,
+            by_id,
             scope=scope,
-            requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
+            last_work_at=last_work_at,
         )
     return out
 

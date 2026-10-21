@@ -4919,7 +4919,9 @@ and each was settled on the withholding side.
   panel draws is not a consistent it can word, the level reads "Not enough recorded yet". The
   validated function counts a departure the page has demoted (an unsettled later direction, say),
   so the level can read Medium beside an answer of "Can't tell". That is the cautious direction and
-  was left as validated rather than re-ruled here.
+  was left as validated rather than re-ruled here. Re-ruled 2026-10-21: the page draws a level
+  above None or low only beside a departure it shows
+  ([the amendment](#amended-2026-10-21-a-level-needs-a-departure)).
 - Each line reads "Departs at #n", "Consistent with #n, as the tool reported; not inspected" for a
   Claude Code tool report or any harness's check, "Consistent with what the session said at #n; not
   a check" otherwise, or "Can't tell". In the Drift card the qualifier is said in the line's Evidence rather than
@@ -5273,7 +5275,9 @@ High. The Analyze nudge needs a cited signal after that same person boundary.
 
 The zero-outcome-line gate remains first: a goal-only reading answers Can't tell before a failed
 check can become its answer. An analysis level of Not enough recorded yet does not replace a
-measured live pill. A departure leads the analysis reasons. Its short source line is "Analysis
+measured live pill (changed 2026-10-21: a stored reading that stands owns the level slot, with a
+level or with none; see [the amendment](#amended-2026-10-21-a-level-needs-a-departure)). A
+departure leads the analysis reasons. Its short source line is "Analysis
 at <time>, intent against cited checks and messages".
 
 A broader recorded pass retires a narrower failure only where explicit Python unittest or pytest
@@ -5402,8 +5406,9 @@ detects semantic drift.
 Live reasons admit only the thirteen native check, path and coverage tokens the live producer
 can emit. Model-assessment reasons and blockers, including an absent outcome line, and unknown
 tokens supply no live explanation. Limits of this estimate separates coverage gaps from recorded events.
-At Not enough recorded yet, every known reason stays once in the existing closed Why not
-None or low disclosure, except the visible limit that the intent names no folder. Cited entries
+At a live estimate's Not enough recorded yet, every known reason stays once in the existing closed
+Why not None or low disclosure, except the visible limit that the intent names no folder. An
+analysis draws no such level since 2026-10-21, and says its reasons in the answer sentence. Cited entries
 remain visible even when no event sentence is needed. An unresolved citation stays unlisted,
 never replaced with another entry. A named failed check retains its age and whether files
 changed after it. Recorded UTC times retain the complete date and seconds; an absent check
@@ -5719,6 +5724,92 @@ behind Evidence. Nothing about the reading changes; these are placement and word
 - A stale result's banner names the reader's message it predates ("This check is from before your
   09:20 message."), and its one run control reads "Check again". A later direction's question still
   owns the only run path while it stands, as DEC-27 rules.
+
+### Amended 2026-10-21: a level needs a departure
+
+Three walks of the session page (a finished session, a mid-turn reading, a consistent reading)
+found the Drift level reported where the reading found nothing to report: Medium in the bar and
+the header with "Can't tell" on every line; Medium left standing after a later reading cleared the
+departure it rested on; and, on the other side, "Not enough recorded yet" behind "Why not None or
+low" over a reading whose every line was Consistent. This is the repository's "structurally
+present default" invariant: a level was a field every reading carried, so it said something about
+the schema and not about the session.
+
+The rule: the page draws a level above None or low only beside a departure the reading it shows
+carries, counted after the page's own rules (a departure whose citation the record does not hold is
+not one). It reads the departures from the same shape the departure cards and the answer read, so
+the level, the count and the cards cannot disagree.
+
+- `levels.analysis_level` is unchanged. It still reads Medium from a contradicted claim or a pass
+  followed by a change and High from a failed check, and publishes the reasons; those stay data. The
+  page withholds the level in `analysisLevel` (`frontend/src/drift/level.ts`), the way it already held
+  "None or low" to its own rows. A failed check is still said: the answer reads "A check failed at
+  11:03." beside the level's absence, and a contradicted claim keeps its row. This re-rules the
+  2026-10-20 amendment's wording that a Medium with no departure "says why the level stands", and
+  the sentence of the levels build that a level could read Medium beside "Can't tell".
+- A stored reading that stands owns the level slot, with a level or with none. With none, the
+  live estimate does not draw in its place: it reads checks and file paths and never the intent, so a
+  Medium from it beside a reading that found no departure is the same claim in another source's
+  voice. The live estimate draws when no reading stands for the saved words, and keeps its own source
+  line there. This reverses the 2026-10-04 sentence that an analysis of "Not enough recorded yet"
+  does not replace a measured live pill.
+- With no level, the card draws no bar. The one answer sentence says what the reading did find, and
+  where every line is Consistent and the level is held back it says why in the same sentence ("Nothing
+  found against what it read, but no level is drawn: a line of your intent is not shown by any
+  check."). The "Why not None or low" disclosure is a live estimate's alone. When the page itself
+  holds a server None or low back, it adds the row that held it as a reason.
+- The header pill says "so far" while the session runs, and when the reading it shows read a running
+  turn, because a running session's level can still move and a mid-flight reading covers only the work up
+  to it. A state the board does not publish claims neither.
+- A departure that clears is named once, on the reading that no longer finds it ("The departure from
+  the 11:02 reading no longer holds."), with the count where there were several. The page holds the
+  earlier reading's departure count in the tab and says nothing it did not watch, so a reload
+  names nothing. Storing the earlier departures with the reading was rejected: it is a new published
+  field declared in five places (the invariant above), it would name the clear for as long as the
+  record lasts, and the owner's complaint was a silent change between two readings the reader watched.
+  The line does not say why the departure cleared, because nothing the page holds says.
+
+What this does not claim. The withheld level is a correction of what the page draws and not a
+measurement: a session with a failed check and no departure draws no level at all. The owner may
+prefer the live estimate to keep drawing beside such a reading; that is one expression in
+`buildModel` and `DriftLevelView` (`analysis ?? estimate`), and the four behaviours above are
+asserted by `LevelNeedsDeparture.test.tsx`, `ClearedDeparture.test.tsx`, `verdict.test.ts` and the
+stories under "Drift / A level needs a departure".
+
+### Amended 2026-10-21: a running turn is unfinished
+
+A reading taken mid-turn reported a departure because "the session ends with the probe still
+showing wrong output, no rerun and no push", while the agent was running that rerun. The reading
+was read at the mid-flight scope, which the prompt already tells the model covers the work so far
+and gives it `not_reached` for; it answered in the shape of a final reading anyway.
+
+Decision: a guard in the resolver, not a change to the prompt. The non-final header has 27 of 9,216
+bytes spare, a changed header needs a fresh qualification before a scored result stands (the
+2026-10-06 clarification), and no number of added words makes a model reliable. The producer already
+applies every other rule that way, so a departure that does not hold never reaches storage.
+
+The guard (`reading._while_running`, applied by `reading.resolve` after each constraint's own rules):
+at the mid-flight scope, a departure on an intent line whose every citation is words (the person's
+or the agent's own messages) is stored as `not reached at this stop`, with its explanation kept as
+what the record shows it waiting on, when a check or a write is recorded after the latest of those
+words. Everything the 2026-10-04 amendment says unfinished work does not excuse stands:
+
+- A citation that shows work, a failed check or a write, is what the departure rests on and the
+  guard leaves it. A failed relevant check is still a departure.
+- A stall stands: with no check or write recorded after the cited words, nothing kept going.
+- The claims row is untouched; a contradicted claim is not unfinished work.
+- A last-turn or final reading is untouched: the turn is over.
+- The idle press that reads mid-flight (an idle session with no recorded finish) is covered, as a
+  running session is, because both are read up to their last recorded entry.
+
+What it cannot see. A tool call in flight has no entry until its result arrives, so the guard keys
+on work already recorded after the words and not on the call that is running. It is an assembly
+control, not a measurement of model accuracy: the case is a recorded shape (the agent said what it
+would do, kept working, and the model read the missing end as a departure), held by
+`AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture` in `test_reading.py` with its three
+negative controls. A message-only departure that is real still returns at the next reading, and
+at the session's end as a final one. A `not_reached` line raises no level and no Steer back (the
+2026-10-04 amendment), so the demotion errs the cautious way.
 
 ## DEC-28: a model may summarize a session, and the summary is kept
 

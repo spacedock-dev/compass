@@ -75,27 +75,61 @@ describe('the Drift card verdict sentence', () => {
       verdictLine({
         answer: { kind: 'nothing-found' },
         level: 'None or low',
-        levelKey: 'none_or_low',
         byId,
         midFlight: false,
       }),
     ).toBe('None or low: Nothing found against what it read.');
   });
 
-  it.each([
-    ['a contradicted claim', 'The record contradicts what the agent said at #5.'],
-    ['a pass followed by a change', 'A check passed, then files were written after it.'],
-  ])('says why Medium stands with no departure, for %s', (_name, reason) => {
+  it('never puts Medium or higher on a reading that found nothing against the intent', () => {
     const text = verdictLine({
       answer: { kind: 'nothing-found' },
-      level: 'Medium',
-      levelKey: 'medium',
-      reason,
+      level: '',
+      heldBack: [],
       byId,
       midFlight: false,
     });
-    expect(text).toBe(`Medium: No departure from your intent. ${reason}`);
-    expect(text).not.toContain('Nothing found');
+    expect(text).toBe('Nothing found against what it read.');
+  });
+
+  it('says in the same sentence why no level is drawn when every line is consistent', () => {
+    expect(
+      verdictLine({
+        answer: { kind: 'nothing-found' },
+        level: '',
+        heldBack: ['A line of your intent is not shown by any check.'],
+        byId,
+        midFlight: false,
+      }),
+    ).toBe(
+      'Nothing found against what it read, but no level is drawn: a line of your intent is not shown by any check.',
+    );
+    expect(
+      verdictLine({
+        answer: { kind: 'nothing-found' },
+        level: '',
+        heldBack: [
+          'The record contradicts what the agent said.',
+          'A later direction of yours is unsettled.',
+        ],
+        byId,
+        midFlight: true,
+      }),
+    ).toBe(
+      'So far: Nothing found against what it read, but no level is drawn: the record contradicts what the agent said; a later direction of yours is unsettled.',
+    );
+  });
+
+  it('draws no level word on a failed check the reading found, with or without a departure', () => {
+    const failed = entry('f', 800, { type: 'tool_report', subject: 'check', result: 'failed' });
+    expect(
+      verdictLine({
+        answer: { kind: 'failed-check', failed },
+        level: '',
+        byId: indexEntries([failed]),
+        midFlight: false,
+      }),
+    ).toBe(`A check failed at ${clock(800)}.`);
   });
 
   it('says a reading of a running session answers for the work so far', () => {

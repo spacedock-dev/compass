@@ -198,8 +198,19 @@ describe('the groups', () => {
         criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'x' } },
       },
     };
+    /* The entry the departure cites: a departure naming one the record does not hold is refused, and a
+       level stands only on a departure the reading shows. */
+    const said = {
+      fact_id: 'f1',
+      type: 'agent_message',
+      by: 'agent',
+      summary: 'Done: the queue ships.',
+      at: NOW - 300,
+      source_session: { harness: 'claude', sid: 'read' },
+      evidence: { source: 'transcript', confidence: 'exact' },
+    };
     const context = (level: string) => ({
-      semantic: { facts: [] },
+      semantic: { facts: [said] },
       sources: {
         work: {
           tool_reports: [],

@@ -26,6 +26,9 @@ import { agentMessage, evidenceAt, type Shape } from './shape';
    ([DEC-26](../../../docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
    The legacy cockpit's `nextDrift*` functions are the oracle (`level.differential.test.ts`). */
 
+/* The levels that read as a finding of drift: each needs a departure behind it. */
+const ABOVE_LOW: readonly string[] = ['medium', 'high', 'extreme'];
+
 export type Contexts = ReadonlyMap<string, ContextEntry>;
 
 function workOf(
@@ -442,7 +445,25 @@ export function analysisLevel(input: AnalysisInput): DriftLevel | null {
   if (current !== null && nextNumber(raw['revision_read']) !== current) return null;
   let level = String(row['level'] || '');
   if (!Object.hasOwn(LIVE_LEVEL_NAMES, level)) return null;
-  if (level === 'none_or_low' && !analysisShown(shape)) level = 'not_enough';
+  /* The tokens the level is explained from: the server's, and the page's own where it withholds a level the
+     server drew, so the sentence that says why none is drawn has something to say. */
+  const tokens: unknown[] = Array.isArray(row['reasons']) ? [...(row['reasons'] as unknown[])] : [];
+  if (level === 'none_or_low' && !analysisShown(shape)) {
+    level = 'not_enough';
+    tokens.push(
+      shape.criteria.some((line) => line.key === CLAIMS && line.result === UNSUPPORTED)
+        ? 'claim-not-shown'
+        : 'line-not-shown-by-a-check',
+    );
+  } else if (ABOVE_LOW.includes(level) && shape.departures.length === 0) {
+    /* A level above None or low is set from a departure the reading carries. The server also reads Medium
+       from a contradicted claim or a pass followed by a change, and High from a failed check, and the page
+       will not draw any of them beside a reading that found no departure: the level stood on nothing the
+       reading said
+       ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)).
+       What it did find is said in the verdict sentence instead. */
+    level = 'not_enough';
+  }
   const numbers = entryNumbers(input.session, input.work, input.payload);
   const held = input.work.all || input.work.entries || [];
   return {
@@ -463,7 +484,7 @@ export function analysisLevel(input: AnalysisInput): DriftLevel | null {
     ),
     reasons: driftReasons(
       level,
-      row['reasons'],
+      tokens,
       row['cites'],
       held,
       numbers,

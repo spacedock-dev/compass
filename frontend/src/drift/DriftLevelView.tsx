@@ -82,6 +82,7 @@ export function DriftPill() {
       <PillMeter level={level.level} />
       <span>
         Drift: <strong>{level.label}</strong>
+        {model.pillSoFar ? ' so far' : ''}
       </span>
     </Badge>
   );
@@ -130,7 +131,7 @@ export function DriftLevelView() {
      draws it. */
   const analysis = model.analysis;
   const measured = model.estimate;
-  const found = analysis && analysis.level !== 'not_enough' ? analysis : (measured ?? analysis);
+  const found = analysis ?? measured;
   const liveOnly = harness === 'claude';
   const livePending = liveOnly && model.liveOn && !analysis;
   const save = found && 'save' in found;
@@ -143,7 +144,10 @@ export function DriftLevelView() {
   }
   // The monitor explanation follows its switch into More; a level still stays beside Analyze.
   const running = Boolean(model.job);
-  const level = found && 'level' in found ? found : null;
+  /* A reading that stands draws a level or none: with none, the verdict sentence above says what the reading
+     found and why no level is drawn, so no "Not enough recorded yet" bar stands in for it. */
+  const level =
+    found && 'level' in found && !(found.analysis && found.level === 'not_enough') ? found : null;
   if (model.drafted || !level || !level.label) {
     /* A marked analysis contributes no level. Its slot says so, so the reader who marked it sees why the
        meter is gone, where the meter was. */

@@ -509,18 +509,15 @@ function entryPhrase(entry: WorkEntry): string {
 export function verdictLine({
   answer,
   level,
-  levelKey = '',
-  reason = '',
+  heldBack = [],
   byId,
   midFlight,
 }: {
   readonly answer: Answer;
   /** The analysis level's word, or empty where no level stands for this reading. */
   readonly level: string;
-  /** The analysis level itself (`medium`, ...), which decides whether "Nothing found" may carry the word. */
-  readonly levelKey?: string;
-  /** The analysis level's own reason, said where nothing departs and the level still reads above None or low. */
-  readonly reason?: string;
+  /** Why no level is drawn over a reading that found nothing, one sentence each, from the level's own reasons. */
+  readonly heldBack?: readonly string[];
   readonly byId: EntryIndex;
   /** A reading of a running session, which answers for the work so far. */
   readonly midFlight: boolean;
@@ -531,14 +528,17 @@ export function verdictLine({
   if (answer.kind === 'cant-tell') return said("Can't tell from what was read.");
   if (answer.kind === 'not-reached') return said('Not reached at this stop.');
   if (answer.kind === 'nothing-found') {
-    /* The server reads Medium or higher with no departure for a contradicted claim, or a pass followed by a
-       change (`levels.analysis_level`). "Medium: Nothing found" would contradict its own word, so the
-       sentence says why the level stands. */
-    if (level && levelKey && levelKey !== 'none_or_low') {
-      const why = reason || 'The level rests on what the analysis read, not on a departure.';
-      return `${level}${midFlight ? ' so far' : ''}: No departure from your intent. ${why}`;
-    }
-    return levelled('Nothing found against what it read.');
+    /* A level above None or low stands on a departure, so none is drawn here, and when the level is held
+       back the same sentence says why: behind a "Why not None or low" disclosure it read as a missing
+       answer. A held-back reason is a sentence of the page's own, lowercased into this one. */
+    const why = heldBack.map((line) =>
+      `${line.charAt(0).toLowerCase()}${line.slice(1)}`.replace(/\.$/, ''),
+    );
+    return levelled(
+      why.length
+        ? `Nothing found against what it read, but no level is drawn: ${why.join('; ')}.`
+        : 'Nothing found against what it read.',
+    );
   }
   if (answer.kind === 'failed-check') {
     const at = evidenceAt(answer.failed);
