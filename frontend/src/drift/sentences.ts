@@ -153,15 +153,15 @@ export const STORED_WHY: Readonly<Record<string, string>> = {
 };
 
 /* Said once, on the reading that no longer finds a departure the one before it did, with that reading's time:
-   a departure that clears names itself, since nothing else on the card says the earlier one ended. */
-export const clearedLine = (count: number, at: string, steered = false): string =>
-  steered
-    ? count === 1
-      ? `The departure your steer named, from the ${at} reading, no longer holds.`
-      : `The ${String(count)} departures your steer named, from the ${at} reading, no longer hold.`
-    : count === 1
-      ? `The departure from the ${at} reading no longer holds.`
-      : `The ${String(count)} departures from the ${at} reading no longer hold.`;
+   a departure that clears names itself, since nothing else on the card says the earlier one ended. When the
+   reader pasted corrections between the two readings it says they named it, in the singular for the one. */
+export const clearedLine = (count: number, at: string, corrections = 0): string => {
+  const subject = count === 1 ? 'The departure' : `The ${String(count)} departures`;
+  const verb = count === 1 ? 'no longer holds' : 'no longer hold';
+  if (corrections === 0) return `${subject} from the ${at} reading ${verb}.`;
+  const who = corrections === 1 ? 'your correction' : 'your corrections';
+  return `${subject} ${who} named, from the ${at} reading, ${verb}.`;
+};
 export const CLAIM_LEAD = 'What the agent claimed';
 export const RESULT_CANT_TELL = "Can't tell";
 export const RESULT_NOTHING_SHOWS = "Can't tell: nothing recorded shows this yet";
