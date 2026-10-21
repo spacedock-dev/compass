@@ -111,11 +111,15 @@ def build(
     """One block per person's message, opening with the session's first one.
 
     `opening` is the first prompt's part, read from the start when the newest window began after
-    it. The first part is always shown; the block cap bounds the newest parts after it.
+    it. The first part is always shown; the block cap bounds the newest parts after it. A window
+    that began after the start with no `opening` has no first part to show.
     """
     groups = _groups(page.entries)
     head = opening
-    if head is None and groups:
+    # A window that began after byte zero has no known first prompt: when the head read found none
+    # (a first line past its budget), the window's first part is an ordinary part, not the opening.
+    from_start = page.coverage is None or page.coverage.start_offset == 0
+    if head is None and groups and from_start:
         head = _Opening(tuple(groups[0]), partial=False)
         groups = groups[1:]
     cap = max(0, config.session_outline_max_blocks)

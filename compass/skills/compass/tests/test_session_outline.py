@@ -187,6 +187,25 @@ class SessionOutlineTest(unittest.TestCase):
         )
         self.assertLess(first["counts"]["checks"], 60)
 
+    def test_a_first_prompt_past_the_head_budget_leaves_no_block_marked_as_the_opening(
+        self,
+    ) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Synthetic first request. " + "x " * 2000)
+        transcript.bash("pytest tests/test_first.py", "1 passed")
+        for n in range(30):
+            transcript.prompt(f"Synthetic later request {n}: {'pad ' * 40}")
+            transcript.bash(f"pytest tests/test_{n}.py", "1 passed")
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=1000
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            result, _plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        self.assertGreater(result["coverage"]["start_offset"], 0)
+        self.assertTrue(result["blocks"])
+        self.assertEqual([False] * len(result["blocks"]), [b["opening"] for b in result["blocks"]])
+
     def test_a_read_that_starts_at_the_beginning_makes_no_head_read(self) -> None:
         self._large(3)
         with (
