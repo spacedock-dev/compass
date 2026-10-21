@@ -183,14 +183,14 @@
       "method": "GET",
       "name": "context-focused-facts",
       "route": "/api/project-context",
-      "sha256": "53380a545840122c0181a93e33803acfac44a12a45ce6b31553235b4f41d5649",
+      "sha256": "2d424cafc88808799693c070885600d6573c1497814d196819beec2a85919897",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-prompts",
       "route": "/api/project-context",
-      "sha256": "34c9c3617c1ac2c56c98d90faf2c5c4624f7ea46179f1e252efa4417eff86c22",
+      "sha256": "f3419591dfb7486aa5479a9de9004adea6a2ac68a0514ab910b1509f9493ae70",
       "status": 200
     },
     {

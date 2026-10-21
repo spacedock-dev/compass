@@ -121,6 +121,102 @@ class SessionOutlineTest(unittest.TestCase):
         )
         self.assertEqual(1, len(block["failures"]))
 
+    def test_a_prompt_longer_than_the_title_bound_is_cut_at_a_word_with_an_ellipsis(self) -> None:
+        words = [f"word{n:03d}" for n in range(80)]
+        # Every bound the cut could land on, so a cut inside a word cannot hide at one offset.
+        for lead in range(9):
+            with self.subTest(lead=lead):
+                transcript = Transcript(self.root)
+                transcript.prompt(("a" * lead + " " if lead else "") + " ".join(words))
+                transcript.save(self.path)
+                page = self.source.read(self.config, str(self.path), "claude", "root")
+                (block,) = self.outline.build(page, self.config)["blocks"]
+                title = block["prompt"]["title"]
+                self.assertTrue(title.endswith("…"), title)
+                kept = title.removesuffix("…").split()
+                self.assertTrue(all(word in words or word == "a" * lead for word in kept), title)
+
+    def test_a_check_still_failing_in_the_next_phase_is_listed_once(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Keep the suite green.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        transcript.prompt("Look at the lint.")
+        transcript.bash("pytest tests", "2 failed", is_error=True)
+        transcript.bash("ruff check .", "1 error", is_error=True)
+        transcript.save(self.path)
+        first, second = self.outline.build(
+            self.source.read(self.config, str(self.path), "claude", "root"), self.config
+        )["blocks"]
+        self.assertEqual(1, len(first["failures"]))
+        self.assertEqual(1, first["counts"]["checks_failed"])
+        # The pytest failure is the first part's; this part lists only the check that is new.
+        self.assertEqual(["ruff check ."], [row["title"] for row in second["failures"]])
+        self.assertEqual(1, second["counts"]["checks_failed"])
+        self.assertEqual(2, second["counts"]["checks"])
+
+    def test_an_opening_failure_with_unread_work_after_it_is_unknown_not_failing(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Synthetic first request.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        for n in range(30):
+            transcript.prompt(f"Synthetic later request {n}: {'pad ' * 40}")
+            transcript.bash(f"ruff check {n}", "1 passed")
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=2500
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            result, _plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        first = result["blocks"][0]
+        self.assertTrue(first["opening"])
+        self.assertEqual(
+            (0, 1, []),
+            (
+                first["counts"]["checks_failed"],
+                first["counts"]["checks_unknown"],
+                first["failures"],
+            ),
+        )
+
+    def test_an_opening_failure_fixed_in_a_group_the_head_read_dropped_is_unknown(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Synthetic first request.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        transcript.prompt("Synthetic second request.")
+        transcript.bash("pytest tests", "1 passed")
+        for n in range(30):
+            transcript.prompt(f"Synthetic later request {n}: {'pad ' * 40}")
+            transcript.bash(f"ruff check {n}", "1 passed")
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=1_000_000
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            result, _plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        first = result["blocks"][0]
+        self.assertTrue(first["opening"])
+        self.assertEqual(
+            (0, 1), (first["counts"]["checks_failed"], first["counts"]["checks_unknown"])
+        )
+
+    def test_the_head_read_spends_what_the_window_left_of_one_budget(self) -> None:
+        self._large()
+        config = dataclasses.replace(self.config, session_outline_max_bytes=6000)
+        deadlines: list[float] = []
+        real = self.source.read
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            deadlines.append(kwargs["deadline"])
+            return real(*args, **kwargs)
+
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.source, "read", side_effect=spy),
+        ):
+            self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        self.assertEqual(2, len(deadlines))
+        self.assertEqual(deadlines[0], deadlines[1])
+
     def test_block_cap_keeps_the_opening_and_the_newest_and_counts_dropped_blocks(self) -> None:
         self.path.write_text(
             "".join(

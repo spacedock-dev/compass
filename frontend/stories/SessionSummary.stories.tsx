@@ -263,13 +263,12 @@ export const NoSummary: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const none = await stateOf(region, 'none');
-    // The card leads with the outline, not with sentences about what a summary is, and the way to ask for one
-    // follows it.
+    // The way to ask for one stays above the outline, where it also stands once a summary opens or runs.
     await expect(none).not.toHaveTextContent(/tells this session as a short story/);
     const outline = region.querySelector('[data-next-outline="blocks"]');
     await expect(outline).not.toBeNull();
     await expect(
-      (outline as Element).compareDocumentPosition(none) & Node.DOCUMENT_POSITION_FOLLOWING,
+      none.compareDocumentPosition(outline as Element) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     // The estimate sits beside Summarize, in the one row.
     const size = none.querySelector('[data-next-summary-size]') as HTMLElement;

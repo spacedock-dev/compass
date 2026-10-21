@@ -242,6 +242,7 @@
                 "checks": 0,
                 "checks_failed": 0,
                 "checks_fixed": 0,
+                "checks_unknown": 0,
                 "files": 0,
                 "subagent_entries": 0
               },
@@ -269,6 +270,7 @@
                 "checks": 0,
                 "checks_failed": 0,
                 "checks_fixed": 0,
+                "checks_unknown": 0,
                 "files": 0,
                 "subagent_entries": 0
               },
@@ -403,7 +405,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "7278",
+      "Content-Length": "7316",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

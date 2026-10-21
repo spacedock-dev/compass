@@ -1297,7 +1297,7 @@ job ceilings whose numbers still require measurement:
 grouping`, `reason`, `harness`, `coverage`, `blocks` and `more_blocks`. Each block has `prompt` (fact id,
 title and time, or null for work before the first held prompt), `opening` and `partial` (below), a
 `span` (first/last fact ids, entry count, from/to times), `counts` (checks, failing checks, fixed
-checks, files, agent messages, subagent entries), bounded `failures` and `checks` (fact id, title,
+checks, unknown checks, files, agent messages, subagent entries), bounded `failures` and `checks` (fact id, title,
 tool-reported result), and bounded `folders` (folder and write count). Folders sort by count
 descending then name; check examples and failures keep the newest entries in their block. Rewrites
 count as write entries, not unique paths. The block cap bounds the newest parts; extra parts are
@@ -1312,6 +1312,12 @@ check: a check run twice and failing twice is one failure. `checks_fixed` counts
 newest failed run was followed by a pass. `counts.checks` still counts every run. A write is never
 inferred from a shell command: a file an agent changed with a script rather than a write tool or a
 redirect has no entry, and the part says nothing about it.
+
+A check is listed as failing once. A check still red in a later part is the failure of the part it
+first failed in; a later part does not list or count it again, and a pass between the two would have
+made the first one fixed. A failure in the opening part is `checks_unknown`, not failing, when the
+read ended inside that part, before the window began, or held later work the outline drops (`gap`):
+a pass in that work would fix it, and nothing in the outline can say. The card says it did not read whether a later run fixed it.
 
 This is Compass's grouping, never a summary or a completion verdict. Its titles quote the
 existing masked evidence; its result tokens are as the tool reported. It authors no prose about
@@ -1338,6 +1344,10 @@ with `opening: true`. `partial: true` marks an opening part whose read ended bef
 prompt, so its counts are a floor; the card says so. A complete read marks its own first part
 `opening` and `partial` is false.
 
+The head spends what the window left of the one `session_outline_max_seconds` budget, so a focused
+poll never waits for more than that once; a head the window left no time for is clipped, and the
+outline is not cached.
+
 The head is a second read, not a larger window. A larger window would have moved the same cliff
 to bigger sessions and made every focused poll pay for it; the head costs at most its byte bound
 and is skipped when the window already starts at zero. A head read that its clock clipped is not
@@ -1347,11 +1357,15 @@ window is named by `coverage` and is not outlined; Full activity lists it.
 
 The card draws each part as a quoted prompt and short sentences ("The agent replied 7 times, ran 3
 checks and wrote 5 files in frontend/src/drift."), not a line of counts. A count is said once: a
-failing check has its own red row, so the sentence does not count it, and a fixed check is said in
-the sentence in the plain colour. A part carries no entry numbers, since `#1 to #13` named entries
+failing check has its own red row, and "ran N checks" counts every check run, a failing one included,
+so the sentence adds no failure count of its own; a fixed check is said in the sentence in the plain
+colour. A part carries no entry numbers, since `#1 to #13` named entries
 the reader had not seen; only a failed check's row keeps a chip, once the page holds that entry.
-Prompts are cut at a word. The card leads with the outline until a summary is stored or running,
-and puts the read-size estimate in the row with `Summarize`.
+A prompt's title is cut at a word with an ellipsis wherever it was cut: the server bounds the title
+at 112 characters and now cuts back to a word, since the page's 180-character cut never saw a longer
+title. The card's notice and controls stand above the outline in every state, so they do not jump from
+below it to above it when a summary opens or runs, and the read-size estimate sits in the row with
+`Summarize`.
 
 ### Evidence admitted by this build
 

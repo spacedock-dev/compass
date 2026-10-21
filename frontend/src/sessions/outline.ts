@@ -123,9 +123,10 @@ const spoken = (items: readonly string[]) =>
     : `${items.slice(0, -1).join(', ')} and ${items.at(-1) ?? ''}`;
 
 /* What a part did, in short sentences. Checks and files are left out where the harness's are not read, so a zero
-   never stands for "not looked at". A failing check is not counted here: it has its own line under the part,
-   so a count in the sentence would say it twice. A failure a later pass followed is said as fixed, in the same
-   plain voice as the rest, because a red test written first is the work going as planned. */
+   never stands for "not looked at". "Ran N checks" is every check run, a failing one included; the red row under
+   the part is that same check, and no failure count is added to the sentence. A failure a later pass followed is
+   said as fixed, in the same plain voice as the rest, because a red test written first is the work going as
+   planned. One whose fix may lie in work Compass did not read is said as unread, never as still failing. */
 export function blockLine(block: OutlineBlock, coverage: OutlineCoverage | null): string {
   const { counts } = block;
   const replies = coverage?.agentReplies !== 'not_read';
@@ -150,6 +151,12 @@ export function blockLine(block: OutlineBlock, coverage: OutlineCoverage | null)
       counts.checksFixed === 1
         ? 'A check that failed passed on a later run.'
         : `${String(counts.checksFixed)} checks that failed passed on a later run.`,
+    );
+  if (work && counts.checksUnknown)
+    sentences.push(
+      counts.checksUnknown === 1
+        ? 'A check failed here; Compass did not read whether a later run fixed it.'
+        : `${String(counts.checksUnknown)} checks failed here; Compass did not read whether a later run fixed them.`,
     );
   if (counts.subagentEntries)
     sentences.push(`Subagents added ${plural(counts.subagentEntries, 'entry', 'entries')}.`);

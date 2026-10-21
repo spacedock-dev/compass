@@ -83,6 +83,7 @@ const counts = (over: Record<string, number> = {}) => ({
   checks: 0,
   checks_failed: 0,
   checks_fixed: 0,
+  checks_unknown: 0,
   files: 0,
   agent_messages: 0,
   subagent_entries: 0,
