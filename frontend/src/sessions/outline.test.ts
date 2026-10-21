@@ -225,6 +225,8 @@ describe('the outline card model', () => {
     expect(outlineView(null, { loaded: true, failed: false }, 'x')).toEqual({ kind: 'absent' });
   });
 
+  /* The server cuts a title at 112 characters, at a word with an ellipsis, so the page never meets a longer one
+     from it. This is the page's own backstop for text with no bound of its own, held to the same rule. */
   it('trims a long prompt at a word, never inside one', () => {
     const long = `${'word '.repeat(80)}end`;
     const trimmed = trimPrompt(long);

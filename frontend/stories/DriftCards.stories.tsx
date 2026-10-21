@@ -133,7 +133,7 @@ async function citesResolvably(root: HTMLElement, constraint: string, clause: st
       `Show ${number} in Full activity for ${clause ? `${constraint}: ${clause}` : constraint}`,
     );
     await expect(chip.previousSibling?.textContent).toMatch(
-      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|At .+[.”]|\[\d+(\.\d+)?\]|You said: “.+”|(Failed|Passed|Recorded) check: .+|File write: .+)$/,
+      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|(At (\d\d:\d\d|a time not recorded) (the agent changed .+\.|a check (failed|ran)(: .+\.|\.)|the agent said (“.+”|something)\.|you said “.+”\.|[a-z ]+ was recorded\.))|\[\d+(\.\d+)?\]|You said: “.+”|(Failed|Passed|Recorded) check: .+|File write: .+)$/,
     );
     const row = document.querySelector<HTMLElement>(
       `[data-next-entry-id="${CSS.escape(chip.dataset['nextCite'] ?? '')}"]`,
@@ -160,7 +160,7 @@ async function departureCard(
      own sentence, which the label above it already names. */
   const heading = within(node).getByRole('heading', { level: 4 });
   await expect(heading.textContent).toMatch(
-    /^(It changed .+|A check failed|A check ran|What the agent said departs from this|Something in the record departs from this)$/,
+    /^(It changed .+ against .+|(A check failed|A check ran)( at \d\d:\d\d)? against .+|(What the agent said|Your own words|Something in the record)( at \d\d:\d\d)? depart(s)? from .+)$/,
   );
   await expect(heading.textContent).not.toBe(clause);
   await expect(node).toHaveAccessibleName(heading.textContent ?? '');
@@ -294,6 +294,45 @@ export const TwoDeparturesACantTellAndAClaim: Story = {
     ).toBeTruthy();
     await neverDone(shown);
     await noRetiredResultWords(shown);
+  },
+};
+
+/* The stored reading keeps a `detail` and no headline, so a card's title is derived from the entry it cites. Two
+   departures that cite two agent messages used to both read "What the agent said departs from this" (walk of the
+   sample session, 2026-10-21); each now says when, and which constraint it departs from. */
+export const TwoDeparturesOnTwoMessagesAreTitledApart: Story = {
+  ...scenario({
+    session: {
+      annotation_line_1: 'Tests pass',
+      ...stored(
+        reading({
+          goal: { ...GOAL_DEPARTS, cites: ['m1'] },
+          line_1: {
+            result: 'departure',
+            cites: ['m2'],
+            detail: 'It said nothing about the lint.',
+            clause: 'Tests pass',
+          },
+        }),
+      ),
+    },
+    facts: [
+      PERSON,
+      CLAIM,
+      fact('m2', 800, { type: 'agent_message', by: 'agent', summary: 'Lint is clean too.' }),
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const titles = departures(shown).map(
+      (node) => within(node).getByRole('heading', { level: 4 }).textContent,
+    );
+    await expect(titles).toHaveLength(2);
+    await expect(new Set(titles).size).toBe(2);
+    await expect(titles[0]).toMatch(/^What the agent said at \d\d:\d\d departs from the goal$/);
+    await expect(titles[1]).toMatch(
+      /^What the agent said at \d\d:\d\d departs from the expected outcome$/,
+    );
   },
 };
 

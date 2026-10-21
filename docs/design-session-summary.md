@@ -613,7 +613,10 @@ left out because the record does not back them"). Each hidden
 line's own reason and citations stay one keyboard-reachable press away under "Why each was
 hidden". A kept bullet between two runs splits them. No result label leads a hidden line: the page
 once drew "Failed as the tool reported: Withheld: ...". A withheld phase title keeps its own muted
-marker. What the producer withholds, and why, is unchanged. The owner did not choose to merge
+marker. A withheld line, title and phase say "Left out:" with what was wrong in plain words (no citation, too long to
+show whole, not in a form Compass accepts, or the record not backing a completion claim), and an opening summary
+says "this opening summary" where a bullet says "this line"; the jargon of the rule names is gone from every
+sentence. What the producer withholds, and why, is unchanged. The owner did not choose to merge
 departures that share evidence into one card.
 
 The page also names the speaker a bullet's words name. An `asked` bullet whose text opens with
@@ -1433,11 +1436,20 @@ The card draws each part as a quoted prompt and short sentences ("The agent repl
 checks and wrote 5 files in frontend/src/drift."), not a line of counts. A count is said once: a
 failing check has its own red row, and "ran N checks" counts every check run, a failing one included,
 so the sentence adds no failure count of its own; a fixed check is said in the sentence in the plain
-colour. A part carries no entry numbers, since `#1 to #13` named entries
+colour. A failure is an episode, the failed runs of one check with no pass between them: it is counted
+fixed, or listed as still failing, in the first part it failed in and not again in a later part, while a
+failure after a pass is a new episode. A failure the three-row highlight cap dropped was never shown, so
+the next part that fails it lists it. A part carries no entry numbers, since `#1 to #13` named entries
 the reader had not seen; only a failed check's row keeps a chip, once the page holds that entry.
-A prompt's title is cut at a word with an ellipsis wherever it was cut: the server bounds the title
-at 112 characters and now cuts back to a word, since the page's 180-character cut never saw a longer
-title. The card's notice and controls stand above the outline in every state, so they do not jump from
+A prompt's title is cut by the server and only there: it bounds the title at 112 characters (or the
+goal cap, if that is lower), cuts back to a word and adds an ellipsis. A title of exactly the bound
+that ends in a sentence stop is a whole sentence the bound happened to fit and is kept; one that ends
+without a stop at exactly the bound cannot be told from a cut and is still clipped. The page's
+180-character `trimPrompt` never meets a title from the server, so it is a backstop for text from a
+source with no bound of its own. `ServerCutTitleEndsAtAWord` draws a title held in
+`frontend/test/fixtures/server-cut-title.json`, and `test_session_outline` fails when the server
+stops making that title from the fixture's prompt, which is how reverting the cut turns the story's
+claim red. The card's notice and controls stand above the outline in every state, so they do not jump from
 below it to above it when a summary opens or runs, and the read-size estimate sits in the row with
 `Summarize`.
 

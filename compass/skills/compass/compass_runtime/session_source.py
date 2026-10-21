@@ -257,8 +257,13 @@ def _whole_words(title: str, cap: int) -> str:
     nothing of the cut; the outline's page cannot tell and drew "…after Tu" whole. A title shorter
     than the cap was not cut. The fact id and digest keep the producer's text, so the cut changes
     only what a reader sees.
+
+    A title of exactly `cap` ending in sentence punctuation is a whole sentence the cap happened to
+    fit, since the producer keeps one sentence; clipping it dropped its last word and added an
+    ellipsis to a title nothing had cut. One that ends without punctuation at exactly `cap` still
+    cannot be told from a cut, and is clipped.
     """
-    if len(title) < cap:
+    if len(title) < cap or (len(title) == cap and title.endswith((".", "!", "?"))):
         return title
     return transcripts.clip(title, cap - 1)
 

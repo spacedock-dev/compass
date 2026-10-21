@@ -6296,6 +6296,15 @@ titled "Correction to copy". The correction joined a line ending in a stop to it
   this". A write or a check outranks a message, which only reports on one. Where no cited entry is held the card
   keeps the constraint's own words, as before. The title does not claim the entry is the departure; Why still
   carries the reading's explanation.
+  *Refined the same day, review notes.* Two cards on two agent messages, or two failed checks, both read "What
+  the agent said departs from this" or "A check failed" (seen on the sample session). Still with no model call,
+  the title now carries the entry's time and the constraint it departs from, both of which the card already
+  holds: "What the agent said at 11:25 departs from the goal", "A check failed at 11:26 against expected outcome
+  2", "It changed `<path>` against the goal". A time that was not recorded is left out, not drawn as zero. A
+  written path too long for the title keeps its end, the file name, and gives up the directories in front of
+  it; a long unbroken URL or path in What is cut after its last "/" rather than inside a name. The
+  correction dates and quotes the same entry the card titles (`correction._headline`, a write or a check before
+  a message), where it took the first cite.
 - **What is one sentence.** "At 11:25 the agent changed `<path>`." or "At 11:25 the agent said “…”.", about the
   same entry, with each cited entry's number after it. A quote ends on a whole word before its ellipsis wherever
   the cut falls; a single unbroken word longer than the bound, a URL, is still cut where it stands.
@@ -6307,7 +6316,8 @@ titled "Correction to copy". The correction joined a line ending in a stop to it
   wording of the earlier rulings above; copy, never send, is unchanged.
 - **The correction.** A saved line's own closing stop is dropped where its state is joined to it, so
   "…is edited.: the session says this is done" reads "…is edited: the session says this is done"
-  (`correction._label`). The departure's time and, at the agent's own message, its words were already named.
+  (`correction._label`), and so does a closing question or exclamation mark, while an ellipsis, written "…" or
+  "...", is kept because it marks a cut. The departure's time and, at the agent's own message, its words were already named.
 - **The counter follows the text.** The count belongs to the box it was typed in; a rebuilt correction draws its
   own length rather than the previous box's.
 

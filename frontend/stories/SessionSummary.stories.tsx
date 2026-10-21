@@ -126,7 +126,10 @@ export const Ready: Story = {
     await expect(summary.querySelector('[data-next-summary-label]')).toHaveTextContent(
       SUMMARY_LABEL,
     );
-    await expect(summary.querySelector('[data-next-summary-lede]')).toHaveTextContent(LEDE);
+    // The stored paragraph says "The person"; the card draws it as "You", at the start of a sentence only.
+    await expect(summary.querySelector('[data-next-summary-lede]')).toHaveTextContent(
+      LEDE.replace(/^The person/, 'You'),
+    );
     const headings = within(summary).getAllByRole('heading', { level: 3 });
     await expect(headings.map((node) => node.textContent)).toEqual([
       FIRST_PHASE.title,
@@ -1636,12 +1639,12 @@ export const FailedSaysSoInWords: Story = {
         }),
       ).toBeVisible(),
     );
-    // A withheld line carries no result label: "Failed as the tool reported: Withheld: ..." put a result on
+    // A withheld line carries no result label: "Failed as the tool reported: Left out: ..." put a result on
     // words nobody can see.
     await expect(withheldRow).toBeUndefined();
     const hidden = summary.querySelector('[data-next-summary-hidden]') as HTMLElement;
     await expect(hidden.querySelector('[data-next-summary-hidden-line]')).toHaveTextContent(
-      /^1 line hidden: it was too long, and cutting it changed what it said\./,
+      /^1 line hidden: it was too long to show whole\./,
     );
     await expect(hidden).not.toHaveTextContent(/Failed/);
   },
@@ -2156,8 +2159,9 @@ export const OnlyTestFailuresAreBadged: Story = {
   },
 };
 
-/* A summary written again can group the work differently, and says so: from the press that rewrites it, until
-   the page is reloaded. A first summary says nothing of the kind. */
+/* A summary written again can group the work differently, and says so while it is being written, and no longer
+   once the rerun is over: the note was held from the press until the page reloaded, and drew again under the
+   next update. A first summary says nothing of the kind. */
 export const RewrittenSummaryNotes: Story = {
   render: () => (
     <SummaryPage
@@ -2183,5 +2187,9 @@ export const RewrittenSummaryNotes: Story = {
         'A summary written again can group the work into different phases from the one before.',
       ),
     );
+    // The rerun finishes: the server's job is complete, and the note goes.
+    script.summary = { ...(script.summary ?? {}), job: job({ state: 'complete' }) };
+    await poll();
+    await waitFor(() => expect(summary.querySelector('[data-next-summary-rewritten]')).toBeNull());
   },
 };

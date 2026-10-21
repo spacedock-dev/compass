@@ -23,7 +23,9 @@ a departure's headline says what happened and its What is one sentence, so the c
 constraint's sentence as a title or a list of quotes, and the correction box is labelled "Correction to paste"
 where the recorded page said "Correction to copy". The recorded answers are unchanged: the only one that holds
 the old label is `frontend/test/golden/e2e/drift-parity.json`, which the on-demand browser proof reads and no
-test in the gate does.
+test in the gate does. The proof restates that one label on the recorded side
+(`frontend/e2e/support/session-deviations.mjs`) so the rest of the recorded card stays held to the recording;
+the golden file is unchanged, and the proof was edited but not run for this change.
 
 2026-10-21, the session header reads as one line, as the redesign draws it: the state, the identity, the measured words and the controls share one
 row under the title, and the measured line no longer opens with the harness's label, which the identity beside it
