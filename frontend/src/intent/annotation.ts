@@ -183,11 +183,11 @@ export function stripPasteWrapper(text: string): string {
 export function trimToRule(text: string): string {
   const first = text.split(/\r?\n/).find((part) => part.trim()) ?? '';
   const line = first.replace(/^\s*(?:\d+[.)]|[-*\u2022])\s+/, '').trim();
-  // A stop after a list number, an abbreviation or a bare opener ("Yes.") is not the end of a rule: a
+  // A stop after an abbreviation or a bare opener ("Yes.") is not the end of a rule: a
   // sentence under three words runs on to the next stop, or to the end of the line.
   for (const stop of line.matchAll(/[.!?](?=\s|$)/g)) {
     const head = line.slice(0, stop.index + 1);
-    if (/(?:^|\s)(?:e\.g|i\.e|vs|etc|\d+)\.$/i.test(head)) continue;
+    if (/(?:^|\s)(?:e\.g|i\.e|vs|etc)\.$/i.test(head)) continue;
     if (head.split(/\s+/).length < 3) continue;
     return head;
   }
