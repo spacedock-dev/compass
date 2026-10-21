@@ -417,6 +417,75 @@ export const AFixedRedTestIsNotAFailure: Story = {
   },
 };
 
+/* The server cuts a prompt's title at its own bound, now back to a word with an ellipsis. The page shows it as
+   sent: no partial word, and no second ellipsis. */
+export const ServerCutTitleEndsAtAWord: Story = {
+  render: () => {
+    const { base, first, second } = twoBlocks();
+    const title =
+      'Implement Linear issue and then check that the launch-grant card no longer says allowed when this dashboard…';
+    return (
+      <OutlinePage
+        outline={{
+          ...base,
+          blocks: [{ ...first, prompt: { ...first.prompt, title } }, second],
+        }}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const prompt = (await waitFor(() => {
+      const node = region.querySelector<HTMLElement>('[data-next-outline-prompt]');
+      if (!node) throw new Error('no prompt yet');
+      return node;
+    })) as HTMLElement;
+    const shown = prompt.textContent ?? '';
+    await expect(shown).toMatch(/\w…$/);
+    await expect(shown).not.toMatch(/……/);
+    // Every word shown is a whole word of the sentence the title was cut from.
+    const source =
+      'Implement Linear issue and then check that the launch-grant card no longer says allowed when this dashboard started after Turning';
+    for (const word of shown.slice(0, -1).split(' ')) await expect(source).toContain(word);
+  },
+};
+
+/* A failure whose fix may lie in the unread gap is said as unread, not listed as still failing. */
+export const AnOpeningFailureBeforeTheGapIsUnknown: Story = {
+  render: () => {
+    const { base, first, second } = twoBlocks();
+    return (
+      <OutlinePage
+        outline={{
+          ...base,
+          blocks: [
+            {
+              ...first,
+              partial: false,
+              counts: { ...first.counts, checks_failed: 0, checks_unknown: 1 },
+              failures: [],
+            },
+            second,
+          ],
+        }}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const [opening] = [
+      ...(await within(region).findAllByRole('listitem')).filter((item) =>
+        item.hasAttribute('data-next-outline-block'),
+      ),
+    ] as [HTMLElement];
+    await expect(opening.querySelector('[data-next-outline-counts]')).toHaveTextContent(
+      'A check failed here; Compass did not read whether a later run fixed it.',
+    );
+    await expect(opening.querySelector('[data-next-outline-failure]')).toBeNull();
+    await expect(opening).not.toHaveTextContent(/still failing/);
+  },
+};
+
 /* A long first prompt is cut at a word with an ellipsis, never inside one. */
 export const LongPromptCutAtAWord: Story = {
   render: () => {

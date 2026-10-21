@@ -33,6 +33,7 @@ const block = (over: Partial<OutlineBlock> = {}): OutlineBlock => ({
     checks: 3,
     checksFailed: 1,
     checksFixed: 0,
+    checksUnknown: 0,
     files: 4,
     agentMessages: 2,
     subagentEntries: 0,
@@ -87,6 +88,26 @@ describe('the outline card model', () => {
     );
   });
 
+  it('says a failure whose fix may sit in unread work is unknown, not failing', () => {
+    const unknown = block({
+      counts: { ...block().counts, checksFailed: 0, checksUnknown: 1 },
+      failures: [],
+    });
+    const line = blockLine(unknown, CLAUDE);
+    expect(line).toContain(
+      'A check failed here; Compass did not read whether a later run fixed it.',
+    );
+    expect(line).not.toMatch(/still failing/);
+    expect(blockLine(block({ counts: { ...unknown.counts, checksUnknown: 2 } }), CLAUDE)).toContain(
+      '2 checks failed here; Compass did not read whether a later run fixed them.',
+    );
+  });
+
+  it('counts a run check once in the sentence, whether it passed or failed', () => {
+    // "ran N checks" is every run; the red row under the part is the same check, not another.
+    expect(blockLine(block(), CLAUDE)).toContain('ran 3 checks');
+  });
+
   it('names failures not listed, so a bounded list never hides how many are red', () => {
     const view = outlineView(
       outline({
@@ -119,6 +140,7 @@ describe('the outline card model', () => {
         checks: 0,
         checksFailed: 0,
         checksFixed: 0,
+        checksUnknown: 0,
         files: 0,
         agentMessages: 0,
         subagentEntries: 0,

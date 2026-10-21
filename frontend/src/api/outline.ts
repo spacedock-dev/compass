@@ -36,6 +36,8 @@ export interface OutlineBlock {
     readonly checksFailed: number;
     /** Checks that failed in this part and passed on a later run: a red test that was fixed. */
     readonly checksFixed: number;
+    /** Failed checks in a part whose later work was not read: a pass there would have fixed them. */
+    readonly checksUnknown: number;
     readonly files: number;
     readonly agentMessages: number;
     readonly subagentEntries: number;
@@ -105,6 +107,7 @@ function block(row: Raw): OutlineBlock | null {
       checks: count(counts['checks']),
       checksFailed: count(counts['checks_failed']),
       checksFixed: count(counts['checks_fixed']),
+      checksUnknown: count(counts['checks_unknown']),
       files: count(counts['files']),
       agentMessages: count(counts['agent_messages']),
       subagentEntries: count(counts['subagent_entries']),

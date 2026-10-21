@@ -26,6 +26,8 @@ class _Opening:
     entries: tuple[session_source.SourceEntry, ...]
     # The read stopped before the next prompt, so the counts under the first prompt are a floor.
     partial: bool
+    # The head read ended before the window began, so work between them is unread.
+    gap: bool = False
 
 
 def _groups(
@@ -57,9 +59,11 @@ def _block(
     entries: Sequence[session_source.SourceEntry],
     highlights: int,
     fixed: set[str],
+    listed: set[str],
     *,
     opening: bool = False,
     partial: bool = False,
+    unread_after: bool = False,
 ) -> dict[str, Any]:
     first, last = entries[0], entries[-1]
     checks = [entry for entry in entries if entry.kind == "check"]
@@ -67,7 +71,14 @@ def _block(
     # One row per check, its newest failed run in the part: the same failure listed twice was two
     # runs of one check. A run that a later pass followed is fixed, not failing.
     latest = {entry.subject or entry.fact_id: entry for entry in checks if entry.result == "failed"}
-    failures = [entry for entry in latest.values() if entry.fact_id not in fixed]
+    unfixed = {key: entry for key, entry in latest.items() if entry.fact_id not in fixed}
+    # A failure in a part whose own tail or following work was not read may have been fixed there:
+    # it is unknown, not failing, and nothing later in the outline can say which.
+    unknown = unfixed if unread_after else {}
+    # A check still red from an earlier part is the same failure, so only the part it first
+    # failed in lists it. An unknown one is not listed, so a later part that fails it again is.
+    failures = [entry for key, entry in unfixed.items() if key not in unknown and key not in listed]
+    listed.update(key for key in unfixed if key not in unknown)
 
     def check(entry: session_source.SourceEntry) -> dict[str, Any]:
         public = session_source.entry_for_page(entry)
@@ -89,7 +100,8 @@ def _block(
         "counts": {
             "checks": len(checks),
             "checks_failed": len(failures),
-            "checks_fixed": len(latest) - len(failures),
+            "checks_fixed": len(latest) - len(unfixed),
+            "checks_unknown": len(unknown),
             "files": sum(entry.kind == "file" for entry in entries),
             "agent_messages": sum(entry.kind == "agent" for entry in entries),
             "subagent_entries": sum(entry.actor == "subagent" for entry in entries),
@@ -126,14 +138,25 @@ def build(
     more = max(0, len(groups) - cap) if cap else len(groups) + (head is not None)
     highlights = max(0, config.session_outline_highlights)
     fixed = _fixed([*(opening.entries if opening else ()), *page.entries])
+    listed: set[str] = set()
     blocks = (
         [
             *(
-                [_block(head.entries, highlights, fixed, opening=True, partial=head.partial)]
+                [
+                    _block(
+                        head.entries,
+                        highlights,
+                        fixed,
+                        listed,
+                        opening=True,
+                        partial=head.partial,
+                        unread_after=head.partial or head.gap,
+                    )
+                ]
                 if head
                 else []
             ),
-            *(_block(group, highlights, fixed) for group in groups[more:]),
+            *(_block(group, highlights, fixed, listed) for group in groups[more:]),
         ]
         if cap
         else []
@@ -167,12 +190,13 @@ def unmatched(config: RuntimeConfig, harness: str, sid: str) -> dict[str, Any]:
 
 
 def _head(
-    config: RuntimeConfig, path: str, harness: str, sid: str, window_start: int
+    config: RuntimeConfig, path: str, harness: str, sid: str, window_start: int, deadline: float
 ) -> tuple[_Opening | None, bool]:
     """The first prompt's part, read from byte zero up to where the newest window begins.
 
     A busy session passes the window's byte bound in minutes, and the window then starts after its
-    own first prompt. The read stops at the window so the two never overlap. Returns whether its
+    own first prompt. The read stops at the window so the two never overlap, and it spends what is
+    left of the window's `deadline` rather than a second budget of its own. Returns whether its
     clock clipped it, which keeps the outline from being cached.
     """
     budget = min(max(0, config.session_outline_head_bytes), window_start)
@@ -184,17 +208,18 @@ def _head(
         harness,
         sid,
         max_bytes=budget,
-        deadline=time.monotonic() + config.session_outline_max_seconds,
+        deadline=deadline,
     )
     clipped = page.coverage is not None and any(
         region.reason == "time" for region in page.coverage.unread
     )
     if page.state != "ok":
         return None, clipped
+    gap = budget < window_start or clipped
     groups = _groups(page.entries)
     for number, group in enumerate(groups):
         if group[0].kind == "person":
-            return _Opening(tuple(group), partial=number == len(groups) - 1), clipped
+            return _Opening(tuple(group), number == len(groups) - 1, gap), clipped
     return None, clipped
 
 
@@ -261,6 +286,7 @@ def for_session_with_plan(
         if cached is not None and cached[0] == (stamps, bounds):
             result: tuple[dict[str, Any], dict[str, Any] | None] = cached[1]
             return result
+        deadline = time.monotonic() + config.session_outline_max_seconds
         page = session_source.read(
             config,
             path,
@@ -268,10 +294,10 @@ def for_session_with_plan(
             sid,
             newest=True,
             max_bytes=config.session_outline_max_bytes,
-            deadline=time.monotonic() + config.session_outline_max_seconds,
+            deadline=deadline,
         )
         opening, head_clipped = (
-            _head(config, path, harness, sid, page.coverage.start_offset)
+            _head(config, path, harness, sid, page.coverage.start_offset, deadline)
             if page.state == "ok" and page.coverage is not None and page.coverage.start_offset > 0
             else (None, False)
         )

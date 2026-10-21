@@ -17,7 +17,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
-from . import observer, record_pages, records
+from . import observer, record_pages, records, transcripts
 from . import project_context as context
 
 if TYPE_CHECKING:
@@ -250,6 +250,19 @@ def _verify(source: BinaryIO, old: StreamCursor, budget: _Budget) -> str | None:
     return digest.hexdigest() if not left else None
 
 
+def _whole_words(title: str, cap: int) -> str:
+    """A title the producer cut at its character cap, cut back to a word with an ellipsis.
+
+    `_semantic_line` bounds a prompt's title at `cap` wherever that lands, inside a word, and says
+    nothing of the cut; the outline's page cannot tell and drew "…after Tu" whole. A title shorter
+    than the cap was not cut. The fact id and digest keep the producer's text, so the cut changes
+    only what a reader sees.
+    """
+    if len(title) < cap:
+        return title
+    return transcripts.clip(title, cap - 1)
+
+
 def _message(
     config: RuntimeConfig, raw: bytes, record: dict[str, Any], harness: str, sid: str
 ) -> SourceEntry | None:
@@ -259,14 +272,17 @@ def _message(
     # The pages' ids remain canonical, but their reading-specific word caps are not a source cap.
     words = context.whole_message_words(config, record, harness, len(raw))
     title = str(fact["summary"])
+    kind = "person" if fact["type"] == "user_message" else "agent"
     return SourceEntry(
         str(fact["fact_id"]),
         _digest(title, words),
-        "person" if fact["type"] == "user_message" else "agent",
+        kind,
         "parent",
         "parent",
         float(fact["at"]),
-        title,
+        _whole_words(title, min(context.MAX_SEMANTIC_LINE, config.observer_goal_cap_chars))
+        if kind == "person"
+        else title,
         words=words,
     )
 

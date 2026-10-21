@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { contextKey } from '../api/identity';
-import { jobActive } from '../api/summary';
 import { parseOutline } from '../api/outline';
 import { useControls } from '../controls';
 import { entriesHeld } from '../drift/citations';
@@ -182,7 +181,7 @@ function Block({
    summary exists it holds Compass's outline, one block per message of the reader's, read from the focused
    context and updated with the board; once one is saved, the summary stands in the slot and the outline is one
    press below it, where every gap points. `data-next-session-summary-controls` holds the summary's notice and
-   controls, and is empty where this server publishes no summaries. */
+   controls, above the slot in every state, and is empty where this server publishes no summaries. */
 export function WhatItDid({
   running,
   harness,
@@ -293,9 +292,8 @@ export function WhatItDid({
       .finally(settle);
   };
 
-  /* Until a summary exists, and while none is being made, the card opens with the outline and the way to ask
-     for a summary follows it. Once one is stored or running, its controls and progress stay above what they act on. */
-  const leadWithOutline = !summary.stored && !jobActive(summary.job) && !summary.held.opening;
+  /* The notice and controls stay above what they act on, before and after a summary exists: they once sat below
+     the outline and jumped above it the moment a summary opened or ran. */
   const summaryControls = (
     <div className="flex flex-col gap-2 empty:hidden" data-next-session-summary-controls>
       <SummaryControls state={summary} outline={outlineSize(outline)} />
@@ -327,7 +325,7 @@ export function WhatItDid({
           </span>
         ) : null}
       </header>
-      {leadWithOutline ? null : summaryControls}
+      {summaryControls}
       <div className="flex flex-col gap-3" data-next-session-summary-slot>
         {summary.stored ? (
           <>
@@ -366,7 +364,6 @@ export function WhatItDid({
           />
         )}
       </div>
-      {leadWithOutline ? summaryControls : null}
     </Card>
   );
 }
