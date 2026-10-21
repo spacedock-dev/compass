@@ -893,16 +893,17 @@
       "disposition": "store-held"
     },
     {
-      "name": "An open Select popup",
+      "name": "An open Select popup, or the open list of prompts",
       "owner": "DRC-4823",
       "oracles": [
         "frontend/src/controls/choiceProbe.test.tsx",
         "frontend/src/controls/displayGate.test.ts",
+        "frontend/src/intent/PromptSelect.test.tsx",
         "frontend/e2e/controls-continuity.mjs",
         "frontend/e2e/intent-parity.mjs",
         "frontend/e2e/css-contract.mjs"
       ],
-      "contract": "React retains the controlled value and open popup. Defer background board paints while actually open for at most 12 consecutive holds; popup closure catches up once. Manual and cap paints retain popup identity.",
+      "contract": "React retains the controlled value and open Select popup, and the open list of prompts, a popover under a button that holds no value and is held open by its aria-expanded=true trigger. Defer background board paints while actually open for at most 12 consecutive holds; popup closure catches up once. Manual and cap paints retain popup identity.",
       "disposition": "retained-deferral"
     },
     {
