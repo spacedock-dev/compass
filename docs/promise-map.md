@@ -24,7 +24,7 @@ Four steps, and only the first two are required.
    harness it finds on the machine regardless of which one launched it. No account, no cloud
    service, no repository token. The server binds IPv4 loopback and nothing else.
 3. Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-   goal and press `Analyze drift`. The `How Intent and drift works` button explains the steps, the
+   goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
    reading's limits and why an expected outcome line is needed for a drift level.
 
    Sessions separates active work from recent history and gives each active
@@ -72,7 +72,7 @@ and brings recorded departures forward. The session page tells you once what a r
 where, without steering it for you. Pause model calls stops Analyze drift, goal summaries and
 session summaries until Resume model calls. Turn off summaries stops session summaries only;
 while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
-press Analyze drift. The How Intent and drift works button beside Intent explains the steps and
+press Analyze drift. The How Intent and drift works entry in the Intent card's More menu explains the steps and
 the limits; Not enough recorded yet is normal until you add an expected outcome line.
 On Claude Code sessions, you can turn on a live drift estimate in the panel and header after every
 turn, based on recorded checks and file paths rather than the meaning of your intent. An analysis

@@ -5560,12 +5560,12 @@ that, and Full activity is collapsed at the foot of the page.) The switch's acce
 | Sessions breadcrumb | First view | First view |
 | Project link | First view | First view |
 | No terminal to raise: Why | First view | Blocked only |
-| How Intent and drift works | First view | First view |
+| How Intent and drift works | First view | The Intent card's More menu |
 | Use your prompt | First view | First view |
-| Clear | First view | More |
-| Remove line 1 | First view | After outcome use |
-| + Add a line | First view | After outcome use |
-| Undo changes | First view | After a goal edit |
+| Clear | First view | The Intent card's More menu |
+| Remove line 1 | First view | First view |
+| + Add a line | First view | First view |
+| Undo changes | First view | First view, inert until there is something to undo |
 | Save intent | First view | First view |
 | Live monitor | Below fold | More |
 | Analyze drift | Below fold | First view |
@@ -5624,9 +5624,9 @@ under the control where no popover is drawn (its place in the popover is asserte
 | Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
 | Delegated work, and the "still running?" check | Limit | The Drift card, under the reading and its control, where Analyze drift is (row 6e) |
 | Pause model calls | Control | The "What is sent" popover beside Analyze drift; under the control where no popover is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
-| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside Clear |
+| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside its More menu |
 | "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
-| Clear | Control | The Intent card, beside the saved stamp |
+| Clear | Control | The Intent card's More menu |
 | Later directions: unknown, none or settled, with "Nothing here decides…" | Disclosure and limit | The Intent card, last |
 
 The activity column becomes **Full activity**, collapsed at the foot of the page. It keeps CURRENT

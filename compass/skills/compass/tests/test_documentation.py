@@ -170,6 +170,29 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
         )
         return roots
 
+    def test_intent_card_docs_do_not_describe_the_old_card(self) -> None:
+        # The Intent card moved How Intent and drift works and Clear into its More menu
+        # and draws Add a line, Remove, Save intent and Undo changes from the first view.
+        root = SERVER_PATH.parents[3]
+        stale = (
+            "How Intent and drift works` button",
+            "How Intent and drift works button",
+            "appears after a goal edit",
+            "Under the save, the Intent card holds the goal's",
+            "`Remove` and `Add a line` appear",
+        )
+        for relative in (
+            "compass/skills/compass/SKILL.md",
+            "docs/promise-map.md",
+            "docs/design-reader-state.md",
+            "README.md",
+        ):
+            text = (root / relative).read_text(encoding="utf-8")
+            for phrase in stale:
+                self.assertNotIn(phrase, text, relative)
+        reader_state = (root / "docs" / "design-reader-state.md").read_text(encoding="utf-8")
+        self.assertIn("intent-menu", reader_state)
+
     def test_documented_store_paths_are_the_ones_searched(self) -> None:
         # Every "~/..." path in the data-source list must be a real default.
         # ".claude/settings" (the user's own hook config) and ".compass" (Compass's
