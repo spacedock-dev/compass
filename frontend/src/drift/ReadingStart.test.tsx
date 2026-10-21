@@ -134,6 +134,12 @@ describe('a refusal is a state', () => {
   });
 });
 
+/* What is sent, as the disclosure holds it: the popover's panel is in the page while it is closed. */
+const sentText = () =>
+  [...document.querySelectorAll('[data-slot="popover-content"]')]
+    .map((node) => node.textContent ?? '')
+    .join(' ');
+
 describe('notices and the durable off switch', () => {
   const fresh = {
     reading: { consent: true, off: false, providers: {}, words: {}, used: 0, limit: 10 },
@@ -176,24 +182,23 @@ describe('notices and the durable off switch', () => {
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);
     expect(readingPosts(page)[0]?.body).not.toHaveProperty('allow');
-    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
-    expect(textOf('[data-next-reading-notice]')).toContain('Tool output goes to: tools.example');
-    expect(textOf('[data-next-reading-notice]')).toContain('Your saved words.');
-    expect(textOf('[data-next-reading-notice]')).toContain('Claude Code');
-    expect(
-      document.querySelector('[data-next-reading-notice] [data-next-cockpit-action="reading-off"]'),
-    ).not.toBeNull();
+    /* The board has not published the job, so the notice is not open: it is in What is sent. */
+    expect(document.querySelector('[data-next-reading-notice]')).toBeNull();
+    expect(sentText()).toContain('first.example');
+    expect(sentText()).toContain('Tool output goes to: tools.example');
+    expect(sentText()).toContain('Your saved words.');
+    expect(sentText()).toContain('Claude Code');
     await page.go('#n=sessions');
     await page.go('#n=session:alpha%2Fapp:claude:s1');
     await page.settle();
-    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    expect(sentText()).toContain('first.example');
     await press(byAction('reading-ask'));
     await page.settle();
-    expect(document.querySelector('[data-next-reading-notice]')).toBeNull();
+    expect(sentText()).not.toContain('first.example');
     await press(byAction('reading-ask'));
     await page.settle();
-    expect(textOf('[data-next-reading-notice]')).toContain('changed.example');
-    expect(textOf('[data-next-reading-notice]')).not.toContain('first.example');
+    expect(sentText()).toContain('changed.example');
+    expect(sentText()).not.toContain('first.example');
   });
 
   it('names the provider the notice was recorded for after the route falls back to another', async () => {
@@ -207,7 +212,7 @@ describe('notices and the durable off switch', () => {
     await page.settle();
     await press(byAction('reading-ask'));
     await page.settle();
-    expect(textOf('[data-next-reading-notice]')).toContain('Your saved words.');
+    expect(sentText()).toContain('Your saved words.');
     await page.poll({
       ...(page.state.data as object),
       generated: 1200,
@@ -222,7 +227,7 @@ describe('notices and the durable off switch', () => {
         },
       },
     });
-    const shown = textOf('[data-next-reading-notice]');
+    const shown = sentText();
     expect(shown).toContain('Provider: Claude Code');
     expect(shown).toContain('first.example');
     expect(shown).not.toContain('Provider: Codex');
@@ -238,9 +243,15 @@ describe('notices and the durable off switch', () => {
     await page.settle();
     await press(byAction('reading-ask'));
     await page.settle();
+    /* The notice is open while the analysis it came with runs, which the board publishes as a job. */
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_jobs: { 'claude:s1': { id: 'j', steps: [] } },
+    });
     const shown = document.querySelector('[data-next-reading-notice]');
     expect(shown).not.toBeNull();
-    /* One beside the notice and the Drift card head's, which is drawn in every state. */
+    /* One beside the notice and the one in Drift settings, which is drawn in every state. */
     expect(shown?.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(2);
     expect(document.querySelectorAll('[data-next-focus^="reading-off-head:"]')).toHaveLength(1);
@@ -299,12 +310,12 @@ describe('notices and the durable off switch', () => {
     await page.settle();
     await press(byAction('reading-ask'));
     await page.settle();
-    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    expect(sentText()).toContain('first.example');
     await press(byAction('reading-ask'));
-    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    expect(sentText()).toContain('first.example');
     await page.release('/api/reading', new Response('lost', { status: 200 }));
     await page.settle();
-    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    expect(sentText()).toContain('first.example');
     expect(textOf('.next-session-drift-check')).toContain('Could not confirm the reading');
   });
 
@@ -324,6 +335,36 @@ describe('notices and the durable off switch', () => {
       reading_jobs: { 'claude:s1': { id: 'other-tab', steps: [], notice } },
     });
     expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+  });
+
+  it('collapses the notice under What is sent once the analysis it came with is over', async () => {
+    const page = mountDrift({
+      payload: fresh,
+      routes: {
+        '/api/reading': () => json({ ok: true, job: { id: 'j1', steps: [] }, notice }, 202),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_jobs: { 'claude:s1': { id: 'j1', steps: [] } },
+    });
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    await page.poll({ ...(page.state.data as object), generated: 1300, reading_jobs: {} });
+    await page.settle();
+    // No 300px card above what comes next: the same words, behind the one disclosure.
+    expect(document.querySelector('[data-next-reading-notice]')).toBeNull();
+    expect(sentText()).toContain('first.example');
+    expect(sentText()).toContain('Tool output goes to: tools.example');
+    expect(
+      [...document.querySelectorAll('button')].filter(
+        (node) => node.textContent === 'What is sent',
+      ),
+    ).toHaveLength(1);
   });
 
   it('restores a running job notice from the payload without sending anything', async () => {

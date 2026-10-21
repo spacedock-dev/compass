@@ -191,8 +191,9 @@ route names a provider; otherwise it explains how to inspect a session. Every go
 cell, including saved words, opens its session at Intent.
 A citation is a bracketed number such as [41]. Hovering or focusing it shows the cited entry's own
 words in a card, and "See in context of the session" opens Full activity on that entry, marked with
-its words and its current number, loading an older entry first when it is not listed yet. Departure citations retain the neutral "Cited" tag. A current result has no rerun
-button; new work or changed intent gives one "Analyze again" with that reason.
+its words and its current number, loading an older entry first when it is not listed yet. Departure citations retain the neutral "Cited" tag. Once a reading exists the card header
+carries a re-run control: "Check again" when new work or changed words came after the reading, "Analyze again" when
+it is current. It stays on the page, inert, where a press cannot run.
 Console collects delegation, waiting requests,
 capacity and browser-local tripwires. The terminal bridge and semantic history remain prototypes;
 the [cockpit design contract](docs/design-next-ui.md#cockpit-reconciliation) records their limits.

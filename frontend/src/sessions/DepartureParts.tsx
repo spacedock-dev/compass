@@ -1,6 +1,4 @@
 import { RaiseControl, useControls } from '../controls';
-import { Icon } from '../ui/icons';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { delegatedWork, type Row } from '../observed';
 import { LANE_OFF_RECORD, laneOffWhy, unaskedDepartures, type DepartureRow } from './detail';
 
@@ -66,10 +64,12 @@ export function UnaskedDepartureBody({ session }: { readonly session: Row }) {
   );
 }
 
-/* What the session launched. Counts concern recorded launches; unpaired and activity concern this session's
-   own launches, and an unread child is never a completed job. Drawn only where a launch was recorded or its
-   time was, so a session that never delegated says nothing; the check beneath it appears only when the
-   silence has lasted half an hour with a launch unpaired. */
+/* What the session launched, as a limit of what a reading can see: drawn under What the analysis read, and not
+   as a line of the Drift card, where it was a bookkeeping fact about subagents with no action to take. Counts
+   concern recorded launches; unpaired and activity concern this session's own launches, and an unread child
+   is never a completed job. Drawn only where a launch was recorded or its time was, so a session that never
+   delegated says nothing; the check beneath it appears only when the silence has lasted half an hour with a
+   launch unpaired. */
 export function DelegatedWorkLine({
   session,
   now,
@@ -81,28 +81,11 @@ export function DelegatedWorkLine({
   if (!work.draw) return null;
   return (
     <>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                className="inline-flex min-h-0 min-w-0 w-fit cursor-help items-center gap-1.5 border-0 bg-transparent p-0 text-label text-muted-foreground hover:text-foreground"
-              >
-                <Icon name="info" />
-                Delegated work
-              </button>
-            }
-          />
-          <TooltipContent>{work.text}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      {/* The tooltip never carries the only copy: the full sentence stays for a screen reader. */}
-      <p className="sr-only" data-next-delegated-work>
+      <p className="next-cockpit-reading-why" data-next-delegated-work>
         {work.text}
       </p>
       {work.risky ? (
-        <p data-next-delegated-check>
+        <p className="next-cockpit-reading-why" data-next-delegated-check>
           Is the work this session launched still running? Show its process and latest output.
         </p>
       ) : null}

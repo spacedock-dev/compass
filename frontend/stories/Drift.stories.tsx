@@ -6,7 +6,6 @@ import {
   JOB_TITLE,
   LIVE_LEVEL_NAMES,
   NUDGE,
-  RESULT_DEPARTS,
   UNCHECKED,
 } from '../src/drift/sentences';
 import { INTENT_EDITED } from '../src/intent/sentences';
@@ -66,6 +65,13 @@ async function drawn(canvasElement: HTMLElement): Promise<HTMLElement> {
 /* The controls load with the facts, after the card itself: a story waits for the one it asserts. */
 const analyzeButton = (card: HTMLElement) => findButton(card, /^Analyze drift$/);
 const steerBack = (card: HTMLElement) => findButton(card, 'Steer back');
+
+/* The live monitor and Pause model calls sit behind Drift settings in the card's head, one press away. */
+async function openSettings(card: HTMLElement): Promise<HTMLElement> {
+  const head = card.querySelector('header') as HTMLElement;
+  await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
+  return within(document.body).findByRole('dialog', { name: 'Drift settings' });
+}
 
 async function neverRetired(root: HTMLElement) {
   await expect(root.textContent).not.toContain('Looks right');
@@ -143,8 +149,8 @@ export const LiveMonitorAtHigh: Story = {
   ...scenario({ facts: [PROMPT, ...FAILED], work: { live_levels: [LIVE_HIGH] } }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
-    const page = within(canvasElement);
-    const monitor = await page.findByRole('switch', { name: 'Live monitor' });
+    await openSettings(card);
+    const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
     await expect(monitor).toHaveAttribute('aria-checked', 'false');
     await expect(card.querySelector('[data-next-drift-level]')).toBeNull();
     await userEvent.click(monitor);
@@ -162,7 +168,8 @@ export const LiveMonitorAtHigh: Story = {
     await expect(within(card).getByText(NUDGE)).toBeVisible();
     await expect(within(card).queryByText(HARNESS_LIMIT)).toBeNull();
     const analyze = await analyzeButton(card);
-    await expect(await steerBack(card)).toBeVisible();
+    // A failed check with no departure from the intent offers no Steer back.
+    await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await expect(primaries(canvasElement)).toEqual([analyze]);
     await neverRetired(canvasElement);
   },
@@ -233,10 +240,9 @@ export const ResultUnderADeparture: Story = {
       card.querySelector('[data-next-read-section="session"]')?.textContent ?? '',
     ).toMatch(/pytest -q failed .* at \[\d+\]/);
     await expect(level).not.toHaveTextContent('Live estimate');
-    await within(result).findByRole('heading', { name: new RegExp(`^${RESULT_DEPARTS}`) });
-    await expect(
-      within(result).getByRole('heading', { name: new RegExp(`^${RESULT_DEPARTS}`) }),
-    ).toHaveTextContent('1 departure');
+    // The answer is said once, in the verdict sentence under the heading, and not again as a result heading.
+    await expect(card.querySelector('[data-next-drift-verdict]')).toHaveTextContent(/1 departure/);
+    await expect(card.querySelector('[data-next-result-heading]')).toBeNull();
     await expect(within(result).getByText(DEPARTURE_READING.criteria.goal.detail)).toBeVisible();
     const goal = result.querySelector('[data-next-result-goal]') as HTMLElement;
     await expect(goal).toHaveAttribute('data-next-result-state', 'departs');
@@ -245,23 +251,26 @@ export const ResultUnderADeparture: Story = {
       .find((item) => item.textContent?.includes('Tests pass')) as HTMLElement;
     await expect(line).toHaveAttribute('data-next-result-state', 'consistent');
     await expect(line).toHaveTextContent(/Consistent with \[\d+\]/);
-    await expect(
-      within(result).getByRole('heading', { name: 'Where the work went' }),
-    ).toBeVisible();
-    await expect(within(result).getByText(/src\/queue/)).toBeVisible();
+    // Where the work went is one of the things the analysis read, under its footer disclosure.
+    await userEvent.click(within(card).getByRole('button', { name: 'What the analysis read' }));
+    await waitFor(() => expect(within(card).getByText('Where the work went')).toBeVisible());
+    await expect(within(card).getByText(/src\/queue/)).toBeVisible();
     const steer = await steerBack(card);
     await expect(button(card, 'Update intent instead')).toBeVisible();
     await expect(primaries(canvasElement)).toEqual([steer]);
-    // A current result draws no second run control; Analyze returns when the reading is out of date.
-    await expect(within(card).queryByRole('button', { name: /^Analyze/ })).toBeNull();
+    // One run control, in the head, from the first reading on.
+    await expect(within(card).getAllByRole('button', { name: /^Analyze/ })).toHaveLength(1);
+    await expect(
+      button(card.querySelector('header') as HTMLElement, 'Analyze again'),
+    ).toBeVisible();
     await neverDone(result);
     await neverRetired(canvasElement);
   },
 };
 
-/* Stage 5: work that arrived after the reading says so, and the one press that reads it again stands in the
-   callout, with nowhere else on the card to start another. The callout is a card with no role, read by its
-   `data-next-result-stale` hook. */
+/* Stage 5: work that arrived after the reading says so in the card's header, beside the read time, and the
+   one press that reads it again stands there too, with nowhere else on the card to start another. The marker
+   has no role, so it is read by its `data-next-result-stale` hook. */
 export const StaleResult: Story = {
   ...scenario({
     session: STORED_READING,
@@ -280,8 +289,11 @@ export const StaleResult: Story = {
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    await expect(within(stale).getByText('New work since this analysis.')).toBeVisible();
-    const again = within(stale).getByRole('button', { name: 'Check again' });
+    await expect(stale).toHaveTextContent('New work since this analysis.');
+    await expect(stale).toBeVisible();
+    const head = card.querySelector('header') as HTMLElement;
+    await expect(head.contains(stale)).toBe(true);
+    const again = within(head).getByRole('button', { name: 'Check again' });
     await expect(within(card).getAllByRole('button', { name: /^(Analyze|Check again)/ })).toEqual([
       again,
     ]);
@@ -298,15 +310,16 @@ export const StaleResult: Story = {
 };
 
 /* No reader on this machine (stage 6). The reason stands where Analyze would be and no inert Analyze is
-   drawn, because there is no press to refuse. With a failed check on the record, Steer back is the one
-   primary: it is the only thing the page can still offer. */
+   drawn, because there is no press to refuse. A failed check on the record is not a departure, so no Steer
+   back stands beside the reason. */
 async function noReaderStory(canvasElement: HTMLElement, card: HTMLElement, reason: string) {
   const note = REASON_CASES[reason]?.note as string;
   await expect(await within(card).findByText(note)).toBeVisible();
   await expect(within(card).queryByRole('button', { name: /^Analyze/ })).toBeNull();
   await expect(card).not.toHaveTextContent('Analyze drift');
-  const steer = await steerBack(card);
-  await expect(primaries(canvasElement)).toEqual([steer]);
+  // A failed check alone offers no Steer back: it waits for a departure from the intent.
+  await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
+  await expect(primaries(canvasElement)).toHaveLength(0);
   await neverRetired(canvasElement);
 }
 

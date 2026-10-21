@@ -5616,14 +5616,14 @@ under the control where no popover is drawn (its place in the popover is asserte
 
 | More held | Kind | New home |
 | -- | -- | -- |
-| Live monitor switch | Control | The Drift card's heading, on the right of the title |
+| Live monitor switch | Control | Drift settings in the Drift card's heading ([the one-state amendment](#amended-2026-10-21-the-drift-card-has-one-state-at-a-time)) |
 | "How far the session has moved from the goal" | Sentence | The Drift card's heading, under the title |
-| "Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header." (Claude Code, annotations on) | Limit | The Drift card's heading, under the switch |
+| "Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header." (Claude Code, annotations on) | Limit | Drift settings, under the switch, as its description |
 | About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | The Intent card, under the save |
 | What became of discarded words | Sentences | The Intent card, under the save |
 | Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
-| Delegated work, and the "still running?" check | Limit | The Drift card, under the reading and its control, where Analyze drift is (row 6e) |
-| Pause model calls | Control | The "What is sent" popover beside Analyze drift; under the control where no popover is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
+| Delegated work, and the "still running?" check | Limit | What the analysis read, under Not read: a limit of a reading, drawn once one exists |
+| Pause model calls | Control | Drift settings, and the "What is sent" disclosure beside what it stops; Resume model calls beside Drift settings while paused; under the control where no disclosure is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
 | Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside its More menu |
 | "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
 | Clear | Control | The Intent card's More menu |
@@ -5862,6 +5862,75 @@ Rejected: matching the wrapped message by prefix or by the longest common run, w
 correction with a sentence typed around it read as Compass's; and folding the first digest's
 whitespace, which would have moved every stored copy. The parser digest the abstention packets are
 stamped with moves with this change, because `reading.py` is one of its files.
+
+### Amended 2026-10-21: the Drift card has one state at a time
+
+Four walks of the session page (a running session, a finished one, a re-run, a later direction) read
+the card as parts that each said something true and together said too much: before any analysis it
+held Pause model calls, the Live monitor and its sentence, Analyze drift, "0 drift checks requested",
+What is sent, an empty four-step bar and Steer back; while it ran, "Not checked yet" and the empty
+bar stood above the progress and the old result vanished; the first analysis's notice stood open over
+the result for good; the answer was said three times; "New work since this analysis" and "Your intent
+changed after this analysis" were amber boxes between the level and the lines; and, after a reading,
+the only way to read again was one of those boxes. The design's Drift card is a heading, the model and
+the time it was read at, and the result. This amendment gives the card the controls each moment needs
+and no more. It changes what the page draws and where; the reading, its level rules
+([a level needs a departure](#amended-2026-10-21-a-level-needs-a-departure)) and its wording are
+unchanged.
+
+1. **Before an analysis the card is a heading, one sentence and Analyze drift.** "Not checked yet" and
+   its bar are not drawn: a level of nothing labelled four ways measured nothing. The count is drawn
+   only once a check was made, and as one node, so a screen reader hears it once; "0 drift checks
+   requested" counted something that had not happened. What is sent stays one press from the button,
+   because consent is read before the press.
+2. **Drift settings is one control in the heading.** The Live monitor switch with its sentence, and
+   Pause model calls with its explanation, sit behind it, in every state. While model calls are paused
+   Resume model calls stands beside it and not behind it: a paused card has to say how to resume
+   without a second press. This supersedes the 2026-10-20 ruling that Pause stood in the heading
+   beside the switch, which put four controls and two sentences in the card's first view.
+3. **A run replaces the card's body, and over a reading it keeps that reading in view.** While an
+   analysis runs the progress and Cancel are the card's state, with no level or counter beside them.
+   A run over a stored reading draws "Reading again" above that reading, dimmed, busy and inert, until
+   the new one lands; the verdict, level and result stay in the tree so the page does not jump. Focus
+   goes from the title to the verdict, as it went to the result's heading.
+4. **A one-time notice is open only while the request it came with runs.** After that it is the same
+   words inside What is sent, with Pause model calls, and What is sent is drawn once per card state: under
+   Analyze drift before a reading, in the footer after one. The notice stays a card above a running
+   analysis, where it is what the reader is waiting beside. The summary card draws its own notice and
+   keeps it until that card is reworked; `NoticeBody` is shared so it can take the same rule.
+5. **The answer is said once.** The verdict sentence under the heading is the only statement of what the
+   reading found. The "Departs from your intent" heading, the count and the "Can't tell" line under the
+   level are not drawn beside it; over a reading the reader marked inaccurate, where the sentence is not
+   drawn, the heading still is. The level's own meter and source line are unchanged.
+6. **The header says what has happened since the reading, and holds the way to read again.** The model and
+   "Analysis last run HH:MM", then "New work since this analysis" or "Your intent changed after this
+   analysis", then the re-run control, on one line. The control is Check again over a reading new work or
+   changed words left behind, Analyze again over a current one, and it is there in every state a reading
+   can be in: inert while calls are paused, while another press is in flight, while an analysis runs
+   (Cancel is that state's control), over an unsaved edit and while a later direction's question stands,
+   which owns the run path and is named in the control's description. Not drawn where no reader exists on
+   this machine, where the reason already stands in the control's place. A refusal, a held closing and
+   what the last press came to stay under the result, where the reader looks.
+7. **Steer back is offered with a departure.** A failed check, or a claim the record does not show, with
+   no departure from the intent, offered a correction over "Not checked yet" and over readings that found
+   nothing, with nothing for it to steer from. The page no longer offers it; the server still composes a
+   correction from either, and `steerOffer` keeps the legacy page's rule so the differential tests still
+   bind it. `DriftBody` takes the departure as the page's gate.
+8. **The footer is quiet.** Mark as inaccurate, What the analysis read, What is sent and the count, on
+   one line. What Mark as inaccurate does is its description and no longer a second line of the card;
+   marked, the state is said beside the way back. Where the work went moved under What the analysis read
+   with the delegated-work limit under Not read, both drawn once there is a reading to describe.
+9. **An opening of Analyze is said to the polite region and not drawn.** "Analyze is open: the session's
+   last turn finished." was a gate's own words for a control standing pressable beside it. A closing keeps
+   its line, because it explains a control that went inert.
+
+Rejected: a banner above the result for new work and a changed intent, which is what the walk objected to
+and what a header line replaces; a settings dialog for the monitor, whose switch would then be
+unreachable while a popover is the page's one floating layer; drawing the re-run control only after new
+work, which left a reader with an unchanged finished session no way to read again; collapsing the
+notice by a stored "seen" flag, a new published field declared in five places for a fact the job's
+ending already states; and removing `steerOffer`'s claim and failed-check offers, which the server and
+the legacy oracle still hold.
 
 ## DEC-28: a model may summarize a session, and the summary is kept
 

@@ -189,7 +189,7 @@ const REASON =
 
 async function evidenceOf(canvasElement: HTMLElement) {
   await waitFor(() =>
-    expect(canvasElement.querySelector('.next-cockpit-result-line')).toHaveTextContent(
+    expect(canvasElement.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
       "Can't tell",
     ),
   );

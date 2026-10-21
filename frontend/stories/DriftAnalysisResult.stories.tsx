@@ -87,8 +87,8 @@ export const UnderTheLimitSaysNothingAboutIt: Story = {
   },
 };
 
-/* Paused with a current result: no second Analyze of unchanged words, but Resume model calls stays drawn on
-   the card, outside any popover, because it changes permission and starts nothing. */
+/* Paused with a current result: the re-run control stays in the head, inert, and Resume model calls stays
+   drawn beside it, outside any popover, because it changes permission and starts nothing. */
 export const PausedResultStillOffersResume: Story = {
   ...scenario({
     ...RESULT,
@@ -102,7 +102,10 @@ export const PausedResultStillOffersResume: Story = {
     await expect(within(root).getAllByRole('button', { name: 'Resume model calls' })).toHaveLength(
       1,
     );
-    await expect(within(root).queryByRole('button', { name: /^Analyze/ })).toBeNull();
+    await expect(within(root).getByRole('button', { name: 'Analyze again' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   },
 };
 
@@ -208,7 +211,13 @@ export const WhatTheAnalysisRead: Story = {
     const section = (name: string) =>
       read.querySelector<HTMLElement>(`[data-next-read-section="${name}"]`) as HTMLElement;
     const headings = [...read.querySelectorAll('h4')].map((h) => h.textContent);
-    await expect(headings).toEqual(['Model', 'Your intent', 'The session', 'Not read']);
+    await expect(headings).toEqual([
+      'Model',
+      'Your intent',
+      'The session',
+      'Where the work went',
+      'Not read',
+    ]);
     await expect(section('model')).toHaveTextContent('claude-sonnet-5-5 · read at 09:38');
     await expect(section('intent')).toHaveTextContent(/Version 3 · typed .+ ago/);
     await expect([...section('intent').querySelectorAll('li')].map((li) => li.textContent)).toEqual(

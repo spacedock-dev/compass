@@ -60,6 +60,8 @@ export const NO_WORDS = `Nothing has been typed for this session, so there is no
 export const MODEL_UNREAD =
   'Reading availability has not been read, so no reading can be offered. Compass asks again with the next update.';
 export const JOB_TITLE = 'Analyzing drift';
+/* The title over a run that keeps the last result in view, dimmed, until the new one lands. */
+export const JOB_TITLE_AGAIN = 'Reading again';
 export const JOB_NOTE = 'You can keep working. The result will appear here.';
 export const JOB_NOTE_SO_FAR = 'Reads only the work so far. The result will appear here.';
 export const BACKGROUND = 'Runs in the background.';
@@ -346,6 +348,12 @@ export const MODEL_PAUSE_EXPLANATION =
 export const READINGS_OFF = 'Model calls are paused. Nothing is sent until you resume.';
 export const PAGE_OUTDATED = 'Reload this page before resuming model calls. Nothing was sent.';
 export const NOTICE_SENT = 'This request sends:';
+/* The re-run control in the Drift card's header, from the first reading on: Check again over a reading that
+   new work or a changed intent left behind, Analyze again over a current one. */
+export const RERUN_STALE = 'Check again';
+export const RERUN_CURRENT = 'Analyze again';
+export const SETTINGS = 'Drift settings';
+export const RERUN_AFTER_QUESTION = 'Answer the later direction below first.';
 export const NOTICE_WORDS = "The session's words, without the agent's messages.";
 export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
 export const READINGS_OFF_CONSOLE = 'Model calls are paused. Nothing is sent until you resume.';

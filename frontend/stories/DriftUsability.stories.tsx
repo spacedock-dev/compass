@@ -61,6 +61,8 @@ const MEDIUM = {
   analysis_levels: [{ ...analysisRow('claude', 'medium'), reasons: ['departure'], cites: ['m5'] }],
 };
 
+const headOf = (drift: HTMLElement) => drift.querySelector('header') as HTMLElement;
+
 async function card(canvasElement: HTMLElement): Promise<HTMLElement> {
   const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
   await waitFor(() => expect(drift.querySelector('[data-next-result]')).not.toBeNull());
@@ -102,10 +104,10 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     await expect(
       drift.querySelector('[data-next-drift-level] .next-session-drift-range'),
     ).toBeNull();
-    // The monitor's description is its switch's helper text.
-    const head = drift.querySelector('header') as HTMLElement;
+    // The monitor's description is its switch's helper text, in Drift settings.
+    await userEvent.click(within(headOf(drift)).getByRole('button', { name: 'Drift settings' }));
     await expect(
-      within(head).getByRole('switch', { name: 'Live monitor' }),
+      await within(document.body).findByRole('switch', { name: 'Live monitor' }),
     ).toHaveAccessibleDescription(LIVE_HINT);
     // The quote is the agent's, attributed: the result's own words still never say the work was done.
     const outsideWhat = drift.cloneNode(true) as HTMLElement;
@@ -170,7 +172,8 @@ export const TheLevelStaysFirstOverALaterDirection: Story = {
   },
 };
 
-/* Finding 14: new work with no message from the reader: Check again stands beside the banner. */
+/* Finding 14: new work with no message from the reader: Check again stands beside the marker in the card's
+   head, the one run control on the card. */
 export const CheckAgainBesideTheStaleBanner: Story = {
   ...scenario({
     session: TWO_DEPARTURES,
@@ -189,16 +192,18 @@ export const CheckAgainBesideTheStaleBanner: Story = {
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    const again = within(stale).getByRole('button', { name: 'Check again' });
+    const again = within(headOf(drift)).getByRole('button', { name: 'Check again' });
     await expect(again).toBeVisible();
+    await expect(headOf(drift).contains(stale)).toBe(true);
     await expect(within(drift).getAllByRole('button', { name: /^(Analyze|Check again)/ })).toEqual([
       again,
     ]);
   },
 };
 
-/* Finding 13: Pause model calls is in the card's head in every state; the copy in What is sent closes its
-   popover when pressed, and the head then offers Resume. Finding 12: the count says what it counts. */
+/* Finding 13: Pause model calls is one press from the card's head in every state, inside Drift settings; the
+   copy in What is sent closes its popover when pressed, and the head then offers Resume. Finding 12: the count
+   says what it counts. */
 export const PauseInTheHeadAndThePopoverCloses: Story = {
   ...scenario({
     session: TWO_DEPARTURES,
@@ -209,16 +214,22 @@ export const PauseInTheHeadAndThePopoverCloses: Story = {
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
     const head = drift.querySelector('header') as HTMLElement;
-    await expect(within(head).getByRole('button', { name: 'Pause model calls' })).toBeVisible();
+    const settings = within(head).getByRole('button', { name: 'Drift settings' });
+    await userEvent.click(settings);
+    await waitFor(() =>
+      expect(
+        within(document.body).getByRole('button', { name: 'Pause model calls' }),
+      ).toBeVisible(),
+    );
+    await userEvent.click(settings);
     await expect(drift).toHaveTextContent('2 drift checks requested');
     await expect(drift.textContent).not.toContain('model requests');
     await userEvent.click(within(drift).getByRole('button', { name: /^What is sent/ }));
+    const sent = await within(document.body).findByRole('dialog', { name: /^What is sent/ });
     const inside = await waitFor(() => {
-      const found = within(document.body)
-        .getAllByRole('button', { name: 'Pause model calls' })
-        .find((node) => node.closest('[data-slot="popover-content"]'));
+      const found = within(sent).getByRole('button', { name: 'Pause model calls' });
       expect(found).toBeVisible();
-      return found as HTMLElement;
+      return found;
     });
     await userEvent.click(inside);
     await waitFor(() =>

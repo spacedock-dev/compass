@@ -59,7 +59,8 @@ describe('Analyze closing and opening', () => {
     expect(inert()).toBe(true);
     await page.poll(board(null, 1120));
     expect(inert()).toBe(false);
-    expect(change()).toBe("Analyze is open: the session's last turn finished.");
+    // An opening is said to the region and not drawn: the control standing pressable says it in view.
+    expect(change()).toBe('');
     // The region already said the close inside the minute, so the open waits for it.
     expect(cue()).toBe('Analyze closed: the session went quiet.');
     await page.advance(61_000);

@@ -425,10 +425,10 @@ goal. An unavailable prompt time means you must type a goal instead. The notice 
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
-Use **Pause model calls** on a session page, in the **What is sent** popover beside Analyze drift, to pause every model call. A Claude Code session is read by Claude
+Use **Pause model calls** on a session page, under **Drift settings** at the top of the Drift card (it is also in the **What is sent** popover), to pause every model call. While paused, **Resume model calls** stands beside Drift settings. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
 read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever
-reads. **What is sent**, under the button, opens a short list naming it, and with neither installed that reason takes
+reads. **What is sent**, under the button and, once there is a result, in the card's footer, opens a short list naming it, and with neither installed that reason takes
 the button's place and says no analysis can run. Pause model calls stops readings and goal
 summaries and session summaries until **Resume model calls**. Compass stops sending session text
 to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.

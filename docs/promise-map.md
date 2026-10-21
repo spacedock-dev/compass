@@ -110,8 +110,9 @@ The Claude Code live monitor is off by default and remembered for the session in
 It calls no model and raises no notification. An analysis result keeps the source beside each
 outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
-A current result offers no rerun button; new work or changed intent gives one `Analyze again`
-control with that reason. Each departure is a card naming the constraint, quoting your words for
+Once a reading exists the card header carries a re-run control: `Check again` when new work or
+changed words came after the reading, `Analyze again` when it is current. It is inert, not gone,
+where a press cannot run. Each departure is a card naming the constraint, quoting your words for
 it, listing the cited entries by number, and giving the analysis's reason. A cited entry's number
 opens Full activity at that entry, loading older record pages for one not yet listed, with every
 entry the finding cites marked with the finding's words and their current numbers. Departure

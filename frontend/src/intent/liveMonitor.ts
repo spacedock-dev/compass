@@ -56,6 +56,14 @@ export function useLiveMonitor(
    paths. Claude's only today, so the switch is drawn nowhere else. */
 export const LIVE_HARNESSES: ReadonlySet<string> = new Set(['claude']);
 
+/* Whether the switch is drawn for this session: a harness with a live estimate, with annotations on. */
+export function liveMonitorShown(
+  session: Readonly<Record<string, unknown>>,
+  payload: Readonly<Record<string, unknown>>,
+): boolean {
+  return LIVE_HARNESSES.has(String(session['harness'] || '')) && payload['annotate'] === true;
+}
+
 /* Whether the live estimate is wanted for this session, for the Drift step that draws it. */
 export function useLiveEstimateOn(session: Readonly<Record<string, unknown>>): boolean {
   const shell = useShell();

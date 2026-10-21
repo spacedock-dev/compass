@@ -62,7 +62,7 @@ describe('a departure the next reading clears', () => {
     await page.settle();
     await page.poll(board(1000, DEPARTS, 1, 1100));
     await page.settle();
-    expect(textOf('.next-cockpit-result-headline')).toContain('Departs from your intent');
+    expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
     expect(document.querySelector(CLEARED)).toBeNull();
     await page.poll(board(1200, NOTHING, 2, 1210));
     await page.settle();

@@ -104,7 +104,14 @@ export const CantTellOnEveryLineDrawsNoLevel: Story = {
   }),
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
-    await userEvent.click(await within(drift).findByRole('switch', { name: 'Live monitor' }));
+    await userEvent.click(
+      await within(drift.querySelector('header') as HTMLElement).findByRole('button', {
+        name: 'Drift settings',
+      }),
+    );
+    await userEvent.click(
+      await within(document.body).findByRole('switch', { name: 'Live monitor' }),
+    );
     const verdict = await verdictOf(drift);
     await expect(verdict.textContent).not.toMatch(/Medium|High|Extreme/);
     await waitFor(() => expect(drift.querySelector('[data-next-drift-level]')).toBeNull());
