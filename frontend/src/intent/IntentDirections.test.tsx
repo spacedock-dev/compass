@@ -801,3 +801,60 @@ describe('a direction press that cannot finish', () => {
     }
   }
 });
+
+/* Claude Code wraps a paste as `<pasted_content id="N">` and `</pasted_content>` around the pasted words. A
+   server that predates the strip, or a direction history republished from before it, still sends them, and
+   the quote, the pending line and a goal the direction became must never show the tags. */
+const WRAPPED =
+  '\n\n<pasted_content id="3">\nBack to my goal: Ship the worker\n</pasted_content>\n';
+const UNWRAPPED = 'Back to my goal: Ship the worker';
+
+describe('a harness paste wrapper around a direction', () => {
+  it('is never drawn in the whole direction Keep shows before it settles', async () => {
+    const page = mountSession({
+      store: SAVED,
+      session: SAVED_AT,
+      routes: {
+        '/api/project-context': record(fact('f1', 600, 'Back to my goal')),
+        '/api/direction': () => json({ ok: true, text: WRAPPED, clipped: false }),
+        '/api/annotate': () => stored(1, { outcome: 'unchanged' }),
+      },
+    });
+    await settle(page);
+    await press(control('direction-keep'));
+    await settle(page);
+    expect(text('[data-next-cockpit-direction-whole]')).toContain(UNWRAPPED);
+    expect(text('[data-next-cockpit-direction-whole]')).not.toContain('pasted_content');
+  });
+
+  it('is never put in the pending line Add opens', async () => {
+    const page = mountSession({
+      store: SAVED,
+      session: SAVED_AT,
+      routes: {
+        '/api/project-context': record(fact('f1', 600, 'Back to my goal')),
+        '/api/direction': () => json({ ok: true, text: WRAPPED, clipped: false }),
+      },
+    });
+    await settle(page);
+    await press(control('direction-add'));
+    await settle(page);
+    const line = document.querySelector('[data-next-cockpit-direction-key]') as HTMLTextAreaElement;
+    expect(line.value).toBe(UNWRAPPED);
+  });
+
+  it('is never drawn in the quoted summary beside the question', async () => {
+    const page = mountSession({
+      store: SAVED,
+      session: SAVED_AT,
+      routes: {
+        '/api/project-context': record(
+          fact('f1', 600, '<pasted_content id="3"> Back to my goal: Ship the worker'),
+          fact('f2', 610, 'Do it the careful way'),
+        ),
+      },
+    });
+    await settle(page);
+    expect(text('.next-cockpit-direction-question')).not.toContain('pasted_content');
+  });
+});

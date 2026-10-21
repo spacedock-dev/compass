@@ -9,6 +9,7 @@ import { useDisplayed, useShell } from '../shell/context';
 import { DriftContext, type DriftValue, type Jump, type JumpMissing } from './context';
 import { buildModel, type DriftModel } from './model';
 import { overlaid } from './overlay';
+import { readingCopied } from './shape';
 import { driftCtxFor, useDriftVersion, type DriftCtx } from './state';
 import { clearFlipLines } from './flip';
 import { entryWindow } from '../intent/work';
@@ -161,7 +162,12 @@ export function DriftProvider({
     model.shape &&
     !model.shape.malformed &&
     model.annotation?.['not_accurate'] !== true
-      ? ctx.drift.noteReading(key, standing, model.shape.departures.length)
+      ? ctx.drift.noteReading(
+          key,
+          standing,
+          model.shape.departures.length,
+          model.entries.filter(readingCopied).map((entry) => Number(entry.at) || 0),
+        )
       : null;
   const value: DriftValue = {
     ctx,

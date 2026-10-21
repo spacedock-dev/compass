@@ -114,3 +114,56 @@ describe('a departure the next reading clears', () => {
     expect(document.querySelector(CLEARED)).toBeNull();
   });
 });
+
+/* A correction the reader pasted between the two readings is the steer the earlier departure was built into.
+   The card names it, so the reader sees that the steer worked rather than a level that quietly changed. The
+   server recognises the pasted correction as Compass's own words and marks it `copied`; a message the reader
+   typed is no steer. */
+const pasted = (at: number) =>
+  fact('paste', at, {
+    type: 'user_message',
+    by: 'person:me',
+    copied: true,
+    summary: 'Back to my goal',
+  });
+const typed = (at: number) =>
+  fact('typed', at, { type: 'user_message', by: 'person:me', summary: 'Also do the other thing' });
+
+describe('a departure the steer named, cleared by the reading after it', () => {
+  it('says the steer named it, when a correction was pasted between the two readings', async () => {
+    const page = mountDrift({ facts: [...FACTS, pasted(1100)], session: {} });
+    await page.settle();
+    await page.poll(board(1000, DEPARTS, 1, 1090));
+    await page.settle();
+    await page.poll(board(1200, NOTHING, 2, 1210));
+    await page.settle();
+    expect(textOf(CLEARED)).toBe(
+      `The departure your steer named, from the ${clock(1000)} reading, no longer holds.`,
+    );
+  });
+
+  it('counts the departures the steer named', async () => {
+    const page = mountDrift({ facts: [...FACTS, pasted(1100)], session: {} });
+    await page.settle();
+    await page.poll(board(1000, ['departure', 'departure'], 1, 1090));
+    await page.settle();
+    await page.poll(board(1200, NOTHING, 2, 1210));
+    await page.settle();
+    expect(textOf(CLEARED)).toBe(
+      `The 2 departures your steer named, from the ${clock(1000)} reading, no longer hold.`,
+    );
+  });
+
+  it('keeps the plain sentence when nothing was pasted between them, or only the reader typed', async () => {
+    const page = mountDrift({
+      facts: [...FACTS, pasted(900), typed(1100), pasted(1300)],
+      session: {},
+    });
+    await page.settle();
+    await page.poll(board(1000, DEPARTS, 1, 1090));
+    await page.settle();
+    await page.poll(board(1200, NOTHING, 2, 1210));
+    await page.settle();
+    expect(textOf(CLEARED)).toBe(`The departure from the ${clock(1000)} reading no longer holds.`);
+  });
+});
