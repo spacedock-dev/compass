@@ -229,10 +229,14 @@ export const ResultUnderADeparture: Story = {
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    await expect(level).toHaveTextContent(new RegExp(`^${LIVE_LEVEL_NAMES['high']}Analysis`));
-    await expect(level).toHaveTextContent(
-      /Analysis last run \d\d:\d\d · intent against cited checks and messages\./,
+    // The level word is the verdict sentence's, said once; the head keeps the source, and the read time is the
+    // card header's.
+    await expect(card.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
+      new RegExp(`^${LIVE_LEVEL_NAMES['high']}: `),
     );
+    await expect(level).toHaveTextContent(/^Analysis/);
+    await expect(level).toHaveTextContent(/Intent against cited checks and messages\./);
+    await expect(level).not.toHaveTextContent(/last run/);
     /* The level's reason is said under What the analysis read, with the rest of what it read, not between
        the meter and the answer (usability review, 2026-10-20). */
     await expect(level).not.toHaveTextContent(/pytest -q failed .* at #\d+/);
@@ -391,7 +395,10 @@ export const PiShowsAnalysisLevelWithNoSwitchAndNoSteerBack: Story = {
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    await expect(level).toHaveTextContent(new RegExp(`^${LIVE_LEVEL_NAMES['high']}Analysis`));
+    await expect(card.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
+      new RegExp(`^${LIVE_LEVEL_NAMES['high']}: `),
+    );
+    await expect(level).toHaveTextContent(/^Analysis/);
     await expect(within(canvasElement).queryByRole('switch')).toBeNull();
     await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await expect(within(card).queryByText(HARNESS_LIMIT)).toBeNull();

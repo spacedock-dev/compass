@@ -1206,8 +1206,10 @@ prompt, what the reading sends and the shape contract's seven rules are unchange
 4. **A recorded pass is cited ahead of the agent's message.** A `consistent` that cites no check
    gains the latest recorded passes that carry a `consistent` (`check_supports`) and plainly cover
    the line: where the line names a path or a file, a check whose command names it too; where it names
-   none, a check of a kind the line speaks of (tests, lint, types, build). A pass of the same kind
-   on another target does not cover a line about this one. The check leads the citations and the
+   none, a check of a kind whose result the line claims ("the tests pass", "lint is clean", "no
+   type errors"). A line that only shares the keyword ("the lint config is left alone", "tests are
+   not deleted") claims no result and is covered by nothing, and the claim and the keyword must be in
+   one clause. A pass of the same kind on another target does not cover a line about this one. The check leads the citations and the
    message stays, so the page reads `Consistent with #8, as the tool reported; not inspected` rather
    than only what the agent said. A line about what the agent tells the reader keeps its message
    alone, because a run does not show a report. The checks are read from the facts, so the guard works
@@ -3237,7 +3239,8 @@ within the milestone's scope and recorded on the issue.
   where the cutoff is now, its end, or its last turn, from the same end kind HOW IT LANDED shows. It
   shows only where a press could read: a provider, no refusal beside it, saved words, and words
   given before any observed end. The background job (DRC-4686) added "Runs in the background."
-  after it.
+  after it; the Drift card dropped that second sentence on 2026-10-21, since the job box already says
+  where the work runs.
 - The later-direction floor stays at the save time. By construction no message of the reader's lies
   between the window start and the save, so moving it would change nothing on consistent data and
   would, on a fetch the server missed, turn a message into a later direction.
@@ -5717,7 +5720,7 @@ under the control where no popover is drawn (its place in the popover is asserte
 | About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | The Intent card, under the save |
 | What became of discarded words | Sentences | The Intent card, under the save |
 | Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
-| Delegated work, and the "still running?" check | Limit | What the analysis read, under Not read: a limit of a reading, drawn once one exists |
+| Delegated work, and the "still running?" check | Limit | Not on the Drift card (amended 2026-10-21): it was a bookkeeping fact about subagents tied to no line of the reading, and the reader had no action to take on it |
 | Pause model calls | Control | Drift settings, and the "What is sent" disclosure beside what it stops; Resume model calls beside Drift settings while paused; under the control where no disclosure is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
 | Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside its More menu |
 | "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
@@ -5752,8 +5755,9 @@ result is now drawn as the design file draws it. Nothing about the reading chang
 what it stores and the page's evidence rules are as before.
 
 - The card header names the model, from the stored stamp's `<model> · read at` shape and nothing
-  else, and "Analysis last run HH:MM" from `read_at`. The level's analysis line says "Analysis last
-  run" too. A refused or malformed reading draws no header line.
+  else, and "Analysis last run HH:MM" from `read_at`. The header is the one place on the card that says the
+  read time: the level's analysis line and What the analysis read leave it out (amended 2026-10-21).
+  A refused or malformed reading draws no header line.
 - Under a departure the answer reads "Departs from your intent" with its count, then one card per
   departure in the reading's order. A card's label names the constraint ("Departure · Goal",
   "Departure · Expected outcome 2", numbered only where more than one line was read). Its headline is
@@ -5997,7 +6001,9 @@ unchanged.
 5. **The answer is said once.** The verdict sentence under the heading is the only statement of what the
    reading found. The "Departs from your intent" heading, the count and the "Can't tell" line under the
    level are not drawn beside it; over a reading the reader marked inaccurate, where the sentence is not
-   drawn, the heading still is. The level's own meter and source line are unchanged.
+   drawn, the heading still is. Amended 2026-10-21: the level word is said once too. Where the sentence names
+   an analysis level, the level view's head leaves its own word out and keeps the source, the meter and
+   its scale; where the sentence names none (can't tell, not reached) no level is drawn at all.
 6. **The header says what has happened since the reading, and holds the way to read again.** The model and
    "Analysis last run HH:MM", then "New work since this analysis" or "Your intent changed after this
    analysis", then the re-run control, on one line. The control is Check again over a reading new work or
@@ -6014,11 +6020,25 @@ unchanged.
    bind it. `DriftBody` takes the departure as the page's gate.
 8. **The footer is quiet.** Mark as inaccurate, What the analysis read, What is sent and the count, on
    one line. What Mark as inaccurate does is its description and no longer a second line of the card;
-   marked, the state is said beside the way back. Where the work went moved under What the analysis read
-   with the delegated-work limit under Not read, both drawn once there is a reading to describe.
+   marked, the state is said beside the way back. Where the work went moved under What the analysis read,
+   drawn once there is a reading to describe.
 9. **An opening of Analyze is said to the polite region and not drawn.** "Analyze is open: the session's
    last turn finished." was a gate's own words for a control standing pressable beside it. A closing keeps
    its line, because it explains a control that went inert.
+10. **Each verdict and the read time are said once (amended 2026-10-21).** The header's "Analysis last run
+    HH:MM" is the card's one read time: the level's line says only what the analysis was made against, and
+    What the analysis read names the model alone. The delegated-work limit left the result altogether: it
+    was moved under Not read and was still a fact about subagents with nothing for the reader to do.
+11. **A claim the record does not show says why for that claim.** A claim that names a kind of check (tests,
+    lint, types, build) is explained from what the record read holds of that kind: none recorded, a run with
+    no recorded result, or a run the analysis did not tie to the claim. Only a claim that names no kind
+    keeps the sentence that says where the agent made it and that the record read is the board's recent
+    tail.
+12. **A fixed red test is not a failed check.** A failed run that a later pass of the same check followed,
+    the same command line, is a red test written first and fixed. It raises neither the failed-check verdict
+    nor Steer back's "A check the agent ran failed", the rule the session outline already holds for its
+    phases. The server's list is one run per check and never holds a fixed one; the page keeps the entries
+    of earlier loads, so it can.
 
 Rejected: a banner above the result for new work and a changed intent, which is what the walk objected to
 and what a header line replaces; a settings dialog for the monitor, whose switch would then be

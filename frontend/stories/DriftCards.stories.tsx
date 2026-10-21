@@ -800,9 +800,10 @@ export const ClaimNotShownOffersNoSteerBack: Story = {
     await expect(claim).toHaveTextContent(
       /^What the agent claimed · “All green locally: the tests pass” is not shown by the record/,
     );
+    // Its own reason: the claim names the tests, and the only check recorded is a lint run.
     await reasonInView(
       claim,
-      /^Nothing in the record read backs this claim, which the agent made at \[\d+\]\. The record read is the board's recent tail\.$/,
+      'No test check was recorded in what was read, so nothing backs this claim.',
     );
     await citesResolvably(claim, 'What the agent claimed', '');
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
@@ -1051,7 +1052,10 @@ export const FooterWhatTheAnalysisRead: Story = {
       'The session',
       'Not read',
     ]);
-    await expect(read.querySelector('[data-next-read-section="model"]')).toHaveTextContent(STAMP);
+    // The model alone: the read time is the card header's, said once.
+    await expect(read.querySelector('[data-next-read-section="model"]')).toHaveTextContent(
+      /^Modelclaude-sonnet-5-5$/,
+    );
     await expect(read.querySelector('[data-next-read-section="not-read"]')).toHaveTextContent(
       READ_NEVER,
     );

@@ -539,7 +539,7 @@ check" where it rests on the agent's messages alone, "Consistent with what the s
 not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it, never
 "Done". A line that rules out a folder, or limits the work to one, departs on a file write the record holds
 there, whatever the reading said; a recorded passing check that covers a line is cited ahead of the agent's
-message on it. Unfinished work in flight
+message on it, which it does only where the line claims that kind of check's result ("the tests pass"), never for a line that merely names the subject ("the lint config is left alone"). Unfinished work in flight
 at a non-final stop has its own result and cited explanation under Evidence. It raises no
 departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
@@ -552,8 +552,7 @@ once that message leaves the transcript tail the board reads. A press that carri
 messages also asks whether any of them claims a state of the work (running, merged, passing and
 the like) that the record contradicts, or, for a pass, a fix or a file written, that the record
 does not show; the reading is asked to keep "not shown" for those, so a claim nothing Compass
-records can show (merged, pushed, deployed) is not meant to read "not shown". "What the agent claimed" quotes the claim's first sentence and then reads "is contradicted at #m", "is not shown by the record" (the
-record read being the board's recent tail, and never where some of the session's checks, passes
+records can show (merged, pushed, deployed) is not meant to read "not shown". "What the agent claimed" quotes the claim's first sentence and then reads "is contradicted at #m", "is not shown by the record" (with its own reason: which kind of check the claim names and what the record holds of it, or, for a claim naming none, that the record read is the board's recent tail, and never where some of the session's checks, passes
 or file writes went unread), "is shown at #m" or "Can't tell", and is not
 drawn when there was no claim. A check that failed before the claim does not contradict it once
 the agent ran the same tool again before claiming, with no failure in that run or an earlier one of it,

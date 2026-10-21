@@ -158,12 +158,81 @@ export function cantTellReason(row: Criterion, numbers: Numbers): string {
     : RESULT_NOTHING_SHOWS_REASON;
 }
 
-/* Under a claim the record does not show: where the agent said it, and what the record read is, since "not
-   shown" is about that and never about whether the thing happened. */
-export function claimReason(row: Criterion, numbers: Numbers): string {
+/* The kinds of check a claim can speak of, and the words of a check's own command that say which kind it is:
+   the page's copy of `reading._LINE_KINDS` and `_CHECK_WORDS`, kept small for the same reason. */
+type CheckKind = 'test' | 'lint' | 'type' | 'build';
+const CHECK_KINDS: readonly CheckKind[] = ['test', 'lint', 'type', 'build'];
+const CLAIM_WORDS: Readonly<Record<CheckKind, RegExp>> = {
+  test: /\b(?:tests?|suite|specs?|pytest|vitest|jest|unittest)\b/i,
+  lint: /\b(?:lint(?:s|ed|er|ing)?|ruff|biome|eslint)\b/i,
+  type: /\b(?:type-?check(?:s|ed|ing)?|type\s+checks?|mypy|tsc|pyright)\b/i,
+  build: /\bbuild(?:s|ing)?\b/i,
+};
+const COMMAND_WORDS: Readonly<Record<CheckKind, RegExp>> = {
+  test: /^(?:pytest|unittest|vitest|jest|mocha|playwright|tests?|test:\S+|run_tests\.py)$/,
+  lint: /^(?:ruff|biome|eslint|flake8|pylint|lint(?::\S+)?)$/,
+  type: /^(?:mypy|tsc|pyright|typecheck|type-check)$/,
+  build: /^build(?::\S+)?$/,
+};
+
+function commandKinds(summary: string): ReadonlySet<CheckKind> {
+  const words = summary.split(/\s+/).map((word) => word.slice(word.lastIndexOf('/') + 1));
+  return new Set(
+    CHECK_KINDS.filter((kind) => words.some((word) => COMMAND_WORDS[kind].test(word))),
+  );
+}
+
+/* Why a claim the record does not show is not shown, said about that claim: the kinds of check its own words
+   name, and what the record read holds of each (none, a run with no recorded result, or a run the analysis
+   did not tie to it). A claim that names no kind of check gets where the agent said it and what the record
+   read is, since "not shown" is about that and never about whether the thing happened. */
+export function claimReason(
+  row: Criterion,
+  numbers: Numbers,
+  entries: readonly WorkEntry[] = [],
+  windowStart: number | null = null,
+): string {
   if (row.key !== CLAIMS || row.result !== UNSUPPORTED) return '';
-  const said = resultWhere(row.claimEntry, numbers);
-  return `Nothing in the record read backs this claim${said ? `, which the agent made at ${said}` : ''}. ${RESULT_CLAIM_TAIL}`;
+  const claim = String(row.claimEntry?.summary || '');
+  const named = CHECK_KINDS.filter((kind) => CLAIM_WORDS[kind].test(claim));
+  if (!named.length) {
+    const said = resultWhere(row.claimEntry, numbers);
+    return `Nothing in the record read backs this claim${said ? `, which the agent made at ${said}` : ''}. ${RESULT_CLAIM_TAIL}`;
+  }
+  const checks = entries
+    .filter(
+      (entry) =>
+        entry.type === 'tool_report' &&
+        entry.subject === 'check' &&
+        (windowStart === null || (nextNumber(entry.at) ?? 0) >= windowStart),
+    )
+    .map((entry) => ({ kinds: commandKinds(entry.summary), result: entry.result }));
+  const none: string[] = [];
+  const unrecorded: string[] = [];
+  const clauses: string[] = [];
+  for (const kind of named) {
+    const runs = checks.filter((check) => check.kinds.has(kind));
+    const result =
+      runs.find((run) => run.result === 'failed')?.result ??
+      runs.find((run) => run.result === 'passed')?.result;
+    if (!runs.length) none.push(kind);
+    else if (result)
+      clauses.push(
+        `A ${kind} check ${result} on record, and the analysis did not tie it to this claim`,
+      );
+    else unrecorded.push(kind);
+  }
+  const first: string[] = [];
+  if (none.length)
+    first.push(
+      `No ${none.map((kind) => `${kind} check`).join(' and no ')} was recorded in what was read`,
+    );
+  if (unrecorded.length)
+    first.push(
+      `The ${unrecorded.join(' and ')} ${unrecorded.length === 1 ? 'check ran' : 'checks ran'} with no recorded result`,
+    );
+  const all = [...first, ...clauses];
+  return `${all.join('; ')}${first.length ? ', so nothing backs this claim' : ''}.`;
 }
 
 export type ResultState = 'departs' | 'unshown' | 'consistent' | 'cant-tell' | 'not-reached';
@@ -193,8 +262,32 @@ export function claimsDrawn(shape: Shape): Criterion[] {
   return shape.criteria.filter((row) => row.key === CLAIMS && row.result !== UNVERIFIABLE);
 }
 
+/* A failed run a later pass of the same check followed: a red test written first and then fixed, which is the
+   work going as planned. The outline's rule (`session_outline._fixed`), held for the Drift card, because the
+   page keeps the entries of earlier loads and so can hold both runs of one check. The same check is the same
+   command line, as the entry's own summary says it. */
+function fixedFailures(entries: readonly WorkEntry[]): ReadonlySet<WorkEntry> {
+  const passedAt = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.type !== 'tool_report' || entry.subject !== 'check' || entry.result !== 'passed')
+      continue;
+    const at = evidenceAt(entry) || 0;
+    passedAt.set(entry.summary, Math.max(passedAt.get(entry.summary) ?? 0, at));
+  }
+  return new Set(
+    entries.filter(
+      (entry) =>
+        entry.type === 'tool_report' &&
+        entry.subject === 'check' &&
+        entry.result === 'failed' &&
+        (passedAt.get(entry.summary) ?? 0) > (evidenceAt(entry) || 0),
+    ),
+  );
+}
+
 /* The failed checks after the words, by the server's rule (`_failed_checks`): one person-message boundary for
-   the answer and the correction, mirroring reading.py. */
+   the answer and the correction, mirroring reading.py, less a red test a later run fixed. The server's list is
+   one run per check, so it never holds the fixed one. */
 export function failedChecksAfterPerson(
   entries: readonly WorkEntry[],
   anchor: unknown = null,
@@ -208,12 +301,14 @@ export function failedChecksAfterPerson(
   if (last !== null && last > 0) times.push(last);
   if (!times.length) return [];
   const start = Math.max(floor || 0, ...times);
+  const fixed = fixedFailures(entries);
   return entries.filter(
     (entry) =>
       entry &&
       entry.type === 'tool_report' &&
       entry.subject === 'check' &&
       entry.result === 'failed' &&
+      !fixed.has(entry) &&
       (evidenceAt(entry) || 0) > start,
   );
 }
@@ -566,6 +661,28 @@ function entryPhrase(entry: WorkEntry): string {
 /* The Drift card's one plain answer, first under its heading: the level word, how many departures, and what
    and when each rests on, from the stored reading and the entries it cites alone. It never reassures where
    the reading could not settle: "Can't tell" and "Not reached" carry no level word. */
+/* Whether the verdict sentence says the level word: only over an answer the reading could settle. The level
+   view leaves its own word out where the sentence has it, so the card says each verdict once. */
+export function verdictNamesLevel(answer: Answer): boolean {
+  return answer.kind !== 'cant-tell' && answer.kind !== 'not-reached';
+}
+
+/* The shape the Drift card's verdict sentence draws from, or null where it is not drawn: not over an unreadable
+   reading or one the reader marked inaccurate. `DriftVerdict` and the level view both ask, so a level word is
+   left out only where the sentence above it carries it. */
+export function verdictShape(input: {
+  readonly annotate: boolean;
+  readonly shape: Shape | null;
+  readonly raw: unknown;
+  readonly annotation: Annotation | null | undefined;
+}): Shape | null {
+  const { annotate, shape, raw, annotation } = input;
+  if (!annotate || !shape || shape.malformed || !raw || !annotation) return null;
+  if (annotation['not_accurate'] === true) return null;
+  if (!shape.criteria.length && !shape.departures.length) return null;
+  return shape;
+}
+
 export function verdictLine({
   answer,
   level,

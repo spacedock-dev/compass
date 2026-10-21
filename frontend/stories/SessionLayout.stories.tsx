@@ -333,45 +333,58 @@ export const MoreIsRetired: Story = {
     });
     /* The card's own row keeps the reading start; Clear, the measured sentence, About these saved words,
        Discard everything and Later directions sit behind one quiet menu, which floats inside the page. */
-    await expect(within(intent).getByRole('button', { name: /^Saved · reads from/ })).toBeVisible();
+    await expect(
+      await within(intent).findByRole('button', { name: /^Saved · reads from/ }),
+    ).toBeVisible();
     await expect(within(intent).queryByRole('button', { name: 'Clear' })).toBeNull();
-    await userEvent.click(within(intent).getByRole('button', { name: 'More about these words' }));
+    await userEvent.click(
+      await within(intent).findByRole('button', { name: 'More about these words' }),
+    );
     const inIntent = within(canvasElement);
     await waitFor(async () =>
       expect(await inIntent.findByRole('button', { name: 'Clear' })).toBeVisible(),
     );
     await expect(inIntent.getByText(INTENT_MEASURED)).toBeVisible();
-    await expect(inIntent.getByRole('button', { name: 'About these saved words' })).toBeVisible();
+    await expect(
+      await inIntent.findByRole('button', { name: 'About these saved words' }),
+    ).toBeVisible();
     // The offer's summary; the press it opens is the second control of that name.
+    await waitFor(() =>
+      expect(inIntent.getAllByRole('button', { name: 'Discard everything' })[0]).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      ),
+    );
     await expect(
-      inIntent.getAllByRole('button', { name: 'Discard everything' })[0],
-    ).toHaveAttribute('aria-expanded', 'false');
-    await expect(inIntent.getByRole('button', { name: /^Later directions: / })).toBeVisible();
+      await inIntent.findByRole('button', { name: /^Later directions: / }),
+    ).toBeVisible();
     await expect(
-      inIntent.getByRole('button', { name: 'How Intent and drift works' }),
+      await inIntent.findByRole('button', { name: 'How Intent and drift works' }),
     ).toBeVisible();
     // Behind their summaries: the saved stamp's definition and binding key, the binding sentence, and the
     // limit under Later directions.
-    await userEvent.click(within(intent).getByRole('button', { name: /^Saved · reads from/ }));
+    await userEvent.click(
+      await within(intent).findByRole('button', { name: /^Saved · reads from/ }),
+    );
     await waitFor(() => expect(inIntent.getByText('Each save is a revision.')).toBeVisible());
     await expect(intent.querySelector('.next-cockpit-held-bound')).toHaveTextContent(/s1/);
     // Pressing the stamp moves focus out of the menu, which closes it; the menu opens again for the rest.
-    const more = within(intent).getByRole('button', { name: 'More about these words' });
+    const more = await within(intent).findByRole('button', { name: 'More about these words' });
     if (more.getAttribute('aria-expanded') !== 'true') await userEvent.click(more);
     await userEvent.click(await inIntent.findByRole('button', { name: 'About these saved words' }));
     await waitFor(() =>
       expect(inIntent.getByText('These words are bound to claude:s1.')).toBeVisible(),
     );
-    await userEvent.click(inIntent.getByRole('button', { name: /^Later directions: / }));
+    await userEvent.click(await inIntent.findByRole('button', { name: /^Later directions: / }));
     await waitFor(() =>
       expect(inIntent.getByText(/^Nothing here decides whether it changes/)).toBeVisible(),
     );
     const inDrift = within(drift);
     const head = drift.querySelector('header') as HTMLElement;
-    await expect(within(head).getByText(DRIFT_SUBTITLE)).toBeVisible();
+    await expect(await within(head).findByText(DRIFT_SUBTITLE)).toBeVisible();
     // The live monitor and Pause model calls are behind one Drift settings control in the head, and not in the body.
     await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
-    await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
+    await userEvent.click(await within(head).findByRole('button', { name: 'Drift settings' }));
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
     await waitFor(() => expect(monitor).toBeVisible());
     await expect(within(document.body).getByText(LIVE_HINT)).toBeVisible();
@@ -383,11 +396,11 @@ export const MoreIsRetired: Story = {
       ).toBeVisible(),
     );
     await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
-    // Delegated work is a limit of a reading, said under What the analysis read once there is one.
+    // The delegated-work limit is not part of an analysis's account of what it read.
     await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
-    await expect(inDrift.getByRole('button', { name: 'Analyze drift' })).toBeVisible();
+    await expect(await inDrift.findByRole('button', { name: 'Analyze drift' })).toBeVisible();
     // Beside what it stops, Pause model calls stands in What is sent too.
-    await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
+    await userEvent.click(await inDrift.findByRole('button', { name: 'What is sent' }));
     const off = await waitFor(() => {
       const found = within(document.body)
         .getAllByRole('button', { name: 'Pause model calls' })

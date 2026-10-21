@@ -8,7 +8,6 @@ import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { entryWindow, olderEntriesRemain, type WorkEntry } from '../intent/work';
 import { markNotAccurate } from './actions';
-import { DelegatedWorkLine } from '../sessions/DepartureParts';
 import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
 import { EvidenceList } from './Evidence';
@@ -29,7 +28,9 @@ import {
   resultStatus,
   resultWhere,
   resultWork,
+  stampModel,
   verdictLine,
+  verdictShape,
   type Answer,
 } from './result';
 import { fmtDur } from './route';
@@ -310,7 +311,9 @@ function QuietRow({
   /* The design's two forms: `Can't tell · <line>` with the reason under it, and `What the agent claimed ·
      "<claim>" is not shown by the record`. Each says its own reason in view, not behind Evidence. */
   const cantTell = state === 'cant-tell';
-  const reason = cantTell ? cantTellReason(row, model.numbers) : claimReason(row, model.numbers);
+  const reason = cantTell
+    ? cantTellReason(row, model.numbers)
+    : claimReason(row, model.numbers, model.entries, model.shape?.windowStart ?? null);
   const claim = claimHeading(row, model.numbers);
   const status = claim
     ? CLAIM_LEAD
@@ -659,9 +662,10 @@ function Baseline({
   return (
     <Why name="reading-baseline" summary={READ_SUMMARY}>
       <div className="flex flex-col gap-[12px]" data-next-read>
-        {shape.stamp ? (
+        {/* The model alone: the stamp's "read at HH:MM" is the card header's "Analysis last run", said once. */}
+        {stampModel(shape.stamp) ? (
           <ReadSection name="model" title={READ_MODEL}>
-            <p className="next-cockpit-reading-stamp m-0">{shape.stamp}</p>
+            <p className="next-cockpit-reading-stamp m-0">{stampModel(shape.stamp)}</p>
           </ReadSection>
         ) : null}
         {shape.readClauses.length ? (
@@ -708,7 +712,6 @@ function Baseline({
         <WorkSection />
         <ReadSection name="not-read" title={READ_NOT_READ}>
           <p className="next-cockpit-reading-why">{READ_NEVER}</p>
-          <DelegatedWorkLine session={model.session} now={model.generated} />
         </ReadSection>
       </div>
     </Why>
@@ -862,9 +865,7 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
     ctx.shell.controls.focusLane,
     focus ? `reading:${model.key}` : null,
   );
-  if (!annotate || !shape || shape.malformed || !raw || !annotation) return null;
-  if (annotation['not_accurate'] === true) return null;
-  if (!shape.criteria.length && !shape.departures.length) return null;
+  if (!verdictShape({ annotate, shape, raw, annotation }) || !shape) return null;
   const answer = driftAnswer(shape, entries, source.scan);
   const analysis = model.analysis;
   const standing = analysis && analysis.level !== 'not_enough' ? analysis : null;

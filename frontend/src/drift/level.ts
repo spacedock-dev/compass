@@ -330,7 +330,7 @@ export interface DriftLevel {
   readonly signals: Signals | null;
   readonly reasons: Reasons;
   readonly analysis: boolean;
-  /** The analysis line, "Analysis last run 14:03 · intent against cited checks and messages." */
+  /** The analysis line, "Intent against cited checks and messages."; the read time is the card header's. */
   readonly line: string;
   readonly range: string;
 }
@@ -470,8 +470,9 @@ export function analysisLevel(input: AnalysisInput): DriftLevel | null {
     level,
     label: LIVE_LEVEL_NAMES[level] as string,
     source: 'Analysis',
-    /* "Last run" (owner, 2026-10-15 feedback): "Analysis at 22:27" read as a time inside the session. */
-    line: `Analysis last run ${clock(readAt)} · intent against cited checks and messages.`,
+    /* The read time is the card header's, once ("Analysis last run HH:MM"); this line says only what the
+       analysis was made against. */
+    line: 'Intent against cited checks and messages.',
     analysis: true,
     rose: '',
     anchored: false,
