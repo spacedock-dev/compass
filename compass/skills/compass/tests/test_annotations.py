@@ -828,6 +828,15 @@ class AnnotationWiringTest(unittest.TestCase):
         self.assertEqual("not-run", data["reading_check"])
 
 
+class DiscardSentencesNameNoRevisionTest(unittest.TestCase):
+    """The Intent card draws these verbatim, and it never names a revision."""
+
+    def test_no_published_discard_sentence_says_revision(self) -> None:
+        for key, sentence in annotation_store.DISCARD_SENTENCES.items():
+            with self.subTest(key=key):
+                self.assertNotIn("revision", sentence.lower())
+
+
 class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
     """DRC-4561. Two acts, one word, and only the weaker one had a control.
 
@@ -846,7 +855,7 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         # Every revision, the reading kept beside them, and the quotations in
         # the other store — `clear` drops the whole entry and
         # `_withdraw_raises` blanks the rows.
-        self.assertIn("Every revision", said)
+        self.assertIn("Everything you asked of this session", said)
         self.assertIn("reading", said)
         self.assertIn("summary", said)
         self.assertIn("quotes them any more", said)
@@ -868,7 +877,7 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         """
         said = annotation_store.DISCARD_ARMED
 
-        self.assertIn("Every revision", said)
+        self.assertIn("Everything you asked of this session", said)
         self.assertIn("reading", said)
         # The summary goes too, and one being written goes with it (owner's ruling, 2026-10-21).
         self.assertIn("summary, including one being written", said)
@@ -889,7 +898,7 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         """
         said = annotation_store.DISCARD_UNWITHDRAWN
 
-        self.assertIn("Every revision", said)
+        self.assertIn("Everything you asked of this session", said)
         self.assertIn("goes on quoting them", said)
         self.assertNotIn("quotes them any more", said)
 
@@ -897,7 +906,7 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         said = annotation_store.DISCARD_WHY
 
         self.assertIn("clear", said)
-        self.assertIn("keeps every earlier revision", said)
+        self.assertIn("keeps your earlier saves", said)
         self.assertIn("Discarding everything", said)
         # What goes and what stays, before the act: the summary goes, the check record and
         # session history stay, and --forget is the way to clear that history.

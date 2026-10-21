@@ -4,7 +4,7 @@ import { clock } from '../observed';
 import { board, control, goalBox, inert, mountSession, stored, text, type } from './panel.testing';
 
 /* The owner's ruling of 2026-10-21 (docs/design-reading-a-session.md, "Amended 2026-10-21 (owner): editing the
-   goal keeps the reading's start"): Save intent keeps the reading's original start, and Read from now is the
+   goal keeps the reading's start"): Save intent keeps the reading's original start, and Read from my latest message is the
    reader's explicit choice to move it, said in the moment with the time it moved to. */
 
 const OPENED = 1_000;
@@ -42,11 +42,11 @@ describe('a goal edit over saved words', () => {
       goal: 'Ship the queue worker and record the ruling',
       expected_revision: 1,
     });
-    expect(footerCue()).toBe('Saved as a new revision.');
+    expect(footerCue()).toBe('Saved.');
   });
 });
 
-describe('Read from now', () => {
+describe('Read from my latest message', () => {
   it('is not offered before anything is saved, where the first save opens the window by itself', async () => {
     const page = mountSession();
     await settle(page);
@@ -59,7 +59,7 @@ describe('Read from now', () => {
       session: saved(OPENED),
     });
     await settle(page);
-    expect(control('held-save-from-now')?.textContent).toBe('Read from now');
+    expect(control('held-save-from-now')?.textContent).toBe('Read from my latest message');
     expect(inert(control('held-save-from-now'))).toBe(true);
     type(goalBox(), 'Ship the queue worker and record the ruling');
     expect(inert(control('held-save-from-now'))).toBe(false);

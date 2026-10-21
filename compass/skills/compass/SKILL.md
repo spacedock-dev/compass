@@ -412,7 +412,7 @@ press `Analyze drift`, which adopts the draft. `Use your prompt` lists up to fiv
 prompts, and choosing one fills the goal box for you to save. Analyze drift, Keep and an added line's save are refused
 while the goal box or the outcome lines hold an edit you have not saved, because each would stand
 on words that are not on screen; your edit stays in the box. No drift level or pill is drawn over
-an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from now`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time.
+an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from my latest message`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time.
 
 A direction you gave after your intent (after the saved goal's words, or after the drafted prompt)
 is asked about before the press, in the control's place: "Your 11:05 message adds:" quotes the

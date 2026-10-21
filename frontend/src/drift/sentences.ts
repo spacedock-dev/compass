@@ -213,7 +213,7 @@ export const DEPARTURE_DEFINITION =
   'A departure is a place the record does not match the words you chose.';
 export const READING_DEFINITION =
   'A reading is one model pass over the record, made only when you press for it.';
-export const REVISION_DEFINITION = 'Each save is a revision.';
+export const REVISION_DEFINITION = 'Each save is kept on its own.';
 
 export const OFFER =
   'A reading is a model’s account of the evidence on this page: the observed record in this session’s activity and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or what you saw on your screen.';

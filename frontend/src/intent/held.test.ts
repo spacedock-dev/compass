@@ -61,14 +61,14 @@ describe('the cue lane', () => {
   it('drops the announcement guard with the mark, so a lapsed warning is a new warning', () => {
     const { held, clock, announcer, node } = setup();
     held.mark('a', 'saved');
-    announcer.announce('a', 'Saved as a new revision.');
+    announcer.announce('a', 'Saved.');
     node.textContent = '';
     // The same sentence for the same standing mark is a repeat.
-    announcer.announce('a', 'Saved as a new revision.');
+    announcer.announce('a', 'Saved.');
     expect(node.textContent).toBe('');
     clock.advance(30_000);
-    announcer.announce('a', 'Saved as a new revision.');
-    expect(node.textContent).toBe('Saved as a new revision.');
+    announcer.announce('a', 'Saved.');
+    expect(node.textContent).toBe('Saved.');
   });
 
   it('reports when a mark was stamped and nothing once it lapses', () => {

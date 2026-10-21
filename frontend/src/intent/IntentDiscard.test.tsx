@@ -7,8 +7,8 @@ import { board, control, goalBox, mountSession, text, type } from './panel.testi
    every sentence the server's. A double-click, a held key and a slip are all one press, never two. */
 
 const SENTENCES = {
-  why: 'This deletes every revision and the stored reading.',
-  armed: 'Nothing has been deleted yet. Press again to delete every revision.',
+  why: 'This deletes all you asked and the stored reading.',
+  armed: 'Nothing has been deleted yet. Press again to delete all you asked.',
   stored: 'Discarded. These words are gone.',
   refused: 'Nothing was discarded: the store refused.',
   unwritable: 'The discard could not be written.',
@@ -65,6 +65,23 @@ describe('Discard everything', () => {
     expect(discard()?.textContent).toBe('Discard everything');
   });
 
+  it('draws no lone More under a discarded form that holds no words', async () => {
+    const page = mountSession({
+      session: {
+        first_prompt: '',
+        first_prompt_at: null,
+        annotation_discarded_at: 990,
+        annotation_revision_count: 0,
+        annotation_revision: 0,
+      },
+    });
+    await settle(page);
+    const kept = document.querySelector('[data-next-intent-kept]');
+    expect(kept).not.toBeNull();
+    expect(kept?.querySelector('button')).toBeNull();
+    expect(kept?.textContent).not.toContain('More');
+  });
+
   it('arms on the first press, sends nothing, warns assertively and describes the armed control by the warning', async () => {
     const page = mount({
       '/api/annotate': () => json({ ok: true, outcome: 'stored', persisted: true }),
@@ -76,9 +93,31 @@ describe('Discard everything', () => {
     expect(text('#next-cockpit-cue-alert')).toBe(SENTENCES.armed);
     expect(discard()?.getAttribute('aria-describedby')).toBe('next-cockpit-discard-armed');
     expect(text('#next-cockpit-discard-armed')).toBe(SENTENCES.armed);
-    expect(
-      document.querySelector('.next-cockpit-held-discard-offer')?.hasAttribute('data-open'),
-    ).toBe(true);
+    // The question is the card's own, not the menu's: it needs the menu open for neither its warning nor its press.
+    const armedBlock = document.querySelector('[data-next-intent-armed-discard]');
+    expect(armedBlock?.contains(discard() ?? null)).toBe(true);
+    expect(armedBlock?.closest('[data-slot=popover-content]')).toBeNull();
+    expect(document.querySelector('.next-cockpit-held-discard-offer')).toBeNull();
+  });
+
+  it('keeps the words on Keep my words and on Escape, and the offer is back in the menu', async () => {
+    const page = mount({
+      '/api/annotate': () => json({ ok: true, outcome: 'stored', persisted: true }),
+    });
+    await settle(page);
+    await armed(page);
+    const keep = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Keep my words',
+    );
+    await press(keep ?? null);
+    expect(document.querySelector('[data-next-intent-armed-discard]')).toBeNull();
+    expect(page.posts()).toBe(0);
+    expect(document.querySelector('.next-cockpit-held-discard-offer')).not.toBeNull();
+    await armed(page);
+    fireEvent.keyDown(discard() as Element, { key: 'Escape' });
+    await page.settle();
+    expect(document.querySelector('[data-next-intent-armed-discard]')).toBeNull();
+    expect(page.posts()).toBe(0);
   });
 
   it('treats a press inside the dwell, and a double-click, as another arm and never as a confirmation', async () => {

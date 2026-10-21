@@ -41,6 +41,13 @@ check on the card (`failedChecksAfterPerson`), a departure from the retired page
 case in `result.differential.test.ts` or `correction.differential.test.ts` reaches it, and
 `FixedCheck.test.ts` holds it. Golden files are unchanged.
 
+2026-10-21, the discard sentences name no revision
+([the amendment](design-reading-a-session.md#amended-2026-10-21-the-edges-of-the-intent-card)):
+`annotations.DISCARD_SENTENCES` now say "everything you asked of this session" and "your earlier saves"
+where the earlier ones said "every revision". The recordings under `test/golden/e2e` that quote the old
+sentences are unchanged and are not compared by any test that runs in CI; the client-contract fixtures are
+regenerated from the live server, which is not a recorded answer of the retired page.
+
 2026-10-21, a later direction is quoted where it is settled
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-a-later-direction-is-quoted-where-it-is-settled)):
 a saved line's source reads "added from your 11:05 message" where the retired page said "added from #7".
@@ -682,7 +689,9 @@ instead (one direction read, nothing saved), `intentForReading`, the live monito
 reading-feedback lane. The per-entry Add to my intent buttons of the legacy activity list are drawn by the
 Drift step's numbered activity list.
 
-Deviations (owner, 2026-10-12): prompt, stage and direction choices now use shadcn Base UI Select.
+Deviations (owner, 2026-10-12): prompt, stage and direction choices now use shadcn Base UI Select. The prompt
+later became a button that opens a list in a popover (2026-10-21), which is why its trigger is a button and not a
+combobox, and its popup is `data-slot=popover-content`.
 The prompt opens immediately, shows "Loading your prompts" as a disabled item while fetching,
 and keeps that popup open for choices or a stated absence for an empty read or a failed read after an empty or failed
 read. The trigger stays "Use your prompt" at rest and carries `aria-busy` during the request.

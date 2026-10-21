@@ -375,7 +375,7 @@ try {
       await react.page.waitForFunction(
         () =>
           document.querySelectorAll(
-            '[data-slot=select-content] [role=option]:not([aria-disabled=true])',
+            '[data-slot=popover-content] [role=option]:not([aria-disabled=true])',
           ).length > 0,
       );
       const offeredPrompts = await react.page.getByRole('option').count();
@@ -709,7 +709,7 @@ try {
           assert.equal(pending.loading, 'Loading your prompts', 'the open popup must show loading');
           assert.equal(pending.busy, 'true');
           assert.equal(await react.page.getByRole('listbox').isVisible(), true);
-          await mark(react, '[data-slot=select-content]', 'prompt-popup');
+          await mark(react, '[data-slot=popover-content]', 'prompt-popup');
           await react.page.screenshot({
             path: `${SHOTS}select-prompt-loading-${width}.png`,
             fullPage: true,
@@ -729,14 +729,14 @@ try {
             loading: document.querySelector('[role=option][aria-disabled=true]')?.textContent,
           }));
           assert.equal(loaded.text, 'Use your prompt');
-          assert.equal(await same(react, '[data-slot=select-content]', 'prompt-popup'), true);
+          assert.equal(await same(react, '[data-slot=popover-content]', 'prompt-popup'), true);
           assert.equal(await select.getAttribute('aria-expanded'), 'true');
           await react.page.screenshot({
             path: `${SHOTS}select-prompt-loaded-${width}.png`,
             fullPage: true,
           });
           const popupBounds = await react.page.getByRole('listbox').evaluate((node) => {
-            const popup = node.closest('[data-slot=select-content]').getBoundingClientRect();
+            const popup = node.closest('[data-slot=popover-content]').getBoundingClientRect();
             const trigger = document
               .querySelector('[data-next-cockpit-prompt-select]')
               .getBoundingClientRect();
@@ -787,7 +787,7 @@ try {
   );
 
   await step(
-    'the Base UI Select reads the prompts once per opening, fills the box, and Save adopts it naming the fact',
+    'the prompt popup reads the prompts once per opening, fills the box, and Save adopts it naming the fact',
     async () => {
       await load(react, fragmentOf('intent-2'));
       await readEditor(react);
@@ -797,7 +797,7 @@ try {
       await react.page.waitForFunction(
         () =>
           document.querySelectorAll(
-            '[data-slot=select-content] [role=option]:not([aria-disabled=true])',
+            '[data-slot=popover-content] [role=option]:not([aria-disabled=true])',
           ).length > 0,
       );
       const prompts = react.log.requests.filter((r) => r.path.includes('prompts=1'));
@@ -819,9 +819,7 @@ try {
       assert.deepEqual(react.log.nonGet, [], 'choosing a prompt wrote');
       await react.page.locator('[data-next-cockpit-action="held-save"]').click();
       await react.page.waitForFunction(
-        () =>
-          document.querySelector('.next-cockpit-held-footer small')?.textContent ===
-          'Saved as a new revision.',
+        () => document.querySelector('.next-cockpit-held-footer small')?.textContent === 'Saved.',
       );
       assert.equal(react.log.nonGet.length, 1);
       const stored = (await call(board.react.origin, 'GET', '/api/data')).body.sessions.find(
@@ -944,8 +942,10 @@ try {
       )
       .click();
     await discard.click();
+    // Armed, the question is the card's own (outside the menu) and stays drawn with the menu closed.
+    assert.equal(await react.page.locator('[data-next-intent-armed-discard]').count(), 1);
     await react.page.keyboard.press('Escape');
-    assert.equal(await discard.innerText(), 'Discard everything');
+    assert.equal(await react.page.locator('[data-next-intent-armed-discard]').count(), 0);
     assert.match(await react.page.evaluate(() => globalThis.location.hash), /^#n=session:/);
   });
 

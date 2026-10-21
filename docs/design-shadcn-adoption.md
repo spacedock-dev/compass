@@ -495,8 +495,8 @@ collection. The receipt preserves the historical legacy control.
 
 The accordion variant of `Disclosure` uses a controlled Base UI Accordion with one keyed item per
 root. Independent siblings form no exclusive group, so several sections in one session can stay
-open together. The armed discard offer uses controlled Collapsible, with its warning exposed by a
-store write when armed. Popover and menu variants keep native details and their existing dismissal
+open together. The armed discard offer was a controlled Collapsible inside the More menu; since 2026-10-21 it is
+drawn in the card, outside the menu, so a closed menu cannot hide its warning. Popover and menu variants keep native details and their existing dismissal
 contracts. `Disclosure` keeps its public props and call sites.
 
 Both panels use `hiddenUntilFound`. Base UI's `beforematch` callback writes the keyed store; the
@@ -651,7 +651,7 @@ list adds the existing Select entry so its CommonJS store shim is prebundled. A 
 below the trigger with `alignItemWithTrigger=false`, scrolls within the available height, and
 uses two-line items with full titles. Non-modal mode keeps the page and its live regions exposed.
 
-PromptSelect opens before fetching and shows a disabled loading item in that popup, then choices
+PromptSelect (a button over a popover list since 2026-10-21; the Select this paragraph describes is retired for the prompt, though its opening order holds) opens before fetching and shows a disabled loading item in that popup, then choices
 or one of two stated absences (none found in the part of the session read, or the read failed) in the same popup. The trigger stays "Use your prompt" until a
 choice stands in the goal as a pending adoption, and reads "Replace with your prompt" beside a saved
 typed goal; choosing saves nothing. It reserves 18rem on

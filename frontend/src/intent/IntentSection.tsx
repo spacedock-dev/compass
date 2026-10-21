@@ -18,6 +18,8 @@ import {
   directionLinesQuestion,
   directionWhy,
   intentChanges,
+  linesDraft,
+  linesToSend,
   intentDrafted,
   intentKey,
   intentStatus,
@@ -25,7 +27,7 @@ import {
   noDraftWhy,
 } from './derive';
 import { undoChanges } from './edit';
-import { CaveatNotes, Caveats, LaterDirections } from './Caveats';
+import { ArmedDiscard, CaveatNotes, Caveats, LaterDirections } from './Caveats';
 import { ClearGoal, GoalField } from './GoalField';
 import { OutcomeLines, AddOutcomeLine } from './OutcomeLines';
 import { saveIntent } from './save';
@@ -38,6 +40,7 @@ import {
   READ_FROM_NOW_WHY,
   isReadsFrom,
 } from './sentences';
+import { REVISION_DEFINITION } from '../drift/sentences';
 import { usePanel } from './useIntent';
 import { HowTo } from './HowTo';
 
@@ -92,7 +95,7 @@ function Footer() {
         <AddOutcomeLine />
         <ActionButton
           label="Save intent"
-          className="border-[var(--accent)] text-[color:var(--accent)] font-bold px-4 aria-disabled:not-aria-busy:border-solid aria-disabled:not-aria-busy:bg-none aria-disabled:not-aria-busy:text-[color:var(--accent)]"
+          className={`font-bold px-4 ${saveLive || saving ? 'border-[var(--accent)] text-[color:var(--accent)]' : ''}`}
           busyLabel="Saving…"
           pendingKey={`${key}:save`}
           action="held-save"
@@ -104,7 +107,7 @@ function Footer() {
         />
         {reopenable ? (
           <ActionButton
-            label="Read from now"
+            label="Read from my latest message"
             busyLabel="Saving…"
             pendingKey={`${key}:save`}
             action="held-save-from-now"
@@ -150,9 +153,11 @@ export function SavedStamp() {
       summary={`Saved${start !== null && start > 0 ? ` · reads from ${clock(start)}` : ''}`}
       className="next-cockpit-held-stamp"
     >
-      <p>Editing the goal or adding a line keeps this start. Read from now moves it.</p>
+      <p>
+        Editing the goal or adding a line keeps this start. Read from my latest message moves it.
+      </p>
       <span className="next-cockpit-held-revision">{line}</span>
-      <span className="next-cockpit-define">Each save is a revision.</span>
+      <span className="next-cockpit-define">{REVISION_DEFINITION}</span>
       <span className="next-cockpit-held-bound">{compatSessKey(session)}</span>
     </Disclosure>
   );
@@ -165,8 +170,18 @@ export function SavedStamp() {
    words. Each part draws nothing when it has nothing to say.
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
 function Kept() {
-  const { project, session } = usePanel();
+  const { project, session, input, payload } = usePanel();
   const menu = disclosureKey({ project, scope: compatSessKey(session), name: 'intent-menu' });
+  /* The menu holds what acts on words that exist: Clear, the caveats, Discard everything, later directions.
+     Under an empty or discarded form it held only the how-to and drew as a lone "More", so it is left out
+     until the box or the store holds words. A discard's own account is drawn by CaveatNotes, not here. */
+  const changes = intentChanges(input);
+  const offered = (nextNumber(input.annotation?.['revision_count']) ?? 0) > 0;
+  const words =
+    offered ||
+    Boolean(changes.typed.trim()) ||
+    linesToSend(linesDraft(input.held, session, input.annotation)).length > 0;
+  const stamped = Boolean(revisionLine(input.annotation, nextNumber(payload['generated'])));
   return (
     <div
       className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label text-muted-foreground [&_.next-session-drift-caveats]:contents [&_.next-cockpit-held-discard]:mt-0 [&_.next-cockpit-held-hint]:flex-initial [&_.next-cockpit-held-hint]:text-label"
@@ -174,21 +189,24 @@ function Kept() {
     >
       <SavedStamp />
       <CaveatNotes />
-      <Disclosure
-        disclosureKey={menu}
-        summary="More"
-        summaryLabel="More about these words"
-        variant="popover"
-        focusKey={`intent-menu:${compatSessKey(session)}`}
-      >
-        <p className="next-cockpit-held-hint" data-next-intent-measured>
-          {INTENT_MEASURED}
-        </p>
-        <ClearGoal />
-        <Caveats />
-        <LaterDirections />
-        <HowTo />
-      </Disclosure>
+      {words || stamped ? (
+        <Disclosure
+          disclosureKey={menu}
+          summary="More"
+          summaryLabel="More about these words"
+          variant="popover"
+          focusKey={`intent-menu:${compatSessKey(session)}`}
+        >
+          <p className="next-cockpit-held-hint" data-next-intent-measured>
+            {INTENT_MEASURED}
+          </p>
+          <ClearGoal />
+          <Caveats />
+          <LaterDirections />
+          <HowTo />
+        </Disclosure>
+      ) : null}
+      <ArmedDiscard />
     </div>
   );
 }

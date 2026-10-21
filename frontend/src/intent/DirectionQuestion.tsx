@@ -32,8 +32,23 @@ import { usePanel } from './useIntent';
    reader has not been shown. */
 
 const REFUSED_ID = 'next-cockpit-reading-refused';
+/* Beside the direction the buttons act on, when several are listed: Add as a line and Make it the goal take
+   the one the picker holds, and nothing else on the list said which that was. */
+const ACTS_ON = 'the one the buttons below use';
 
-function WholeList({ pending }: { readonly pending: readonly WorkEntry[] }) {
+/* A direction in the picker: the time it was said, then its words. Never a number: the entry number is the
+   record's own bookkeeping and shows the reader nothing they said. */
+function directionLabel(entry: WorkEntry): string {
+  return `${clock(Number(entry.at) || 0)} · ${stripPasteWrapper(String(entry.summary || '')) || 'Your direction'}`;
+}
+
+function WholeList({
+  pending,
+  selected,
+}: {
+  readonly pending: readonly WorkEntry[];
+  readonly selected: string;
+}) {
   const { ctx, session } = usePanel();
   const key = compatSessKey(session);
   const held = ctx.held.wholes.get(key);
@@ -58,9 +73,16 @@ function WholeList({ pending }: { readonly pending: readonly WorkEntry[] }) {
         const id = String(entry.id || '');
         const opened = held?.texts.get(id);
         return (
-          <li key={id} className="next-cockpit-direction-whole-item">
+          <li
+            key={id}
+            className="next-cockpit-direction-whole-item"
+            aria-current={many && id === selected ? 'true' : undefined}
+          >
             {many ? (
-              <span className="next-cockpit-source">{datedClock(Number(entry.at) || 0, now)}</span>
+              <span className="next-cockpit-source">
+                {datedClock(Number(entry.at) || 0, now)}
+                {id === selected ? ` · ${ACTS_ON}` : ''}
+              </span>
             ) : null}
             <span className="next-cockpit-direction-whole-text">
               {opened?.text ?? stripPasteWrapper(String(entry.summary || ''))}
@@ -136,7 +158,7 @@ export function DirectionQuestion({
         data-next-cockpit-direction-question
       >
         <p className="next-cockpit-direction-said">{said}</p>
-        <WholeList pending={pending} />
+        <WholeList pending={pending} selected={String(earliest.id || '')} />
         <div className="next-cockpit-reading-ask items-start [&>button]:flex-auto">
           <DirectionActionButton
             weight={primary ? 'primary' : 'secondary'}
@@ -175,13 +197,7 @@ export function DirectionQuestion({
               onValueChange={(value) => {
                 if (value) pickDirection(ctx, session, value);
               }}
-              items={pending.map((entry) => {
-                const at = numbers.get(entry.id);
-                return {
-                  value: entry.id,
-                  label: `${at !== undefined ? `#${String(at)}` : clock(Number(entry.at) || 0)} · ${stripPasteWrapper(String(entry.summary || '')) || 'Your direction'}`,
-                };
-              })}
+              items={pending.map((entry) => ({ value: entry.id, label: directionLabel(entry) }))}
             >
               <SelectTrigger
                 ref={pickRef}
@@ -193,15 +209,11 @@ export function DirectionQuestion({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {pending.map((entry) => {
-                  const at = numbers.get(entry.id);
-                  return (
-                    <SelectItem
-                      key={entry.id}
-                      value={entry.id}
-                    >{`${at !== undefined ? `#${String(at)}` : clock(Number(entry.at) || 0)} · ${stripPasteWrapper(String(entry.summary || '')) || 'Your direction'}`}</SelectItem>
-                  );
-                })}
+                {pending.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    {directionLabel(entry)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Label>

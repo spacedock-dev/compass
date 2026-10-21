@@ -156,12 +156,12 @@ DIRECTION_UNAVAILABLE = (
 # saying nothing of the reading or the summary (DRC-4928). `Clear` is named last and only to
 # separate the two acts.
 DISCARD_WHY = (
-    "Discarding everything deletes every revision of what you asked of this session, any reading "
+    "Discarding everything deletes all you asked of this session, any reading "
     "of it, and this session's summary, and nothing raised against those words quotes them any "
     "more. It keeps the record that a check ran, which bounds how often one may run. Session "
     "history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that "
-    "store. The clear beside the goal is the weaker act: the save after it keeps every earlier "
-    "revision."
+    "store. The clear beside the goal is the weaker act: the save after it keeps your earlier "
+    "saves."
 )
 # The page keeps a cue for the same number of seconds (`CUE_TTL_MS` in `controls/keyedState.ts`),
 # and `scripts/regen_client_fixtures.py` writes this one into the vocabulary fixture so a test on
@@ -175,7 +175,7 @@ CUE_WINDOW_SECONDS = 30
 # DISCARD_STORED's past, same four names in the same order, so a reader who
 # read one recognises the other.
 DISCARD_ARMED = (
-    "Press it again to discard. Every revision of what you asked of this session will go, along "
+    "Press it again to discard. Everything you asked of this session will go, along "
     "with any reading of it and this session's summary, including one being written, and nothing "
     "raised against those words will quote them any more; the record that a check ran stays. "
     f"Nothing has been deleted yet, and this offer lapses in {CUE_WINDOW_SECONDS} seconds."
@@ -196,13 +196,13 @@ DISCARD_REOPEN = (
 # none, it could not be written, or it could not be read. A sentence that named the summary in every
 # case said "its summary" over a session that never had one.
 DISCARD_STORED = (
-    "Discarded. Every revision of what you asked of this session is gone, along with any "
+    "Discarded. Everything you asked of this session is gone, along with any "
     "reading of it and its summary, and nothing raised against those words quotes them any "
     "more. The record that a check ran stays, because it is what bounds how often one may run. "
     + DISCARD_REOPEN
 )
 DISCARD_STORED_NO_SUMMARY = (
-    "Discarded. Every revision of what you asked of this session is gone, along with any "
+    "Discarded. Everything you asked of this session is gone, along with any "
     "reading of it, and nothing raised against those words quotes them any more. This session "
     "had no stored summary. The record that a check ran stays, because it is what bounds how "
     "often one may run. " + DISCARD_REOPEN
@@ -221,12 +221,12 @@ DISCARD_SUMMARY_UNAVAILABLE = (
     "of this session is stored, and none was deleted."
 )
 DISCARD_REFUSED = (
-    "Not discarded. The server refused, so every revision is still stored and nothing raised "
-    "against them was withdrawn."
+    "Not discarded. The server refused, so what you asked of this session is still stored and "
+    "nothing raised against it was withdrawn."
 )
 DISCARD_UNWRITABLE = (
-    "Not discarded. The store could not be written, so the next collection reads every "
-    "revision back and nothing raised against them was withdrawn."
+    "Not discarded. The store could not be written, so the next collection reads what you "
+    "asked of this session back and nothing raised against it was withdrawn."
 )
 # The store exists and this build cannot read it, so nothing was written. It
 # names the file and the step, as every refusal here names one.
@@ -259,7 +259,7 @@ STORE_UNREADABLE = (
 # this board: the control is gated on a stored revision and there is no longer
 # one, so a second press is not available to the reader who needs it.
 DISCARD_UNWITHDRAWN = (
-    "Discarded here. Every revision of what you asked of this session is gone, along with any "
+    "Discarded here. Everything you asked of this session is gone, along with any "
     "reading of it. The departure store could not be written, so anything raised against those "
     "words goes on quoting them."
 )

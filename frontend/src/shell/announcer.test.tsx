@@ -27,20 +27,20 @@ describe('a sentence is spoken once per standing key', () => {
   it('writes the first sentence and suppresses a repeat of it', () => {
     const announcer = createAnnouncer();
     const nodes = attached(announcer);
-    announcer.announce('save:goal', 'Saved as a new revision.');
-    expect(nodes.cue.textContent).toBe('Saved as a new revision.');
+    announcer.announce('save:goal', 'Saved.');
+    expect(nodes.cue.textContent).toBe('Saved.');
     nodes.cue.textContent = 'something else';
-    announcer.announce('save:goal', 'Saved as a new revision.');
+    announcer.announce('save:goal', 'Saved.');
     expect(nodes.cue.textContent).toBe('something else');
   });
 
   it('keys the guard by mark, because the cue sentences are the same for every field', () => {
     const announcer = createAnnouncer();
     const nodes = attached(announcer);
-    announcer.announce('save:goal', 'Saved as a new revision.');
+    announcer.announce('save:goal', 'Saved.');
     nodes.cue.textContent = '';
-    announcer.announce('save:outcome', 'Saved as a new revision.');
-    expect(nodes.cue.textContent).toBe('Saved as a new revision.');
+    announcer.announce('save:outcome', 'Saved.');
+    expect(nodes.cue.textContent).toBe('Saved.');
   });
 
   it('speaks a changed sentence under the same key', () => {

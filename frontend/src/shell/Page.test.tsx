@@ -464,11 +464,11 @@ describe('the page is React’s alone and starts nothing on its own', () => {
     const page = mountShell({ data: BOARD });
     await page.settle();
     const cue = document.getElementById(REGION_IDS.cue);
-    act(() => page.shell.announcer.announce('save:goal', 'Saved as a new revision.'));
+    act(() => page.shell.announcer.announce('save:goal', 'Saved.'));
     await page.go('#n=attention');
     await page.go('#n=project:alpha%2Fapp');
     expect(document.getElementById(REGION_IDS.cue)).toBe(cue);
-    expect(cue?.textContent).toBe('Saved as a new revision.');
+    expect(cue?.textContent).toBe('Saved.');
   });
 
   it('never builds a text selection or a range of its own: selection is the browser’s, and nothing restores one', () => {

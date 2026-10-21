@@ -19,6 +19,8 @@ interface CardSetup {
   readonly session?: Record<string, unknown>;
   readonly facts?: readonly Record<string, unknown>[];
   readonly prompts?: readonly Record<string, unknown>[];
+  /** Board fields beside the session's, such as the reading route that makes "What is sent" appear. */
+  readonly payload?: Record<string, unknown>;
   readonly onAnnotate?: (body: Record<string, unknown>) => Response | Promise<Response>;
 }
 
@@ -34,13 +36,13 @@ function buildPayload(
     /* The server's own sentences, as `annotations.DISCARD_SENTENCES` words them: this page draws them and
        composes none, so a story that quotes them holds the page to what the server said it would remove and keep. */
     annotate_discard: {
-      why: 'Discarding everything deletes every revision of what you asked of this session, any reading of it, and this session’s summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps every earlier revision.',
+      why: 'Discarding everything deletes all you asked of this session, any reading of it, and this session’s summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps your earlier saves.',
       armed:
-        'Press it again to discard. Every revision of what you asked of this session will go, along with any reading of it and this session’s summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.',
+        'Press it again to discard. Everything you asked of this session will go, along with any reading of it and this session’s summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.',
       stored:
-        'Discarded. Every revision of what you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
+        'Discarded. Everything you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
       stored_no_summary:
-        'Discarded. Every revision of what you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
+        'Discarded. Everything you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
       refused: 'Could not discard.',
       unwritable: 'Could not write discard.',
       record:
@@ -125,7 +127,7 @@ function IntentCardHarness({ setup }: { readonly setup?: CardSetup }) {
         if (url.startsWith('/api/data')) {
           const hold = (window as unknown as { __holdIntentData?: Promise<void> }).__holdIntentData;
           if (hold) await hold;
-          return json(buildPayload(currentSession, generation++));
+          return json({ ...buildPayload(currentSession, generation++), ...(setup?.payload ?? {}) });
         }
         if (url.startsWith('/api/project-context')) {
           return json({
@@ -147,7 +149,7 @@ function IntentCardHarness({ setup }: { readonly setup?: CardSetup }) {
           }
           const nextRev = Number(currentSession['annotation_revision'] ?? 0) + 1;
           /* The server's rule (docs/design-reading-a-session.md, "Amended 2026-10-21 (owner): editing the goal
-             keeps the reading's start"): a save over a window keeps it, and only Read from now reopens it, at
+             keeps the reading's start"): a save over a window keeps it, and only Read from my latest message reopens it, at
              the reader's latest message. A session that published no window keeps publishing none. */
           const opened = Number(currentSession['annotation_window_start'] ?? 0);
           const window =
@@ -504,7 +506,7 @@ export const GoalEditKeepsTheReadingStart: Story = {
     await waitFor(async () => {
       await expect(
         card.querySelector('.next-cockpit-held-footer .next-cockpit-held-cue'),
-      ).toHaveTextContent('Saved as a new revision.');
+      ).toHaveTextContent('Saved.');
     });
     await waitFor(async () => {
       await expect(
@@ -521,7 +523,7 @@ export const UsingAPromptAsTheGoalKeepsTheReadingStart: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Intent' });
     const view = within(card);
-    await userEvent.click(view.getByRole('combobox', { name: 'Use your prompt' }));
+    await userEvent.click(view.getByRole('button', { name: 'Use your prompt' }));
     const doc = within(canvasElement.ownerDocument.body);
     await userEvent.click(
       await doc.findByRole('option', { name: /Latest prompt · \d\d:\d\d · excerpt Add streaming/ }),
@@ -545,7 +547,7 @@ export const ReadFromNowMovesTheStartAndSaysSo: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Intent' });
     const view = within(card);
-    const now = view.getByRole('button', { name: 'Read from now' });
+    const now = view.getByRole('button', { name: 'Read from my latest message' });
     await expect(now).toHaveAttribute('aria-disabled', 'true');
     await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ' and record the ruling');
     await expect(now).not.toHaveAttribute('aria-disabled', 'true');
@@ -579,8 +581,13 @@ export const PromptMenuPick: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Intent' });
     const view = within(card);
-    const trigger = view.getByRole('combobox', { name: 'Use your prompt' });
+    // The design's button, not a select: it holds no value, and pressing it opens the list of prompts.
+    const trigger = view.getByRole('button', { name: 'Use your prompt' });
+    await expect(view.queryByRole('combobox', { name: 'Use your prompt' })).toBeNull();
+    await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(trigger);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const doc = within(canvasElement.ownerDocument.body);
     await waitFor(async () => {
       await expect(doc.getByText('Your prompts in this session')).toBeVisible();
@@ -646,7 +653,7 @@ export const MovedControlsInQuietRow: Story = {
     await expect(within(card).getByText('26 / 240')).toBeVisible();
     // The stamp opens its definition from the quiet row.
     await userEvent.click(within(kept).getByRole('button', { name: /^Saved · reads from/ }));
-    await waitFor(() => expect(quiet.getByText('Each save is a revision.')).toBeVisible());
+    await waitFor(() => expect(quiet.getByText('Each save is kept on its own.')).toBeVisible());
     // Pressing the stamp moves focus out of the menu, which closes it; the menu opens again for the rest.
     const more = within(kept).getByRole('button', { name: 'More about these words' });
     if (more.getAttribute('aria-expanded') !== 'true') await userEvent.click(more);
@@ -672,8 +679,7 @@ export const MovedControlsInQuietRow: Story = {
     );
     // Escape disarmed the discard and closed the menu with it; Clear is one more open away.
     const again = within(kept).getByRole('button', { name: 'More about these words' });
-    await waitFor(() => expect(again).toHaveAttribute('aria-expanded', 'false'));
-    await userEvent.click(again);
+    if (again.getAttribute('aria-expanded') !== 'true') await userEvent.click(again);
     await userEvent.click(await quiet.findByRole('button', { name: 'Clear' }));
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue('');
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
@@ -702,7 +708,7 @@ export const EndedSessionCaveatBeforeAndAfterSave: Story = {
     await waitFor(async () => {
       await expect(
         card.querySelector('.next-cockpit-held-footer .next-cockpit-held-cue'),
-      ).toHaveTextContent(`Saved as a new revision. ${ENDED_CAVEAT}`);
+      ).toHaveTextContent(`Saved. ${ENDED_CAVEAT}`);
     });
   },
 };
@@ -726,19 +732,26 @@ export const TypedWordsStayThroughSlowSave: Story = {
       new Promise<void>((resolve) => {
         release = resolve;
       });
-    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
-    await waitFor(async () => {
+    try {
+      await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+      await waitFor(async () => {
+        await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saving…');
+      });
+      // Let the annotate reply land while the refresh is still held.
+      await new Promise((resolve) => setTimeout(resolve, 300));
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saving…');
-    });
-    // Let the annotate reply land while the refresh is still held.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saving…');
-    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
-      'Keep the parser pure and small',
-    );
-    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
-      'Tests pass',
-    );
+      await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
+        'Keep the parser pure and small',
+      );
+      await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
+        'Tests pass',
+      );
+    } catch (failure) {
+      // A held fetch left pending by a failed assertion would hang the next story on this page.
+      release();
+      delete (window as unknown as { __holdIntentData?: Promise<void> }).__holdIntentData;
+      throw failure;
+    }
     release();
     await waitFor(async () => {
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
@@ -746,6 +759,58 @@ export const TypedWordsStayThroughSlowSave: Story = {
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
       'Keep the parser pure and small',
     );
+    delete (window as unknown as { __holdIntentData?: Promise<void> }).__holdIntentData;
+  },
+};
+
+/* The same hold for a prompt adopted as the goal: the box keeps the chosen words, and says it is saving, while
+   the board refresh that follows the save is in flight, and settles on them once it lands. */
+export const AdoptedPromptStaysThroughSlowSave: Story = {
+  args: {
+    setup: {
+      session: {
+        annotation_goal: 'Saved goal',
+        annotation_goal_why: '',
+        annotation_revision: 1,
+        annotation_revision_count: 1,
+        annotation_at: 1_760_000_500,
+        annotation_goal_saved_at: 1_760_000_500,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const card = await page.findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    const chosen = 'Add streaming tokenizer benchmarks before touching the AST';
+    await userEvent.click(view.getByRole('button', { name: 'Use your prompt' }));
+    const doc = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await doc.findByRole('option', { name: /Add streaming tokenizer/ }));
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(chosen);
+    let release: () => void = () => undefined;
+    (window as unknown as { __holdIntentData?: Promise<void> }).__holdIntentData =
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const status = () => card.querySelector('[data-next-intent-status]');
+    try {
+      await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+      await waitFor(async () => {
+        await expect(status()).toHaveTextContent('Saving…');
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await expect(status()).toHaveTextContent('Saving…');
+      await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(chosen);
+    } catch (failure) {
+      release();
+      delete (window as unknown as { __holdIntentData?: Promise<void> }).__holdIntentData;
+      throw failure;
+    }
+    release();
+    await waitFor(async () => {
+      await expect(status()).toHaveTextContent('Saved');
+    });
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(chosen);
     delete (window as unknown as { __holdIntentData?: Promise<void> }).__holdIntentData;
   },
 };
@@ -766,8 +831,9 @@ async function controlsTogether(card: HTMLElement) {
   await expect(Math.abs((a?.top ?? 0) - (s?.top ?? 1))).toBeLessThan(4);
   await expect((a?.right ?? 0) <= (s?.left ?? 0)).toBe(true);
   await expect((s?.right ?? 0) <= (u?.left ?? 0)).toBe(true);
+  // Left-hand and short of the far edge, with Read from my latest message among them once words are saved.
   await expect((u?.right ?? 0) - (a?.left ?? 0)).toBeLessThan(
-    card.getBoundingClientRect().width / 2,
+    (card.getBoundingClientRect().width * 3) / 4,
   );
   const goal = view.getByRole('textbox', { name: 'Goal' });
   await expect(goal.getBoundingClientRect().height).toBeGreaterThan(60);
@@ -801,11 +867,25 @@ export const StateEmpty: Story = {
     await expect(card.querySelector('[data-next-intent-status]')).toBeNull();
     await expect(inert(save)).toBe(true);
     await expect(inert(undo)).toBe(true);
-    await expect(card.querySelector('[data-next-intent-kept]')?.textContent ?? '').toBe('More');
+    // Nothing is saved or typed, so the row draws no menu of its own: a lone "More" had nothing to open on.
+    await expect(card.querySelector('[data-next-intent-kept]')?.textContent ?? '').toBe('');
   },
 };
 
 export const StateDrafted: Story = {
+  args: {
+    setup: {
+      payload: {
+        reading_routes: {
+          claude: {
+            provider: 'anthropic',
+            label: 'Claude Code',
+            disclosure: 'This session’s own harness reads it.',
+          },
+        },
+      },
+    },
+  },
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
     const { view, save } = await controlsTogether(card);
@@ -814,8 +894,14 @@ export const StateDrafted: Story = {
     );
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(/^Draft$/);
     await expect(inert(save)).toBe(false);
-    // The prompt-length sentence is under "What is sent", not in the goal's hint.
+    // The prompt-length sentence is under "What is sent", not in the goal's hint, and it is there.
     await expect(view.queryByText(/1,000 characters/)).toBeNull();
+    const sent = await within(canvasElement).findByRole('button', { name: /^What is sent/ });
+    await userEvent.click(sent);
+    const limit = await within(canvasElement).findByText(
+      'Analyze reads at most the first 1,000 characters of any prompt.',
+    );
+    await waitFor(() => expect(limit).toBeVisible());
   },
 };
 
@@ -919,7 +1005,7 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
       (await quiet.findAllByRole('button', { name: 'Discard everything' }))[0] as HTMLElement,
     );
     // Before the press: what goes, and what stays.
-    const why = await quiet.findByText(/^Discarding everything deletes every revision/);
+    const why = await quiet.findByText(/^Discarding everything deletes all you asked/);
     for (const named of [
       'any reading of it',
       'this session’s summary',
@@ -961,6 +1047,98 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
     await expect(canvasElement.textContent).not.toContain(
       'None of it is kept here: this record says only',
     );
+  },
+};
+
+/* An armed Discard everything is the card's own, not the menu's: the warning and Confirm discard are drawn
+   whether or not More is open, stay where they were drawn through a board refresh and the passing of time, and
+   leave only when confirmed, kept or lapsed. */
+const ARMED_SETUP: CardSetup = {
+  session: {
+    annotation_goal: 'Keep the parser small and pure',
+    annotation_goal_why: '',
+    annotation_revision: 2,
+    annotation_revision_count: 2,
+    annotation_at: 1_760_000_500,
+    annotation_goal_saved_at: 1_760_000_500,
+  },
+};
+
+async function armDiscard(canvasElement: HTMLElement) {
+  const page = within(canvasElement);
+  const card = await page.findByRole('region', { name: 'Intent' });
+  const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
+  const more = within(kept).getByRole('button', { name: 'More about these words' });
+  await userEvent.click(more);
+  const quiet = within(canvasElement);
+  await userEvent.click(
+    (await quiet.findAllByRole('button', { name: 'Discard everything' }))[0] as HTMLElement,
+  );
+  await userEvent.click(
+    (await quiet.findAllByRole('button', { name: 'Discard everything' }))[1] as HTMLElement,
+  );
+  const confirm = await quiet.findByRole('button', { name: 'Confirm discard' });
+  return { card, kept, more, quiet, confirm };
+}
+
+export const ArmedDiscardStaysVisibleAndInPlace: Story = {
+  args: { setup: ARMED_SETUP },
+  play: async ({ canvasElement }) => {
+    const { card, more, quiet, confirm } = await armDiscard(canvasElement);
+    const warning = canvasElement.querySelector('#next-cockpit-discard-armed') as HTMLElement;
+    await expect(warning).toHaveTextContent('this offer lapses in 30 seconds');
+    // In the card, not in the menu: it needs the menu open for neither its words nor its press.
+    await expect(card.contains(confirm)).toBe(true);
+    await expect(confirm.closest('[data-slot=popover-content]')).toBeNull();
+    if (more.getAttribute('aria-expanded') === 'true') await userEvent.click(more);
+    await waitFor(() => expect(more).toHaveAttribute('aria-expanded', 'false'));
+    await expect(confirm).toBeVisible();
+    await expect(warning).toBeVisible();
+    // Where it was, after a board refresh and a quarter of its life.
+    const before = confirm.getBoundingClientRect();
+    (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
+      7_000,
+    );
+    await (
+      window as unknown as {
+        __updateIntentSession: (patch: Record<string, unknown>) => Promise<void>;
+      }
+    ).__updateIntentSession({});
+    const after = (
+      await quiet.findByRole('button', { name: 'Confirm discard' })
+    ).getBoundingClientRect();
+    await expect(Math.abs(after.top - before.top)).toBeLessThan(2);
+    await expect(Math.abs(after.left - before.left)).toBeLessThan(2);
+    await expect(warning).toBeVisible();
+  },
+};
+
+export const ArmedDiscardIsKeptByKeepMyWords: Story = {
+  args: { setup: ARMED_SETUP },
+  play: async ({ canvasElement }) => {
+    const { card, quiet } = await armDiscard(canvasElement);
+    await userEvent.click(await quiet.findByRole('button', { name: 'Keep my words' }));
+    await waitFor(() =>
+      expect(quiet.queryByRole('button', { name: 'Confirm discard' })).toBeNull(),
+    );
+    await expect(canvasElement.querySelector('#next-cockpit-discard-armed')).toBeNull();
+    await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(
+      'Keep the parser small and pure',
+    );
+  },
+};
+
+export const ArmedDiscardLapsesAfterItsTime: Story = {
+  args: { setup: ARMED_SETUP },
+  play: async ({ canvasElement }) => {
+    const { quiet } = await armDiscard(canvasElement);
+    (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
+      31_000,
+    );
+    await waitFor(() =>
+      expect(quiet.queryByRole('button', { name: 'Confirm discard' })).toBeNull(),
+    );
+    await expect(canvasElement.querySelector('#next-cockpit-discard-armed')).toBeNull();
   },
 };
 
