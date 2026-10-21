@@ -241,11 +241,14 @@
                 "agent_messages": 1,
                 "checks": 0,
                 "checks_failed": 0,
+                "checks_fixed": 0,
                 "files": 0,
                 "subagent_entries": 0
               },
               "failures": [],
               "folders": [],
+              "opening": true,
+              "partial": false,
               "prompt": {
                 "at": 1899996400.0,
                 "fact_id": "fact:1b3f7a63986acb47",
@@ -265,11 +268,14 @@
                 "agent_messages": 0,
                 "checks": 0,
                 "checks_failed": 0,
+                "checks_fixed": 0,
                 "files": 0,
                 "subagent_entries": 0
               },
               "failures": [],
               "folders": [],
+              "opening": false,
+              "partial": false,
               "prompt": {
                 "at": 1899998200.0,
                 "fact_id": "fact:4aae9c22a7d95d9a",
@@ -397,7 +403,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "7181",
+      "Content-Length": "7278",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

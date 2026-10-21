@@ -14,18 +14,19 @@
       "annotate": true,
       "annotate_cap": 240,
       "annotate_discard": {
-        "armed": "Press it again to discard. Every revision of what you asked of this session will go, along with any reading of it, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses on its own.",
+        "armed": "Press it again to discard. Every revision of what you asked of this session will go, along with any reading of it and this session's summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.",
         "held": "Not discarded. This session's words were saved by a build of Compass that can read more than this one, so nothing was changed. Discard them from that build, or remove this session's entry from compass-annotations.json.",
         "nothing": "Nothing to discard. Nothing was typed against this session, so nothing was deleted and no record of a deletion was made.",
         "record": "What you asked of this session was discarded, along with any reading of it. None of it is kept here: this record says only that the act happened and when. Where session history is recording, it holds its own fourteen-day copy of the goal and each outcome line, and --forget deletes that store.",
         "record_standing": "The departure store could not be written when they went, so anything raised against those words goes on quoting them.",
         "refused": "Not discarded. The server refused, so every revision is still stored and nothing raised against them was withdrawn.",
-        "stored": "Discarded. Every revision of what you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run.",
+        "stored": "Discarded. Every revision of what you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run.",
+        "summary_kept": "Discarded here, but this session's summary could not be deleted and is still stored. Delete summary removes it.",
         "unreadable": "What you asked of this session was discarded, so there is nothing left to read it against.",
         "untrusted": "Not discarded. Compass could not read compass-annotations.json, so nothing was saved and nothing was overwritten. Move or repair that file to save again.",
         "unwithdrawn": "Discarded here. Every revision of what you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them.",
         "unwritable": "Not discarded. The store could not be written, so the next collection reads every revision back and nothing raised against them was withdrawn.",
-        "why": "The clear beside the goal and the remove beside each outcome line empty them, and the save after it keeps every earlier revision, so anything raised against those words goes on quoting them. Discarding everything is the other act."
+        "why": "Discarding everything deletes every revision of what you asked of this session, any reading of it, and this session's summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps every earlier revision."
       },
       "annotate_unreadable": "",
       "browser_lane": false,
@@ -595,7 +596,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "18923",
+      "Content-Length": "19359",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.2"

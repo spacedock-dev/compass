@@ -26,11 +26,12 @@
       "revision": 2,
       "revision_count": 2,
       "saved_revision": null,
+      "summary": "untouched",
       "withdrew": true
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "136",
+      "Content-Length": "158",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

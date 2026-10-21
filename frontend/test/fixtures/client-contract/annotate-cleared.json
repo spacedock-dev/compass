@@ -24,11 +24,12 @@
       "revision": null,
       "revision_count": 0,
       "saved_revision": null,
+      "summary": "absent",
       "withdrew": true
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "145",
+      "Content-Length": "164",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },
