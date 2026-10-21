@@ -82,6 +82,14 @@ word around them is still held to the recording, which is untouched. The replace
 still carry the retired wording and are not regenerated, so `pnpm test:intent:browser` will report those
 lines until its comparison masks them the same way. Golden files are unchanged.
 
+2026-10-21, the edges of the departure-backed level
+([the clarification](design-reading-a-session.md#clarified-2026-10-21-the-edges-of-the-departure-backed-level)):
+under a reading that stands with no level the card says when it is also hiding a live estimate the
+reader switched on, says it is early over an empty verdict of a session minutes old, and names a
+departure that cleared where a reading departs less often than the one before it, not only a clear
+to zero. The how-to's sentence about a goal with no expected outcome line now says "Can't tell"
+and draws no level. None of these is in a recording, and no golden file changed.
+
 2026-10-21, a level needs a departure
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)): the
 analysis level the retired page drew from the server's row is no longer drawn at Medium, High or

@@ -3,6 +3,7 @@ import type { Annotation } from '../intent/annotation';
 import { personAuthored, type WorkEntry } from '../intent/work';
 import { clock, type Row } from '../observed';
 import { revisionSuperseded } from '../sessions/rows';
+import { fmtDur } from './route';
 import {
   CLAIMS,
   CONSISTENT,
@@ -815,6 +816,48 @@ export function verdictLine({
     where = `, citing ${String(distinct.length)} entries${span}`;
   }
   return levelled(`${count}${where}.`);
+}
+
+/* How much of a session a reading may cover and still be called early. A judgement, not a measurement: it is
+   the span in which a session has usually not yet run a check, which is what an empty verdict then waits on. */
+const EARLY_SECONDS = 600;
+
+export const LIVE_HIDDEN =
+  'The live estimate is not drawn while this reading stands: it reads checks and file paths, never your intent.';
+
+/* Said under an empty verdict when the reading covers only the first minutes of a session, so three lines of
+   "Can't tell" read as "too soon" and not as a finding. Only where the page can show it is early: the answer
+   is the empty one over an outcome line, the session was not finished, the record was read from its start, and
+   the span from its first entry to the end of what the reading read is inside the window. Nothing otherwise,
+   because a start the page cannot see would make "early" a default. */
+export function earlyLine(
+  answer: Answer,
+  shape: Shape,
+  raw: unknown,
+  entries: readonly WorkEntry[],
+): string {
+  if (
+    answer.kind !== 'cant-tell' ||
+    shape.scope === 'final' ||
+    shape.coverage?.tail_truncated !== false ||
+    !shape.criteria.some((row) => isOutcomeLine(row.key))
+  ) {
+    return '';
+  }
+  const through = nextNumber((raw as Row | null)?.['evidence_through']);
+  const times = entries
+    .map((entry) => nextNumber(entry.at))
+    .filter((at): at is number => at !== null && at > 0 && through !== null && at <= through);
+  const first = Math.min(...times);
+  if (
+    through === null ||
+    !times.length ||
+    through - first <= 0 ||
+    through - first >= EARLY_SECONDS
+  ) {
+    return '';
+  }
+  return `Early: this reading covers only the first ${fmtDur(through - first)} of the session. Read again once it has run its checks.`;
 }
 
 /* The model a stored reading names, from the stamp the server composes as "<model> · read at HH:MM". Only

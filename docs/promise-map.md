@@ -73,7 +73,7 @@ where, without steering it for you. Pause model calls stops Analyze drift, goal 
 session summaries until Resume model calls. Turn off summaries stops session summaries only;
 while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
 press Analyze drift. The How Intent and drift works entry in the Intent card's More menu explains the steps and
-the limits; Not enough recorded yet is normal until you add an expected outcome line.
+the limits; with no expected outcome line, a reading says "Can't tell" and draws no level.
 On Claude Code sessions, you can turn on a live drift estimate in the panel and header after every
 turn, based on recorded checks and file paths rather than the meaning of your intent. An analysis
 shows its level, each outcome line against the recorded work and what the agent said with its
