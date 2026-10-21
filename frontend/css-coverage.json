@@ -1596,7 +1596,8 @@
   "exceptions": {
     "frontend/src/attention/attention.css||.next-attention-risk-assignment": "Items.tsx retains assignment evidence on a risk item; the proof risk fixtures do not publish this assignment.",
     "frontend/src/capacity/capacity.css||.next-capacity-fill.unknown": "CapacityStrip Bar retains the unknown pace band when a window has elapsed time but no measured pace.",
-    "frontend/src/capacity/capacity.css||.next-capacity-ends em": "CapacityStrip Ends retains the observed basis under a projected end; the browser worlds do not publish that projection.",
+    "frontend/src/capacity/capacity.css||.next-capacity-ends em|#1": "The proof fixtures never render a projected end, so this duplicate em font pair is unobserved; the rule above it styles the same element.",
+    "frontend/src/capacity/capacity.css||.next-capacity-ends em|#2": "CapacityStrip Ends retains the observed basis under a projected end; the browser worlds do not publish that projection.",
     "frontend/src/delegation/delegation.css||.next-delegation progress::-moz-progress-bar": "Firefox paints native progress with this pseudo-element; Chromium cannot apply it.",
     "frontend/src/delegation/delegation.css||.next-delegation-trend": "DelegationPanel retains a known repeated-window trend; the browser fixture has no published trend.",
     "frontend/src/delegation/delegation.css||.next-rail-capacity-heading .next-rail-used--secondary": "WindowRow retains the secondary ink for a 50-79 percent used capacity window in the rail.",

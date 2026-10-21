@@ -971,12 +971,15 @@ conditional context and declaration values identify retained rules. Hover, focus
 disabled and pseudo-element rules are retained conservatively when their base selector
 matches. No class grep substitutes for this measurement.
 
-The method has five limits. The rule-boundary check discards Playwright ranges Chromium
+The method has four limits. The rule-boundary check discards Playwright ranges Chromium
 coalesces across adjacent used rules, so CDP rule-usage counts carry the certification
-alone. A comma-separated selector list is certified by its first matching selector, so a
-dead selector appended to a used rule is not detected. `coverageKey` omits the file, so a
-dead rule duplicating a covered rule's selector and declarations in another file is not
-detected. Two rules with the same file, context and selector share one exception identity.
+alone. A comma-separated selector list is certified only when every selector is used or
+pseudo-matched, so a dead selector appended to a used rule fails the gate. Chromium still
+marks every selector of a list used when one matches, so a dead selector already present
+in the recorded union is not detected until a collection records per-selector matches.
+`coverageKey` omits the file, so a dead rule duplicating a covered rule's selector and
+declarations in another file is not detected. Two rules with the same file, context and
+selector take `#n` ordinals in document order, so each has its own exception identity.
 `@font-face` blocks are not walked; the font checks protect those rows instead.
 
 The deletion groups were verified separately against the CSS proof and all seven chrome

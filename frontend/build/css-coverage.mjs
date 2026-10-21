@@ -74,13 +74,24 @@ export function sourceRules(text) {
       end: rule.source.end.offset,
     });
   });
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.context}|${selectorKey(row.selector)}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  for (const group of groups.values())
+    if (group.length > 1) group.forEach((row, index) => (row.ordinal = index + 1));
   return rows;
 }
 export function ruleIdentity(file, rule) {
-  return `${file}|${rule.context}|${selectorKey(rule.selector)}`;
+  // Two rules with the same context and selector in one file get an ordinal, so each keeps its own exception.
+  const ordinal = rule.ordinal ? `|#${rule.ordinal}` : '';
+  return `${file}|${rule.context}|${selectorKey(rule.selector)}${ordinal}`;
 }
+// Chromium marks a whole style rule used, so one live selector must not certify a dead one in
+// the same comma list. Every selector in a list has to be used or pseudo-matched.
 const isCovered = (rule, used, pseudo) =>
-  selectors(rule.selector).some(
+  selectors(rule.selector).every(
     (key) => used.has(coverageKey(rule.context, key, rule.declarations)) || pseudo.has(key),
   );
 export function uncoveredRules(file, text, record) {
