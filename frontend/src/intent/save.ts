@@ -378,7 +378,7 @@ async function saveWork(
   return kind;
 }
 
-/* After Read from now landed: the time the refreshed row says the reading now starts, as the cue's kind, so the
+/* After Read from my latest message landed: the time the refreshed row says the reading now starts, as the cue's kind, so the
    page says it in the moment the save is drawn and with the time. Null where the row publishes none, which
    leaves the plain "Saved" cue rather than a time nobody confirmed. */
 function sayReadsFrom(ctx: Ctx, identity: SessionIdentity, key: string): string | null {

@@ -5,7 +5,7 @@ import { goalBox, mountSession } from './panel.testing';
 import { json } from './testing';
 
 const choices = [{ fact_id: 'p1', text: 'Fix the login redirect', at: 100, cut: false }];
-const trigger = () => screen.getByRole('combobox', { name: 'Use your prompt' });
+const trigger = () => screen.getByRole('button', { name: 'Use your prompt' });
 
 async function opening() {
   const page = mountSession({

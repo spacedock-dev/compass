@@ -76,9 +76,31 @@ describe('Discard everything', () => {
     expect(text('#next-cockpit-cue-alert')).toBe(SENTENCES.armed);
     expect(discard()?.getAttribute('aria-describedby')).toBe('next-cockpit-discard-armed');
     expect(text('#next-cockpit-discard-armed')).toBe(SENTENCES.armed);
-    expect(
-      document.querySelector('.next-cockpit-held-discard-offer')?.hasAttribute('data-open'),
-    ).toBe(true);
+    // The question is the card's own, not the menu's: it needs the menu open for neither its warning nor its press.
+    const armedBlock = document.querySelector('[data-next-intent-armed-discard]');
+    expect(armedBlock?.contains(discard() ?? null)).toBe(true);
+    expect(armedBlock?.closest('[data-slot=popover-content]')).toBeNull();
+    expect(document.querySelector('.next-cockpit-held-discard-offer')).toBeNull();
+  });
+
+  it('keeps the words on Keep my words and on Escape, and the offer is back in the menu', async () => {
+    const page = mount({
+      '/api/annotate': () => json({ ok: true, outcome: 'stored', persisted: true }),
+    });
+    await settle(page);
+    await armed(page);
+    const keep = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Keep my words',
+    );
+    await press(keep ?? null);
+    expect(document.querySelector('[data-next-intent-armed-discard]')).toBeNull();
+    expect(page.posts()).toBe(0);
+    expect(document.querySelector('.next-cockpit-held-discard-offer')).not.toBeNull();
+    await armed(page);
+    fireEvent.keyDown(discard() as Element, { key: 'Escape' });
+    await page.settle();
+    expect(document.querySelector('[data-next-intent-armed-discard]')).toBeNull();
+    expect(page.posts()).toBe(0);
   });
 
   it('treats a press inside the dwell, and a double-click, as another arm and never as a confirmation', async () => {

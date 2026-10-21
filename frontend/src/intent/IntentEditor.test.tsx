@@ -150,9 +150,9 @@ describe('Save intent', () => {
       goal: 'Land the worker behind a flag',
       expected_revision: 0,
     });
-    expect(footerCue()).toBe('Saved as a new revision.');
+    expect(footerCue()).toBe('Saved.');
     // And once, in the polite region, after the paint that shows it.
-    expect(text('#next-cockpit-cue-status')).toBe('Saved as a new revision.');
+    expect(text('#next-cockpit-cue-status')).toBe('Saved.');
     expect(goalBox().value).toBe('Land the worker behind a flag');
     expect(inert(control('held-save'))).toBe(true);
   });
@@ -182,8 +182,8 @@ describe('Save intent', () => {
     await settle(page);
     expect(footerCue()).toBe(
       caveat
-        ? 'Saved as a new revision. This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.'
-        : 'Saved as a new revision.',
+        ? 'Saved. This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.'
+        : 'Saved.',
     );
   });
 

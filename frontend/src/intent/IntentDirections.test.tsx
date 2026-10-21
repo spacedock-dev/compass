@@ -118,11 +118,18 @@ describe('the question before the press', () => {
     expect(text('.next-cockpit-direction-said')).toBe('2 later directions:');
     const pick = document.querySelector('[data-next-direction-select]') as HTMLButtonElement;
     await openSelect(pick);
-    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
-      '#1 · First one.',
-      '#2 · Second one.',
-    ]);
+    const labels = screen.getAllByRole('option').map((o) => o.textContent ?? '');
+    expect(labels).toHaveLength(2);
+    expect(labels[0]).toMatch(/^\d\d:\d\d · First one\.$/);
+    expect(labels[1]).toMatch(/^\d\d:\d\d · Second one\.$/);
+    for (const label of labels) expect(label).not.toMatch(/#\d/);
     await chooseSelect(pick, 'f1');
+    const marked = [...document.querySelectorAll('.next-cockpit-direction-whole-item')].filter(
+      (item) => item.getAttribute('aria-current') === 'true',
+    );
+    expect(marked).toHaveLength(1);
+    expect(marked[0]?.textContent).toContain('First one.');
+    expect(marked[0]?.textContent).toContain('the one the buttons below use');
     expect(text('.next-cockpit-direction-said')).toBe('2 later directions:');
     expect(pick.textContent).toContain('First');
     expect(page.posts('/api/annotate')).toBe(0);
@@ -175,7 +182,7 @@ describe('Add as a line', () => {
     });
     expect(document.querySelector('[data-next-cockpit-direction-key]')).toBeNull();
     // The saved line is said once in the polite region, as the legacy page says it.
-    expect(text('#next-cockpit-cue-status')).toBe('Saved as a new revision.');
+    expect(text('#next-cockpit-cue-status')).toBe('Saved.');
   });
 
   it('sends a second press to the line already pending and reads nothing again', async () => {

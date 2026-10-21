@@ -244,7 +244,7 @@ async function saveTyped(canvasElement: HTMLElement) {
   await userEvent.type(goal, 'Land the worker behind a flag');
   await userEvent.click(canvas.getByRole('button', { name: 'Save intent' }));
   const footer = canvasElement.querySelector('.next-cockpit-held-footer') as HTMLElement;
-  await waitFor(() => expect(footer).toHaveTextContent('Saved as a new revision.'));
+  await waitFor(() => expect(footer).toHaveTextContent('Saved.'));
   return footer;
 }
 
@@ -253,7 +253,7 @@ export const SavingOnAnEndedSessionRepeatsTheCaveat: Story = {
   play: async ({ canvasElement }) => {
     const footer = await saveTyped(canvasElement);
     await expect(footer.querySelector('.next-cockpit-held-cue')).toHaveTextContent(
-      'Saved as a new revision. This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.',
+      'Saved. This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.',
     );
   },
 };
@@ -261,8 +261,6 @@ export const SavingOnAnEndedSessionRepeatsTheCaveat: Story = {
 export const SavingOnALiveSessionSaysOnlyThatItSaved: Story = {
   play: async ({ canvasElement }) => {
     const footer = await saveTyped(canvasElement);
-    await expect(footer.querySelector('.next-cockpit-held-cue')).toHaveTextContent(
-      /^Saved as a new revision\.$/,
-    );
+    await expect(footer.querySelector('.next-cockpit-held-cue')).toHaveTextContent(/^Saved\.$/);
   },
 };

@@ -255,7 +255,7 @@ try {
       const action = (name) => page.getByRole('button', { name, exact: true });
       if (fixture.chosen) {
         const before = await page.evaluate(() => globalThis.__journey.clicks.length);
-        await page.getByRole('combobox', { name: 'Use your prompt' }).click();
+        await page.getByRole('button', { name: 'Use your prompt' }).click();
         await page.getByRole('option').first().click();
         assert.equal(
           await page.evaluate(() => globalThis.__journey.clicks.length),
@@ -280,7 +280,7 @@ try {
         await action('Save intent').press('Enter');
         await page.waitForFunction(
           () =>
-            /Saved as a new revision/.test(
+            /Saved\./.test(
               document.querySelector('.next-cockpit-held-footer')?.textContent || '',
             ) &&
             document

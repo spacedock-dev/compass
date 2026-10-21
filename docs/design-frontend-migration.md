@@ -658,7 +658,9 @@ instead (one direction read, nothing saved), `intentForReading`, the live monito
 reading-feedback lane. The per-entry Add to my intent buttons of the legacy activity list are drawn by the
 Drift step's numbered activity list.
 
-Deviations (owner, 2026-10-12): prompt, stage and direction choices now use shadcn Base UI Select.
+Deviations (owner, 2026-10-12): prompt, stage and direction choices now use shadcn Base UI Select. The prompt
+later became a button that opens a list in a popover (2026-10-21), which is why its trigger is a button and not a
+combobox, and its popup is `data-slot=popover-content`.
 The prompt opens immediately, shows "Loading your prompts" as a disabled item while fetching,
 and keeps that popup open for choices or a stated absence for an empty read or a failed read after an empty or failed
 read. The trigger stays "Use your prompt" at rest and carries `aria-busy` during the request.

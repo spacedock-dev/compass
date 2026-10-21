@@ -353,7 +353,7 @@ export const MoreIsRetired: Story = {
     // Behind their summaries: the saved stamp's definition and binding key, the binding sentence, and the
     // limit under Later directions.
     await userEvent.click(within(intent).getByRole('button', { name: /^Saved · reads from/ }));
-    await waitFor(() => expect(inIntent.getByText('Each save is a revision.')).toBeVisible());
+    await waitFor(() => expect(inIntent.getByText('Each save is kept on its own.')).toBeVisible());
     await expect(intent.querySelector('.next-cockpit-held-bound')).toHaveTextContent(/s1/);
     // Pressing the stamp moves focus out of the menu, which closes it; the menu opens again for the rest.
     const more = within(intent).getByRole('button', { name: 'More about these words' });

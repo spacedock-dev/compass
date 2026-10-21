@@ -3341,7 +3341,7 @@ to Can't tell. Editing the goal says the work already done still counts.
   The first save that carries a goal opens the window, so a line saved before any goal does not
   count as the start: adopting a prompt over a revision holding lines alone opens at the prompt's
   own time, and typed goal words open at their own window.
-- Reading from the edit onwards is the reader's explicit choice, offered as Read from now beside Save
+- Reading from the edit onwards is the reader's explicit choice, offered beside Save (labelled Read from my latest message since 2026-10-21; see the amendment at the end of the Intent card's section)
   intent. `POST /api/annotate` takes `read_from_now: true` on a typed save or an adoption, and the
   save then opens the window as a first save would: the reader's latest message at or before the save
   for typed words, the source's own time for an adopted prompt. It is the reader's latest message and
@@ -6108,6 +6108,42 @@ parts. It now matches the design's form, and a save no longer shows the draft wh
 
 No differential test over the recorded answers changed. The on-demand browser proofs under
 `frontend/e2e` still carry the old card's text and were not run for this change.
+
+### Amended 2026-10-21: the edges of the Intent card
+
+What the first pass left, finished.
+
+- **`Use your prompt` is a button.** It opens a popover list headed "Your prompts in this session",
+  and holds no value, so its accessible role is button (not combobox) and its options are the list's
+  buttons. The popup still opens before the read, and the same popup shows loading, the prompts or
+  a stated absence.
+- **An armed Discard everything stays where it was drawn.** The offer stays in More. The arming
+  press moves the question into the card: the warning, Confirm discard and a Keep my words button
+  are drawn in the card's quiet row, outside the menu, until the reader confirms, keeps (the
+  button, or Escape) or the 30 second offer lapses. In the menu the warning was hidden whenever the
+  menu was closed, and the menu moved between the first press and the second.
+- **No lone `More`.** The menu is left out while the store and the boxes hold no words, because it
+  held only the how-to there.
+- **`Save intent` looks inert when it is.** The accent border and text belong to a Save that would
+  write something.
+- **No revision in a sentence the page words.** "Saved as a new revision." is "Saved."; the
+  unchanged answer is "Already saved. These words match what is stored, so nothing new was saved."
+  and the saved disclosure says "Each save is kept on its own." Revision stays the store's
+  bookkeeping. The discard account is the server's sentence and still says "revision"; it is held
+  in `annotations.DISCARD_SENTENCES`, not on the page.
+- **A direction is named by its time**, never `#n`: the picker reads `10:57 · the words`. When
+  several are listed, the one `Add as a line` and `Make it the goal` act on is marked in the list
+  ("the one the buttons below use") and carries `aria-current`.
+- **`Read from now` is `Read from my latest message`.** The start it opens is the reader's latest
+  message, and for a lines-only save over an adopted goal that is the typed message too: the
+  adopted prompt's own time is used only when a save adopts one. The label and tooltip now say so.
+- **Held-refresh coverage.** A story holds the board refresh after saving an adopted prompt,
+  the slow-save story releases its held fetch on failure, and a story asserts the 1,000-character
+  sentence in What is sent. `IntentVocabulary.test.tsx` holds the page's own sentences, and the card
+  as drawn, to no revision or entry number.
+
+The on-demand browser proofs were brought forward to the new names and the card-level armed
+question; they were not run for this change.
 
 ### Amended 2026-10-21: a later direction is quoted where it is settled
 

@@ -229,9 +229,12 @@ try {
       .waitFor({ state: 'visible' });
     await page.getByRole('button', { name: /Saved.*reads from/ }).click();
     await page
-      .getByText('Editing the goal or adding a line keeps this start. Read from now moves it.', {
-        exact: true,
-      })
+      .getByText(
+        'Editing the goal or adding a line keeps this start. Read from my latest message moves it.',
+        {
+          exact: true,
+        },
+      )
       .waitFor({ state: 'visible' });
     await page.getByRole('button', { name: 'Discard everything', exact: true }).click();
     await page

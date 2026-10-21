@@ -53,7 +53,7 @@ export const INTENT_LEDE =
   'Say what this session should achieve. Type it, or start from a prompt you gave the session. Compass reads the session against these words and never writes into the session.';
 
 /* The ended-session caveat the goal box already carries, repeated where the save is confirmed: a reader who
-   saved late read "Saved as a new revision." and had no sign that Analyze would still read the drafted goal
+   saved late read "Saved." and had no sign that Analyze would still read the drafted goal
    instead. Said only beside a confirmed save on an ended session. The goal box shows the same sentence, so
    the short form, which reads as "nothing can be read", is not used. */
 export const ENDED_CAVEAT =
@@ -67,12 +67,12 @@ export const HELD_CUES: Readonly<Record<string, string>> = {
   error: 'Not saved. The server refused the write, and your words are still in the box.',
   unpersisted:
     'Not stored. The store could not be written, so the refresh has already dropped these words, and they are still in the box.',
-  saved: 'Saved as a new revision.',
+  saved: 'Saved.',
   /* The request was lost, aborted at the bound, or answered with something unreadable: not a refusal, so
      never "Not saved". */
   unconfirmed:
     'Compass did not answer, so this page cannot tell whether your intent was saved. Your words are still in the box.',
-  unchanged: 'Already stored. These words match the saved revision, so no new revision was minted.',
+  unchanged: 'Already saved. These words match what is stored, so nothing new was saved.',
   /* The store exists and the server could not read it, so it wrote nothing: writing would keep only what
      it can read and lose every other session's words. The remedy is the file, not a retry. */
   untrusted:
@@ -84,7 +84,7 @@ export const HELD_CUES: Readonly<Record<string, string>> = {
     "Not saved. This session's words were saved by a build of Compass that can read more than this one, so nothing was saved over them, and what you typed is still in the box. Save from that build, or remove this session's entry from compass-annotations.json.",
 };
 
-/* The cue Read from now earns carries the time it moved the start to, so its kind does too. A static table
+/* The cue Read from my latest message earns carries the time it moved the start to, so its kind does too. A static table
    cannot hold a time; the page reads it back from the refreshed row and stamps it here, in the one moment
    the save is drawn. */
 export const READS_FROM_KIND = 'reads-from:';
@@ -97,10 +97,10 @@ export function readsFromSentence(kind: string): string {
     : '';
 }
 
-/* What Read from now does, said where the reader chooses it. Saving alone keeps the start the first reading
+/* What Read from my latest message does, said where the reader chooses it. Saving alone keeps the start the first reading
    had, so the work already done toward earlier words stays read. */
 export const READ_FROM_NOW_WHY =
-  'Saves your intent and reads the session from now on. Work before that is not read. Save intent alone keeps reading from where it started.';
+  'Saves your intent and reads the session from your latest message on. Work before that message is not read. Save intent alone keeps reading from where it started.';
 
 /* The reply's `outcome` token to the cue it earns. An unknown token, from a server newer than this page,
    falls back on `persisted`, which keeps its meaning across builds. */
