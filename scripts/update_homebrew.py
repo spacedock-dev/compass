@@ -7,7 +7,8 @@ Usage:
 `<tag>` is the release tag, with or without its leading `v`. `checksums.txt` is the one
 scripts/publish-cli.sh attaches to the release: `sha256  filename` lines for exactly the four
 installer archives. The formula names each archive by URL and checksum, so Homebrew is the only
-thing that downloads, verifies and installs it.
+thing that downloads, verifies and installs it. The formula states its `version` outright, and
+its test asserts that `compass --version` prints it.
 
 Two refusals keep a wrong formula from landing:
 
@@ -28,7 +29,8 @@ from pathlib import Path
 
 SEMVER_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-LISTED_VERSION_RE = re.compile(r"/compass_([^_/\n]+)_(?:darwin|linux)_")
+VERSION_FIELD_RE = re.compile(r'^\s*version "([^"\n]+)"', re.MULTILINE)
+URL_VERSION_RE = re.compile(r"/compass_([^_/\n]+)_(?:darwin|linux)_")
 REPOSITORY = "https://github.com/spacedock-dev/compass"
 
 PLATFORMS = (
@@ -81,6 +83,7 @@ def render(tag: str, version: str, sums: dict[str, str]) -> str:
         "class Compass < Formula",
         '  desc "Agnostic agent cartography and visualization tool"',
         f'  homepage "{REPOSITORY}"',
+        f'  version "{version}"',
         '  license all_of: ["Apache-2.0", "OFL-1.1"]',
         "",
     ]
@@ -103,7 +106,7 @@ def render(tag: str, version: str, sums: dict[str, str]) -> str:
         "  end",
         "",
         "  test do",
-        '    assert_match "Compass", shell_output("#{bin}/compass --help")',
+        '    assert_match version.to_s, shell_output("#{bin}/compass --version")',
         "  end",
         "end",
     ]
@@ -111,12 +114,17 @@ def render(tag: str, version: str, sums: dict[str, str]) -> str:
 
 
 def listed_version(formula: Path) -> str | None:
+    """The version a tap formula states: its `version` field, else the one in its download URLs.
+
+    The URL fallback reads a formula written before the field was rendered.
+    """
     try:
-        match = LISTED_VERSION_RE.search(formula.read_text(encoding="utf-8"))
+        text = formula.read_text(encoding="utf-8")
     except FileNotFoundError:
         return None
     except (OSError, UnicodeError) as exc:
         raise SystemExit(f"error: cannot read {formula}: {exc}") from exc
+    match = VERSION_FIELD_RE.search(text) or URL_VERSION_RE.search(text)
     return match.group(1) if match else None
 
 

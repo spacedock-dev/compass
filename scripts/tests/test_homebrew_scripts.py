@@ -39,6 +39,7 @@ GOLDEN_V130 = """\
 class Compass < Formula
   desc "Agnostic agent cartography and visualization tool"
   homepage "https://github.com/spacedock-dev/compass"
+  version "1.3.0"
   license all_of: ["Apache-2.0", "OFL-1.1"]
 
   on_macos do
@@ -70,7 +71,7 @@ class Compass < Formula
   end
 
   test do
-    assert_match "Compass", shell_output("#{bin}/compass --help")
+    assert_match version.to_s, shell_output("#{bin}/compass --version")
   end
 end
 """
@@ -146,6 +147,34 @@ class UpdateHomebrewTest(unittest.TestCase):
 
         self.assertIn("newer than 1.2.9", message)
         self.assertEqual(before, self.formula.read_bytes())
+
+    def test_the_tap_version_is_the_explicit_field_even_when_no_url_carries_one(self) -> None:
+        self.formula.parent.mkdir(parents=True)
+        self.formula.write_text(
+            'class Compass < Formula\n  version "1.9.0"\nend\n', encoding="utf-8"
+        )
+
+        message = update_homebrew.write_formula(
+            self.formula, self.sums(checksums("1.3.0", V130)), "v1.3.0"
+        )
+
+        self.assertIn("lists compass 1.9.0, newer than 1.3.0", message)
+        self.assertNotIn("1.3.0", self.formula.read_text(encoding="utf-8"))
+
+    def test_a_formula_with_no_version_line_is_read_from_its_download_urls(self) -> None:
+        # What the tap holds if a formula was written before the version field was rendered.
+        self.formula.parent.mkdir(parents=True)
+        legacy = GOLDEN_V130.replace('  version "1.3.0"\n', "").replace("1.3.0", "1.4.0")
+        self.formula.write_text(legacy, encoding="utf-8")
+
+        older = update_homebrew.write_formula(
+            self.formula, self.sums(checksums("1.3.0", V130)), "v1.3.0"
+        )
+        newer = update_homebrew.write_formula(self.formula, self.sums(checksums("1.5.0")), "v1.5.0")
+
+        self.assertIn("lists compass 1.4.0, newer than 1.3.0", older)
+        self.assertEqual("tap now lists compass 1.5.0", newer)
+        self.assertIn('version "1.5.0"', self.formula.read_text(encoding="utf-8"))
 
     def test_versions_compare_as_numbers_not_text(self) -> None:
         update_homebrew.write_formula(self.formula, self.sums(checksums("1.9.0")), "v1.9.0")
