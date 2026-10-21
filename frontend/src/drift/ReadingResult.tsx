@@ -34,6 +34,7 @@ import { fmtDur } from './route';
 import { clock } from '../observed';
 import {
   CLAIMS,
+  clearedLine,
   CLAUSE_UNRETAINED,
   DEPARTURE,
   NOT_REACHED,
@@ -837,7 +838,7 @@ export function ReadingResult({
    stored reading the result below draws, and only while that result stands: not over a running analysis, an
    unreadable reading, or one the reader marked inaccurate. */
 export function DriftVerdict() {
-  const { model } = useDrift();
+  const { model, cleared } = useDrift();
   const { shape, raw, annotation, entries, source, job, annotate } = model;
   if (!annotate || !shape || shape.malformed || !raw || !annotation || job) return null;
   if (annotation['not_accurate'] === true) return null;
@@ -848,17 +849,26 @@ export function DriftVerdict() {
   const text = verdictLine({
     answer,
     level: standing?.label ?? '',
-    levelKey: standing?.level ?? '',
-    reason: standing?.reasons.first ?? '',
+    heldBack: analysis && !standing ? analysis.reasons.blockers : [],
     byId: model.byId,
     midFlight: shape.scope === 'mid-flight',
   });
   return (
-    <p
-      className="mx-4 my-0 max-w-[var(--measure)] text-value font-semibold leading-[1.45] text-foreground"
-      data-next-drift-verdict
-    >
-      {text}
-    </p>
+    <>
+      <p
+        className="mx-4 my-0 max-w-[var(--measure)] text-value font-semibold leading-[1.45] text-foreground"
+        data-next-drift-verdict
+      >
+        {text}
+      </p>
+      {cleared ? (
+        <p
+          className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"
+          data-next-drift-cleared
+        >
+          {clearedLine(cleared.count, clock(cleared.readAt))}
+        </p>
+      ) : null}
+    </>
   );
 }

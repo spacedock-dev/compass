@@ -31,6 +31,22 @@ export interface Flip {
   drawn: number;
 }
 
+/* The departures a reading carried the last time this tab drew it, and what the next reading cleared. Held
+   in the tab and never stored: it says only what this tab watched happen, so a reading it never saw depart
+   cannot clear. */
+export interface SeenReading {
+  readAt: number;
+  departures: number;
+  /** The reading drawn before this one, and how many departures it carried. */
+  before: { readonly readAt: number; readonly departures: number } | null;
+}
+
+/** The earlier reading's departures that the reading now standing no longer finds. */
+export interface ClearedDeparture {
+  readonly readAt: number;
+  readonly count: number;
+}
+
 export type FlipTimerName = 'hold' | 'until' | 'line' | 'say';
 
 /* A Cancel in flight, or one that could not be confirmed, per session and for the one job it named, so
@@ -87,6 +103,7 @@ export function createDriftState(shell: Shell) {
   const jobsSeen = new Map<string, JobSeen>();
   const corrections = new Map<string, HeldCorrection>();
   const notAccurate = new Set<string>();
+  const readings = new Map<string, SeenReading>();
   const timers = new Map<FlipTimerName, { at: number; handle: TimerHandle }>();
   const wants = new Map<FlipTimerName, number | null>();
   let overlay: Overlay = { stamp: -1, jobs: {}, routes: {}, reading: null };
@@ -181,6 +198,34 @@ export function createDriftState(shell: Shell) {
       return () => {
         mounted -= 1;
       };
+    },
+
+    /* The reading now standing for a session and how many departures it carries: the departures the one
+       before it carried that this one does not are returned for as long as it stands, and the next reading,
+       whatever it finds, takes the note down. The count is the latest drawn for that reading, because the
+       entries a departure cites may load after the first draw. Idempotent per `readAt`, so a render that
+       runs twice says the same. */
+    noteReading(key: string, readAt: number, departures: number): ClearedDeparture | null {
+      const seen = readings.get(key);
+      if (seen && seen.readAt === readAt) {
+        seen.departures = departures;
+      } else {
+        const before =
+          seen && readAt > seen.readAt
+            ? { readAt: seen.readAt, departures: seen.departures }
+            : null;
+        readings.delete(key);
+        readings.set(key, { readAt, departures, before });
+        while (readings.size > HELD_CUE_LIMIT) {
+          const [oldest] = readings.keys();
+          if (oldest === undefined) break;
+          readings.delete(oldest);
+        }
+      }
+      const now = readings.get(key);
+      return now?.before && now.before.departures > 0 && departures === 0
+        ? { readAt: now.before.readAt, count: now.before.departures }
+        : null;
     },
 
     /* The flip ledger is bounded as the cue lanes are: past sixteen drawn sessions the oldest goes. */

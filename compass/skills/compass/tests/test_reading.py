@@ -3706,6 +3706,86 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                     self.assertEqual(reading.RESULT_NOT_REACHED, result["goal"]["result"])
 
 
+class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCase):
+    """A recorded-shape mid-turn case: the agent said what it would do, kept working, and the model
+    read the missing end of that work as a departure. While the turn is open it is unfinished work.
+
+    The prompt is left alone (its trusted header has 27 of 9,216 bytes spare, and a changed header needs
+    a fresh qualification), so the guard is in the resolver, which every reading passes through.
+    """
+
+    PLAN = "Probe still shows the wrong output. Next I rerun it and push."
+    WRONG: ClassVar[dict[str, str]] = {
+        "result": "departure",
+        "detail": "The session ends with the probe still failing, no rerun and no push.",
+    }
+
+    def selected(self, *later: dict[str, Any]) -> reading.Selection:
+        said = {
+            **AGENT_MESSAGE_FACT,
+            "summary": self.PLAN,
+            reading.AGENT_WORDS_FIELD: self.PLAN,
+            "at": 99.0,
+        }
+        ledger = reading.build_ledger(
+            [WORDS_FACT, said, *later], "claude", "s1", tool_output={}, read_agent_words=True
+        )
+        _prompt, selection = reading.build_prompt(
+            ledger, goal="Fix the probe and push it.", lines=(), max_bytes=16_384
+        )
+        return selection
+
+    def resolved(
+        self, selection: reading.Selection, scope: str, cite: str = "m1"
+    ) -> reading.Criterion:
+        index = next(i for i, row in selection.by_index().items() if row["id"] == cite)
+        parsed = reading.parse_reply(
+            json.dumps({"goal": {**self.WRONG, "cites": [index]}}),
+            reading.constraints_for(selection.lines, claims=selection.asked_claims),
+        )
+        return reading.resolve(
+            parsed, selection, goal="Fix the probe and push it.", detail_cap_chars=200, scope=scope
+        )["goal"]
+
+    def test_a_departure_on_words_alone_while_work_goes_on_reads_as_not_reached(self) -> None:
+        after = (
+            check_fact(fact_id="c9", result="passed", at=110.0),
+            {
+                **check_fact(fact_id="w9", at=120.0),
+                "subject": "write",
+                "result": "",
+                "summary": "src/probe.py",
+            },
+        )
+        row = self.resolved(self.selected(*after), reading.SCOPE_MID_FLIGHT)
+        self.assertEqual(reading.RESULT_NOT_REACHED, row["result"])
+        self.assertEqual(("m1",), row["cites"])
+        self.assertEqual(self.WRONG["detail"], row["detail"])
+
+    def test_the_same_reading_of_a_finished_turn_keeps_its_departure(self) -> None:
+        selection = self.selected(check_fact(fact_id="c9", result="passed", at=110.0))
+        for scope in (reading.SCOPE_LAST_TURN, reading.SCOPE_FINAL):
+            with self.subTest(scope=scope):
+                row = self.resolved(selection, scope)
+                self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_stall_with_no_work_after_the_words_stays_a_departure(self) -> None:
+        row = self.resolved(self.selected(), reading.SCOPE_MID_FLIGHT)
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_work_before_the_words_does_not_excuse_them(self) -> None:
+        before = check_fact(fact_id="c0", result="passed", at=95.0)
+        row = self.resolved(self.selected(before), reading.SCOPE_MID_FLIGHT)
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_departure_resting_on_a_failed_check_is_not_excused_by_later_work(self) -> None:
+        failed = check_fact(fact_id="c1", result="failed", at=98.0)
+        later = check_fact(fact_id="c2", result="passed", at=130.0)
+        selection = self.selected(failed, later)
+        row = self.resolved(selection, reading.SCOPE_MID_FLIGHT, cite="c1")
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+
 class TheResolverTakesTheQuestionFromThePrompt(unittest.TestCase):
     """K8: whether Expected Output was posed travels on the Selection from the
     header the prompt actually used, so a verdict volunteered on a clause the

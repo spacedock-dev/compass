@@ -19,7 +19,7 @@ import {
   type WorkEntry,
   type WorkSource,
 } from '../intent/work';
-import type { Row } from '../observed';
+import { endedAt, type Row } from '../observed';
 import type { RecordEntry } from '../store/board';
 import { harnessLabels } from '../sessions/rows';
 import { analysisLevel, liveEstimate, type Contexts, type DriftLevel } from './level';
@@ -74,6 +74,8 @@ export interface DriftModel {
   readonly analysis: DriftLevel | null;
   /** The level the header pill shows, which never reads "Not enough recorded yet" and never shows over a draft. */
   readonly pill: DriftLevel | null;
+  /** The pill's level is provisional: the session is running, or the reading it shows read a running turn. */
+  readonly pillSoFar: boolean;
   /** The header's "N entries": nothing where the record was not read, because 0 would be a default. */
   readonly entryCount: number | null;
   /** The entries since the intent's window opened, where one has and entries before it are held; else null. */
@@ -259,11 +261,19 @@ export function buildModel(input: ModelInput): DriftModel {
     payload,
     generated,
   });
-  /* The analysis level is unaffected by the switch, so its pill shows whichever way the switch is set. */
-  const shown: DriftLevel | { readonly save: true } | null =
-    analysis && analysis.level !== 'not_enough' ? analysis : (estimate ?? analysis);
+  /* The analysis level is unaffected by the switch, so its pill shows whichever way the switch is set. A
+     reading that stands owns the slot, with a level or with none: the live estimate reads checks and paths
+     and never what the intent says, so it does not draw Medium beside a reading that found no departure. */
+  const shown: DriftLevel | { readonly save: true } | null = analysis ?? estimate;
   const pill =
     shown && 'level' in shown && !drafted && LEVEL_SCALE.includes(shown.level) ? shown : null;
+  /* "So far" while the turn is open: a running session's level can still move, and a reading made then
+     covers only the work up to it, whatever the session has done since. A state the board does not publish
+     claims neither. */
+  const state = session['state'];
+  const running = typeof state === 'string' && state !== 'idle' && endedAt(session) === null;
+  const pillSoFar =
+    Boolean(pill) && (running || (pill?.analysis === true && shape?.scope === 'mid-flight'));
   return {
     session,
     payload,
@@ -296,6 +306,7 @@ export function buildModel(input: ModelInput): DriftModel {
     estimate,
     analysis,
     pill,
+    pillSoFar,
     entryCount: read ? numbers.size + numbering.earlier.length : null,
     windowCount: read && numbering.earlier.length ? numbers.size : null,
   };

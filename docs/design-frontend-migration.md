@@ -17,6 +17,19 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-21, a level needs a departure
+([the amendment](design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)): the
+analysis level the retired page drew from the server's row is no longer drawn at Medium, High or
+Extreme beside a reading that shows no departure, and a server None or low the page holds back
+names the row that held it. `level.differential.test.ts` projects both departures: where the
+recording's level is above None or low and the page's shape carries no departure, the page's
+level must read Not enough recorded yet and nothing else of that analysis is compared; and the
+page's own held-back row is removed from its blockers before they are compared with the recorded
+ones. Every other field of the analysis and of the live estimate is still held to the recording,
+which is untouched. The card also draws no "Not enough recorded yet" bar or "Why not None or low"
+under a reading that stands (the live estimate keeps both), and the header pill says "so far"
+while the session runs; neither is in a recording. Golden files are unchanged.
+
 2026-10-20, from the usability review: Full activity draws its rows in number order, so a check
 sits under the message whose number it carries even when it last ran later; it says "Last turn"
 once, on the turn's newest row, with the numbers the turn spans; it puts each row's source sentence

@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { DriftModel } from './model';
-import type { DriftCtx } from './state';
+import type { ClearedDeparture, DriftCtx } from './state';
 import type { Criterion } from './shape';
 
 /* What the Drift section's parts read, assembled once per render by `DriftProvider`: the model every part
@@ -29,6 +29,8 @@ export interface DriftValue {
   readonly ctx: DriftCtx;
   readonly model: DriftModel;
   readonly finding: Criterion | null;
+  /** The departures of the reading before this one that this reading no longer finds, while it stands. */
+  readonly cleared: ClearedDeparture | null;
   readonly jump: Jump | null;
   /** What the last press could not load, kept until the next press, a new reading or another session. */
   readonly jumpMissing: JumpMissing | null;
