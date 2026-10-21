@@ -146,6 +146,45 @@ class ARecordedWriteSettlesALineThatNamesAFolder(base.AClaudeCodeReadingProducer
         )
         self.assertNotEqual(reading.WHY_RECORDED_WRITE, row["why"])
 
+    def test_a_negator_that_governs_something_else_forbids_no_folder(self) -> None:
+        for line in (
+            "src/parser.py is updated and no tests fail",
+            "Creates docs/guide.md with no broken links",
+            "Fix the bug in src/app.py without changing the public API",
+            "Fix the bug in src/app.py, no other file is changed",
+            "Modify frontend/src, never frontend/e2e",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual((), reading.folder_rules(line))
+
+    def test_only_the_folder_a_negator_governs_is_ruled_out(self) -> None:
+        for line, folders in (
+            ("Add tests under tests/ and don't touch src/", ("src",)),
+            ("Update docs/ and do not change anything in src/", ("src",)),
+            ("No file under src/ is edited", ("src",)),
+            ("Nothing under frontend/e2e is changed", ("frontend/e2e",)),
+            ("src/ is left untouched", ("src",)),
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(((reading.RULE_FORBID, folders),), reading.folder_rules(line))
+
+    def test_a_write_the_line_asked_for_is_not_a_departure(self) -> None:
+        row = self._lines(
+            [base.WORDS_FACT, write_fact("src/parser.py")],
+            "src/parser.py is updated and no tests fail",
+        )
+        self.assertNotEqual(reading.WHY_RECORDED_WRITE, row["why"])
+        row = self._lines(
+            [base.WORDS_FACT, write_fact("tests/test_a.py")],
+            "Add tests under tests/ and don't touch src/",
+        )
+        self.assertNotEqual(reading.WHY_RECORDED_WRITE, row["why"])
+        row = self._lines(
+            [base.WORDS_FACT, write_fact("src/a.py")],
+            "Add tests under tests/ and don't touch src/",
+        )
+        self.assertEqual(reading.WHY_RECORDED_WRITE, row["why"])
+
     def test_a_write_from_before_the_line_was_requested_does_not_count(self) -> None:
         recorded = reading.Recorded(
             writes=(reading.RecordedWrite("w1", "frontend/e2e/a.ts", 60.0),)

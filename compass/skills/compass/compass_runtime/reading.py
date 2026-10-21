@@ -3872,14 +3872,50 @@ def _path_tokens(text: str, *, files: bool = False) -> tuple[str, ...]:
     return tuple(found)
 
 
+# The shapes in which a negator governs a path: it forbids the path only when the clause says the
+# path itself is not changed. A negator elsewhere in the clause ("no tests fail", "without
+# changing the public API", "no other file") governs something else, and a clause that
+# only has one of those leaves its paths to the reading.
+_MUT = (
+    r"(?:edit\w*|chang\w*|modif\w*|touch\w*|writ\w*|wrote|add\w*|creat\w*|delet\w*"
+    r"|alter\w*|updat\w*)"
+)
+_AUX = r"(?:(?:is|are|gets?|should|must|will|may)(?:\s+be)?\s+)?"
+_SCOPE = r"(?:under|in|inside|within)"
+_LEFT_ALONE = r"(?:untouched|unchanged|unmodified|alone)"
+_FORBID_SHAPES = (
+    rf"\b(?:no|zero)\s+(?:\w+\s+)?files?\s+{_SCOPE}\s+{{p}}\s+{_AUX}{_MUT}\b",
+    rf"\bnothing\s+{_SCOPE}\s+{{p}}\s+{_AUX}{_MUT}\b",
+    rf"\bno\s+(?:changes?|edits?|writes?|modifications?)\s+(?:to|{_SCOPE})\s+{{p}}",
+    (
+        rf"\b(?:do\s+not|don't|never|must\s+not|mustn't|should\s+not|shouldn't|without)\s+"
+        rf"(?:(?:ever|even)\s+)?{_MUT}\s+(?:(?:anything|any\s+files?|files?|code)\s+{_SCOPE}\s+)?{{p}}"
+    ),
+    (
+        rf"\b{{p}}\s+(?:is|are|stays?|remains?|must\s+(?:stay|remain)|should\s+(?:stay|remain)"
+        rf"|is\s+left|are\s+left|left)\s+{_LEFT_ALONE}"
+    ),
+    rf"\b{{p}}\s+(?:is|are)\s+(?:not|never)\s+{_MUT}\b",
+    rf"\bleav(?:e|es|ing)\s+(?:(?:anything|files?)\s+{_SCOPE}\s+)?{{p}}\s+{_LEFT_ALONE}",
+)
+
+
+def _forbids(clause: str, folder: str) -> bool:
+    """Whether a negator in the clause governs this folder as the thing left unchanged."""
+    path = rf"[`'\"(]*(?:\./)?{re.escape(folder)}/?(?:/\*\*?)?[`'\")]*(?=[\s,;:.!?]|$)"
+    return any(re.search(shape.format(p=path), clause, re.IGNORECASE) for shape in _FORBID_SHAPES)
+
+
 def folder_rules(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
     """The folder rules an outcome line states, each as (kind, folders), or none.
 
     Deliberately narrow: a clause counts only when it names a path, speaks of changing files,
-    and says one way or the other where. `forbid` is a negated clause ("no file under X is
-    edited", "X is left untouched"); `only` limits the work to the folders ("only files under
-    X change", "nothing outside X is changed"). A clause that mixes the two, or says neither, is
-    left to the reading, as is a line that names no folder at all.
+    and says one way or the other where. `forbid` is a path the clause itself says is not
+    changed ("no file under X is edited", "don't touch X", "X is left untouched"), and only the
+    folders such a phrase governs are named; a negator that governs something else ("no tests
+    fail", "without changing the API") rules nothing out. `only` limits the work to the folders
+    ("only files under X change", "nothing outside X is changed"). A clause that mixes the two,
+    or says neither, is left to the reading, as is a line that names no folder at all.
     """
     rules: list[tuple[str, tuple[str, ...]]] = []
     for clause in _CLAUSE_BREAK.split(text):
@@ -3892,7 +3928,9 @@ def folder_rules(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
         if negated and outside and not limits:
             rules.append((RULE_ONLY, folders))
         elif negated and not outside and not limits:
-            rules.append((RULE_FORBID, folders))
+            forbidden = tuple(folder for folder in folders if _forbids(clause, folder))
+            if forbidden:
+                rules.append((RULE_FORBID, forbidden))
         elif limits and not negated and not outside:
             rules.append((RULE_ONLY, folders))
     return tuple(rules)
