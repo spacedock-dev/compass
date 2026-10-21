@@ -5070,7 +5070,7 @@ The owner's 2026-10-06 request for plain explanations and evidence times superse
 215 words outside field values. The canonical partial-departure fixture keeps its coverage
 limits visible and has a 295-word ceiling, replacing its earlier 270. The unchanged
 nondeparture fixtures retain 175. DEC-27 moves the idle explanation to the how-to popup;
-its opened body has a 150-word ceiling, including the board-derived limit line, replacing the 85-word idle explanation ceiling. HowTo.test.tsx and popover-continuity.mjs assert it. The historical ceilings above record
+its opened body has a 150-word ceiling, including the board-derived limit line, replacing the 85-word idle explanation ceiling. HowTo.test.tsx asserts it on the minimal payload; the real session page's how-to measures over it (178 words) and is a known follow-up. The historical ceilings above record
 what was agreed then; this amendment does not rewrite them. These are regression ceilings for
 those two canonical examples, not universal reading budgets or runtime citation limits. A
 valid reading with two or more citations keeps every surviving support and its recorded times,
