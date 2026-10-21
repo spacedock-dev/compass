@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2083895,
+    "bytes": 2084311,
     "file": "react.html",
-    "sha256": "880c1705e8f35a75f5ae8592cf212bc892c314bf2e5193f52f1a6ab63af1f1a6"
+    "sha256": "0a4f60ac8b9b6b7b6724eec136d7a05230728de0e82e098301129693d6fddf5d"
   },
   "format": 1,
   "frontend": "react",
@@ -695,7 +695,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "3eb6ad7be61cc9819279b83e5755c27c734dd80dc3a336137cffa8b1a9f684a5"
+        "sha256": "6838f9957cf444a0a7c7256cd6a8bbc5639255840367870647f68e2093787670"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -731,7 +731,7 @@
       },
       {
         "file": "frontend/src/intent/Caveats.tsx",
-        "sha256": "65cecd800e50b07d379b5dc520b22f39a5070b913ca3880fa60328bdeae10718"
+        "sha256": "ab411d012b7c7a1bdc0885b7bee1d62d039a711dbecdcc91cc529eaaf53f27a4"
       },
       {
         "file": "frontend/src/intent/DirectionActionButton.tsx",
@@ -739,7 +739,7 @@
       },
       {
         "file": "frontend/src/intent/DirectionQuestion.tsx",
-        "sha256": "e22ad7105f993209634eecd9536a3b57141cc8ded0cbfb14dc6d7487476b456e"
+        "sha256": "74e4fb60bb969b94fb8ca9e35632d92323a7427a6258e912b8d07b57f6f15986"
       },
       {
         "file": "frontend/src/intent/FeedbackHint.tsx",
@@ -767,7 +767,7 @@
       },
       {
         "file": "frontend/src/intent/IntentSection.tsx",
-        "sha256": "a65b8d6200eaeb7e44640711abf0626fff3c3e9fb745315f90dc613383902322"
+        "sha256": "4b273d1eace2e8770ec693a029972e47ccde70c4156816931e31597b379ad817"
       },
       {
         "file": "frontend/src/intent/LiveMonitorSwitch.tsx",
@@ -779,7 +779,7 @@
       },
       {
         "file": "frontend/src/intent/PromptSelect.tsx",
-        "sha256": "aa22301cd5cf89c57154a6ab7abc8073f037524c4642d0362432b7d1511de0a3"
+        "sha256": "34122c52916c7f10ed027b817420858b01f5b5f52f2eaa51a34d0efbfa18582f"
       },
       {
         "file": "frontend/src/intent/annotation.ts",
@@ -847,11 +847,11 @@
       },
       {
         "file": "frontend/src/intent/save.ts",
-        "sha256": "893ac4ece888734c6a5a3c94ac9950be69e0e423b750b511fa2055cc613db1d8"
+        "sha256": "82af75086208afcb02374c4a0efbbf2c43093cb32fb6a721e8db75effc294bd4"
       },
       {
         "file": "frontend/src/intent/sentences.ts",
-        "sha256": "9c317f5bbaa30e58c4eadae2c802a3479519265244749ce307f517e8d7f5cdf8"
+        "sha256": "0d18695a4e9e1f708d0368cc853ec7a57149e39bd3a5a3b01ff3f20e8c3c5871"
       },
       {
         "file": "frontend/src/intent/testing.tsx",
@@ -1091,7 +1091,7 @@
       },
       {
         "file": "frontend/src/sample/session.fixture.json",
-        "sha256": "8fe5d1dcaf6dd201973aeb45511343134326f4e4a377d4cf045d0602ce9abd0f"
+        "sha256": "fcfe94b048aeb4f22e8687bb38ba15c29eedef0bb2eb98b550780de80fde294b"
       },
       {
         "file": "frontend/src/sample/tour.ts",
