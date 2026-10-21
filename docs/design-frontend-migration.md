@@ -752,6 +752,18 @@ function changed, so the differential tests and the recorded answers are as they
 [design record](design-reading-a-session.md#amended-2026-10-21-the-drift-card-has-one-state-at-a-time) owns
 each ruling and what was rejected.
 
+Deviation (2026-10-21): an unsettled line says why in view, a claims row quotes its claim, and a claim
+alone draws no line beside Steer back
+([the amendment](design-reading-a-session.md#amended-2026-10-21-the-record-settles-a-line)). `resultStatus`
+and `claimStatus` keep the retired page's words, so `result.differential.test.ts` is unchanged: the quiet
+row draws `Can't tell · <line>` and its reason, and `What the agent claimed · "<claim>"` with the claim's
+tail, from `cantTellReason` and `claimHeading`, new functions the recording has no answer for. The retired
+page's `Claim to check at #n · age` is the one trigger answer that departs: `correction.differential.test.ts`
+asks the recorded side with the claim taken out of the offer, and every other trigger is still held to it.
+The page also lets a written path carry a departure stored as `recorded-write`, which `checkSupports` takes
+as a flag; the recorded checks and every recorded answer for a row stored without it are unchanged. Golden
+files are unchanged.
+
 Deviations, each recorded rather than hidden. The card, the numbered list and the departures hold the last
 board they drew while the reader is in the correction box (untouched or edited), composing, or holding a
 pointer on a control they left it for, and say "Updates are paused" instead of the legacy whole-page queue,

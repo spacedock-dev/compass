@@ -289,6 +289,12 @@ WHY_CLAIM_UNCITED = "claim-uncited"
 # An `unsupported` withdrawn because the session's checks were not all read:
 # no grant or destination sent them, or the prompt had no room (review, PR C).
 WHY_CLAIM_RECORD_UNREAD = "claim-record-unread"
+# The one token on a verdict that stands rather than one withdrawn: an outcome line settled as a
+# departure by a file write the record holds, in or out of a folder the line names. It is a token
+# because the written paths it cites carry no result, so `check_supports` drops them from a
+# departure unless the row says the code, not the model, settled it.
+# [DEC-17](docs/design-reading-a-session.md#amended-2026-10-21-the-record-settles-a-line)
+WHY_RECORDED_WRITE = "recorded-write"
 WHY_TOKENS = (
     WHY_STANDS,
     WHY_NOT_ASKED,
@@ -307,6 +313,7 @@ WHY_TOKENS = (
     WHY_FAILED_CHECK_ON_RECORD,
     WHY_CLAIM_UNCITED,
     WHY_CLAIM_RECORD_UNREAD,
+    WHY_RECORDED_WRITE,
 )
 
 # Rule 7 turns on who wrote an evidence entry, so the answer is a closed
@@ -3130,7 +3137,13 @@ def failure_followed_by_write(
     )
 
 
-def check_supports(entry: Mapping[str, Any], result: str, window_start: float) -> bool:
+def check_supports(
+    entry: Mapping[str, Any],
+    result: str,
+    window_start: float,
+    *,
+    recorded_write: bool = False,
+) -> bool:
     """Whether one cited entry may carry this verdict, per the ruling's item 8.
 
     Any entry that is neither a tool report nor a check passes through to the
@@ -3142,12 +3155,23 @@ def check_supports(entry: Mapping[str, Any], result: str, window_start: float) -
     predicate per constraint, so the per-line checklist applies it line by line.
     Inside the window is read by `evidence_at`, so a check whose result
     landed after the words counts though its call began before them.
+
+    `recorded_write` is true only for a row stored with `WHY_RECORDED_WRITE`: the
+    code found the write inside or outside a folder the line names, so the write
+    itself carries that one departure, and no other verdict.
     """
     is_report = str(entry.get("type") or "") == TOOL_REPORT_TYPE
     if not is_report and entry.get("subject") != CHECK_SUBJECT:
         return not _subjectless_pi_check(entry)
     if entry.get("subject") != CHECK_SUBJECT:
-        return False
+        return (
+            recorded_write
+            and result == RESULT_DEPARTURE
+            and is_report
+            and entry.get("subject") == WRITE_SUBJECT
+            and (evidence_at(entry) or 0.0) > 0
+            and not _before_window(entry, window_start)
+        )
     at = evidence_at(entry) or 0.0
     if at <= 0 or at < window_start:
         return False
@@ -3508,6 +3532,7 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     latest_check_at: float = 0.0,
     checks_unread: bool = False,
     carried: Sequence[LedgerEntry] = (),
+    recorded_write: bool = False,
 ) -> tuple[list[LedgerEntry], str]:
     """The entries a verdict rests on, and which rule it fails, as its `why` token.
 
@@ -3528,7 +3553,11 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     of a grant. An outcome line's `consistent` resting on no work does not
     stand beside one (review, 2026-10-03).
     """
-    supporting = [entry for entry in cited if check_supports(entry, result, window_start)]
+    supporting = [
+        entry
+        for entry in cited
+        if check_supports(entry, result, window_start, recorded_write=recorded_write)
+    ]
     dropped = len(supporting) < len(cited)
     if name == CONSTRAINT_CLAIMS:
         why = _claims_rule(
@@ -3665,6 +3694,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     scope: str = SCOPE_LAST_TURN,
     requested_at: float | None = None,
     uncitable: frozenset[str] = frozenset(),
+    recorded_write: bool = False,
 ) -> Criterion:
     """One constraint's criterion, with every server-side rule applied.
 
@@ -3720,6 +3750,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
             latest_check_at=latest_check_at,
             checks_unread=checks_unread,
             carried=tuple(by_index.values()),
+            recorded_write=recorded_write,
         )
         if rests_on_nothing:
             result, why = RESULT_UNVERIFIABLE, rests_on_nothing
@@ -3771,6 +3802,340 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     return criterion
 
 
+# What the record settles before the model's word is believed. Two guards, both over entries the
+# code holds and neither adding anything to what the reading sends. A recorded write is a fact, not
+# a judgment: a file written under a folder an outcome line rules out, or outside the only folders
+# it allows, is a departure whatever the reply said, because "I cannot tell" about a line the same
+# card's own list of written files breaks is the record and the verdict contradicting each other
+# side by side. A recorded pass that covers a line is cited ahead of the agent's message on it, so
+# the page says which check it rests on rather than only what the agent said.
+# [DEC-17](docs/design-reading-a-session.md#amended-2026-10-21-the-record-settles-a-line)
+MAX_RECORDED_CITES = 3
+RULE_FORBID = "forbid"
+RULE_ONLY = "only"
+# The slash pairs ordinary prose is full of. Only a line that limits the work to a folder reads
+# a word it did not mean as a folder to the cost of a false departure, so they never name one.
+_PROSE_PAIRS = frozenset(
+    {
+        "and/or", "either/or", "input/output", "read/write", "pass/fail", "true/false",
+        "yes/no", "on/off", "he/she", "his/her", "w/o", "n/a", "i/o", "pros/cons",
+    }
+)  # fmt: skip
+_PATH_WORD = re.compile(r"[\w][\w.\-]*(?:/[\w][\w.\-]*)*/?")
+_CLAUSE_BREAK = re.compile(r";|\n|(?<=[.!?])\s+")
+_RULE_NEGATORS = re.compile(
+    r"\b(?:no|not|never|none|nothing|without|untouched|unchanged|zero)\b|n't\b", re.IGNORECASE
+)
+_RULE_MUTATION = re.compile(
+    r"\b(?:edit(?:s|ed|ing)?|chang(?:e|es|ed|ing)|modif(?:y|ies|ied|ying)|touch(?:es|ed|ing)?"
+    r"|writ(?:e|es|ing|ten)|wrote|add(?:s|ed|ing)?|creat(?:e|es|ed|ing)|delet(?:e|es|ed|ing)"
+    r"|alter(?:s|ed|ing)?|updat(?:e|es|ed|ing)|untouched|unchanged)\b",
+    re.IGNORECASE,
+)
+# "Within" and "inside" alone are not here: "no file within frontend/e2e is edited" rules the
+# folder out, and a bare preposition cannot tell that from "stays within".
+_RULE_LIMITS = re.compile(
+    r"\bonly\b|\b(?:stay|stays|staying|remain|remains)\s+(?:inside|within|in|under)\b"
+    r"|\b(?:limited|confined|restricted)\s+to\b",
+    re.IGNORECASE,
+)
+_RULE_OUTSIDE = re.compile(
+    r"\b(?:outside|beyond|other\s+than|except|apart\s+from|aside\s+from)\b", re.IGNORECASE
+)
+_FILE_NAME = re.compile(r"\.\w{1,5}$")
+
+
+def _path_tokens(text: str, *, files: bool = False) -> tuple[str, ...]:
+    """The paths a line's own words name, as written relative to the session's directory.
+
+    A word with a slash in it (`frontend/e2e`, `src/`); with `files`, also a bare file name
+    (`reading.py`). A glob tail is dropped and anything absolute or climbing out is not a path
+    this can place, so it is left out rather than guessed at.
+    """
+    found: list[str] = []
+    for raw in text.split():
+        word = raw.strip("`'\"()[]{},;:!?").rstrip(".")
+        for tail in ("/**", "/*"):
+            word = word.removesuffix(tail)
+        word = word.removeprefix("./")
+        if (
+            not _PATH_WORD.fullmatch(word)
+            or word.lower() in _PROSE_PAIRS
+            or any(part in {"", ".", ".."} for part in word.rstrip("/").split("/"))
+        ):
+            continue
+        if "/" not in word and not (files and _FILE_NAME.search(word)):
+            continue
+        path = word.rstrip("/")
+        if path not in found:
+            found.append(path)
+    return tuple(found)
+
+
+def folder_rules(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """The folder rules an outcome line states, each as (kind, folders), or none.
+
+    Deliberately narrow: a clause counts only when it names a path, speaks of changing files,
+    and says one way or the other where. `forbid` is a negated clause ("no file under X is
+    edited", "X is left untouched"); `only` limits the work to the folders ("only files under
+    X change", "nothing outside X is changed"). A clause that mixes the two, or says neither, is
+    left to the reading, as is a line that names no folder at all.
+    """
+    rules: list[tuple[str, tuple[str, ...]]] = []
+    for clause in _CLAUSE_BREAK.split(text):
+        folders = _path_tokens(clause)
+        if not folders or not _RULE_MUTATION.search(clause):
+            continue
+        negated = _RULE_NEGATORS.search(clause) is not None
+        limits = _RULE_LIMITS.search(clause) is not None
+        outside = _RULE_OUTSIDE.search(clause) is not None
+        if negated and outside and not limits:
+            rules.append((RULE_ONLY, folders))
+        elif negated and not outside and not limits:
+            rules.append((RULE_FORBID, folders))
+        elif limits and not negated and not outside:
+            rules.append((RULE_ONLY, folders))
+    return tuple(rules)
+
+
+def _within(path: str, folders: Sequence[str]) -> bool:
+    return any(path == folder or path.startswith(f"{folder}/") for folder in folders)
+
+
+@dataclass(frozen=True)
+class RecordedWrite:
+    """One path the record shows written, with the fact that shows it."""
+
+    id: str
+    path: str
+    at: float
+    result_at: float | None = None
+
+
+@dataclass(frozen=True)
+class Recorded:
+    """The writes and checks the session's record holds, whether or not a prompt carried them.
+
+    Built from the facts by `recorded_from` and used only to settle and to cite. Nothing in it
+    is sent to a model.
+    """
+
+    writes: tuple[RecordedWrite, ...] = ()
+    checks: tuple[LedgerEntry, ...] = ()
+
+
+def recorded_from(
+    facts: Iterable[Mapping[str, Any]],
+    harness: str,
+    sid: str,
+    *,
+    tool_output: ToolOutput | None = None,
+) -> Recorded:
+    """What the record holds of this session's writes and checks, as the guards read them.
+
+    A check is read through `build_ledger`, so its summary, its aging flags and its time are the
+    ones a reading would have been shown, with the published `changed_after` where no grant
+    recovered the pair, as `levels` reads it.
+    """
+    writes: list[RecordedWrite] = []
+    checks: list[LedgerEntry] = []
+    changed = tool_output.changed_after if tool_output is not None else frozenset()
+    incomplete = tool_output.read_incomplete if tool_output is not None else frozenset()
+    for fact in facts:
+        if not isinstance(fact, dict) or fact.get("subject") not in (WRITE_SUBJECT, CHECK_SUBJECT):
+            continue
+        if fact.get("subject") == WRITE_SUBJECT:
+            session = fact.get("source_session")
+            fact_id = records.safe_text(fact.get("fact_id"), 160).strip()
+            path = str(fact.get("summary") or "").strip().removeprefix("./")
+            stamp = _number(fact.get("at"))
+            if (
+                isinstance(session, dict)
+                and (session.get("harness"), session.get("sid")) == (harness, sid)
+                and fact.get("type") == TOOL_REPORT_TYPE
+                and fact_id
+                and stamp is not None
+                and stamp > 0
+                and path
+                and not path.startswith("/")
+                and ".." not in path.split("/")
+            ):
+                writes.append(RecordedWrite(fact_id, path.rstrip("/"), stamp))
+            continue
+        for row in build_ledger(
+            [fact],
+            harness,
+            sid,
+            tool_output={},
+            changed_after=changed,
+            read_incomplete=incomplete,
+        ):
+            if row.get("subject") == CHECK_SUBJECT:
+                row["changed_after"] = row.get("changed_after") is True or (
+                    fact.get("changed_after") is True
+                )
+                checks.append(row)
+    return Recorded(tuple(writes), tuple(checks))
+
+
+def recorded_departure(
+    text: str,
+    clause: str,
+    recorded: Recorded,
+    *,
+    window_start: float,
+    requested_at: float | None,
+    detail_cap_chars: int,
+) -> Criterion | None:
+    """The departure a recorded write settles on one outcome line, or None.
+
+    Only a departure: no write found says nothing, because the listing is capped and a window
+    can be partial, so the absence of one inside a folder is never a reason to say a line holds.
+    """
+    for kind, folders in folder_rules(text):
+        hits = sorted(
+            (
+                write
+                for write in recorded.writes
+                if not _before_window({"at": write.at}, window_start)
+                and after_line_request({"at": write.at}, requested_at)
+                and _within(write.path, folders) is (kind == RULE_FORBID)
+            ),
+            key=lambda write: write.at,
+        )
+        if not hits:
+            continue
+        where = ", ".join(folders)
+        files = f"{len(hits)} {'file' if len(hits) == 1 else 'files'}"
+        detail = (
+            f"{files} recorded as written under {where}, which this line rules out."
+            if kind == RULE_FORBID
+            else f"{files} recorded as written outside {where}, where this line keeps the work."
+        )
+        return {
+            "result": RESULT_DEPARTURE,
+            "cites": tuple(write.id for write in hits[:MAX_RECORDED_CITES]),
+            "detail": records.safe_text(detail, detail_cap_chars),
+            "clause": clause,
+            "why": WHY_RECORDED_WRITE,
+        }
+    return None
+
+
+# The words of a line that say which kind of check would show it, and the words of a check's own
+# command that say which kind it is. Deliberately small: a check covers a line when they share a
+# kind, or when the line names a path the check's command names. A line neither shape reaches is
+# left with the agent's message, which is the honest answer where no check plainly covers it.
+_LINE_KINDS = {
+    "test": re.compile(r"\b(?:tests?|suite|specs?|pytest|vitest|jest|unittest)\b", re.IGNORECASE),
+    "lint": re.compile(r"\b(?:lint(?:s|ed|er|ing)?|ruff|biome|eslint)\b", re.IGNORECASE),
+    "types": re.compile(
+        r"\b(?:type-?check(?:s|ed|ing)?|type\s+checks?|mypy|tsc|pyright)\b", re.IGNORECASE
+    ),
+    "build": re.compile(r"\bbuild(?:s|ing)?\b", re.IGNORECASE),
+}
+_CHECK_WORDS = {
+    "test": re.compile(
+        r"^(?:pytest|unittest|vitest|jest|mocha|playwright|tests?|test:\S+|run_tests\.py)$"
+    ),
+    "lint": re.compile(r"^(?:ruff|biome|eslint|flake8|pylint|lint(?::\S+)?)$"),
+    "types": re.compile(r"^(?:mypy|tsc|pyright|typecheck|type-check)$"),
+    "build": re.compile(r"^build(?::\S+)?$"),
+}
+
+
+def _check_kinds(command: str) -> frozenset[str]:
+    words = [os.path.basename(word) for word in command.split()]
+    return frozenset(
+        kind for kind, pattern in _CHECK_WORDS.items() if any(pattern.match(word) for word in words)
+    )
+
+
+def _same_path(a: str, b: str) -> bool:
+    return a == b or a.endswith(f"/{b}") or b.endswith(f"/{a}")
+
+
+def covers_line(text: str, command: str) -> bool:
+    """Whether a check's command plainly covers an outcome line.
+
+    A line that names a path is covered by a check that names it too; one that names none, by a
+    check of a kind the line speaks of (tests, lint, types, build). A pass of the same kind on a
+    different target does not cover a line about this one.
+    """
+    named = _path_tokens(text, files=True)
+    if named:
+        words = command.split()
+        targets = [word.rstrip("/").removeprefix("./") for word in words if "/" in word]
+        targets += [word for word in words if _FILE_NAME.search(word)]
+        return any(_same_path(path, target) for path in named for target in targets)
+    return any(_LINE_KINDS[kind].search(text) for kind in _check_kinds(command))
+
+
+def covering_checks(
+    text: str,
+    recorded: Recorded,
+    *,
+    window_start: float,
+    requested_at: float | None,
+) -> list[str]:
+    """The ids of the latest recorded passes that cover the line and can carry a `consistent`."""
+    passes = [
+        entry
+        for entry in recorded.checks
+        if check_supports(entry, RESULT_CONSISTENT, window_start)
+        and after_line_request(entry, requested_at)
+        and covers_line(text, _check_text(entry))
+    ]
+    passes.sort(key=lambda entry: evidence_at(entry) or 0.0, reverse=True)
+    return [entry["id"] for entry in passes[:MAX_RECORDED_CITES]]
+
+
+def _settled_by_record(
+    criterion: Criterion,
+    name: str,
+    text: str,
+    recorded: Recorded,
+    *,
+    window_start: float,
+    requested_at: float | None,
+    detail_cap_chars: int,
+) -> Criterion:
+    """One outcome line after the record has had its say."""
+    if not is_outcome_line(name):
+        return criterion
+    departed = recorded_departure(
+        text,
+        criterion["clause"],
+        recorded,
+        window_start=window_start,
+        requested_at=requested_at,
+        detail_cap_chars=detail_cap_chars,
+    )
+    if departed is not None:
+        return departed
+    # A line about what the agent tells the reader rests on the agent's message, which is what it
+    # is about; a check beside it would say the run, not the report, is what shows it.
+    if criterion.get("result") != RESULT_CONSISTENT or _about_what_the_agent_tells(
+        RESULT_CONSISTENT, name, text
+    ):
+        return criterion
+    cited = set(criterion["cites"])
+    if any(entry["id"] in cited for entry in recorded.checks):
+        return criterion
+    leading = [
+        key
+        for key in covering_checks(
+            text, recorded, window_start=window_start, requested_at=requested_at
+        )
+        if key not in cited
+    ]
+    return (
+        {**criterion, "cites": (*leading, *criterion["cites"])[:MAX_CITES]}
+        if leading
+        else criterion
+    )
+
+
 def _numbered(selection: object) -> dict[int, LedgerEntry]:
     """The menu numbering, from the one handle allowed to carry it.
 
@@ -3798,6 +4163,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
     scope: str = SCOPE_LAST_TURN,
     line_requests: Mapping[str, float] | None = None,
     uncitable: frozenset[str] = frozenset(),
+    recorded: Recorded | None = None,
 ) -> dict[str, Criterion]:
     """The model's tokens and indices, turned into what the page may render.
 
@@ -3812,6 +4178,10 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
 
     `window_start` is where the evidence window opens: `window_start` of the
     revision read.
+
+    `recorded` is what the record holds of writes and checks, whether or not the prompt
+    carried them: it settles an outcome line a recorded write breaks and puts the check that
+    covers a `consistent` line ahead of the agent's message (`_settled_by_record`).
     """
     by_index = _numbered(selection)
     failed_on_record = selection.record_failed or any(
@@ -3843,6 +4213,23 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
     # page names the row itself.
     clauses = dict(zip(names, (goal, *texts, ""), strict=False))
     out: dict[str, Criterion] = {}
+
+    def settled(name: str, criterion: Criterion) -> Criterion:
+        requested = (line_requests or {}).get(name) if is_outcome_line(name) else None
+        return (
+            _settled_by_record(
+                criterion,
+                name,
+                clauses[name],
+                recorded,
+                window_start=window_start,
+                requested_at=requested,
+                detail_cap_chars=detail_cap_chars,
+            )
+            if recorded is not None
+            else criterion
+        )
+
     for name in names:
         # Bounded and scrubbed like every other published string. It is the
         # reader's own text, but it arrives here as an argument and it was the
@@ -3865,37 +4252,43 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
                 and bool(selection.unread_checks)
                 and not any(demonstrates_work(entry) for entry in selection.entries)
             )
-            out[name] = {
-                "result": RESULT_UNVERIFIABLE,
-                "cites": (),
-                "detail": "",
-                "clause": clause,
-                "why": WHY_CHECKS_NOT_READ if crowded else WHY_NOT_ASKED,
-            }
+            out[name] = settled(
+                name,
+                {
+                    "result": RESULT_UNVERIFIABLE,
+                    "cites": (),
+                    "detail": "",
+                    "clause": clause,
+                    "why": WHY_CHECKS_NOT_READ if crowded else WHY_NOT_ASKED,
+                },
+            )
             continue
-        out[name] = _while_running(
-            _resolve_one(
-                parsed.get(name) or {},
-                by_index,
-                name=name,
-                clause=clause,
-                detail_cap_chars=detail_cap_chars,
-                window_start=window_start,
-                unread_failures=selection.unread_failures,
-                failed_on_record=failed_on_record,
-                line_text=clauses[name],
-                latest_check_at=latest_check_at,
-                checks_unread=selection.checks_unsent
-                or bool(selection.unread_checks)
-                or bool(selection.unlisted),
-                scope=scope,
-                requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
-                uncitable=uncitable,
-            ),
+        out[name] = settled(
             name,
-            by_id,
-            scope=scope,
-            last_work_at=last_work_at,
+            _while_running(
+                _resolve_one(
+                    parsed.get(name) or {},
+                    by_index,
+                    name=name,
+                    clause=clause,
+                    detail_cap_chars=detail_cap_chars,
+                    window_start=window_start,
+                    unread_failures=selection.unread_failures,
+                    failed_on_record=failed_on_record,
+                    line_text=clauses[name],
+                    latest_check_at=latest_check_at,
+                    checks_unread=selection.checks_unsent
+                    or bool(selection.unread_checks)
+                    or bool(selection.unlisted),
+                    scope=scope,
+                    requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
+                    uncitable=uncitable,
+                ),
+                name,
+                by_id,
+                scope=scope,
+                last_work_at=last_work_at,
+            ),
         )
     return out
 
@@ -4141,6 +4534,7 @@ def produce(  # noqa: PLR0913
         window_start=window_start(latest),
         scope=scope,
         line_requests=line_request_floors(latest, request_sources, harness, sid),
+        recorded=recorded_from(facts, harness, sid, tool_output=tool_output),
         uncitable=settled_reader_words(
             facts,
             harness,

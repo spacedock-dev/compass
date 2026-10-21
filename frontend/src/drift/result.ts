@@ -11,6 +11,7 @@ import {
   RESULT_CANT_TELL,
   RESULT_CLAIM_TAIL,
   RESULT_NOTHING_SHOWS,
+  RESULT_NOTHING_SHOWS_REASON,
   UNSUPPORTED,
   UNVERIFIABLE,
 } from './sentences';
@@ -110,6 +111,59 @@ export function resultStatus(
     : row.citedIds.length
       ? "Can't tell: what was read does not settle this"
       : RESULT_NOTHING_SHOWS;
+}
+
+/* The words of the claims row's heading, from the design's form: `What the agent claimed · "<claim>" is not
+   shown by the record`. The claim is the title of the agent's message the row cites, the way
+   `reading.claim_title` quotes it into a correction (the first sentence, its closing stop dropped). The tail is
+   `claimStatus`'s own ruled wording by the list's numbers, so the two cannot say different things. Null where
+   the row cites no message the page holds: there is nothing to quote, and `claimStatus` says what it can. */
+export interface ClaimHeading {
+  readonly claim: string;
+  readonly tail: string;
+}
+
+export function claimHeading(row: Criterion, numbers: Numbers): ClaimHeading | null {
+  if (row.key !== CLAIMS) return null;
+  const claim = String(row.claimEntry?.summary || '')
+    .trim()
+    .replace(/\.+$/, '')
+    .trim();
+  if (!claim) return null;
+  const record = resultWhere(row.recordEntry, numbers);
+  if (row.result === DEPARTURE) {
+    return { claim, tail: `is contradicted${record ? ` at ${record}` : ''}` };
+  }
+  if (row.result === UNSUPPORTED) return { claim, tail: 'is not shown by the record' };
+  if (row.result === CONSISTENT && record) return { claim, tail: `is shown at ${record}` };
+  return null;
+}
+
+/* Why a line reads "Can't tell", in the one sentence that is about that line. The rule that left it without a
+   verdict says it where one did, a limit of the harness where that is the cause; otherwise the entries the
+   reading read are named, or their absence is, so no two unsettled lines read the same unless they rest on
+   the same thing. Never the generic "what was read does not settle this". */
+export function cantTellReason(row: Criterion, numbers: Numbers): string {
+  if (row.why) return row.why;
+  if (row.limit) return row.limit;
+  const cited = row.citedIds
+    .map((id) => numbers.get(id))
+    .filter((n): n is string => n !== undefined)
+    .map((n) => `#${n}`);
+  if (cited.length) {
+    return `What it read, ${[...new Set(cited)].join(', ')}, neither shows nor contradicts this.`;
+  }
+  return row.citedIds.length
+    ? 'What it read neither shows nor contradicts this.'
+    : RESULT_NOTHING_SHOWS_REASON;
+}
+
+/* Under a claim the record does not show: where the agent said it, and what the record read is, since "not
+   shown" is about that and never about whether the thing happened. */
+export function claimReason(row: Criterion, numbers: Numbers): string {
+  if (row.key !== CLAIMS || row.result !== UNSUPPORTED) return '';
+  const said = resultWhere(row.claimEntry, numbers);
+  return `Nothing in the record read backs this claim${said ? `, which the agent made at ${said}` : ''}. ${RESULT_CLAIM_TAIL}`;
 }
 
 export type ResultState = 'departs' | 'unshown' | 'consistent' | 'cant-tell' | 'not-reached';

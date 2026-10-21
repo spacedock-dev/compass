@@ -347,7 +347,9 @@ export function offeredDirection(
    failed. */
 export const CHECK_FAILED_TRIGGER = 'A check the agent ran failed';
 
-/* What put Steer back on offer, in one line: the entry, its number and its age. */
+/* What put Steer back on offer, in one line: the entry, its number and its age. A claim alone puts no line
+   here: "Claim to check at #13 · 4m ago" sat under Steer back with no explanation and read as an instruction
+   to the reader, and the claims row says which claim and where (redesign walk, 2026-10-21). */
 export function steerTrigger(input: {
   readonly offer: SteerOffer | null;
   readonly shape: Shape | null;
@@ -364,9 +366,7 @@ export function steerTrigger(input: {
   const ids =
     offer.departed && shape
       ? shape.departures.flatMap((row) => (row.citedIds || []).slice(0, 1))
-      : offer.claimed && shape
-        ? shape.criteria.filter((row) => row.key === CLAIMS).flatMap((row) => row.citedIds || [])
-        : [];
+      : [];
   const candidates =
     offer.failed && !ids.length
       ? failedChecks(session, entries, scan)
@@ -379,10 +379,6 @@ export function steerTrigger(input: {
   const at = evidenceAt(fact) || 0;
   const n = numbers.get(String(fact.id || ''));
   const age = at > 0 ? `${fmtDur(Math.max(0, input.generated - at))} ago` : 'time not recorded';
-  const trigger = offer.departed
-    ? 'Departure evidence'
-    : offer.claimed
-      ? 'Claim to check'
-      : CHECK_FAILED_TRIGGER;
+  const trigger = offer.departed ? 'Departure evidence' : CHECK_FAILED_TRIGGER;
   return `${trigger}${n !== undefined ? ` at #${String(n)}` : ''} · ${age}`;
 }

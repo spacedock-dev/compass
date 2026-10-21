@@ -199,7 +199,8 @@
     "tells-the-person",
     "failed-check-on-record",
     "claim-uncited",
-    "claim-record-unread"
+    "claim-record-unread",
+    "recorded-write"
   ],
   "workEvidenceByHarness": {
     "claude": [

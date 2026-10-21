@@ -10,8 +10,9 @@ import {
   RESULT_CANT_TELL,
   RESULT_MARKED,
   RESULT_NOT_ACCURATE,
-  RESULT_NOTHING_SHOWS,
+  RESULT_NOTHING_SHOWS_REASON,
   RESULT_UNMARK,
+  TELLS_THE_PERSON,
   UNKNOWN_KEY,
 } from '../src/drift/sentences';
 import { neverDone } from './drift.checks';
@@ -22,6 +23,7 @@ import {
   failedCheck,
   fact,
   passedCheck,
+  written,
   type Scenario,
 } from './drift.scenario';
 
@@ -182,15 +184,22 @@ async function stamp(root: HTMLElement) {
   );
 }
 
-/* The reason for Can't tell stays inside Evidence (owner, 2026-10-14): hidden until the reader opens it. */
-async function reasonBehindEvidence(row: HTMLElement) {
-  const reason = [...row.querySelectorAll<HTMLElement>('.next-cockpit-reading-why')].find(
-    (node) => node.textContent === CHECK_DOES_NOT_SHOW_IT,
-  ) as HTMLElement;
-  await expect(reason).toBeDefined();
-  await expect(reason).not.toBeVisible();
+/* The reason for Can't tell is in view under the line, in the design's form `Can't tell · <line>` then why (the
+   redesign walk, 2026-10-21, which replaces the 2026-10-14 ruling that kept it inside Evidence). It is said once:
+   opening Evidence does not repeat it. */
+async function reasonInView(row: HTMLElement, sentence: string | RegExp) {
+  const reason = row.querySelector<HTMLElement>('[data-next-reason]') as HTMLElement;
+  await expect(reason).not.toBeNull();
+  await expect(reason).toBeVisible();
+  if (typeof sentence === 'string') await expect(reason.textContent).toBe(sentence);
+  else await expect(reason.textContent).toMatch(sentence);
+  await expect(reason.textContent).not.toContain('what was read does not settle this');
   await userEvent.click(within(row).getByRole('button', { name: 'Evidence' }));
-  await waitFor(() => expect(reason).toBeVisible());
+  await expect(
+    [...row.querySelectorAll('.next-cockpit-reading-why')].filter(
+      (node) => node.textContent === reason.textContent,
+    ),
+  ).toHaveLength(1);
 }
 
 async function noRetiredResultWords(root: HTMLElement) {
@@ -261,14 +270,14 @@ export const TwoDeparturesACantTellAndAClaim: Story = {
     const cantTell = quietRow(quiet, 'line_2');
     await expect(cantTell).toHaveAttribute('data-next-result-state', 'cant-tell');
     await expect(cantTell).toHaveTextContent(`${RESULT_CANT_TELL} · “The docs say how to run it”`);
-    await reasonBehindEvidence(cantTell);
+    await reasonInView(cantTell, CHECK_DOES_NOT_SHOW_IT);
     const claim = quietRow(quiet, 'claims');
     await expect(claim).toHaveAttribute('data-next-result-state', 'unshown');
+    // The claim is quoted, as the design has it, and the row says where the agent made it.
     await expect(claim).toHaveTextContent(
-      /What the agent said at \[\d+\] is not shown by the record/,
+      /^What the agent claimed · “All green locally: the tests pass” is not shown by the record/,
     );
     await citesResolvably(claim, 'What the agent claimed', '');
-    await expect(claim.textContent).not.toContain('All green locally');
     // The quiet rows come after every card.
     await expect(
       (cards[1] as HTMLElement).compareDocumentPosition(quiet) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -442,12 +451,141 @@ export const CantTellAndNothingShown: Story = {
     const cantTell = quietRow(shown, 'line_1');
     await expect(cantTell).toHaveAttribute('data-next-result-state', 'cant-tell');
     await expect(cantTell).toHaveTextContent(`${RESULT_CANT_TELL} · “Tests pass”`);
-    await reasonBehindEvidence(cantTell);
+    await reasonInView(cantTell, CHECK_DOES_NOT_SHOW_IT);
     const nothing = quietRow(shown, 'line_2');
-    await expect(nothing).toHaveTextContent(
-      `${RESULT_NOTHING_SHOWS} · “The docs say how to run it”`,
-    );
+    await expect(nothing).toHaveTextContent(`${RESULT_CANT_TELL} · “The docs say how to run it”`);
+    await reasonInView(nothing, RESULT_NOTHING_SHOWS_REASON);
     await expect(chips(nothing)).toHaveLength(0);
+    await neverDone(shown);
+  },
+};
+
+/* A write the record holds, inside a folder the line rules out, settles the line: the producer stores it as a
+   departure that rests on the written paths, and the page lets those paths carry it where it lets no other
+   write. The card shows the departure beside the same list of written files that used to contradict "Can't
+   tell". */
+const FOLDER_LINE = 'No file under frontend/e2e is edited';
+const WRITES = [
+  written('w1', 520, 'frontend/e2e/support/state.ts'),
+  written('w2', 530, 'frontend/e2e/a.spec.ts'),
+];
+const folderReading = (why: string) => ({
+  annotation_line_1: FOLDER_LINE,
+  ...stored(
+    reading({
+      goal: GOAL_CONSISTENT,
+      line_1: {
+        result: 'departure',
+        cites: ['w1', 'w2'],
+        detail: '2 files recorded as written under frontend/e2e, which this line rules out.',
+        clause: FOLDER_LINE,
+        why,
+      },
+    }),
+  ),
+});
+
+export const ARecordedWriteSettlesALineThatRulesOutItsFolder: Story = {
+  ...scenario({ session: folderReading('recorded-write'), facts: [PERSON, PASSED, ...WRITES] }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await expect(await verdictOf(drift)).toHaveTextContent('1 departure');
+    const cards = departures(shown);
+    await expect(cards.map((node) => node.dataset['nextDeparture'])).toEqual(['line_1']);
+    await departureCard(
+      cards[0] as HTMLElement,
+      'Expected outcome',
+      FOLDER_LINE,
+      '2 files recorded as written under frontend/e2e, which this line rules out.',
+      'Expected outcome line 1',
+    );
+    await expect(chips(cards[0] as HTMLElement)).toHaveLength(2);
+    await neverDone(shown);
+  },
+};
+
+/* The same two writes cited with no `recorded-write` token are a model's departure on a write alone, which
+   carries no result: the page still withdraws it, so the token is what lets a write stand and nothing else. */
+export const AModelsDepartureOnAWriteAloneIsStillWithdrawn: Story = {
+  ...scenario({ session: folderReading(''), facts: [PERSON, PASSED, ...WRITES] }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await expect(departures(shown)).toHaveLength(0);
+    const row = quietRow(shown, 'line_1');
+    await expect(row).toHaveAttribute('data-next-result-state', 'cant-tell');
+    await reasonInView(row, CHECK_DOES_NOT_SHOW_IT);
+  },
+};
+
+/* Every line that reads Can't tell says why in the sentence under it, and no two say the same unless they rest
+   on the same thing: a rule that withdrew it, the entries it read and found silent, or that nothing recorded
+   speaks to it. The generic "what was read does not settle this" is gone. */
+export const EveryCantTellLineSaysItsOwnReason: Story = {
+  ...scenario({
+    session: {
+      annotation_line_1: 'The docs say how to run it',
+      annotation_line_2: 'The agent reports the counts',
+      annotation_line_3: 'The migration is reversible',
+      annotation_line_4: 'The changelog names the fix',
+      ...stored(
+        reading({
+          goal: GOAL_CONSISTENT,
+          line_1: {
+            result: 'not verifiable from available evidence',
+            cites: [],
+            detail: '',
+            clause: 'The docs say how to run it',
+            why: 'check-does-not-show-it',
+          },
+          line_2: {
+            result: 'not verifiable from available evidence',
+            cites: [],
+            detail: '',
+            clause: 'The agent reports the counts',
+            why: 'tells-the-person',
+          },
+          line_3: {
+            result: 'not verifiable from available evidence',
+            cites: ['c2'],
+            detail: '',
+            clause: 'The migration is reversible',
+          },
+          line_4: {
+            result: 'not verifiable from available evidence',
+            cites: [],
+            detail: '',
+            clause: 'The changelog names the fix',
+          },
+        }),
+      ),
+    },
+    facts: [PERSON, PASSED],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const rows = [
+      ...shown.querySelectorAll<HTMLElement>('[data-next-result-state="cant-tell"]'),
+    ].filter((node) => node.dataset['nextResultRow']?.startsWith('line_'));
+    await expect(rows).toHaveLength(4);
+    const reasons = rows.map(
+      (node) => node.querySelector<HTMLElement>('[data-next-reason]')?.textContent ?? '',
+    );
+    for (const reason of reasons) {
+      await expect(reason.length).toBeGreaterThan(0);
+      await expect(reason).not.toContain('what was read does not settle this');
+    }
+    await expect(new Set(reasons).size).toBe(4);
+    await expect(reasons[0]).toBe(CHECK_DOES_NOT_SHOW_IT);
+    await expect(reasons[1]).toBe(TELLS_THE_PERSON);
+    await expect(reasons[2]).toMatch(
+      /^What it read, \[\d+(\.\d+)?\], neither shows nor contradicts this\.$/,
+    );
+    await expect(reasons[3]).toBe(RESULT_NOTHING_SHOWS_REASON);
+    for (const node of rows) {
+      await expect(node.textContent).toMatch(/^Can't tell · “/);
+    }
     await neverDone(shown);
   },
 };
@@ -478,7 +616,7 @@ export const ClaimContradicted: Story = {
     });
     await expect(claim).toHaveAttribute('data-next-result-state', 'departs');
     await expect(claim).toHaveTextContent(
-      /What the agent said at \[\d+\] is contradicted at \[\d+(\.\d+)?\]/,
+      /^What the agent claimed · “All green locally: the tests pass” is contradicted at \[\d+(\.\d+)?\]/,
     );
     await expect(claim).toHaveTextContent('pytest failed after the agent said the tests pass.');
     await citesResolvably(claim, 'What the agent claimed', '');
@@ -627,7 +765,7 @@ export const ClaimShownByTheRecord: Story = {
     });
     await expect(claim).toHaveAttribute('data-next-result-state', 'consistent');
     await expect(claim).toHaveTextContent(
-      /What the agent said at \[\d+\] is shown at \[\d+(\.\d+)?\]/,
+      /^What the agent claimed · “All green locally: the tests pass” is shown at \[\d+(\.\d+)?\]/,
     );
     await citesResolvably(claim, 'What the agent claimed', '');
     await neverDone(shown);
@@ -661,7 +799,11 @@ export const ClaimNotShownOffersNoSteerBack: Story = {
       return node;
     });
     await expect(claim).toHaveTextContent(
-      /What the agent said at \[\d+\] is not shown by the record/,
+      /^What the agent claimed · “All green locally: the tests pass” is not shown by the record/,
+    );
+    await reasonInView(
+      claim,
+      /^Nothing in the record read backs this claim, which the agent made at \[\d+\]\. The record read is the board's recent tail\.$/,
     );
     await citesResolvably(claim, 'What the agent claimed', '');
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();

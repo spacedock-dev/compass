@@ -120,6 +120,12 @@ export const FAILED_CHECK_UNREAD =
   'A check that failed was not read, because the reading had no room for it, so nothing here says the output is consistent.';
 export const CLAIM_RECORD_UNREAD =
   "Not all of this session's checks were read, so the analysis cannot say the record does not show what the agent said.";
+/* The stored token of an outcome line the producer settled from a recorded write (`reading.WHY_RECORDED_WRITE`).
+   Unlike every other token it is on a verdict that stands, so this sentence is only ever the reason a page that
+   does not hold the write it cites gives for withdrawing it. */
+export const RECORDED_WRITE = 'recorded-write';
+export const RECORDED_WRITE_UNHELD =
+  'Compass settled this from a file write it recorded, and this page does not hold that entry, so it reads as not verifiable.';
 export const CLAIM_UNCITED =
   "The analysis did not cite the agent's message and, for a contradiction or a match, the entry it compared it with, so it reads as not verifiable.";
 
@@ -143,6 +149,7 @@ export const STORED_WHY: Readonly<Record<string, string>> = {
   'failed-check-on-record': FAILED_CHECK_ON_RECORD,
   'claim-uncited': CLAIM_UNCITED,
   'claim-record-unread': CLAIM_RECORD_UNREAD,
+  [RECORDED_WRITE]: RECORDED_WRITE_UNHELD,
 };
 
 /* Said once, on the reading that no longer finds a departure the one before it did, with that reading's time:
@@ -155,8 +162,11 @@ export const clearedLine = (count: number, at: string, steered = false): string 
     : count === 1
       ? `The departure from the ${at} reading no longer holds.`
       : `The ${String(count)} departures from the ${at} reading no longer hold.`;
+export const CLAIM_LEAD = 'What the agent claimed';
 export const RESULT_CANT_TELL = "Can't tell";
 export const RESULT_NOTHING_SHOWS = "Can't tell: nothing recorded shows this yet";
+export const RESULT_NOTHING_SHOWS_REASON =
+  'Nothing recorded shows this yet: no write, check or message it read speaks to it.';
 export const RESULT_CLAIM_TAIL = "The record read is the board's recent tail.";
 export const RESULT_DEPARTS = 'Departs from your intent';
 export const RESULT_NOTHING_FOUND =
