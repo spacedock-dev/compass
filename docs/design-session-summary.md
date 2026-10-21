@@ -671,7 +671,9 @@ ceilings and every earlier ruling are unchanged.
   inside, instead of staying open above the summary.
 - **A summary written again says it can group differently.** After Summarize again, or a start after a
   delete made in this tab, the card says a summary written again can group the work into different
-  phases. The page holds that in memory for the tab; the server publishes no history of rewrites.
+  phases. The page holds that in memory for the tab and draws it only while the rerun job runs: once a later
+  context read shows the job over, the note is cleared and a later start does not bring it back. The server
+  publishes no history of rewrites.
 
 **Measured.** The current and the previous prompts were run through the production producer and
 `observer.claude_exec` over the committed sample session (96 entries: two windows and a lede, three
