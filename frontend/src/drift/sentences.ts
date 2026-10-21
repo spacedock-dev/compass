@@ -180,10 +180,6 @@ export const RESULT_MARKED =
   'Marked inaccurate. This analysis no longer sets the drift level or Steer back, and its verdicts below are set aside.';
 export const RESULT_UNMARK = 'Undo';
 export const RESULT_MARK_UNSAVED = 'Your mark was not saved. Try again.';
-/* What the reader may say was wrong with a reading they disowned: optional, one choice, held in this tab and
-   sent nowhere, so it says so. Said once, beside the message that says the reading was disowned. */
-export const WRONG_LEGEND = 'What was wrong? Optional. Kept in this tab only; nothing is sent.';
-export const WRONG_CHOICES = ['The level', 'A verdict', 'The evidence', 'Something else'] as const;
 
 /* What it read: the model, the intent it read against, how much of the session it read, and what it never
    reads. Headings and short items rather than one paragraph of caveats. */

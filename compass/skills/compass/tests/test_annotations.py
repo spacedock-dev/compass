@@ -915,7 +915,7 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         said = set(annotation_store.DISCARD_SENTENCES.values())
 
         self.assertEqual(len(annotation_store.DISCARD_SENTENCES), len(said))
-        self.assertEqual(13, len(said))
+        self.assertEqual(15, len(said))
         self.assertNotIn("Saved as a new revision.", said)
         for sentence in said:
             with self.subTest(sentence=sentence[:32]):
@@ -938,6 +938,99 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
                 config, state, "pi", "never-annotated", diagnostic_sink=lambda _line: None
             ),
         )
+
+    def _two_dashboards(self) -> tuple[RuntimeConfig, Any, Any]:
+        """One Compass home and two states: a discarding dashboard and the one that saves."""
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, True)
+        config, discarding = make_runtime(state_home=home, state_dir=Path(home))
+        return config, discarding, build_runtime_state(config, started=0.0)
+
+    def test_a_discard_decides_on_the_stored_revisions_and_not_on_this_dashboards_copy(
+        self,
+    ) -> None:
+        """DRC-4939. A save from another tab landed after this dashboard last read the file.
+
+        The discard route chose whether to take the summary from `active`, the unlocked cached
+        copy, so a save that this dashboard had not yet seen left words discarded and the
+        summary standing. The count of what went is taken under the lock, from the file.
+        """
+        config, discarding, saving = self._two_dashboards()
+        silent = lambda _line: None  # noqa: E731 - a sink with nothing to say
+        self.assertEqual((), annotation_store.active(config, discarding))
+        for goal in ("First", "Second"):
+            annotation_store.annotate(
+                config, saving, "pi", "raced", goal=goal, output="", diagnostic_sink=silent
+            )
+        self.assertEqual((), annotation_store.active(config, discarding))
+
+        receipt: dict[str, int] = {}
+        outcome = annotation_store.clear(
+            config, discarding, "pi", "raced", diagnostic_sink=silent, receipt=receipt
+        )
+
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        self.assertEqual(2, receipt["removed_revisions"])
+        entry = annotation_store.find(annotation_store.refresh(config, saving), "pi", "raced")
+        self.assertTrue(annotation_store.is_discarded(entry))
+        self.assertEqual(2, annotation_store.discarded_revision(entry))
+
+    def test_a_save_after_a_discard_is_a_new_revision_never_half_of_the_old_entry(self) -> None:
+        """DRC-4939. The two orders of a save and a discard each leave one whole state."""
+        config, discarding, saving = self._two_dashboards()
+        silent = lambda _line: None  # noqa: E731 - a sink with nothing to say
+        annotation_store.annotate(
+            config, saving, "pi", "order", goal="Before", output="", diagnostic_sink=silent
+        )
+        receipt: dict[str, int] = {}
+        annotation_store.clear(
+            config, discarding, "pi", "order", diagnostic_sink=silent, receipt=receipt
+        )
+        annotation_store.annotate(
+            config, saving, "pi", "order", goal="After", output="", diagnostic_sink=silent
+        )
+
+        entry = annotation_store.find(annotation_store.refresh(config, discarding), "pi", "order")
+        self.assertEqual(1, receipt["removed_revisions"])
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        self.assertEqual(["After"], [r["goal"] for r in entry["revisions"]])
+        self.assertEqual(2, entry["revisions"][-1]["n"])
+
+    def test_a_discard_that_removed_nothing_says_so_in_its_receipt(self) -> None:
+        config, discarding, saving = self._two_dashboards()
+        silent = lambda _line: None  # noqa: E731 - a sink with nothing to say
+        never: dict[str, int] = {}
+        annotation_store.clear(
+            config, discarding, "pi", "never", diagnostic_sink=silent, receipt=never
+        )
+        self.assertEqual(0, never["removed_revisions"])
+
+        annotation_store.annotate(
+            config, saving, "pi", "twice", goal="Words", output="", diagnostic_sink=silent
+        )
+        annotation_store.clear(config, saving, "pi", "twice", diagnostic_sink=silent)
+        again: dict[str, int] = {}
+        annotation_store.clear(
+            config, discarding, "pi", "twice", diagnostic_sink=silent, receipt=again
+        )
+        self.assertEqual(0, again["removed_revisions"])
+
+    def test_a_discard_the_store_refused_leaves_no_count_to_claim(self) -> None:
+        """A refusal removed nothing, and a missing count must not read as zero removed."""
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, True)
+        config, state = make_runtime(
+            state_home=home, state_dir=Path(home), annotations_enabled=False
+        )
+        receipt: dict[str, int] = {}
+        self.assertEqual(
+            annotation_store.OUTCOME_REFUSED,
+            annotation_store.clear(
+                config, state, "pi", "off", diagnostic_sink=lambda _line: None, receipt=receipt
+            ),
+        )
+        self.assertNotIn("removed_revisions", receipt)
 
     def test_the_sentences_ride_the_payload_only_where_the_store_is_live(self) -> None:
         home = tempfile.mkdtemp()

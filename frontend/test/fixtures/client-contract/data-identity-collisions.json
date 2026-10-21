@@ -20,8 +20,10 @@
         "record": "What you asked of this session was discarded, along with any reading of it. None of it is kept here: this record says only that the act happened and when. Where session history is recording, it holds its own fourteen-day copy of the goal and each outcome line, and --forget deletes that store.",
         "record_standing": "The departure store could not be written when they went, so anything raised against those words goes on quoting them.",
         "refused": "Not discarded. The server refused, so every revision is still stored and nothing raised against them was withdrawn.",
-        "stored": "Discarded. Every revision of what you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run.",
-        "summary_kept": "Discarded here, but this session's summary could not be deleted and is still stored. Delete summary removes it.",
+        "stored": "Discarded. Every revision of what you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.",
+        "stored_no_summary": "Discarded. Every revision of what you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.",
+        "summary_kept": "Discarded here, but this session's summary could not be deleted, so any summary stored for it is still stored. Delete summary removes it.",
+        "summary_unavailable": "Discarded here. The summary store could not be read, so Compass cannot say whether a summary of this session is stored, and none was deleted.",
         "unreadable": "What you asked of this session was discarded, so there is nothing left to read it against.",
         "untrusted": "Not discarded. Compass could not read compass-annotations.json, so nothing was saved and nothing was overwritten. Move or repair that file to save again.",
         "unwithdrawn": "Discarded here. Every revision of what you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them.",
@@ -596,7 +598,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "19512",
+      "Content-Length": "20184",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

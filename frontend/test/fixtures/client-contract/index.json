@@ -15,35 +15,35 @@
       "method": "POST",
       "name": "annotate-adopted",
       "route": "/api/annotate",
-      "sha256": "07dadce3b493444da6019e14e4378d6034b00cae6a3ea01b5ae6dbc33375a4bd",
+      "sha256": "238053187c25e03151890cc4c44d0a9b6f82dabb65fb5c410d870e078b0b2939",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-cleared",
       "route": "/api/annotate",
-      "sha256": "e85c22910a1c68d82487d62c9944579639727caecd5955b1fc0b1ed53a7617ac",
+      "sha256": "69091d68648fcc59c422f0dc59bfa78616ff1be0da65a0f24b58a9dca854089f",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-current-revision",
       "route": "/api/annotate",
-      "sha256": "16cf83f0056f34af6257dfb087e8bde9d8fe7b39e056cca39d5de4fc9b255f05",
+      "sha256": "9e0303ac86c3477b2af20ae01ea85b4f7ffec552bc07dc54a7dc1e6a4969eea4",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-direction-added",
       "route": "/api/annotate",
-      "sha256": "ca5b99c799e24e6db36cf360281350d30d56da7b8fe059e99f5be3b620a85775",
+      "sha256": "05743af24ab288116c3698ea01e0d6ed244dcf3d25d4fb5bfee23bd4bd3a8e95",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-direction-refused",
       "route": "/api/annotate",
-      "sha256": "2fc3c8bb780c552ddc69ee4272fa2289c405e1fbd8ed8ad7426a4fec056386f9",
+      "sha256": "8bdda84a63fb8e685f4b3f7a1cd557ac1cc20937482ceb118ed3edf4547ff2d0",
       "status": 200
     },
     {
@@ -71,21 +71,21 @@
       "method": "POST",
       "name": "annotate-refused",
       "route": "/api/annotate",
-      "sha256": "243ca321eb07e4c5f04fd540abfcffe8c9aa928c1d4f13df58712d01581d7dd2",
+      "sha256": "83b4ec958941441e866740aab271897bf9c559629cf85a0c828e82135165b42b",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-stale-lines",
       "route": "/api/annotate",
-      "sha256": "487997c49610aa0b420ce23d69477aa6d4aac814cfbc14889bd5aa1f7f154159",
+      "sha256": "70314c446ef73b9d0cd51f085a7a37d23c5d68498c75b91c981a91326426de46",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-stored",
       "route": "/api/annotate",
-      "sha256": "7b100fc3fe3d87c7ccab0d5dcd3d14c259a846395a397320b4354a691a990192",
+      "sha256": "907fcfb00680f1d13f6e065e6c8aa1398d3576c8564fd8734d0852a781d725f5",
       "status": 200
     },
     {
@@ -99,28 +99,28 @@
       "method": "POST",
       "name": "annotate-unchanged",
       "route": "/api/annotate",
-      "sha256": "e2ca88a6d54ba5e2ef30e905fa8c13a8aa86a530c9a12ee63906523cb8301876",
+      "sha256": "94e782bfb7c97f6ed17dc41c7be3469c0ddb745d742120f8a60cb7cd31be654b",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-unreadable",
       "route": "/api/annotate",
-      "sha256": "3fd193ee767d92ce7a09700a8eb11409abf8b75f404c4ade061359057cd67251",
+      "sha256": "758888a3dd7ac9081e0da627c43b2cc280db82df11d72d0051d3089e5e19a31b",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-untrusted",
       "route": "/api/annotate",
-      "sha256": "92f844b2662818b52d458f16731df6db6abae061f7d84ef0fb86a749c7851508",
+      "sha256": "393e7530070455910237a846de66a69c66d5500405c8755e8d6252f150428a4e",
       "status": 200
     },
     {
       "method": "POST",
       "name": "annotate-unwritable",
       "route": "/api/annotate",
-      "sha256": "2c07fde13e58e47be0424e343da08aaaf82b8ca3a6a7276b7ebe9d0bab2791c8",
+      "sha256": "da3b33763692a848a3fed15fa64862e1e15bfa6aee786e34bb63a965cbc3a7fb",
       "status": 200
     },
     {
@@ -281,7 +281,7 @@
       "method": "GET",
       "name": "data-empty",
       "route": "/api/data",
-      "sha256": "10c005d579fc6a82aa32338bb5a3a48d8b210918070402fee76433528c409389",
+      "sha256": "0f7c951959e32da1f785e8da42ff28b77a1e931c1b54437a671d26467501a616",
       "status": 200
     },
     {
@@ -302,35 +302,35 @@
       "method": "GET",
       "name": "data-healthy",
       "route": "/api/data",
-      "sha256": "1192b9ca2ee26e534f516f96946e104c4931479dc8429e5d6269732a4f7701de",
+      "sha256": "ac12c1f4039b80475f962c99823d29be752183c082d283d40ba53da6dc54f7b3",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-identity-collisions",
       "route": "/api/data",
-      "sha256": "91c38353b1e6f4cf2ba67cc6d2310ce3c427ee2240fafc3345a32a25ba1bd742",
+      "sha256": "f673305a06f34c1697f385c5d838d26498ff94fbd8772b9537b0298aa770488d",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-restarted-build",
       "route": "/api/data",
-      "sha256": "103d028128f6893a042fc87d54543d1abf528ce373592f81bc9696725ab7ca40",
+      "sha256": "fa4b78f97156a01f2e848db4d2b7b26838d98a40132027b1cb87d767bf9284b8",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
-      "sha256": "95f664f245ceca7374797a5b43eb52c5c7b6f8bc1d01476ad5ef4015fac94ea4",
+      "sha256": "e1fd351173567fd613921f05c973f0dac6f4a75ca5221ce3aa1fd85fde650819",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unavailable",
       "route": "/api/data",
-      "sha256": "4469e06df78ce5782d167e3fb7afd01e128de59d4904f530338622c9ad15064a",
+      "sha256": "bc7d09f44310f0b62e3f8adabc35771dfe84c0dc86679189b3d60ef0b2ba6b19",
       "status": 200
     },
     {

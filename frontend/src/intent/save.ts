@@ -446,6 +446,15 @@ export function pressDiscard(ctx: Ctx, row: Row, detail: number): void {
   void discardAnnotation(ctx, row, identity);
 }
 
+/* The kinds that mean words were removed and the drafts over them must go. */
+const DISCARD_LANDED: ReadonlySet<string> = new Set([
+  'discard-stored',
+  'discard-stored_no_summary',
+  'discard-unwithdrawn',
+  'discard-summary_kept',
+  'discard-summary_unavailable',
+]);
+
 async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity): Promise<void> {
   const key = discardKey(row);
   const press = pendingStart(ctx, key, 'Discarding…', 'Discarding.');
@@ -479,22 +488,28 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
     /* A discard is one act over two stores and the second half fails on its own. `withdrew` is the departure
        store's answer, so the categorical sentence is not printed over rows this page is about to redraw
        with the discarded words still in them. `=== false` and not falsiness: a server that predates the
-       field omits it, and an absent answer must leave the sentence it had. */
-    const summaryKept = body.summary === 'unwritable' || body.summary === 'unavailable';
-    /* The summary is a third store and fails on its own as well. The departure store's half wins when both
-       fail, because the sentence for it is the one that stops a reader believing the quotations went; the
-       summary stays on the page with its own Delete summary. */
+       field omits it, and an absent answer must leave the sentence it had. `removed` is the store's own count
+       under its lock, so zero is a discard that found nothing and says so rather than "gone".
+
+       The summary is a third store and says what happened to it in one of four ways, so the sentence names
+       only that: gone, never there, kept because the store could not be written, or unknown because it could
+       not be read. A server that predates the field leaves the plain sentence. The departure store's half
+       wins when both fail, because the sentence for it is the one that stops a reader believing the
+       quotations went; the summary stays on the page with its own Delete summary. */
+    const summaryKind: Record<string, string> = {
+      absent: 'discard-stored_no_summary',
+      unwritable: 'discard-summary_kept',
+      unavailable: 'discard-summary_unavailable',
+    };
     const kind =
-      result === 'discard-stored' && body.withdrew === false
-        ? 'discard-unwithdrawn'
-        : result === 'discard-stored' && summaryKept
-          ? 'discard-summary_kept'
-          : result;
-    if (
-      kind === 'discard-stored' ||
-      kind === 'discard-unwithdrawn' ||
-      kind === 'discard-summary_kept'
-    ) {
+      result === 'discard-stored' && body.removed === 0
+        ? 'discard-nothing'
+        : result === 'discard-stored' && body.withdrew === false
+          ? 'discard-unwithdrawn'
+          : result === 'discard-stored'
+            ? (summaryKind[String(body.summary ?? '')] ?? result)
+            : result;
+    if (DISCARD_LANDED.has(kind)) {
       // The independent log may already hold these words, even if the next dashboard fetch fails.
       intentLogFor(ctx.shell).invalidate();
       /* The drafts go with the annotation. They are an independent lane, so a half-typed box would otherwise

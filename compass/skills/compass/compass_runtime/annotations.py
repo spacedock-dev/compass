@@ -163,6 +163,10 @@ DISCARD_WHY = (
     "store. The clear beside the goal is the weaker act: the save after it keeps every earlier "
     "revision."
 )
+# The page keeps a cue for the same number of seconds (`CUE_TTL_MS` in `controls/keyedState.ts`),
+# and `scripts/regen_client_fixtures.py` writes this one into the vocabulary fixture so a test on
+# that side fails when they part (DRC-4939). The armed discard and Delete summary lapse with it.
+CUE_WINDOW_SECONDS = 30
 # The confirmation, and it carries the whole scope rather than the fact that
 # there is one. It is the only sentence a reader sees before the act, so
 # naming the four effects here is what makes the two presses a decision
@@ -174,23 +178,47 @@ DISCARD_ARMED = (
     "Press it again to discard. Every revision of what you asked of this session will go, along "
     "with any reading of it and this session's summary, including one being written, and nothing "
     "raised against those words will quote them any more; the record that a check ran stays. "
-    "Nothing has been deleted yet, and this offer lapses in 30 seconds."
+    f"Nothing has been deleted yet, and this offer lapses in {CUE_WINDOW_SECONDS} seconds."
+)
+# A discard does not stop the session being summarized again: a finished session is summarized when
+# it is opened (docs/design-session-summary.md, rule 5). Said wherever the old summary is gone, so a
+# reader who sees one reappear was told it could.
+DISCARD_REOPEN = (
+    "Opening a finished session again writes a new summary unless summaries are turned off."
 )
 # Categorical and with no count. Nothing measures how many raises were
 # withdrawn: `departures.withdraw` answers True whether it blanked five rows or
 # none, and a figure derived from the row's own `departures` list would be the
 # first Measured Invariant's defect again.
+#
+# One sentence per thing that happened to the summary store, because the summary is the third
+# store and what it did is one of four things the route reports (DRC-4939): it deleted one, it had
+# none, it could not be written, or it could not be read. A sentence that named the summary in every
+# case said "its summary" over a session that never had one.
 DISCARD_STORED = (
     "Discarded. Every revision of what you asked of this session is gone, along with any "
     "reading of it and its summary, and nothing raised against those words quotes them any "
-    "more. The record that a check ran stays, because it is what bounds how often one may run."
+    "more. The record that a check ran stays, because it is what bounds how often one may run. "
+    + DISCARD_REOPEN
 )
-# The summary is the third store, and the one that can fail alone: the words and the readings
-# are gone by then and cannot be put back, so this says what is left and the control that
-# removes it. Nothing here claims the departure store, which `DISCARD_UNWITHDRAWN` speaks for.
+DISCARD_STORED_NO_SUMMARY = (
+    "Discarded. Every revision of what you asked of this session is gone, along with any "
+    "reading of it, and nothing raised against those words quotes them any more. This session "
+    "had no stored summary. The record that a check ran stays, because it is what bounds how "
+    "often one may run. " + DISCARD_REOPEN
+)
+# The summary store can fail alone: the words and the readings are gone by then and cannot be put
+# back, so these say what is left and, where it is true, the control that removes it. Nothing here
+# claims the departure store, which `DISCARD_UNWITHDRAWN` speaks for.
 DISCARD_SUMMARY_KEPT = (
-    "Discarded here, but this session's summary could not be deleted and is still stored. "
-    "Delete summary removes it."
+    "Discarded here, but this session's summary could not be deleted, so any summary stored for "
+    "it is still stored. Delete summary removes it."
+)
+# Unreadable is not unwritable: Compass does not know whether a summary exists, and Delete summary
+# reads the same store, so it names no remedy it cannot promise.
+DISCARD_SUMMARY_UNAVAILABLE = (
+    "Discarded here. The summary store could not be read, so Compass cannot say whether a summary "
+    "of this session is stored, and none was deleted."
 )
 DISCARD_REFUSED = (
     "Not discarded. The server refused, so every revision is still stored and nothing raised "
@@ -289,8 +317,10 @@ DISCARD_SENTENCES: Final[dict[str, str]] = {
     "why": DISCARD_WHY,
     "armed": DISCARD_ARMED,
     "stored": DISCARD_STORED,
+    "stored_no_summary": DISCARD_STORED_NO_SUMMARY,
     "unwithdrawn": DISCARD_UNWITHDRAWN,
     "summary_kept": DISCARD_SUMMARY_KEPT,
+    "summary_unavailable": DISCARD_SUMMARY_UNAVAILABLE,
     "refused": DISCARD_REFUSED,
     "unwritable": DISCARD_UNWRITABLE,
     "untrusted": DISCARD_UNTRUSTED,
@@ -2525,6 +2555,7 @@ def clear(
     *,
     now: float | None = None,
     diagnostic_sink: Callable[[str], None] = print,
+    receipt: dict[str, int] | None = None,
 ) -> str:
     """Forget one session's words entirely. Returns an `OUTCOMES` token.
 
@@ -2545,6 +2576,13 @@ def clear(
     which the test pinning it gives the reason for: the caller withdraws
     departure rows only on `STORED`, and an annotation evicted out from under
     its rows would otherwise leave them quoting forever.
+
+    `receipt["removed_revisions"]` is how many revisions this call took, counted from the
+    file under the lock and set only once the write landed (DRC-4939). The caller decides what
+    else to take with the words from it, never from `active`, whose cached copy a save in
+    another tab can outrun: a discard decided on that copy left the summary standing under
+    words that had gone. A save that lands first is a revision this call takes too; one that
+    lands after is a new revision over the record.
     """
     if not config.annotations_enabled:
         return OUTCOME_REFUSED
@@ -2559,6 +2597,7 @@ def clear(
         current = store.entries
         existing = find(current, *key)
         others = tuple(e for e in current if (e["harness"], e["sid"]) != key)
+        removed = 0
         if existing is None:
             kept: list[Annotation] = list(others)
         elif is_discarded(existing):
@@ -2566,6 +2605,7 @@ def clear(
             # when the words went, and a second press deleted nothing.
             kept = [*others, existing]
         else:
+            removed = len(existing["revisions"])
             record: Annotation = {
                 "harness": existing["harness"],
                 "sid": existing["sid"],
@@ -2575,7 +2615,10 @@ def clear(
             }
             kept = [*others, record]
         # Inside the lock, for `annotate`'s reason.
-        return _commit(config, state, store, key, kept, diagnostic_sink=diagnostic_sink)
+        outcome = _commit(config, state, store, key, kept, diagnostic_sink=diagnostic_sink)
+        if receipt is not None and outcome == OUTCOME_STORED:
+            receipt["removed_revisions"] = removed
+        return outcome
 
 
 def forget(config: RuntimeConfig) -> str:

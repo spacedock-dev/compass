@@ -87,6 +87,7 @@
     "clause",
     "why"
   ],
+  "cueWindowSeconds": 30,
   "format": 1,
   "levelReasons": [
     "draft-unsaved",

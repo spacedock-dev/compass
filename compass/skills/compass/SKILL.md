@@ -461,7 +461,7 @@ and no text at all. That record is why a discarded session still has a line in t
 and why the board never describes it as a session nobody typed against. That act is the `Discard everything` control, in the Intent card, behind the summary of the same name and offered only
 where a revision is stored; it takes two presses, and between them the board names what it will
 delete (the revisions, any reading and the summary), what it will withdraw and what it keeps (the
-record that a check ran, and session history, which `--forget` clears), and when the offer lapses. That sentence is the control's own description, and it is
+record that a check ran, and session history, which `--forget` clears), and when the offer lapses. The result names only what happened to the summary: gone, none stored, still stored, or unreadable. Where it is gone or was never there, it says a finished session opened again writes a new one unless summaries are turned off. That sentence is the control's own description, and it is
 written to the page's live region when the first press arms it, so it reaches a reader who is not
 looking at the screen. Beside each raised departure sits the raise that selects its tmux pane
 where available, whatever state the session is in; it does not bring the window forward or send
@@ -574,8 +574,7 @@ The shared budget is not shown until it is spent; then a banner holds the top of
 naming the limit and the time the next analysis can run. "Mark as inaccurate" marks the reading with
 a token that is stored beside it and never sent or counted, and says so beside the control; that
 reading no longer sets the level or Steer back until you press Undo. One message where the level was
-says so, with Undo and Analyze again beside it, the reading's verdicts stay below it dimmed as disowned,
-and an optional "what was wrong" choice is kept in the tab only. A later
+says so, with Undo and Analyze again beside it, and the reading's verdicts stay below it dimmed as disowned. A later
 direction alone offers no correction. A correction puts departures and failed checks first, dates
 a time from an earlier day, and asks for evidence where an outcome is not shown. Under each
 departure, and a contradicted claim, it carries the analysis's own explanation on an indented

@@ -3031,8 +3031,11 @@ and the row is marked withdrawn, so nothing quoting the words you took back surv
 row is what the two caps above count and deleting it would refund the subprocess it spent.
 
 Discarding here means the `clear` field of a `POST /api/annotate` body, which deletes every
-revision and, after a clear that landed over words that existed, the session's stored summary (the
-reply's `summary` field says `deleted`, `absent`, a refusal token, or `untouched`). It is reachable from the board as `discard everything`, a control under the goal and the
+revision and, after a clear that took at least one revision, the session's stored summary. The
+store counts what it took under its own lock (the reply's `removed` field, null on any other arm), so a
+save from another tab that the page had not yet seen is taken too and never leaves the summary
+standing. The reply's `summary` field says `deleted`, `absent`, a refusal token (`unwritable`,
+`unavailable`), or `untouched`, and the page's sentence claims only that outcome. It is reachable from the board as `discard everything`, a control under the goal and the
 expected outcome on the session page's drift block, offered only where a revision is stored and armed by one press before a second
 performs it. The board's own `clear` control beside the goal, and `remove` beside an outcome line,
 are a different act: each empties one box or drops one line, and the save that follows appends a

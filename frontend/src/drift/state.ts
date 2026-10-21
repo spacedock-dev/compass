@@ -105,8 +105,6 @@ export function createDriftState(shell: Shell) {
   const jobsSeen = new Map<string, JobSeen>();
   const corrections = new Map<string, HeldCorrection>();
   const notAccurate = new Set<string>();
-  /* The one thing the reader said was wrong with a reading they marked inaccurate, per session. */
-  const wrong = new Map<string, string>();
   const readings = new Map<string, SeenReading>();
   const timers = new Map<FlipTimerName, { at: number; handle: TimerHandle }>();
   const wants = new Map<FlipTimerName, number | null>();
@@ -155,7 +153,6 @@ export function createDriftState(shell: Shell) {
     jobsSeen,
     corrections,
     notAccurate,
-    wrong,
     editor,
     /* An immutable snapshot, replaced on every write, so a render that reads it has a value to depend on. */
     getOverlay: (): Overlay => overlay,

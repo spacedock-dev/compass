@@ -4,8 +4,6 @@ import {
   READ_NEVER,
   READ_SUMMARY,
   RESULT_MARKED,
-  WRONG_CHOICES,
-  WRONG_LEGEND,
   RESULT_NOT_ACCURATE,
   RESULT_NOT_ACCURATE_HINT,
   RESULT_UNMARK,
@@ -188,7 +186,7 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
 };
 
 /* A reading marked inaccurate keeps its verdicts on the card, drawn as disowned, so a later scan does not
-   read them as standing; the card offers a way forward, and an optional choice of what was wrong. */
+   read them as standing; the card offers a way forward. */
 export const MarkedInaccurate: Story = {
   ...scenario({
     ...RESULT,
@@ -259,31 +257,24 @@ export const MarkedInaccurateWithTheLiveMonitorOn: Story = {
   },
 };
 
-/* "What was wrong?" is optional, one choice at a time, and kept in this tab only: nothing is sent. */
-export const MarkedInaccurateAsksWhatWasWrong: Story = {
+/* The card asks nothing it keeps nowhere: an optional "what was wrong" choice was held in this tab, sent to
+   no one and outlived the reading, so a marked reading offers the mark and its way back and forward only. */
+export const MarkedInaccurateOffersNoChoiceItDoesNotKeep: Story = {
   ...scenario({
     ...RESULT,
     session: { ...RESULT.session, annotation_not_accurate: true },
   }),
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
-    const group = await waitFor(() => {
-      const node = drift.querySelector<HTMLElement>('[data-next-marked-wrong]');
+    const notice = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    await expect(group).toHaveTextContent(WRONG_LEGEND);
-    const buttons = within(group).getAllByRole('button');
-    await expect(buttons.map((button) => button.textContent)).toEqual([...WRONG_CHOICES]);
-    for (const button of buttons) await expect(button).toHaveAttribute('aria-pressed', 'false');
-    await userEvent.click(buttons[1] as HTMLElement);
-    await waitFor(() => expect(buttons[1]).toHaveAttribute('aria-pressed', 'true'));
-    // One choice stands; pressing another moves it, and pressing it again takes it back.
-    await userEvent.click(buttons[2] as HTMLElement);
-    await waitFor(() => expect(buttons[2]).toHaveAttribute('aria-pressed', 'true'));
-    await expect(buttons[1]).toHaveAttribute('aria-pressed', 'false');
-    await userEvent.click(buttons[2] as HTMLElement);
-    await waitFor(() => expect(buttons[2]).toHaveAttribute('aria-pressed', 'false'));
+    await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
+    await expect(notice.querySelector('[data-next-marked-wrong]')).toBeNull();
+    await expect(notice).not.toHaveTextContent(/what was wrong/i);
+    await expect(within(notice).queryByRole('button', { pressed: true })).toBeNull();
   },
 };
 

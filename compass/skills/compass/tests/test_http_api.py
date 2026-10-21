@@ -6488,6 +6488,88 @@ class SummaryJobHTTPTest(unittest.TestCase):
         self.assertEqual("untouched", answer["summary"])
         self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
 
+    def test_a_discard_names_how_many_revisions_it_took_and_no_more(self) -> None:
+        # DRC-4939. The count is the store's, read under its lock, and null where the arm is not
+        # a discard, so a figure of zero is a discard that found nothing.
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="First", output="", now=100.0
+        )
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Second", output="", now=101.0
+        )
+        self.assertEqual(2, self.discard()["removed"])
+        self.assertEqual(0, self.discard()["removed"])
+
+    def test_a_discard_without_a_stored_summary_says_none_existed(self) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        answer = self.discard()
+        self.assertEqual("absent", answer["summary"])
+        self.assertEqual(1, answer["removed"])
+
+    def test_a_discard_takes_the_summary_when_this_dashboards_copy_is_stale(self) -> None:
+        # DRC-4939. The words were saved from another tab after this dashboard last read the
+        # store, so its cached copy holds nothing. The summary was left standing under words that
+        # had gone, because the route decided on that copy.
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        self.summarize_to_the_end()
+        self.state.annotations = ()
+        self.assertIsNone(
+            annotation_store.find(
+                annotation_store.active(self.config, self.state), "claude", "root"
+            )
+        )
+        answer = self.discard()
+        self.assertEqual("deleted", answer["summary"])
+        self.assertEqual(1, answer["removed"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+
+    def test_a_discard_says_the_summary_store_was_unavailable_and_does_not_claim_it_gone(
+        self,
+    ) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        Path(self.store.store_path(self.config)).write_text("not json", encoding="utf-8")
+        answer = self.discard()
+        self.assertEqual("unavailable", answer["summary"])
+        self.assertEqual(1, answer["removed"])
+
+    def test_the_discard_sentences_say_only_what_happened_to_the_summary(self) -> None:
+        said = annotation_store.DISCARD_SENTENCES
+        # A summary that went, one that never existed, one that is still stored, and one the
+        # store could not be read to tell: four sentences, each claiming only its own case.
+        self.assertIn("its summary", said["stored"])
+        self.assertIn("no stored summary", said["stored_no_summary"])
+        self.assertIn("still stored", said["summary_kept"])
+        self.assertNotIn("still stored", said["summary_unavailable"])
+        self.assertNotIn("Delete summary removes it", said["summary_unavailable"])
+        # Reopening writes a new summary unless summaries are off: said wherever the store was
+        # read and no summary stands, and not where one may still stand or the store is unreadable.
+        for name in ("stored", "stored_no_summary"):
+            with self.subTest(name=name):
+                self.assertIn("unless summaries are turned off", said[name])
+        for name in ("summary_kept", "summary_unavailable"):
+            with self.subTest(name=name):
+                self.assertNotIn("unless summaries are turned off", said[name])
+
+    def test_the_armed_discard_derives_its_lapse_from_the_cue_window(self) -> None:
+        self.assertIn(
+            f"lapses in {annotation_store.CUE_WINDOW_SECONDS} seconds",
+            annotation_store.DISCARD_ARMED,
+        )
+
     def test_a_discard_keeps_the_record_that_a_check_ran(self) -> None:
         self.config = dataclasses.replace(self.config, annotations_enabled=True)
         self.application.config = self.config

@@ -1987,6 +1987,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # token when a discard took the session's summary, and `untouched` on every arm
             # that owes it nothing.
             "summary": summary,
+            # How many revisions a discard took, counted under the store's lock, so a figure of
+            # zero is a discard that found nothing and null is an arm that is not a discard.
+            "removed": receipt.get("removed_revisions"),
         }
         self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
 
@@ -2006,19 +2009,23 @@ class _RequestHandler(BaseHTTPRequestHandler):
         withdrew = True
         summary = "untouched"
         if payload.get("clear") is True:
-            held = annotation_store.find(annotation_store.active(config, state), harness, sid)
+            # What went is what the store counted under its lock. The cached copy this route
+            # used to read first can trail a save from another tab, and a discard decided on it
+            # left the summary standing under words that were gone (DRC-4939).
+            counted = receipt if receipt is not None else {}
             outcome = annotation_store.clear(
-                config, state, harness, sid, diagnostic_sink=application.diagnostic_sink
+                config,
+                state,
+                harness,
+                sid,
+                diagnostic_sink=application.diagnostic_sink,
+                receipt=counted,
             )
             withdrew = _withdraw_raises(application, outcome, harness, sid)
             # Only words that were really discarded take the summary with them. A clear over
             # nothing typed, or over a session already discarded, deleted nothing, and the
             # summary does not depend on saved intent.
-            if (
-                outcome == annotation_store.OUTCOME_STORED
-                and held is not None
-                and not annotation_store.is_discarded(held)
-            ):
+            if outcome == annotation_store.OUTCOME_STORED and counted.get("removed_revisions"):
                 try:
                     summary = summary_jobs.discard(application, harness, sid)
                 except (OSError, ValueError):

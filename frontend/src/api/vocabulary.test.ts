@@ -19,7 +19,9 @@ import {
   SILENT_REASONS,
   STORED_WHY,
 } from '../drift/sentences';
+import { CUE_TTL_MS } from '../controls/keyedState';
 import { toolReportLine } from '../drift/workList';
+import { DELETE_LAPSE_SECONDS } from '../sessions/summary';
 import {
   ANNOTATION_FIELDS,
   HELD_UNSAFE,
@@ -51,6 +53,7 @@ interface Vocabulary {
   readonly promptSources: string[];
   readonly promptChosen: string;
   readonly maxOutcomeLines: number;
+  readonly cueWindowSeconds: number;
   readonly turnStopHarnesses: string[];
   readonly scopeTextMidFlightIdle: string;
   readonly correctionCapChars: number;
@@ -70,6 +73,13 @@ const vocabulary = JSON.parse(
 ) as Vocabulary;
 
 const sorted = (values: Iterable<string>): string[] => [...values].sort();
+
+describe('the cue window', () => {
+  it('is the lifetime of a held cue, and the lapse Delete summary and the armed discard each name', () => {
+    expect(CUE_TTL_MS).toBe(vocabulary.cueWindowSeconds * 1000);
+    expect(DELETE_LAPSE_SECONDS).toBe(vocabulary.cueWindowSeconds);
+  });
+});
 
 describe('the reading vocabulary', () => {
   it('names the same assessment keys as the producer', () => {
