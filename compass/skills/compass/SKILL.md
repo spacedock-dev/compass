@@ -371,7 +371,9 @@ and leaves it out when the record was not read. It lists the twenty most
 recent entries in the window, the ten most recent messages the agent wrote, every check and file in
 the window and every later direction still to settle, each at its own number, and says how many it
 counted and did not list. An entry a departure cites is flagged "Cited" and always listed, and a direction you
-gave after saving is flagged "A later direction you gave", which records no finding. Numbers are
+gave after saving is flagged "A later direction you gave", which records no finding. In a Claude Code
+session a message you sent while the agent was working, and your answer to its multiple-choice question, are
+directions you gave too, at the time you typed or answered. Numbers are
 worked out again on every render. Each cited entry's number on a finding opens Full activity,
 scrolls to that entry and marks every entry the finding cites with its saved words and their current
 numbers, and tints each of those rows so it stands apart from the list, without requesting another
