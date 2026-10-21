@@ -70,6 +70,16 @@ const loaded = async (root: HTMLElement) => {
   await waitFor(() => expect(root.querySelector('[data-next-summary]')).not.toBeNull(), {
     timeout: 10000,
   });
+  // The phases open as they arrive, and a story that measures the page waits for them to stop growing.
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+  await Promise.allSettled(
+    document
+      .getAnimations()
+      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map((animation) => animation.finished),
+  );
 };
 const settle = () =>
   new Promise<void>((resolve) =>
@@ -456,9 +466,10 @@ export const FindingCitingTheOlderPageTintsIt: Story = {
   },
 };
 
-/* Each phase of the summary is folded by default; what it holds a reader should know about sits on its head,
-   outside the fold: the departures its entries are evidence for, and a count of its failed lines. */
-export const PhasesFoldAndMarkTheirHeads: Story = {
+/* Each phase of the summary arrives open, with its lines in view; what it holds a reader should know about sits
+   on its head, outside the fold: the departures its entries are evidence for, and a count of its failed test
+   runs. A reader can still fold one. */
+export const PhasesOpenAndMarkTheirHeads: Story = {
   render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
   play: async ({ canvasElement }) => {
     await loaded(canvasElement);
@@ -466,9 +477,9 @@ export const PhasesFoldAndMarkTheirHeads: Story = {
     await expect(phases.length).toBeGreaterThan(3);
     for (const phase of phases) {
       const trigger = phase.querySelector('[data-slot="accordion-trigger"]');
-      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
       const line = phase.querySelector('[data-next-summary-bullet]');
-      if (line) await expect(line).not.toBeVisible();
+      if (line) await waitFor(() => expect(line).toBeVisible());
     }
     const held = phases.find((phase) => phase.querySelector('[data-next-summary-holds]'));
     await expect(held).toBeDefined();
@@ -478,13 +489,15 @@ export const PhasesFoldAndMarkTheirHeads: Story = {
     await expect(pills[0]).toBeVisible();
     const failing = phases.find((phase) => phase.querySelector('[data-next-summary-failures]'));
     await expect(failing?.querySelector('[data-next-summary-failures]')).toHaveTextContent(
-      /^\d+ failures?$/,
+      /^\d+ test failures?$/,
     );
     await expect(failing?.querySelector('[data-next-summary-failures]')).toBeVisible();
-    // Opening a phase shows its lines.
+    // Folding a phase hides its lines.
     const trigger = failing?.querySelector('[data-slot="accordion-trigger"]') as HTMLElement;
     await userEvent.click(trigger);
-    await waitFor(() => expect(failing?.querySelector('[data-next-summary-bullet]')).toBeVisible());
+    await waitFor(() =>
+      expect(failing?.querySelector('[data-next-summary-bullet]')).not.toBeVisible(),
+    );
   },
 };
 

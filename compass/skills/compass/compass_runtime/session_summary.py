@@ -313,6 +313,9 @@ def _voice(*, titles: bool) -> str:
         "- Say what the agent did with plain verbs the record shows: ran, read, edited, wrote, "
         'opened, pushed, committed, searched, started, stopped, as in "The agent ran pytest." End '
         "such a sentence at what the agent acted on; never add a result to it.\n"
+        "- Write one short clause per sentence, 15 words or fewer, about one thing, and make the "
+        'agent its subject: "The agent edited parser.py." Do not chain actions with "then", '
+        '"while" or a semicolon; give each its own sentence.\n'
         "- Never use these words, in any form, in your own voice, not even as nouns: "
         f"{_COMPLETION_WORDS}. The only exceptions: what a named speaker said, directly after the "
         f'speaker and verb ("The agent said PR #12 was merged."){exceptions}. Give each such '
@@ -382,7 +385,7 @@ def _lede_prompt(lines: Sequence[_Line], config: RuntimeConfig, *, tail: bool = 
         (_UPDATE_LEDE_SCOPE if tail else "")
         + "Write the opening of a summary for a person coming back to this session: two plain "
         f"sentences, at most {config.session_summary_lede_chars} characters. The first says what "
-        "the person set out to do. The second says what the agent did and where these entries "
+        "the agent did, with the agent as its subject. The second says where these entries "
         "end, as they report it, and names any point where the person corrected or redirected "
         "the agent. Relayed entries were not written by the person. Write it so it can be shown; "
         "a lede that breaks these rules is hidden from the reader:\n"

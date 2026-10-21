@@ -28,6 +28,10 @@ export const SUMMARY_NOT_CLAUDE = (harness: string, outlined = true) =>
   `${harness} sessions cannot be summarized yet: Compass summarizes Claude Code sessions only.${outlined ? ' The outline above is Compass’s own grouping.' : ''}`;
 export const SUMMARY_RELEVANCE =
   'Each line cites the entries it rests on. Compass checks that a cited entry exists and what kind it is, not that it supports the line.';
+/* A summary written again is a new read of the session, not an edit of the last: the walk found the second one
+   grouped the work into other phases, with nothing to say that was expected. */
+export const SUMMARY_REWRITTEN =
+  'A summary written again can group the work into different phases from the one before.';
 export const SUMMARY_FAILED_SEND =
   'Compass could not confirm the request. The next board shows whether it started.';
 export const SUMMARY_CANCEL_FAILED = 'Compass could not confirm the cancel. Try again.';
@@ -158,10 +162,6 @@ export const withheldSentence = (reason: string): string =>
    lines in twelve made the sample's summary unreadable. Each reason is the table's above, said of one line or of
    several; the rule that withholds them is unchanged, and each line's own reason stays one press away. */
 const HIDDEN_WHY: Readonly<Record<string, readonly [string, string]>> = {
-  completion_claim: [
-    'it said, in the summary’s own voice, that work was done or working',
-    'they said, in the summary’s own voice, that work was done or working',
-  ],
   no_citation: ['it cited no entry', 'they cited no entry'],
   shape_fault: [
     'it was not in the shape a summary line must take',
@@ -176,8 +176,8 @@ const HIDDEN_WHY: Readonly<Record<string, readonly [string, string]>> = {
    says why: "each broke a rule a summary line must keep" once stood for a mix and said none of them. */
 const HIDDEN_PART: Readonly<Record<string, readonly [string, string]>> = {
   completion_claim: [
-    'said, in the summary’s own voice, that work was done or working',
-    'said, in the summary’s own voice, that work was done or working',
+    'was left out because the record does not back it',
+    'were left out because the record does not back them',
   ],
   no_citation: ['cited no entry', 'cited no entry'],
   shape_fault: [
@@ -200,7 +200,12 @@ export function hiddenSentence(reasons: readonly string[], range: string): strin
     const key = reason in HIDDEN_PART ? reason : '';
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  const one = counts.size === 1 ? HIDDEN_WHY[[...counts.keys()][0] ?? ''] : undefined;
+  const only = counts.size === 1 ? ([...counts.keys()][0] ?? '') : null;
+  /* A line the producer held for saying, in its own voice, that work was done or working: the reader is told the
+     record does not back it, as the walk asked, and each line's own reason stays one press away. */
+  if (only === 'completion_claim')
+    return `${n === 1 ? 'One line was left out because the record does not back it' : `${String(n)} lines were left out because the record does not back them`}.${range ? ` ${range}.` : ''}`;
+  const one = only === null ? undefined : HIDDEN_WHY[only];
   const why =
     counts.size === 1
       ? one
@@ -257,11 +262,10 @@ export const withheldTitle = (reason: string): string =>
   WITHHELD_TITLES[reason] ?? 'Phase title withheld: it broke a rule a phase title must keep.';
 export const LEDE_LAST = 'The opening summary is written once every part has been read.';
 
-/* A `said` bullet reads as the agent's words: it opens with the label "Said:", as the card names a speaker. The
-   producer's attribution rule asks the model to name the speaker ("The agent said ...", "The agent also said
-   that ..."), and the label already names it, so the two are folded rather than stacked. Folded to a bare "Said"
-   they read as a sentence with no subject ("Said the tooltip formats ..."), and an adverb the fold did not know
-   left "Said: The agent also said ...". */
+/* A `said` bullet is the agent's words, and its text names the agent as the speaker: the producer's attribution
+   rule asks for "The agent said ...", and the check withholds a line that does not. A line that arrives
+   without one, from a summary stored before that, is given the speaker here, so it never reads as the summary's
+   own claim. There is no "Said:" label: it was a kind marker leaking into the text. */
 /* One table of speech verbs for every speaker test, so a line naming the agent or the person with any of them is
    read as that speaker's. Three tables once disagreed: "The agent reported ..." matched only the person's, and an
    `asked` line credited it to the person ("You said: The agent reported ..."). */
@@ -270,15 +274,12 @@ const SPEECH_VERB =
 const ADVERB = '(?:(?:also|then|later|again|first|finally|now)\\s+)?';
 const AGENT_NOUN =
   "(?:the\\s+agent['’]s\\s+reply|the\\s+agent|agent|the\\s+assistant|assistant|claude)";
-const AGENT_SPEECH = new RegExp(
-  `^(?:${AGENT_NOUN}\\s+${ADVERB})?said\\b(?:\\s+that\\b)?[\\s:,]*`,
-  'i',
-);
+const BARE_SAID = /^said\b(?:\s+that\b)?[\s:,]*/i;
 export function saidText(words: string): string {
   const flat = words.trim();
-  const named = AGENT_SPEECH.exec(flat);
-  const rest = named ? flat.slice(named[0].length) : flat;
-  return rest ? `Said: ${rest}` : words;
+  if (AGENT_NAMED.test(flat)) return words;
+  const rest = BARE_SAID.test(flat) ? flat.replace(BARE_SAID, '') : flat;
+  return rest ? `The agent said: ${rest}` : words;
 }
 /* The agent named as the speaker, as opposed to a bare "Said", which an `asked` line uses for the person too. */
 const AGENT_NAMED = new RegExp(`^${AGENT_NOUN}\\s+${ADVERB}${SPEECH_VERB}\\b`, 'i');
@@ -323,10 +324,10 @@ const TOOL_REPORT = /\breported\s+failed,\s*as\s+the\s+tool\s+reported\b/i;
 export function bulletWords(kind: string, words: string): string {
   const flat = words.trim();
   /* A `said` line cites only the agent's words, so a line naming the person is the agent's report of them: it
-     keeps "Said:" and names the person as the card does, "you". */
+     is told as the agent's and names the person as the card does, "you". */
   if (kind === 'said' && PERSON_NAMED.test(flat)) {
     const you = askedText(flat);
-    return `Said: ${(you[0] ?? '').toLowerCase()}${you.slice(1)}`;
+    return `The agent said ${(you[0] ?? '').toLowerCase()}${you.slice(1)}`;
   }
   if (kind === 'said') return saidText(words);
   if (kind === 'asked') return askedText(words);
@@ -337,17 +338,36 @@ export function bulletWords(kind: string, words: string): string {
   return words;
 }
 
-/* Cited entries a chip cannot open: an earlier check or file has no entry of its own in Full activity. Said as a
-   sentence that names why, where it once read "2 cited entries Full activity cannot open from here". */
+/* Cited entries a chip cannot open: an earlier check or file has no entry of its own in Full activity. Said once,
+   at the foot of the card, for the whole summary: it once followed the opening and most bullets. */
 export function unlinkedSentence(n: number): string {
   return n === 1
-    ? '(1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.)'
-    : `(${String(n)} cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.)`;
+    ? '1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.'
+    : `${String(n)} cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.`;
 }
 
+/* Whether a failed bullet is a failed test run. The server marks a bullet failed when a cited check failed, which
+   holds a build, a lint and a browser launch the agent's sandbox refused as much as a test. The card badges the
+   first only: the walk found a sandboxed Storybook run badged with the weight of a real test failure. The
+   producer's text is all the page has of the check, so a run is a test run when it names one and was not put down
+   to the environment the agent ran in. */
+const TEST_RUN =
+  /\b(?:tests?|pytest|vitest|jest|mocha|unittest|rspec|storybook|stories|playwright|cypress)\b/i;
+const ENVIRONMENT =
+  /\b(?:sandbox(?:ed)?|environment|not-recorded|permission denied|EPERM|offline|no network)\b/i;
+export const isTestFailure = (words: string): boolean =>
+  TEST_RUN.test(words) && !ENVIRONMENT.test(words);
+
 /* The card's right-hand header: the model, and when the summary was made. */
-export function summaryStamp(summary: StoredSummary, running: boolean, model: string): string {
+export function summaryStamp(
+  summary: StoredSummary,
+  running: boolean,
+  model: string,
+  summarizing = false,
+): string {
   const at = summary.madeAt ? clock(summary.madeAt) : '';
+  /* A summary a job is still writing is not "summarized at" any time: it says so until the job is done. */
+  if (summarizing) return [model, 'summarizing…'].filter(Boolean).join(' · ');
   const when = running
     ? [at ? `updated ${at}` : '', 'still running']
     : [at ? `summarized at ${at}` : ''];
@@ -413,9 +433,9 @@ export function summaryNotes(summary: StoredSummary, startsAt: string): string[]
   return notes;
 }
 
-/* How large the read is, before a summary runs. With the server's plan it adds the parts and an upper bound on the
-   minutes; a plan off a partial read gives a floor on the parts, and a plan the preflight would refuse, or one
-   with no parts, is not quoted, so the card falls back to what the outline counted. */
+/* How large the read is, before a summary runs. With the server's plan of a whole read it adds the parts and an
+   upper bound on the minutes; a plan off a partial read, one the preflight would refuse, or one with no parts is
+   not quoted, so the card falls back to what the outline counted. */
 export function readSize(
   entries: number | null,
   more: boolean,
@@ -423,10 +443,11 @@ export function readSize(
 ): string {
   if (entries === null) return '';
   const size = `${more ? 'More than' : 'About'} ${plural(entries, 'entry', 'entries')} to read`;
-  if (!plan || plan.reason || plan.parts < 1)
+  /* A plan off a partial read counts a floor, and the job's own count can pass it: "at least 2 parts" once
+     became "part 1 of 3" with nothing saying so. Only a whole read's count is quoted. */
+  if (!plan || plan.reason || plan.parts < 1 || !plan.complete)
     return `${size}. Compass plans the parts when the summary starts, and shows them here.`;
-  const parts = `${plan.complete ? '' : 'at least '}${plural(plan.parts, 'part', 'parts')}`;
-  return `${size} in ${parts}, up to ${plural(plan.minutes, 'minute', 'minutes')}.`;
+  return `${size} in ${plural(plan.parts, 'part', 'parts')}, up to ${plural(plan.minutes, 'minute', 'minutes')}.`;
 }
 
 export function progressLine(job: SummaryJob): string {

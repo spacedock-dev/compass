@@ -44,8 +44,12 @@ describe('the lede of a stored summary', () => {
     expect(
       within(lede).getAllByRole('link', { name: /cited for the opening summary/ }),
     ).toHaveLength(1);
-    expect(lede.querySelector('[data-next-summary-unlinked]')?.textContent).toBe(
-      '(1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.)',
+    /* Counted once, at the foot of the summary, and not after the opening. */
+    expect(lede.querySelector('[data-next-summary-unlinked]')).toBeNull();
+    const notes = region.querySelectorAll('[data-next-summary-unlinked]');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.textContent).toBe(
+      '1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.',
     );
   });
 });

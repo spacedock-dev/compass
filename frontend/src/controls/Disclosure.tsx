@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useCallback,
+  useLayoutEffect,
   useRef,
   useState,
   useId,
@@ -35,6 +36,9 @@ export interface DisclosureProps {
   readonly aside?: ReactNode;
   /** The heading drawn around the trigger, for a summary that is a heading of the page. Accordion only. */
   readonly headerProps?: ComponentProps<typeof AccordionTrigger>['headerProps'];
+  /** Opens the first time this key is drawn, and never again: a reader who closes it keeps it closed, because
+   * the write that opened it is the store's own and the reader's close is the next one. Accordion only. */
+  readonly openByDefault?: boolean;
   readonly children: ReactNode;
 }
 
@@ -56,10 +60,17 @@ function AccordionDisclosure({
   focusKey,
   aside,
   headerProps,
+  openByDefault = false,
   children,
 }: DisclosureProps) {
   const controls = useControls();
   const open = useControlledDisclosureState(controls.disclosures, disclosureKey);
+  /* `version` is zero until some write names the key, so a key the reader has opened or closed is never opened
+     again, and one never touched opens exactly once. */
+  useLayoutEffect(() => {
+    if (openByDefault && controls.disclosures.version(disclosureKey) === 0)
+      controls.disclosures.set(disclosureKey, true);
+  }, [openByDefault, controls.disclosures, disclosureKey]);
   const triggerRef = useFocusKey<HTMLButtonElement>(controls.focusLane, focusKey ?? null);
   const panelRef = useRevealFragment(disclosureKey);
   return (

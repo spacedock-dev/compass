@@ -28,6 +28,8 @@ export interface SessionSummaryHeld {
   readonly deleteArmedAt: number;
   /** When this tab last deleted the summary, in the clock's milliseconds, or 0: said until the next start. */
   readonly deletedAt: number;
+  /** The summary now standing was written after an earlier one, by Summarize again or after a delete here. */
+  readonly rewritten: boolean;
 }
 
 const EMPTY: SessionSummaryHeld = {
@@ -40,6 +42,7 @@ const EMPTY: SessionSummaryHeld = {
   opening: false,
   deleteArmedAt: 0,
   deletedAt: 0,
+  rewritten: false,
 };
 
 export interface SummaryHeldStore {

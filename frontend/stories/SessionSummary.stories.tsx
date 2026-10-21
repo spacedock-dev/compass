@@ -87,7 +87,7 @@ async function atWidth(width: number, check: () => Promise<void>) {
   }
 }
 
-/* Each `said` bullet opens with "Said" and cites only the agent's messages; each `asked` opens with "You" and
+/* Each `said` bullet names the agent as its speaker and cites only the agent's messages; each `asked` opens with "You" and
    cites only the person's; a `failed` one says so in words; every chip is named for the bullet it supports and
    names a row of Full activity. */
 async function attributed(summary: HTMLElement) {
@@ -98,7 +98,7 @@ async function attributed(summary: HTMLElement) {
     const words = row.querySelector('[data-next-summary-text]')?.textContent ?? '';
     const chips = [...row.querySelectorAll<HTMLElement>('[data-next-outline-entry]')];
     await expect(chips.length).toBeGreaterThan(0);
-    if (kind === 'said') await expect(words).toMatch(/^Said: /);
+    if (kind === 'said') await expect(words).toMatch(/^The agent (also )?said\b/);
     if (kind === 'asked') await expect(words).toMatch(/^You (asked|said)\b/);
     if (kind === 'failed') await expect(words).toMatch(/^Failed(?: as the tool reported)?: /);
     for (const chip of chips) {
@@ -140,7 +140,7 @@ export const Ready: Story = {
     );
     await attributed(summary);
     // The model wrote "Reverting the test edit." for a `said` bullet: it is drawn as the agent's words.
-    await expect(summary).toHaveTextContent('Said: Reverting the test edit.');
+    await expect(summary).toHaveTextContent('The agent said: Reverting the test edit.');
     // A failed bullet takes the failure colour.
     const failed = summary.querySelector('[data-next-summary-bullet="failed"]') as HTMLElement;
     await expect(getComputedStyle(failed).color).toBe('rgb(228, 136, 106)');
@@ -342,8 +342,9 @@ export const NoSummaryPlannedPartly: Story = {
   ),
   play: async ({ canvasElement }) => {
     const none = await stateOf(await card(canvasElement), 'none');
+    // A floor on the parts is not quoted: the job's own count may pass it, and the progress line would disagree.
     await expect(none.querySelector('[data-next-summary-size]')).toHaveTextContent(
-      /^More than 6 entries to read in at least 1 part, up to 1 minute\.$/,
+      /^More than 6 entries to read\. Compass plans the parts when the summary starts, and shows them here\.$/,
     );
   },
 };
@@ -432,6 +433,13 @@ export const Working: Story = {
       'Summarizing: part 3 of 12',
     );
     await expect(working).toHaveTextContent(SUMMARY_WORKING_KEEP);
+    // Turn off summaries turns off every session's summaries, where Cancel stops this run: it stands apart from
+    // Cancel, in a row of its own and as a quiet control, and not as an equal button beside it.
+    const cancel = within(working).getByRole('button', { name: 'Cancel' });
+    const off = within(working).getByRole('button', { name: 'Turn off summaries' });
+    await expect(off.parentElement).not.toBe(cancel.parentElement);
+    await expect(cancel).toHaveAttribute('data-variant', 'default');
+    await expect(off).toHaveAttribute('data-variant', 'quiet');
     await expect(region.querySelector('[data-next-outline="blocks"]')).not.toBeNull();
     await userEvent.click(within(working).getByRole('button', { name: 'Cancel' }));
     await waitFor(() =>
@@ -460,6 +468,10 @@ export const WorkingOverASavedSummary: Story = {
     const summary = await summaryOf(region);
     await expect(summary.querySelector('[data-next-summary-gap="stopped"]')).toHaveTextContent(
       GAP_RUNNING,
+    );
+    // The header does not date a summary a job is still writing.
+    await expect(region.querySelector('[data-next-outline-stamp]')).toHaveTextContent(
+      /^claude-sonnet-5-5 · summarizing…$/,
     );
   },
 };
@@ -817,7 +829,8 @@ export const NoSummariesOnThisServer: Story = {
 };
 
 /* The notice: shown with the first summary, gone when a later start's reply carries none, and shown again
-   naming the new destination when where summaries go changes. Turn off summaries sits beside it. */
+   naming the new destination when where summaries go changes. Once the summary stands the notice is folded to
+   one line, and opening it shows what it said, with Turn off summaries inside. */
 export const NoticeOnceThenAgainOnChange: Story = {
   render: () => {
     let n = 0;
@@ -866,11 +879,16 @@ export const NoticeOnceThenAgainOnChange: Story = {
       if (!node) throw new Error('no notice');
       return node;
     });
+    await expect(first).toHaveAttribute('data-next-summary-notice-folded');
+    const fold = within(first).getByRole('button', {
+      name: 'What this request sent to Claude Code',
+    });
+    await expect(fold).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(fold);
     await expect(first).toHaveTextContent('Anthropic');
-    await expect(
-      within(first).getByRole('region', { name: 'Summary request notice' }),
-    ).toBeVisible();
-    await expect(within(first).getByRole('button', { name: 'Turn off summaries' })).toBeVisible();
+    await waitFor(() =>
+      expect(within(first).getByRole('button', { name: 'Turn off summaries' })).toBeVisible(),
+    );
     await press();
     await waitFor(() => expect(region.querySelector('[data-next-summary-notice]')).toBeNull());
     await press();
@@ -1593,13 +1611,13 @@ export const AgentWordsOnAnAskedLine: Story = {
     const summary = await summaryOf(region);
     const row = summary.querySelector('[data-next-summary-bullet="asked"]') as HTMLElement;
     await expect(row.querySelector('[data-next-summary-text]')).toHaveTextContent(
-      'Said: it also raised the billing rate.',
+      'The agent said it also raised the billing rate.',
     );
     await expect(row).not.toHaveTextContent(/You said/);
     await waitFor(() =>
       expect(
         within(row).getAllByRole('link', {
-          name: /cited for “Said: it also raised the billing rate\.”/,
+          name: /cited for “The agent said it also raised the billing rate\.”/,
         }),
       ).toHaveLength(2),
     );
@@ -1637,7 +1655,7 @@ export const WithheldRunCollapses: Story = {
     const [first, second] = runs as [HTMLElement, HTMLElement];
     await waitFor(() =>
       expect(first.querySelector('[data-next-summary-hidden-line]')).toHaveTextContent(
-        '2 lines hidden: they said, in the summary’s own voice, that work was done or working. Entries #2 to #2.1.',
+        '2 lines were left out because the record does not back them. Entries #2 to #2.1.',
       ),
     );
     await expect(second.querySelector('[data-next-summary-hidden-line]')).toHaveTextContent(
@@ -1817,8 +1835,11 @@ export const CheckCitationTheRecordDoesNotCarry: Story = {
       return last;
     });
     await expect(row.querySelector('[data-next-outline-entry]')).toBeNull();
-    await expect(row.querySelector('[data-next-summary-unlinked]')).toHaveTextContent(
-      '(1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.)',
+    // Said once, at the foot of the card, and not after the line that cites it.
+    await expect(row.querySelector('[data-next-summary-unlinked]')).toBeNull();
+    await expect(summary.querySelectorAll('[data-next-summary-unlinked]')).toHaveLength(1);
+    await expect(summary.querySelector('[data-next-summary-unlinked]')).toHaveTextContent(
+      '1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.',
     );
     const line = await waitFor(() => {
       const node = canvasElement.querySelector<HTMLElement>('[data-next-departure-summary]');
@@ -1948,5 +1969,160 @@ export const MissingLineStaysInTheOutline: Story = {
       expect(outline.querySelector('[data-next-outline-missing]')).not.toBeNull(),
     );
     await expect(region.querySelectorAll('[data-next-outline-missing]')).toHaveLength(1);
+  },
+};
+
+/* The phases arrive open, so the opening and its bullets are in view with no press: the design shows the story, not
+   a column of closed headings. A reader who closes one keeps it closed through the next board. */
+export const BulletsInViewOnFirstRender: Story = {
+  render: () => <SummaryPage summary={storedSummary()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const phases = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-phase]')];
+    await expect(phases).toHaveLength(2);
+    for (const phase of phases) {
+      await expect(phase.querySelector('[data-slot="accordion-trigger"]')).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      const bullets = [...phase.querySelectorAll<HTMLElement>('[data-next-summary-bullet]')];
+      await expect(bullets.length).toBeGreaterThan(0);
+      for (const bullet of bullets) await waitFor(() => expect(bullet).toBeVisible());
+    }
+    const trigger = phases[0]?.querySelector('[data-slot="accordion-trigger"]') as HTMLElement;
+    await userEvent.click(trigger);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await poll();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(phases[1]?.querySelector('[data-slot="accordion-trigger"]')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  },
+};
+
+/* The citations Full activity does not list are said once, at the foot of the card, as a count of the entries
+   across the opening and every line: they were said after the opening and most bullets. */
+export const FullActivityLimitSaidOnce: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        lede: { text: LEDE, cites: ['source-check-8', 'p1'] },
+        blocks: [
+          block('p1', 'source-check-9', 4, [
+            {
+              title: 'Running the webhook checks',
+              bullets: [
+                bullet('The agent ran pytest tests/test_webhook.py.', 'did', ['source-check-8']),
+                bullet('The agent ran pytest tests/test_retry.py.', 'did', ['source-check-9']),
+                bullet(
+                  'pytest tests/test_webhook.py reported failed, as the tool reported.',
+                  'failed',
+                  ['source-check-9'],
+                ),
+              ],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const notes = summary.querySelectorAll<HTMLElement>('[data-next-summary-unlinked]');
+    await expect(notes).toHaveLength(1);
+    const note = notes[0] as HTMLElement;
+    await expect(note).toHaveTextContent(
+      '2 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.',
+    );
+    await expect(note.dataset['nextSummaryUnlinked']).toBe('2');
+    // Not after the opening, nor after a bullet.
+    await expect(
+      summary.querySelector('[data-next-summary-lede] [data-next-summary-unlinked]'),
+    ).toBeNull();
+    for (const row of summary.querySelectorAll('[data-next-summary-bullet]'))
+      await expect(row.querySelector('[data-next-summary-unlinked]')).toBeNull();
+    // At the foot: after the last line the summary draws.
+    const last = [...summary.querySelectorAll('[data-next-summary-bullet]')].at(-1) as Element;
+    await expect(
+      last.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  },
+};
+
+/* The badge on a phase counts failed test runs. A build that failed, or a browser run the agent's sandbox
+   refused, is still drawn as a failed line, and is not counted as a test failure. */
+export const OnlyTestFailuresAreBadged: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'c2', 4, [
+            {
+              title: 'Running the tests',
+              bullets: [
+                bullet('pnpm test:stories reported failed, as the tool reported.', 'failed', [
+                  'c1',
+                ]),
+                bullet(
+                  'The Storybook browser run reported failed, as the tool reported, and the agent attributed the launch error to the sandbox.',
+                  'failed',
+                  ['c2'],
+                ),
+              ],
+            },
+            {
+              title: 'Building the page',
+              bullets: [
+                bullet('pnpm build reported failed, as the tool reported.', 'failed', ['c2']),
+              ],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const [tests, build] = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-phase]')];
+    await expect(tests?.querySelector('[data-next-summary-failures]')).toHaveTextContent(
+      /^1 test failure$/,
+    );
+    await expect(build?.querySelector('[data-next-summary-failures]')).toBeNull();
+    // The failed lines are all still said.
+    await expect(summary.querySelectorAll('[data-next-summary-bullet="failed"]')).toHaveLength(3);
+  },
+};
+
+/* A summary written again can group the work differently, and says so: from the press that rewrites it, until
+   the page is reloaded. A first summary says nothing of the kind. */
+export const RewrittenSummaryNotes: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        out_of_date: {
+          kind: 'changed_earlier',
+          reason: 'changed_earlier',
+          affected_blocks: [0],
+          new_entries: 0,
+          appendable: false,
+          action: 'summarize_again',
+        },
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await expect(summary.querySelector('[data-next-summary-rewritten]')).toBeNull();
+    await userEvent.click(await within(region).findByRole('button', { name: 'Summarize again' }));
+    await waitFor(() =>
+      expect(summary.querySelector('[data-next-summary-rewritten]')).toHaveTextContent(
+        'A summary written again can group the work into different phases from the one before.',
+      ),
+    );
   },
 };

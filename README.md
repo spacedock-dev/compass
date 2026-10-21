@@ -182,9 +182,9 @@ type the goal you are holding that session to and optionally an expected outcome
 you check it for drift with one press and read back what has been raised about that session and what
 became of the raise, and a What the session has done card. What the session has done shows
 Compass's own outline of a Claude Code or Codex record, made with no model call, and on Claude Code a
-model-written summary: an opening paragraph, then phases folded closed, each with its lines and the
-entries they cite one press away. A phase that holds evidence for a departure, or has failed lines,
-says so on its heading.
+model-written summary: an opening paragraph on what the agent did, then phases open with their lines and
+the entries they cite, which you can fold. A phase that holds evidence for a departure, or has failed
+test runs, says so on its heading.
 Sessions keeps an orientation paragraph and how-to visible after a session has been checked.
 The paragraph explains analysis when annotations are on, the store is readable and a reading
 route names a provider; otherwise it explains how to inspect a session. Every goal

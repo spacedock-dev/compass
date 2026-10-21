@@ -1597,13 +1597,13 @@ class SessionSummaryTest(unittest.TestCase):
 
     def test_call_and_byte_ceilings_after_retries_leave_later_window_gaps(self) -> None:
         entries = [entry(n, words="x" * 70) for n in range(1, 4)]
-        for bound in ({"session_summary_max_calls": 4}, {"session_summary_max_bytes_sent": 14000}):
+        for bound in ({"session_summary_max_calls": 4}, {"session_summary_max_bytes_sent": 15000}):
             model = Replies(("", "unstopped"), ("", "failed"), ("", "oversized"), ("", "failed"))
             result = self.run_summary(entries, model, session_summary_window_bytes=100, **bound)
             self.assertEqual("partial", result.state)
             self.assertEqual("ceiling", result.blocks[-1].reason)
             self.assertEqual(4, result.spend.calls)
-            self.assertLessEqual(result.spend.bytes_sent, 14000)
+            self.assertLessEqual(result.spend.bytes_sent, 15000)
 
     def test_a_later_refusal_keeps_finished_blocks_and_does_not_retry(self) -> None:
         entries = [entry(n, words="x" * 70) for n in range(1, 4)]
@@ -2058,9 +2058,22 @@ class SummaryPromptTest(unittest.TestCase):
     def test_lede_prompt_asks_for_two_sentences_of_goal_course_and_end(self) -> None:
         text = self.instructions(self.lede)
         self.assertIn("two plain sentences, at most 400 characters", text)
-        self.assertIn("The first says what the person set out to do", text)
-        self.assertIn("The second says what the agent did and where these entries end", text)
+        # The design's opening says what the agent did, not what the person asked.
+        self.assertIn("The first says what the agent did, with the agent as its subject", text)
+        self.assertIn("The second says where these entries end", text)
         self.assertIn("names any point where the person corrected or redirected", text)
+        self.assertNotIn("set out to do", text)
+
+    def test_both_prompts_ask_for_short_clauses_with_the_agent_as_subject(self) -> None:
+        for prompt in (self.window, self.lede):
+            text = self.instructions(prompt)
+            self.assertIn("one short clause", text)
+            self.assertIn("15 words or fewer", text)
+            self.assertIn('make the agent its subject: "The agent edited parser.py."', text)
+        # The taught clause is one the check shows, and the speaker label the page once added is not taught.
+        self.assertFalse(self.summary.completion_claim("The agent edited parser.py.", kind="did"))
+        for prompt in (self.window, self.lede):
+            self.assertNotIn("Said:", self.instructions(prompt))
 
     def test_every_example_the_prompts_teach_is_one_the_check_shows(self) -> None:
         # Each line as a model would write it, beside the fragment both prompts teach.
