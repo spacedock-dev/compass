@@ -350,13 +350,16 @@ export function unlinkedSentence(n: number): string {
    holds a build, a lint and a browser launch the agent's sandbox refused as much as a test. The card badges the
    first only: the walk found a sandboxed Storybook run badged with the weight of a real test failure. The
    producer's text is all the page has of the check, so a run is a test run when it names one and was not put down
-   to the environment the agent ran in. */
+   to the environment the agent ran in. A build, a lint or a type check is put down first even when its words
+   name a test: `pnpm build:storybook` and `ruff check tests` each carry a test word and are not test runs. */
 const TEST_RUN =
   /\b(?:tests?|pytest|vitest|jest|mocha|unittest|rspec|storybook|stories|playwright|cypress)\b/i;
 const ENVIRONMENT =
   /\b(?:sandbox(?:ed)?|environment|not-recorded|permission denied|EPERM|offline|no network)\b/i;
+const NOT_A_TEST =
+  /\b(?:(?:pnpm|npm|yarn)\s+(?:run\s+)?(?:build|lint|typecheck|format|compile)|ruff|mypy|tsc|biome|eslint|prettier)\b/i;
 export const isTestFailure = (words: string): boolean =>
-  TEST_RUN.test(words) && !ENVIRONMENT.test(words);
+  TEST_RUN.test(words) && !NOT_A_TEST.test(words) && !ENVIRONMENT.test(words);
 
 /* The card's right-hand header: the model, and when the summary was made. */
 export function summaryStamp(

@@ -285,8 +285,8 @@ export function SummaryControls({
       </div>
     );
   }
-  /* The notice is read once the summary stands: it is not drawn above a saved summary, where it once pushed the
-     opening down about 300px. What it said is "What is sent" at the card's foot, with Turn off summaries inside. */
+  /* Above a saved summary the notice folds to a one-line control, because the full text once pushed the opening
+     down about 300px. The foot of the card holds the Sent disclosure, with Turn off summaries inside. */
   const notice = <Notice state={state} />;
   if (grant.reason) {
     return (

@@ -613,6 +613,15 @@ describe('the failure badge', () => {
     expect(isTestFailure('ruff check src reported failed, as the tool reported.')).toBe(false);
     expect(isTestFailure('pnpm build reported failed, as the tool reported.')).toBe(false);
   });
+  it('does not count a failed build, lint or type check whose words name a test', () => {
+    expect(isTestFailure('pnpm build:storybook reported failed, as the tool reported.')).toBe(
+      false,
+    );
+    expect(isTestFailure('ruff check tests reported failed, as the tool reported.')).toBe(false);
+    expect(
+      isTestFailure('mypy compass/skills/compass/tests reported failed, as the tool reported.'),
+    ).toBe(false);
+  });
   it('does not count a run the agent put down to its sandbox', () => {
     expect(
       isTestFailure(

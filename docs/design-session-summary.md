@@ -551,9 +551,9 @@ context, not evidence and must not be cited. Earlier bullets and entries never e
 After the windows, one lede call receives only menu lines cited by surviving phases. Selection
 prefers the person's entries, then other entries in order, within one window's byte allowance;
 the selected lines retain source order and their original numbers. The prompt asks for two plain
-sentences within the lede character bound. The first says what the person set out to do; the
-second says what the agent did and where those entries end, as they report it, naming any
-correction or redirection they show. It carries the window prompt's forms except the title rule.
+sentences within the lede character bound. The first says what the agent did, with the agent as
+its subject; the person's goal is not asked for. The second says where those entries end, as they
+report it, naming any correction or redirection they show. It carries the window prompt's forms except the title rule.
 It receives no phase prose or titles. Its citations must name entries actually given to it. A failed lede leaves `lede: null`
 and `lede_reason`, preserving the phases.
 
@@ -638,8 +638,10 @@ ceilings and every earlier ruling are unchanged.
   cited check failed, which includes a build and a browser run the agent's sandbox refused. The
   page badges a `failed` bullet only when its words name a test run and do not put the failure down
   to the sandbox or environment. It reads the producer's text because the page holds nothing else
-  of the check. The line itself is still drawn as a failure. The test is a word match, so a failed
-  check the agent never named as a test is not badged, and the badge never overstates.
+  of the check. The line itself is still drawn as a failure. A build, lint or type-check command
+  is never badged, even when its words name a test (`pnpm build:storybook`, `ruff check tests`).
+  The test is a word match, so it can miss a real test failure the agent never named as a test, and
+  it can still badge a sandbox failure the text does not name as the environment.
 - **The estimate and the progress agree.** A plan off a partial read counted a floor on the parts
   ("at least 2 parts, up to 10 minutes") and the job then counted 3, and finished in about 30
   seconds. The page now quotes parts and minutes only for a plan of a whole read, and otherwise says
