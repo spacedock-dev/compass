@@ -1925,6 +1925,11 @@ plan the preflight would refuse, it keeps its previous entry-count sentence. The
 a summary exists, the store or source is unavailable, the focus is unmatched, or the harness is not
 Claude Code. It is focused metadata only, never a session-row field.
 
+The entry count in that sentence is the numbered list's, the same figure the session header and the
+since-intent count read. The list holds the newest record pages (fifty entries each), so while older
+pages remain unread the count is a floor: the card says "More than N", and the header says "at least
+N entries", rather than quoting one page as the whole session.
+
 ### Markers, charges and publication
 
 One hashed session path in `state_dir/summary-jobs/` is the cross-process slot. It is written before

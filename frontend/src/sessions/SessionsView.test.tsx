@@ -610,8 +610,8 @@ describe('two sessions in two worktrees of one repository', () => {
       )?.textContent;
     expect(facts('s1')).toContain('one/compass');
     expect(facts('s2')).toContain('one/compass');
-    expect(facts('s1')).toContain('haiku-a');
-    expect(facts('s2')).toContain('haiku-b');
+    expect(facts('s1')).toContain('worktree haiku-a');
+    expect(facts('s2')).toContain('worktree haiku-b');
     // A main checkout publishes no worktree, so no worktree is drawn for it.
     expect(facts('s3')).toBe('PROJECTone/compass');
   });

@@ -32,9 +32,13 @@ for you" in the measured line and under CURRENT ACTIVITY where the recording say
 recorded text is restated before the comparison, in `detail.differential.test.tsx`
 (`projectRecordedHarnessWord`, `projectRecordedTurnEnd`); every other word of the header stays held to the
 recording, and the golden files are unchanged. The session page also draws What the session has done before the
-Drift card, which the comparison already excluded with the panel. The session heading, and only the heading,
-substitutes the goal or the first prompt for a title that is only an identifier (an issue key, a UUID or the
-session's own id); a Sessions row keeps the title as published.
+Drift card, which the comparison already excluded with the panel. The session heading, the browser tab title and
+the breadcrumb, which all read one session title, substitute the goal or the first prompt for a title that is
+only an identifier (an issue key, a hex or UUID id, or the session's own id); a Sessions row keeps the title as
+published. An issue key is upper-case letters with two or more digits; a hex or UUID id is matched separately.
+The header's entry count reads "at least N entries" while the record is partly read, which is a deliberate
+restatement of the recorded header: the count is a floor for as long as an older page is unread, whether or not
+an intent window is open.
 
 2026-10-21, the edges of the Drift card's states
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-the-drift-card-has-one-state-at-a-time)):

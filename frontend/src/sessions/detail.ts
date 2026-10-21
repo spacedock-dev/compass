@@ -77,6 +77,8 @@ export function sessionMeta(
   entries: number | null,
   /** The entries since the intent's window opened, where entries before it are also held. */
   since: number | null = null,
+  /** Only the newest pages of the record are held, so `entries` is a floor. */
+  partial = false,
 ): string {
   const parts: string[] = [];
   const ended = durationSince(generated, endedAt(session));
@@ -103,7 +105,7 @@ export function sessionMeta(
   }
   if (entries !== null)
     parts.push(
-      `${String(entries)} ${entries === 1 ? 'entry' : 'entries'}${since === null ? '' : `, ${String(since)} since your intent’s start`}`,
+      `${partial ? 'at least ' : ''}${String(entries)} ${entries === 1 ? 'entry' : 'entries'}${since === null ? '' : `, ${String(since)} since your intent’s start`}`,
     );
   if (isScanOnly(session)) parts.push('read by scanning: no turn end can be observed here');
   const gaps = gapNames(session);

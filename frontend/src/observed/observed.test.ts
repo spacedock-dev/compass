@@ -388,6 +388,11 @@ describe('the session heading stands in for an identifier-only title', () => {
     ).toBe('Real words');
     expect(pageTitleOf(row({ title: 'abc12345', first_prompt: 'Real words' }))).toBe('Real words');
   });
+  it('keeps a real title that has the shape of a short hyphenated word', () => {
+    for (const title of ['gpt-4', 'utf-8', 'x-1']) {
+      expect(pageTitleOf(row({ title, first_prompt: 'Other words' }))).toBe(title);
+    }
+  });
   it('keeps a real title and cuts a long line at 120 characters', () => {
     expect(pageTitleOf(row({ title: 'Ship the redesign', first_prompt: 'x' }))).toBe(
       'Ship the redesign',

@@ -70,15 +70,17 @@ export function labelOf(session: Row): string {
    last prompt where the harness publishes no first one, stands in for it: its first line, cut at a width a heading can hold. Only the
    session page's heading asks: a Sessions row keeps the title as published, since the rows are held to the recorded
    page. */
-const IDENTIFIER_TITLE =
-  /^(?:[A-Za-z][A-Za-z0-9]{0,9}-\d+|[0-9a-f]{8}(?:-[0-9a-f]{4}){0,4}(?:-[0-9a-f]{12})?)$/i;
+/* An issue key is upper-case with a number of two or more digits: "gpt-4" and "utf-8" are real titles. */
+const ISSUE_KEY = /^[A-Z][A-Z0-9]{1,9}-\d{2,}$/;
+const HEX_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){0,4}(?:-[0-9a-f]{12})?$/i;
 const TITLE_WIDTH = 120;
 
 export function pageTitleOf(source: Row): string {
   const goal = goalOf(source);
   const title = trimmed(source['title']);
   if (!title) return '';
-  if (!IDENTIFIER_TITLE.test(title) && title !== trimmed(source['sid'])) return title;
+  if (!ISSUE_KEY.test(title) && !HEX_ID.test(title) && title !== trimmed(source['sid']))
+    return title;
   const firstPrompt =
     promptCopied(source, 'first_prompt') || source['first_prompt_control'] === true
       ? ''
