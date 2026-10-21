@@ -2292,6 +2292,14 @@ after a verifier reproduced false results against the first clarification:
 - an `rtk` check with a passing flag and failure text in its output reads "ran, result not
   recorded", never passed.
 
+DRC-4890 names the rule on the published entry. A check whose result an attribution rule withholds
+carries `result_reason`: `several_checks` when the call holds more than one check,
+`directory_not_placeable` when a `cd` before it names a directory the shell places at run time, and
+`piped_beside_other_commands` when a pipe sits in a call whose other segments print. The token is set
+only when lifting that rule would publish a result, so a check the flag or the output's own wording
+already leaves unrecorded carries none. The page words each token in its reason table, and
+`frontend/test/fixtures/vocabulary.json` pins the two together.
+
 DRC-4733 tightens the output attribution rule on 2026-09-29. Read-only means a command does not
 record a change; it does not mean the command's output came from a check. Summary lines, failure
 markers and Pi's check counts attribute only to a single check with no independent output-producing
