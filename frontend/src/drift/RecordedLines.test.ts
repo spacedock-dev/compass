@@ -121,9 +121,53 @@ describe('the claims row quotes the claim', () => {
     });
   });
 
-  it('says where the agent made it under a claim the record does not show', () => {
-    expect(claimReason(claims({}), numbers)).toBe(
+  const said = (summary: string) => claims({ claimEntry: { id: 'm1', summary } });
+  const check = (summary: string, result: string, at = 600) => ({
+    id: `c-${summary}`,
+    type: 'tool_report',
+    subject: 'check',
+    summary,
+    result,
+    at,
+  });
+  const reason = (summary: string, entries: readonly unknown[] = [], window = 100) =>
+    claimReason(said(summary), numbers, entries as never, window);
+
+  it('says where the agent made a claim that names no kind of check, and what was read', () => {
+    expect(claimReason(said('The PR is open.'), numbers)).toBe(
       "Nothing in the record read backs this claim, which the agent made at #13. The record read is the board's recent tail.",
+    );
+  });
+
+  it('says no check of the kind a claim names was recorded', () => {
+    expect(reason('All green locally: 473 tests pass.')).toBe(
+      'No test check was recorded in what was read, so nothing backs this claim.',
+    );
+    expect(reason('Lint and the type checks are clean.')).toBe(
+      'No lint check and no type check was recorded in what was read, so nothing backs this claim.',
+    );
+  });
+
+  it('says a check of the kind ran with no recorded result', () => {
+    const entries = [check('ruff check .', 'not-recorded'), check('mypy', '')];
+    expect(reason('The lint and type checks pass', entries)).toBe(
+      'The lint and type checks ran with no recorded result, so nothing backs this claim.',
+    );
+  });
+
+  it('says a passing check was recorded and the analysis did not tie it to the claim', () => {
+    expect(reason('The tests pass', [check('pytest -q', 'passed')])).toBe(
+      'A test check passed on record, and the analysis did not tie it to this claim.',
+    );
+  });
+
+  it('gives each claim its own reason, and reads only checks after the window opened', () => {
+    const entries = [check('pytest -q', 'passed', 50), check('ruff check .', '')];
+    expect(reason('The tests pass and the build is green', entries, 100)).toBe(
+      'No test check and no build check was recorded in what was read, so nothing backs this claim.',
+    );
+    expect(reason('The tests pass', entries, 100)).not.toBe(
+      reason('The build is green', entries, 100),
     );
   });
 

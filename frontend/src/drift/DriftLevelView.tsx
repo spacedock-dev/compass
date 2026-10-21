@@ -5,6 +5,7 @@ import { Fragment } from 'react';
 import { intentUnsaved } from '../intent/derive';
 import { useDrift } from './context';
 import { meterSegments, readingStored, type Signals } from './level';
+import { driftAnswer, verdictNamesLevel, verdictShape } from './result';
 import { routeRefusal } from './route';
 import {
   HARNESS_LIMIT,
@@ -166,11 +167,22 @@ export function DriftLevelView() {
       : '';
   const reasons = !running && level.reasons ? level.reasons : { first: '', blockers: [] };
   const signals: Signals | null = level.signals;
+  /* The verdict sentence above names an analysis level, so the word is not said again over its meter. */
+  const verdict = level.analysis
+    ? verdictShape({
+        annotate: model.annotate,
+        shape: model.shape,
+        raw: model.raw,
+        annotation,
+      })
+    : null;
+  const worded =
+    verdict !== null && verdictNamesLevel(driftAnswer(verdict, model.entries, model.source.scan));
   return (
     <>
       <div className="next-session-drift-live" data-next-drift-level>
         <p className="next-session-drift-live-head">
-          <span className="next-session-drift-level">{level.label}</span>
+          {worded ? null : <span className="next-session-drift-level">{level.label}</span>}
           {level.source ? <span className="next-session-drift-source">{level.source}</span> : null}
         </p>
         {level.level ? (

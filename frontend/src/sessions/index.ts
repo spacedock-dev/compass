@@ -14,4 +14,4 @@ export {
   type PromptCandidate,
 } from './intent';
 export { departureRow, deliveryAbsence, unaskedDepartures, raiseLimit } from './detail';
-export { DelegatedWorkLine, DepartureReentry, UnaskedDepartureBody } from './DepartureParts';
+export { DepartureReentry, UnaskedDepartureBody } from './DepartureParts';

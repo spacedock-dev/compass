@@ -432,10 +432,11 @@ Save intent. A saved line names when you said it ("added from your 11:05 message
 opens that listed direction too. The prompt menu resolves choices when opened. An unsettled direction at
 or before a stored reading demotes its intent rows; a later message labels the reading as preceding it.
 
-Delegated work names recorded launches and their clocks when present. Missing or partial
-attribution says Compass cannot see all the work; a missing count is not zero. An unpaired
-launch followed by thirty quiet minutes in the last turn adds an At-risk item and a question
-to copy into the session. It records no finding about whether a process is running or finished.
+Delegated work has no line on the Drift card. An unpaired launch followed by thirty quiet
+minutes in the last turn adds an At-risk item and a question to copy into the session, and that
+item names the recorded launches and their clocks. Missing or partial attribution says Compass
+cannot see all the work; a missing count is not zero. It records no finding about whether a
+process is running or finished.
 
 A reading you asked for states its departures once, in its result. What the checks run while you
 were away raised is reviewed under `Raised while you were away: N`, drawn only where they raised
@@ -523,7 +524,8 @@ find and, where every line is consistent but the level is held back, why. The li
 drawn beside a reading that stands. The header pill adds "so far" while the session runs. A
 departure that an earlier reading found and the next one does not is named once on that reading.
 The answer follows: "Departs from your intent" with a count and
-each departure's own account under a departure, otherwise a failed check after your last message,
+each departure's own account under a departure, otherwise a failed check after your last message
+that a later pass of the same check, in the same directory, did not follow,
 "Can't tell", "Not reached at this stop", or "Nothing found against what it read". Coverage beside it names a measured partial
 message tail, unlisted passes or writes, checks that did not fit and an adopted-source fallback.
 An older reading says coverage was not recorded. A tail starting inside the intent window tags
@@ -539,7 +541,7 @@ check" where it rests on the agent's messages alone, "Consistent with what the s
 not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it, never
 "Done". A line that rules out a folder, or limits the work to one, departs on a file write the record holds
 there, whatever the reading said; a recorded passing check that covers a line is cited ahead of the agent's
-message on it. Unfinished work in flight
+message on it, which it does only where the line claims that kind of check's result ("the tests pass"), never for a line that merely names the subject ("the lint config is left alone"). Unfinished work in flight
 at a non-final stop has its own result and cited explanation under Evidence. It raises no
 departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
@@ -552,8 +554,7 @@ once that message leaves the transcript tail the board reads. A press that carri
 messages also asks whether any of them claims a state of the work (running, merged, passing and
 the like) that the record contradicts, or, for a pass, a fix or a file written, that the record
 does not show; the reading is asked to keep "not shown" for those, so a claim nothing Compass
-records can show (merged, pushed, deployed) is not meant to read "not shown". "What the agent claimed" quotes the claim's first sentence and then reads "is contradicted at #m", "is not shown by the record" (the
-record read being the board's recent tail, and never where some of the session's checks, passes
+records can show (merged, pushed, deployed) is not meant to read "not shown". "What the agent claimed" quotes the claim's first sentence and then reads "is contradicted at #m", "is not shown by the record" (with its own reason: which kind of check the claim names and what the record holds of it, or, for a claim naming none, that the record read is the board's recent tail, and never where some of the session's checks, passes
 or file writes went unread), "is shown at #m" or "Can't tell", and is not
 drawn when there was no claim. A check that failed before the claim does not contradict it once
 the agent ran the same tool again before claiming, with no failure in that run or an earlier one of it,

@@ -28,6 +28,19 @@ Drift card, which the comparison already excluded with the panel. The session he
 substitutes the goal or the first prompt for a title that is only an identifier (an issue key, a UUID or the
 session's own id); a Sessions row keeps the title as published.
 
+2026-10-21, the edges of the Drift card's states
+([the amendment](design-reading-a-session.md#amended-2026-10-21-the-drift-card-has-one-state-at-a-time)):
+the card says its read time once, so the analysis level's line is "Intent against cited checks and
+messages." where the recording says "Analysis at 14:03 · intent against cited checks and messages."
+(`level.differential.test.ts` projects the recorded line to the page's form and compares every other
+field as before), What the analysis read names the model without the stamp's "read at" time, and
+the delegated-work line is no longer drawn on the card, so `DepartureParts.test.tsx` no longer asks for
+the answers recorded for it and says why with `allowUnreadGoldens`; the rows and the way back beside
+them are still compared in full. A failed check a later pass of the same check followed is not a failed
+check on the card (`failedChecksAfterPerson`), a departure from the retired page's list; no generated
+case in `result.differential.test.ts` or `correction.differential.test.ts` reaches it, and
+`FixedCheck.test.ts` holds it. Golden files are unchanged.
+
 2026-10-21, a later direction is quoted where it is settled
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-a-later-direction-is-quoted-where-it-is-settled)):
 a saved line's source reads "added from your 11:05 message" where the retired page said "added from #7".
@@ -314,10 +327,10 @@ excerpt cue. The checklist's label reads "Expected outcome · up to 6 lines" whe
 first three onto the recorded editor; the browser proofs that read the retired badge or the old menu name now
 read the source line and the new name.
 
-The analysis level's line says "Analysis last run 14:03" where the retired page said "Analysis at 14:03"
-(owner, 2026-10-19), because the old words read as a time inside the session; the Drift card header
-says the same beside the model. The `drift__level` comparison in
-`frontend/src/drift/level.differential.test.ts` projects that one prefix back to the recorded words
+The Drift card header says "Analysis last run 14:03" where the retired page said "Analysis at 14:03"
+(owner, 2026-10-19), because the old words read as a time inside the session. The analysis level's own line
+no longer carries a time at all (2026-10-21): the header is the card's one read time. The `drift__level`
+comparison in `frontend/src/drift/level.differential.test.ts` projects the recorded line to the page's form
 before comparing, and every other field of the analysis level stays held to the recording, which is
 untouched. The departure cards that replace "Model assessment" in the same change draw from the same
 `result.ts` functions, which the `drift__result` comparison still holds unchanged. The first analysis
@@ -784,7 +797,7 @@ in every state. Pause model calls and the Live monitor sit behind Drift settings
 in the card's header beside a re-run control that stays there from the first reading on, a run over a
 reading keeps that reading in view dimmed, the one-time notice collapses under What is sent when its
 analysis ends, the verdict sentence replaces the result's own heading, Steer back is offered only with a
-departure, and Where the work went and the delegated-work limit moved under What the analysis read. No pure
+departure, and Where the work went moved under What the analysis read (the delegated-work limit left the card on the same day). No pure
 function changed, so the differential tests and the recorded answers are as they were; the
 [design record](design-reading-a-session.md#amended-2026-10-21-the-drift-card-has-one-state-at-a-time) owns
 each ruling and what was rejected.

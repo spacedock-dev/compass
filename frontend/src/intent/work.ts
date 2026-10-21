@@ -36,6 +36,8 @@ export interface WorkEntry {
   readonly actorClaim: string;
   readonly modelDerived: boolean;
   readonly subject: string;
+  /** A check's own identity, directory included; empty where the server published none. */
+  readonly checkId: string;
   readonly copied: boolean;
   readonly work: boolean;
   readonly result: string;
@@ -96,6 +98,7 @@ export function workEntries(session: Row, semantic: unknown): WorkEntry[] {
         actorClaim: claim,
         modelDerived: claim.startsWith('model-derived'),
         subject: String(fact['subject'] || ''),
+        checkId: String(fact['check_id'] || ''),
         copied: fact['copied'] === true,
         work: workOn(session['harness'], fact['type']),
         result: String(fact['result'] || ''),

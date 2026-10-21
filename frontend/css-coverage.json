@@ -1609,11 +1609,8 @@
     "frontend/src/drift/drift.css||.next-cockpit-reading-row+.next-cockpit-reading-row,.next-cockpit-departure+.next-cockpit-departure": "ReadingResult retains spacing for consecutive outcome or departure rows; the reached result fixtures contain single rows.",
     "frontend/src/drift/drift.css||.next-cockpit-reading-clause-absent": "ReadingResult retains an unavailable clause from a retained reading or prompt baseline.",
     "frontend/src/drift/drift.css||.next-cockpit-reading-limit": "ReadingResult Tail retains a published per-row qualification limit; reached readings publish none.",
-    "frontend/src/drift/drift.css||.next-cockpit-result-work": "ResultWorkView retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
-    "frontend/src/drift/drift.css||.next-cockpit-result-work h3": "ResultWorkView retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
-    "frontend/src/drift/drift.css||.next-cockpit-result-work ul": "ResultWorkView retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
-    "frontend/src/drift/drift.css||.next-cockpit-result-folder": "ResultWorkView retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
-    "frontend/src/drift/drift.css||.next-cockpit-result-path": "ResultWorkView retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
+    "frontend/src/drift/drift.css||.next-cockpit-result-folder": "WorkSection retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
+    "frontend/src/drift/drift.css||.next-cockpit-result-path": "WorkSection retains published written-file paths grouped by folder; the reached result fixtures publish no written paths.",
     "frontend/src/drift/drift.css||.next-cockpit-result .next-cockpit-reading-row+.next-cockpit-reading-row": "ReadingResult retains spacing for consecutive outcome or departure rows; the reached result fixtures contain single rows.",
     "frontend/src/drift/drift.css||[data-next-result-state=\"unshown\"]>.next-cockpit-result-glyph": "ResultState retains the unshown result glyph when a retained result cannot be shown; current fixtures show results or an absence.",
     "frontend/src/drift/drift.css||[data-next-result-state=\"unshown\"]>.next-cockpit-result-glyph::before": "ResultState retains the unshown result glyph when a retained result cannot be shown; current fixtures show results or an absence.",
@@ -1654,5 +1651,5 @@
   "baseline": "b86823fc",
   "currentPages": 14,
   "currentSheets": 1741,
-  "exceptionRules": 58
+  "exceptionRules": 55
 }

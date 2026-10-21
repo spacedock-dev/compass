@@ -64,7 +64,6 @@ export const JOB_TITLE = 'Analyzing drift';
 export const JOB_TITLE_AGAIN = 'Reading again';
 export const JOB_NOTE = 'You can keep working. The result will appear here.';
 export const JOB_NOTE_SO_FAR = 'Reads only the work so far. The result will appear here.';
-export const BACKGROUND = 'Runs in the background.';
 export const CANCEL_FAILED =
   'Could not confirm the cancel. The analysis may still be running; refresh to check.';
 export const MODEL_OFF =

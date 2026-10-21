@@ -513,7 +513,9 @@ describe('What the analysis read', () => {
     expect(read).not.toBeNull();
     const section = (name: string) =>
       read.querySelector(`[data-next-read-section="${name}"]`) as HTMLElement;
-    expect(section('model').textContent).toContain('claude-sonnet-5-5 · read at 09:38');
+    // The model alone: the read time is the card header's "Analysis last run", said once.
+    expect(section('model').textContent).toContain('claude-sonnet-5-5');
+    expect(section('model').textContent).not.toMatch(/read at|\d\d:\d\d/);
     const intent = section('intent');
     expect(intent.querySelector('h4')?.textContent).toBe('Your intent');
     expect(intent.textContent).toMatch(/typed .+ ago/);

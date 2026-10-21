@@ -192,7 +192,8 @@ export const ADepartureKeepsItsLevelAndTheRunningPillSaysSoFar: Story = {
     const drift = await card(canvasElement);
     const verdict = await verdictOf(drift);
     await expect(verdict).toHaveTextContent(/^Medium: 1 departure/);
-    await expect(drift.querySelector('[data-next-drift-level]')).toHaveTextContent(/^Medium/);
+    // The level's word is the sentence's alone; the meter's head holds its source.
+    await expect(drift.querySelector('[data-next-drift-level]')).toHaveTextContent(/^Analysis/);
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-drift-pill]')).toHaveTextContent(
         'Drift: Medium so far',

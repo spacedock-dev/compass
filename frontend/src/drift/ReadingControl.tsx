@@ -20,7 +20,6 @@ import {
 } from './route';
 import {
   absenceAttr,
-  BACKGROUND,
   CANCEL_FAILED,
   JOB_NOTE,
   JOB_NOTE_SO_FAR,
@@ -256,7 +255,7 @@ export function ReadingControl({
     !(ended !== null && given !== null && given > ended)
       ? readHint(session)
       : '';
-  const readLine = hint && !again ? `${hint} ${BACKGROUND}` : '';
+  const readLine = hint && !again ? hint : '';
   const job = readingJob(payload, session);
   /* Only from a published annotation: with the store off there is no count to read, and "0 requests" would be
      a default standing in for one. */

@@ -4,6 +4,7 @@ import { JOB_TITLE, LIVE_HINT, RESULT_DEPARTS } from '../src/drift/sentences';
 import { neverDone } from './drift.checks';
 import {
   analysisRow,
+  DEPARTURE_READING,
   DriftScenario,
   fact,
   failedCheck,
@@ -82,6 +83,13 @@ export const Empty: Story = {
     await expect(within(card).queryByRole('switch', { name: 'Live monitor' })).toBeNull();
     await expect(rerun(card)).toHaveLength(0);
     await expect(sentButtons(card)).toHaveLength(1);
+    // One sentence under Analyze drift, what it will read; "Runs in the background." is not a second.
+    await expect(card).not.toHaveTextContent('Runs in the background');
+    const ask = analyze.closest('.next-cockpit-reading-ask') as HTMLElement;
+    const under = ask.nextElementSibling as HTMLElement;
+    await expect(under).toHaveTextContent(
+      /^Reads the work so far; the session is still running\.$/,
+    );
     // The settings are one press away, in the header.
     await userEvent.click(within(head(card)).getByRole('button', { name: 'Drift settings' }));
     const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
@@ -178,6 +186,123 @@ export const Result: Story = {
     await expect(footer).toHaveTextContent('1 drift check requested');
     await expect(card.textContent?.match(/drift checks? requested/g)).toHaveLength(1);
     await neverDone(card);
+  },
+};
+
+/* Each verdict and the read time are said once. The sentence names the level, so the level view does not say
+   it again over its meter; "Analysis last run HH:MM" is the header's, and neither the level's line nor What
+   the analysis read repeats it. What is shown is counted, so a closed disclosure's words are not missed. */
+export const EachVerdictAndTheReadTimeAppearOnce: Story = {
+  ...scenario({
+    session: {
+      ...STORED_READING,
+      annotation_assessment: {
+        ...DEPARTURE_READING,
+        stamp: 'claude-sonnet-5-5 · read at 09:38',
+      },
+    },
+    facts: READ_FACTS,
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await readingDrawn(card);
+    const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
+    await expect(verdict).toHaveTextContent(/^High: 1 departure/);
+    // The level word is the sentence's alone: the meter's own head holds only its source.
+    const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
+    await expect(level.querySelector('.next-session-drift-level')).toBeNull();
+    await expect(level.querySelector('.next-session-drift-source')).toHaveTextContent('Analysis');
+    await expect(level.querySelector('.next-session-drift-meter [data-on]')).not.toBeNull();
+    await expect(card.querySelector('[data-next-result-heading]')).toBeNull();
+    await expect(within(card).queryByText(RESULT_DEPARTS)).toBeNull();
+    // The read time: the header says it, and nothing else on the card does, open or closed.
+    const stamp = card.querySelector('[data-next-drift-stamp]') as HTMLElement;
+    await expect(stamp).toHaveTextContent(/^claude-sonnet-5-5 · Analysis last run \d\d:\d\d$/);
+    await expect(level).not.toHaveTextContent(/last run|read at/);
+    await expect(level).toHaveTextContent('Intent against cited checks and messages.');
+    await userEvent.click(within(card).getByRole('button', { name: 'What the analysis read' }));
+    const model = card.querySelector('[data-next-read-section="model"]') as HTMLElement;
+    await expect(model).toHaveTextContent(/^Modelclaude-sonnet-5-5$/);
+    await expect(
+      card.textContent?.match(/(?:last run|read at|Analysis at) \d\d:\d\d/g),
+    ).toHaveLength(1);
+    // The delegated-work limit is not one of the things the analysis read.
+    await expect(card.textContent).not.toContain('Delegated work');
+  },
+};
+
+/* A red test the agent wrote first and a later run of the same check fixed is the work going as planned: no
+   "A check failed" verdict, no failed check to steer from. The control beside it, the same failure with no
+   later pass, still says so, which is what makes the first story able to fail. */
+const CONSISTENT_ON_THE_AGENT = {
+  result: 'consistent with the evidence read',
+  cites: ['m1'],
+  detail: '',
+};
+const SAID = fact('m1', 650, {
+  type: 'agent_message',
+  by: 'agent',
+  summary: 'The retry work is done.',
+});
+const ALL_CONSISTENT = {
+  annotation_assessment: {
+    ...DEPARTURE_READING,
+    criteria: {
+      goal: { ...CONSISTENT_ON_THE_AGENT, clause: 'Ship the queue' },
+      line_1: { ...CONSISTENT_ON_THE_AGENT, clause: 'Tests pass' },
+    },
+  },
+  annotation_reading_count: 1,
+};
+/* The pairing is by the check's identity, which the server derives from the directory as well as the command
+   line, so the same `pytest -q` in another package is another check. */
+const RED = { ...failedCheck('c1', 500), check_id: 'check:api' };
+const FIXED = fact('c3', 600, {
+  subject: 'check',
+  check_id: 'check:api',
+  result: 'passed',
+  result_source: 'passed flag',
+  summary: 'pytest -q',
+});
+const PASSED_ELSEWHERE = fact('c4', 600, {
+  subject: 'check',
+  check_id: 'check:web',
+  result: 'passed',
+  result_source: 'passed flag',
+  summary: 'pytest -q',
+});
+
+export const AFixedRedTestRaisesNoFailedCheck: Story = {
+  ...scenario({ session: ALL_CONSISTENT, facts: [PERSON, RED, FIXED, SAID] }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await readingDrawn(card);
+    const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
+    await expect(verdict).not.toHaveTextContent(/A check failed/);
+    await expect(card).not.toHaveTextContent('A check failed');
+    await expect(card).not.toHaveTextContent('A check the agent ran failed');
+    await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
+  },
+};
+
+export const AFailedCheckNothingFixedStillRaisesIt: Story = {
+  ...scenario({ session: ALL_CONSISTENT, facts: [PERSON, RED, SAID] }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await readingDrawn(card);
+    const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
+    await expect(verdict).toHaveTextContent(/^A check failed at \d\d:\d\d\./);
+  },
+};
+
+export const APassOfTheSameCommandInAnotherDirectoryFixesNothing: Story = {
+  ...scenario({ session: ALL_CONSISTENT, facts: [PERSON, RED, PASSED_ELSEWHERE, SAID] }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await readingDrawn(card);
+    const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
+    await expect(verdict).toHaveTextContent(/^A check failed at \d\d:\d\d\./);
   },
 };
 

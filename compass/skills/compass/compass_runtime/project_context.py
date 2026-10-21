@@ -4007,6 +4007,14 @@ class _ToolReportTally:
                 **{k: v for k, v in row.items() if k not in {"rank", "_key", "_first_at"}},
                 "harness": "claude",
                 "sid": sid,
+                # The check's own identity, directory included, hashed as the source does. The page
+                # matches a failed run to a later pass by it; the command line alone would let a
+                # pass of `pytest -q` in one directory hide a failure of it in another.
+                **(
+                    {"check_id": _semantic_id("check", row["_key"].removeprefix("check:"))}
+                    if row["_key"].startswith("check:")
+                    else {}
+                ),
                 **(
                     {"ordinal": position[0], "ordinal_sub": position[1]}
                     if (position := positions.get(row["_key"])) is not None
@@ -6907,6 +6915,7 @@ def _semantic_fact_from_event(
         "assignment",
         "worker_kind",
         "subject",
+        "check_id",
         "result",
         "result_source",
         "earlier_failed",
