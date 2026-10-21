@@ -11,6 +11,10 @@ const label = (tab: string): string => (tab ? (tab[0] ?? '').toUpperCase() + tab
    separate roots would otherwise generate the same ids. */
 let mountedStrips = 0;
 
+/* The focus-lane key of one tab in one strip. The lane keeps one entry per key, so two strips sharing a key
+   would overwrite each other's entry and focus would land on whichever registered last. */
+const focusKey = (prefix: string, tab: string): string => `${prefix}:cockpit-tab:${tab}`;
+
 function Tab({
   prefix,
   tab,
@@ -23,7 +27,7 @@ function Tab({
   readonly cue: ReactNode;
 }) {
   const { controls } = useShell();
-  const ref = useFocusKey<HTMLButtonElement>(controls.focusLane, `cockpit-tab:${tab}`);
+  const ref = useFocusKey<HTMLButtonElement>(controls.focusLane, focusKey(prefix, tab));
   return (
     <TabsTrigger
       value={tab}
@@ -86,7 +90,7 @@ export function ProjectTabs({
           event.preventDefault();
           event.preventBaseUIHandler();
           open(target);
-          controls.focusLane.focus(`cockpit-tab:${target}`);
+          controls.focusLane.focus(focusKey(prefix, target));
         }}
       >
         {tabs.map((tab) => (
