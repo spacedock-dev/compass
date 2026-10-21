@@ -178,7 +178,8 @@ export const TheDirectionSelectDrawsNoWrapper: Story = {
   },
 };
 
-/* A departure that cites the reader's own message quotes it: "You said", then the words, without the tags. */
+/* A departure that cites the reader's own message quotes it, in the card that opens on its number: "You said",
+   then the words, without the tags. */
 const CITING_READING = {
   ...DEPARTURE_READING,
   criteria: {
@@ -198,7 +199,24 @@ export const ACitedMessageIsQuotedWithoutItsWrapper: Story = {
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    await expect(card).toHaveTextContent('You said: “Also, prune the stylesheets”');
+    // The departure card titles itself on the failed check it cites, so the reader's message is quoted in the
+    // citation's own card, which opens on its number.
+    const citation = await waitFor(() => {
+      const node = card.querySelector<HTMLElement>('[data-next-cite="u3"]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(card.textContent).not.toMatch(WRAPPER);
+    await userEvent.hover(citation);
+    const shown = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-next-citation-card]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(shown.querySelector('[data-next-citation-snippet]')).toHaveTextContent(
+      /^You said: “Also, prune the stylesheets”$/,
+    );
+    await expect(shown.textContent).not.toMatch(WRAPPER);
     await expect(drift.textContent).not.toMatch(WRAPPER);
   },
 };
