@@ -77,6 +77,7 @@ function Footer() {
     typeof line?.text === 'string' &&
     Boolean(line.text.trim()) &&
     !line.pending &&
+    !question &&
     [INTENT_EDITED_ADD, ''].includes(directionWhy(line, input, heldCap(input.payload)));
   const saveLive = ((changes.any || changes.adoptable) && !question) || lineLive;
   /* Offered only over words that are saved: the first save opens the window by itself, so beside it the

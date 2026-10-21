@@ -444,8 +444,8 @@ export type WholeResult = {
   readonly message?: string;
 };
 
-// The count-only summary shows no direction text. Every Keep first draws all words,
-// including a sole short direction, before a later press may settle them (DEC-27).
+// Reads the words of the open directions the page has not yet held, so they are drawn before a press may
+// settle them (DEC-27). The question loads them on mount; this press reads again only when that failed.
 async function readWhole(
   ctx: Ctx,
   identity: SessionIdentity,
@@ -522,8 +522,8 @@ async function readWhole(
 }
 
 /* The words of every open direction, read once they are drawn and not on a press, so the question quotes
-   what each choice acts on and the first press of Leave it settles words already on screen. It reads and
-   writes nothing in the session or the store. A failed read leaves the quote at the entry's first sentence
+   what each choice acts on and the first press of Leave it settles words already on screen. It adds no session or
+   store state of its own. A failed read leaves the quote at the entry's first sentence
    and Leave it's own press reads again, as it did. One read per set of directions at a time. */
 const loading = new Set<string>();
 
@@ -652,12 +652,9 @@ export async function keepIntent(ctx: Ctx, row: Row, projectKey: string): Promis
     }
     /* A press after the list was drawn names the revision it was drawn against, so words saved since then
        are refused rather than settled over. `pending` is every drawn direction here, so `through` is too. */
-    const whole = ctx.held.wholes.get(key);
-    const expected =
-      whole && whole.drawn.size && whole.revision !== null ? whole.revision : drawnAt;
     const reply = answered(
       await ctx.shell.runtime.client.postAnnotate(
-        { ...identity, ...adopt, settle_through: through, expected_revision: expected },
+        { ...identity, ...adopt, settle_through: through, expected_revision: drawnAt },
         press.signal,
       ),
     );
@@ -670,9 +667,6 @@ export async function keepIntent(ctx: Ctx, row: Row, projectKey: string): Promis
       : outcome === 'untrusted'
         ? (HELD_CUES['settle-untrusted'] ?? KEEP_REFUSED)
         : KEEP_REFUSED;
-    /* A refused Keep draws its directions again against the revision now on screen: the one held was what
-       the store just refused. */
-    if (!settled) ctx.held.wholes.delete(key);
     if (settled) {
       forgetAdopted(ctx, row, draft);
     }

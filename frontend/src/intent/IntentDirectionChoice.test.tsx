@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { clock } from '../observed';
 import { trimToRule } from './annotation';
 import { json } from './testing';
-import { control, goalBox, inert, mountSession, stored, text } from './panel.testing';
+import { board, control, goalBox, inert, mountSession, stored, text, type } from './panel.testing';
 
 /* A later direction is quoted, with its time, where the reader chooses what to do with it, and each choice
    acts on its first press. Add as a line and Make it the goal start from the rule in the message rather than
@@ -82,6 +82,84 @@ describe('a later direction is quoted where it is settled', () => {
   });
 });
 
+describe('Leave it names the revision on screen', () => {
+  it('sends the revision a save minted, not the one the page loaded with', async () => {
+    const sent: unknown[] = [];
+    const page = mount({
+      '/api/annotate': (request: unknown) => {
+        const body = (request as { body?: Record<string, unknown> })?.body ?? {};
+        if ('settle_through' in body) {
+          sent.push(body['expected_revision']);
+          return body['expected_revision'] === 2
+            ? stored(2, { outcome: 'unchanged' })
+            : json({ ok: true, outcome: 'conflict', persisted: false });
+        }
+        return stored(2);
+      },
+    });
+    await settle(page);
+    type(goalBox(), 'v2');
+    await press(control('held-save'));
+    await settle(page);
+    await page.poll(board(SAVED_AT, { goal: 'v2', revision: 2 }));
+    await settle(page);
+    await press(control('direction-keep'));
+    await settle(page);
+    expect(sent).toEqual([2]);
+  });
+
+  it('keeps the quote whole after a refusal, and the next press settles', async () => {
+    let calls = 0;
+    const page = mount({
+      '/api/annotate': () => {
+        calls += 1;
+        return calls === 1
+          ? json({ ok: true, outcome: 'conflict', persisted: false })
+          : stored(1, { outcome: 'unchanged' });
+      },
+    });
+    await settle(page);
+    await press(control('direction-keep'));
+    await settle(page);
+    expect(text('[data-next-cockpit-direction-whole]')).toContain(WHOLE);
+    await press(control('direction-keep'));
+    await settle(page);
+    expect(page.posts('/api/annotate')).toBe(2);
+    expect(page.posts('/api/direction')).toBe(1);
+  });
+});
+
+describe('Save intent beside the unanswered lines question', () => {
+  it('stays inert after Make it the goal then Add as a line, with one goal button', async () => {
+    const page = mountSession({
+      store: { goal: 'Ship the worker', lines: ['A standing line'], revision: 2 },
+      session: SAVED_AT,
+      routes: {
+        '/api/project-context': record(fact('f1', 600, 'Keep the flag off by default.')),
+        '/api/direction': () =>
+          json({
+            ok: true,
+            text: WHOLE,
+            clipped: false,
+            results: [{ ok: true, text: WHOLE, clipped: false }],
+            goal_choice: { fact_id: 'f1', text: WHOLE, at: 600, cut: false },
+          }),
+        '/api/annotate': () => stored(3),
+      },
+    });
+    await settle(page);
+    await press(control('direction-goal'));
+    await settle(page);
+    await press(control('direction-add'));
+    await settle(page);
+    expect(inert(control('held-save'))).toBe(true);
+    const goals = [...document.querySelectorAll('button')].filter(
+      (b) => b.textContent === 'Make it the goal',
+    );
+    expect(goals).toHaveLength(1);
+  });
+});
+
 describe('Add as a line', () => {
   it('opens the rule with its hint on the first press and is saved by the one Save intent', async () => {
     const page = mount();
@@ -136,6 +214,20 @@ describe('the rule in a direction', () => {
     );
     expect(trimToRule('Ship v1.2 first. Then more.')).toBe('Ship v1.2 first.');
     expect(trimToRule('')).toBe('');
+  });
+
+  it('does not stop at a list marker, an abbreviation or a one-word opener', () => {
+    expect(trimToRule('1. Fix auth and add tests')).toBe('Fix auth and add tests');
+    expect(trimToRule('- Keep the flag off')).toBe('Keep the flag off');
+    expect(trimToRule('Use e.g. a lock file for caching. Then more.')).toBe(
+      'Use e.g. a lock file for caching.',
+    );
+    expect(trimToRule('Yes. Do it, and keep the flag off')).toBe(
+      'Yes. Do it, and keep the flag off',
+    );
+    expect(trimToRule('Actually, stop. Do it differently')).toBe(
+      'Actually, stop. Do it differently',
+    );
   });
 });
 

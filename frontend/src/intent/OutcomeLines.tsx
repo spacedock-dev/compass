@@ -146,7 +146,7 @@ function DirectionLineView() {
         {said}
       </p>
       <p className="next-cockpit-held-hint">{RULE_HINT}</p>
-      {why || held.clipped ? <DirectionGoalButton factId={held.factId} scope="line" /> : null}
+      {said || held.clipped ? <DirectionGoalButton factId={held.factId} scope="line" /> : null}
       {held.clipped ? <p className="next-cockpit-held-full">{DIRECTION_CLIPPED}</p> : null}
       {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
     </li>

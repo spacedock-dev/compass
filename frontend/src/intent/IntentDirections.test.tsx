@@ -589,8 +589,8 @@ describe('Leave it', () => {
     expect(text('.next-cockpit-direction-question')).toContain(
       'Nothing was settled and no analysis was started: your intent changed since this page was drawn, or the store refused the mark.',
     );
-    // A refused Leave it draws its directions again against the revision now on screen.
-    expect(text('[data-next-cockpit-direction-whole]')).not.toContain('verify it on a clean');
+    // A refused Leave it keeps the words it drew, so the next press acts on what is still on screen.
+    expect(text('[data-next-cockpit-direction-whole]')).toContain('verify it on a clean');
   });
 });
 

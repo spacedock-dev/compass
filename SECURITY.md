@@ -192,7 +192,9 @@ The posture rests on two invariants:
    session's content.
    Two `POST`s store nothing of their own and are named here for what they return rather than for
    the count above: `POST /api/direction` hands back the whole text of one later direction you
-   gave, for review before it becomes an outcome line, and `POST /api/correction` hands back Steer
+   gave, which the page asks for on its own, with no press, for every open direction (up to 64)
+   when it draws the question that quotes them, so you read the words before you choose what to do
+   with them, and `POST /api/correction` hands back Steer
    back's correction, which is the goal and outcome lines you saved, each line's state and the
    times of the entries it rests on, and since 2026-10-04 the first sentence of an agent message
    whose claim the record contradicts or does not show, or, since 2026-10-20, at which a departure
@@ -1915,16 +1917,16 @@ intent", settles through `POST /api/annotate` with no `allow` and no `tool_outpu
 for the consent step and the tool-output allow: the first press runs and shows the notice, and a
 stored off still refuses every press until Resume model calls.
 
-Keeping your intent and adding a later direction. "Keep my intent and
-analyze" settles every unsettled later direction before anything else in the press, so a press
-that then starts no analysis (another provider, the budget, one already in flight) has still
-settled. Where no analysis can start at all, no reader or model calls paused, or where an Allow
-is still owed, the same answer is the `settle_through` field of a `POST /api/annotate` body and
-reads nothing. Over an unsaved draft either one adopts the draft and records the settlement in one
-store write, and a refused adoption settles nothing.
+Keeping your intent and adding a later direction. "Leave it" settles every later direction the
+question quoted, as the `settle_through` field of a `POST /api/annotate` body, which reads nothing
+and starts no analysis: "Analyze drift" is its own press. Over an unsaved draft it adopts the
+draft and records the settlement in one store write, and a refused adoption settles nothing. It
+names the intent revision on screen when it is pressed, so words saved since the page was drawn
+are refused rather than settled over, and a refusal leaves the quoted words in place.
 
-"Add it to my intent" is two requests. The first, `POST /api/direction`, names a session and one
-fact id and returns that message's whole text for review, where the published record holds only
+"Add as a line" reads, then writes. The read, `POST /api/direction`, names a session and one
+fact id and returns that message's whole text, which the page already holds from drawing the
+question, where the published record holds only
 its first sentence, clipped. That is wider than any published field, so it is stated exactly. It
 returns the text of one message, masked by named form as a check line is (a `NAME=value`, the
 word after `--password`, `--token` or `-p`, an `Authorization:` or `X-Api-Key:` value, a
@@ -2836,7 +2838,7 @@ as it sends a Claude Code, Codex or Pi session's user messages. The file is kept
 every caller of that one reads work or tool output (the observer, the gate and Spacedock boot
 scans, the working-directory read, workflow discovery), and none of them is handed this path, so
 "Compass can't read work from this harness" stays true. A direction the harness truncated is
-refused by "Add it to my intent" rather than saved as the whole of what was typed. The shapes behind
+refused by "Add as a line" rather than saved as the whole of what was typed. The shapes behind
 this are in
 [docs/captures/antigravity/transcript-shapes-1.2.11-macos.jsonl](docs/captures/antigravity/transcript-shapes-1.2.11-macos.jsonl).
 
@@ -3240,7 +3242,7 @@ the revision and the reading that used it; an explicit goal save makes typed wor
 
 Amended by the owner, approving the Analyze drift plan, 2026-10-04: the menu's five choices are
 built only when the reader opens it. A listed later direction may also be explicitly chosen with
-"Use this as my goal". The server resolves its fact id in the same session's own source record,
+"Make it the goal". The server resolves its fact id in the same session's own source record,
 requires a person-authored message after the goal's direction floor, and verifies the displayed
 words, source time and saved revision again before adoption. Claude and Codex use a stable,
 bounded backward 64 MiB search so recent messages in long files and paged entries

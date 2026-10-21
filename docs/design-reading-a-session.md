@@ -6098,7 +6098,7 @@ presses, and two of the three edited a card above it.
   reader sent it; of several, each is quoted under its own time. Compass reads those words when the
   question is drawn, one read of every open direction, because the reader must see what each choice
   acts on before it acts ([DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)'s
-  rule that Keep settles only words it has drawn is kept). The read writes nothing and starts no model,
+  rule that Keep settles only words it has drawn is kept). The read adds no session or store state of its own and starts no model,
   and a read that fails leaves the entry's first sentence quoted and Leave it to read again on its press.
 - **One press.** `Add as a line`, `Make it the goal` and `Leave it` each act on their first press. Add and
   Make start from the rule in the message (its first sentence), not the whole of it, and both say "Write the
