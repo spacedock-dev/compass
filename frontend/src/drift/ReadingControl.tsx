@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from 'react';
 import { nextNumber } from '../api/bootstrap';
 import { disclosureKey, useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
+import { ANALYZE_READS_PROMPT } from '../intent/sentences';
 import { endedAt, readHint, type Row } from '../observed';
 import { PROMPT_SOURCES } from '../sessions/intent';
 import { askForReading, cancelReading, readingOff, readingOn } from './actions';
@@ -423,6 +424,9 @@ export function ReadingControl({
       }
     >
       {partsList}
+      <p className="next-cockpit-reading-why" data-next-reading-prompt-limit>
+        {ANALYZE_READS_PROMPT}
+      </p>
       {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
       {off ? null : <TurnOff closes="reading-sent" />}
     </Why>

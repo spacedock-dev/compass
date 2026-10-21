@@ -160,12 +160,10 @@ function LineRow({
   index,
   text,
   boxId,
-  used,
 }: {
   readonly index: number;
   readonly text: string;
   readonly boxId: string | undefined;
-  readonly used: boolean;
 }) {
   const { ctx, input, session, cap, source, payload } = usePanel();
   const key = linesKey(session);
@@ -176,7 +174,7 @@ function LineRow({
   const line = place && place.text === text ? place : null;
   return (
     <li
-      className={`next-cockpit-held-line ${used ? 'grid-cols-[auto_minmax(0,1fr)_auto]' : 'grid-cols-[auto_minmax(0,1fr)]'}`}
+      className="next-cockpit-held-line grid-cols-[auto_minmax(0,1fr)_auto]"
       data-next-cockpit-held-line={index}
     >
       <span
@@ -222,19 +220,17 @@ function LineRow({
           </span>
         ) : null}
       </div>
-      {used ? (
-        <ActionButton
-          weight="secondary"
-          className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
-          icon="remove"
-          label="Remove"
-          action="held-line-remove"
-          arg={String(index)}
-          ariaLabel={`Remove line ${String(index + 1)}`}
-          focusKey={`${key}:remove:${String(index)}`}
-          onPress={() => removeLine(input, index)}
-        />
-      ) : null}
+      <ActionButton
+        weight="secondary"
+        className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
+        icon="remove"
+        label="Remove"
+        action="held-line-remove"
+        arg={String(index)}
+        ariaLabel={`Remove line ${String(index + 1)}`}
+        focusKey={`${key}:remove:${String(index)}`}
+        onPress={() => removeLine(input, index)}
+      />
     </li>
   );
 }
@@ -249,11 +245,6 @@ export function OutcomeLines() {
   const boxes = draft.length ? draft : [''];
   const full = draft.length >= OUTCOME_LINES_MAX;
   const line = held.directions.get(compatSessKey(session));
-  const used =
-    draft.length > 1 ||
-    draft.some((text) => text.trim()) ||
-    annotationLines(annotation).length > 0 ||
-    Boolean(line?.text?.trim());
   const why = storeUnreadable(payload) ? '' : String(annotation?.['lines_why'] || '');
   const cue = heldSentence(held.kind(key), null);
   /* Where an open later direction already says the list is full beside its own save, the list's sentence is
@@ -282,7 +273,6 @@ export function OutcomeLines() {
             key={index}
             index={index}
             text={text}
-            used={Boolean(used)}
             boxId={index === 0 ? firstBoxId : undefined}
           />
         ))}
@@ -314,13 +304,6 @@ export function OutcomeLines() {
 export function AddOutcomeLine() {
   const { ctx, input, session } = usePanel();
   const draft = linesDraft(ctx.held, session, input.annotation);
-  const line = ctx.held.directions.get(compatSessKey(session));
-  const used =
-    draft.length > 1 ||
-    draft.some((text) => text.trim()) ||
-    annotationLines(input.annotation).length > 0 ||
-    Boolean(line?.text?.trim());
-  if (!used) return null;
   return (
     <ActionButton
       label="+ Add a line"

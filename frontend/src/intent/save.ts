@@ -173,12 +173,16 @@ export async function adoptPrompt(
     /* Only what this press adopted goes, and only while it is still what the box holds: the reply can arrive
        after the reader typed other words or picked another prompt, and the adoption's words are then the
        saved goal beneath a newer edit that is still theirs. */
-    forgetAdopted(ctx, row, candidate);
-    forgetChosen(ctx, row, candidate);
     // An earlier press's "changed" or "refused" no longer stands once this one landed.
     const request = ctx.held.requests.get(compat(row));
     if (request && !request.pending) request.message = '';
-    await refresh(ctx);
+    /* After the refresh, so the box keeps showing the adopted words until the row that holds them is drawn. */
+    try {
+      await refresh(ctx);
+    } finally {
+      forgetAdopted(ctx, row, candidate);
+      forgetChosen(ctx, row, candidate);
+    }
     return true;
   } catch {
     ctx.held.requests.set(compat(row), {
@@ -350,8 +354,13 @@ async function saveWork(
     void refresh(ctx);
     return kind;
   }
-  forgetSent(ctx, row, changes, body, sent);
-  await refresh(ctx);
+  /* Forgotten after the refresh, not before: with the draft gone and the row not yet redrawn, the boxes showed
+     the drafted prompt and emptied outcome lines for as long as the board took to answer. */
+  try {
+    await refresh(ctx);
+  } finally {
+    forgetSent(ctx, row, changes, body, sent);
+  }
   return kind;
 }
 

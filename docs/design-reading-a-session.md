@@ -5893,3 +5893,31 @@ closed summary shape and the harness table are in
 
 The owner also reversed [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)'s
 two-column layout for this milestone; see the amendment directly above.
+
+### Amended 2026-10-21: the Intent card follows the design
+
+The card the 2026-10-12 build left was a one-line goal, a select whose label changed, Undo and
+Add a line that appeared only after typing, a status of two sentences and a meta row of six
+parts. It now matches the design's form, and a save no longer shows the draft while it settles.
+
+- **A save keeps the reader's words on screen.** The held goal and lines are dropped after the
+  board refresh that follows the reply, not before it. Dropped first, the boxes read the drafted
+  prompt and empty outcome lines until the row arrived, about two seconds. The same order holds for
+  an adopted prompt. A story with a held refresh asserts it.
+- **The form.** The goal is a three-row box. `Use your prompt` is one button with one label that
+  opens "Your prompts in this session"; it no longer becomes `Replace with your prompt` or shows the
+  chosen prompt. `+ Add a line`, `Save intent` and `Undo changes` sit together on the left and are
+  drawn from the first view, the last two inert until there is something to write or undo, and each
+  line's `×` is drawn before the reader types.
+- **Status is a word.** `Saved`, `Unsaved changes`, `Draft` over a goal drafted from a prompt, and
+  the refusals `Not saved` and `Not confirmed`. Which prompt a draft came from is the goal's source
+  line, and `How Intent and drift works` is in the menu below.
+- **The goal's hint** no longer carries the prompt-length sentence. "Analyze reads at most the
+  first 1,000 characters of any prompt" is in What is sent, beside the parts a reading sends.
+- **The meta row** keeps the reading's start (`Saved · reads from 10:57`) and one quiet `More`
+  menu holding the measured sentence, `Clear`, `About these saved words`, `Discard everything`,
+  `Later directions` and the how-to. What became of discarded words stays on the card, because it
+  says what became of the reader's words.
+
+No differential test over the recorded answers changed. The on-demand browser proofs under
+`frontend/e2e` still carry the old card's text and were not run for this change.

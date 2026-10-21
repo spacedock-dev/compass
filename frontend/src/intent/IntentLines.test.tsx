@@ -32,7 +32,7 @@ describe('the outcome checklist', () => {
     await settle(page);
     expect(lineBoxes()).toHaveLength(1);
     expect(lineBoxes()[0]?.value).toBe('');
-    expect(control('held-line-add')).toBeNull();
+    expect(control('held-line-add')).not.toBeNull();
     type(lineBoxes()[0] as HTMLTextAreaElement, 'A check');
     await press(control('held-line-add'));
     expect(lineBoxes()).toHaveLength(2);

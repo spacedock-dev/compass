@@ -65,14 +65,14 @@ describe('the "Use your prompt" menu', () => {
     expect(page.posts()).toBe(0);
   });
 
-  it('names the menu a replacement beside a saved typed goal, so its face never reads as the source', async () => {
+  it('keeps one label on the button whatever the box holds', async () => {
     const page = mountSession({
       store: { goal: 'Saved', revision: 1 },
       routes: { '/api/project-context': menu },
     });
     await settle(page);
     expect(text('[data-next-cockpit-goal-source]')).toMatch(/^Typed · saved/);
-    expect(select().textContent).toBe('Replace with your prompt');
+    expect(select().textContent).toBe('Use your prompt');
     expect(select().getAttribute('aria-label')).toBe('Use your prompt');
   });
 
@@ -90,7 +90,7 @@ describe('the "Use your prompt" menu', () => {
     );
   });
 
-  it('fills the box and says so, saves nothing, and puts the face back once the reader types over it', async () => {
+  it('fills the box and says so, saves nothing, and keeps its one label when the reader types over it', async () => {
     const page = mountSession({
       store: { goal: 'Saved goal', revision: 1 },
       routes: { '/api/project-context': menu },
@@ -98,7 +98,6 @@ describe('the "Use your prompt" menu', () => {
     await settle(page);
     await choose(page, 'p1');
     expect(goalBox().value).toBe('Fix the login redirect');
-    expect(select().textContent).toContain('Fix the login redirect');
     expect(text('#next-cockpit-cue-status')).toBe('Goal filled from your prompt. Not saved.');
     expect(page.posts()).toBe(0);
     expect(inert(control('held-save'))).toBe(false);

@@ -220,6 +220,7 @@ export const HowToSaysWhatAReadingCanSettleAndHowFarToTrustIt: Story = {
   args: { cites: [] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'More about these words' }));
     await userEvent.click(
       await canvas.findByRole('button', { name: 'How Intent and drift works' }),
     );
