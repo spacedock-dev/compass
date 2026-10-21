@@ -19,6 +19,7 @@ import {
 } from './result';
 import { readingShape } from './shape';
 import { seedSample } from '../../test/legacy_goldens';
+import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
 /* The result stage's words, run next to the legacy page's over generated readings: the status line of each
    row, the answer over all of them, where the work went, why a reading is stale. */
@@ -260,9 +261,10 @@ describe('the result stage says what the legacy page says', () => {
         failures.push(`seed ${String(seed)} stale presence`);
       if (stale) {
         note(`stale:${stale.kind}`);
-        const expected = squash(`${stale.head} ${stale.superseded}`);
-        if (text(staleHtml) !== expected) {
-          failures.push(`seed ${String(seed)} stale text: ${text(staleHtml)} / ${expected}`);
+        const expected = squash(maskRevisionWords(`${stale.head} ${stale.superseded}`));
+        const recorded = text(maskRevisionWords(staleHtml));
+        if (recorded !== expected) {
+          failures.push(`seed ${String(seed)} stale text: ${recorded} / ${expected}`);
         }
       }
       const arrivedA = text(legacy.call<string>('nextReadingArrivedLine', annotation, entries));

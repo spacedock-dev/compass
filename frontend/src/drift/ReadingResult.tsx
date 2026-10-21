@@ -637,7 +637,6 @@ function Baseline({
     shape.revisionRead === null
       ? ''
       : [
-          `Version ${String(shape.revisionRead)}`,
           shape.revisionReadAt !== null
             ? `${shape.promptSource ? 'saved' : 'typed'} ${fmtDur(Math.max(0, model.generated - shape.revisionReadAt))} ago`
             : `${shape.promptSource ? 'save time' : 'time'} not recorded`,

@@ -24,6 +24,7 @@ import {
   sessionInstruction,
   type PromptCandidate,
 } from './intent';
+import { datedClock } from '../observed/values';
 
 /* What the Sessions screen draws, as data: a pure function of one payload and the model read from it, so
    every sentence is testable without a DOM and the screen cannot say something the rows do not. The
@@ -149,16 +150,22 @@ export function drift(source: Row | undefined, context: SessionsContext): DriftR
 }
 
 /* One reading, or one raise, against words that have moved on. The sentence is owned here for the
-   reason the legacy page owns it once: a second wording would be a second promise. Silence on either
-   absence rather than a placeholder: a raise whose revision did not survive says so on its own line and
-   is never shown today's number. */
+   reason the legacy page owns it once: a second wording would be a second promise. It names the two
+   moments the reader has seen on this page (when the reading was made, when they changed the words) and
+   never a revision number, which appears nowhere else. The numbers still decide whether the words moved;
+   they are not printed. Silence on either absence rather than a placeholder: a moment the record did not
+   keep is left out of the sentence, never replaced by today's. */
 export function revisionSuperseded(
   subject: string,
   read: number | null,
   current: number | null,
+  madeAt: number | null = null,
+  changedAt: number | null = null,
 ): string {
   if (read === null || current === null || read === current) return '';
-  return `${subject} read revision ${String(read)}. Revision ${String(current)} is current, so it does not describe what you are asking for now.`;
+  const made = madeAt !== null && madeAt > 0 ? ` at ${datedClock(madeAt)}` : '';
+  const changed = changedAt !== null && changedAt > 0 ? ` at ${datedClock(changedAt)}` : '';
+  return `${subject} was made${made} against an earlier version of your intent. You changed it${changed}, so it does not describe what you are asking for now.`;
 }
 
 export interface DriftMark {
@@ -175,9 +182,12 @@ export function driftMark(source: Row | undefined, context: SessionsContext): Dr
   const dated = records.map((row) => row.at).filter((at): at is number => at !== null && at > 0);
   const age = dated.length ? durationSince(context.generated, Math.max(...dated)) : null;
   const current = nextNumber(source['annotation_revision']);
+  const changedAt = nextNumber(source['annotation_at']);
   const stale = [
     ...new Set(
-      records.map((row) => revisionSuperseded(row.subject, row.revision, current)).filter(Boolean),
+      records
+        .map((row) => revisionSuperseded(row.subject, row.revision, current, row.at, changedAt))
+        .filter(Boolean),
     ),
   ];
   return {

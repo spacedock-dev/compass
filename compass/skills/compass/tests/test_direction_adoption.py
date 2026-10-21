@@ -104,6 +104,173 @@ class _Writes:
         return self._real(*args, **kwargs)
 
 
+class GoalEditWindowTest(unittest.TestCase):
+    """The owner's ruling of 2026-10-21: editing the goal keeps the reading's start.
+
+    Read from now is the reader's explicit choice, so only `read_from_now`
+    reopens the window, as a first save would.
+    """
+
+    def setUp(self) -> None:
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, True)
+        self.config, self.state = make_runtime(state_home=home, state_dir=Path(home))
+        self.opened = FIRST_AT + 5
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            goal="Ship the placeholder parser",
+            now=FIRST_AT + 10,
+            window_start=self.opened,
+        )
+
+    def _published(self) -> Any:
+        return annotation_store.published(
+            annotation_store.find(annotation_store.load(self.config), "claude", SHORT)
+        )
+
+    def _edit(self, now: float, **over: Any) -> str:
+        return annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            goal="Ship the placeholder parser and its lexer",
+            now=now,
+            window_start=now - 5,
+            **over,
+        )
+
+    def test_a_goal_edit_keeps_the_start_the_first_save_opened(self) -> None:
+        self.assertEqual(annotation_store.OUTCOME_STORED, self._edit(FIRST_AT + 200))
+        self.assertEqual(self.opened, self._published()["window_start"])
+        self._edit(FIRST_AT + 300, lines=["A line"], expected_revision=2)
+        self.assertEqual(self.opened, self._published()["window_start"])
+
+    def test_using_a_prompt_as_the_goal_keeps_the_start_too(self) -> None:
+        outcome = annotation_store.adopt(
+            self.config,
+            self.state,
+            _row(),
+            source="first-prompt",
+            expected_text=FIRST,
+            expected_at=FIRST_AT,
+            now=FIRST_AT + 200,
+            expected_revision=1,
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        self.assertEqual(self.opened, self._published()["window_start"])
+        # A lines-only save over the adopted goal does not reopen it at the prompt's time.
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            lines=["A line"],
+            expected_revision=2,
+            now=FIRST_AT + 300,
+        )
+        self.assertEqual(self.opened, self._published()["window_start"])
+
+    def test_read_from_now_reopens_a_typed_edit_at_the_latest_message(self) -> None:
+        self._edit(FIRST_AT + 200, read_from_now=True)
+        self.assertEqual(FIRST_AT + 195, self._published()["window_start"])
+
+    def test_read_from_now_reopens_an_adopted_goal_at_its_source_time(self) -> None:
+        annotation_store.adopt(
+            self.config,
+            self.state,
+            _row(),
+            source="first-prompt",
+            expected_text=FIRST,
+            expected_at=FIRST_AT,
+            now=FIRST_AT + 200,
+            expected_revision=1,
+            read_from_now=True,
+        )
+        self.assertEqual(FIRST_AT, self._published()["window_start"])
+
+    def test_read_from_now_over_unchanged_words_still_moves_the_start(self) -> None:
+        outcome = annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            goal="Ship the placeholder parser",
+            now=FIRST_AT + 200,
+            window_start=FIRST_AT + 150,
+            read_from_now=True,
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        self.assertEqual(FIRST_AT + 150, self._published()["window_start"])
+        self.assertEqual(2, self._published()["revision"])
+
+
+class GoalAfterLinesWindowTest(unittest.TestCase):
+    """A line saved before any goal is not the start of the work the goal names."""
+
+    def setUp(self) -> None:
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, True)
+        self.config, self.state = make_runtime(state_home=home, state_dir=Path(home))
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            lines=["A line"],
+            now=FIRST_AT + 500,
+            window_start=FIRST_AT + 490,
+        )
+
+    def _published(self) -> Any:
+        return annotation_store.published(
+            annotation_store.find(annotation_store.load(self.config), "claude", SHORT)
+        )
+
+    def test_adopting_a_prompt_after_a_lines_only_save_opens_at_the_prompt(self) -> None:
+        outcome = annotation_store.adopt(
+            self.config,
+            self.state,
+            _row(),
+            source="first-prompt",
+            expected_text=FIRST,
+            expected_at=FIRST_AT,
+            now=FIRST_AT + 600,
+            expected_revision=1,
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        self.assertEqual(FIRST_AT, self._published()["window_start"])
+
+    def test_typed_goal_after_a_lines_only_save_opens_at_the_typed_window(self) -> None:
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            goal="Ship the placeholder parser",
+            now=FIRST_AT + 600,
+            window_start=FIRST_AT + 20,
+            expected_revision=1,
+        )
+        self.assertEqual(FIRST_AT + 20, self._published()["window_start"])
+
+    def test_a_second_lines_only_save_still_carries_the_start(self) -> None:
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            lines=["A line", "Another"],
+            now=FIRST_AT + 700,
+            window_start=FIRST_AT + 690,
+            expected_revision=1,
+        )
+        self.assertEqual(FIRST_AT + 490, self._published()["window_start"])
+
+
 class AddDirectionStoreTest(unittest.TestCase):
     def setUp(self) -> None:
         home = tempfile.mkdtemp()
@@ -932,6 +1099,34 @@ class DirectionRouteTest(_ClaudeSession):
             "expected_revision": 0,
             **over,
         }
+
+    def test_using_a_prompt_as_the_goal_keeps_the_start_unless_read_from_now_is_pressed(
+        self,
+    ) -> None:
+        with self._serving() as port:
+            status, body = self._post(
+                port,
+                "/api/annotate",
+                {"harness": "claude", "sid": SHORT, "goal": "Ship the placeholder parser"},
+            )
+            self.assertEqual((200, "stored"), (status, body["outcome"]))
+            opened = annotation_store.load(self.config)[0]["revisions"][-1]["window_start"]
+            self.assertGreater(opened, FIRST_AT)
+            status, body = self._post(
+                port, "/api/annotate", self._adoption_payload(expected_revision=1)
+            )
+            self.assertEqual((200, "stored"), (status, body["outcome"]))
+            revision = annotation_store.load(self.config)[0]["revisions"][-1]
+            self.assertEqual(FIRST, revision["goal"])
+            self.assertEqual(opened, revision["window_start"])
+            status, body = self._post(
+                port,
+                "/api/annotate",
+                self._adoption_payload(expected_revision=2, read_from_now=True),
+            )
+            self.assertEqual((200, "stored"), (status, body["outcome"]))
+            moved = annotation_store.load(self.config)[0]["revisions"][-1]
+            self.assertEqual(FIRST_AT, moved["window_start"])
 
     def test_adoption_receipt_survives_an_actual_post_lock_concurrent_write(self) -> None:
         # The adoption releases the real store lock before the HTTP route rereads

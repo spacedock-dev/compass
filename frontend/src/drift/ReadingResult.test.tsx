@@ -159,7 +159,10 @@ describe('a stored reading', () => {
     expect(stale.getAttribute('data-next-result-stale')).toBe('intent');
     expect(stale.textContent).toContain('Your intent changed after this analysis.');
     const status = stale.closest('[data-next-drift-status]') as HTMLElement;
-    expect(status.textContent).toContain('This reading read revision 3. Revision 4 is current');
+    expect(status.textContent).toMatch(
+      /This reading was made at .+ against an earlier version of your intent\. You changed it at .+, so it does not describe what you are asking for now\./,
+    );
+    expect(status.textContent).not.toMatch(/revision \d/i);
     expect(status.querySelector('[data-next-cockpit-action="reading-ask"]')?.textContent).toBe(
       'Check again',
     );
@@ -462,7 +465,8 @@ describe('What the analysis read', () => {
     expect(section('model').textContent).toContain('claude-sonnet-5-5 · read at 09:38');
     const intent = section('intent');
     expect(intent.querySelector('h4')?.textContent).toBe('Your intent');
-    expect(intent.textContent).toContain('Version 3');
+    expect(intent.textContent).toMatch(/typed .+ ago/);
+    expect(intent.textContent).not.toContain('Version');
     expect([...intent.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
       'Goal “Ship the queue”',
       'Expected outcome “Tests pass”',

@@ -3214,7 +3214,7 @@ within the milestone's scope and recorded on the issue.
   evidence.
 - Amended by the owner, approving the Analyze drift plan, 2026-10-04: unchanged typed goal words
   carry their existing window through a lines-only save or an added direction. New goal words
-  recompute the window. For those typed words it is
+  recomputed the window until the owner's ruling of 2026-10-21 below. For those typed words it is
   the latest `user_message` of this session at or before the save, read on the server from the
   session's record, found in the all-sessions collection so a save from that view on an aged session
   still finds it. A permission approval is not a message, so it never moves the window. A record
@@ -3304,6 +3304,33 @@ such a session: it is read up to its last recorded entry, the way a running sess
 - The Claude Code press line and Why sentence for an idle row are gone, since the board no longer
   refuses one. Every line the board can still publish states the condition that holds, a press on a
   refused Analyze opens its disclosure, and the disclosure is named "Why Analyze is off".
+
+#### Amended 2026-10-21 (owner): editing the goal keeps the reading's start
+
+The bullet above that says new goal words "recompute the window" is replaced. The owner's walk found
+that rewriting a goal to widen it moved `reads from 10:57` to `reads from 11:05`, so the next reading
+read only the entries after the edit and a line the earlier work had satisfied went from Consistent
+to Can't tell. Editing the goal says the work already done still counts.
+
+- A revision keeps the window of the revision before it. Saving new goal words, saving a line, and
+  adopting a prompt or a later direction as the goal with Use this as my goal all leave the start
+  where it was, so the next reading reads from the original start. Only the first save of a session,
+  and the first save after a discard, open a window of their own, by the rules above.
+  The first save that carries a goal opens the window, so a line saved before any goal does not
+  count as the start: adopting a prompt over a revision holding lines alone opens at the prompt's
+  own time, and typed goal words open at their own window.
+- Reading from the edit onwards is the reader's explicit choice, offered as Read from now beside Save
+  intent. `POST /api/annotate` takes `read_from_now: true` on a typed save or an adoption, and the
+  save then opens the window as a first save would: the reader's latest message at or before the save
+  for typed words, the source's own time for an adopted prompt. It is the reader's latest message and
+  not the save instant because the turn that message started is still the work being read. The page
+  says so beside the save in the same moment, with that time. Unchanged words saved this way still
+  mint a revision, since the window is the thing the reader asked to move.
+- A window start is still never later than its own save, and one that is stored without a window
+  opens at its save, as above.
+- A reading or a raise that predates a change of the goal says so in times the reader has seen (when
+  it was made, and when the intent changed) and never by revision number. Revision numbers stay
+  inside the store and the wire.
 
 ### What the background build decided, 2026-09-24
 

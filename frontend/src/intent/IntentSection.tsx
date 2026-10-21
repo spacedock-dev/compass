@@ -6,7 +6,7 @@ import { Disclosure, disclosureKey, useFocusKey } from '../controls';
 import { clock, endedAt } from '../observed';
 import { useDisplayed } from '../shell/context';
 import { ActionButton } from './ActionButton';
-import { discardStamp, revisionLine, storeUnreadable } from './annotation';
+import { annotationDiscarded, discardStamp, revisionLine, storeUnreadable } from './annotation';
 import { heldSentence } from './cues';
 import {
   directionLinesQuestion,
@@ -22,7 +22,13 @@ import { CaveatNotes, Caveats, LaterDirections } from './Caveats';
 import { ClearGoal, GoalField } from './GoalField';
 import { OutcomeLines, AddOutcomeLine } from './OutcomeLines';
 import { saveIntent } from './save';
-import { ENDED_CAVEAT, INTENT_LEDE, INTENT_MEASURED } from './sentences';
+import {
+  ENDED_CAVEAT,
+  INTENT_LEDE,
+  INTENT_MEASURED,
+  READ_FROM_NOW_WHY,
+  isReadsFrom,
+} from './sentences';
 import { usePanel } from './useIntent';
 import { HowTo } from './HowTo';
 
@@ -49,11 +55,17 @@ function Footer() {
   const kind = saving ? '' : ctx.held.kind(key);
   const cue = [
     heldSentence(kind, null),
-    kind === 'saved' && endedAt(session) !== null ? ENDED_CAVEAT : '',
+    (kind === 'saved' || isReadsFrom(kind)) && endedAt(session) !== null ? ENDED_CAVEAT : '',
   ]
     .filter(Boolean)
     .join(' ');
   const question = directionLinesQuestion(ctx.held, session);
+  const saveLive = (changes.any || changes.adoptable) && !question;
+  /* Offered only over words that are saved: the first save opens the window by itself, so beside it the
+     choice would be a second button for one act. `revision_count` is the store's own count and is 0 for none. */
+  const reopenable =
+    (nextNumber(input.annotation?.['revision_count']) ?? 0) > 0 &&
+    !annotationDiscarded(input.annotation);
   /* Undo is inert while its save is in flight: reverting the box would leave the words being sent unseen. */
   return (
     <div className="next-cockpit-held-footer">
@@ -66,11 +78,24 @@ function Footer() {
           pendingKey={`${key}:save`}
           action="held-save"
           arg="intent"
-          inert={!((changes.any || changes.adoptable) && !question)}
+          inert={!saveLive}
           describedBy={absent.join(' ')}
           focusKey={`${key}:save`}
           onPress={() => void saveIntent(ctx, session)}
         />
+        {reopenable ? (
+          <ActionButton
+            label="Read from now"
+            busyLabel="Saving…"
+            pendingKey={`${key}:save`}
+            action="held-save-from-now"
+            arg="intent"
+            title={READ_FROM_NOW_WHY}
+            inert={!saveLive}
+            focusKey={`${key}:save-from-now`}
+            onPress={() => void saveIntent(ctx, session, true)}
+          />
+        ) : null}
         <ActionButton
           label="Undo changes"
           action="held-undo"
@@ -106,7 +131,7 @@ export function SavedStamp() {
       summary={`Saved${start !== null && start > 0 ? ` · reads from ${clock(start)}` : ''}`}
       className="next-cockpit-held-stamp"
     >
-      <p>Adding a line keeps this window; saving new goal words opens another.</p>
+      <p>Editing the goal or adding a line keeps this start. Read from now moves it.</p>
       <span className="next-cockpit-held-revision">{line}</span>
       <span className="next-cockpit-define">Each save is a revision.</span>
       <span className="next-cockpit-held-bound">{compatSessKey(session)}</span>

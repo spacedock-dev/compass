@@ -72,10 +72,9 @@ export function LaterDirections() {
   }
   const generated = nextNumber(payload['generated']);
   const age = durationSince(generated, settledAt);
-  const revision = nextNumber(annotation?.['settled_revision']);
   return block(
     age === null ? 'settled' : `settled ${age} ago`,
-    `You settled this${age === null ? '' : ` ${age} ago`}${revision === null ? '' : `, against revision ${String(revision)}`}. A direction given after that will raise it again.`,
+    `You settled this${age === null ? '' : ` ${age} ago`}. A direction given after that will raise it again.`,
     'next-cockpit-conflict-settled',
   );
 }

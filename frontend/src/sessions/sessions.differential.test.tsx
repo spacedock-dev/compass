@@ -4,6 +4,7 @@ import { genPayload } from '../observed/generate.test.helper';
 import { loadLegacyViews } from '../observed/legacy.test.helper';
 import { mountShell } from '../shell/testing';
 import { retractSessionCopies } from '../../test/sessionCopyDeviation';
+import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
 /* The Sessions screen, held to the legacy page by what a reader can read. The legacy `nextSessionsView`
    runs unchanged over a generated payload and this screen renders the same payload in the real shell;
@@ -203,7 +204,7 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
         }
       }
       if (
-        JSON.stringify(old) !== JSON.stringify(mine) &&
+        maskRevisionWords(JSON.stringify(old)) !== maskRevisionWords(JSON.stringify(mine)) &&
         !DEVIATIONS.some((d) => d.seed === seed)
       ) {
         const left = JSON.stringify(old);

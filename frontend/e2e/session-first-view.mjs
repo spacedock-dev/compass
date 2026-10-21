@@ -229,7 +229,7 @@ try {
       .waitFor({ state: 'visible' });
     await page.getByRole('button', { name: /Saved.*reads from/ }).click();
     await page
-      .getByText('Adding a line keeps this window; saving new goal words opens another.', {
+      .getByText('Editing the goal or adding a line keeps this start. Read from now moves it.', {
         exact: true,
       })
       .waitFor({ state: 'visible' });

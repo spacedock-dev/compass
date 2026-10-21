@@ -32,7 +32,13 @@ import {
 } from './derive';
 import { promptCandidate } from '../sessions/intent';
 import { intentLogFor } from './logContext';
-import { ADOPT_CHANGED, ADOPT_REFUSED, DISCARD_DWELL_MS, HELD_OUTCOME_CUES } from './sentences';
+import {
+  ADOPT_CHANGED,
+  ADOPT_REFUSED,
+  DISCARD_DWELL_MS,
+  HELD_OUTCOME_CUES,
+  readsFromKind,
+} from './sentences';
 
 /* Save intent, the prompt adoption it chains, and Discard everything: every write of the reader's own
    words. Each is one explicit press. Nothing here is retried, and nothing starts from a mount, a poll or a
@@ -124,6 +130,7 @@ export async function adoptPrompt(
   source: string,
   signal: AbortSignal,
   minted: { revision: number } | null,
+  fromNow = false,
 ): Promise<Adopted> {
   const input = readInput(ctx, identity, row);
   if (!input) return false;
@@ -132,7 +139,12 @@ export async function adoptPrompt(
   const expected = nextNumber(row['annotation_revision']) || 0;
   const reply = answered(
     await ctx.shell.runtime.client.postAnnotate(
-      { ...identity, ...adoption(candidate), expected_revision: expected },
+      {
+        ...identity,
+        ...adoption(candidate),
+        expected_revision: expected,
+        ...(fromNow ? { read_from_now: true } : {}),
+      },
       signal,
     ),
   );
@@ -266,6 +278,7 @@ async function saveWork(
   row: Row,
   signal: AbortSignal,
   chain: Chain | null,
+  fromNow = false,
 ): Promise<string | null> {
   const input = readInput(ctx, identity, row);
   if (!input) return null;
@@ -279,7 +292,7 @@ async function saveWork(
     const source =
       changes.chosen || changes.pending ? PROMPT_CHOSEN : (intentDraft(input)?.source ?? '');
     const minted = { revision: 0 };
-    const adopted = await adoptPrompt(ctx, identity, row, source, signal, minted);
+    const adopted = await adoptPrompt(ctx, identity, row, source, signal, minted, fromNow);
     if (adopted === true && frozen) {
       /* Only the lines the press held, with no goal, and against the revision the adoption minted rather
          than the refreshed row's, so a newer revision another tab saved in between is refused instead of
@@ -298,7 +311,7 @@ async function saveWork(
     /* The goal back at the draft adopts it, never a typed save of an excerpt. */
     const drafted = intentDraft(input);
     if (drafted && changes.typed === drafted.text) {
-      const adopted = await adoptPrompt(ctx, identity, row, drafted.source, signal, null);
+      const adopted = await adoptPrompt(ctx, identity, row, drafted.source, signal, null, fromNow);
       // Marked as the chained adoption marks it, so an earlier "Not confirmed" does not outlive this save.
       if (adopted === true) ctx.held.mark(key, 'saved');
       return adopted === true ? 'saved' : adopted === 'unconfirmed' ? 'unconfirmed' : null;
@@ -316,6 +329,7 @@ async function saveWork(
   body['expected_revision'] = chain
     ? chain.revision
     : nextNumber(input.annotation?.['revision']) || 0;
+  if (fromNow) body['read_from_now'] = true;
   const reply = answered(
     await ctx.shell.runtime.client.postAnnotate(
       body as { harness: string; sid: string; expected_revision: number },
@@ -364,12 +378,23 @@ async function saveWork(
   return kind;
 }
 
+/* After Read from now landed: the time the refreshed row says the reading now starts, as the cue's kind, so the
+   page says it in the moment the save is drawn and with the time. Null where the row publishes none, which
+   leaves the plain "Saved" cue rather than a time nobody confirmed. */
+function sayReadsFrom(ctx: Ctx, identity: SessionIdentity, key: string): string | null {
+  const at = nextNumber(readInput(ctx, identity)?.annotation?.['window_start']);
+  if (at === null || !(at > 0)) return null;
+  const kind = readsFromKind(at);
+  ctx.held.mark(key, kind);
+  return kind;
+}
+
 /* Save intent: both fields in one write. The typed arm of `/api/annotate` takes `goal` and `lines` together,
    an absent or null field being "leave this one alone", so the press sends only what changed and a stale
    draft of one field cannot overwrite a save of the other. One request rather than two chained ones, so
    there is one revision and one outcome to report. It names the revision both boxes were drawn against, so a
    save from a tab another tab has moved on is refused and the typed words stay in the boxes. */
-export async function saveIntent(ctx: Ctx, row: Row): Promise<void> {
+export async function saveIntent(ctx: Ctx, row: Row, fromNow = false): Promise<void> {
   const identity = identityOf(row);
   if (!identity) return;
   const input = readInput(ctx, identity, row);
@@ -387,7 +412,8 @@ export async function saveIntent(ctx: Ctx, row: Row): Promise<void> {
   ctx.held.notify();
   let said: string | null = null;
   try {
-    said = await saveWork(ctx, identity, row, press.signal, null);
+    said = await saveWork(ctx, identity, row, press.signal, null, fromNow);
+    if (fromNow && said === 'saved') said = sayReadsFrom(ctx, identity, key) ?? said;
   } finally {
     pendingEnd(ctx, control, press);
     ctx.held.requestFocus(control);

@@ -219,7 +219,7 @@ export const WhatTheAnalysisRead: Story = {
       'Not read',
     ]);
     await expect(section('model')).toHaveTextContent('claude-sonnet-5-5 · read at 09:38');
-    await expect(section('intent')).toHaveTextContent(/Version 3 · typed .+ ago/);
+    await expect(section('intent')).toHaveTextContent(/typed .+ ago/);
     await expect([...section('intent').querySelectorAll('li')].map((li) => li.textContent)).toEqual(
       ['Goal “Ship the queue”', 'Expected outcome “Tests pass”'],
     );

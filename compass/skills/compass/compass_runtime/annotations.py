@@ -1845,6 +1845,7 @@ def annotate(  # noqa: PLR0913
     origins: Any = None,
     now: float | None = None,
     window_start: Any = None,
+    read_from_now: bool = False,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> str:
     """Save what the reader typed. Returns an `OUTCOMES` token.
@@ -1863,7 +1864,10 @@ def annotate(  # noqa: PLR0913
 
     `window_start` is the server's `reading.typed_window_start` for this save,
     computed from the session's record at `now`; None, or anything that is not
-    a moment at or before the save, opens the window at the save.
+    a moment at or before the save, opens the window at the save. It opens a
+    window only for a first save, or when `read_from_now` asks for one: a later
+    save keeps the start the reading already had (docs/design-reading-a-session.md,
+    "Amended 2026-10-21 (owner): editing the goal keeps the reading's start").
     """
     legacy = lines is None and isinstance(output, str)
     if legacy:
@@ -1875,7 +1879,11 @@ def annotate(  # noqa: PLR0913
     aligned = _aligned_origins(origins, lines, config.annotation_text_cap_chars)
     if aligned is False:
         return OUTCOME_REFUSED
-    options: dict[str, Any] = {"legacy_output": legacy, "origins": aligned}
+    options: dict[str, Any] = {
+        "legacy_output": legacy,
+        "origins": aligned,
+        "read_from_now": read_from_now,
+    }
     if expected_revision is not None:
         options["expected_revision"] = expected_revision
     return _annotate(
@@ -2258,9 +2266,14 @@ def _annotate(  # noqa: PLR0913
                 if new_texts is None
                 else _sourced(new_texts, last["lines"], options.get("origins"))
             )
-            unchanged = (last["goal"], last["lines"]) == (text_goal, text_lines) and (
-                _provenance(last) or {}
-            ) == source_fields
+            restart = options.get("read_from_now") is True
+            # Read from now asks for a new window, so words that repeat the last
+            # revision still mint one: the window is what the reader changed.
+            unchanged = (
+                (last["goal"], last["lines"]) == (text_goal, text_lines)
+                and (_provenance(last) or {}) == source_fields
+                and not restart
+            )
             if unchanged and through is None:
                 # Unchanged text is not a new request, so it mints no revision.
                 # The cache is still refreshed from the load above: two
@@ -2272,10 +2285,12 @@ def _annotate(  # noqa: PLR0913
                 return OUTCOME_UNCHANGED
             revision: Revision = {
                 **source_fields,
-                **_opened(
-                    source_fields,
-                    _carried_window(last, source_fields, text_goal, window_start),
+                **_window_after(
+                    last,
+                    source_fields if new_goal is not None else {},
+                    window_start,
                     stamp,
+                    restart=restart or (not last["goal"].strip() and bool(text_goal.strip())),
                 ),
                 **_goal_saved_at(last, source_fields, text_goal, stamp),
                 "n": last["n"] + 1,
@@ -2653,20 +2668,41 @@ def _goal_saved_at(
     return {"goal_saved_at": stamp}
 
 
-def _carried_window(last: Revision, provenance: Mapping[str, Any], goal: str, typed: Any) -> Any:
-    """Unchanged typed words keep their window, as their goal save time does."""
-    if not provenance and not _provenance(last) and last["goal"] == goal:
-        return last.get("window_start") or last["at"]
-    return typed
+def _window_after(
+    last: Revision,
+    provenance: Mapping[str, Any],
+    typed: Any,
+    stamp: float,
+    *,
+    restart: bool,
+) -> Window:
+    """The window start a later revision stores: the one before it, unless the reader restarts.
+
+    Editing the goal, adopting a prompt or a direction, and saving a line all
+    keep the start the reading already had, so work done toward the earlier
+    words stays read. `restart` is the reader's explicit Read from now, and
+    opens a window as a first save does, and so does the first save that
+    carries a goal over a revision holding lines alone: a line saved before any
+    goal is not the start of the work. The carried start is clamped to the
+    save, because a clock that stepped back would otherwise store a start
+    after its own revision, which is refused on read.
+    """
+    if restart:
+        return _opened(provenance, typed, stamp)
+    saved = reading.valid_prompt_time(stamp)
+    carried = reading.valid_prompt_time(last.get("window_start") or last["at"])
+    if saved is None or carried is None:
+        return {}
+    return {"window_start": min(carried, saved)}
 
 
 def _opened(provenance: Mapping[str, Any], typed: Any, stamp: float) -> Window:
-    """The window start a new revision stores: the words' own time.
+    """The window start a window-opening save stores: the words' own time.
 
-    Adopted words, including an adopted goal carried under a lines-only save,
-    open at their source time. Unchanged typed words carry their window through
-    a lines-only save; new goal words open at `typed`, else at the save. A stamp
-    that is not itself a moment stores nothing, so the revision still reads back.
+    Adopted words open at their source time, and new typed words at `typed`,
+    else at the save. A stamp that is not itself a moment stores nothing, so the
+    revision still reads back. Only a first save and Read from now reach this; a
+    later save carries the start before it (`_window_after`).
     """
     saved = reading.valid_prompt_time(stamp)
     if saved is None:
@@ -2802,6 +2838,7 @@ def adopt(  # noqa: PLR0913
     settle_through: Any = None,
     chosen: PromptChoice | None = None,
     receipt: MutableMapping[str, int] | None = None,
+    read_from_now: bool = False,
 ) -> str:
     """Adopt a prompt as the goal. Returns an `OUTCOMES` token.
 
@@ -2839,6 +2876,7 @@ def adopt(  # noqa: PLR0913
             **options,
             "empty_goal_only": expected_revision is None,
             "expected_revision": expected_revision,
+            "read_from_now": read_from_now,
             **({"settle_through": float(settle_through), "goal_empty_or": text} if keep else {}),
         },
     )

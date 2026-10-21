@@ -17,6 +17,25 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-21, editing the goal keeps the reading's start
+([the amendment](design-reading-a-session.md#amended-2026-10-21-owner-editing-the-goal-keeps-the-readings-start)):
+no sentence on the page names a revision number any more. The stale line under a reading or a raise says
+when it was made and when the intent changed ("This reading was made at 11:07 against an earlier version of
+your intent. You changed it at 11:09, so it does not describe what you are asking for now."), a raise's
+baseline reads "read against the intent as it stood then", a list row's reading note reads "read at 11:07;
+intent changed at 11:09", and the saved line under the goal reads "typed 5m ago" with "older saves dropped"
+past the store's bound, where the recordings say "This reading read revision 2. Revision 3 is current",
+"read against revision 2", "read revision 2, 3 is current" and "revision 4 of 16 · typed 5m ago". The
+Saved disclosure's second sentence is rewritten, since the recorded one ("Adding a line keeps this window;
+saving new goal words opens another.") now says the opposite of what a save does, and Read from now is a
+new control beside Save intent. `test/revisionWordDeviation.ts` masks the retired sentence and its
+replacement to one token on both sides of `result.differential.test.ts`, `IntentLog.differential.test.tsx`,
+`annotation.differential.test.ts`, `sessions.differential.test.tsx` and `DepartureParts.test.tsx`; every other
+word around them is still held to the recording, which is untouched. The replacements are held by
+`api/vocabulary.test.ts`. The on-demand browser recordings (`frontend/test/golden/e2e/intent-parity.json`)
+still carry the retired wording and are not regenerated, so `pnpm test:intent:browser` will report those
+lines until its comparison masks them the same way. Golden files are unchanged.
+
 2026-10-21, a level needs a departure
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)): the
 analysis level the retired page drew from the server's row is no longer drawn at Medium, High or

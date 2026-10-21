@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2073591,
+    "bytes": 2074967,
     "file": "react.html",
-    "sha256": "997aa213183688df72ae331489357aa62eae7a077913d2b8785e66f26bbc044b"
+    "sha256": "9898bf8667e8aa9abcdd9fdfe6dabf90ed92586d8c9d5418bdef62a14a6269ac"
   },
   "format": 1,
   "frontend": "react",
@@ -595,7 +595,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "32b7a8441e1406343543b8971e86ae7449c060ac4cc2a3bbc450cde619d0a430"
+        "sha256": "d4be5a81e3f1451dc3947aedffc31c55db92d597c3bd03041739e68cb48a8233"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -683,7 +683,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "26cab8b980501a3d94fb98d5d336e0b86aa3c0873486ac111e6e830ed96c7089"
+        "sha256": "4d51ed91ac30bdb59452620373c10055e6ecb4d56733eafdcfffb0de8f99ad23"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -723,11 +723,11 @@
       },
       {
         "file": "frontend/src/intent/ActionButton.tsx",
-        "sha256": "faced00a43e5364d2a87c8253b6f1b61f7f6fe41e8053b55656d12d6bd026ccc"
+        "sha256": "f430b87a8f7913341df5e4d233eec117b14765b424588c768acea6a2e587b998"
       },
       {
         "file": "frontend/src/intent/Caveats.tsx",
-        "sha256": "e09a01e40241df33f6609b8c101f19389cd685ec00ffd24b01386b57febc1b51"
+        "sha256": "38025a4428c4f5a3dc89aff036749ddb3e564b33ec851df38b251168ff4d291c"
       },
       {
         "file": "frontend/src/intent/DirectionActionButton.tsx",
@@ -763,7 +763,7 @@
       },
       {
         "file": "frontend/src/intent/IntentSection.tsx",
-        "sha256": "1b197f43489b3b316dfbf23980899b1702d704cbaac86dcf33ff602d9f9606c4"
+        "sha256": "4ca06acacea15c69497b993c5afef3ebdcb1467d0be4ad5270e5efdb4a0703d6"
       },
       {
         "file": "frontend/src/intent/LiveMonitorSwitch.tsx",
@@ -779,7 +779,7 @@
       },
       {
         "file": "frontend/src/intent/annotation.ts",
-        "sha256": "2fa8d2f877600f00cacfdf26e1f213e4845070c656190798a3fa292aaa8bf63f"
+        "sha256": "2b6068af04a5ef19c8df54428dace42409a62be12f09f88ac35d1848bf00bd31"
       },
       {
         "file": "frontend/src/intent/api.ts",
@@ -791,7 +791,7 @@
       },
       {
         "file": "frontend/src/intent/cues.ts",
-        "sha256": "367c1907bfec0e545fe66483a4cd34ec61cbe368ff85de31ab9a663304cffb25"
+        "sha256": "7e442b0aa0720843983b7aa017df216c7bfcebd0220c50323438817f501b497d"
       },
       {
         "file": "frontend/src/intent/derive.ts",
@@ -827,7 +827,7 @@
       },
       {
         "file": "frontend/src/intent/logModel.ts",
-        "sha256": "00edc6057c96e6c8aafe6b4076c3d9eb1b7bdf0219a7d62de8b130132b7fff90"
+        "sha256": "042f2efa513f92fea24bd6316bbc6c6c49173921f0a30ec42ac49bde411f4234"
       },
       {
         "file": "frontend/src/intent/logStore.ts",
@@ -843,11 +843,11 @@
       },
       {
         "file": "frontend/src/intent/save.ts",
-        "sha256": "2a5057a77b967470449cd3a4f17d41ec59cc16433762b753bcfbd42da8f68952"
+        "sha256": "3e51eefb9eb8ff2fecc4a426ecce452aa5bec31aef872d38a783ebc959364d84"
       },
       {
         "file": "frontend/src/intent/sentences.ts",
-        "sha256": "a10cd82a20284c53883d4a030809b01fad100745315ec81365a4e9378fe8c651"
+        "sha256": "b7ab25a35e613a3f097de2fa10c22bf3c9ae303dba5f129c8592baf5e33677d0"
       },
       {
         "file": "frontend/src/intent/testing.tsx",
@@ -1139,7 +1139,7 @@
       },
       {
         "file": "frontend/src/sessions/detail.ts",
-        "sha256": "d92bd84366f12fc1f9b70f4014c91cdfac409d5c5ad3d16ad64363402ddba360"
+        "sha256": "663eee8240e310153ee94eac60ed2993d76c4d885c2ea312cd828af2cfd3607e"
       },
       {
         "file": "frontend/src/sessions/fullActivityKey.ts",
@@ -1167,7 +1167,7 @@
       },
       {
         "file": "frontend/src/sessions/rows.ts",
-        "sha256": "e035450f9ab45fded66d1bfa78cdad980014b1a0607f528c50cbdc6a070a5106"
+        "sha256": "afbe88cbc6898dc736d796b84103bd597f81683b7c61b18c5904ec123e07848e"
       },
       {
         "file": "frontend/src/sessions/sessions.css",
