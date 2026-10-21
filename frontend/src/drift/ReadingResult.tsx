@@ -866,7 +866,7 @@ export function DriftVerdict() {
           className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"
           data-next-drift-cleared
         >
-          {clearedLine(cleared.count, clock(cleared.readAt))}
+          {clearedLine(cleared.count, clock(cleared.readAt), cleared.steered)}
         </p>
       ) : null}
     </>

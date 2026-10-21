@@ -109,6 +109,8 @@ export interface Scenario {
   readonly keepsMarks?: boolean;
   /** What `POST /api/correction` answers, as `correction.compose` would for this session. */
   readonly correction?: Record<string, unknown>;
+  /** The words `POST /api/direction` opens each direction as, for a story about what a quote shows. */
+  readonly directionText?: string;
   /** Every `POST /api/correction` body the page sent, for a story about what the request carries. */
   readonly correctionPosts?: Record<string, unknown>[];
   /** Filled in on mount: the browser's Back, which a story cannot press through the page's own links. */
@@ -230,6 +232,15 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
             marked = body['not_accurate'];
             return json({ ok: true, outcome: 'stored', persisted: true });
           }
+        }
+        if (scenario.directionText !== undefined && url.startsWith('/api/direction')) {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          const opened = { ok: true, text: scenario.directionText, clipped: false };
+          return json(
+            Array.isArray(body['fact_ids'])
+              ? { ok: true, results: body['fact_ids'].map(() => opened) }
+              : opened,
+          );
         }
         if (scenario.correction && url.startsWith('/api/correction/copied'))
           return json({ ok: true });

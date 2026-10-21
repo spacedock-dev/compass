@@ -168,6 +168,16 @@ export function scrub(text: string): string {
   return text.replace(HELD_UNSAFE, ' ');
 }
 
+/* Claude Code wraps a paste in `<pasted_content id="N">` and `</pasted_content>`, and `records.strip_paste_wrapper`
+   takes the two tags off before the server publishes a direction. This is the same rule on the page, for a
+   direction an older server or a republished history still sends with them, so the reader never reads the
+   harness's tags as their own words. The text between them stays; only the two tags go. */
+const PASTE_TAG = /<\/?pasted_content(?:\s[^<>]*)?>/g;
+
+export function stripPasteWrapper(text: string): string {
+  return text.replace(PASTE_TAG, '').trim();
+}
+
 /* The server's own cap on a typed box, published as `annotate_cap`, and 240 where it did not publish one. */
 export const HELD_CAP_DEFAULT = 240;
 

@@ -2025,7 +2025,9 @@ The copied-correction route. `POST /api/correction/copied` names a session
 and the exact text the reader copied, at most 5,140 characters, and the server records its digest:
 a SHA-256 of the text after one normalisation, applied to both sides, which is what Claude Code
 2.1.283 was measured doing to a paste: CRLF and CR become LF, a tab becomes four spaces, and
-whitespace is trimmed at both ends. The store holds the digest, the moment of the copy and where the
+whitespace is trimmed at both ends. It also records a second digest of the same text with every run of
+whitespace folded to one space, so a paste whose only edit was whitespace still matches; a changed
+word, or a space inside a word, does not. The store holds the digests, the moment of the copy and where the
 session's transcript ended at that moment (its inode and size), and, once a message is recognised,
 that message's fact id and time. It never holds the text. It is `compass-copied-corrections.json`
 beside the annotation store, owner-only through a temp file and a rename, under an OS lock on the
@@ -2037,7 +2039,9 @@ own words again. `--forget` deletes the file, and `--no-annotations` turns it of
 waiting answers without storing anything, so registering one twice earns no second match. Only
 Claude Code sessions are read for a match. A user message written after the point the transcript
 had reached when the text was copied, whose digest computed from its raw text before any redaction
-or clipping matches exactly, is Compass-assisted, whatever either clock says. The transcript is
+or clipping matches exactly (or by the whitespace-folded digest), is Compass-assisted, whatever either
+clock says. Claude Code wraps a paste in its own `pasted_content` tags, which are taken off before
+either digest is computed; words typed around the paste are not, so they make a different message. The transcript is
 read from that point to its end, at most its newest 64 MiB plus its opening 32 MiB, matching the Intent source reads,
 under the same unchanged digest and first-paste rules; the semantic history store
 reads a source to, so a paste the bounded tail never held is still recognised. Each digest binds the

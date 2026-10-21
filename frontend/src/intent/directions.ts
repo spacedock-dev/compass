@@ -2,7 +2,7 @@ import { nextNumber, payloadSessions } from '../api/bootstrap';
 import { compatSessKey, contextKey, stableProjectKey } from '../api/identity';
 import type { SessionIdentity } from '../api/types';
 import type { Row } from '../observed';
-import { annotationOf, heldCap, scrub } from './annotation';
+import { annotationOf, heldCap, scrub, stripPasteWrapper } from './annotation';
 import { markAndSay } from './cues';
 import {
   announce,
@@ -164,7 +164,7 @@ export async function openDirection(
         factId,
         n,
         later,
-        text: scrub(body.text),
+        text: scrub(stripPasteWrapper(body.text)),
         clipped: body.clipped === true,
         replace: null,
       };
@@ -398,7 +398,7 @@ export async function adoptDirectionAsGoal(
     filled = true;
     ctx.held.chosen.set(key, {
       factId,
-      text: record['text'],
+      text: stripPasteWrapper(record['text']),
       at: nextNumber(record['at']),
       cut: record['cut'] === true,
       direction: true,
@@ -484,7 +484,10 @@ async function readWhole(
           const body = results[index];
           const id = String(entry.id || '');
           if (body?.ok === true && typeof body.text === 'string') {
-            held.texts.set(id, { text: body.text, clipped: body.clipped === true });
+            held.texts.set(id, {
+              text: stripPasteWrapper(body.text),
+              clipped: body.clipped === true,
+            });
             if (body.clipped === true) refused = true;
           } else {
             if (!refused && body?.ok === false) refusal = directionFailure('keep', body.reason);

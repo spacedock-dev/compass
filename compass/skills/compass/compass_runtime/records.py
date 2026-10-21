@@ -1315,6 +1315,23 @@ def strip_prompt_wrappers(text: str) -> str:
         stripped = shorter
 
 
+# Claude Code 2.1.305 stores a paste in the user record's content string as
+# `\n\n<pasted_content id="N">\nTEXT\n</pasted_content>\n`, with whatever the reader typed around
+# it. Only the two tags are the harness's; the text between them is the reader's, or Compass's for
+# a correction pasted back. The attribute list is matched loosely because the shape is measured,
+# not documented, and a tag name that only begins the same (`pasted_contents`) is another tag.
+_PASTE_TAG_RE = re.compile(r"</?pasted_content(?:\s[^<>]*)?>")
+
+
+def strip_paste_wrapper(text: str) -> str:
+    """The text with the harness's paste tags taken off, trimmed as `strip_prompt_wrappers` does.
+
+    Two readers hold the same rule: what the page quotes of a direction, and the digest that
+    recognises a correction pasted back, so a wrapper never reaches either.
+    """
+    return _PROMPT_TRIM_RE.sub("", _PASTE_TAG_RE.sub("", text))
+
+
 def injected_prompt(text: str, harness: str) -> bool:
     """Is this user-record text the harness talking, rather than the operator?
 

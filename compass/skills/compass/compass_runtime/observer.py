@@ -1012,8 +1012,9 @@ def _message_from(role: Any, content: Any, harness: str, cap: int) -> dict[str, 
         return {"role": "assistant", "text": text}
     # The operator's own words, with the harness's image markers peeled off the
     # front — `strip_prompt_wrappers` is what makes `[Image #1] fix the build`
-    # publishable as a goal rather than as a marker.
-    body = records.strip_prompt_wrappers(text)
+    # publishable as a goal rather than as a marker. A paste's tags come off first
+    # (DRC-4920), so what a direction quotes is the pasted words, never the wrapper.
+    body = records.strip_prompt_wrappers(records.strip_paste_wrapper(text))
     if not body or records.injected_prompt(text, harness):
         return None
     return {"role": "user", "text": body}

@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2068263,
+    "bytes": 2068807,
     "file": "react.html",
-    "sha256": "b9aef48764baa1b773a2ba16e1908c441b0b9afba1817b58dd1b1d525321bba2"
+    "sha256": "7f0e5b5dec2bb7da39053933a93cda10f1986b1d73f8cb512f8f0fb14c3d83a1"
   },
   "format": 1,
   "frontend": "react",
@@ -563,7 +563,7 @@
       },
       {
         "file": "frontend/src/drift/DriftProvider.tsx",
-        "sha256": "17bbf4bdcb9c08572be2a3e95b4bd292e145e47574db25773bf59495ec562857"
+        "sha256": "7411cce4e12856f6f0929785626df2e7e22f4812cea338e57827f425424340fb"
       },
       {
         "file": "frontend/src/drift/DriftStamp.tsx",
@@ -591,7 +591,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "ec501257cb8adf957abc55c52a35f763c312d1e8d8bb3e5c7be2b556f8751b60"
+        "sha256": "547c3aeb4981496b4e576773f575afddbf0d457a5da4a6ac8abcc337f6a158ee"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -687,7 +687,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "90236c99721cbf070ffe4cf50b45f196256f813c266708cded6cc3fb051fa950"
+        "sha256": "7b99595fdb375b4d1493db271441ccb9b18a99e0d61217e4e187e9f9ca8bde73"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -695,7 +695,7 @@
       },
       {
         "file": "frontend/src/drift/state.ts",
-        "sha256": "0a416635c44105873f2771b3acb1fbc80c67fe89f48a5ab765da3e4f65680dfd"
+        "sha256": "df67148a40abfa473aecf26a1c9a2fa69bab0d03d181244d8c62c7b09502d3f7"
       },
       {
         "file": "frontend/src/drift/steerActions.ts",
@@ -727,7 +727,7 @@
       },
       {
         "file": "frontend/src/intent/DirectionQuestion.tsx",
-        "sha256": "0b63ec0b1a3f66fe86372e989ad196dd6338a1b891d545c35c4d9be001cf2f00"
+        "sha256": "55418621982bbf53df6bfbaa8fd61c003e987a72ad8b8cd9f5a2300b14ee3256"
       },
       {
         "file": "frontend/src/intent/FeedbackHint.tsx",
@@ -771,7 +771,7 @@
       },
       {
         "file": "frontend/src/intent/annotation.ts",
-        "sha256": "39a0172c564f5685428a62ef82408b068394c1706d1c514235c3f919044bf1e5"
+        "sha256": "2fa8d2f877600f00cacfdf26e1f213e4845070c656190798a3fa292aaa8bf63f"
       },
       {
         "file": "frontend/src/intent/api.ts",
@@ -791,7 +791,7 @@
       },
       {
         "file": "frontend/src/intent/directions.ts",
-        "sha256": "c39476e9bb843393257bd10746c3ff2e4ca7c5e2f7476bc358e2878e429c3b61"
+        "sha256": "35a05a355732ec71576d92e0af9ffcb42c77d95fe482e50124efc80fe979bc3a"
       },
       {
         "file": "frontend/src/intent/edit.ts",

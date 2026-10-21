@@ -17,6 +17,7 @@ import {
   PROMPT_CHOSEN,
 } from './derive';
 import { keepIntent, openDirection, type DirectionReading } from './directions';
+import { stripPasteWrapper } from './annotation';
 import { pickDirection } from './edit';
 import { ADD_DIRECTION, DIRECTION_CLIPPED, KEEP, KEEP_ANALYZE } from './sentences';
 import { entryNumbers, type WorkEntry } from './work';
@@ -193,7 +194,7 @@ export function DirectionQuestion({
                 const at = numbers.get(entry.id);
                 return {
                   value: entry.id,
-                  label: `${at !== undefined ? `#${String(at)}` : clock(Number(entry.at) || 0)} · ${entry.summary || 'Your direction'}`,
+                  label: `${at !== undefined ? `#${String(at)}` : clock(Number(entry.at) || 0)} · ${stripPasteWrapper(String(entry.summary || '')) || 'Your direction'}`,
                 };
               })}
             >
@@ -213,7 +214,7 @@ export function DirectionQuestion({
                     <SelectItem
                       key={entry.id}
                       value={entry.id}
-                    >{`${at !== undefined ? `#${String(at)}` : clock(Number(entry.at) || 0)} · ${entry.summary || 'Your direction'}`}</SelectItem>
+                    >{`${at !== undefined ? `#${String(at)}` : clock(Number(entry.at) || 0)} · ${stripPasteWrapper(String(entry.summary || '')) || 'Your direction'}`}</SelectItem>
                   );
                 })}
               </SelectContent>

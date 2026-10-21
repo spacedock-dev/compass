@@ -3045,7 +3045,9 @@ the later-direction floor (item 9).
    moves on, up to 32 per session, apart from the eight waiting digests. Adoption and every
    surface that shows a prompt as the reader's words (the stated goal, the assignment, an exact
    direction) compare fact ids, so a prompt typed in the same second as a paste stays the
-   reader's while the tail holds it.
+   reader's while the tail holds it. Amended 2026-10-21: the harness's paste tags are taken off before
+   the digest is computed, and a paste edited only in whitespace is also recognised
+   ([the amendment](#amended-2026-10-21-a-pasted-correction-is-compasss-words-and-a-kept-direction-is-no-evidence)).
 10. Not accurate. A token the reader can set on a reading, stored with the annotation entry and
     removed with it. `--forget` does not reach it. It is never sent, never counted and never entered
     into abstention marks, and SECURITY.md notes it. The
@@ -5810,6 +5812,56 @@ would do, kept working, and the model read the missing end as a departure), held
 negative controls. A message-only departure that is real still returns at the next reading, and
 at the session's end as a final one. A `not_reached` line raises no level and no Steer back (the
 2026-10-04 amendment), so the demotion errs the cautious way.
+
+### Amended 2026-10-21: a pasted correction is Compass's words, and a kept direction is no evidence
+
+A reader who pasted a Steer back correction into the session and read it again saw `1 later
+direction` with `Use this as my goal` offered for it, the direction quoted inside the harness's
+`<pasted_content id=…>` tags, a departure whose What led with `You said: "Back to my goal…"`, and a
+rebuilt correction that dated the departure to the moment of the steer. Two session walks measured it
+(the recorded shape is in [the captures](captures/README.md)). Claude Code 2.1.305 stores a paste as
+the content string `\n\n<pasted_content id="N">\nTEXT\n</pasted_content>\n`, so the digest of the
+pasted message never equalled the digest of the text the reader copied, and item 9 of
+[DEC-24](#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
+never recognised it. The same walks showed a direction the reader had just kept with `Keep my intent`
+as the first quote under a later departure.
+
+1. The two tags are the harness's, and the words between them are the reader's or, for a correction
+   pasted back, Compass's. `records.strip_paste_wrapper` takes the tags off, and nothing else: a
+   tag that only begins the same is another tag. It runs where a user message becomes the words the
+   page quotes (`observer._message_from`, so the fact's `reader_words`, the direction a press opens
+   and the draft of `Use this as my goal` never carry the wrapper) and before the digest of a
+   message is taken (`copied_corrections`). The page strips the same tags from a direction an older
+   server or a republished history still sends with them. Words typed around a paste stay in the
+   message, so a correction with a sentence before or after it is the reader's own.
+2. Item 9's normalisation is exact, by the owner's ruling of 2026-09-28, and stays what the first
+   digest computes. A second digest of the text with every run of whitespace folded to one space
+   forgives a reader who reflowed lines or widened a gap, as this issue's scope asked ("unedited, or
+   edited only in whitespace"). It is stored beside the first, `folded` on each waiting copy, and a
+   copy stored before it existed keeps matching on the first alone. A changed word, or a space
+   inside a word, is still the reader's own message. This departs from item 9's "any edit is a
+   different digest" for whitespace alone.
+3. A departure never stands on the reader's words that settled nothing. `reading.settled_reader_words`
+   names the user messages that are a correction Compass built (`copied`) or a later direction the
+   reader kept (after the intent's floor, up to what Keep settled through), and `resolve` drops
+   them from a departure's citations, whatever the model cited. A departure that rested only on them
+   is stored as uncited, which is `not verifiable`. Every other verdict keeps its citations. The
+   producer applies the rule, so a stored reading is never wrong that way; a reading stored before it
+   still cites what it cited, and the page does not second-guess a stored shape. Steer back's rebuilt
+   correction reads the stored reading through the same rule, so the moment it names is the agent's
+   work and never the paste.
+4. The card says when a steer worked. The page already names a departure that clears
+   ([the level amendment](#amended-2026-10-21-a-level-needs-a-departure)); where a correction the
+   server recognised as Compass's own words sits in the session between the two readings, the line
+   reads "The departure your steer named, from the 11:02 reading, no longer holds." That is the
+   page's inference from two facts it holds (a recognised paste, and the reading the tab drew before),
+   not a stored link between a correction and its departure. Storing the earlier departure itself
+   stays with the open question under DEC-15b.
+
+Rejected: matching the wrapped message by prefix or by the longest common run, which would let a
+correction with a sentence typed around it read as Compass's; and folding the first digest's
+whitespace, which would have moved every stored copy. The parser digest the abstention packets are
+stamped with moves with this change, because `reading.py` is one of its files.
 
 ## DEC-28: a model may summarize a session, and the summary is kept
 

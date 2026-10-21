@@ -45,6 +45,8 @@ export interface SeenReading {
 export interface ClearedDeparture {
   readonly readAt: number;
   readonly count: number;
+  /** A correction the reader pasted into the session sits between the two readings: the steer named it. */
+  readonly steered: boolean;
 }
 
 export type FlipTimerName = 'hold' | 'until' | 'line' | 'say';
@@ -205,7 +207,12 @@ export function createDriftState(shell: Shell) {
        whatever it finds, takes the note down. The count is the latest drawn for that reading, because the
        entries a departure cites may load after the first draw. Idempotent per `readAt`, so a render that
        runs twice says the same. */
-    noteReading(key: string, readAt: number, departures: number): ClearedDeparture | null {
+    noteReading(
+      key: string,
+      readAt: number,
+      departures: number,
+      pastedAt: readonly number[] = [],
+    ): ClearedDeparture | null {
       const seen = readings.get(key);
       if (seen && seen.readAt === readAt) {
         seen.departures = departures;
@@ -223,9 +230,13 @@ export function createDriftState(shell: Shell) {
         }
       }
       const now = readings.get(key);
-      return now?.before && now.before.departures > 0 && departures === 0
-        ? { readAt: now.before.readAt, count: now.before.departures }
-        : null;
+      if (!now?.before || now.before.departures === 0 || departures !== 0) return null;
+      const since = now.before.readAt;
+      return {
+        readAt: since,
+        count: now.before.departures,
+        steered: pastedAt.some((at) => at > since && at <= readAt),
+      };
     },
 
     /* The flip ledger is bounded as the cue lanes are: past sixteen drawn sessions the oldest goes. */

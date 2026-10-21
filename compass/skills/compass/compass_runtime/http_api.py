@@ -3284,6 +3284,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             row,
             entry["revisions"],
             _facts_of(context),
+            settled_through=settled["through"] if (settled := entry.get("settled")) else None,
             record_coverage_lookup=lambda: (
                 dict(reached)
                 if reached
