@@ -174,6 +174,9 @@ export function intentDraft(input: DraftInput): Draft | null {
   if (!annotateOn(payload) || storeUnreadable(payload)) return null;
   const chosen = chosenStands(input);
   if (chosen) return chosen;
+  /* A discarded session starts empty: the draft is offered by "Use your prompt" and never put back in the
+     box, because one stray Save intent would restore an intent the reader had just deleted. */
+  if (annotationDiscarded(input.annotation)) return null;
   if (String(savedGoal(input) || '').trim()) return null;
   /* A session that opened with a harness control has no first prompt to draft, and the latest is a later
      record, which the first-prompt read never drafts from. */

@@ -454,9 +454,21 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
        store's answer, so the categorical sentence is not printed over rows this page is about to redraw
        with the discarded words still in them. `=== false` and not falsiness: a server that predates the
        field omits it, and an absent answer must leave the sentence it had. */
+    const summaryKept = body.summary === 'unwritable' || body.summary === 'unavailable';
+    /* The summary is a third store and fails on its own as well. The departure store's half wins when both
+       fail, because the sentence for it is the one that stops a reader believing the quotations went; the
+       summary stays on the page with its own Delete summary. */
     const kind =
-      result === 'discard-stored' && body.withdrew === false ? 'discard-unwithdrawn' : result;
-    if (kind === 'discard-stored' || kind === 'discard-unwithdrawn') {
+      result === 'discard-stored' && body.withdrew === false
+        ? 'discard-unwithdrawn'
+        : result === 'discard-stored' && summaryKept
+          ? 'discard-summary_kept'
+          : result;
+    if (
+      kind === 'discard-stored' ||
+      kind === 'discard-unwithdrawn' ||
+      kind === 'discard-summary_kept'
+    ) {
       // The independent log may already hold these words, even if the next dashboard fetch fails.
       intentLogFor(ctx.shell).invalidate();
       /* The drafts go with the annotation. They are an independent lane, so a half-typed box would otherwise

@@ -404,6 +404,48 @@ class SummaryJobTest(_SummaryCase):
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
         self.assertEqual("deleted", self.state.summary_jobs["claude:s1"].reason)
 
+    def test_discard_stops_a_job_in_flight_and_names_the_reason(self) -> None:
+        entered, release = threading.Event(), threading.Event()
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return Replies()(prompt, output_cap_bytes=output_cap_bytes)
+
+        code, _ = self.jobs.start(
+            self.application, self.page, action="start", model=model, destination="Anthropic"
+        )
+        self.assertEqual(202, code)
+        self.assertTrue(entered.wait(5))
+        self.assertEqual("absent", self.jobs.discard(self.application, "claude", "s1"))
+        release.set()
+        wait_job(self.application, "claude", "s1", timeout=5)
+        self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
+        job = self.state.summary_jobs["claude:s1"]
+        self.assertEqual(("discarded", "cancelled"), (job.reason, job.state))
+
+    def test_discard_deletes_one_sessions_summary_and_no_other(self) -> None:
+        self.run_job()
+        other = summary_store.get(self.config, "claude", "s1")
+        assert other is not None
+        assert self.page.snapshot is not None
+        self.assertEqual(
+            "stored",
+            summary_store.put(
+                self.config,
+                "claude",
+                "s2",
+                other.summary,
+                self.page.snapshot,
+                made_at=100.0,
+                model_stamp="synthetic-model",
+            ),
+        )
+        self.assertEqual("deleted", self.jobs.discard(self.application, "claude", "s1"))
+        self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
+        self.assertIsNotNone(summary_store.get(self.config, "claude", "s2"))
+        self.assertEqual("absent", self.jobs.discard(self.application, "claude", "s1"))
+
     def test_revoke_between_parts_keeps_finished_prefix_and_makes_no_next_call(self) -> None:
         replies = Replies()
         real_put = summary_store.put

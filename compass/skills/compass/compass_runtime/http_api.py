@@ -1949,7 +1949,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         state = application.state
         receipt: dict[str, int] = {}
-        outcome, withdrew = self._annotation_outcome(harness, sid, payload, receipt=receipt)
+        outcome, withdrew, summary = self._annotation_outcome(
+            harness, sid, payload, receipt=receipt
+        )
         # Dropped rather than waited out, for `_dismiss`'s reason: the next GET
         # would otherwise serve the pre-save payload for up to `collect_memo_sec`.
         state.snapshot.clear()
@@ -1979,6 +1981,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # withdrawal, so a reader of the wire sees one field with one
             # meaning rather than a key that appears only sometimes.
             "withdrew": withdrew,
+            # The third store's answer, for the same reason: `deleted`, `absent` or a refusal
+            # token when a discard took the session's summary, and `untouched` on every arm
+            # that owes it nothing.
+            "summary": summary,
         }
         self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
 
@@ -1989,18 +1995,32 @@ class _RequestHandler(BaseHTTPRequestHandler):
         payload: dict[str, Any],
         *,
         receipt: dict[str, int] | None = None,
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, str]:
         application = self.server.application
         config = application.config
         state = application.state
         goal, output = payload.get("goal"), payload.get("output")
         settle_through = payload.get("settle_through")
         withdrew = True
+        summary = "untouched"
         if payload.get("clear") is True:
+            held = annotation_store.find(annotation_store.active(config, state), harness, sid)
             outcome = annotation_store.clear(
                 config, state, harness, sid, diagnostic_sink=application.diagnostic_sink
             )
             withdrew = _withdraw_raises(application, outcome, harness, sid)
+            # Only words that were really discarded take the summary with them. A clear over
+            # nothing typed, or over a session already discarded, deleted nothing, and the
+            # summary does not depend on saved intent.
+            if (
+                outcome == annotation_store.OUTCOME_STORED
+                and held is not None
+                and not annotation_store.is_discarded(held)
+            ):
+                try:
+                    summary = summary_jobs.discard(application, harness, sid)
+                except (OSError, ValueError):
+                    summary = "unwritable"
         elif "add_direction" in payload:
             outcome = self._add_direction(harness, sid, payload)
         elif "not_accurate" in payload:
@@ -2066,7 +2086,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 window_start=self._typed_window_start(harness, sid, now),
                 diagnostic_sink=application.diagnostic_sink,
             )
-        return outcome, withdrew
+        return outcome, withdrew, summary
 
     def _typed_window_start(self, harness: str, sid: str, saved_at: float) -> float | None:
         """Where typed words saved now start reading work, or None for the save time.

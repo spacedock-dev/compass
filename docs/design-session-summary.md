@@ -23,11 +23,14 @@ change into a rule for every model call a reader's action starts.
    displayed string is held to the backstop: the lede, the phase titles and the bullets alike.
 2. **A summary does not need a saved intent.** A reader with no goal yet is the one who most needs to
    know what happened.
-3. **Summaries get a new store under the Compass home.** A summary must exist without an intent and
-   must not be removed by Discard everything, so the annotation store cannot hold it. The store has
+3. **Summaries get a new store under the Compass home.** A summary must exist without an intent, so
+   the annotation store cannot hold it. The store has
    its own SECURITY.md invariant 2 row, its own aggregate byte bound and an eviction that can never
    push out a reader's saved words, redaction on the way in and on the way out, a Delete summary
-   control, and a place in `--forget`.
+   control, and a place in `--forget`. This answer first said Discard everything must not remove
+   the summary; the owner reversed that on 2026-10-21, and
+   [the amendment](#amended-2026-10-21-owner-discard-everything-also-deletes-the-summary) owns the
+   rule now. The store stays separate, which is what lets a summary exist without an intent.
 4. **Consent is opt-out, with a notice.** Summaries have a grant of their own, separate from
    Analyze, granted by default and withdrawn only when the reader turns it off. The first summary on
    this machine shows a non-blocking notice naming what is sent and to which provider, with Turn off
@@ -113,6 +116,54 @@ The earlier explicit `allow: true` request remains accepted for older pages, inc
 its destination checks. Summary presses keep `{consent: "off"}` and `{consent: "on"}`;
 while paused they answer 403 without changing the saved summary answer.
 
+### Amended 2026-10-21 (owner): Discard everything also deletes the summary
+
+The owner reversed the part of answer 3 that kept the summary through Discard everything. A reader
+who discards what they asked of a session, then finds a model's account of that session still
+standing under it, has been told the discard was total when it was not. Walk records of a
+session with an intent, a reading and a summary found the summary surviving with no word that it
+had been kept.
+
+- The discard now removes every revision of the session's saved words, any reading of
+  them, and the session's stored summary. A summary job still running is stopped first, exactly as
+  Delete summary stops it, so a reply returning afterwards cannot publish the text back. The job's
+  reason is `discarded`, which reads as cancelled. Only that session's summary goes; no other
+  session's does.
+- It keeps the record that a check ran, which bounds how often one may run; the discard
+  record itself (when, and no text); and session history, which holds its own fourteen-day copy of
+  the goal and each outcome line where it is recording, and which `--forget` deletes. The page says
+  all of this before the second press and once after it.
+- The summary is deleted only on a clear that landed over words that existed. A request
+  over a session nothing was typed against, or one already discarded, deleted no words and leaves
+  the summary alone: a summary does not depend on a saved intent, and a hand-made request must not
+  take it. The reply carries `summary`: `deleted`, `absent` (nothing was stored, or only a job was
+  running), a refusal token from the store (`unwritable`, `unavailable`), or `untouched` where the
+  press owed it nothing. The field is always present, so one key has one meaning.
+- A summary that cannot be deleted leaves the annotation discarded and the summary standing.
+  The page then says so and names Delete summary as the way to finish, rather than the categorical
+  sentence. When the departure store also failed to withdraw, that sentence wins, because it stops
+  a reader believing quotations went.
+- The form starts empty. A discarded session's goal box is not refilled with the drafted first
+  prompt: one stray Save intent would bring back an intent the reader had just deleted. The prompt
+  stays one press away under Use your prompt.
+- The result is one sentence. The record of the discard waits for the result's thirty seconds to lapse
+  rather than standing beside it.
+- The counter: the drift card counts only checks the store counted, and says nothing at zero.
+  A discard record keeps no count, so it reads as no counter, not as zero checks beside a sentence
+  that says the check record stays.
+
+The three places that stated the old rule follow it: answer 3 above, the alternatives paragraph
+below, and the store section's "Discard everything leaves it alone", which now reads that it deletes the discarded session's entry ([the store contract](#store-contract)).
+
+Delete summary is two presses. The first arms the control and says what goes (this machine's
+copy of the summary) and what does not (anything else), that Summarize writes a new one by sending
+the session to the model again, that nothing has been deleted yet, and that the offer lapses in
+30 seconds. Keep summary and Escape take it back, and a press inside the 1.2 second dwell after the
+arm, or a double click, is another arm and never the deletion, as for Discard everything. The
+control sits quietly after What is sent. The second press shows its pending state, and the card
+then says "Summary deleted at 11:08. Summarize writes a new one." until a summary starts again, so
+a card that returns to its first-visit state does not read as though no summary had existed.
+
 ### The layout reversal
 
 [DEC-27](design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result),
@@ -161,8 +212,9 @@ are superseded for the same parts and for the same reason. Their other items sta
 - **A summary-only record in the annotation store.** It looked cheap because the store already has a
   lock, redaction and an owner-only write. It costs too much. The store's loader requires revisions,
   so a record with no saved intent needs a second record kind the loader must learn, and an older
-  build that does not know it would refuse or drop it. Discard everything removes every record tied
-  to a session's intent, so a summary would go with the words it did not depend on. And the store's
+  build that does not know it would refuse or drop it. A summary must also exist with no saved
+  intent, which the annotation store's entries cannot express, so deleting one with the other is a
+  step the discard takes over two stores and not a property of one. And the store's
   bound counts sessions and revisions, so a large set of summaries would evict a reader's saved
   words, which the ruling forbids.
 - **Reusing the reading's `CONTENT_VERSION`.** Bumping it for summaries would ask every reader again
@@ -1558,7 +1610,10 @@ summary prose nor an implicit summary call. `POST /api/summary/delete` accepts e
 fetch-site and non-navigation guards run before parsing the body or reading the store. Local
 processes without browser metadata can delete summaries; this is not authentication.
 
-`--forget` deletes this file even with annotations disabled. Discard everything leaves it alone.
+`--forget` deletes this file even with annotations disabled. Discard everything deletes the
+discarded session's entry from it (see
+[the amendment](#amended-2026-10-21-owner-discard-everything-also-deletes-the-summary)), and
+leaves every other session's.
 The ruling was silent on `--no-annotations`: it does **not** govern this independent store.
 `--no-observer-model` is the job's call gate and does not hide or prevent deleting saved summaries.
 Start/cancel routes and summary generation follow the [job and grant contract](#job-and-grant-contract).
@@ -1666,9 +1721,10 @@ The identity names the current job, so a stale tab can cancel a newer job on tha
 this conservative choice follows the specified identity-only request. Delete uses the existing
 `/api/summary/delete` shape and outcome; it cancels the job and deletes the stored summary under
 the publication lock; a lock failure answers the existing `unwritable` outcome. Discard
-everything, on the Intent card, neither stops a running summary job nor removes a saved summary:
-a summary does not depend on saved intent (answer 3 of [the ruling](#the-ruling)), and "Discard of
-the summary" in the issue is Delete summary.
+everything, on the Intent card, does the same under the reason `discarded`: `summary_jobs.discard`
+stops the job and deletes the session's entry in one step under the publication lock, and
+`/api/annotate`'s clear arm calls it after a clear that landed over words that existed (see
+[the amendment](#amended-2026-10-21-owner-discard-everything-also-deletes-the-summary)).
 
 `update` requires a stored summary (`422 no-summary` otherwise), fully re-reads the source and
 calls `session_summary.update` with its saved snapshot. Only new evidence is sent, subject to the

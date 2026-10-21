@@ -18,7 +18,7 @@ from typing import Any, cast
 from unittest import mock
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import cli, lifecycle, session_source, session_summary
+from compass_runtime import cli, lifecycle, session_source, session_summary, summary_jobs
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -456,7 +456,7 @@ class SummaryStoreTest(_StoreCase):
         path.write_text(json.dumps(raw))
         self.assertEqual("unavailable", self.store.load(self.config).state)
 
-    def test_discard_everything_keeps_the_summary(self) -> None:
+    def test_discard_everything_deletes_the_summary_and_keeps_the_check_record(self) -> None:
         self.transcript.prompt("Inspect")
         self.save(self.read())
         self.assertEqual(
@@ -480,7 +480,19 @@ class SummaryStoreTest(_StoreCase):
                 now=110.0,
             ),
         )
-        self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
+        application = SimpleNamespace(
+            config=self.config,
+            state=self.state,
+            clock=lambda: 120.0,
+            diagnostic_sink=lambda _: None,
+            collect_json=lambda **_: (0, b"{}"),
+        )
+        self.assertEqual("deleted", summary_jobs.discard(application, "claude", "root"))
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+        entry = annotation_store.find(
+            annotation_store.active(self.config, self.state), "claude", "root"
+        )
+        self.assertTrue(annotation_store.is_discarded(entry))
 
     def test_forget_command_removes_summary_even_with_annotations_off(self) -> None:
         self.transcript.prompt("Inspect")

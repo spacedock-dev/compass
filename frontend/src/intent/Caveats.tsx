@@ -152,12 +152,13 @@ function ArmedDiscard({ name, children }: { readonly name: string; readonly chil
 export function CaveatNotes() {
   const panel = usePanel();
   const { input, session, payload } = panel;
+  const discard = discardView(panel);
   const account = discardAccount(
     input.annotation,
     session['departures'],
     publishedDiscard(payload),
+    !discard?.landed,
   );
-  const discard = discardView(panel);
   if (!account.length && !discard?.landed) return null;
   return (
     <div className="next-session-drift-caveats">

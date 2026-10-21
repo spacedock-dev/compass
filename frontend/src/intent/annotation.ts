@@ -122,9 +122,12 @@ export function discardAccount(
   annotation: Annotation | null | undefined,
   departures: unknown,
   published: Row,
+  /* False while the result of the discard just pressed stands: it says the same thing, so the record waits
+     for the result to lapse rather than repeating it beside it. */
+  withRecord = true,
 ): string[] {
   if (!annotation || !annotationDiscarded(annotation)) return [];
-  const record = String(annotation['discarded_why'] || published['record'] || '');
+  const record = withRecord ? String(annotation['discarded_why'] || published['record'] || '') : '';
   const rows = Array.isArray(departures) ? departures : [];
   const standing = rows.length ? String(published['record_standing'] || '') : '';
   return [record, standing].filter(Boolean);

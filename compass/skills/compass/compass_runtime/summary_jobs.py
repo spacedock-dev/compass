@@ -620,14 +620,26 @@ def set_consent(application: reading_jobs.Application, allowed: bool) -> reading
     return answer
 
 
-def delete(application: reading_jobs.Application, harness: str, sid: str) -> str:
+def delete(
+    application: reading_jobs.Application, harness: str, sid: str, *, reason: str = "deleted"
+) -> str:
     with _locked(application):
         # A stop that fails still deletes: `_stop` bars the in-memory job before it writes.
         with contextlib.suppress(OSError):
-            _stop(application, harness, sid, "deleted")
+            _stop(application, harness, sid, reason)
         outcome = summary_store.delete(application.config, harness, sid)
     _publish(application)
     return outcome
+
+
+def discard(application: reading_jobs.Application, harness: str, sid: str) -> str:
+    """Discard everything's half of the act: stop a job in flight, then delete the summary.
+
+    The same act as Delete summary under its own reason, so a job's reply returning after it
+    cannot recreate the text and the job reads as cancelled by the discard.
+    The ruling is the 2026-10-21 amendment in docs/design-session-summary.md.
+    """
+    return delete(application, harness, sid, reason="discarded")
 
 
 def recover(application: reading_jobs.Application, *, alive: Callable[[int], bool]) -> int:

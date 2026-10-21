@@ -1,10 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import {
-  LEVEL_HIDDEN_MARKED,
   READ_NEVER,
   READ_SUMMARY,
   RESULT_MARKED,
+  WRONG_CHOICES,
+  WRONG_LEGEND,
   RESULT_NOT_ACCURATE,
   RESULT_NOT_ACCURATE_HINT,
   RESULT_UNMARK,
@@ -155,28 +156,39 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     await expect(row).toHaveTextContent(RESULT_NOT_ACCURATE_HINT);
     await waitFor(() => expect(drift.querySelector('[data-next-drift-level]')).not.toBeNull());
     await within(drift).findByRole('button', { name: 'Steer back' });
+    await expect(drift.querySelector('[data-next-disowned]')).toBeNull();
     const mark = within(row).getByRole('button', { name: RESULT_NOT_ACCURATE });
     mark.scrollIntoView({ block: 'center' });
     const before = row.getBoundingClientRect().top;
     await userEvent.click(mark);
-    // After: what changed, said beside the control, and Undo in its place.
+    // After: one message, at the top where the level was, with Undo and Analyze again beside it.
     await waitFor(() => expect(row).toHaveAttribute('data-next-result-mark', 'marked'));
-    await expect(within(row).getByRole('status')).toHaveTextContent(RESULT_MARKED);
-    const undo = within(row).getByRole('button', { name: RESULT_UNMARK });
-    // The level and Steer back left the column above; the control stayed where it was pressed.
+    const notice = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
+    // Said once: the foot no longer repeats it, and no second Undo stands there.
+    await expect(row.textContent).not.toContain('Marked inaccurate');
+    await expect(within(row).queryByRole('button', { name: RESULT_UNMARK })).toBeNull();
+    await expect(drift.textContent?.split(RESULT_MARKED).length).toBe(2);
+    const undo = within(notice).getByRole('button', { name: RESULT_UNMARK });
+    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    // The level and Steer back left the column above; the foot stayed where the press was.
     await expect(Math.abs(row.getBoundingClientRect().top - before)).toBeLessThan(4);
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
-    await expect(drift.querySelector('[data-next-drift-marked]')).toHaveTextContent(
-      LEVEL_HIDDEN_MARKED,
-    );
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await userEvent.click(undo);
     await waitFor(() => expect(row).toHaveAttribute('data-next-result-mark', 'unmarked'));
     await waitFor(() => expect(drift.querySelector('[data-next-drift-level]')).not.toBeNull());
     await expect(drift.querySelector('[data-next-drift-marked]')).toBeNull();
+    await expect(drift.querySelector('[data-next-disowned]')).toBeNull();
   },
 };
 
+/* A reading marked inaccurate keeps its verdicts on the card, drawn as disowned, so a later scan does not
+   read them as standing; the card offers a way forward, and an optional choice of what was wrong. */
 export const MarkedInaccurate: Story = {
   ...scenario({
     ...RESULT,
@@ -186,14 +198,50 @@ export const MarkedInaccurate: Story = {
     const drift = await card(canvasElement);
     const row = await foot(drift);
     await expect(row).toHaveAttribute('data-next-result-mark', 'marked');
-    await expect(within(row).getByRole('status')).toHaveTextContent(RESULT_MARKED);
-    await expect(within(row).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
-    await expect(drift.querySelector('[data-next-drift-marked]')).toHaveTextContent(
-      LEVEL_HIDDEN_MARKED,
-    );
+    const notice = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
+    await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
+    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    // The verdicts stay readable and are set aside: dimmed, and under the one message.
+    const disowned = drift.querySelector<HTMLElement>('[data-next-disowned]');
+    await expect(disowned).not.toBeNull();
+    await expect(disowned).toHaveTextContent('Departs from your intent');
+    await expect(Number(getComputedStyle(disowned as HTMLElement).opacity)).toBeLessThan(0.8);
     // The old wording is gone.
     await expect(drift.textContent).not.toContain('Not accurate?');
-    await expect(drift.textContent).not.toContain('You marked this analysis not accurate.');
+    await expect(drift.textContent).not.toContain('Drift level hidden because you marked');
+  },
+};
+
+/* "What was wrong?" is optional, one choice at a time, and kept in this tab only: nothing is sent. */
+export const MarkedInaccurateAsksWhatWasWrong: Story = {
+  ...scenario({
+    ...RESULT,
+    session: { ...RESULT.session, annotation_not_accurate: true },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const group = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-marked-wrong]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(group).toHaveTextContent(WRONG_LEGEND);
+    const buttons = within(group).getAllByRole('button');
+    await expect(buttons.map((button) => button.textContent)).toEqual([...WRONG_CHOICES]);
+    for (const button of buttons) await expect(button).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(buttons[1] as HTMLElement);
+    await waitFor(() => expect(buttons[1]).toHaveAttribute('aria-pressed', 'true'));
+    // One choice stands; pressing another moves it, and pressing it again takes it back.
+    await userEvent.click(buttons[2] as HTMLElement);
+    await waitFor(() => expect(buttons[2]).toHaveAttribute('aria-pressed', 'true'));
+    await expect(buttons[1]).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(buttons[2] as HTMLElement);
+    await waitFor(() => expect(buttons[2]).toHaveAttribute('aria-pressed', 'false'));
   },
 };
 

@@ -422,13 +422,17 @@ describe('Not accurate', () => {
     });
     expect(foot()?.getAttribute('data-next-result-mark')).toBe('marked');
     expect(byAction('not-accurate')?.textContent).toBe('Undo');
-    expect(textOf('[data-next-result-mark] [role="status"]')).toBe(
-      'Marked inaccurate. This analysis no longer sets the drift level or Steer back.',
+    // One message, where the level was, with Undo and Analyze again beside it; the foot says nothing more.
+    expect(textOf('[data-next-drift-marked] [role="status"]')).toBe(
+      'Marked inaccurate. This analysis no longer sets the drift level or Steer back, and its verdicts below are set aside.',
     );
+    expect(foot()?.textContent).toBe('');
+    expect(
+      document.querySelector('[data-next-drift-marked] [data-next-cockpit-action="reading-ask"]')
+        ?.textContent,
+    ).toBe('Analyze again');
+    expect(document.querySelector('[data-next-disowned]')).not.toBeNull();
     expect(document.querySelector('[data-next-drift-level]')).toBeNull();
-    expect(textOf('[data-next-drift-marked]')).toBe(
-      'Drift level hidden because you marked this analysis inaccurate.',
-    );
     // Undo posts the mark back off.
     await press(byAction('not-accurate') as HTMLElement);
     await page.settle();

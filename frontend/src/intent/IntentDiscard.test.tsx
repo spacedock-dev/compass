@@ -12,6 +12,7 @@ const SENTENCES = {
   stored: 'Discarded. These words are gone.',
   refused: 'Nothing was discarded: the store refused.',
   unwritable: 'The discard could not be written.',
+  summary_kept: 'Discarded, but the summary is still stored. Delete summary removes it.',
   record: 'You discarded these words.',
 };
 const withSentences = (data: object) => ({ ...data, annotate_discard: SENTENCES });
@@ -135,6 +136,83 @@ describe('Discard everything', () => {
     await press(discard());
     await settle(page);
     expect(goalBox().value).not.toBe('half-typed words');
+  });
+
+  it('starts the form empty after a discard, and never refills it from the drafted prompt', async () => {
+    const DISCARDED = { annotation_discarded_at: 1000, annotation_revision_count: 0 };
+    const page = mount({
+      '/api/annotate': () => {
+        page.state.data = withSentences(board(DISCARDED));
+        return json({ ok: true, outcome: 'stored', persisted: true, withdrew: true });
+      },
+    });
+    await settle(page);
+    expect(goalBox().value).toBe('Saved goal');
+    await armed(page);
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    // The board's first prompt is still there to draft from, and is offered as an action only.
+    expect(goalBox().value).toBe('');
+    expect(text('[data-next-cockpit-held-kind="goal"] ~ *')).not.toContain('Ship the queue worker');
+    expect(document.body.textContent).not.toContain('Draft from your first prompt');
+    expect(control('held-save')?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('says it once after a discard: the result, and not the record under it as well', async () => {
+    const DISCARDED = { annotation_discarded_at: 1000, annotation_revision_count: 0 };
+    const page = mount({
+      '/api/annotate': () => {
+        page.state.data = withSentences({
+          ...board(DISCARDED),
+          annotate_discard: { ...SENTENCES },
+        });
+        return json({ ok: true, outcome: 'stored', persisted: true, withdrew: true });
+      },
+    });
+    await settle(page);
+    await armed(page);
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    const said = text('.next-session-drift-caveats');
+    expect(said).toContain(SENTENCES.stored);
+    expect(said).not.toContain(SENTENCES.record);
+    // The record stands once the result's own thirty seconds have lapsed.
+    await act(async () => {
+      page.clock.advance(31_000);
+    });
+    await page.settle();
+    expect(text('.next-session-drift-caveats')).toContain(SENTENCES.record);
+    expect(text('.next-session-drift-caveats')).not.toContain(SENTENCES.stored);
+  });
+
+  it('names a summary the server could not delete, and says Delete summary finishes it', async () => {
+    const DISCARDED = { annotation_discarded_at: 1000, annotation_revision_count: 0 };
+    const page = mount({
+      '/api/annotate': () => {
+        page.state.data = withSentences(board(DISCARDED));
+        return json({
+          ok: true,
+          outcome: 'stored',
+          persisted: true,
+          withdrew: true,
+          summary: 'unwritable',
+        });
+      },
+    });
+    await settle(page);
+    await armed(page);
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.summary_kept);
   });
 
   it('disarms on Escape without leaving the page, and the next arm is a new warning', async () => {

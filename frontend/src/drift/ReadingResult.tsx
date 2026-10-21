@@ -47,11 +47,9 @@ import {
   RESULT_CANT_TELL,
   RESULT_DEPARTS,
   RESULT_MARK_UNSAVED,
-  RESULT_MARKED,
   RESULT_NOT_ACCURATE,
   RESULT_NOT_ACCURATE_HINT,
   RESULT_NOTHING_FOUND,
-  RESULT_UNMARK,
   readIdle,
   SCOPE_TEXT_IDLE,
   unloadedCites,
@@ -483,13 +481,13 @@ function ResultFoot() {
   const control = (
     <ActionButton
       weight="quiet"
-      label={marked ? RESULT_UNMARK : RESULT_NOT_ACCURATE}
+      label={RESULT_NOT_ACCURATE}
       busyLabel="Saving…"
       pendingKey={`not-accurate:${model.key}`}
       action="not-accurate"
       arg={String(readAt)}
       focusKey={`not-accurate:${model.key}`}
-      {...(marked ? {} : { describes: hintId })}
+      describes={hintId}
       onPress={() => {
         if (!model.identity) return;
         const top = foot.current?.getBoundingClientRect().top;
@@ -506,14 +504,7 @@ function ResultFoot() {
       className="next-cockpit-result-foot"
       data-next-result-mark={marked ? 'marked' : 'unmarked'}
     >
-      {marked ? (
-        <>
-          <p className="next-cockpit-reading-why" role="status">
-            {RESULT_MARKED}
-          </p>
-          {control}
-        </>
-      ) : (
+      {marked ? null : (
         <>
           {control}
           <span id={hintId} className="next-visually-hidden">
@@ -521,7 +512,7 @@ function ResultFoot() {
           </span>
         </>
       )}
-      {unsaved ? (
+      {unsaved && !marked ? (
         <p className="next-cockpit-reading-why" role="status">
           {RESULT_MARK_UNSAVED}
         </p>
@@ -735,71 +726,78 @@ export function ReadingResult({
   return (
     <div className="next-session-drift-check next-cockpit-result gap-1" data-next-result>
       {question}
-      {answer && marked ? (
-        <ResultAnswer
-          answer={answer}
-          midFlight={shape.scope === 'mid-flight'}
-          focusKey={question ? null : `reading:${model.key}`}
-        />
-      ) : null}
-      {idle ? (
-        <p className="next-cockpit-reading-why" data-next-reading-idle>
-          {idle}
-        </p>
-      ) : null}
-      {coverage ? (
-        <p className="next-cockpit-reading-why" data-next-reading-coverage>
-          {coverage}
-        </p>
-      ) : null}
-      {departures.length ? (
-        <div className="flex flex-col gap-3.5" data-next-departures>
-          {departures.map((row) => (
-            <DepartureCard key={row.key} row={row} outcomes={outcomes} />
-          ))}
-        </div>
-      ) : null}
-      {departures.length && steerOff ? (
-        <p className="next-cockpit-reading-why" data-next-steer-off>
-          {steerOff}
-        </p>
-      ) : null}
-      {/* While a later direction stands the question owns the primary press, and Steer back stays beside the
-          departures it steers from (owner, 2026-10-20). */}
-      {question && slotted ? (
-        <>
-          <div className="next-cockpit-reading-ask" data-next-result-steer>
-            {slotted.button}
+      {/* A marked reading's verdicts stay readable and are set aside: dimmed, never hidden, under the one
+          message the level's slot holds. An unmarked reading's wrapper adds no box. */}
+      <div
+        className={marked ? 'flex flex-col gap-1 opacity-60' : 'contents'}
+        {...(marked ? { 'data-next-disowned': '' } : {})}
+      >
+        {answer && marked ? (
+          <ResultAnswer
+            answer={answer}
+            midFlight={shape.scope === 'mid-flight'}
+            focusKey={question ? null : `reading:${model.key}`}
+          />
+        ) : null}
+        {idle ? (
+          <p className="next-cockpit-reading-why" data-next-reading-idle>
+            {idle}
+          </p>
+        ) : null}
+        {coverage ? (
+          <p className="next-cockpit-reading-why" data-next-reading-coverage>
+            {coverage}
+          </p>
+        ) : null}
+        {departures.length ? (
+          <div className="flex flex-col gap-3.5" data-next-departures>
+            {departures.map((row) => (
+              <DepartureCard key={row.key} row={row} outcomes={outcomes} />
+            ))}
           </div>
-          {slotted.box}
-        </>
-      ) : null}
-      {quiet ? (
-        <div
-          className={`flex flex-col gap-3 ${departures.length ? 'border-t border-[var(--rule)] pt-3' : ''}`}
-          data-next-result-quiet
-        >
-          {goal.map((row) => (
-            <QuietRow key={row.key} row={row} outcomes={outcomes} tag="div" />
-          ))}
-          {lines.length ? (
-            <ol className="next-cockpit-result-lines">
-              {lines.map((row) => (
-                <QuietRow key={row.key} row={row} outcomes={outcomes} tag="li" />
-              ))}
-            </ol>
-          ) : null}
-          {claimed.map((row) => (
-            <QuietRow key={row.key} row={row} outcomes={outcomes} tag="div" />
-          ))}
-        </div>
-      ) : null}
-      {/* Steer back after what it steers back from, as the design draws it. Offered only with a departure. */}
-      {leadSteer ? (
-        <div className="next-cockpit-reading-ask" data-next-result-primary>
-          {leadSteer.button}
-        </div>
-      ) : null}
+        ) : null}
+        {departures.length && steerOff ? (
+          <p className="next-cockpit-reading-why" data-next-steer-off>
+            {steerOff}
+          </p>
+        ) : null}
+        {/* While a later direction stands the question owns the primary press, and Steer back stays beside the
+          departures it steers from (owner, 2026-10-20). */}
+        {question && slotted ? (
+          <>
+            <div className="next-cockpit-reading-ask" data-next-result-steer>
+              {slotted.button}
+            </div>
+            {slotted.box}
+          </>
+        ) : null}
+        {quiet ? (
+          <div
+            className={`flex flex-col gap-3 ${departures.length ? 'border-t border-[var(--rule)] pt-3' : ''}`}
+            data-next-result-quiet
+          >
+            {goal.map((row) => (
+              <QuietRow key={row.key} row={row} outcomes={outcomes} tag="div" />
+            ))}
+            {lines.length ? (
+              <ol className="next-cockpit-result-lines">
+                {lines.map((row) => (
+                  <QuietRow key={row.key} row={row} outcomes={outcomes} tag="li" />
+                ))}
+              </ol>
+            ) : null}
+            {claimed.map((row) => (
+              <QuietRow key={row.key} row={row} outcomes={outcomes} tag="div" />
+            ))}
+          </div>
+        ) : null}
+        {/* Steer back after what it steers back from, as the design draws it. Offered only with a departure. */}
+        {leadSteer ? (
+          <div className="next-cockpit-reading-ask" data-next-result-primary>
+            {leadSteer.button}
+          </div>
+        ) : null}
+      </div>
       {foot ? <div className="next-cockpit-result-press">{foot}</div> : null}
       <div
         className="flex flex-wrap items-start gap-x-4 gap-y-2 border-t border-[var(--rule)] pt-2.5"

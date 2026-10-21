@@ -2,8 +2,15 @@ import { compatSessKey } from '../api/identity';
 import { parseGrant, parseJob, parseLargestRead } from '../api/summary';
 import type { ApiResult, SessionIdentity, SummaryReceipt } from '../api/types';
 import { noticeAnnouncement } from '../drift/notice';
+import { clock } from '../observed';
 import type { Shell } from '../shell/context';
-import { SUMMARY_CANCEL_FAILED, SUMMARY_FAILED_SEND } from './summary';
+import { DISCARD_DWELL_MS } from '../intent/sentences';
+import {
+  DELETE_LAPSE_SECONDS,
+  SUMMARY_CANCEL_FAILED,
+  SUMMARY_FAILED_SEND,
+  summaryDeleted,
+} from './summary';
 import { summaryHeldFor } from './summaryHeld';
 
 /* The summary's presses. Each sends one request, keeps what the answer says in the tab's held store, and asks
@@ -53,7 +60,7 @@ export async function startSummary(
     if (origin === 'open') held.patch(key, { opening: false });
     return;
   }
-  held.patch(key, { refusal: null, failed: '' });
+  held.patch(key, { refusal: null, failed: '', deletedAt: 0 });
   try {
     const answer = bodyOf(await shell.runtime.client.postSummary({ ...identity, action, origin }));
     /* A lost reply may still have been admitted and charged, so the card asks the board rather than saying
@@ -156,8 +163,51 @@ export async function setSummaries(
   }
 }
 
+/* Delete summary is two presses, as Discard everything is: the first arms it and says what will go and what
+   will not, the second performs it. A press inside the dwell after the arm, and a double click, are another
+   arm and never the deletion, for the reason the discard's dwell gives. The arm lapses on its own after
+   `DELETE_LAPSE_SECONDS`, so a reader who walked away returns to a control that is not armed. */
+const lapseKey = (key: string) => `summary-delete:${key}`;
+
+export function pressDeleteSummary(
+  shell: Shell,
+  identity: SessionIdentity,
+  detail: number,
+  armedSentence: string,
+): void {
+  const key = compatSessKey(identity);
+  const held = summaryHeldFor(shell.runtime);
+  const armedAt = held.get(key).deleteArmedAt;
+  const slip = detail > 1 || shell.clock.now() - armedAt < DISCARD_DWELL_MS;
+  if (armedAt === 0 || slip) {
+    const at = shell.clock.now();
+    held.patch(key, { deleteArmedAt: at });
+    shell.announcer.announce(lapseKey(key), armedSentence, { assertive: true });
+    shell.clock.setTimeout(() => {
+      if (held.get(key).deleteArmedAt !== at) return;
+      held.patch(key, { deleteArmedAt: 0 });
+      shell.announcer.retractArmed(lapseKey(key));
+      shell.announcer.forget(lapseKey(key));
+    }, DELETE_LAPSE_SECONDS * 1000);
+    return;
+  }
+  void deleteSummary(shell, identity);
+}
+
+/* Keep summary, and Escape on the armed control: the arm is dropped on purpose, so the next one is a fresh offer. */
+export function disarmDeleteSummary(shell: Shell, identity: SessionIdentity): boolean {
+  const key = compatSessKey(identity);
+  const held = summaryHeldFor(shell.runtime);
+  if (held.get(key).deleteArmedAt === 0) return false;
+  held.patch(key, { deleteArmedAt: 0 });
+  shell.announcer.retractArmed(lapseKey(key));
+  shell.announcer.forget(lapseKey(key));
+  return true;
+}
+
 /* Delete summary: removes the saved summary and stops a job on it. The session is not summarized again on
-   this open: the reader removed what was there. */
+   this open: the reader removed what was there. The deletion is said with its time, because the card returns
+   to its first-visit state and would otherwise read as though no summary had ever been there. */
 export async function deleteSummary(shell: Shell, identity: SessionIdentity): Promise<void> {
   const key = compatSessKey(identity);
   const held = summaryHeldFor(shell.runtime);
@@ -168,10 +218,17 @@ export async function deleteSummary(shell: Shell, identity: SessionIdentity): Pr
   try {
     const answer = bodyOf(await shell.runtime.client.postSummaryDelete(identity));
     const outcome = String(answer?.body?.['outcome'] ?? '');
+    shell.announcer.retractArmed(lapseKey(key));
     if (outcome !== 'deleted' && outcome !== 'absent') {
-      held.patch(key, { failed: 'Compass could not delete the summary. Try again.' });
+      held.patch(key, {
+        failed: 'Compass could not delete the summary. Try again.',
+        deleteArmedAt: 0,
+      });
       return;
     }
+    const at = shell.clock.now();
+    held.patch(key, { deleteArmedAt: 0, deletedAt: at });
+    shell.announcer.announce(lapseKey(key), summaryDeleted(clock(at / 1000)));
     await shell.runtime.refresh();
   } finally {
     shell.runtime.pending.end(control, token);

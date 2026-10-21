@@ -295,7 +295,7 @@ end-of-session git probe that shipped in 0.19. And, since the annotation store l
 typed the session should achieve and produce: the words are kept beside the two end axes, so a
 session that ended can be read against what was asked of it rather than only against whether it
 stopped. The Intent log keeps them after the row leaves the board. Taking them back is one act
-and it is on the board: `discard everything` deletes every revision, deletes any reading of them,
+and it is on the board: `discard everything` deletes every revision, deletes any reading of them and the session's summary,
 and withdraws the quotations from anything raised against them. What it leaves is the fact that a
 check ran and a record of the act itself, carrying no text: the moment you discarded, and the last
 revision number that went. That record is why the Intent log still lists the session afterwards,
