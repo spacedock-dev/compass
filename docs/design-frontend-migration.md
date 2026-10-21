@@ -24,7 +24,9 @@ for you" in the measured line and under CURRENT ACTIVITY where the recording say
 recorded text is restated before the comparison, in `detail.differential.test.tsx`
 (`projectRecordedHarnessWord`, `projectRecordedTurnEnd`); every other word of the header stays held to the
 recording, and the golden files are unchanged. The session page also draws What the session has done before the
-Drift card, which the comparison already excluded with the panel.
+Drift card, which the comparison already excluded with the panel. The session heading, and only the heading,
+substitutes the goal or the first prompt for a title that is only an identifier (an issue key, a UUID or the
+session's own id); a Sessions row keeps the title as published.
 
 2026-10-21, a later direction is quoted where it is settled
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-a-later-direction-is-quoted-where-it-is-settled)):

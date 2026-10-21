@@ -6,6 +6,7 @@ import {
   endedAt,
   isRecord,
   pair,
+  promptCopied,
   records,
   textOf,
   trimmed,
@@ -65,7 +66,8 @@ export function labelOf(session: Row): string {
 }
 
 /* A title that is only an identifier (an issue key, or the session's own id) says nothing a reader can use, so
-   the goal, then the last prompt, stands in for it: its first line, cut at a width a heading can hold. Only the
+   the goal, then the first prompt (never a correction the reader copied, nor a control message), then the
+   last prompt where the harness publishes no first one, stands in for it: its first line, cut at a width a heading can hold. Only the
    session page's heading asks: a Sessions row keeps the title as published, since the rows are held to the recorded
    page. */
 const IDENTIFIER_TITLE =
@@ -77,7 +79,11 @@ export function pageTitleOf(source: Row): string {
   const title = trimmed(source['title']);
   if (!title) return '';
   if (!IDENTIFIER_TITLE.test(title) && title !== trimmed(source['sid'])) return title;
-  const words = (goal ? trimmed(goal.text) : '') || trimmed(source['last_prompt']);
+  const firstPrompt =
+    promptCopied(source, 'first_prompt') || source['first_prompt_control'] === true
+      ? ''
+      : trimmed(source['first_prompt']);
+  const words = (goal ? trimmed(goal.text) : '') || firstPrompt || trimmed(source['last_prompt']);
   const line =
     words
       .split('\n')
