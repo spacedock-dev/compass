@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2077135,
+    "bytes": 2077207,
     "file": "react.html",
-    "sha256": "d3078fd6252acbfce40771e24074697cbcb7a29cc346acf4fe4259b6498bc1a3"
+    "sha256": "7728d06d6d341af34896e58165770fafc34054997541134065298cf35ea28c5f"
   },
   "format": 1,
   "frontend": "react",
@@ -299,7 +299,7 @@
       },
       {
         "file": "frontend/src/api/types.ts",
-        "sha256": "15cda635c7e54e2fb5bbe06aecffb17354ecfa8fed10c3e53ff62d7eee623cf4"
+        "sha256": "e2c26d37e88a9f1733da20239a5d32862f5cbec81a65fabfdb276c31ce31432d"
       },
       {
         "file": "frontend/src/attention/AttentionAnnouncer.tsx",
@@ -847,7 +847,7 @@
       },
       {
         "file": "frontend/src/intent/save.ts",
-        "sha256": "020e617257b4b807c4b54f63405ab8787ac53e50576d4d4c8e9b5eb996801b5c"
+        "sha256": "893ac4ece888734c6a5a3c94ac9950be69e0e423b750b511fa2055cc613db1d8"
       },
       {
         "file": "frontend/src/intent/sentences.ts",
