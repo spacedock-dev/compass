@@ -5,3 +5,9 @@ export function worktreeOf(row: Readonly<Record<string, unknown>> | null | undef
   const value = row?.['worktree'];
   return typeof value === 'string' ? value.trim() : '';
 }
+
+/* The line a Sessions row shows under the project: the name alone read as an unexplained second line. */
+export function worktreeLabel(row: Readonly<Record<string, unknown>> | null | undefined): string {
+  const name = worktreeOf(row);
+  return name ? `worktree ${name}` : '';
+}

@@ -43,6 +43,7 @@ from .support import (
     collect,
     collect_claude,
     config_patch,
+    make_config,
     make_runtime,
     runtime,
     serve_until_closed,
@@ -901,6 +902,21 @@ class PublishedTextSweepTest(unittest.TestCase):
         aggregate._redact_published_text([row])
         self.assertNotIn("A" * 20, json.dumps(row))
         self.assertIn(self.MARKER, row["state_detail"])
+
+    def test_a_worktree_directory_named_like_a_credential_is_masked(self) -> None:
+        # The name is operator text read from a path, so it reaches the row through
+        # `apply_project_identity` and has to leave the sweep masked.
+        with tempfile.TemporaryDirectory() as tmp:
+            main = Path(tmp) / "one" / "compass"
+            (main / ".git").mkdir(parents=True)
+            row: Any = runtime_sessions.base_session("claude", "s", "one/compass")
+            runtime_sessions.apply_project_identity(
+                make_config(), row, str(main / ".claude" / "worktrees" / self.FAKE)
+            )
+        self.assertEqual(self.FAKE, row["worktree"])
+        aggregate._redact_published_text([row])
+        self.assertNotIn("A" * 20, json.dumps(row))
+        self.assertIn(self.MARKER, row["worktree"])
 
     def test_a_subagent_name_carries_no_credential(self) -> None:
         # On opencode this is the child session's own TITLE, which is the same

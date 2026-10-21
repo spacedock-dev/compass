@@ -267,9 +267,12 @@ def project_identity(config: RuntimeConfig, cwd: str) -> dict[str, str]:
     """
     if not cwd or not os.path.isabs(cwd):
         return {}
+    return _identity_from_root(config, cwd, _git_identity_root(cwd))
+
+
+def _identity_from_root(config: RuntimeConfig, cwd: str, repo_root: str | None) -> dict[str, str]:
     if not os.path.isdir(os.path.realpath(cwd)):
         return {}
-    repo_root = _git_identity_root(cwd)
     root = repo_root or os.path.realpath(cwd)
     name = os.path.basename(root.rstrip(os.sep)) or project_from_cwd(config, root)
     return {
@@ -279,15 +282,48 @@ def project_identity(config: RuntimeConfig, cwd: str) -> dict[str, str]:
     }
 
 
+def _removed_worktree(cwd: str) -> tuple[str, str] | None:
+    """``(repository root, worktree name)`` for a path under a deleted linked worktree.
+
+    The ``.git`` pointers are gone with the directory, so the only evidence is the
+    ``<root>/.claude/worktrees/<name>`` layout Claude Code creates, and it counts
+    only when ``<root>`` still holds a ``.git`` directory. Other harnesses' layouts
+    are not guessed at, per
+    [D-7](docs/design-session-identity.md#d-7-a-session-in-a-linked-worktree-files-under-its-repository).
+    """
+    parts = cwd.split(os.sep)
+    for index in range(len(parts) - 3, 0, -1):
+        if parts[index : index + 2] == [".claude", "worktrees"] and parts[index + 2]:
+            root = os.sep.join(parts[:index]) or os.sep
+            if os.path.isdir(os.path.join(root, ".git")):
+                return os.path.realpath(root), parts[index + 2]
+            return None
+    return None
+
+
 def apply_project_identity(config: RuntimeConfig, session: Session, cwd: str) -> None:
     """Attach a measured hidden key and short name without replacing legacy display data."""
-    identity = project_identity(config, cwd)
+    if not cwd or not os.path.isabs(cwd):
+        return
+    # One read serves the key, the label and the worktree name, per
+    # [D-7](docs/design-session-identity.md#d-7-a-session-in-a-linked-worktree-files-under-its-repository).  # noqa: E501
+    checkout, main = _git_checkout(cwd)
+    identity = _identity_from_root(config, cwd, main)
     if not identity:
+        removed = _removed_worktree(cwd)
+        if removed:
+            root, name = removed
+            label = project_from_cwd(config, root)
+            if label:
+                session["project"] = label
+                session["project_key"] = _project_identity_key("git:", root)
+                session["project_name"] = os.path.basename(root) or label
+                session["project_identity_source"] = "git common directory"
+                session["worktree"] = name
         return
     session["project_key"] = identity["key"]
     session["project_name"] = identity["name"]
     session["project_identity_source"] = identity["source"]
-    checkout, main = _git_checkout(cwd) if os.path.isabs(cwd) else (None, None)
     if checkout and main and checkout != main:
         # The label is what the board groups on, so a linked worktree files under
         # its repository and the checkout's own name moves to `worktree`, which

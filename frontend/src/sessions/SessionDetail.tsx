@@ -180,7 +180,13 @@ function SessionMetadata({
   readonly generated: number | null;
 }) {
   const drift = useDrift();
-  const meta = sessionMeta(session, generated, drift.model.entryCount, drift.model.windowCount);
+  const meta = sessionMeta(
+    session,
+    generated,
+    drift.model.entryCount,
+    drift.model.windowCount,
+    drift.model.entriesPartial,
+  );
   return meta ? <p className="next-session-detail-meta">{meta}</p> : null;
 }
 

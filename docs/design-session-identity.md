@@ -573,5 +573,18 @@ The worktree name sits beside the project on the Sessions row and in the session
 the label no longer separates two sessions on one repository. It goes through the same
 credential sweep as `project_name`, because a directory name is operator text.
 
+A session whose worktree was removed afterwards has no `.git` pointer left to follow, so the
+pointers cannot place it. A working directory of the form `<root>/.claude/worktrees/<name>` whose
+`<root>` still holds a `.git` directory is filed under `<root>`'s repository with `<name>` as its
+worktree; that layout is Claude Code's own, and no other harness's layout is guessed at. A removed
+worktree elsewhere, or one whose repository is gone too, keeps the label of its own working
+directory. `apply_project_identity` reads the checkout once and the same result serves the key,
+the label and the worktree name.
+
+Sessions rows draw the name as `worktree <name>` under the project, so the line is not an
+unexplained second one. Bookmarks keyed by the earlier `worktrees/<name>` label do not follow a
+session to its repository's label: the key was never the label, but a bookmark that stored the
+label finds nothing under it and is not migrated.
+
 Not changed: a session in a subdirectory of a main checkout keeps the label of its own working
 directory, as before. How writes inside an isolation worktree count is a separate ruling.

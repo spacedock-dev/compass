@@ -15,6 +15,7 @@ import {
   conflictCandidates,
   entryLabel,
   entryNumbering,
+  olderEntriesRemain,
   workSource,
   type WorkEntry,
   type WorkSource,
@@ -78,6 +79,9 @@ export interface DriftModel {
   readonly pillSoFar: boolean;
   /** The header's "N entries": nothing where the record was not read, because 0 would be a default. */
   readonly entryCount: number | null;
+  /** The count is a floor: only the newest pages of the record are held, and older ones remain to read. The
+      header, the summary's size and the window count all read it with `entryCount`, so they say one thing. */
+  readonly entriesPartial: boolean;
   /** The entries since the intent's window opened, where one has and entries before it are held; else null. */
   readonly windowCount: number | null;
 }
@@ -308,6 +312,7 @@ export function buildModel(input: ModelInput): DriftModel {
     pill,
     pillSoFar,
     entryCount: read ? numbers.size + numbering.earlier.length : null,
+    entriesPartial: read && olderEntriesRemain(input.record, numbering.opened),
     windowCount: read && numbering.earlier.length ? numbers.size : null,
   };
 }

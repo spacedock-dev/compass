@@ -69,8 +69,8 @@ export const RowsNameTheirWorktree: Story = {
     await waitFor(() => expect(where('wa')).not.toBeNull());
     await expect(where('wa')?.textContent).toContain('one/compass');
     await expect(where('wb')?.textContent).toContain('one/compass');
-    await expect(where('wa')?.textContent).toContain('haiku-a');
-    await expect(where('wb')?.textContent).toContain('haiku-b');
+    await expect(where('wa')?.textContent).toContain('worktree haiku-a');
+    await expect(where('wb')?.textContent).toContain('worktree haiku-b');
     await expect(where('wm')?.textContent).not.toContain('haiku');
   },
 };

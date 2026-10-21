@@ -356,6 +356,22 @@ export const NoSummary: Story = {
   },
 };
 
+/* A record read one page at a time holds only the newest page, so the header, the size beside Summarize and
+   the entries line all say that count is a floor, in the same number, rather than the summary quoting the
+   page as the whole session. */
+export const NoSummaryOnAPartlyReadRecord: Story = {
+  render: () => <SummaryPage summary={ABSENT} ended={false} paged />,
+  play: async ({ canvasElement }) => {
+    const none = await stateOf(await card(canvasElement), 'none');
+    const size = none.querySelector('[data-next-summary-size]') as HTMLElement;
+    await waitFor(() => expect(size.textContent).toMatch(/^More than \d+ entries to read/));
+    const count = /^More than (\d+) entries/.exec(size.textContent ?? '')?.[1];
+    await expect(canvasElement.querySelector('.next-session-detail-meta')).toHaveTextContent(
+      `at least ${count ?? '?'} entries`,
+    );
+  },
+};
+
 const PLAN = {
   reason: null,
   complete: true,

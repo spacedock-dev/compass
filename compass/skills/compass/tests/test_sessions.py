@@ -214,6 +214,46 @@ class CompassServerTest(RuntimeTestCase):
         self.assertEqual("haiku-b", b["worktree"])
         self.assertIsNone(top["worktree"])
 
+    def test_a_session_in_a_removed_worktree_files_under_its_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            main = Path(tmp) / "one" / "compass"
+            (main / ".git").mkdir(parents=True)
+            gone = main / ".claude" / "worktrees" / "gone" / "src"
+            config = make_config()
+            row = runtime_sessions.base_session(
+                "claude", "s", runtime_sessions.project_from_cwd(config, str(gone))
+            )
+            runtime_sessions.apply_project_identity(config, row, str(gone))
+            main_row = runtime_sessions.base_session("claude", "m", "one/compass")
+            runtime_sessions.apply_project_identity(config, main_row, str(main))
+
+        self.assertEqual("one/compass", row["project"])
+        self.assertEqual("gone", row["worktree"])
+        self.assertEqual(main_row["project_key"], row["project_key"])
+
+    def test_a_worktree_path_whose_root_is_no_repository_is_not_inferred(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gone = Path(tmp) / "plain" / ".claude" / "worktrees" / "gone"
+            config = make_config()
+            label = runtime_sessions.project_from_cwd(config, str(gone))
+            row = runtime_sessions.base_session("claude", "s", label)
+            runtime_sessions.apply_project_identity(config, row, str(gone))
+
+        self.assertEqual(label, row["project"])
+        self.assertIsNone(row["worktree"])
+
+    def test_the_git_checkout_is_read_once_per_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            main = Path(tmp) / "one" / "compass"
+            (main / ".git").mkdir(parents=True)
+            config = make_config()
+            row = runtime_sessions.base_session("claude", "s", "one/compass")
+            with mock.patch.object(
+                runtime_sessions, "_git_checkout", wraps=runtime_sessions._git_checkout
+            ) as spy:
+                runtime_sessions.apply_project_identity(config, row, str(main))
+        self.assertEqual(1, spy.call_count)
+
     def test_git_identity_collapses_main_and_worktree_without_basename_collision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
