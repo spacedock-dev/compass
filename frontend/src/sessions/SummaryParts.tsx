@@ -196,6 +196,7 @@ export function SummaryControls({
   readonly outline: { readonly entries: number | null; readonly more: boolean };
 }) {
   const shell = useShell();
+  const { model } = useDrift();
   const { grant, stored, job, held } = state;
   const failed = held.failed ? <Line data-next-summary-failed>{held.failed}</Line> : null;
   if (!grant) return null;
@@ -304,7 +305,9 @@ export function SummaryControls({
     );
   }
   const opening = state.due;
-  const size = readSize(outline.entries, outline.more, state.plan);
+  /* The header's count and this one are read from the numbered list the rows render from, so one session never
+     says 13, 20 and 22 in three places; the outline's own total stands in only until that list is read. */
+  const size = readSize(model.entryCount ?? outline.entries, outline.more, state.plan);
   if (held.opening)
     return (
       <div className="flex flex-col gap-2" data-next-summary-state="starting">

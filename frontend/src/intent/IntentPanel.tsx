@@ -161,6 +161,8 @@ export function IntentPanel({
         data-next-session-panel="intent"
       >
         {annotating ? <IntentSection /> : null}
+        {/* The design's order is Intent, what the session has done, Drift: the work reads before the verdict on it. */}
+        {summary}
         <Card
           variant="drift-panel"
           as="section"
@@ -194,7 +196,6 @@ export function IntentPanel({
           )}
           {children}
         </Card>
-        {summary}
       </div>
     </PanelContext>
   );

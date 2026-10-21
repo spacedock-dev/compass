@@ -64,6 +64,29 @@ export function labelOf(session: Row): string {
   return String(session['project'] == null ? '' : session['project']);
 }
 
+/* A title that is only an identifier (an issue key, or the session's own id) says nothing a reader can use, so
+   the goal, then the last prompt, stands in for it: its first line, cut at a width a heading can hold. Only the
+   session page's heading asks: a Sessions row keeps the title as published, since the rows are held to the recorded
+   page. */
+const IDENTIFIER_TITLE =
+  /^(?:[A-Za-z][A-Za-z0-9]{0,9}-\d+|[0-9a-f]{8}(?:-[0-9a-f]{4}){0,4}(?:-[0-9a-f]{12})?)$/i;
+const TITLE_WIDTH = 120;
+
+export function pageTitleOf(source: Row): string {
+  const goal = goalOf(source);
+  const title = trimmed(source['title']);
+  if (!title) return '';
+  if (!IDENTIFIER_TITLE.test(title) && title !== trimmed(source['sid'])) return title;
+  const words = (goal ? trimmed(goal.text) : '') || trimmed(source['last_prompt']);
+  const line =
+    words
+      .split('\n')
+      .find((part) => part.trim())
+      ?.trim() ?? '';
+  if (!line) return title;
+  return line.length > TITLE_WIDTH ? `${line.slice(0, TITLE_WIDTH - 1).trimEnd()}…` : line;
+}
+
 /* One row of the model, from one payload row. `asks` are the exact requests that belong to it,
    `harness` the payload's own row about the harness that published it, and `shared` how many rows carry
    its label. Nothing here reads the DOM, the clock or a store: a figure is derived from the payload it

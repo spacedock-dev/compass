@@ -1,8 +1,9 @@
 import { Badge } from '../ui/badge';
+import { useHoldStill } from './useHoldStill';
 import { Card } from '../ui/card';
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Disclosure, RaiseControl, disclosureKey, useFocusKey } from '../controls';
-import { endedAt, type ObservedSession, type Row } from '../observed';
+import { endedAt, pageTitleOf, type ObservedSession, type Row } from '../observed';
 import { selectObserved } from '../observed/select';
 import { sessionHome, type SessionRoute } from '../router/grammar';
 import { useDisplayed, useShell } from '../shell/context';
@@ -46,6 +47,7 @@ import {
   sessionFooter,
   sessionHealth,
   sessionMeta,
+  turnEndedSentence,
   sessionSubagents,
   sessionTasks,
 } from './detail';
@@ -143,6 +145,7 @@ function CommandSurface({
     : observed.isEnded
       ? 'session ended'
       : observed.state;
+  const turnEnd = turnEndedSentence(session);
   return (
     <div className="next-session-command-surface" aria-label="Session command surface">
       <Card
@@ -153,9 +156,9 @@ function CommandSurface({
         data-next-session-command="activity"
       >
         <span className="next-session-current-label">CURRENT ACTIVITY</span>
-        <strong
-          {...(observed.nowKnown ? {} : { className: 'next-session-absent' })}
-        >{`${state} · ${observed.nowText}`}</strong>
+        <strong {...(observed.nowKnown ? {} : { className: 'next-session-absent' })}>
+          {turnEnd ?? `${state} · ${observed.nowText}`}
+        </strong>
         {context ? (
           <InstructionLine
             session={session}
@@ -170,21 +173,13 @@ function CommandSurface({
 
 function SessionMetadata({
   session,
-  labels,
   generated,
 }: {
   readonly session: Row;
-  readonly labels: ReadonlyMap<string, string>;
   readonly generated: number | null;
 }) {
   const drift = useDrift();
-  const meta = sessionMeta(
-    session,
-    labels,
-    generated,
-    drift.model.entryCount,
-    drift.model.windowCount,
-  );
+  const meta = sessionMeta(session, generated, drift.model.entryCount, drift.model.windowCount);
   return meta ? <p className="next-session-detail-meta">{meta}</p> : null;
 }
 
@@ -192,13 +187,11 @@ function Header({
   session,
   observed,
   route,
-  labels,
   generated,
 }: {
   readonly session: Row;
   readonly observed: ObservedSession;
   readonly route: SessionRoute;
-  readonly labels: ReadonlyMap<string, string>;
   readonly generated: number | null;
 }) {
   const shell = useShell();
@@ -211,6 +204,8 @@ function Header({
      `idle` while the ask stays open. */
   const word = ended ? 'ended' : observed.askKnown ? 'needs input' : state?.label;
   const label = observed.project;
+  const title = pageTitleOf(session);
+  const showRate = observed.rateKnown && !observed.isEnded && !observed.isQuiet;
   return (
     <header
       className={`next-session-detail-header${observed.isNeeds || observed.askKnown ? ' pb-0' : ''}`}
@@ -219,23 +214,11 @@ function Header({
         <h1
           ref={titleRef}
           tabIndex={-1}
-          className={`${observed.titleKnown ? '' : 'next-session-absent'}${observed.isNeeds || observed.askKnown ? ' line-clamp-2' : ''}`}
-          title={observed.titleText}
+          className={`${title ? '' : 'next-session-absent'}${observed.isNeeds || observed.askKnown ? ' line-clamp-2' : ''}`}
+          title={title || observed.titleText}
         >
-          {observed.titleText}
+          {title || observed.titleText}
         </h1>
-        <p className="next-session-identity">
-          {`${observed.harness} · ${observed.sid}`}
-          {/* Named in full here, where it stands alone among identifiers: a bare "44 /m" said no unit. */}
-          {observed.rateKnown ? ` · ${observed.rateText.replace(/ \/m$/, ' tokens/min')}` : ''}
-          {label && sessionHome(route) !== 'projects' ? (
-            <>
-              {' · '}
-              <RouteAnchor route={{ view: 'project', project: label }}>{label}</RouteAnchor>
-            </>
-          ) : null}
-          <SessionAge session={session} generated={generated} />
-        </p>
       </div>
       <div className="next-session-detail-bar">
         {/* The state with its dot leads the measured line, which already says what the session is doing and
@@ -259,8 +242,21 @@ function Header({
             </Badge>
           </span>
         ) : null}
+        <p className="next-session-identity">
+          {`${observed.harness} · ${observed.sid}`}
+          {/* A rate belongs to a session that is producing tokens: an idle or ended one reports its last burst, which reads as speed it no longer has.
+              Named in full here, where it stands alone among identifiers: a bare "44 /m" said no unit. */}
+          {showRate ? ` · ${observed.rateText.replace(/ \/m$/, ' tokens/min')}` : ''}
+          {label && sessionHome(route) !== 'projects' ? (
+            <>
+              {' · '}
+              <RouteAnchor route={{ view: 'project', project: label }}>{label}</RouteAnchor>
+            </>
+          ) : null}
+          <SessionAge session={session} generated={generated} />
+        </p>
         {!(observed.isNeeds || observed.askKnown) ? (
-          <SessionMetadata session={session} labels={labels} generated={generated} />
+          <SessionMetadata session={session} generated={generated} />
         ) : null}
         <DriftPill />
         <Controls session={session} observed={observed} route={route} />
@@ -304,6 +300,8 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
   const asks = useMemo(() => sessionAsks(payload, session), [payload, session]);
   usePruneAnswerNotes(payload);
   const scope = `${route.harness ?? ''}:${route.session}`;
+  const [page, setPage] = useState<HTMLElement | null>(null);
+  useHoldStill(page);
   if (!observed) return null;
   const blocked = observed.isNeeds ? ' next-session-detail--blocked' : '';
   const state = detailState(session['state']);
@@ -318,6 +316,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
   const factKey = (name: string) => disclosureKey({ project: route.project, scope, name });
   return (
     <article
+      ref={setPage}
       className={`next-session-detail${blocked}`}
       data-next-session-detail={String(session['sid'] ?? '')}
       {...(state ? { 'data-next-session-state': state.token } : {})}
@@ -325,13 +324,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
     >
       <ReadingCapBanner payload={payload} />
       <DriftProvider session={session} payload={payload} project={route.project}>
-        <Header
-          session={session}
-          observed={observed}
-          route={route}
-          labels={labels}
-          generated={generated}
-        />
+        <Header session={session} observed={observed} route={route} generated={generated} />
         {observed.askKnown ? (
           <AnswerBlock
             payload={payload}
@@ -361,7 +354,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
           </DriftSlot>
           <FullActivity project={route.project} session={session}>
             {observed.isNeeds || observed.askKnown ? (
-              <SessionMetadata session={session} labels={labels} generated={generated} />
+              <SessionMetadata session={session} generated={generated} />
             ) : null}
             <CommandSurface session={session} observed={observed} generated={generated} />
             {/* The numbered record every "#<n>" on this page names, right after CURRENT ACTIVITY. */}

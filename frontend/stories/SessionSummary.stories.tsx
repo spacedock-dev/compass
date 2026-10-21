@@ -273,7 +273,7 @@ export const NoSummary: Story = {
     ).toBeTruthy();
     // The estimate sits beside Summarize, in the one row.
     const size = none.querySelector('[data-next-summary-size]') as HTMLElement;
-    await expect(size).toHaveTextContent('About 6 entries to read.');
+    await expect(size).toHaveTextContent('About 8 entries to read.');
     const press = within(none).getByRole('button', { name: 'Summarize' });
     await expect(size.parentElement).toBe(press.parentElement);
     const sent = within(none).getByRole('button', { name: 'What is sent to Claude Code' });
@@ -321,7 +321,7 @@ export const NoSummaryPlanned: Story = {
   play: async ({ canvasElement }) => {
     const none = await stateOf(await card(canvasElement), 'none');
     await expect(none.querySelector('[data-next-summary-size]')).toHaveTextContent(
-      /^About 6 entries to read in 4 parts, up to 10 minutes\.$/,
+      /^About 8 entries to read in 4 parts, up to 10 minutes\.$/,
     );
     await poll();
     await expect(summaryPosts()).toHaveLength(0);
@@ -344,7 +344,7 @@ export const NoSummaryPlannedPartly: Story = {
   play: async ({ canvasElement }) => {
     const none = await stateOf(await card(canvasElement), 'none');
     await expect(none.querySelector('[data-next-summary-size]')).toHaveTextContent(
-      /^More than 6 entries to read in at least 1 part, up to 1 minute\.$/,
+      /^More than 8 entries to read in at least 1 part, up to 1 minute\.$/,
     );
   },
 };

@@ -17,6 +17,15 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-21, the session header reads as one line, as the redesign draws it: the state, the identity, the measured words and the controls share one
+row under the title, and the measured line no longer opens with the harness's label, which the identity beside it
+already names. A session between turns shows no token rate, and a finished turn says "Turn ended 11:00 · waiting
+for you" in the measured line and under CURRENT ACTIVITY where the recording says "awaiting your message". The
+recorded text is restated before the comparison, in `detail.differential.test.tsx`
+(`projectRecordedHarnessWord`, `projectRecordedTurnEnd`); every other word of the header stays held to the
+recording, and the golden files are unchanged. The session page also draws What the session has done before the
+Drift card, which the comparison already excluded with the panel.
+
 2026-10-21, a later direction is quoted where it is settled
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-a-later-direction-is-quoted-where-it-is-settled)):
 a saved line's source reads "added from your 11:05 message" where the retired page said "added from #7".

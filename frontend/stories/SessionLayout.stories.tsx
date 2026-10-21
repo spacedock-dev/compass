@@ -102,6 +102,7 @@ function PageExample({
   windowStart = G - 200,
   stallOlder = false,
   ended = false,
+  idle = false,
   readingWindow = G - 200,
 }: {
   readonly asking?: boolean;
@@ -109,6 +110,7 @@ function PageExample({
   readonly windowStart?: number;
   readonly stallOlder?: boolean;
   readonly ended?: boolean;
+  readonly idle?: boolean;
   readonly readingWindow?: number;
 }) {
   const [shell] = useState(() => {
@@ -157,6 +159,9 @@ function PageExample({
                 fallback: false,
               }),
             },
+            harnesses: [
+              { key: 'claude', label: 'Claude Code', reports_rate: true, discovered: true },
+            ],
             ...(log.asking ? { ask: true, asks: [ASK] } : {}),
             sessions: [
               {
@@ -165,11 +170,16 @@ function PageExample({
                 project: 'demo',
                 project_key: '/demo',
                 title: 'Synthetic layout session',
-                state: log.asking ? 'needs_input' : 'working',
+                state: log.asking ? 'needs_input' : idle ? 'idle' : 'working',
                 started_at: G - 3600,
-                tasks: [{ subject: 'running Bash', status: 'in_progress' }],
-                state_detail: 'running Bash',
-                turn: { elapsed_h: '3m' },
+                rate_per_min: 1450,
+                ...(idle
+                  ? { finished_at: G - 600, state_detail: 'awaiting your message' }
+                  : {
+                      tasks: [{ subject: 'running Bash', status: 'in_progress' }],
+                      state_detail: 'running Bash',
+                      turn: { elapsed_h: '3m' },
+                    }),
                 delegated_launches: 2,
                 delegated_unpaired: 1,
                 delegated_visibility: 'full',
@@ -247,7 +257,7 @@ function PageExample({
   );
 }
 
-const ORDER = ['Asked you', 'Intent', 'Drift', 'What the session has done', 'Full activity'];
+const ORDER = ['Asked you', 'Intent', 'What the session has done', 'Drift', 'Full activity'];
 
 /* The page's own regions, by role and accessible name, in document order. */
 function regions(root: HTMLElement): HTMLElement[] {
@@ -298,7 +308,7 @@ export const RegionsInOrder: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
-    const expected = ['Intent', 'Drift', 'What the session has done', 'Full activity'];
+    const expected = ['Intent', 'What the session has done', 'Drift', 'Full activity'];
     for (const width of [1280, 400]) {
       await atWidth(width, () => inOrderTopToBottom(canvasElement, expected));
     }
@@ -306,11 +316,69 @@ export const RegionsInOrder: Story = {
     const status = canvasElement.querySelector('[data-next-session-status]') as HTMLElement;
     await expect(status).toHaveTextContent('State: working');
     await expect(status.querySelector('[data-next-session-status-dot]')).toBeVisible();
-    await expect(status.nextElementSibling).toHaveTextContent(/running Bash · turn started 3m ago/);
+    const meta = canvasElement.querySelector('.next-session-detail-meta') as HTMLElement;
+    await expect(meta).toHaveTextContent(/running Bash · turn started 3m ago/);
+    // One line, as the design draws it: the state, the identity with its rate and the measured words share a row.
+    const identity = canvasElement.querySelector('.next-session-identity') as HTMLElement;
+    await expect(identity).toHaveTextContent('1,450 tokens/min');
+    await atWidth(1280, async () => {
+      const rows = [status, identity, meta].map((node) => node.getBoundingClientRect());
+      for (const box of rows)
+        await expect(Math.abs(box.top - (rows[0] as DOMRect).top)).toBeLessThan(12);
+    });
     await expect(canvas.getByText(WHAT_IT_DID_PLACEHOLDER)).toBeVisible();
     await expect(canvas.getByRole('button', { name: 'Full activity' })).toHaveAttribute(
       'aria-expanded',
       'false',
+    );
+  },
+};
+
+/* A session between turns has no rate to show: the last burst reads as speed it no longer has. A finished turn says
+   when it ended and that the session waits on the reader. */
+export const IdleShowsNoRate: Story = {
+  render: () => <PageExample idle />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    const header = canvasElement.querySelector('.next-session-detail-header') as HTMLElement;
+    await expect(header).toHaveTextContent('State: idle');
+    await expect(header).not.toHaveTextContent('tokens/min');
+    await expect(header).toHaveTextContent(/Turn ended \d\d:\d\d · waiting for you/);
+    await expect(canvasElement).not.toHaveTextContent('idle · awaiting your message');
+  },
+};
+
+/* The page holds still under the reader: content arriving above a control the pointer is on moves the
+   viewport by what it added, so the control stays where the reader aimed. The answer block is the growth here,
+   drawn above every card when a board poll brings a question. A DOM `click()` runs the poll without moving the
+   pointer, as a poll that arrives on its own does. */
+export const HoldsControlUnderPointer: Story = {
+  render: () => <PageExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('heading', { level: 1, name: 'Synthetic layout session' });
+    const control = await canvas.findByRole('button', { name: 'Full activity' });
+    await userEvent.hover(control);
+    const before = control.getBoundingClientRect().top;
+    log.asking = true;
+    (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
+    await waitFor(() =>
+      expect(canvasElement.querySelector('.next-session-ask-question')).not.toBeNull(),
+    );
+    await waitFor(() =>
+      expect(Math.abs(control.getBoundingClientRect().top - before)).toBeLessThan(1.5),
+    );
+    // Content leaving above moves it back the same way, so a press never lands on what slid under it.
+    const grown = window.scrollY;
+    await expect(grown).toBeGreaterThan(0);
+    log.asking = false;
+    (canvas.getByRole('button', { name: 'Simulate board poll' }) as HTMLButtonElement).click();
+    await waitFor(() =>
+      expect(canvasElement.querySelector('.next-session-ask-question')).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(Math.abs(control.getBoundingClientRect().top - before)).toBeLessThan(1.5),
     );
   },
 };
@@ -642,8 +710,8 @@ export const QuestionLeadsAndAnswersOnce: Story = {
     await waitFor(() =>
       expect(named(canvasElement)).toEqual([
         'Intent',
-        'Drift',
         'What the session has done',
+        'Drift',
         'Full activity',
       ]),
     );
