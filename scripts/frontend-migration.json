@@ -1378,6 +1378,17 @@
       ],
       "contract": "Closed until opened; kept open across redraws and a refreshed summary under summary-hidden:<phase place>:cites:<cited entry ids>, so a shifted run does not open another run's reasons. A run that cites nothing is keyed by its place.",
       "disposition": "stable-identity"
+    },
+    {
+      "name": "The departures the last drawn reading carried, and what the next reading cleared",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/DriftLevelNeedsDeparture.stories.tsx",
+        "frontend/stories/DriftPastedCorrection.stories.tsx",
+        "frontend/src/drift/ClearedDeparture.test.tsx"
+      ],
+      "contract": "Held for the life of the tab, one per session, bounded at 16, never stored. A later reading with no departure, after one this tab drew with some, is named once as clearing them, and the reading after it takes the line down; a reload says nothing.",
+      "disposition": "store-held"
     }
   ],
   "storage": [
