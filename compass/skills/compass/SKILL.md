@@ -125,7 +125,7 @@ done** card, and a **Drift** card with the `Analyze drift` control, what an anal
 sends under it, the reading, and every departure on record, asked for or not. While a direction you
 gave after your intent is unsettled, the question about it stands where `Analyze drift` would be
 (see below). On Claude Code and Codex, What the session has done shows Compass's own outline of
-the record, one group per message of yours with its checks, failures and folders, made with no model
+the record, one group per message of yours, opening at your first, in short sentences naming its checks, failures and folders, made with no model
 call; other harnesses keep no record it can page through and say so. On Claude Code it also holds a
 model-written summary in phases, each line citing the entries it rests on: a finished session is
 summarized when you open it, once Compass has observed its end (without one the card offers

@@ -20,6 +20,10 @@ export interface OutlineBlock {
     readonly title: string;
     readonly at: number | null;
   } | null;
+  /** The session's first part. Always shown, even when the read's newest window begins after it. */
+  readonly opening: boolean;
+  /** The first part's read ended before the next prompt, so its counts are a floor. */
+  readonly partial: boolean;
   readonly span: {
     readonly first: string;
     readonly last: string;
@@ -28,7 +32,10 @@ export interface OutlineBlock {
   };
   readonly counts: {
     readonly checks: number;
+    /** Checks whose newest failed run in this part no later pass followed. */
     readonly checksFailed: number;
+    /** Checks that failed in this part and passed on a later run: a red test that was fixed. */
+    readonly checksFixed: number;
     readonly files: number;
     readonly agentMessages: number;
     readonly subagentEntries: number;
@@ -86,6 +93,8 @@ function block(row: Raw): OutlineBlock | null {
       prompt && text(prompt['fact_id'])
         ? { factId: text(prompt['fact_id']), title: text(prompt['title']), at: time(prompt['at']) }
         : null,
+    opening: row['opening'] === true,
+    partial: row['partial'] === true,
     span: {
       first,
       last,
@@ -95,6 +104,7 @@ function block(row: Raw): OutlineBlock | null {
     counts: {
       checks: count(counts['checks']),
       checksFailed: count(counts['checks_failed']),
+      checksFixed: count(counts['checks_fixed']),
       files: count(counts['files']),
       agentMessages: count(counts['agent_messages']),
       subagentEntries: count(counts['subagent_entries']),

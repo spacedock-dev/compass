@@ -311,7 +311,7 @@ describe('what the card says', () => {
   });
   it('points at the outline only where one is drawn, and says summaries are off everywhere', () => {
     expect(SUMMARY_NOT_CLAUDE('Gemini CLI', false)).not.toContain('outline');
-    expect(SUMMARY_NOT_CLAUDE('Codex')).toContain('The outline below');
+    expect(SUMMARY_NOT_CLAUDE('Codex')).toContain('The outline above');
     // One switch for the machine: the sentence once said "this session".
     expect(SUMMARY_OFF).toContain('every session');
     expect(SUMMARY_OFF).not.toContain('this session');

@@ -6,22 +6,68 @@ import math
 import os
 import time
 from collections import Counter
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
 from . import observer, session_source, session_summary
 from . import state as runtime_state
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from .config import RuntimeConfig
     from .state import RuntimeState
 
 
-def _block(entries: list[session_source.SourceEntry], highlights: int) -> dict[str, Any]:
+@dataclass(frozen=True)
+class _Opening:
+    """The session's first prompt and the work under it, read from the start of the record."""
+
+    entries: tuple[session_source.SourceEntry, ...]
+    # The read stopped before the next prompt, so the counts under the first prompt are a floor.
+    partial: bool
+
+
+def _groups(
+    entries: Iterable[session_source.SourceEntry],
+) -> list[list[session_source.SourceEntry]]:
+    groups: list[list[session_source.SourceEntry]] = []
+    for entry in entries:
+        if entry.kind == "person" or not groups:
+            groups.append([])
+        groups[-1].append(entry)
+    return groups
+
+
+def _fixed(entries: Iterable[session_source.SourceEntry]) -> set[str]:
+    """Failed runs a later passing run of the same check followed: a red test that was fixed."""
+    passed: set[str] = set()
+    fixed: set[str] = set()
+    for entry in reversed(list(entries)):
+        if entry.kind != "check" or entry.subject is None:
+            continue
+        if entry.result == "passed":
+            passed.add(entry.subject)
+        elif entry.result == "failed" and entry.subject in passed:
+            fixed.add(entry.fact_id)
+    return fixed
+
+
+def _block(
+    entries: Sequence[session_source.SourceEntry],
+    highlights: int,
+    fixed: set[str],
+    *,
+    opening: bool = False,
+    partial: bool = False,
+) -> dict[str, Any]:
     first, last = entries[0], entries[-1]
     checks = [entry for entry in entries if entry.kind == "check"]
-    failures = [entry for entry in checks if entry.result == "failed"]
     folders = Counter(entry.folder for entry in entries if entry.kind == "file")
+    # One row per check, its newest failed run in the part: the same failure listed twice was two
+    # runs of one check. A run that a later pass followed is fixed, not failing.
+    latest = {entry.subject or entry.fact_id: entry for entry in checks if entry.result == "failed"}
+    failures = [entry for entry in latest.values() if entry.fact_id not in fixed]
 
     def check(entry: session_source.SourceEntry) -> dict[str, Any]:
         public = session_source.entry_for_page(entry)
@@ -31,6 +77,8 @@ def _block(entries: list[session_source.SourceEntry], highlights: int) -> dict[s
         "prompt": {"fact_id": first.fact_id, "title": first.title, "at": first.at}
         if first.kind == "person"
         else None,
+        "opening": opening,
+        "partial": partial,
         "span": {
             "first": first.fact_id,
             "last": last.fact_id,
@@ -41,6 +89,7 @@ def _block(entries: list[session_source.SourceEntry], highlights: int) -> dict[s
         "counts": {
             "checks": len(checks),
             "checks_failed": len(failures),
+            "checks_fixed": len(latest) - len(failures),
             "files": sum(entry.kind == "file" for entry in entries),
             "agent_messages": sum(entry.kind == "agent" for entry in entries),
             "subagent_entries": sum(entry.actor == "subagent" for entry in entries),
@@ -56,15 +105,35 @@ def _block(entries: list[session_source.SourceEntry], highlights: int) -> dict[s
     }
 
 
-def build(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, Any]:
-    """One block per person's message, including work before the first held prompt."""
-    groups: list[list[session_source.SourceEntry]] = []
-    for entry in page.entries:
-        if entry.kind == "person" or not groups:
-            groups.append([])
-        groups[-1].append(entry)
+def build(
+    page: session_source.SourcePage, config: RuntimeConfig, opening: _Opening | None = None
+) -> dict[str, Any]:
+    """One block per person's message, opening with the session's first one.
+
+    `opening` is the first prompt's part, read from the start when the newest window began after
+    it. The first part is always shown; the block cap bounds the newest parts after it.
+    """
+    groups = _groups(page.entries)
+    head = opening
+    if head is None and groups:
+        head = _Opening(tuple(groups[0]), partial=False)
+        groups = groups[1:]
     cap = max(0, config.session_outline_max_blocks)
-    more = max(0, len(groups) - cap)
+    more = max(0, len(groups) - cap) if cap else len(groups) + (head is not None)
+    highlights = max(0, config.session_outline_highlights)
+    fixed = _fixed([*(opening.entries if opening else ()), *page.entries])
+    blocks = (
+        [
+            *(
+                [_block(head.entries, highlights, fixed, opening=True, partial=head.partial)]
+                if head
+                else []
+            ),
+            *(_block(group, highlights, fixed) for group in groups[more:]),
+        ]
+        if cap
+        else []
+    )
     coverage = asdict(page.coverage) if page.coverage else None
     if coverage is not None:
         coverage["unread"] = list(coverage["unread"])
@@ -80,11 +149,7 @@ def build(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, A
         else page.state,
         "harness": page.harness,
         "coverage": coverage,
-        "blocks": [
-            _block(group, max(0, config.session_outline_highlights)) for group in groups[more:]
-        ]
-        if cap
-        else [],
+        "blocks": blocks,
         "more_blocks": more,
     }
 
@@ -95,6 +160,38 @@ def unmatched(config: RuntimeConfig, harness: str, sid: str) -> dict[str, Any]:
         **build(session_source.SourcePage("unavailable", harness, sid), config),
         "reason": "session_not_matched",
     }
+
+
+def _head(
+    config: RuntimeConfig, path: str, harness: str, sid: str, window_start: int
+) -> tuple[_Opening | None, bool]:
+    """The first prompt's part, read from byte zero up to where the newest window begins.
+
+    A busy session passes the window's byte bound in minutes, and the window then starts after its
+    own first prompt. The read stops at the window so the two never overlap. Returns whether its
+    clock clipped it, which keeps the outline from being cached.
+    """
+    budget = min(max(0, config.session_outline_head_bytes), window_start)
+    if budget <= 0:
+        return None, False
+    page = session_source.read(
+        config,
+        path,
+        harness,
+        sid,
+        max_bytes=budget,
+        deadline=time.monotonic() + config.session_outline_max_seconds,
+    )
+    clipped = page.coverage is not None and any(
+        region.reason == "time" for region in page.coverage.unread
+    )
+    if page.state != "ok":
+        return None, clipped
+    groups = _groups(page.entries)
+    for number, group in enumerate(groups):
+        if group[0].kind == "person":
+            return _Opening(tuple(group), partial=number == len(groups) - 1), clipped
+    return None, clipped
 
 
 def _plan(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, Any] | None:
@@ -145,6 +242,7 @@ def for_session_with_plan(
             return build(session_source.SourcePage("unavailable", harness, sid), config), None
         bounds = (
             config.session_outline_max_bytes,
+            config.session_outline_head_bytes,
             config.session_outline_max_seconds,
             config.session_outline_max_blocks,
             config.session_outline_highlights,
@@ -168,18 +266,25 @@ def for_session_with_plan(
             max_bytes=config.session_outline_max_bytes,
             deadline=time.monotonic() + config.session_outline_max_seconds,
         )
-        result = (build(page, config), _plan(page, config))
+        opening, head_clipped = (
+            _head(config, path, harness, sid, page.coverage.start_offset)
+            if page.state == "ok" and page.coverage is not None and page.coverage.start_offset > 0
+            else (None, False)
+        )
+        result = (build(page, config, opening), _plan(page, config))
         try:
             unchanged = session_source.source_stamps(path, harness) == stamps
         except OSError:
             unchanged = False
         if not unchanged:
             return build(session_source.SourcePage("stale", harness, sid), config), None
-        clipped = page.coverage is not None and any(
-            region.reason == "time" for region in page.coverage.unread
+        clipped = head_clipped or (
+            page.coverage is not None
+            and any(region.reason == "time" for region in page.coverage.unread)
         )
-        # A time-clipped window is short of its newest turns; caching it would serve that
-        # clipped outline until the transcript changed, so the next poll retries instead.
+        # A time-clipped window is short of its newest turns, and a clipped head of its first
+        # prompt's part; caching either would serve it until the transcript changed, so the next
+        # poll retries instead.
         if page.state == "ok" and not clipped:
             runtime_state.bounded_put(
                 state.session_outlines,
