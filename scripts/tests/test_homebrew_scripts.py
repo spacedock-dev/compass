@@ -382,6 +382,39 @@ class PublishHomebrewTest(unittest.TestCase):
         self.assertIn("rejected the push 3 times", done.stderr)
         self.assertEqual(["seed"], self.commits())
 
+    def test_a_concurrent_tap_commit_is_kept_not_overwritten(self) -> None:
+        # Another product's commit lands after our clone and before our push. A force push would
+        # erase it; the retry must build on it. The python3 shim lands it once, at the point
+        # between clone and push where the script first calls python3.
+        other = self.root / "other"
+        self.git(self.root, "clone", "--quiet", str(self.remote), str(other))
+        (other / "Formula" / "other.rb").write_text(
+            "class Other < Formula\nend\n", encoding="utf-8"
+        )
+        self.git(other, "add", "Formula/other.rb")
+        self.git(
+            other, "-c", "user.name=other", "-c", "user.email=other@example.com",
+            "commit", "--quiet", "-m", "other",
+        )  # fmt: skip
+        landed = self.root / "landed-once"
+        shim = self.root / "bin"
+        shim.mkdir()
+        (shim / "python3").write_text(
+            "#!/bin/sh\n"
+            f'if [ ! -e "{landed}" ]; then touch "{landed}"; '
+            f'git -C "{other}" push --quiet "{self.remote}" HEAD:main; fi\n'
+            f'exec "{sys.executable}" "$@"\n',
+            encoding="utf-8",
+        )
+        (shim / "python3").chmod(0o755)
+        self.env["PATH"] = f"{shim}{os.pathsep}{os.environ['PATH']}"
+
+        done = self.publish("v1.3.0")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertTrue(landed.exists())
+        self.assertEqual(["compass 1.3.0", "other", "seed"], self.commits())
+
     def test_it_pushes_nothing_when_the_release_has_no_checksums(self) -> None:
         done = self.publish("v1.9.0")
 
