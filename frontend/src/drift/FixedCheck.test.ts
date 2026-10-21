@@ -20,10 +20,12 @@ const check = (
   result: string,
   at: number,
   summary = 'pytest -q tests/test_retry.py',
+  checkId = `check:${summary}`,
 ) => ({
   id,
   type: 'tool_report',
   subject: 'check',
+  checkId,
   summary,
   result,
   at,
@@ -42,6 +44,38 @@ describe('a failed check a later run fixed', () => {
       person,
       check('c1', 'failed', 200),
       check('c2', 'passed', 300, 'ruff check .'),
+    );
+    expect(failedChecksAfterPerson(entries, null, 0).map((entry) => entry.id)).toEqual(['c1']);
+  });
+
+  it('stays failed where the same command line passed in another directory', () => {
+    const entries = held(
+      person,
+      check('c1', 'failed', 200, 'pytest -q', 'check:api'),
+      check('c2', 'passed', 300, 'pytest -q', 'check:web'),
+    );
+    expect(failedChecksAfterPerson(entries, null, 0).map((entry) => entry.id)).toEqual(['c1']);
+    const shown = {
+      result: 'consistent with the evidence read',
+      restsOn: 'tool',
+      citedIds: ['c2'],
+    };
+    const shape = {
+      criteria: [
+        { ...shown, key: 'goal' },
+        { ...shown, key: 'line_1' },
+      ],
+      departures: [],
+      windowStart: 100,
+    } as never;
+    expect(driftAnswer(shape, entries, null).kind).toBe('failed-check');
+  });
+
+  it('stays failed where the failed run carries no identity', () => {
+    const entries = held(
+      person,
+      check('c1', 'failed', 200, 'pytest -q', ''),
+      check('c2', 'passed', 300, 'pytest -q', ''),
     );
     expect(failedChecksAfterPerson(entries, null, 0).map((entry) => entry.id)).toEqual(['c1']);
   });

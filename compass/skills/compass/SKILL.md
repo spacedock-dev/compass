@@ -432,10 +432,11 @@ Save intent. A saved line names when you said it ("added from your 11:05 message
 opens that listed direction too. The prompt menu resolves choices when opened. An unsettled direction at
 or before a stored reading demotes its intent rows; a later message labels the reading as preceding it.
 
-Delegated work names recorded launches and their clocks when present. Missing or partial
-attribution says Compass cannot see all the work; a missing count is not zero. An unpaired
-launch followed by thirty quiet minutes in the last turn adds an At-risk item and a question
-to copy into the session. It records no finding about whether a process is running or finished.
+Delegated work has no line on the Drift card. An unpaired launch followed by thirty quiet
+minutes in the last turn adds an At-risk item and a question to copy into the session, and that
+item names the recorded launches and their clocks. Missing or partial attribution says Compass
+cannot see all the work; a missing count is not zero. It records no finding about whether a
+process is running or finished.
 
 A reading you asked for states its departures once, in its result. What the checks run while you
 were away raised is reviewed under `Raised while you were away: N`, drawn only where they raised
@@ -523,7 +524,8 @@ find and, where every line is consistent but the level is held back, why. The li
 drawn beside a reading that stands. The header pill adds "so far" while the session runs. A
 departure that an earlier reading found and the next one does not is named once on that reading.
 The answer follows: "Departs from your intent" with a count and
-each departure's own account under a departure, otherwise a failed check after your last message,
+each departure's own account under a departure, otherwise a failed check after your last message
+that a later pass of the same check, in the same directory, did not follow,
 "Can't tell", "Not reached at this stop", or "Nothing found against what it read". Coverage beside it names a measured partial
 message tail, unlisted passes or writes, checks that did not fit and an adopted-source fallback.
 An older reading says coverage was not recorded. A tail starting inside the intent window tags

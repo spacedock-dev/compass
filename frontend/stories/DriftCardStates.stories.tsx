@@ -255,9 +255,19 @@ const ALL_CONSISTENT = {
   },
   annotation_reading_count: 1,
 };
-const RED = failedCheck('c1', 500);
+/* The pairing is by the check's identity, which the server derives from the directory as well as the command
+   line, so the same `pytest -q` in another package is another check. */
+const RED = { ...failedCheck('c1', 500), check_id: 'check:api' };
 const FIXED = fact('c3', 600, {
   subject: 'check',
+  check_id: 'check:api',
+  result: 'passed',
+  result_source: 'passed flag',
+  summary: 'pytest -q',
+});
+const PASSED_ELSEWHERE = fact('c4', 600, {
+  subject: 'check',
+  check_id: 'check:web',
   result: 'passed',
   result_source: 'passed flag',
   summary: 'pytest -q',
@@ -278,6 +288,16 @@ export const AFixedRedTestRaisesNoFailedCheck: Story = {
 
 export const AFailedCheckNothingFixedStillRaisesIt: Story = {
   ...scenario({ session: ALL_CONSISTENT, facts: [PERSON, RED, SAID] }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await readingDrawn(card);
+    const verdict = card.querySelector('[data-next-drift-verdict]') as HTMLElement;
+    await expect(verdict).toHaveTextContent(/^A check failed at \d\d:\d\d\./);
+  },
+};
+
+export const APassOfTheSameCommandInAnotherDirectoryFixesNothing: Story = {
+  ...scenario({ session: ALL_CONSISTENT, facts: [PERSON, RED, PASSED_ELSEWHERE, SAID] }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     await readingDrawn(card);

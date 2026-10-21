@@ -264,15 +264,22 @@ export function claimsDrawn(shape: Shape): Criterion[] {
 
 /* A failed run a later pass of the same check followed: a red test written first and then fixed, which is the
    work going as planned. The outline's rule (`session_outline._fixed`), held for the Drift card, because the
-   page keeps the entries of earlier loads and so can hold both runs of one check. The same check is the same
-   command line, as the entry's own summary says it. */
+   page keeps the entries of earlier loads and so can hold both runs of one check. The same check is the
+   server's own identity for it, which includes the directory it ran in: the command line alone says the same
+   thing for `pytest -q` in two packages, and a pass in one must not hide a failure in the other. An entry
+   that carries no identity is never matched, so it stays failed. */
 function fixedFailures(entries: readonly WorkEntry[]): ReadonlySet<WorkEntry> {
   const passedAt = new Map<string, number>();
   for (const entry of entries) {
-    if (entry.type !== 'tool_report' || entry.subject !== 'check' || entry.result !== 'passed')
+    if (
+      entry.type !== 'tool_report' ||
+      entry.subject !== 'check' ||
+      entry.result !== 'passed' ||
+      !entry.checkId
+    )
       continue;
     const at = evidenceAt(entry) || 0;
-    passedAt.set(entry.summary, Math.max(passedAt.get(entry.summary) ?? 0, at));
+    passedAt.set(entry.checkId, Math.max(passedAt.get(entry.checkId) ?? 0, at));
   }
   return new Set(
     entries.filter(
@@ -280,7 +287,8 @@ function fixedFailures(entries: readonly WorkEntry[]): ReadonlySet<WorkEntry> {
         entry.type === 'tool_report' &&
         entry.subject === 'check' &&
         entry.result === 'failed' &&
-        (passedAt.get(entry.summary) ?? 0) > (evidenceAt(entry) || 0),
+        Boolean(entry.checkId) &&
+        (passedAt.get(entry.checkId) ?? 0) > (evidenceAt(entry) || 0),
     ),
   );
 }

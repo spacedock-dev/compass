@@ -225,6 +225,30 @@ class WhatAReaderSeesOfTheChecksASessionRan(ClaudeChecksTestCase):
         self.assertEqual(1, scan["distinct_checks"])
         self.assertEqual(1, scan["written_paths"])
 
+    def test_a_check_publishes_an_identity_that_a_directory_changes(self) -> None:
+        # The page pairs a failed run with a later pass by this identity. The command line is the
+        # same in both directories, so only the identity can keep a pass in one from hiding a
+        # failure in the other.
+        self.session.bash("cd api && pytest -q", "1 failed in 0.1s", is_error=True)
+        self.session.bash("cd web && pytest -q", "1 passed in 0.1s", is_error=False)
+        self.session.bash("cd api && pytest -q", "1 failed in 0.1s", is_error=True)
+
+        checks = self.checks()
+
+        self.assertEqual(2, len(checks), checks)
+        self.assertEqual({"pytest -q"}, {check["title"] for check in checks})
+        identities = {check["check_id"] for check in checks}
+        self.assertEqual(2, len(identities))
+        self.assertTrue(all(identity.startswith("check:") for identity in identities))
+
+    def test_a_written_path_carries_no_check_identity(self) -> None:
+        self.session.write(self.file("src/retry.py"))
+        self.session.bash("pytest -q", "1 passed in 0.1s", is_error=False)
+
+        events, _scan = self.read()
+
+        self.assertNotIn("check_id", next(event for event in events if event["subject"] == "write"))
+
     def test_a_piped_run_whose_tail_says_two_failed_is_a_failure_whatever_the_flag(self) -> None:
         self.session.bash(
             "pytest -q 2>&1 | tail -3",

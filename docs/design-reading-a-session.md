@@ -5437,7 +5437,9 @@ had stopped after a true running claim. A background launch followed by thirty
 quiet minutes occurred at five stops, including both stalls and two development
 servers deliberately left running. The parser cannot distinguish those uses.
 
-The page shows Delegated work only for recorded launches, with counts and clocks. Partial or
+The page names recorded launches, with counts and clocks, only inside the At-risk item below; the
+Drift card no longer draws a Delegated work line
+([the amendment](#where-everything-in-more-went)). Partial or
 unavailable attribution is named; an unknown count stays unknown. Unpaired and quiet counts
 concern this session's own launches, while launch totals can include admitted children. Thirty
 quiet minutes after an unpaired launch in the last turn adds an At-risk item and a generic
@@ -5555,7 +5557,7 @@ sentence about work the page cannot see stay reachable.
 | 6b | Live monitor | Moves into More. It is off by default and needs no model. | DEC-26 item 4 (placement only) |
 | 6c | Discard everything | Moves into More and stays reachable. | Nothing; SECURITY.md still describes it |
 | 6d | What analysis does | Replaced by the "How Intent and drift works" popup. One explainer, not two. | Nothing |
-| 6e | Delegated work | Moves into More and stays reachable from Analyze drift. It is an honest limit. | Nothing |
+| 6e | Delegated work | Moved into More and stayed reachable from Analyze drift. Amended 2026-10-21: the Drift card no longer draws the line, and the launches surface only in the At-risk item ([where it went](#where-everything-in-more-went)). It is an honest limit. | Nothing |
 | 6f | Pause model calls | Moves into More. The promise map's off switch stays. | Nothing |
 | 6g | Add to my intent on each activity row | Always visible on a row that holds a later direction. Amended 2026-10-12: a control that appears only on hover is one a reader never learns is there. DEC-24 item 3 needs it. | Nothing |
 | 6h | "No terminal to raise" and its "Why" | Shown only when the session is blocked on the reader. | DEC-20 (the raise is primary when a session is blocked) |
@@ -6035,7 +6037,10 @@ unchanged.
     keeps the sentence that says where the agent made it and that the record read is the board's recent
     tail.
 12. **A fixed red test is not a failed check.** A failed run that a later pass of the same check followed,
-    the same command line, is a red test written first and fixed. It raises neither the failed-check verdict
+    the same check being the server's own identity for it (the directory it ran in and its command line,
+    published on each check as `check_id`), is a red test written first and fixed. The command line alone is
+    not the identity: `pytest -q` passing in one package says nothing of it failing in another, and a check
+    that carries no identity is never matched. It raises neither the failed-check verdict
     nor Steer back's "A check the agent ran failed", the rule the session outline already holds for its
     phases. The server's list is one run per check and never holds a fixed one; the page keeps the entries
     of earlier loads, so it can.
