@@ -2,12 +2,12 @@ import { Button } from '../ui/button';
 import { compatSessKey } from '../api/identity';
 import { useFocusKey } from '../controls';
 import { useShell } from '../shell/context';
-import { LIVE_HARNESSES, useLiveMonitor } from './liveMonitor';
+import { liveMonitorShown, useLiveMonitor } from './liveMonitor';
 import { LIVE_MONITOR } from './sentences';
 import { LIVE_HINT } from '../drift/sentences';
 import { usePanel } from './useIntent';
 
-/* Drawn in the Drift card's head; placement only: its value still decides whether the live level, nudge and
+/* Drawn in the Drift card's settings, one press from its head; placement only: its value still decides whether the live level, nudge and
    header pill are drawn, never whether the server or a model runs. */
 export function LiveMonitorSwitch() {
   const shell = useShell();
@@ -19,12 +19,10 @@ export function LiveMonitorSwitch() {
     session: String(session['session'] || ''),
   });
   const ref = useFocusKey<HTMLButtonElement>(shell.controls.focusLane, `live-monitor:${key}`);
-  if (!LIVE_HARNESSES.has(String(session['harness'] || '')) || payload['annotate'] !== true) {
-    return null;
-  }
+  if (!liveMonitorShown(session, payload)) return null;
   return (
-    <div className="flex max-w-[22rem] flex-col items-end gap-1 max-[760px]:items-start">
-      <div className="next-session-drift-monitor">
+    <div className="flex max-w-[22rem] flex-col items-start gap-1">
+      <div className="next-session-drift-monitor mt-0">
         <span id="next-session-drift-monitor-label">{LIVE_MONITOR}</span>
         <Button
           variant="native"
@@ -49,7 +47,7 @@ export function LiveMonitorSwitch() {
       </div>
       <p
         id="next-session-drift-monitor-hint"
-        className="m-0 text-right text-label leading-[1.4] text-muted-foreground max-[760px]:text-left"
+        className="m-0 text-label leading-[1.4] text-muted-foreground"
         data-next-live-hint
       >
         {LIVE_HINT}

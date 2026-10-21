@@ -2,7 +2,7 @@ import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import { useMemo, type ReactNode } from 'react';
 import { Disclosure, RaiseControl, disclosureKey, useFocusKey } from '../controls';
-import { delegatedWork, endedAt, type ObservedSession, type Row } from '../observed';
+import { endedAt, type ObservedSession, type Row } from '../observed';
 import { selectObserved } from '../observed/select';
 import { sessionHome, type SessionRoute } from '../router/grammar';
 import { useDisplayed, useShell } from '../shell/context';
@@ -16,13 +16,12 @@ import {
   DriftPill,
   DriftProvider,
   DriftStamp,
-  DriftHeadPause,
+  DriftHeadControls,
   DeparturesSection,
   ReadingCapBanner,
   WorkListView,
 } from '../drift';
 import { DriftSlot } from './DriftSlot';
-import { DelegatedWorkLine } from './DepartureParts';
 import { FullActivity } from './FullActivity';
 import { WhatItDid } from './WhatItDid';
 import {
@@ -118,24 +117,6 @@ function Controls({
         </div>
       ) : null}
     </>
-  );
-}
-
-/* Work the session handed to something else, which a reading cannot see: an honest limit Analyze drift must
-   keep in reach, so it sits in the Drift card under the control rather than in a menu.
-   [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
-function DelegatedWork({
-  session,
-  generated,
-}: {
-  readonly session: Row;
-  readonly generated: number | null;
-}) {
-  if (!delegatedWork(session, generated).draw) return null;
-  return (
-    <div className="next-session-drift-caveats" data-next-delegated>
-      <DelegatedWorkLine session={session} now={generated} />
-    </div>
   );
 }
 
@@ -373,10 +354,9 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
               />
             }
             stamp={<DriftStamp />}
-            actions={<DriftHeadPause />}
+            actions={<DriftHeadControls />}
             drift={<DriftBody primary={!(observed.isNeeds || observed.askKnown)} />}
           >
-            <DelegatedWork session={session} generated={generated} />
             <DeparturesSection />
           </DriftSlot>
           <FullActivity project={route.project} session={session}>

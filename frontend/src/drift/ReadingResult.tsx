@@ -1,5 +1,4 @@
 import { SampleBeside } from '../sample/SampleMark';
-import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { nextNumber } from '../api/bootstrap';
@@ -9,6 +8,7 @@ import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { entryWindow, olderEntriesRemain, type WorkEntry } from '../intent/work';
 import { markNotAccurate } from './actions';
+import { DelegatedWorkLine } from '../sessions/DepartureParts';
 import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
 import { EvidenceList } from './Evidence';
@@ -22,7 +22,6 @@ import {
   coverageLimits,
   driftAnswer,
   goalSourceLine,
-  resultStale,
   resultState,
   resultStatus,
   resultWhere,
@@ -58,7 +57,7 @@ import {
   unloadedCites,
 } from './sentences';
 import { datedClock } from '../observed/values';
-import type { SteerSlot } from './ReadingControl';
+import { ReadingCount, WhatIsSent, type SteerSlot } from './ReadingControl';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
 import { CitationLink } from './CitationLink';
 import { CitedText } from './CitedText';
@@ -417,16 +416,18 @@ function ResultAnswer({
   return <div className="next-cockpit-result-answer">{body}</div>;
 }
 
-function ResultWorkView() {
+/* Where the work went, one click away under What the analysis read: the design's Drift card has no such block
+   between the answer and its footer, and a list of folders with citations was what pushed Mark as inaccurate
+   and Steer back down the card. Moved, never dropped. */
+function WorkSection() {
   const { model } = useDrift();
   const { shape } = model;
   if (!shape) return null;
   const work = resultWork(model.entries, model.numbers, model.source.scan, shape.windowStart);
   if (!work) return null;
   return (
-    <div className="next-cockpit-result-work">
-      <h3>Where the work went</h3>
-      <ul>
+    <ReadSection name="work" title="Where the work went">
+      <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
         {work.groups.map((group) => (
           <li key={group.folder} className="next-cockpit-result-folder">
             <span className="next-cockpit-result-path">
@@ -449,7 +450,7 @@ function ResultWorkView() {
       ) : work.unavailable ? (
         <p className="next-cockpit-reading-why">The total written in this window is unavailable.</p>
       ) : null}
-    </div>
+    </ReadSection>
   );
 }
 
@@ -478,6 +479,7 @@ function ResultFoot() {
   }, [marked]);
   if (readAt === null || !model.annotate) return null;
   const unsaved = ctx.drift.notAccurate.has(model.key);
+  const hintId = `not-accurate-why:${model.key}`;
   const control = (
     <ActionButton
       weight="quiet"
@@ -487,6 +489,7 @@ function ResultFoot() {
       action="not-accurate"
       arg={String(readAt)}
       focusKey={`not-accurate:${model.key}`}
+      {...(marked ? {} : { describes: hintId })}
       onPress={() => {
         if (!model.identity) return;
         const top = foot.current?.getBoundingClientRect().top;
@@ -495,6 +498,8 @@ function ResultFoot() {
       }}
     />
   );
+  /* A quiet footer line: the control, and what it does as its description rather than a second line of the
+     card. Marked, the state says so beside the way back. */
   return (
     <div
       ref={foot}
@@ -511,7 +516,9 @@ function ResultFoot() {
       ) : (
         <>
           {control}
-          <p className="next-cockpit-reading-why">{RESULT_NOT_ACCURATE_HINT}</p>
+          <span id={hintId} className="next-visually-hidden">
+            {RESULT_NOT_ACCURATE_HINT}
+          </span>
         </>
       )}
       {unsaved ? (
@@ -671,8 +678,10 @@ function Baseline({
             </ul>
           </ReadSection>
         ) : null}
+        <WorkSection />
         <ReadSection name="not-read" title={READ_NOT_READ}>
           <p className="next-cockpit-reading-why">{READ_NEVER}</p>
+          <DelegatedWorkLine session={model.session} now={model.generated} />
         </ReadSection>
       </div>
     </Why>
@@ -691,14 +700,12 @@ export function ReadingResult({
   readonly slotted: SteerSlot | null;
   /** Why Steer back does not carry the departures listed, said beside them (`steerWithheld`). */
   readonly steerOff?: string;
-  /** The stale result's one run control. */
-  readonly again: (steer: SteerSlot | null, showRun?: boolean) => ReactNode;
+  /** What a press was answered with under the result; the run control itself is the card header's. */
+  readonly again: (steer: SteerSlot | null) => ReactNode;
 }) {
   const { model } = useDrift();
   const { shape, raw, annotation, entries, source } = model;
   if (!shape || !raw || !annotation) return null;
-  const stale = resultStale(shape, raw, annotation, entries);
-  const staleState = Boolean(stale);
   const answer =
     shape.criteria.length || shape.departures.length
       ? driftAnswer(shape, entries, source.scan)
@@ -717,48 +724,22 @@ export function ReadingResult({
   /* What the agent claimed, after the intent it is independent of. */
   const claimed = claimsDrawn(shape);
   const quiet = goal.length + lines.length + claimed.length > 0;
-  /* A current result keeps the disclosure and accounting without a second run control.
-     [DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)
-     A direction question owns the sole run path while it stands. */
+  /* A current result keeps the disclosure and accounting without a second run control: the card header holds
+     the one, in every state. A direction question owns the run path while it stands.
+     [DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result) */
   const leadSteer = !question && slotted?.lead ? slotted : null;
-  const steers =
-    slotted && !question ? (
-      <>
-        {leadSteer ? null : <div className="next-cockpit-reading-ask">{slotted.button}</div>}
-        {slotted.box}
-      </>
-    ) : null;
-  const foot = staleState
-    ? steers
-    : question
-      ? null
-      : again(leadSteer ? { ...leadSteer, button: null } : slotted, false);
-  const callout = staleState && !question ? again(null) : null;
+  const foot = question ? null : again(slotted ? { ...slotted, button: null } : null);
+  /* The verdict sentence above the level says the answer once; a heading here says it only where that
+     sentence is not drawn, over a reading marked inaccurate. */
+  const marked = annotation['not_accurate'] === true;
   return (
     <div className="next-session-drift-check next-cockpit-result gap-1" data-next-result>
       {question}
-      {stale ? (
-        <Card
-          variant="reading-stale"
-          className="next-cockpit-result-stale"
-          data-next-result-stale={stale.kind}
-        >
-          <p className="next-cockpit-result-stale-head">
-            {stale.before !== null
-              ? `This check is from before your ${clock(stale.before)} message.`
-              : stale.head}
-          </p>
-          {stale.superseded ? (
-            <p className="next-cockpit-reading-stale">{stale.superseded}</p>
-          ) : null}
-          {callout}
-        </Card>
-      ) : null}
-      {answer ? (
+      {answer && marked ? (
         <ResultAnswer
           answer={answer}
           midFlight={shape.scope === 'mid-flight'}
-          focusKey={staleState || question ? null : `reading:${model.key}`}
+          focusKey={question ? null : `reading:${model.key}`}
         />
       ) : null}
       {idle ? (
@@ -813,9 +794,7 @@ export function ReadingResult({
           ))}
         </div>
       ) : null}
-      <ResultWorkView />
-      {/* Steer back after what it steers back from, as the design draws it. Its primary state is the card's
-          own rule (`steerPrimary`), unchanged here. */}
+      {/* Steer back after what it steers back from, as the design draws it. Offered only with a departure. */}
       {leadSteer ? (
         <div className="next-cockpit-reading-ask" data-next-result-primary>
           {leadSteer.button}
@@ -828,6 +807,10 @@ export function ReadingResult({
       >
         <ResultFoot />
         <Baseline shape={shape} raw={raw} arrived={arrived} />
+        {question ? null : <WhatIsSent />}
+        <div className="self-center empty:hidden">
+          <ReadingCount count={nextNumber(annotation['reading_count']) || 0} />
+        </div>
       </div>
     </div>
   );
@@ -835,12 +818,17 @@ export function ReadingResult({
 
 /* The Drift card's answer in one sentence, first under its heading (usability review, 2026-10-20: the level,
    the count and what they rest on were spread over the meter, the answer and each card). Drawn from the
-   stored reading the result below draws, and only while that result stands: not over a running analysis, an
-   unreadable reading, or one the reader marked inaccurate. */
-export function DriftVerdict() {
-  const { model, cleared } = useDrift();
-  const { shape, raw, annotation, entries, source, job, annotate } = model;
-  if (!annotate || !shape || shape.malformed || !raw || !annotation || job) return null;
+   stored reading the result below draws, and only while that result stands: not over an unreadable reading
+   or one the reader marked inaccurate. It stays while a run over it is in view, dimmed. It is the one place
+   the card says its answer, so it is also where focus lands when a result replaces the progress. */
+export function DriftVerdict({ focus }: { readonly focus: boolean }) {
+  const { ctx, model, cleared } = useDrift();
+  const { shape, raw, annotation, entries, source, annotate } = model;
+  const ref = useFocusKey<HTMLParagraphElement>(
+    ctx.shell.controls.focusLane,
+    focus ? `reading:${model.key}` : null,
+  );
+  if (!annotate || !shape || shape.malformed || !raw || !annotation) return null;
   if (annotation['not_accurate'] === true) return null;
   if (!shape.criteria.length && !shape.departures.length) return null;
   const answer = driftAnswer(shape, entries, source.scan);
@@ -856,8 +844,11 @@ export function DriftVerdict() {
   return (
     <>
       <p
-        className="mx-4 my-0 max-w-[var(--measure)] text-value font-semibold leading-[1.45] text-foreground"
+        ref={ref}
+        tabIndex={-1}
+        className="mx-4 my-0 max-w-[var(--measure)] text-value font-semibold leading-[1.45] text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-1"
         data-next-drift-verdict
+        {...(focus ? { 'data-next-focus': `reading:${model.key}` } : {})}
       >
         {text}
       </p>

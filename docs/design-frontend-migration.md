@@ -742,6 +742,16 @@ so one card read "Departs; evidence #3" beside "Departure evidence at #4". A fai
 check the agent ran failed", because a bare "Check failed" under "Not checked yet" read as the drift check
 having failed. `correction.differential.test.ts` gives the recorded side the same first citation and wording.
 
+Deviation (2026-10-21): the card is drawn one state at a time, where the retired page drew every control
+in every state. Pause model calls and the Live monitor sit behind Drift settings, the stale notice is a line
+in the card's header beside a re-run control that stays there from the first reading on, a run over a
+reading keeps that reading in view dimmed, the one-time notice collapses under What is sent when its
+analysis ends, the verdict sentence replaces the result's own heading, Steer back is offered only with a
+departure, and Where the work went and the delegated-work limit moved under What the analysis read. No pure
+function changed, so the differential tests and the recorded answers are as they were; the
+[design record](design-reading-a-session.md#amended-2026-10-21-the-drift-card-has-one-state-at-a-time) owns
+each ruling and what was rejected.
+
 Deviations, each recorded rather than hidden. The card, the numbered list and the departures hold the last
 board they drew while the reader is in the correction box (untouched or edited), composing, or holding a
 pointer on a control they left it for, and say "Updates are paused" instead of the legacy whole-page queue,

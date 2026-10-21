@@ -22,7 +22,7 @@ describe('the first view of a session', () => {
     expect(control('held-undo')).toBeNull();
   });
 
-  it('keeps Save visible, Clear in the Intent card and the monitor in the Drift card head', async () => {
+  it('keeps Save visible, Clear in the Intent card and the monitor behind Drift settings in the Drift card head', async () => {
     const page = mountSession();
     await settle(page);
     expect(control('held-save')).not.toBeNull();
@@ -30,9 +30,11 @@ describe('the first view of a session', () => {
     expect(document.querySelector('[data-next-session-more]')).toBeNull();
     const intent = document.querySelector('[aria-labelledby="next-session-intent-heading"]');
     expect(intent?.contains(control('held-clear'))).toBe(true);
-    expect(
-      document.querySelector('.next-session-drift-head')?.contains(control('live-monitor')),
-    ).toBe(true);
+    // The switch is inside the settings the head offers, which open over the page, so it is not a node of the head.
+    expect(document.querySelector('.next-session-drift-head')?.textContent).toContain(
+      'Drift settings',
+    );
+    expect(control('live-monitor')).not.toBeNull();
     expect(text('.next-session-reentry-none')).toBe('');
     type(goalBox(), 'Changed goal');
     expect(control('held-undo')).not.toBeNull();

@@ -50,9 +50,12 @@ function announceFlip(ctx: DriftCtx, session: Row, flip: Flip, sentence: string)
 /* In view every time; to the region at most once a minute per session, so a session that flaps is not read
    out on every turn. A flip inside the minute is held, never dropped: the newest is said when the minute is
    up, so the region's last word is never a state that has gone. */
-function say(ctx: DriftCtx, session: Row, flip: Flip, sentence: string): void {
+function say(ctx: DriftCtx, session: Row, flip: Flip, sentence: string, shown = true): void {
   const now = ctx.shell.clock.now();
-  flip.line = sentence;
+  /* An opening is said to the region and not drawn: the control standing pressable beside it says it, and
+     "Analyze is open: the session's last turn finished." was a gate's own language for "you can analyze now"
+     (walk 70d59c47, item 5). A closing keeps its line, because it explains a control that went inert. */
+  flip.line = shown ? sentence : '';
   flip.lineAt = now;
   if (flip.saidAt !== null && now - flip.saidAt < FLIP_SAY_EVERY_MS) {
     flip.owed = sentence;
@@ -131,7 +134,7 @@ export function readingFlip(ctx: DriftCtx, input: FlipInput): Flip {
     flip.shown = true;
     flip.candidate = null;
     drift.want('hold', null);
-    if (!quiet) say(ctx, session, flip, opened(session));
+    if (!quiet) say(ctx, session, flip, opened(session), false);
     return flip;
   }
   if (flip.candidate !== false) {

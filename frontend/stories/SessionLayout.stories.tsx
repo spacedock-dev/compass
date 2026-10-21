@@ -356,20 +356,25 @@ export const MoreIsRetired: Story = {
     );
     const inDrift = within(drift);
     const head = drift.querySelector('header') as HTMLElement;
-    await expect(within(head).getByRole('switch', { name: 'Live monitor' })).toBeVisible();
     await expect(within(head).getByText(DRIFT_SUBTITLE)).toBeVisible();
-    await expect(within(head).getByText(LIVE_HINT)).toBeVisible();
+    // The live monitor and Pause model calls are behind one Drift settings control in the head, and not in the body.
+    await expect(inDrift.queryByRole('switch', { name: 'Live monitor' })).toBeNull();
+    await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
+    const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
+    await waitFor(() => expect(monitor).toBeVisible());
+    await expect(within(document.body).getByText(LIVE_HINT)).toBeVisible();
     // What the monitor does is the switch's own helper text.
-    await expect(
-      within(head).getByRole('switch', { name: 'Live monitor' }),
-    ).toHaveAccessibleDescription(LIVE_HINT);
-    await expect(inDrift.getByText(/^Delegated work: 2 recorded launches/)).toBeVisible();
-    await expect(
-      inDrift.getByText(/^Is the work this session launched still running\?/),
-    ).toBeVisible();
+    await expect(monitor).toHaveAccessibleDescription(LIVE_HINT);
+    await waitFor(() =>
+      expect(
+        within(document.body).getByRole('button', { name: 'Pause model calls' }),
+      ).toBeVisible(),
+    );
+    await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
+    // Delegated work is a limit of a reading, said under What the analysis read once there is one.
+    await expect(inDrift.queryByText(/^Delegated work:/)).toBeNull();
     await expect(inDrift.getByRole('button', { name: 'Analyze drift' })).toBeVisible();
-    // Pause model calls stands in the card's head in every state, and beside what it stops in What is sent.
-    await expect(within(head).getByRole('button', { name: 'Pause model calls' })).toBeVisible();
+    // Beside what it stops, Pause model calls stands in What is sent too.
     await userEvent.click(inDrift.getByRole('button', { name: 'What is sent' }));
     const off = await waitFor(() => {
       const found = within(document.body)

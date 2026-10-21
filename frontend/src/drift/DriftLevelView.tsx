@@ -2,7 +2,6 @@ import { CitedText } from './CitedText';
 import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Fragment } from 'react';
-import { annotationLines } from '../intent/annotation';
 import { intentUnsaved } from '../intent/derive';
 import { useDrift } from './context';
 import { meterSegments, readingStored, type Signals } from './level';
@@ -16,7 +15,6 @@ import {
   LIVE_LINE,
   LIVE_SAVE,
   NUDGE,
-  UNCHECKED,
 } from './sentences';
 import { EvidenceList } from './Evidence';
 import { Why } from './Why';
@@ -158,23 +156,9 @@ export function DriftLevelView() {
         </p>
       );
     }
-    const unchecked =
-      model.annotate &&
-      annotation &&
-      !readingStored(annotation) &&
-      Boolean(String(annotation['goal'] || '').trim() || annotationLines(annotation).length);
-    if (model.drafted || !unchecked) return null;
-    return (
-      <>
-        <div className="next-session-drift-live" data-next-drift-unchecked>
-          <p className="next-session-drift-live-head">
-            <span className="next-session-drift-level">{UNCHECKED}</span>
-          </p>
-          <Meter level="" dim={running} />
-          <Scale level="" />
-        </div>
-      </>
-    );
+    /* Before any analysis there is no level, so none is drawn: "Not checked yet" over four empty segments
+       labelled nothing. */
+    return null;
   }
   const high = level.level === 'high' || level.level === 'extreme';
   /* While an analysis runs the design keeps the title and dims the meter, and drops the detail line. Over an

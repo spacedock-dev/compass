@@ -86,7 +86,7 @@ export const AnIdleReadingSaysHowFarItRead: Story = {
     );
     // The entry is from another day, so its date is named, as the copied correction names it.
     await expect(line.textContent).toMatch(/at \d{4}-\d\d-\d\d \d\d:\d\d;/);
-    await expect(canvasElement.querySelector('[data-next-result-heading]')).toHaveTextContent(
+    await expect(canvasElement.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
       /^So far:/,
     );
   },

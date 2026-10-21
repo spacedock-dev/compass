@@ -37,7 +37,7 @@ describe('an idle session analyzed up to its last recorded entry', () => {
     expect(textOf('[data-next-reading-idle]')).toBe(
       `Read up to the last recorded entry at ${datedClock(900)}; the last turn was not recorded as finished.`,
     );
-    expect(textOf('[data-next-result-heading]')).toContain('So far:');
+    expect(textOf('[data-next-drift-verdict]')).toContain('So far:');
   });
 
   it('draws no idle line for a reading of a running session', async () => {

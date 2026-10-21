@@ -24,12 +24,16 @@ import {
   JOB_NOTE,
   JOB_NOTE_SO_FAR,
   JOB_TITLE,
+  JOB_TITLE_AGAIN,
+  RERUN_AFTER_QUESTION,
+  RERUN_CURRENT,
+  RERUN_STALE,
   READINGS_OFF,
   MODEL_PAUSE_EXPLANATION,
   WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
-import { ModelNotice, DisclosureParts } from './ModelNotice';
+import { ModelNotice, DisclosureParts, NoticeBody } from './ModelNotice';
 import { noticeContentParts, noticeLabel, sessionNotice } from './notice';
 
 /* The Analyze control in all of its states: idle, running, off, refused, and with no reader on
@@ -41,23 +45,20 @@ export const DISCLOSURE_ID = 'next-cockpit-reading-disclosure';
 
 export { DisclosureParts } from './ModelNotice';
 
-/* The attempt count beside the control, worded the same in every state: short to the eye, and the whole
-   sentence to a screen reader, which the short form is hidden from. The store counts drift checks alone
-   (`readings`), so it says so: "model requests" read 2 beside four model calls once summaries also ran
-   (usability review, 2026-10-20). */
+/* The attempt count, in the card's footer and only once one was made: before any, "0 drift checks requested"
+   counted something that had not happened, and while a check ran it still said 0. The store counts drift
+   checks alone (`readings`), so it says so: "model requests" read 2 beside four model calls once summaries
+   also ran (usability review, 2026-10-20). One node, so a screen reader hears it once. */
 export function ReadingCount({ count }: { readonly count: number }) {
-  const short = `${String(count)} drift check${count === 1 ? '' : 's'} requested`;
+  if (count < 1) return null;
   return (
-    <p className="next-cockpit-reading-count">
-      <span aria-hidden="true">{short}</span>
-      <span className="next-visually-hidden">{`${short} for this session.`}</span>
-    </p>
+    <p className="next-cockpit-reading-count">{`${String(count)} drift check${count === 1 ? '' : 's'} requested`}</p>
   );
 }
 
-/* Pause model calls, drawn while readings are on. It sits in the Drift card's head in every state
-   (`DriftHeadPause`), and in the notice and the "What is sent" popover beside what it stops, so the off
-   switch is never only in a part the page did not draw.
+/* Pause model calls, drawn while readings are on. It is one press away in the Drift card's head in every
+   state (Drift settings, `DriftHeadControls`), and in the notice and the "What is sent" popover beside what
+   it stops, so the off switch is never only in a part the page did not draw.
    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
 export function TurnOff({
   closes = '',
@@ -110,22 +111,23 @@ export function TurnOff({
   );
 }
 
-const MODEL_PAUSE_ID = 'next-session-drift-pause-why';
-
-/* Pause model calls in the Drift card's head, in every state where calls can be paused or resumed: after an
-   analysis it was only inside the "What is sent" popover, two presses away from a reader looking for the off
-   switch (usability review, 2026-10-20). The copies beside the notice and in the popover stay where they
-   explain what they stop. */
-export function DriftHeadPause() {
-  return <TurnOff head />;
-}
+export const MODEL_PAUSE_ID = 'next-session-drift-pause-why';
 
 /* Each step's state comes from where the published phase sits among them. A finished step is a filled mark,
    never a check mark: a check beside a reading is the shape the ruling keeps off every result. An unknown
    phase marks every step still to come rather than guessing which one is running. The box has no role: it is
    inside a page every revision redraws, so a status role re-announced it on each revision while the job ran.
    Its start and its outcome go once each through the persistent region instead (`trackJobs`). */
-export function JobBox({ job, running }: { readonly job: Row; readonly running: boolean }) {
+export function JobBox({
+  job,
+  running,
+  again = false,
+}: {
+  readonly job: Row;
+  readonly running: boolean;
+  /** A run over a result that stays in view, dimmed, until this one lands. */
+  readonly again?: boolean;
+}) {
   const { ctx, model } = useDrift();
   const { key } = model;
   const titleRef = useFocusKey<HTMLSpanElement>(ctx.shell.controls.focusLane, `reading:${key}`);
@@ -150,7 +152,7 @@ export function JobBox({ job, running }: { readonly job: Row; readonly running: 
           tabIndex={-1}
           data-next-focus={`reading:${key}`}
         >
-          {JOB_TITLE}
+          {again ? JOB_TITLE_AGAIN : JOB_TITLE}
         </span>
         <ActionButton
           weight="secondary"
@@ -203,22 +205,21 @@ export function ReadingControl({
   primary = true,
   steer = null,
   again = false,
-  showRun = true,
   about = '',
   refusalOf,
 }: {
   readonly board: Board;
   readonly primary?: boolean;
   readonly steer?: SteerSlot | null;
+  /** A result stands: its run control is the card header's, and this draws only what a press was answered with. */
   readonly again?: boolean;
-  readonly showRun?: boolean;
   /** What a reading is, drawn inside "What is sent" while no reading is stored. */
   readonly about?: string;
   /** The refusal as the card computed it before the board's ranking, to drop a stale one. */
   readonly refusalOf: string;
 }) {
   const { ctx, model } = useDrift();
-  const { session, payload, annotation, key, identity } = model;
+  const { session, payload, annotation, key } = model;
   const held = ctx.intent.held;
   const raw = held.requests.get(key);
   /* A refusal is a state, not an event, and it stops being true the moment the reader does what it asks.
@@ -234,16 +235,10 @@ export function ReadingControl({
     }
   });
   const { reason, pressed, inert, changed, settling } = board;
-  const pending = Boolean(request?.pending);
   const route = model.route;
   const provider = route?.['provider'] ? String(route['provider']) : '';
   const off = readingsOff(payload);
-  const busyKey = `reading:${key}`;
-  const enabled = !off && !reason && !pending;
   const count = nextNumber(annotation?.['reading_count']) || 0;
-  const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
-  const parts = disclosureParts(route, provider, disclosure);
-  const partsList = parts.length ? <DisclosureParts parts={parts} id={DISCLOSURE_ID} /> : null;
   /* What an analysis will read, under the control, and only where a press could read it: a provider, no
      refusal beside it, saved words, and words given before any observed end, which the server withholds by
      the same time the later-direction floor does. */
@@ -282,13 +277,15 @@ export function ReadingControl({
   /* While a job runs, the box stands where the button was, with the count after it in the idle order. A
      refusal is about a new press, which is not offered, so it waits. The notice stays under the box because
      the job carries it, so a reload mid-run still says where the words went. */
+  /* Over a result that stays in view, dimmed, the box is the card body's, drawn above it. */
+  if (job && again) return null;
   if (job) {
     const running = ended === null && session['state'] !== 'idle';
+    const kept = Boolean(model.raw && model.shape && !model.shape.malformed);
     return (
       <>
-        <JobBox job={job} running={running} />
+        <JobBox job={job} running={running} again={kept} />
         {said(answered)}
-        {counted}
         {off ? said(READINGS_OFF) : null}
         <ReadingNotice />
       </>
@@ -321,40 +318,14 @@ export function ReadingControl({
       </>
     );
   }
-  const described = off ? REFUSED_ID : reason ? REFUSED_ID : disclosure ? DISCLOSURE_ID : '';
-  const label = again ? 'Check again' : 'Analyze drift';
-  /* A current result keeps its one Analyze. Resume model calls is the Drift card head's, drawn whenever calls
-     are paused, so Analyze stays in its place, refused, rather than becoming a second Resume beside it. */
-  const press = showRun ? (
-    <ActionButton
-      weight={primary && provider && !inert && !off ? 'primary' : 'secondary'}
-      label={label}
-      busyLabel="Starting…"
-      pendingKey={busyKey}
-      inert={!enabled}
-      describes={described}
-      action="reading-ask"
+  const press = (
+    <RunPress
+      board={board}
+      weight={primary ? 'primary' : 'secondary'}
+      label="Analyze drift"
       focusKey={`reading:${key}`}
-      fallbackKey={`reading:${key}`}
-      onPress={() => {
-        /* A press on an Analyze the board refused opens its "Why Analyze is off", so the press shows the
-           reason rather than nothing: the short line beside it was already drawn. */
-        if (!off && inert && pressed) {
-          ctx.shell.controls.disclosures.set(
-            disclosureKey({ project: model.project, scope: key, name: `reading-why:${key}` }),
-            true,
-          );
-        }
-        if (off) return;
-        if (identity) {
-          void askForReading(ctx, identity, {
-            route,
-            revision: nextNumber(annotation?.['revision']) || 0,
-          });
-        }
-      }}
     />
-  ) : null;
+  );
   /* The announcement and the description are one node while a refusal stands. Printing the stored message and
      the reason separately rendered the same sentence twice, adjacent and identical, where the contract is that
      it renders exactly once. The press is still announced, because this node carries `role="status"` when it
@@ -408,27 +379,16 @@ export function ReadingControl({
   const changeLine = changed ? (
     <p className="next-cockpit-reading-why next-cockpit-reading-change">{changed}</p>
   ) : null;
-  /* Idle: the provider disclosure one click away, in a popover so opening it moves nothing and covers no
-     control above it. Its summary names the receiver while a press would record a new notice, and always on
-     a fallback route, whose receiver is a second provider. */
-  const receiver = provider ? String(route?.['label'] || provider) : '';
-  const sent = disclosure ? (
-    <Why
-      name="reading-sent"
-      pop
-      summary={
-        route?.['fallback'] === true || route?.['notice_due'] === true
-          ? `What is sent to ${receiver}`
-          : 'What is sent'
-      }
-    >
-      {partsList}
-      {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
-      {off ? null : <TurnOff closes="reading-sent" />}
-    </Why>
-  ) : (
-    aboutWhy
-  );
+  /* Where a result stands the run control is the card header's, and what is sent is the footer's, once: this
+     draws only what a press was answered with. Idle, the disclosure is one press away beside Analyze. */
+  if (again) {
+    return (
+      <>
+        {changeLine}
+        {accounts}
+      </>
+    );
+  }
   return (
     <>
       <div className="next-cockpit-reading-ask">
@@ -448,8 +408,7 @@ export function ReadingControl({
       {changeLine}
       {inert ? null : counted}
       {accounts}
-      <ReadingNotice />
-      <SampleBeside id="sent">{sent}</SampleBeside>
+      <WhatIsSent about={about} />
     </>
   );
 }
@@ -476,27 +435,185 @@ function NoReader({ reason }: { readonly reason: string }) {
   );
 }
 
-export function ReadingNotice() {
-  const { ctx, model } = useDrift();
-  const notice = sessionNotice(ctx.intent.held.requests.get(model.key), model.job);
-  if (!notice || readingsOff(model.payload)) return null;
-  const route = model.route;
-  /* The route's words describe what the route sends now; they stand beside the notice only while the route
-     is still the provider the notice was recorded for. */
+/* The words a notice sits beside: the route's own while the route is still the provider the notice was
+   recorded for, since the route describes what it sends now, and the notice's own account of its content
+   tier after a change of provider. */
+function noticeParts(notice: Row, route: Row | null): readonly string[] {
   const same = String(route?.['provider'] || '') === String(notice['provider'] || '');
   const parts = same
     ? disclosureParts(route, String(route?.['provider'] || ''), String(route?.['disclosure'] || ''))
     : [];
+  return parts.length ? parts : noticeContentParts(notice);
+}
+
+/* The one-time notice, open only while the request it came with runs: it is what the reader is about to want
+   to read while the box counts down. Once the result stands it is the same words under What is sent
+   (`WhatIsSent`), not a 300px card above the answer. */
+export function ReadingNotice() {
+  const { ctx, model } = useDrift();
+  if (!model.job) return null;
+  const notice = sessionNotice(ctx.intent.held.requests.get(model.key), model.job);
+  if (!notice || readingsOff(model.payload)) return null;
   return (
     <ModelNotice
       notice={notice}
       provider={noticeLabel(notice)}
-      parts={parts.length ? parts : noticeContentParts(notice)}
+      parts={noticeParts(notice, model.route)}
     >
       <TurnOff />
     </ModelNotice>
   );
 }
+
+/* What is sent, in one place on the card whatever its state: a disclosure that opens over the page and moves
+   nothing, with the off switch inside it. The route's words, and the notice the last request recorded where
+   this tab holds one, are the same disclosure. Its summary names the receiver while a press would record a
+   new notice, and always on a fallback route, whose receiver is a second provider. */
+export function WhatIsSent({ about = '' }: { readonly about?: string }) {
+  const { ctx, model } = useDrift();
+  const route = model.route;
+  const provider = route?.['provider'] ? String(route['provider']) : '';
+  const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
+  const off = readingsOff(model.payload);
+  const notice = off ? null : sessionNotice(ctx.intent.held.requests.get(model.key), model.job);
+  const aboutWhy = about ? (
+    <Why name="reading-about" summary="What a reading reads" body={about} />
+  ) : null;
+  if (!disclosure && !notice) return aboutWhy;
+  const receiver = provider ? String(route?.['label'] || provider) : '';
+  const parts = disclosureParts(route, provider, disclosure);
+  return (
+    <SampleBeside id="sent">
+      <Why
+        name="reading-sent"
+        pop
+        summary={
+          route?.['fallback'] === true || route?.['notice_due'] === true
+            ? `What is sent to ${receiver}`
+            : 'What is sent'
+        }
+      >
+        {notice ? (
+          <NoticeBody
+            notice={notice}
+            provider={noticeLabel(notice)}
+            parts={noticeParts(notice, route)}
+          />
+        ) : parts.length ? (
+          <DisclosureParts parts={parts} id={DISCLOSURE_ID} />
+        ) : null}
+        {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
+        {off ? null : <TurnOff closes="reading-sent" />}
+      </Why>
+    </SampleBeside>
+  );
+}
+
+/* The press that starts a reading, in the idle card's body and, once a reading exists, in its header. One
+   rule for both: refused while calls are paused, while another press is in flight, while a refusal stands
+   beside it, and while an analysis runs, so the control stays on the page and says why rather than going
+   away. */
+export function RunPress({
+  board,
+  label,
+  focusKey,
+  fallbackKey,
+  weight = 'secondary',
+  blocked = false,
+  describedBy,
+}: {
+  readonly board: Board;
+  readonly label: string;
+  readonly focusKey: string;
+  readonly fallbackKey?: string;
+  readonly weight?: 'primary' | 'secondary' | 'quiet';
+  /** A press that cannot run for a reason the board does not hold: an analysis running, a question open. */
+  readonly blocked?: boolean;
+  /** What describes the control; the board's refusal or the disclosure where this is left out. */
+  readonly describedBy?: string;
+}) {
+  const { ctx, model } = useDrift();
+  const { payload, annotation, key, identity, route } = model;
+  const request = ctx.intent.held.requests.get(key);
+  const { reason, pressed, inert } = board;
+  const provider = route?.['provider'] ? String(route['provider']) : '';
+  const off = readingsOff(payload);
+  const enabled = !off && !reason && !request?.pending && !blocked;
+  const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
+  const described = describedBy ?? (off || reason ? REFUSED_ID : disclosure ? DISCLOSURE_ID : '');
+  const pressWeight = weight === 'primary' && (!provider || inert || off) ? 'secondary' : weight;
+  return (
+    <ActionButton
+      weight={pressWeight}
+      label={label}
+      busyLabel="Starting…"
+      pendingKey={`reading:${key}`}
+      inert={!enabled}
+      describes={described}
+      action="reading-ask"
+      focusKey={focusKey}
+      fallbackKey={fallbackKey ?? focusKey}
+      onPress={() => {
+        /* A press on an Analyze the board refused opens its "Why Analyze is off", so the press shows the
+           reason rather than nothing: the short line beside it was already drawn. */
+        if (!off && inert && pressed) {
+          ctx.shell.controls.disclosures.set(
+            disclosureKey({ project: model.project, scope: key, name: `reading-why:${key}` }),
+            true,
+          );
+        }
+        if (off || blocked) return;
+        if (identity) {
+          void askForReading(ctx, identity, {
+            route,
+            revision: nextNumber(annotation?.['revision']) || 0,
+          });
+        }
+      }}
+    />
+  );
+}
+
+/* The re-run control in the Drift card's header, from the first reading on and in every state a reading can
+   be in: Check again over one that new work or a changed intent left behind, Analyze again over a current one.
+   Inert, never gone, where a press cannot run: calls paused, an analysis running (Cancel is that state's
+   control), an unsaved edit, or a later direction's question, which owns the one run path while it stands
+   ([DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)).
+   Not drawn with no reader on this machine, where an inert press has nothing to refuse
+   ([NUI-18](../../../docs/design-next-ui.md#nui-18-one-control-primitive-and-an-inert-control-stays-on-the-page)). */
+export function RerunControl({
+  board,
+  stale,
+  question,
+}: {
+  readonly board: Board;
+  readonly stale: boolean;
+  readonly question: boolean;
+}) {
+  const { model } = useDrift();
+  if (model.annotate && routeRefusal(model.payload, model.session)) return null;
+  const key = model.key;
+  return (
+    <>
+      <RunPress
+        board={board}
+        weight="quiet"
+        label={stale ? RERUN_STALE : RERUN_CURRENT}
+        focusKey={`reading-again:${key}`}
+        fallbackKey={`reading:${key}`}
+        blocked={Boolean(model.job) || question}
+        {...(question ? { describedBy: RERUN_AFTER_QUESTION_ID } : {})}
+      />
+      {question ? (
+        <span id={RERUN_AFTER_QUESTION_ID} className="next-visually-hidden">
+          {RERUN_AFTER_QUESTION}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+const RERUN_AFTER_QUESTION_ID = 'next-session-drift-rerun-why';
 
 /* Why the question's Keep sends nothing while calls are paused. Resume is the Drift card head's, which stays
    available while an earlier analysis unwinds. The direction question owns its job box and Cancel; this slot

@@ -55,7 +55,9 @@ describe('a stored reading', () => {
     await page.settle();
     const result = document.querySelector('[data-next-result]') as HTMLElement;
     expect(result).not.toBeNull();
-    expect(textOf('.next-cockpit-result-headline')).toBe('Departs from your intent1 departure');
+    // The answer is said once, in the verdict sentence under the card's heading.
+    expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
+    expect(document.querySelector('[data-next-result-heading]')).toBeNull();
     const goal = document.querySelector('[data-next-result-goal]') as HTMLElement;
     expect(goal.getAttribute('data-next-result-state')).toBe('departs');
     expect(goal.textContent).toContain('Departs; evidence [1]');
@@ -71,7 +73,11 @@ describe('a stored reading', () => {
     expect(
       document.querySelector('[data-next-entry="2"] [data-next-entry-flag="cited"]'),
     ).toBeNull();
-    expect(byAction('reading-ask')).toBeNull();
+    // The run control is the header's, from the first reading on.
+    expect(byAction('reading-ask')?.textContent).toBe('Analyze again');
+    expect(
+      document.querySelector('.next-session-drift-head')?.contains(byAction('reading-ask')),
+    ).toBe(true);
     expect(textOf('[data-next-result]')).toContain('1 drift check requested');
     // Under the cap the budget is not mentioned anywhere.
     expect(document.body.textContent).not.toMatch(/left today/);
@@ -91,8 +97,7 @@ describe('a stored reading', () => {
     });
     await page.settle();
     await page.settle();
-    expect(textOf('.next-cockpit-result-line')).toBe("Can't tell");
-    expect(document.querySelector('.next-cockpit-result-headline')).toBeNull();
+    expect(textOf('[data-next-drift-verdict]')).toBe("Can't tell from what was read.");
     expect(document.querySelector('[data-next-result-goal]')?.textContent).toContain(
       'Nothing resolvable was cited',
     );
@@ -122,7 +127,7 @@ describe('a stored reading', () => {
     });
     await page.settle();
     await page.settle();
-    expect(textOf('.next-cockpit-result-line')).toBe("Can't tell");
+    expect(textOf('[data-next-drift-verdict]')).toBe("Can't tell from what was read.");
     const why = document.querySelector('[data-next-result-goal] .next-cockpit-reading-why');
     expect(why?.textContent).toBe(
       'What it cited does not show this: a departure needs its latest run failing, and a consistent its latest run passing with no change after it, both after the words you saved.',
@@ -142,7 +147,7 @@ describe('a stored reading', () => {
     expect(document.querySelector('[data-next-result]')).toBeNull();
   });
 
-  it('says a reading of earlier words is of earlier words, and offers Analyze again in the callout', async () => {
+  it('says a reading of earlier words is of earlier words, in the header beside Check again', async () => {
     const page = mountDrift({
       session: stored(),
       store: { revision: 4 },
@@ -153,8 +158,11 @@ describe('a stored reading', () => {
     const stale = document.querySelector('[data-next-result-stale]') as HTMLElement;
     expect(stale.getAttribute('data-next-result-stale')).toBe('intent');
     expect(stale.textContent).toContain('Your intent changed after this analysis.');
-    expect(stale.textContent).toContain('This reading read revision 3. Revision 4 is current');
-    expect(stale.querySelector('[data-next-cockpit-action="reading-ask"]')).not.toBeNull();
+    const status = stale.closest('[data-next-drift-status]') as HTMLElement;
+    expect(status.textContent).toContain('This reading read revision 3. Revision 4 is current');
+    expect(status.querySelector('[data-next-cockpit-action="reading-ask"]')?.textContent).toBe(
+      'Check again',
+    );
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
   });
 
@@ -172,7 +180,7 @@ describe('a stored reading', () => {
     const stale = document.querySelector('[data-next-result-stale="work"]') as HTMLElement;
     expect(stale.textContent).toContain('New work since this analysis.');
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
-    expect(textOf('.next-cockpit-result-stale + *, [data-next-result]')).toContain(
+    expect(textOf('[data-next-result]')).toContain(
       '1 check, 1 message arrived since this analysis.',
     );
   });
@@ -194,15 +202,14 @@ describe('result focus', () => {
       sessions: [{ ...(page.state.data as { sessions: object[] }).sessions[0], ...stored() }],
     });
     await page.settle();
-    const heading = document.querySelector('[data-next-result-heading]');
-    expect(heading).not.toBeNull();
-    expect(document.activeElement).toBe(heading);
-    expect(byAction('reading-ask')).toBeNull();
+    const verdict = document.querySelector('[data-next-drift-verdict]');
+    expect(verdict).not.toBeNull();
+    expect(document.activeElement).toBe(verdict);
   });
 });
 
 describe('a current result while model calls are paused', () => {
-  it('offers Resume model calls without a second Analyze of unchanged words', async () => {
+  it('offers Resume model calls, with the one re-run control inert', async () => {
     const page = mountDrift({
       session: stored(),
       facts: FACTS,
@@ -216,7 +223,8 @@ describe('a current result while model calls are paused', () => {
     expect(resume.closest('[hidden]')).toBeNull();
     expect(resume.closest('[data-closed]')).toBeNull();
     expect(screen.queryAllByRole('button', { name: 'Resume model calls' })).toHaveLength(1);
-    expect(byAction('reading-ask')).toBeNull();
+    expect(byAction('reading-ask')?.getAttribute('aria-disabled')).toBe('true');
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
   });
 });
 

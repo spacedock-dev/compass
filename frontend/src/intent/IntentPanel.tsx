@@ -12,7 +12,6 @@ import { DirectionQuestion } from './DirectionQuestion';
 import { chosenIsStale, goalKey, intentDraft, type DraftInput } from './derive';
 import { reconcileDirection } from './directions';
 import { IntentSection } from './IntentSection';
-import { LiveMonitorSwitch } from './LiveMonitorSwitch';
 import { DRIFT_SUBTITLE } from './sentences';
 import { PanelContext, useHeldVersion, useIntentCtx, type Panel } from './useIntent';
 import { workSource } from './work';
@@ -40,7 +39,7 @@ export interface IntentPanelProps {
   readonly summary?: ReactNode;
   /** The Drift card header's model and when the analysis last ran, beside its title. */
   readonly stamp?: ReactNode;
-  /** Controls the Drift card header holds in every state: Pause or Resume model calls. */
+  /** What the Drift card header holds beside its title: its settings, and Resume while calls are paused. */
   readonly actions?: ReactNode;
   /** What the session page composes beneath: the delegated-work line and the departures raised away. */
   readonly children?: ReactNode;
@@ -171,21 +170,20 @@ export function IntentPanel({
         >
           <header className="next-session-drift-head flex-col items-stretch max-[760px]:py-0">
             <div className="next-session-drift-titles flex flex-col">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
                 <h2 id="next-session-drift-heading" className="next-session-drift-heading">
                   Drift
                 </h2>
                 {stamp}
               </div>
-              <p className="next-session-drift-sub text-body">{DRIFT_SUBTITLE}</p>
-            </div>
-            {/* The live monitor and what it does, in the head of the card it controls now that More is retired:
-                placement only, its value and default are unchanged. What it does is the switch's own helper
-                text, not a line of the card (usability review, 2026-10-20). Pause model calls sits beside it.
-                [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */}
-            <div className="flex flex-wrap items-start justify-start gap-x-4 gap-y-2">
-              {actions}
-              <LiveMonitorSwitch />
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                <p className="next-session-drift-sub text-body">{DRIFT_SUBTITLE}</p>
+                {/* Drift settings (the live monitor and Pause model calls) and, while calls are paused, Resume:
+                    one place in the head of the card they control, never in its body. Placement only: the
+                    switch's value and default are unchanged.
+                    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */}
+                {actions}
+              </div>
             </div>
           </header>
           {drift ?? (

@@ -34,6 +34,33 @@ export function DisclosureParts({
   );
 }
 
+/* What a notice says, with no frame: open as the card while the request it came with runs, and inside the one
+   "What is sent" disclosure once the result it came with is in. */
+export function NoticeBody({
+  notice,
+  provider,
+  parts,
+}: {
+  readonly notice: Row;
+  readonly provider: string;
+  readonly parts: readonly string[];
+}) {
+  const output = String(notice['tool_output'] || '');
+  return (
+    <>
+      <p className="next-cockpit-reading-why">{NOTICE_SENT}</p>
+      <DisclosureParts parts={parts} />
+      <div>
+        <p className="next-cockpit-reading-why">{noticeProvider(provider)}</p>
+        <p className="next-cockpit-reading-why">
+          {noticeDestination(String(notice['destination'] || ''))}
+        </p>
+        {output ? <p className="next-cockpit-reading-why">{noticeToolOutput(output)}</p> : null}
+      </div>
+    </>
+  );
+}
+
 export function ModelNotice({
   notice,
   provider,
@@ -48,18 +75,9 @@ export function ModelNotice({
   /** The region's name; two notices on one page must not share one. */
   readonly name?: string;
 }) {
-  const output = String(notice['tool_output'] || '');
   return (
     <Card as="section" variant="reading-notice" data-next-reading-notice="" aria-label={name}>
-      <p className="next-cockpit-reading-why">{NOTICE_SENT}</p>
-      <DisclosureParts parts={parts} />
-      <div>
-        <p className="next-cockpit-reading-why">{noticeProvider(provider)}</p>
-        <p className="next-cockpit-reading-why">
-          {noticeDestination(String(notice['destination'] || ''))}
-        </p>
-        {output ? <p className="next-cockpit-reading-why">{noticeToolOutput(output)}</p> : null}
-      </div>
+      <NoticeBody notice={notice} provider={provider} parts={parts} />
       <div className="next-cockpit-reading-ask">{children}</div>
     </Card>
   );
