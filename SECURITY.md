@@ -1320,6 +1320,18 @@ a file changed since collection. A missing or unverifiable source keeps its list
 no fact id, stores no words and does not run for an unasked reading. The history and listing bounds
 still hold; this is not a whole-transcript evidence ledger. Other harnesses keep their existing
 in-tail words.
+Since 2026-10-21 the reader's own messages include two Claude Code records that carry no user turn: a
+message the reader sent while the agent worked, and the reader's answer to the agent's multiple-choice
+question ([the amendment](docs/design-reading-a-session.md#amended-2026-10-21-a-message-sent-mid-turn-and-an-answer-to-the-agents-question-are-the-readers-words)).
+Both are sent as any other reader message is: whole, redacted by `records.safe_text`, at most 1,000
+characters, inside the same 16 KiB prompt bound, and never stored or published. An answer is its
+question's one-word `header` (the agent's label), the answer and any note the reader attached. The
+question's text and every option's preview, which are the agent's words, are not read as the
+reader's. This sends more of what the reader typed than before, and sends the answer a reader
+chose from the agent's options, which is why it is said here; the disclosure's "your messages" is
+unchanged because the kind of thing sent is. A pasted image in such a message is never read, only
+its text. The queue these messages arrive through also holds background-task notifications, and
+only a record whose `origin.kind` is `human` is taken.
 A Claude Code press also reads the focused session's person and agent messages back to the reading's
 window start instead of from the 400,000-byte tail (2026-10-13, `project_context.press_message_events`,
 [the amendment](docs/design-reading-a-session.md#amended-2026-10-13-a-press-reads-the-message-record-back-to-the-window-start)).

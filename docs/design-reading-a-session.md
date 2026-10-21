@@ -1112,6 +1112,50 @@ and whether it should be is filed separately. The parser digest the abstention
 packets are stamped with moves with this change, so a packet frozen before it is refused as
 `frozen-on-another-parser` and is frozen again.
 
+#### Amended 2026-10-21: a message sent mid-turn, and an answer to the agent's question, are the reader's words
+
+A reader who corrects a running agent, or answers the question it asks, gave a direction, and
+before this the page said it did not exist: `Later directions: none`, no outline phase, and a reading
+that named the agent's compliance as its departure. Two session walks measured it. Claude Code gives a
+message sent while a turn runs to the model inside a tool result, so the transcript holds no user turn
+for it, and the answer to the agent's multiple-choice question is a tool result too. The reader read
+only user turns, so neither reached a later direction, an outline phase or the reading's evidence. The
+[recorded shapes](captures/README.md) are the evidence for what follows.
+
+1. A message the agent took in mid-turn is read from its `queued_command` attachment, when
+   `origin.kind` is `human` and `commandMode` is `prompt`. Not from the `queue-operation` rows: the
+   same queue carries a finished background task's notification, 280 of the 297 `absorbed_mid_turn`
+   removals measured, and counting those would make the harness the reader. The direction is dated
+   by the attachment's own `timestamp`, which is when the reader typed it. The removal can come
+   minutes later, so a reading that dated it there would put the reader's correction after work it
+   had already shaped. Only the attachment's `text` blocks are read, never a pasted image's bytes.
+2. The answer is read from `toolUseResult.answers`, one line per answered question: the question's
+   `header` (the agent's one-word label for what was asked), a colon, the answer, and the note the
+   reader attached in parentheses. The header keeps a bare option such as "Defer to a follow-up" from
+   standing alone as an instruction. The question's text and every option's `preview` are the
+   agent's words and are never put in the reader's mouth. A question that timed out or was declined
+   has no answer and gives no direction.
+3. Both are user-role steers from the one reader every consumer already shares, so each is a later
+   direction the reader settles with Keep or adds to their words, starts an outline phase titled with
+   its words, and reaches the reading's ledger as a person's entry under the same 1,000-character
+   words cap and redaction as a message typed at the prompt. The fact's `evidence.source` says which
+   it is. Neither is a copied correction, so neither is Compass's text.
+4. `observer.parse_message_record` is unchanged and still picks the session's goal. A direction the
+   agent took in mid-turn does not move a goal the reader set at the prompt: the reader decides
+   that with `Use this as my goal`, as for any later direction. The two shapes arrive through
+   `observer.parse_reader_record`, which adds them to that parser's output.
+5. What is sent to a model changes in amount and not in kind. These are the reader's own words,
+   inside the cap, redaction and 16 KiB bound above, so [SECURITY.md](../SECURITY.md#observer-model-calls)
+   says so and the short disclosure before the press keeps "your messages", which already means
+   what the reader sent into the session. Rewording it would move the recorded client contract
+   fixtures and the sample session's stored disclosure for no change in what is sent.
+6. Codex has no queue record in the 1,082 rollouts read; a message sent while a call is pending is
+   an ordinary user message there, which its reader already takes. Its `request_user_input` answer
+   is unmeasured and is left as it was, as are the other harnesses.
+
+The parser digest the abstention packets are stamped with moves with this change, as the
+2026-10-01 amendment above allows for: `project_context.py` is one of its files.
+
 #### Amended 2026-10-02: the owner accepts the Claude Code producer without a pass
 
 Every scored Claude Code run failed this check: four runs, the last two each with one false

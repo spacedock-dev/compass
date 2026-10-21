@@ -494,10 +494,10 @@ def _instruction_event(
         return None
     if harness in observer.DIRECTION_HARNESSES:
         return _direction_event(config, record, harness, sid)
-    message = observer.parse_message_record(record)
+    message = observer.parse_reader_record(record)
     if message is None or message.get("role") != "user":
         return None
-    at = records.parse_ts(record.get("timestamp") or "")
+    at = records.parse_ts(_reader_stamp(record) or record.get("timestamp") or "")
     text = message["text"].strip()
     if at is None or not text:
         return None
@@ -510,7 +510,7 @@ def _instruction_event(
         "phase": "user-role instruction",
         "title": title,
         READER_WORDS_FIELD: _message_words(config, text, harness),
-        "source": "timestamped non-meta user-role record",
+        "source": message.get("source") or "timestamped non-meta user-role record",
         "harness": harness,
         "sid": sid,
         "intent_promotable": _intent_promotable(text, title),
@@ -530,6 +530,19 @@ def _instruction_event(
             event["tag_source"] = "explicit user-role wording"
             break
     return event
+
+
+def _reader_stamp(record: dict[str, Any]) -> Any:
+    """When the reader typed a message the agent took in mid-turn, from the attachment itself.
+
+    The queue records the message when it is absorbed, which can be minutes after it was sent
+    (measured: 2 m 44 s on one session). The reader's direction dates from the typing, and the
+    attachment carries that time under its own `timestamp`.
+    """
+    attachment = record.get("attachment")
+    if isinstance(attachment, dict) and attachment.get("type") == "queued_command":
+        return attachment.get("timestamp")
+    return None
 
 
 def _message_title(config: RuntimeConfig, text: str, harness: str) -> str:
@@ -559,7 +572,7 @@ def whole_message_words(
     config: RuntimeConfig, record: dict[str, Any], harness: str, cap: int
 ) -> str:
     """Source words use the same parser and slash-command normalization, without a prompt cap."""
-    message = observer.parse_message_record(record, cap=cap)
+    message = observer.parse_reader_record(record, cap=cap)
     text = str(message["text"]) if message else ""
     command = transcripts.command_direction(config, text) if harness == "claude" else None
     return records.safe_text(" ".join(records.mask_prose(command or text).split()), cap)
@@ -711,6 +724,10 @@ def _message_text_chars(record: Mapping[str, Any]) -> int:
     """The characters of text a transcript record carries, which is what a reading would redact."""
     message = record.get("message")
     content = message.get("content") if isinstance(message, dict) else None
+    if content is None:
+        # A mid-turn message holds its words in the attachment, beside any pasted image's bytes.
+        attachment = record.get("attachment")
+        content = attachment.get("prompt") if isinstance(attachment, dict) else None
     if isinstance(content, str):
         return len(content)
     if not isinstance(content, list):
@@ -1078,7 +1095,7 @@ def _task_assignment(text: str, artifact: str) -> str:
 def _record_timestamp(record: dict[str, Any]) -> float | None:
     message = record.get("message")
     message_ts = message.get("timestamp") if isinstance(message, dict) else None
-    return records.parse_ts(record.get("timestamp") or message_ts or "")
+    return records.parse_ts(record.get("timestamp") or message_ts or _reader_stamp(record) or "")
 
 
 def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
@@ -5008,7 +5025,7 @@ def transcript_window_words(
             key = (fact["fact_id"], fact["at"])
             if key not in identities:
                 continue
-            message = observer.parse_message_record(record, cap=len(raw))
+            message = observer.parse_reader_record(record, cap=len(raw))
             if message is None:
                 continue
             text = message["text"]
@@ -5018,7 +5035,8 @@ def transcript_window_words(
             content = (
                 records.as_dict(record.get("payload")).get("content")
                 if record is not None and record.get("type") == "response_item"
-                else records.message_dict(record).get("content")
+                else observer.reader_source_content(record)
+                or records.message_dict(record).get("content")
             )
             signature = hashlib.sha256(
                 json.dumps(content, sort_keys=True, ensure_ascii=False).encode("utf-8", "replace")
@@ -5796,9 +5814,10 @@ def _could_be_instruction(raw: bytes, harness: str) -> bool:
     if b"\\u" in raw:
         return True
     if harness == "claude":
-        return bool(re.search(rb'"type"\s*:\s*"user"', raw)) and (
-            b'"tool_result"' not in raw or b'"text"' in raw
-        )
+        return (
+            bool(re.search(rb'"type"\s*:\s*"user"', raw))
+            and (b'"tool_result"' not in raw or b'"text"' in raw or b'"answers"' in raw)
+        ) or (b'"queued_command"' in raw and b'"human"' in raw)
     if harness == "codex":
         return bool(re.search(rb'"role"\s*:\s*"user"', raw))
     return True
@@ -5953,7 +5972,8 @@ def _direction_signature(record: Any, harness: str) -> bytes:
         message = records.as_dict(
             records.as_dict(record).get("payload" if harness == "codex" else "message")
         )
-        return records.record_fingerprint(message.get("content"))
+        source = observer.reader_source_content(record) if harness == "claude" else None
+        return records.record_fingerprint(source if source is not None else message.get("content"))
     return records.record_fingerprint(record)
 
 
@@ -5961,7 +5981,7 @@ def _direction_words(config: RuntimeConfig, record: Any, harness: str) -> Direct
     if harness in observer.DIRECTION_HARNESSES:
         direction = transcripts.antigravity_direction(record)
         return DirectionText(direction.text if direction and not direction.truncated else "")
-    message = observer.parse_message_record(record)
+    message = observer.parse_reader_record(record)
     if not message:
         return DirectionText("")
     text = str(message["text"])

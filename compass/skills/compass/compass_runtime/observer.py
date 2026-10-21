@@ -1080,6 +1080,142 @@ def parse_message_record(
     return _parse_message_record(record, cap)
 
 
+# Where the reader's words came from, for the two Claude Code records that carry them with no
+# user turn. Each is the evidence's own source label, so a reading and a reviewer can tell the
+# reader's message at the prompt from one the agent took in mid-turn.
+MID_TURN_SOURCE = "message the reader sent while the agent worked"
+ANSWER_SOURCE = "reader's answer to the agent's question"
+
+
+def _queued_prompt_text(prompt: Any) -> str:
+    """The words of a queued prompt: a string, or text blocks beside pasted images.
+
+    A pasted image rides in the same list as base64 bytes. Only its `text` blocks are the
+    reader's words, and the bytes are never read.
+    """
+    if isinstance(prompt, str):
+        return prompt
+    if not isinstance(prompt, list):
+        return ""
+    return "\n".join(
+        block["text"]
+        for block in prompt
+        if isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+    )
+
+
+def _absorbed_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
+    """The reader's message the agent took in mid-turn, from its `queued_command` attachment.
+
+    Claude Code gives a message sent while a turn runs to the model inside a tool result, so the
+    transcript holds no user turn for it. The attachment is the record that names its sender:
+    `origin.kind` is `human` for the reader and `task-notification` for a finished background
+    task, and the queue carries both. Two-thirds of the `absorbed_mid_turn` removals measured
+    were the second, so the `queue-operation` rows alone would count the harness as the reader.
+    `commandMode` must be `prompt` for the same reason: it is the reader's words, not a command.
+    """
+    if record.get("type") != "attachment" or record.get("isSidechain"):
+        return None
+    attachment = records.as_dict(record.get("attachment"))
+    if (
+        attachment.get("type") != "queued_command"
+        or attachment.get("commandMode") != "prompt"
+        or records.as_dict(attachment.get("origin")).get("kind") != "human"
+    ):
+        return None
+    message = _message_from("user", _queued_prompt_text(attachment.get("prompt")), "claude", cap)
+    return None if message is None else {**message, "source": MID_TURN_SOURCE}
+
+
+def _answer_text(answer: Any) -> str:
+    if isinstance(answer, str):
+        return answer.strip()
+    if isinstance(answer, list):
+        return ", ".join(item.strip() for item in answer if isinstance(item, str) and item.strip())
+    return ""
+
+
+def _answer_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
+    """The reader's answer to the agent's multiple-choice question, from the tool's result.
+
+    `toolUseResult.answers` maps each question's text to what the reader chose or typed, and is
+    empty when the question timed out or was declined, which leaves no words to read. Each
+    line is the question's `header`, the agent's one-word label for what was asked, then the
+    answer, so a bare option label such as "Defer to a follow-up" does not stand alone as an
+    instruction. The question's own text and every option's `preview` are the agent's words and
+    stay out. The reader's `notes` on an answer are theirs and go in.
+    """
+    if record.get("type") != "user" or record.get("isSidechain") or record.get("isMeta"):
+        return None
+    result = record.get("toolUseResult")
+    if not isinstance(result, dict) or not isinstance(result.get("questions"), list):
+        return None
+    answers = result.get("answers")
+    if not isinstance(answers, dict):
+        return None
+    headers = {
+        question["question"]: question["header"]
+        for question in result["questions"]
+        if isinstance(question, dict)
+        and isinstance(question.get("question"), str)
+        and isinstance(question.get("header"), str)
+    }
+    annotations = records.as_dict(result.get("annotations"))
+    lines: list[str] = []
+    for asked, given in answers.items():
+        answer = _answer_text(given)
+        if not answer:
+            continue
+        header = headers.get(asked, "").strip()
+        line = f"{header}: {answer}" if header else answer
+        notes = records.as_dict(annotations.get(asked)).get("notes")
+        if isinstance(notes, str) and notes.strip():
+            line = f"{line} ({notes.strip()})"
+        lines.append(line)
+    if not lines:
+        return None
+    # The text reaches `_message_from` as a string, so its tool-result guard does not apply.
+    message = _message_from("user", "; ".join(lines), "claude", cap)
+    return None if message is None else {**message, "source": ANSWER_SOURCE}
+
+
+def parse_reader_record(
+    record: Any,
+    cap: int = records.EXTRACT_TEXT_CAP_CHARS,
+) -> dict[str, str] | None:
+    """`parse_message_record`, and the two records that carry the reader's words with no turn.
+
+    A message sent mid-turn and an answer to the agent's question. Kept apart from
+    `parse_message_record` because that one also picks the session's goal, and a direction the
+    agent took in mid-turn must not move a goal the reader set at the prompt. The two extra
+    shapes carry a `source` label; an ordinary user turn carries none.
+    """
+    message = _parse_message_record(record, cap)
+    if message is not None or not isinstance(record, dict):
+        return message
+    return _absorbed_message(record, cap) or _answer_message(record, cap)
+
+
+def reader_source_content(record: Any) -> Any:
+    """What a mid-turn message or an answer holds of the reader's, for a source fingerprint.
+
+    None for any other record. The ordinary message's content is already what a fingerprint
+    reads, but these two carry theirs outside `message.content`, so one that read only that
+    would give every mid-turn message the same fingerprint.
+    """
+    if not isinstance(record, dict):
+        return None
+    attachment = records.as_dict(record.get("attachment"))
+    if attachment.get("type") == "queued_command":
+        return attachment.get("prompt")
+    result = record.get("toolUseResult")
+    if isinstance(result, dict) and isinstance(result.get("answers"), dict):
+        return [result["answers"], result.get("annotations")]
+    return None
+
+
 def _dedup_key(record: dict[str, Any]) -> str:
     """The record's own identity, or empty when it carries none.
 
