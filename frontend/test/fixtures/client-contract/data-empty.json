@@ -14,6 +14,7 @@
       "annotate": true,
       "annotate_cap": 240,
       "annotate_discard": {
+        "already": "Already discarded. What you asked of this session was discarded earlier, so this press deleted nothing and the earlier record stands.",
         "armed": "Press it again to discard. Every revision of what you asked of this session will go, along with any reading of it and this session's summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.",
         "held": "Not discarded. This session's words were saved by a build of Compass that can read more than this one, so nothing was changed. Discard them from that build, or remove this session's entry from compass-annotations.json.",
         "nothing": "Nothing to discard. Nothing was typed against this session, so nothing was deleted and no record of a deletion was made.",
@@ -129,7 +130,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "5807",
+      "Content-Length": "5955",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

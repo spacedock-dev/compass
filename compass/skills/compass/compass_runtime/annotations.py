@@ -313,6 +313,14 @@ DISCARD_NOTHING = (
     "Nothing to discard. Nothing was typed against this session, so nothing was deleted "
     "and no record of a deletion was made."
 )
+# A discard over a session whose words an earlier discard already took. It is not
+# DISCARD_NOTHING: words were typed and a record of their discard exists, so "nothing
+# was typed" and "no record" would both be false. The reply tells the two zero-removed
+# cases apart by its `discarded` stamp, which is null only for the first.
+DISCARD_ALREADY = (
+    "Already discarded. What you asked of this session was discarded earlier, so this press "
+    "deleted nothing and the earlier record stands."
+)
 DISCARD_SENTENCES: Final[dict[str, str]] = {
     "why": DISCARD_WHY,
     "armed": DISCARD_ARMED,
@@ -328,6 +336,7 @@ DISCARD_SENTENCES: Final[dict[str, str]] = {
     "record": DISCARD_RECORD,
     "record_standing": DISCARD_RECORD_STANDING,
     "nothing": DISCARD_NOTHING,
+    "already": DISCARD_ALREADY,
     # The reading route's own refusal, so the block on the tab and the route
     # behind its button cannot word one state two ways.
     "unreadable": reading.WITHHELD[reading.WITHHELD_DISCARDED],

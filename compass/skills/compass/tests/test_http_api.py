@@ -6502,6 +6502,29 @@ class SummaryJobHTTPTest(unittest.TestCase):
         self.assertEqual(2, self.discard()["removed"])
         self.assertEqual(0, self.discard()["removed"])
 
+    def test_a_second_discard_over_a_discarded_session_says_a_record_stands(self) -> None:
+        # A repeat press removes nothing, as a press over words never typed does, but a discard
+        # record exists. The reply carries the stamp that tells the page which zero it is, and the
+        # server owns a sentence that is true of it rather than "nothing was typed".
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        never = self.discard()
+        self.assertEqual(0, never["removed"])
+        self.assertIsNone(never["discarded"])
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Words", output="", now=100.0
+        )
+        first = self.discard()
+        again = self.discard()
+        self.assertEqual(1, first["removed"])
+        self.assertEqual(0, again["removed"])
+        self.assertIsNotNone(again["discarded"])
+        said = annotation_store.DISCARD_SENTENCES
+        self.assertIn("already", said)
+        self.assertNotIn("Nothing was typed", said["already"])
+        self.assertNotIn("no record", said["already"])
+        self.assertIn("earlier", said["already"])
+
     def test_a_discard_without_a_stored_summary_says_none_existed(self) -> None:
         self.config = dataclasses.replace(self.config, annotations_enabled=True)
         self.application.config = self.config

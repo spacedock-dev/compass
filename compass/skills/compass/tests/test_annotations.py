@@ -915,7 +915,7 @@ class DiscardingIsNotTheClearBesideTheBoxTest(unittest.TestCase):
         said = set(annotation_store.DISCARD_SENTENCES.values())
 
         self.assertEqual(len(annotation_store.DISCARD_SENTENCES), len(said))
-        self.assertEqual(15, len(said))
+        self.assertEqual(16, len(said))
         self.assertNotIn("Saved as a new revision.", said)
         for sentence in said:
             with self.subTest(sentence=sentence[:32]):

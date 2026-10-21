@@ -449,6 +449,7 @@ export function pressDiscard(ctx: Ctx, row: Row, detail: number): void {
 /* The kinds that mean words were removed and the drafts over them must go. */
 const DISCARD_LANDED: ReadonlySet<string> = new Set([
   'discard-stored',
+  'discard-already',
   'discard-stored_no_summary',
   'discard-unwithdrawn',
   'discard-summary_kept',
@@ -489,7 +490,9 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
        store's answer, so the categorical sentence is not printed over rows this page is about to redraw
        with the discarded words still in them. `=== false` and not falsiness: a server that predates the
        field omits it, and an absent answer must leave the sentence it had. `removed` is the store's own count
-       under its lock, so zero is a discard that found nothing and says so rather than "gone".
+       under its lock, so zero is a discard that found nothing and says so rather than "gone". Two zeros differ:
+       a null `discarded` stamp is words never typed, and a set one is a repeat over a discard record, which
+       says so and, unlike the first, drops the drafts that a stale tab still holds over the discarded words.
 
        The summary is a third store and says what happened to it in one of four ways, so the sentence names
        only that: gone, never there, kept because the store could not be written, or unknown because it could
@@ -503,7 +506,9 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
     };
     const kind =
       result === 'discard-stored' && body.removed === 0
-        ? 'discard-nothing'
+        ? body.discarded == null
+          ? 'discard-nothing'
+          : 'discard-already'
         : result === 'discard-stored' && body.withdrew === false
           ? 'discard-unwithdrawn'
           : result === 'discard-stored'
