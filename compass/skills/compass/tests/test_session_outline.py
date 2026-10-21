@@ -45,7 +45,7 @@ class SessionOutlineTest(unittest.TestCase):
         transcript.bash("pytest tests", "1 failed", is_error=True)
         transcript.prompt("Change the synthetic module.")
         transcript.write(str(self.root / "src/a.py"))
-        transcript.bash("pytest tests", "1 passed")
+        transcript.bash("mypy src", "1 error", is_error=True)
         transcript.prompt("Add another synthetic case.")
         transcript.save(self.path)
         page = self.source.read(self.config, str(self.path), "claude", "root")
@@ -61,7 +61,67 @@ class SessionOutlineTest(unittest.TestCase):
         self.assertEqual(page.entries[-1].fact_id, last["span"]["last"])
         self.assertNotIn('"words":', json.dumps(result))
 
-    def test_block_cap_keeps_newest_and_counts_dropped_blocks(self) -> None:
+    def test_a_failing_run_followed_by_a_passing_run_of_the_same_check_is_fixed(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Write the failing test first, then make it pass.")
+        transcript.bash("pytest tests/test_a.py", "1 failed", is_error=True)
+        transcript.write(str(self.root / "src/a.py"))
+        transcript.bash("pytest tests/test_a.py", "1 passed")
+        transcript.prompt("Now lint it.")
+        transcript.bash("ruff check .", "1 error", is_error=True)
+        transcript.save(self.path)
+        first, second = self.outline.build(
+            self.source.read(self.config, str(self.path), "claude", "root"), self.config
+        )["blocks"]
+        self.assertEqual(
+            (2, 0, 1),
+            (
+                first["counts"]["checks"],
+                first["counts"]["checks_failed"],
+                first["counts"]["checks_fixed"],
+            ),
+        )
+        self.assertEqual([], first["failures"])
+        # A check still red at the end of the read stays a failure.
+        self.assertEqual(
+            (1, 0), (second["counts"]["checks_failed"], second["counts"]["checks_fixed"])
+        )
+        self.assertEqual(["failed"], [row["result"] for row in second["failures"]])
+
+    def test_a_fix_in_a_later_part_still_clears_the_earlier_failure(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Break it on purpose.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        transcript.prompt("Now fix it.")
+        transcript.bash("pytest tests", "1 passed")
+        transcript.save(self.path)
+        first, second = self.outline.build(
+            self.source.read(self.config, str(self.path), "claude", "root"), self.config
+        )["blocks"]
+        self.assertEqual(
+            (0, 1), (first["counts"]["checks_failed"], first["counts"]["checks_fixed"])
+        )
+        self.assertEqual(
+            (0, 0), (second["counts"]["checks_failed"], second["counts"]["checks_fixed"])
+        )
+
+    def test_a_check_that_failed_again_after_passing_is_failing_once(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Keep the suite green.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        transcript.bash("pytest tests", "1 passed")
+        transcript.bash("pytest tests", "2 failed", is_error=True)
+        transcript.bash("pytest tests", "3 failed", is_error=True)
+        transcript.save(self.path)
+        (block,) = self.outline.build(
+            self.source.read(self.config, str(self.path), "claude", "root"), self.config
+        )["blocks"]
+        self.assertEqual(
+            (1, 0), (block["counts"]["checks_failed"], block["counts"]["checks_fixed"])
+        )
+        self.assertEqual(1, len(block["failures"]))
+
+    def test_block_cap_keeps_the_opening_and_the_newest_and_counts_dropped_blocks(self) -> None:
         self.path.write_text(
             "".join(
                 json.dumps(test_record_pages.RecordPagesTest.record(i)) + "\n" for i in range(5)
@@ -71,11 +131,93 @@ class SessionOutlineTest(unittest.TestCase):
         result = self.outline.build(
             self.source.read(config, str(self.path), "claude", "root"), config
         )
-        self.assertEqual(3, result["more_blocks"])
+        self.assertEqual(2, result["more_blocks"])
         self.assertEqual(
-            ["Build synthetic step 3.", "Build synthetic step 4."],
+            ["Build synthetic step 0.", "Build synthetic step 3.", "Build synthetic step 4."],
             [b["prompt"]["title"] for b in result["blocks"]],
         )
+        self.assertEqual([True, False, False], [b["opening"] for b in result["blocks"]])
+
+    def _large(self, prompts: int = 40) -> Transcript:
+        transcript = Transcript(self.root)
+        for n in range(prompts):
+            transcript.prompt(f"Synthetic request number {n}: {'pad ' * 40}")
+            transcript.bash(f"pytest tests/test_{n}.py", "1 passed")
+        transcript.save(self.path)
+        return transcript
+
+    def test_a_session_larger_than_the_read_bound_still_has_a_phase_at_its_first_prompt(
+        self,
+    ) -> None:
+        self._large()
+        config = dataclasses.replace(self.config, session_outline_max_bytes=6000)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            result, _plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        self.assertIn("before_window", [r["reason"] for r in result["coverage"]["unread"]])
+        first, *rest = result["blocks"]
+        self.assertTrue(first["opening"])
+        self.assertTrue(first["prompt"]["title"].startswith("Synthetic request number 0:"))
+        # The head read reached the second prompt, so the opening part is whole.
+        self.assertFalse(first["partial"])
+        self.assertEqual((1, 0), (first["counts"]["checks"], first["counts"]["checks_failed"]))
+        self.assertTrue(rest)
+        self.assertEqual([False] * len(rest), [b["opening"] for b in rest])
+        self.assertTrue(rest[-1]["prompt"]["title"].startswith("Synthetic request number 39:"))
+        self.assertNotIn('"words":', json.dumps(result))
+
+    def test_the_opening_part_is_marked_partial_when_its_read_ends_inside_it(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("The only prompt, then a long run of work.")
+        for n in range(60):
+            transcript.bash(f"pytest tests/test_{n}.py", "1 passed" + " ok" * 40)
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=4000, session_outline_head_bytes=3000
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            result, _plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        first, second = result["blocks"]
+        self.assertEqual(
+            ("The only prompt, then a long run of work.", True, True),
+            (first["prompt"]["title"], first["opening"], first["partial"]),
+        )
+        # The newest window's own part has no prompt to name and is not the opening.
+        self.assertEqual(
+            (None, False, False), (second["prompt"], second["opening"], second["partial"])
+        )
+        self.assertLess(first["counts"]["checks"], 60)
+
+    def test_a_first_prompt_past_the_head_budget_leaves_no_block_marked_as_the_opening(
+        self,
+    ) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Synthetic first request. " + "x " * 2000)
+        transcript.bash("pytest tests/test_first.py", "1 passed")
+        for n in range(30):
+            transcript.prompt(f"Synthetic later request {n}: {'pad ' * 40}")
+            transcript.bash(f"pytest tests/test_{n}.py", "1 passed")
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=1000
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            result, _plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        self.assertGreater(result["coverage"]["start_offset"], 0)
+        self.assertTrue(result["blocks"])
+        self.assertEqual([False] * len(result["blocks"]), [b["opening"] for b in result["blocks"]])
+
+    def test_a_read_that_starts_at_the_beginning_makes_no_head_read(self) -> None:
+        self._large(3)
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.source, "read", wraps=self.source.read) as read,
+        ):
+            result, _plan = self.outline.for_session_with_plan(
+                self.config, self.state, "claude", "root"
+            )
+        self.assertEqual(1, read.call_count)
+        self.assertEqual([True, False, False], [b["opening"] for b in result["blocks"]])
+        self.assertFalse(result["blocks"][0]["partial"])
 
     def test_highlights_are_bounded_and_counts_are_not(self) -> None:
         transcript = Transcript(self.root)

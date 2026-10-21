@@ -40,8 +40,7 @@ async function atWidth(width: number, check: () => Promise<void>) {
   }
 }
 
-/* Real data: the outline's check ids are not the record's, so a failure has no chip and a part that ends on a
-   check is drawn from where it starts. */
+/* Real data: the outline's check ids are not the record's, so a failure has no chip. */
 export const Outline: Story = {
   render: () => <OutlinePage outline={claudeOutline()} />,
   play: async ({ canvasElement }) => {
@@ -52,26 +51,28 @@ export const Outline: Story = {
     await expect(region).not.toHaveTextContent(/summary/i);
     const blocks = region.querySelectorAll('[data-next-outline-block]');
     await expect(blocks).toHaveLength(2);
-    const [first, second] = [...blocks] as [HTMLElement, HTMLElement];
+    const [first] = [...blocks] as [HTMLElement];
     await expect(
       within(first).getByText('Add retry with backoff to the webhook handler.'),
     ).toBeVisible();
+    // Short sentences: no "4 entries", no "(2)" repeating a count, and the failure is not counted twice.
     await expect(first.querySelector('[data-next-outline-counts]')).toHaveTextContent(
-      '4 entries · 1 agent reply · 2 checks run, 1 failed as the tool reported · 3 files written in src/webhook (2), tests (1)',
+      'The agent replied 1 time, ran 2 checks and wrote 3 files in src/webhook and tests.',
     );
     // The failure in the failure colour, and no chip: no record page carries the outline's id for it.
-    const failure = first.querySelector('[data-next-outline-failure]') as HTMLElement;
+    const failures = first.querySelectorAll('[data-next-outline-failure]');
+    await expect(failures).toHaveLength(1);
+    const failure = failures[0] as HTMLElement;
     await expect(failure).toHaveTextContent(
       'Failed as the tool reported: pytest tests/test_webhook.py',
     );
     await expect(getComputedStyle(failure).color).toBe('rgb(228, 136, 106)');
-    await waitFor(() =>
-      expect(first.querySelector('[data-next-outline-span]')).toHaveTextContent('Starts at#1'),
-    );
     await expect(within(failure).queryByRole('button')).toBeNull();
-    await expect(second.querySelector('[data-next-outline-span]')).toHaveTextContent(
-      'Entries#3to#4',
-    );
+    // No entry anchors on a part: not "Starts at #1", not "Entries #3 to #4", and no number the reader has not seen.
+    await expect(region.querySelector('[data-next-outline-span]')).toBeNull();
+    await expect(box.queryByText(/Starts at|Entries|Ends at/)).toBeNull();
+    for (const line of region.querySelectorAll('[data-next-outline-counts]'))
+      await expect(line.textContent).not.toMatch(/#\d|\(\d+\)|messages with|entr(y|ies)/);
     await expect(region.querySelector('[data-next-outline-stamp]')).toHaveTextContent(
       /^updated \d\d:\d\d · still running$/,
     );
@@ -86,8 +87,8 @@ export const Outline: Story = {
   },
 };
 
-/* The future case, once the outline's check ids are the record's: the failure and the span's end get chips,
-   and the failure's chip opens Full activity on the check. */
+/* The future case, once the outline's check ids are the record's: the failure gets a chip, and it opens Full
+   activity on the check. A part's own start and end never get one. */
 export const MatchedIdsFutureCase: Story = {
   render: () => <OutlinePage outline={claudeOutline({}, true)} />,
   play: async ({ canvasElement }) => {
@@ -98,9 +99,7 @@ export const MatchedIdsFutureCase: Story = {
       if (!node) throw new Error('no block yet');
       return node;
     })) as HTMLElement;
-    await waitFor(() =>
-      expect(first.querySelector('[data-next-outline-span]')).toHaveTextContent('Entries#1to#2.2'),
-    );
+    await expect(first.querySelector('[data-next-outline-span]')).toBeNull();
     const chip = await within(region).findByRole('link', {
       name: 'Open entry #2.1, the failed check, in Full activity',
     });
@@ -115,120 +114,6 @@ export const MatchedIdsFutureCase: Story = {
       expect(document.activeElement).toBe(
         canvasElement.querySelector('[data-next-cockpit-work] [data-next-entry-id="c1"]'),
       ),
-    );
-  },
-};
-
-/* A chip opens Full activity and lands on the entry it names. */
-export const ChipOpensFullActivity: Story = {
-  render: () => <OutlinePage outline={claudeOutline()} />,
-  play: async ({ canvasElement }) => {
-    const region = await card(canvasElement);
-    const canvas = within(canvasElement);
-    await expect(canvas.getByRole('button', { name: 'Full activity' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-    const chip = await within(region).findByRole('link', {
-      name: 'Open entry #3, where this part starts, in Full activity',
-    });
-    await userEvent.click(chip);
-    await waitFor(() =>
-      expect(canvas.getByRole('button', { name: 'Full activity' })).toHaveAttribute(
-        'aria-expanded',
-        'true',
-      ),
-    );
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        canvasElement.querySelector('[data-next-cockpit-work] [data-next-entry-id="p2"]'),
-      ),
-    );
-  },
-};
-
-const entryRow = (root: HTMLElement, id: string) =>
-  root.querySelector(`[data-next-cockpit-work] [data-next-entry-id="${id}"]`);
-
-/* A prompt the page does not hold yet: its chip reads older record pages for it, then lands on it. */
-export const ColdPromptChipReadsOlderPages: Story = {
-  render: () => <OutlinePage outline={claudeOutline()} paged />,
-  play: async ({ canvasElement }) => {
-    const region = await card(canvasElement);
-    const chip = await waitFor(() => {
-      const node = region.querySelector<HTMLElement>('[data-next-outline-entry="p1"]');
-      if (!node) throw new Error('no chip yet');
-      return node;
-    });
-    await expect(chip).toHaveAccessibleName(
-      'Open an older entry the page has not read yet, where this part starts, in Full activity',
-    );
-    // Never the bare word "entry": the chip says why it has no number yet.
-    await expect(chip).toHaveTextContent('older entry');
-    await expect(entryRow(canvasElement, 'p1')).toBeNull();
-    await userEvent.click(chip);
-    await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'p1')));
-    await expect(region.querySelector('[data-next-outline-missing]')).toBeNull();
-  },
-};
-
-/* A slow press that settles after a later press leaves focus where the later press put it. */
-export const LaterPressWins: Story = {
-  render: () => <OutlinePage outline={claudeOutline()} paged />,
-  play: async ({ canvasElement }) => {
-    const region = await card(canvasElement);
-    script.holdOlder = true;
-    const cold = await waitFor(() => {
-      const node = region.querySelector<HTMLElement>('[data-next-outline-entry="p1"]');
-      if (!node) throw new Error('no chip yet');
-      return node;
-    });
-    await userEvent.click(cold);
-    await waitFor(() => expect(script.releaseOlder).not.toBeNull());
-    const fast = region.querySelector<HTMLElement>('[data-next-outline-entry="p2"]') as HTMLElement;
-    await userEvent.click(fast);
-    await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'p2')));
-    script.releaseOlder?.();
-    await waitFor(() => expect(entryRow(canvasElement, 'p1')).not.toBeNull());
-    // Two frames: the slow press's settle runs in one.
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    await expect(document.activeElement).toBe(entryRow(canvasElement, 'p2'));
-    await expect(region.querySelector('[data-next-outline-missing]')).toBeNull();
-  },
-};
-
-/* A prompt no record page holds: the press opens Full activity and says plainly that it does not show it. */
-export const EntryNotInFullActivity: Story = {
-  render: () => {
-    const base = claudeOutline();
-    const [first, second] = base.blocks;
-    return (
-      <OutlinePage
-        outline={{
-          ...base,
-          blocks: [
-            {
-              ...second,
-              prompt: { fact_id: 'p0', title: 'An earlier message.', at: G - 900 },
-              span: { first: 'p0', last: 'p0', entries: 1, from_at: G - 900, to_at: G - 900 },
-            },
-            first,
-          ],
-        }}
-      />
-    );
-  },
-  play: async ({ canvasElement }) => {
-    const region = await card(canvasElement);
-    const chip = await waitFor(() => {
-      const node = region.querySelector<HTMLElement>('[data-next-outline-entry="p0"]');
-      if (!node) throw new Error('no chip yet');
-      return node;
-    });
-    await userEvent.click(chip);
-    const note = await within(region).findByRole('status');
-    await expect(note).toHaveTextContent(
-      'Full activity does not show that entry: it could not be loaded, or it sits in a folded run of checks.',
     );
   },
 };
@@ -295,12 +180,10 @@ export const Codex: Story = {
     );
     const blocks = [...region.querySelectorAll<HTMLElement>('[data-next-outline-block]')];
     await expect(blocks).toHaveLength(2);
-    for (const block of blocks) {
-      await expect(block.querySelector('[data-next-outline-counts]')).toHaveTextContent(
-        /^1 entry$/,
-      );
-    }
-    await expect(region).not.toHaveTextContent(/checks run|files written|agent repl(y|ies) ·/);
+    // No sentence about work this harness does not read: a zero would stand for "not looked at".
+    for (const block of blocks)
+      await expect(block.querySelector('[data-next-outline-counts]')).toBeNull();
+    await expect(region).not.toHaveTextContent(/ran \d+ checks?|wrote \d+ files?|agent replied/);
   },
 };
 
@@ -398,6 +281,7 @@ export const StartsPartway: Story = {
             {
               ...first,
               prompt: null,
+              opening: false,
               span: { first: 'a1', last: 'c2', entries: 3, from_at: G - 550, to_at: G - 498 },
             },
           ],
@@ -415,7 +299,151 @@ export const StartsPartway: Story = {
       '2 earlier parts of this session are not shown here. Full activity lists every entry.',
     );
     await expect(region.querySelector('[data-next-outline-prompt="none"]')).toHaveTextContent(
+      'Work carrying on from earlier in this session',
+    );
+  },
+};
+
+/* The scenario's outline and its two blocks, narrowed once. */
+function twoBlocks() {
+  const base = claudeOutline();
+  const [first, second] = base.blocks;
+  if (!first || !second) throw new Error('the scenario outline holds two blocks');
+  return { base, first, second };
+}
+
+/* A session that passed the read bound: the newest window starts after its first prompt, and the outline still
+   opens at that prompt. The part after the gap has no prompt to name, and the note says what lies between. */
+export const OpensAtTheFirstPromptBeyondTheWindow: Story = {
+  render: () => {
+    const { base, first, second } = twoBlocks();
+    return (
+      <OutlinePage
+        outline={{
+          ...base,
+          more_blocks: 0,
+          coverage: {
+            ...base.coverage,
+            complete: false,
+            starts_at: 'a9',
+            start_offset: 900000,
+            unread: [
+              { start_offset: 0, end_offset: 900000, reason: 'before_window', stream: 'parent' },
+            ],
+          },
+          blocks: [
+            { ...first, partial: true },
+            {
+              ...second,
+              prompt: null,
+              opening: false,
+              span: { first: 'a9', last: 'a9', entries: 1, from_at: G - 90, to_at: G - 90 },
+              counts: { ...second.counts, agent_messages: 2 },
+            },
+          ],
+        }}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const box = within(region);
+    await box.findByText(
+      'Compass read your first message and the newest part of this session. What happened between them is not outlined here.',
+    );
+    await expect(box.queryByText(/starts partway/)).toBeNull();
+    const [opening, later] = [
+      ...region.querySelectorAll<HTMLElement>('[data-next-outline-block]'),
+    ] as [HTMLElement, HTMLElement];
+    // The first block is the session's first prompt, not "Before the first message of yours this outline read".
+    await expect(opening).toHaveAttribute('data-next-outline-opening');
+    await expect(
+      within(opening).getByText('Add retry with backoff to the webhook handler.'),
+    ).toBeVisible();
+    // Its counts end where the first read did, and it says so.
+    await expect(opening.querySelector('[data-next-outline-counts]')).toHaveTextContent(
+      /Counted only as far as Compass read\.$/,
+    );
+    await expect(later.querySelector('[data-next-outline-prompt="none"]')).toHaveTextContent(
+      'Work carrying on from earlier in this session',
+    );
+    await expect(region).not.toHaveTextContent(
       'Before the first message of yours this outline read',
     );
+  },
+};
+
+/* A failing run followed by a passing run of the same check is a red test that was fixed: said plainly, not in
+   the failure colour, and not listed as a failure. A check still red after its last run is, once. */
+export const AFixedRedTestIsNotAFailure: Story = {
+  render: () => {
+    const { base, first, second } = twoBlocks();
+    return (
+      <OutlinePage
+        outline={{
+          ...base,
+          blocks: [
+            {
+              ...first,
+              counts: { ...first.counts, checks: 3, checks_failed: 0, checks_fixed: 1 },
+              failures: [],
+            },
+            {
+              ...second,
+              counts: { ...second.counts, checks: 2, checks_failed: 1, checks_fixed: 0 },
+              failures: [{ fact_id: 'fact:lint', title: 'ruff check src', result: 'failed' }],
+            },
+          ],
+        }}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const [fixed, red] = [
+      ...(await within(region).findAllByRole('listitem')).filter((item) =>
+        item.hasAttribute('data-next-outline-block'),
+      ),
+    ] as [HTMLElement, HTMLElement];
+    await expect(fixed.querySelector('[data-next-outline-counts]')).toHaveTextContent(
+      'A check that failed passed on a later run.',
+    );
+    await expect(fixed.querySelector('[data-next-outline-failure]')).toBeNull();
+    await expect(fixed).not.toHaveAttribute('data-next-outline-failed');
+    await expect(fixed).not.toHaveTextContent(/Failed as the tool reported/);
+    // The check that is still failing is listed once, in the failure colour.
+    await expect(red.querySelectorAll('[data-next-outline-failure]')).toHaveLength(1);
+    await expect(red).toHaveTextContent('Failed as the tool reported: ruff check src');
+  },
+};
+
+/* A long first prompt is cut at a word with an ellipsis, never inside one. */
+export const LongPromptCutAtAWord: Story = {
+  render: () => {
+    const { base, first, second } = twoBlocks();
+    const title =
+      'Implement the launch grant card. The launch-grant card still says "allowed when this dashboard started" after Turning off the grant from the toolbar, and the same stale line stays on the next card as well.';
+    return (
+      <OutlinePage
+        outline={{
+          ...base,
+          blocks: [{ ...first, prompt: { ...first.prompt, title } }, second],
+        }}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const prompt = (await waitFor(() => {
+      const node = region.querySelector<HTMLElement>('[data-next-outline-prompt]');
+      if (!node) throw new Error('no prompt yet');
+      return node;
+    })) as HTMLElement;
+    const shown = prompt.textContent ?? '';
+    await expect(shown.endsWith('…')).toBe(true);
+    await expect(shown).toMatch(/\w…$/);
+    const whole = prompt.getAttribute('title') ?? '';
+    await expect(whole.startsWith(shown.slice(0, -1))).toBe(true);
+    await expect(whole.charAt(shown.length - 1)).toMatch(/^\s?$/);
   },
 };

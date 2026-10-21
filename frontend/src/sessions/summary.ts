@@ -16,18 +16,16 @@ import { clock } from '../observed';
    and none presents a citation as proof of the sentence beside it
    ([the known limit](../../../docs/design-session-summary.md#the-known-limit-relevance-is-not-checked)). */
 
-export const SUMMARY_ADDS =
-  'A summary tells this session as a short story in phases, each line citing the entries it rests on. It is written by a model; the outline below is Compass’s own grouping.';
 export const SUMMARY_WORKING_KEEP = 'You can keep working. The summary will appear here.';
 export const SUMMARY_STARTING = 'Starting a summary of this finished session…';
 /* The switch is one for the whole machine, so the sentence says so: it once said "this session", and a reader
    who turned summaries off on one session found them off on the next. */
 export const SUMMARY_OFF =
   'Summaries are turned off for every session. Nothing is sent for a summary until you turn them on.';
-/* The outline is named only where one is drawn: a Gemini session has none, and the sentence once pointed at "the
-   outline below" above the line saying this session has no outline. */
+/* The outline is named only where one is drawn: a Gemini session has none, and the sentence once pointed at an
+   outline beside the line saying this session has no outline. */
 export const SUMMARY_NOT_CLAUDE = (harness: string, outlined = true) =>
-  `${harness} sessions cannot be summarized yet: Compass summarizes Claude Code sessions only.${outlined ? ' The outline below is Compass’s own grouping.' : ''}`;
+  `${harness} sessions cannot be summarized yet: Compass summarizes Claude Code sessions only.${outlined ? ' The outline above is Compass’s own grouping.' : ''}`;
 export const SUMMARY_RELEVANCE =
   'Each line cites the entries it rests on. Compass checks that a cited entry exists and what kind it is, not that it supports the line.';
 export const SUMMARY_FAILED_SEND =

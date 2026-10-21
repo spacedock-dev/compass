@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { contextKey } from '../api/identity';
+import { jobActive } from '../api/summary';
 import { parseOutline } from '../api/outline';
 import { useControls } from '../controls';
 import { entriesHeld } from '../drift/citations';
@@ -17,7 +18,6 @@ import { summaryHeader, useOpenSummary, useSummaryState } from './summaryState';
 import { fullActivityKey } from './fullActivityKey';
 import {
   missingSentence,
-  NO_PROMPT,
   OUTLINE_EMPTY,
   OUTLINE_FAILED,
   OUTLINE_LABEL,
@@ -108,54 +108,10 @@ export function EntryChip({
   );
 }
 
-/* Which entries get a chip. A prompt's id is the record page's own message id, so a prompt the page does not
-   hold yet is read for. A check or file id is the outline's own and does not yet name a record row
-   (docs/design-session-summary.md#open-questions), so it gets a chip only once the page holds an entry under
-   it, and a press never reads pages for an id no page carries. */
-function useChips(block: BlockView) {
-  const { model } = useDrift();
-  const chip = (id: string) => model.byId.has(id) || id === block.promptId;
-  return {
-    first: chip(block.first),
-    last: block.first !== block.last && chip(block.last),
-    failure: chip,
-  };
-}
-
-function Span({
-  block,
-  onOpen,
-}: {
-  readonly block: BlockView;
-  readonly onOpen: (id: string, n: string | null) => void;
-}) {
-  const chips = useChips(block);
-  if (!chips.first && !chips.last) return null;
-  const single = block.first === block.last;
-  const first = chips.first ? (
-    <EntryChip
-      id={block.first}
-      purpose={single ? 'this part of the session' : 'where this part starts'}
-      onOpen={onOpen}
-    />
-  ) : null;
-  const last = chips.last ? (
-    <EntryChip id={block.last} purpose="where this part ends" onOpen={onOpen} />
-  ) : null;
-  const lead = single ? 'Entry' : first && last ? 'Entries' : first ? 'Starts at' : 'Ends at';
-  return (
-    <p
-      className="m-0 flex flex-wrap items-center gap-x-1 text-label text-muted-foreground"
-      data-next-outline-span
-    >
-      <span>{lead}</span>
-      {first}
-      {first && last ? <span>to</span> : null}
-      {last}
-    </p>
-  );
-}
-
+/* A failing check's chip, where the page holds an entry under its id. A check's id is the outline's own and does
+   not yet name a record row (docs/design-session-summary.md#open-questions), so it gets a chip only once the page
+   holds one, and a press never reads pages for an id no page carries. A part's own start and end carry no chip:
+   `#1 to #13` named entries the reader had not yet seen. */
 function Block({
   block,
   onOpen,
@@ -163,11 +119,12 @@ function Block({
   readonly block: BlockView;
   readonly onOpen: (id: string, n: string | null) => void;
 }) {
-  const chips = useChips(block);
+  const { model } = useDrift();
   return (
     <li
       className="flex flex-col gap-1 border-l-2 border-[var(--rule)] pl-3"
-      data-next-outline-block={block.first}
+      data-next-outline-block={block.key}
+      {...(block.opening ? { 'data-next-outline-opening': '' } : {})}
       {...(block.failures.length ? { 'data-next-outline-failed': '' } : {})}
     >
       <p className="m-0 text-body text-foreground [overflow-wrap:anywhere]">
@@ -178,7 +135,7 @@ function Block({
         ) : null}
         {block.prompt === null ? (
           <span className="text-muted-foreground" data-next-outline-prompt="none">
-            {NO_PROMPT}
+            {block.noPrompt}
           </span>
         ) : (
           <q data-next-outline-prompt title={block.promptFull ?? undefined}>
@@ -186,9 +143,11 @@ function Block({
           </q>
         )}
       </p>
-      <p className="m-0 text-label text-muted-foreground" data-next-outline-counts>
-        {block.counts.join(' · ')}
-      </p>
+      {block.line ? (
+        <p className="m-0 text-body text-muted-foreground" data-next-outline-counts>
+          {block.line}
+        </p>
+      ) : null}
       {block.failures.length ? (
         <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Failures in this part">
           {block.failures.map((failure) => (
@@ -200,14 +159,18 @@ function Block({
               <span className="[overflow-wrap:anywhere]">
                 {`Failed as the tool reported: ${failure.title || 'a check'}`}
               </span>
-              {chips.failure(failure.factId) ? (
+              {model.byId.has(failure.factId) ? (
                 <EntryChip id={failure.factId} purpose="the failed check" onOpen={onOpen} />
               ) : null}
             </li>
           ))}
+          {block.moreFailures ? (
+            <li className="text-label text-destructive" data-next-outline-more-failures>
+              {`and ${String(block.moreFailures)} more ${block.moreFailures === 1 ? 'check' : 'checks'} still failing`}
+            </li>
+          ) : null}
         </ul>
       ) : null}
-      <Span block={block} onOpen={onOpen} />
     </li>
   );
 }
@@ -330,6 +293,15 @@ export function WhatItDid({
       .finally(settle);
   };
 
+  /* Until a summary exists, and while none is being made, the card opens with the outline and the way to ask
+     for a summary follows it. Once one is stored or running, its controls and progress stay above what they act on. */
+  const leadWithOutline = !summary.stored && !jobActive(summary.job) && !summary.held.opening;
+  const summaryControls = (
+    <div className="flex flex-col gap-2 empty:hidden" data-next-session-summary-controls>
+      <SummaryControls state={summary} outline={outlineSize(outline)} />
+    </div>
+  );
+
   return (
     <Card
       variant="drift-panel"
@@ -355,9 +327,7 @@ export function WhatItDid({
           </span>
         ) : null}
       </header>
-      <div className="flex flex-col gap-2 empty:hidden" data-next-session-summary-controls>
-        <SummaryControls state={summary} outline={outlineSize(outline)} />
-      </div>
+      {leadWithOutline ? null : summaryControls}
       <div className="flex flex-col gap-3" data-next-session-summary-slot>
         {summary.stored ? (
           <>
@@ -396,6 +366,7 @@ export function WhatItDid({
           />
         )}
       </div>
+      {leadWithOutline ? summaryControls : null}
     </Card>
   );
 }

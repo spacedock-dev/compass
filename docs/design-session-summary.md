@@ -1235,19 +1235,31 @@ job ceilings whose numbers still require measurement:
 | `session_source_classify_share` | 0.25 | Hold back a quarter of that time from scanning for classifying what was scanned. |
 | `session_source_line_max_bytes` | 16 MiB | Match the forward index's line skip before masking. |
 | `session_outline_max_bytes` | 2 MiB | A focused poll pays less than a press and names its unread prefix. |
+| `session_outline_head_bytes` | 256 KiB | Read the start of the record for the first prompt's part, once the newest window begins after it. |
 | `session_outline_max_seconds` | 0.25 seconds | Bound work repeated on focused polls. |
 | `session_outline_max_blocks` | 20 | Keep recent turns in a bounded focused response. |
 | `session_outline_highlights` | 3 | Bound each block's failures, folders and check examples separately. |
 | `session_outline_cache_limit` | 16 | Match the message-index cache's session count. |
 
-`session_outline.build(page, config)` returns `state`, `made_by: compass`, `basis: grouping`,
-`reason`, `harness`, `coverage`, `blocks` and `more_blocks`. Each block has `prompt` (fact id,
-title and time, or null for work before the first held prompt), a `span` (first/last fact ids,
-entry count, from/to times), `counts` (checks, failed checks, files, agent messages, subagent
-entries), bounded `failures` and `checks` (fact id, title, tool-reported result), and bounded
-`folders` (folder and write count). Folders sort by count descending then name; check examples
-and failures keep the newest entries in their block. Rewrites count as write entries, not unique
-paths. Extra blocks are dropped from the front and counted in `more_blocks`.
+`session_outline.build(page, config, opening=None)` returns `state`, `made_by: compass`, `basis:
+grouping`, `reason`, `harness`, `coverage`, `blocks` and `more_blocks`. Each block has `prompt` (fact id,
+title and time, or null for work before the first held prompt), `opening` and `partial` (below), a
+`span` (first/last fact ids, entry count, from/to times), `counts` (checks, failing checks, fixed
+checks, files, agent messages, subagent entries), bounded `failures` and `checks` (fact id, title,
+tool-reported result), and bounded `folders` (folder and write count). Folders sort by count
+descending then name; check examples and failures keep the newest entries in their block. Rewrites
+count as write entries, not unique paths. The block cap bounds the newest parts; extra parts are
+dropped from the front of those and counted in `more_blocks`, and the opening part is never one of
+them.
+
+**A fixed check.** A failed run that a later passing run of the same check followed, anywhere in
+the read, is a red test that was fixed. Matching is by the check's `subject`, so it holds across
+parts and across the parent and its subagents. `checks_failed` counts checks whose newest failed
+run in the part no pass followed, one per check, and `failures` lists exactly those, one row per
+check: a check run twice and failing twice is one failure. `checks_fixed` counts the checks whose
+newest failed run was followed by a pass. `counts.checks` still counts every run. A write is never
+inferred from a shell command: a file an agent changed with a script rather than a write tool or a
+redirect has no entry, and the part says nothing about it.
 
 This is Compass's grouping, never a summary or a completion verdict. Its titles quote the
 existing masked evidence; its result tokens are as the tool reported. It authors no prose about
@@ -1261,6 +1273,33 @@ would serve that until the transcript changed, for a finished session the life o
 owned child when present. Only a focused project/session answer gains `sources.outline`, before
 `for_page`. When the focus matches no single row, `session_outline.unmatched` returns the same
 labelled shape with `state: unavailable` and `reason: session_not_matched`, reading nothing. Session rows gain nothing.
+
+### The outline always opens at the first prompt
+
+The newest window is bounded in bytes, and a busy session passes the bound in minutes: an
+eight-minute session with about 200 thousand output tokens produced an outline whose only part was
+the work after the window began, headed by no prompt. The window is unchanged. When it begins after
+byte zero (`coverage.start_offset` above zero), `for_session` makes one more read from the start of
+the record, bounded by `session_outline_head_bytes` and by where the window begins so the two never
+overlap, and keeps the first part that starts at a person's message. `build` shows that part first
+with `opening: true`. `partial: true` marks an opening part whose read ended before the next
+prompt, so its counts are a floor; the card says so. A complete read marks its own first part
+`opening` and `partial` is false.
+
+The head is a second read, not a larger window. A larger window would have moved the same cliff
+to bigger sessions and made every focused poll pay for it; the head costs at most its byte bound
+and is skipped when the window already starts at zero. A head read that its clock clipped is not
+cached, as a clipped window is not. The block cap applies to the newest parts after the opening
+one, so the outline holds at most the cap plus one parts. What lies between the opening part and the
+window is named by `coverage` and is not outlined; Full activity lists it.
+
+The card draws each part as a quoted prompt and short sentences ("The agent replied 7 times, ran 3
+checks and wrote 5 files in frontend/src/drift."), not a line of counts. A count is said once: a
+failing check has its own red row, so the sentence does not count it, and a fixed check is said in
+the sentence in the plain colour. A part carries no entry numbers, since `#1 to #13` named entries
+the reader had not seen; only a failed check's row keeps a chip, once the page holds that entry.
+Prompts are cut at a word. The card leads with the outline until a summary is stored or running,
+and puts the read-size estimate in the row with `Summarize`.
 
 ### Evidence admitted by this build
 

@@ -15,7 +15,6 @@ import {
   GAP_RUNNING,
   PLACE_LINES,
   REPLY_CUT,
-  SUMMARY_ADDS,
   SUMMARY_FAILED_SEND,
   SUMMARY_HOLDS,
   SUMMARY_INCOMPLETE,
@@ -264,11 +263,19 @@ export const NoSummary: Story = {
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const none = await stateOf(region, 'none');
-    await expect(none).toHaveTextContent(SUMMARY_ADDS);
-    await expect(none.querySelector('[data-next-summary-size]')).toHaveTextContent(
-      'About 6 entries to read.',
-    );
-    await expect(region.querySelector('[data-next-outline="blocks"]')).not.toBeNull();
+    // The card leads with the outline, not with sentences about what a summary is, and the way to ask for one
+    // follows it.
+    await expect(none).not.toHaveTextContent(/tells this session as a short story/);
+    const outline = region.querySelector('[data-next-outline="blocks"]');
+    await expect(outline).not.toBeNull();
+    await expect(
+      (outline as Element).compareDocumentPosition(none) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The estimate sits beside Summarize, in the one row.
+    const size = none.querySelector('[data-next-summary-size]') as HTMLElement;
+    await expect(size).toHaveTextContent('About 6 entries to read.');
+    const press = within(none).getByRole('button', { name: 'Summarize' });
+    await expect(size.parentElement).toBe(press.parentElement);
     const sent = within(none).getByRole('button', { name: 'What is sent to Claude Code' });
     await userEvent.click(sent);
     await waitFor(() =>
@@ -607,7 +614,7 @@ export const Partial: Story = {
 };
 
 /* Interrupted with no saved summary: the reason in the reader's words, the parts it kept, Summarize, and the
-   outline below. */
+   outline above it. */
 export const Interrupted: Story = {
   render: () => (
     <SummaryPage
@@ -1858,28 +1865,16 @@ export const LostReplyAsksTheBoard: Story = {
 };
 
 /* A chip pressed in the outline under a saved summary says it could not be shown inside the outline, where the
-   press was made, not above the summary. */
+   press was made, not above the summary. The outline's failed check is from before the intent's start, which Full
+   activity does not list. */
 export const MissingLineStaysInTheOutline: Story = {
-  render: () => {
-    const outline = claudeOutline({}, true) as { blocks: Record<string, unknown>[] };
-    const [first, ...rest] = outline.blocks;
-    return (
-      <SummaryPage
-        summary={storedSummary()}
-        outline={{
-          ...outline,
-          blocks: [
-            {
-              ...first,
-              prompt: { fact_id: 'p9', title: 'An entry no page holds.', at: 1 },
-              span: { first: 'p9', last: 'p9', entries: 1, from_at: 1, to_at: 1 },
-            },
-            ...rest,
-          ],
-        }}
-      />
-    );
-  },
+  render: () => (
+    <SummaryPage
+      summary={storedSummary()}
+      outline={claudeOutline({}, true)}
+      session={{ annotation_window_start: G - 400, annotation_goal_saved_at: G - 400 }}
+    />
+  ),
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     await summaryOf(region);
@@ -1891,9 +1886,12 @@ export const MissingLineStaysInTheOutline: Story = {
       if (!node) throw new Error('no outline');
       return node;
     });
-    await userEvent.click(
-      within(outline).getAllByRole('link', { name: /^Open an older entry/ })[0] as HTMLElement,
-    );
+    const chip = await waitFor(() => {
+      const node = outline.querySelector<HTMLElement>('[data-next-outline-entry="c1"]');
+      if (!node) throw new Error('no chip yet');
+      return node;
+    });
+    await userEvent.click(chip);
     await waitFor(() =>
       expect(outline.querySelector('[data-next-outline-missing]')).not.toBeNull(),
     );

@@ -11,7 +11,10 @@ export const OUTLINE_LOADING = "Reading this session's record for an outline…"
 export const OUTLINE_FAILED =
   'The outline could not be read. Compass tries again on the next update.';
 export const OUTLINE_EMPTY = 'The part of the record Compass read holds no entries yet.';
-export const NO_PROMPT = 'Before the first message of yours this outline read';
+/* A part with no prompt of its own to name: work before the first message the read holds, or work that carries on
+   from a message the read did not reach. */
+export const NO_PROMPT_OPENING = 'Work before your first message';
+export const NO_PROMPT_CONTINUED = 'Work carrying on from earlier in this session';
 /* The prompt is the person's own words, masked by the server; a block head is a glance, and the whole message
    is one press away in Full activity. */
 export const PROMPT_CHARS = 180;
@@ -33,19 +36,29 @@ export interface BlockView {
   readonly promptId: string | null;
   readonly prompt: string | null;
   readonly promptFull: string | null;
+  /** What heads a part that has no prompt of its own. */
+  readonly noPrompt: string;
   readonly at: string | null;
-  readonly first: string;
-  readonly last: string;
-  readonly entries: number;
-  readonly counts: readonly string[];
+  readonly opening: boolean;
+  /** What the part did, in short sentences. No entry numbers, and no count said twice. */
+  readonly line: string;
+  /** One row per check still failing, newest runs; the count of those not listed follows. */
   readonly failures: readonly { readonly factId: string; readonly title: string }[];
+  readonly moreFailures: number;
 }
 
 const plural = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
 
+/* Cut at a word, never inside one: a title once ended "…after Tu". A single word longer than half the limit has
+   no boundary worth keeping, so it is cut where it stands. */
 export function trimPrompt(title: string): string {
   const flat = title.replace(/\s+/g, ' ').trim();
-  return flat.length > PROMPT_CHARS ? `${flat.slice(0, PROMPT_CHARS - 1).trimEnd()}…` : flat;
+  if (flat.length <= PROMPT_CHARS) return flat;
+  const room = flat.slice(0, PROMPT_CHARS - 1);
+  const wholeWord = /\s/.test(flat.charAt(PROMPT_CHARS - 1));
+  const space = room.lastIndexOf(' ');
+  const kept = wholeWord || space < PROMPT_CHARS / 2 ? room : room.slice(0, space);
+  return `${kept.replace(/[\s,;:.\-–—]+$/, '')}…`;
 }
 
 /* Why there is no outline, in the reader's words. `harness` is the harness's display name. */
@@ -60,7 +73,12 @@ export function noOutline(outline: Outline, harness: string): string {
 }
 
 /* What the read behind the outline did not cover, said once above the blocks. */
-export function coverageNotes(coverage: OutlineCoverage | null, more: number): string[] {
+export function coverageNotes(
+  coverage: OutlineCoverage | null,
+  more: number,
+  /** The outline opens at the session's first prompt although the newest window began after it. */
+  opens = false,
+): string[] {
   const notes: string[] = [];
   if (coverage) {
     const replies = coverage.agentReplies === 'not_read';
@@ -76,7 +94,9 @@ export function coverageNotes(coverage: OutlineCoverage | null, more: number): s
     const reasons = new Set(coverage.unread.map((region) => region.reason));
     if (coverage.startOffset > 0 || reasons.has('before_window'))
       notes.push(
-        "Compass read only the newest part of this session's record, so the outline starts partway.",
+        opens
+          ? 'Compass read your first message and the newest part of this session. What happened between them is not outlined here.'
+          : "Compass read only the newest part of this session's record, so the outline starts partway.",
       );
     if (reasons.has('time') || reasons.has('bytes'))
       notes.push(
@@ -95,42 +115,48 @@ export function coverageNotes(coverage: OutlineCoverage | null, more: number): s
   return notes;
 }
 
-/* The counts under a block. Checks and files are left out where the harness's are not read, so a zero never
-   stands for "not looked at". */
-export function blockCounts(block: OutlineBlock, coverage: OutlineCoverage | null): string[] {
-  const counts = block.counts;
-  /* The span below a block is "#1 to #5" in message numbers, and a check or file sits under a message as #2.1,
-     so a bare "8 entries" over "#1 to #5" read as a miscount. Messages are what the numbers count. */
-  const inner = coverage?.checksAndFiles === 'not_admitted' ? 0 : counts.checks + counts.files;
-  const messages = block.span.entries - inner;
-  const parts = [
-    coverage?.checksAndFiles === 'not_admitted' || messages <= 0
-      ? plural(block.span.entries, 'entry', 'entries')
-      : inner
-        ? `${plural(messages, 'message', 'messages')} with ${plural(inner, 'check or file', 'checks and files')} under them`
-        : plural(messages, 'message', 'messages'),
-  ];
-  if (coverage?.agentReplies !== 'not_read' && counts.agentMessages)
-    parts.push(plural(counts.agentMessages, 'agent reply', 'agent replies'));
-  if (coverage?.checksAndFiles !== 'not_admitted') {
-    if (counts.checks)
-      parts.push(
-        counts.checksFailed
-          ? `${plural(counts.checks, 'check', 'checks')} run, ${String(counts.checksFailed)} failed as the tool reported`
-          : plural(counts.checks, 'check run', 'checks run'),
-      );
-    if (counts.files) {
-      const folders = block.folders
-        .map((row) => `${row.folder || 'no folder'} (${String(row.files)})`)
-        .join(', ');
-      parts.push(
-        `${plural(counts.files, 'file', 'files')} written${folders ? ` in ${folders}` : ''}`,
-      );
-    }
+const folderName = (folder: string) =>
+  folder === '' || folder === '.' ? 'the project root' : folder;
+const spoken = (items: readonly string[]) =>
+  items.length < 2
+    ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} and ${items.at(-1) ?? ''}`;
+
+/* What a part did, in short sentences. Checks and files are left out where the harness's are not read, so a zero
+   never stands for "not looked at". A failing check is not counted here: it has its own line under the part,
+   so a count in the sentence would say it twice. A failure a later pass followed is said as fixed, in the same
+   plain voice as the rest, because a red test written first is the work going as planned. */
+export function blockLine(block: OutlineBlock, coverage: OutlineCoverage | null): string {
+  const { counts } = block;
+  const replies = coverage?.agentReplies !== 'not_read';
+  const work = coverage?.checksAndFiles !== 'not_admitted';
+  const did: string[] = [];
+  if (replies && counts.agentMessages)
+    did.push(`replied ${plural(counts.agentMessages, 'time', 'times')}`);
+  if (work && counts.checks) did.push(`ran ${plural(counts.checks, 'check', 'checks')}`);
+  if (work && counts.files) {
+    const where = block.folders.map((row) => folderName(row.folder));
+    const listed = block.folders.reduce((sum, row) => sum + row.files, 0);
+    did.push(
+      `wrote ${plural(counts.files, 'file', 'files')}${
+        where.length ? `${listed < counts.files ? ', mostly' : ''} in ${spoken(where)}` : ''
+      }`,
+    );
   }
+  const sentences: string[] = [];
+  if (did.length) sentences.push(`The agent ${spoken(did)}.`);
+  if (work && counts.checksFixed)
+    sentences.push(
+      counts.checksFixed === 1
+        ? 'A check that failed passed on a later run.'
+        : `${String(counts.checksFixed)} checks that failed passed on a later run.`,
+    );
   if (counts.subagentEntries)
-    parts.push(plural(counts.subagentEntries, 'subagent entry', 'subagent entries'));
-  return parts;
+    sentences.push(`Subagents added ${plural(counts.subagentEntries, 'entry', 'entries')}.`);
+  if (!sentences.length && replies && work)
+    sentences.push('No agent work is recorded under this message.');
+  if (sentences.length && block.partial) sentences.push('Counted only as far as Compass read.');
+  return sentences.join(' ');
 }
 
 export function outlineView(
@@ -148,21 +174,22 @@ export function outlineView(
     promptId: block.prompt?.factId ?? null,
     prompt: block.prompt ? trimPrompt(block.prompt.title) : null,
     promptFull: block.prompt ? block.prompt.title : null,
+    noPrompt: block.opening ? NO_PROMPT_OPENING : NO_PROMPT_CONTINUED,
     at: block.prompt?.at
       ? clock(block.prompt.at)
       : block.span.fromAt
         ? clock(block.span.fromAt)
         : null,
-    first: block.span.first,
-    last: block.span.last,
-    entries: block.span.entries,
-    counts: blockCounts(block, outline.coverage),
+    opening: block.opening,
+    line: blockLine(block, outline.coverage),
     failures: block.failures.map((row) => ({ factId: row.factId, title: row.title })),
+    moreFailures: Math.max(0, block.counts.checksFailed - block.failures.length),
   }));
+  const opens = Boolean(outline.blocks[0]?.opening && outline.blocks[0].prompt);
   return {
     kind: 'blocks',
     blocks,
-    notes: coverageNotes(outline.coverage, outline.moreBlocks),
+    notes: coverageNotes(outline.coverage, outline.moreBlocks, opens),
     empty: blocks.length === 0,
   };
 }

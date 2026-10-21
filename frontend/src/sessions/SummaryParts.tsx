@@ -18,7 +18,6 @@ import {
   FRESHNESS_UNKNOWN,
   LEDE_LAST,
   PLACE_LINES,
-  SUMMARY_ADDS,
   REPLY_CUT,
   SUMMARY_HOLDS,
   SUMMARY_INCOMPLETE,
@@ -293,6 +292,7 @@ export function SummaryControls({
     );
   }
   const opening = state.due;
+  const size = readSize(outline.entries, outline.more, state.plan);
   if (held.opening)
     return (
       <div className="flex flex-col gap-2" data-next-summary-state="starting">
@@ -312,14 +312,9 @@ export function SummaryControls({
         </Line>
       ) : (
         <>
-          <Line>{SUMMARY_ADDS}</Line>
-          {readSize(outline.entries, outline.more, state.plan) ? (
-            <Line data-next-summary-size>
-              {readSize(outline.entries, outline.more, state.plan)}
-            </Line>
-          ) : null}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             {opening ? null : <Press state={state} action="start" label="Summarize" primary />}
+            {size ? <Line data-next-summary-size>{size}</Line> : null}
             <Sent state={state} />
           </div>
         </>

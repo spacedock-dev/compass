@@ -40,6 +40,9 @@ SESSION_SOURCE_CLASSIFY_SHARE = 0.25
 SESSION_SOURCE_LINE_MAX_BYTES = 16 * 1024 * 1024
 # A focused poll pays much less than a press; a clipped outline names its unread prefix.
 SESSION_OUTLINE_MAX_BYTES = 2 * 1024 * 1024
+# The head read that keeps a session's first prompt in the outline once the newest window passes it
+# (docs/design-session-summary.md#the-outline-always-opens-at-the-first-prompt).
+SESSION_OUTLINE_HEAD_BYTES = 256 * 1024
 SESSION_OUTLINE_MAX_SECONDS = 0.25
 # Keep the focused answer small while retaining several recent turns and three examples per list.
 SESSION_OUTLINE_MAX_BLOCKS = 20
@@ -249,6 +252,7 @@ class RuntimeConfig:
     session_source_classify_share: float
     session_source_line_max_bytes: int
     session_outline_max_bytes: int
+    session_outline_head_bytes: int
     session_outline_max_seconds: float
     session_outline_max_blocks: int
     session_outline_highlights: int
@@ -874,6 +878,7 @@ def build_runtime_config(
         session_source_classify_share=SESSION_SOURCE_CLASSIFY_SHARE,
         session_source_line_max_bytes=SESSION_SOURCE_LINE_MAX_BYTES,
         session_outline_max_bytes=SESSION_OUTLINE_MAX_BYTES,
+        session_outline_head_bytes=SESSION_OUTLINE_HEAD_BYTES,
         session_outline_max_seconds=SESSION_OUTLINE_MAX_SECONDS,
         session_outline_max_blocks=SESSION_OUTLINE_MAX_BLOCKS,
         session_outline_highlights=SESSION_OUTLINE_HIGHLIGHTS,
