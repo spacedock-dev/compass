@@ -1069,14 +1069,15 @@
       "disposition": "store-held"
     },
     {
-      "name": "The whole text of each direction Keep opened before settling",
+      "name": "The whole text of each open later direction, read when the question is drawn",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/intent/IntentDirections.test.tsx",
+        "frontend/src/intent/IntentDirectionChoice.test.tsx",
         "frontend/src/drift/KeepAnalyze.test.tsx",
         "frontend/e2e/drift-parity.mjs"
       ],
-      "contract": "Keep holds whole directions and the drawn revision. Its first press reads and shows every direction, a new arrival is unread, and a later settlement names that drawn revision. The count-only question permits no one-press settlement.",
+      "contract": "The page reads every open direction's whole text when the question is drawn, with no press, and holds the ids drawn whole for the tab. Each choice acts on words already on screen, a failed read quotes the first sentence and Leave it reads again, and every Leave it names the intent revision on screen.",
       "disposition": "store-held"
     },
     {
