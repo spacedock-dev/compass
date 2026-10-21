@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2068707,
+    "bytes": 2068723,
     "file": "react.html",
-    "sha256": "01af30d885e7125086d75f5b1da12ae38ef0621f33eaf5ead7b8e7e6931d224a"
+    "sha256": "b6fd97387b90ed8d255e8e860ad76620c4c0a87d1c6393c3f862c545a2012047"
   },
   "format": 1,
   "frontend": "react",
@@ -555,7 +555,7 @@
       },
       {
         "file": "frontend/src/drift/DriftBody.tsx",
-        "sha256": "9ee1a95383037149fefa90f645d8dc0a7cd7586e797ff5708b0c74323d55e9a4"
+        "sha256": "4dac36e11e9c34664ab5f4d8e9dda8a5dae94c40affd9d2b1a86f07d7f289ecb"
       },
       {
         "file": "frontend/src/drift/DriftLevelView.tsx",
@@ -587,7 +587,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingControl.tsx",
-        "sha256": "c2ffff7f7d5c9ec59c1c26a8186b12fa30238cacf0862f83643d6fc175f1eb63"
+        "sha256": "6a83d2564176f49d756019ab52994168461008a42edb6e74798d434ddbfe0bee"
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
@@ -719,7 +719,7 @@
       },
       {
         "file": "frontend/src/intent/Caveats.tsx",
-        "sha256": "1e094bd3ee28053607cb20d36af9c5b82b679d1c6f98df38ac35e0ca6ca9b56d"
+        "sha256": "e09a01e40241df33f6609b8c101f19389cd685ec00ffd24b01386b57febc1b51"
       },
       {
         "file": "frontend/src/intent/DirectionActionButton.tsx",
@@ -735,7 +735,7 @@
       },
       {
         "file": "frontend/src/intent/GoalField.tsx",
-        "sha256": "aab3dfadf36d06dd961a0a1488e2c9cd2f46715f5cb7f52f38533492d06d52e3"
+        "sha256": "27cb221764f018049c58ccd42cd0d5f1314aa560fef45e3b496af437de1d00c3"
       },
       {
         "file": "frontend/src/intent/HeldTextarea.tsx",
@@ -755,7 +755,7 @@
       },
       {
         "file": "frontend/src/intent/IntentSection.tsx",
-        "sha256": "4c59696699fc319571984a371af16a235ee953cdb942838b168180aa8462a660"
+        "sha256": "1b197f43489b3b316dfbf23980899b1702d704cbaac86dcf33ff602d9f9606c4"
       },
       {
         "file": "frontend/src/intent/LiveMonitorSwitch.tsx",
@@ -763,11 +763,11 @@
       },
       {
         "file": "frontend/src/intent/OutcomeLines.tsx",
-        "sha256": "34e6c4aa0a436b775d4ec1e15ebd8acd610e9afb56addd6910435f3cdecb23a6"
+        "sha256": "c78721bc8a0127c17bacc7b81d716dda3c7c2681d4ed2cfcf013fe7db9967489"
       },
       {
         "file": "frontend/src/intent/PromptSelect.tsx",
-        "sha256": "96cc5b36f5d91a9a37ae22a159ffe076efb61620831e2ffcef1f54ee8b4aee06"
+        "sha256": "aa22301cd5cf89c57154a6ab7abc8073f037524c4642d0362432b7d1511de0a3"
       },
       {
         "file": "frontend/src/intent/annotation.ts",
@@ -787,7 +787,7 @@
       },
       {
         "file": "frontend/src/intent/derive.ts",
-        "sha256": "9c9b29c474252d96d46b5e56054e15f0055dd0c7330d9f2cff5ae0cc9eae361c"
+        "sha256": "b9723e9f6965b30ed0152d5fcdbb08c6ca0ad71200339c98cc96f3902446c480"
       },
       {
         "file": "frontend/src/intent/directions.ts",
@@ -807,7 +807,7 @@
       },
       {
         "file": "frontend/src/intent/intent.css",
-        "sha256": "1ae8bf98f23a6e43acec3244fc203c13e78ab26bce203a1eb9c66ddb0d07c3dc"
+        "sha256": "4e30208314c1c97b6fea988d1fe4c9f910a6161dff287dc049cbbac310c222a5"
       },
       {
         "file": "frontend/src/intent/liveMonitor.ts",
@@ -835,7 +835,7 @@
       },
       {
         "file": "frontend/src/intent/save.ts",
-        "sha256": "cdf29ca88656b81ef14fb3fb8611ec25e4f08e5389c98bb8629f26a0ea0f42ac"
+        "sha256": "2a5057a77b967470449cd3a4f17d41ec59cc16433762b753bcfbd42da8f68952"
       },
       {
         "file": "frontend/src/intent/sentences.ts",
