@@ -636,7 +636,7 @@
     "|.next-cockpit-held-stamp [data-slot=\"accordion-content\"]>span|display:block",
     "|.next-cockpit-held-stamp|display:block",
     "|.next-cockpit-held-stamp|display:flex;flex-wrap:wrap;gap:08px",
-    "|.next-cockpit-held-tools|display:flex;align-items:center;gap:4px8px;margin-left:auto",
+    "|.next-cockpit-held-tools|display:flex;flex-wrap:wrap;align-items:center;gap:4px8px",
     "|.next-cockpit-held-under|grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px12px",
     "|.next-cockpit-held>header|display:flex;justify-content:space-between;align-items:baseline;gap:10px",
     "|.next-cockpit-landed h2|margin:0;color:var(--ink-label);font-family:var(--mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.07em",
