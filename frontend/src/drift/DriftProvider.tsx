@@ -165,7 +165,11 @@ export function DriftProvider({
       ? ctx.drift.noteReading(
           key,
           standing,
-          model.shape.departures.length,
+          model.shape.departures.map((row) => ({
+            key: row.key,
+            detail: row.detail,
+            cites: row.citedIds,
+          })),
           model.entries.filter(readingCopied).map((entry) => Number(entry.at) || 0),
         )
       : null;

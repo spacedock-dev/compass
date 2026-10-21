@@ -36,17 +36,29 @@ export interface Flip {
    cannot clear. */
 export interface SeenReading {
   readAt: number;
-  departures: number;
-  /** The reading drawn before this one, and how many departures it carried. */
-  before: { readonly readAt: number; readonly departures: number } | null;
+  departures: readonly DepartureMark[];
+  /** The reading drawn before this one, and the departures it carried. */
+  before: { readonly readAt: number; readonly departures: readonly DepartureMark[] } | null;
 }
+
+/** What names one departure from one reading to the next: the line it stands on, the reason it gave and the
+    entries it cited. A model words one finding differently each time it reads, so the reason alone is not it. */
+export interface DepartureMark {
+  readonly key: string;
+  readonly detail: string;
+  readonly cites: readonly string[];
+}
+
+const sameDeparture = (left: DepartureMark, right: DepartureMark): boolean =>
+  left.key === right.key &&
+  (left.detail.trim() === right.detail.trim() || left.cites.some((id) => right.cites.includes(id)));
 
 /** The earlier reading's departures that the reading now standing no longer finds. */
 export interface ClearedDeparture {
   readonly readAt: number;
   readonly count: number;
-  /** A correction the reader pasted into the session sits between the two readings: the steer named it. */
-  readonly steered: boolean;
+  /** How many corrections the reader pasted into the session between the two readings: what they named. */
+  readonly corrections: number;
 }
 
 export type FlipTimerName = 'hold' | 'until' | 'line' | 'say';
@@ -202,15 +214,18 @@ export function createDriftState(shell: Shell) {
       };
     },
 
-    /* The reading now standing for a session and how many departures it carries: the departures the one
-       before it carried that this one does not are returned for as long as it stands, and the next reading,
-       whatever it finds, takes the note down. The count is the latest drawn for that reading, because the
-       entries a departure cites may load after the first draw. Idempotent per `readAt`, so a render that
-       runs twice says the same. */
+    /* The reading now standing for a session and the departures it carries: the departures the one before it
+       carried that this one does not are returned for as long as it stands, and the next reading, whatever it
+       finds, takes the note down. Without a correction pasted between the two, that is every departure the
+       earlier one had and only when this one has none. With one, it is each departure the correction named that
+       this reading no longer finds, whether or not another stands: a steer that worked can leave the reading
+       departing on something else, and the reader is told the first was met. The departures are the latest drawn
+       for that reading, because the entries a departure cites may load after the first draw. Idempotent per
+       `readAt`, so a render that runs twice says the same. */
     noteReading(
       key: string,
       readAt: number,
-      departures: number,
+      departures: readonly DepartureMark[],
       pastedAt: readonly number[] = [],
     ): ClearedDeparture | null {
       const seen = readings.get(key);
@@ -230,13 +245,18 @@ export function createDriftState(shell: Shell) {
         }
       }
       const now = readings.get(key);
-      if (!now?.before || now.before.departures === 0 || departures !== 0) return null;
+      if (!now?.before) return null;
       const since = now.before.readAt;
-      return {
-        readAt: since,
-        count: now.before.departures,
-        steered: pastedAt.some((at) => at > since && at <= readAt),
-      };
+      const corrections = pastedAt.filter((at) => at > since && at <= readAt).length;
+      const gone =
+        corrections > 0 || departures.length === 0
+          ? now.before.departures.filter(
+              (earlier) => !departures.some((later) => sameDeparture(earlier, later)),
+            ).length
+          : 0;
+      return gone > 0 && (departures.length === 0 || corrections > 0)
+        ? { readAt: since, count: gone, corrections }
+        : null;
     },
 
     /* The flip ledger is bounded as the cue lanes are: past sixteen drawn sessions the oldest goes. */

@@ -16,13 +16,14 @@ from __future__ import annotations
 import json
 import unittest
 from typing import Any, ClassVar, cast
+from unittest import mock
 
 from compass_runtime import copied_corrections as copies
 from compass_runtime import correction, project_context, reading, records
 
 from .test_claims_and_adopted_goal import SID, _agent, _person, _Producer
 from .test_claude_checks import SHORT, START
-from .test_copied_corrections import COPIED, OWN, STORED, _App, _paste, _Store
+from .test_copied_corrections import COPIED, NOW, OWN, STORED, _App, _paste, _row, _Store
 from .test_correction import DEPARTED, GOAL, fact, row_of, session_row
 from .test_correction import reading as stored_reading
 
@@ -165,6 +166,109 @@ class WhatThePageIsShownIsTheCorrectionNotTheWrapperTest(_App):
         )
 
 
+# A paste whose tag shares its line with the reader's typed words: the one shape whose published title
+# the wrapper strip changes, because the title is the first line outside any tag-only line.
+INLINE = f"Also, {TAG_OPEN}Back to my goal: ship it.\nMore of the paste.\n{TAG_CLOSE}"
+
+
+class AWrappedPastesFactIdIsTheOneItAlreadyHadTest(_App):
+    """A reading stored before the strip cites the id the build before it gave the message (DRC-4935).
+
+    The id hashes the title, and the strip changes the title of a paste whose tag sits on a line of
+    typed words. The id is held where it was, so the citation a stored reading carries still finds
+    its message, while the title the page quotes is the stripped one.
+    """
+
+    def stored_id(self) -> str:
+        """What the build before the strip published for the newest message, read off the record.
+
+        Not through `collect`: its history store keeps every id it ever published, so asking for
+        the old one there would leave both standing and hide the move this guards.
+        """
+        with mock.patch.object(records, "strip_paste_wrapper", side_effect=lambda text: text):
+            event = project_context._instruction_event(
+                self.config, self.session.rows[-1], "claude", SHORT
+            )
+        assert event is not None
+        return str(
+            project_context._semantic_fact_from_event(event, "steer", "user_message", "")["fact_id"]
+        )
+
+    def paste(self, text: str) -> float:
+        self.register(now=START.timestamp() + self.session.seconds + 1)
+        at = _paste(self.session, text)
+        self.session.save(self.path)
+        return at
+
+    def test_the_title_loses_the_wrapper_and_the_id_does_not_change(self) -> None:
+        at = self.paste(INLINE)
+        before = self.stored_id()
+        now = next(f for f in self.user_facts() if float(f["at"]) == at)
+        self.assertNotIn("pasted_content", json.dumps(now))
+        self.assertEqual(before, now["fact_id"])
+
+    def test_a_list_content_message_keeps_its_id_with_or_without_an_image_block(self) -> None:
+        blocks: dict[str, list[dict[str, Any]]] = {
+            "text alone": [{"type": "text", "text": INLINE}],
+            "text and image": [
+                {"type": "text", "text": INLINE},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png"}},
+            ],
+        }
+        for label, content in blocks.items():
+            with self.subTest(content=label):
+                self.register(now=START.timestamp() + self.session.seconds + 1)
+                at = _paste(self.session, "")
+                self.session.rows[-1]["message"]["content"] = content
+                self.session.save(self.path)
+                before = self.stored_id()
+                now = next(f for f in self.user_facts() if float(f["at"]) == at)
+                self.assertNotIn("pasted_content", json.dumps(now))
+                self.assertEqual(before, now["fact_id"])
+
+    def test_a_paste_whose_title_the_strip_leaves_alone_keeps_its_id_too(self) -> None:
+        at = self.paste(wrapped(OWN, before="Also:"))
+        self.assertEqual(
+            self.stored_id(),
+            next(f for f in self.user_facts() if float(f["at"]) == at)["fact_id"],
+        )
+
+    def test_the_hashed_title_is_never_published(self) -> None:
+        self.paste(INLINE)
+        context = project_context.collect(
+            self.config, self.state, [_row()], "billing", now=NOW, focus=("claude", SHORT)
+        )
+        # The tag is in the context for the server's own use, and in nothing a page route sends.
+        self.assertIn("pasted_content", json.dumps(context))
+        self.assertNotIn("pasted_content", json.dumps(project_context.for_page(context)))
+
+    def test_a_stored_departure_resting_on_the_wrapped_paste_keeps_it(self) -> None:
+        self.paste(INLINE)
+        cited = self.stored_id()
+        row = session_row(
+            sid=SHORT,
+            annotation_assessment=stored_reading(goal=row_of(DEPARTED, (cited,), clause=GOAL)),
+            annotation_line_1="",
+            annotation_line_2="",
+            annotation_line_3="",
+            annotation_window_start=0.0,
+            annotation_settled_through=0.0,
+        )
+        result = correction.compose(
+            row,
+            self.user_facts(),
+            floor=0.0,
+            lines_judged=True,
+            clock=lambda stamp: f"T{int(stamp)}",
+        )
+        self.assertTrue(result["ok"], result)
+        text = "".join(
+            part if isinstance(part, str) else "{" + part["entry"] + "}" for part in result["parts"]
+        )
+        self.assertIn("departed from my goal", text)
+        self.assertIn("{" + cited + "}", text)
+
+
 SETTLED = 95.0
 FLOOR = 50.0
 
@@ -205,9 +309,16 @@ class ADepartureNeverCitesTheReadersKeptDirectionOrACorrectionTest(_Producer):
         self.assertEqual((), tuple(criterion["cites"]))
 
     def test_a_copied_correction_is_not_cited_under_a_departure(self) -> None:
-        correction_fact = {**_person("c1", 100.0, STORED), reading.COPIED_FLAG: True}
-        criterion = self.produce_cited([correction_fact, self.agent_after()], [1], settled=None)
+        # Only the copied flag differs from the control, and no Keep settled anything
+        # (`settled=None`), so the kept-direction branch cannot be what drops the citation.
+        words = _person("c1", 100.0, STORED)
+        control = self.produce_cited([words, self.agent_after()], [1], settled=None)
+        self.assertEqual(reading.RESULT_DEPARTURE, control["result"])
+        self.assertEqual(("c1",), tuple(control["cites"]))
+        flagged = {**words, reading.COPIED_FLAG: True}
+        criterion = self.produce_cited([flagged, self.agent_after()], [1], settled=None)
         self.assertNotEqual(reading.RESULT_DEPARTURE, criterion.get("result"))
+        self.assertEqual((), tuple(criterion["cites"]))
 
     def test_the_agents_own_work_beside_it_still_carries_the_departure(self) -> None:
         facts = [_kept("k1", 90.0, "Also prune the stylesheets."), self.agent_after()]

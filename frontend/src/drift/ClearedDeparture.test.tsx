@@ -10,7 +10,13 @@ const FACTS = [
   fact('m1', 400, { type: 'agent_message', by: 'agent', summary: 'Done: the queue ships.' }),
   check('c1', 500, 'failed', { result_source: 'failed flag', summary: 'pytest -q' }),
 ];
-const reading = (readAt: number, results: readonly string[]) => ({
+const REASON = 'It stopped running the tests.';
+const reading = (
+  readAt: number,
+  results: readonly string[],
+  reason: string = REASON,
+  cites: readonly string[] = ['c1'],
+) => ({
   revision_read: 3,
   revision_read_at: 990,
   window_start: 100,
@@ -33,17 +39,24 @@ const reading = (readAt: number, results: readonly string[]) => ({
       index === 0 ? 'goal' : `line_${String(index)}`,
       {
         result,
-        cites: result === 'departure' ? ['c1'] : [],
-        detail: result === 'departure' ? 'It stopped running the tests.' : '',
+        cites: result === 'departure' ? cites : [],
+        detail: result === 'departure' ? reason : '',
         clause: 'Ship the queue',
       },
     ]),
   ),
 });
-const board = (readAt: number, results: readonly string[], count: number, generated: number) => ({
+const board = (
+  readAt: number,
+  results: readonly string[],
+  count: number,
+  generated: number,
+  reason?: string,
+  cites?: readonly string[],
+) => ({
   ...driftBoard({
     session: {
-      annotation_assessment: reading(readAt, results),
+      annotation_assessment: reading(readAt, results, reason, cites),
       annotation_window_start: 100,
       annotation_reading_count: count,
     },
@@ -119,8 +132,8 @@ describe('a departure the next reading clears', () => {
    The card names it, so the reader sees that the steer worked rather than a level that quietly changed. The
    server recognises the pasted correction as Compass's own words and marks it `copied`; a message the reader
    typed is no steer. */
-const pasted = (at: number) =>
-  fact('paste', at, {
+const pasted = (at: number, id = 'paste') =>
+  fact(id, at, {
     type: 'user_message',
     by: 'person:me',
     copied: true,
@@ -130,7 +143,7 @@ const typed = (at: number) =>
   fact('typed', at, { type: 'user_message', by: 'person:me', summary: 'Also do the other thing' });
 
 describe('a departure the steer named, cleared by the reading after it', () => {
-  it('says the steer named it, when a correction was pasted between the two readings', async () => {
+  it('says the correction named it, when one was pasted between the two readings', async () => {
     const page = mountDrift({ facts: [...FACTS, pasted(1100)], session: {} });
     await page.settle();
     await page.poll(board(1000, DEPARTS, 1, 1090));
@@ -138,11 +151,11 @@ describe('a departure the steer named, cleared by the reading after it', () => {
     await page.poll(board(1200, NOTHING, 2, 1210));
     await page.settle();
     expect(textOf(CLEARED)).toBe(
-      `The departure your steer named, from the ${clock(1000)} reading, no longer holds.`,
+      `The departure your correction named, from the ${clock(1000)} reading, no longer holds.`,
     );
   });
 
-  it('counts the departures the steer named', async () => {
+  it('counts the departures the correction named', async () => {
     const page = mountDrift({ facts: [...FACTS, pasted(1100)], session: {} });
     await page.settle();
     await page.poll(board(1000, ['departure', 'departure'], 1, 1090));
@@ -150,7 +163,7 @@ describe('a departure the steer named, cleared by the reading after it', () => {
     await page.poll(board(1200, NOTHING, 2, 1210));
     await page.settle();
     expect(textOf(CLEARED)).toBe(
-      `The 2 departures your steer named, from the ${clock(1000)} reading, no longer hold.`,
+      `The 2 departures your correction named, from the ${clock(1000)} reading, no longer hold.`,
     );
   });
 
@@ -165,5 +178,69 @@ describe('a departure the steer named, cleared by the reading after it', () => {
     await page.poll(board(1200, NOTHING, 2, 1210));
     await page.settle();
     expect(textOf(CLEARED)).toBe(`The departure from the ${clock(1000)} reading no longer holds.`);
+  });
+});
+
+/* A steer can leave the reader's concern met and the reading still departing, on something else: the walk's
+   second reading kept `1 departure` with a different reason, and nothing told the reader the first had been
+   addressed. The earlier departure is the one a later departure on the same line and the same reason, or on
+   an entry it cited before, still is; a model words one finding differently from reading to reading, so a
+   reading with no correction between is never told it replaced anything. */
+const ANOTHER = check('c2', 520, 'failed', { result_source: 'failed flag', summary: 'ruff check' });
+const AGAIN = 'The coverage gate was held to 54 new exceptions.';
+const second = (at: number) => pasted(at, 'paste-2');
+
+describe('a departure the steer named, replaced by a different one', () => {
+  it('is said gone while another departure stands, when a correction was pasted between', async () => {
+    const page = mountDrift({ facts: [...FACTS, ANOTHER, pasted(1100)], session: {} });
+    await page.settle();
+    await page.poll(board(1000, DEPARTS, 1, 1090));
+    await page.settle();
+    await page.poll(board(1200, DEPARTS, 2, 1210, AGAIN, ['c2']));
+    await page.settle();
+    expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
+    expect(textOf(CLEARED)).toBe(
+      `The departure your correction named, from the ${clock(1000)} reading, no longer holds.`,
+    );
+  });
+
+  it('is not said when the departure stands again, worded as before or resting on what it did', async () => {
+    const page = mountDrift({ facts: [...FACTS, ANOTHER, pasted(1100)], session: {} });
+    await page.settle();
+    await page.poll(board(1000, DEPARTS, 1, 1090));
+    await page.settle();
+    await page.poll(board(1200, DEPARTS, 2, 1210));
+    await page.settle();
+    expect(document.querySelector(CLEARED)).toBeNull();
+    await page.poll(board(1300, DEPARTS, 3, 1310, AGAIN, ['c1']));
+    await page.settle();
+    expect(document.querySelector(CLEARED)).toBeNull();
+  });
+
+  it('is not said of a reading no correction came between, whatever it found instead', async () => {
+    const page = mountDrift({ facts: [...FACTS, ANOTHER, pasted(900), pasted(1300)], session: {} });
+    await page.settle();
+    await page.poll(board(1000, DEPARTS, 1, 1090));
+    await page.settle();
+    await page.poll(board(1200, DEPARTS, 2, 1210, AGAIN, ['c2']));
+    await page.settle();
+    expect(document.querySelector(CLEARED)).toBeNull();
+  });
+
+  it('counts only the departures that went, and says corrections when more than one was pasted', async () => {
+    const page = mountDrift({
+      facts: [...FACTS, ANOTHER, pasted(1100), second(1150)],
+      session: {},
+    });
+    await page.settle();
+    await page.poll(board(1000, ['departure', 'departure'], 1, 1090));
+    await page.settle();
+    // The goal's departure stands again; the line's is gone.
+    const standing = board(1200, ['departure', 'not verifiable from available evidence'], 2, 1210);
+    await page.poll(standing);
+    await page.settle();
+    expect(textOf(CLEARED)).toBe(
+      `The departure your corrections named, from the ${clock(1000)} reading, no longer holds.`,
+    );
   });
 });

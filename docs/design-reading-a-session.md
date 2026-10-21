@@ -5977,7 +5977,7 @@ as the first quote under a later departure.
 4. The card says when a steer worked. The page already names a departure that clears
    ([the level amendment](#amended-2026-10-21-a-level-needs-a-departure)); where a correction the
    server recognised as Compass's own words sits in the session between the two readings, the line
-   reads "The departure your steer named, from the 11:02 reading, no longer holds." That is the
+   reads "The departure your correction named, from the 11:02 reading, no longer holds." That is the
    page's inference from two facts it holds (a recognised paste, and the reading the tab drew before),
    not a stored link between a correction and its departure. Storing the earlier departure itself
    stays with the open question under DEC-15b.
@@ -5986,6 +5986,38 @@ Rejected: matching the wrapped message by prefix or by the longest common run, w
 correction with a sentence typed around it read as Compass's; and folding the first digest's
 whitespace, which would have moved every stored copy. The parser digest the abstention packets are
 stamped with moves with this change, because `reading.py` is one of its files.
+
+### Amended 2026-10-21: the edges of recognising a pasted correction
+
+The rule above shipped with four edges left, found in review and in the walk of a session whose reading,
+stored before the strip, lost its departure.
+
+1. A message's fact id keeps the value it had. The id hashes the title, and the strip changed the title of
+   a paste whose tag shares a line with the reader's typed words, so a reading stored before it cited an id
+   that no longer existed and the page demoted the citation. The event now carries the title as it was hashed
+   (`ID_TITLE_FIELD`, server-only and stripped by `for_page`) and only where the strip changed it, so the id
+   is the one the earlier build gave and the published title is clean. The tag is looked for in a string
+   content and in the text blocks of a list content (a message that carries an image), because the strip
+   reads both. Mapping old ids to new on every read
+   was rejected: it needs the stored reading to carry a second id per message, and the history store, which
+   dedupes on the id, would hold the same message under both. A paste whose tag stands alone on its own
+   line never moved, because a title skips a line that opens with `<`; the walked session was that shape,
+   so what its reading lost was the citation the rule above removes for a recognised paste, not an id. `AWrappedPastesFactIdIsTheOneItAlreadyHadTest`
+   holds a stored reading that cites a wrapped paste through the strip.
+2. The page draws a message's words from one entry list, so the tags come off where the list is made
+   (`workEntries`, for a user message only: an agent's words are its own text). The direction select's
+   title, the quote of a cited message and the work list read it, and a story holds each.
+3. The cleared line names the departure a correction addressed, whether or not another stands. Between two
+   readings with a correction pasted (`copied`, after the first reading and no later than the second), a
+   departure of the first that the second no longer finds is cleared, though the second departs on
+   something else. A departure is the same one when it is on the same line and either gives the same reason
+   or cites an entry the first cited; a model words one finding differently each time, so the reason alone
+   would call every re-read a replacement. With no correction between, the line is said only when the
+   reading carries none, as before. It reads "your correction" for one pasted between the two readings and
+   "your corrections" for more; a correction pasted before the first reading or after the second is not
+   counted.
+4. The copied-flag test beside the kept-direction one now has a control that departs on the same words
+   without the flag and with nothing kept, so the flag is the only thing that can drop the citation.
 
 ### Amended 2026-10-21: the Drift card has one state at a time
 

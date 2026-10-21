@@ -892,7 +892,7 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
           className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"
           data-next-drift-cleared
         >
-          {clearedLine(cleared.count, clock(cleared.readAt), cleared.steered)}
+          {clearedLine(cleared.count, clock(cleared.readAt), cleared.corrections)}
         </p>
       ) : null}
     </>

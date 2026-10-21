@@ -3,7 +3,7 @@ import { compatSessKey, contextKey } from '../api/identity';
 import { isRecord, type Row } from '../observed';
 import type { ContextEntry, RecordEntry } from '../store/board';
 import { PROMPT_SOURCES, type PromptCandidate } from '../sessions/intent';
-import type { Annotation } from './annotation';
+import { stripPasteWrapper, type Annotation } from './annotation';
 
 /* The observed record one session's Intent panel reads: the facts the server's project context published
    about it, in the order they happened, and the later directions found among them. Passive source reading
@@ -75,6 +75,16 @@ function positiveInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
+/* The words an entry is drawn with. A message's title can still hold the harness's paste tags (a server or a
+   history from before the strip publishes it so), and every surface reads this list, so they come off here
+   once. The agent's words are its own text: a tag it wrote about stays. */
+function entryWords(fact: Row): string {
+  const words = String(fact['summary'] || '');
+  return (
+    (fact['type'] === 'user_message' ? stripPasteWrapper(words) : words) || 'No summary published'
+  );
+}
+
 export function workEntries(session: Row, semantic: unknown): WorkEntry[] {
   const key = compatSessKey(session);
   const facts = isRecord(semantic) && Array.isArray(semantic['facts']) ? semantic['facts'] : [];
@@ -88,7 +98,7 @@ export function workEntries(session: Row, semantic: unknown): WorkEntry[] {
         id: String(fact['fact_id'] || ''),
         type: String(fact['type'] || ''),
         by: String(fact['by'] || ''),
-        summary: String(fact['summary'] || 'No summary published'),
+        summary: entryWords(fact),
         at: fact['at'],
         resultAt: fact['result_at'],
         sourceSession: fact['source_session'],
