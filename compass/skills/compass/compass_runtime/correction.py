@@ -382,6 +382,7 @@ class _Rows:
         lines_judged: bool,
         sid: str = "",
         line_requests: Mapping[str, float] | None = None,
+        settled: frozenset[str] = frozenset(),
     ) -> None:
         criteria = assessment.get("criteria")
         self.criteria: Mapping[str, Any] = criteria if isinstance(criteria, dict) else {}
@@ -394,6 +395,8 @@ class _Rows:
         self.unsettled = unsettled
         self.lines_judged = lines_judged
         self.line_requests = line_requests or {}
+        # The reader's kept directions and the correction pasted back, which no departure stands on.
+        self.settled = settled
 
     def state(self, name: str) -> tuple[str, dict[str, Any] | None]:
         """One constraint's state and the entry its time is read from."""
@@ -429,6 +432,10 @@ class _Rows:
             and not (self.window > 0 and at <= 0)
             and reading.after_line_request(f, self.line_requests.get(name))
         ]
+        if result == reading.RESULT_DEPARTURE:
+            # What a steer dated the departure to was the steer itself (DRC-4920): a departure
+            # is dated by what the agent did, and the reader's own words settled nothing.
+            cites = [f for f in cites if str(f["fact_id"]) not in self.settled]
         if not cites or {reading.author_of(f) for f in cites} == {reading.AUTHOR_DERIVED}:
             return _NOT_SHOWN, None
         line = reading.is_outcome_line(name) or name == reading.CONSTRAINT_OUTPUT
@@ -569,6 +576,7 @@ def _current_rows(
     unsettled: bool,
     lines_judged: bool,
     line_requests: Mapping[str, float] | None = None,
+    floor: float | None = None,
 ) -> _Rows | None:
     """The stored reading, only while it read the words saved now."""
     assessment = row.get("annotation_assessment")
@@ -587,6 +595,13 @@ def _current_rows(
         lines_judged=lines_judged,
         sid=str(row.get("sid") or ""),
         line_requests=line_requests,
+        settled=reading.settled_reader_words(
+            facts,
+            str(row.get("harness") or ""),
+            str(row.get("sid") or ""),
+            floor=floor,
+            settled_through=row.get("annotation_settled_through"),
+        ),
     )
 
 
@@ -740,7 +755,12 @@ def compose(
     window = reading.valid_prompt_time(row.get("annotation_window_start")) or 0.0
     failed = _failed_checks(own, window, person_at)
     rows = _current_rows(
-        row, own, unsettled=unsettled, lines_judged=lines_judged, line_requests=line_requests
+        row,
+        own,
+        unsettled=unsettled,
+        lines_judged=lines_judged,
+        line_requests=line_requests,
+        floor=floor,
     )
 
     def at(fact: Mapping[str, Any]) -> str:

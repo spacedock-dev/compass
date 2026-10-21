@@ -3035,6 +3035,43 @@ def _states_a_verdict(
     return False
 
 
+def settled_reader_words(
+    facts: Iterable[Mapping[str, Any]],
+    harness: str,
+    sid: str,
+    *,
+    floor: float | None,
+    settled_through: Any,
+) -> frozenset[str]:
+    """Fact ids of this session's user messages that no departure may stand on.
+
+    A correction Compass built and the reader pasted back (`COPIED_FLAG`) is Compass's words. A
+    later direction the reader kept (`Keep my intent`, settled through `settled_through`) was
+    answered by keeping the intent, so the agent following it is not the reader's evidence against
+    the agent. Neither says what the work did, and a departure that cites either blames the
+    reader's own sentence for the drift and dates it to the steer (DRC-4920). The first prompt
+    and anything before `floor` are the words themselves, not a later direction, and stay out.
+    """
+    through = valid_prompt_time(settled_through)
+    found: set[str] = set()
+    for fact in facts:
+        session = fact.get("source_session")
+        if (
+            fact.get("type") != "user_message"
+            or not isinstance(session, dict)
+            or (session.get("harness"), session.get("sid")) != (harness, sid)
+        ):
+            continue
+        fact_id = records.safe_text(fact.get("fact_id"), 160).strip()
+        at = valid_prompt_time(fact.get("at"))
+        kept = (
+            floor is not None and through is not None and at is not None and floor < at <= through
+        )
+        if fact_id and (fact.get(COPIED_FLAG) is True or kept):
+            found.add(fact_id)
+    return frozenset(found)
+
+
 def latest_person_at(facts: Iterable[Mapping[str, Any]]) -> float | None:
     """Latest recorded user message; saved intent and model prose cannot open a turn."""
     return max(
@@ -3599,6 +3636,19 @@ def _while_running(
     return criterion
 
 
+def _without_settled_words(
+    result: str | None, cited: list[LedgerEntry], uncitable: frozenset[str]
+) -> list[LedgerEntry]:
+    """A departure's citations less the reader's kept direction and a correction pasted back.
+
+    Neither says what the work did (`settled_reader_words`), so they never stand under a departure,
+    whichever the model cited. Any other verdict keeps them.
+    """
+    if result != RESULT_DEPARTURE:
+        return cited
+    return [entry for entry in cited if entry["id"] not in uncitable]
+
+
 def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     row: Mapping[str, Any],
     by_index: Mapping[int, LedgerEntry],
@@ -3614,6 +3664,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     checks_unread: bool = False,
     scope: str = SCOPE_LAST_TURN,
     requested_at: float | None = None,
+    uncitable: frozenset[str] = frozenset(),
 ) -> Criterion:
     """One constraint's criterion, with every server-side rule applied.
 
@@ -3650,6 +3701,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
         and not _before_window(by_index[value], window_start)
         and after_line_request(by_index[value], requested_at)
     ]
+    cited = _without_settled_words(result, cited, uncitable)
     if (
         result in (RESULT_DEPARTURE, RESULT_CONSISTENT, RESULT_UNSUPPORTED, RESULT_NOT_REACHED)
         and not cited
@@ -3735,7 +3787,7 @@ def _numbered(selection: object) -> dict[int, LedgerEntry]:
     return selection.by_index()
 
 
-def resolve(
+def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolve_one`
     parsed: Mapping[str, Mapping[str, Any]],
     selection: Selection,
     *,
@@ -3745,6 +3797,7 @@ def resolve(
     window_start: float = 0.0,
     scope: str = SCOPE_LAST_TURN,
     line_requests: Mapping[str, float] | None = None,
+    uncitable: frozenset[str] = frozenset(),
 ) -> dict[str, Criterion]:
     """The model's tokens and indices, turned into what the page may render.
 
@@ -3837,6 +3890,7 @@ def resolve(
                 or bool(selection.unlisted),
                 scope=scope,
                 requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
+                uncitable=uncitable,
             ),
             name,
             by_id,
@@ -3939,6 +3993,7 @@ def produce(  # noqa: PLR0913
     ) = None,
     record_coverage_lookup: Callable[[], Mapping[str, Any]] | None = None,
     final_source_lookup: FinalLookup | None = None,
+    settled_through: Any = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -3970,6 +4025,10 @@ def produce(  # noqa: PLR0913
     it reads the newest recorded final reply from the exact source the press read, for the
     rows the prompt selected (`build_prompt`'s `final_lookup`). The unasked lane never
     sends agent messages, so it never reaches it.
+
+    `settled_through` is the reading route's, read from the entry the press just settled: the row it
+    holds can predate a Keep the same press made, and a direction kept a moment ago must not stand
+    under a departure (`settled_reader_words`). Absent, the row's own is read.
 
     `on_phase` is a reading job's, told `PHASE_CHECKING` once a reply arrived
     and never otherwise, so a published phase is one that really happened.
@@ -4082,6 +4141,16 @@ def produce(  # noqa: PLR0913
         window_start=window_start(latest),
         scope=scope,
         line_requests=line_request_floors(latest, request_sources, harness, sid),
+        uncitable=settled_reader_words(
+            facts,
+            harness,
+            sid,
+            floor=_later_direction_floor(latest),
+            settled_through=max(
+                valid_prompt_time(settled_through) or 0.0,
+                valid_prompt_time(row.get("annotation_settled_through")) or 0.0,
+            ),
+        ),
     )
     cutoff = cutoff_text(
         selected.entries,
@@ -4404,6 +4473,19 @@ def baseline_at(revision: Mapping[str, Any]) -> float:
     # silently settle later directions and refuse an already-ended session.
     field = "goal_source_at" if revision.get("goal_source") in PROMPT_SOURCES else "at"
     return valid_prompt_time(revision.get(field)) or 0.0
+
+
+def _later_direction_floor(revision: Mapping[str, Any]) -> float | None:
+    """When a message must be after to be a later direction of this revision's words.
+
+    `annotations.direction_floor`'s rule for a saved goal, which is all a reading is read from:
+    adopted words by their source time, typed words by when they were saved.
+    """
+    for name in ("goal_source_at", "goal_saved_at", "at"):
+        stamp = valid_prompt_time(revision.get(name))
+        if stamp is not None:
+            return stamp
+    return None
 
 
 # Said in the cutoff when an adopted goal could not be read whole (owner,
