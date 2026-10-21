@@ -50,6 +50,7 @@ DECLARED_SESSION_FIELDS = frozenset(
         "project_key",
         "project_name",
         "project_identity_source",
+        "worktree",
         "provider",
         "model",
         "consumption",
@@ -179,6 +180,40 @@ DECLARED_SESSION_FIELDS = frozenset(
 
 
 class CompassServerTest(RuntimeTestCase):
+    def test_two_worktrees_of_one_repository_file_under_one_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            main = root / "one" / "compass"
+            (main / ".git").mkdir(parents=True)
+            trees = {}
+            for name in ("haiku-a", "haiku-b"):
+                tree = main / ".claude" / "worktrees" / name
+                gitdir = main / ".git" / "worktrees" / name
+                gitdir.mkdir(parents=True)
+                (tree / "src").mkdir(parents=True)
+                tree.joinpath(".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
+                (gitdir / "commondir").write_text("../..\n", encoding="utf-8")
+                trees[name] = tree
+            config = make_config()
+
+            def filed(cwd: Path) -> dict[str, Any]:
+                row = runtime_sessions.base_session(
+                    "claude", "s", runtime_sessions.project_from_cwd(config, str(cwd))
+                )
+                runtime_sessions.apply_project_identity(config, row, str(cwd))
+                return dict(row)
+
+            a, b = filed(trees["haiku-a"] / "src"), filed(trees["haiku-b"])
+            top = filed(main)
+
+        self.assertEqual("one/compass", a["project"])
+        self.assertEqual(a["project"], b["project"])
+        self.assertEqual(a["project"], top["project"])
+        self.assertEqual(a["project_key"], b["project_key"])
+        self.assertEqual("haiku-a", a["worktree"])
+        self.assertEqual("haiku-b", b["worktree"])
+        self.assertIsNone(top["worktree"])
+
     def test_git_identity_collapses_main_and_worktree_without_basename_collision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

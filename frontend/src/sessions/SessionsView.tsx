@@ -28,6 +28,7 @@ import {
 } from './rows';
 import { sessionInstruction, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
+import { worktreeOf } from './worktree';
 import {
   BOARD_WHY,
   DUPLICATE_LABEL_LIMIT,
@@ -363,7 +364,7 @@ function RowView({ row }: { readonly row: SessionRow }) {
       <Identity row={row} />
       {/* The project label alone: "Exact location not published" sat hatched on every row and read as an
           error, for a location no harness publishes here. */}
-      <Fact kind="where" label="PROJECT" value={session.project} />
+      <Fact kind="where" label="PROJECT" value={session.project} detail={worktreeOf(row.source)} />
       <GoalCellView row={row} />
       {history ? (
         <>

@@ -3183,8 +3183,8 @@ of decisions rather than a category.
 
 The reason the ban became an allowlist is that it was stricter than the product around it and the
 asymmetry was doing no work. The dashboard already publishes prompt text. Published text below owns
-the enumeration, and the carriers that reach the page raw are these nine: `title`, `last_prompt`, `state_detail`,
-`project_key`, `project_name`, `tasks[].subject`, `tasks[].activeForm`, `subagents[].name` and
+the enumeration, and the carriers that reach the page raw are these ten: `title`, `last_prompt`, `state_detail`,
+`project_key`, `project_name`, `worktree`, `tasks[].subject`, `tasks[].activeForm`, `subagents[].name` and
 `subagents[].parent`. More reaches the page through `records.safe_text`, including the observer's
 derived goal and Codex's `title`, which is a prompt because Codex writes no generated title. And
 `GET /api/observe` already writes prompt-derived text to disk as a sidecar under
@@ -3741,8 +3741,8 @@ can read the registered terminal can see its captured text.
 
 A harness transcript records what the operator typed, verbatim, so if a key was ever pasted into a
 prompt the store holds it. The dashboard reads those stores and publishes prompt text. Named as
-fields rather than glossed, because a prose alias is a name no test can check, the carriers that reach the page raw are these nine: `title`, `last_prompt`, `state_detail`,
-`project_key`, `project_name`, `tasks[].subject`, `tasks[].activeForm`, `subagents[].name` and
+fields rather than glossed, because a prose alias is a name no test can check, the carriers that reach the page raw are these ten: `title`, `last_prompt`, `state_detail`,
+`project_key`, `project_name`, `worktree`, `tasks[].subject`, `tasks[].activeForm`, `subagents[].name` and
 `subagents[].parent`. Those are the two tables in
 `aggregate`, and the instruction line's own `text` passes the same sweep beside them. It is a list
 of carriers rather than a list of every published string that could hold what the operator typed:

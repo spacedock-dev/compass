@@ -17,6 +17,8 @@ export interface PayloadSession {
   readonly project?: string;
   readonly project_key?: string;
   readonly project_name?: string;
+  /** The linked worktree's directory name; null for a main checkout. */
+  readonly worktree?: string | null;
   readonly state?: string;
   readonly state_detail?: string;
   readonly active?: boolean;

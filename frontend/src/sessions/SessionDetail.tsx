@@ -52,6 +52,7 @@ import {
 import { RouteAnchor } from './SessionsView';
 import { harnessLabels } from './rows';
 import { sessionInstruction } from './intent';
+import { worktreeOf } from './worktree';
 import './sessions.css';
 
 /* The session page: one exact session, its state, what it is waiting on, and what it has done. Identity is
@@ -234,6 +235,7 @@ function Header({
               <RouteAnchor route={{ view: 'project', project: label }}>{label}</RouteAnchor>
             </>
           ) : null}
+          {worktreeOf(session) ? ` · worktree ${worktreeOf(session)}` : ''}
           <SessionAge session={session} generated={generated} />
         </p>
       </div>
