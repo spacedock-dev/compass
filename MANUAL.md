@@ -50,7 +50,8 @@ to the nearest option. Arguments written in capitals are values you supply. Bool
 leaving an off switch out on a later start enables that feature again without deleting its store.
 Pass one operation flag at a time. If combined, the current implementation chooses `--diagnose`,
 then `--forget`, then `--stop`, then `--status`; it does not execute a sequence of operations.
-`--daemon` with any of those four operations is a usage error.
+`--daemon` with any of those four operations is a usage error. `--version` is checked before all of
+them and ignores the other flags, though their values must still parse.
 
 ### Starting and inspecting an instance
 
