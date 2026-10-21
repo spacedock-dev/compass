@@ -329,6 +329,7 @@ def _voice(*, titles: bool) -> str:
         '- Say what happened, not what did not: "The agent stopped and waited for the person", '
         'not "did not merge".\n'
         '- Quote a tool error\'s own output only as "the error read: <its words>".\n'
+        '- Never write an entry number in text ("at entry 43", "[43]"); citations carry them.\n'
     )
 
 

@@ -278,12 +278,34 @@ const AGENT_NOUN =
 const BARE_SAID = /^said\b(?:\s+that\b)?[\s:,]*/i;
 export function saidText(words: string): string {
   const flat = words.trim();
-  if (AGENT_NAMED.test(flat)) return words;
+  if (AGENT_NAMED.test(flat) || AGENT_SUBJECT.test(flat)) return words;
   const rest = BARE_SAID.test(flat) ? flat.replace(BARE_SAID, '') : flat;
   return rest ? `The agent said: ${rest}` : words;
 }
 /* The agent named as the speaker, as opposed to a bare "Said", which an `asked` line uses for the person too. */
 const AGENT_NAMED = new RegExp(`^${AGENT_NOUN}\\s+${ADVERB}${SPEECH_VERB}\\b`, 'i');
+/* The agent as the subject of any clause, not only a speech one: "The agent read the gate ...". Such a line already
+   names who it is about, so "The agent said:" in front of it read "The agent said: The agent read ...". */
+const AGENT_SUBJECT = /^the\s+(?:agent|assistant)\b(?!['’]s\b)/i;
+/* The person as the subject of any clause, which the card says as "You": "The person chose ..." is "You chose ...",
+   in front of which no kind prefix is wanted either. The subject only: a quote or a later mention is left alone. */
+const PERSON_SUBJECT = /^the\s+(?:person|user)\b(?!['’]s\b)\s*/i;
+const YOU_SUBJECT = /^you\b/i;
+/* The verb after "the person" agrees with "you": "wants" is "want", "has" is "have". Past tense is untouched. */
+const YOU_VERB: Readonly<Record<string, string>> = {
+  has: 'have',
+  is: 'are',
+  was: 'were',
+  does: 'do',
+  goes: 'go',
+};
+function youSubject(rest: string): string {
+  const [, verb = '', after = ''] = /^(\S+)([\s\S]*)$/.exec(rest) ?? [];
+  const plain = verb.toLowerCase();
+  const agreed =
+    YOU_VERB[plain] ?? (/[^s]s$/.test(plain) && !plain.endsWith("'s") ? verb.slice(0, -1) : verb);
+  return `You ${agreed}${after}`.trimEnd();
+}
 /* The person named as the speaker; "You <verb>" already reads in the card's own voice for the person. */
 const PERSON_YOU = new RegExp(`^you\\s+${ADVERB}${SPEECH_VERB}\\b`, 'i');
 const PERSON_NAMED = new RegExp(
@@ -299,10 +321,10 @@ const BARE_SPEECH = /^(asked|said)\b\s*/i;
    fixed") would otherwise read in the summary's own voice. */
 export function askedText(words: string): string {
   const flat = words.trim();
-  if (PERSON_YOU.test(flat)) return words;
+  if (PERSON_YOU.test(flat) || YOU_SUBJECT.test(flat)) return words;
   /* The line names the agent as its speaker. An `asked` bullet cites the person and the agent, so it may report
      either, and "You said: The agent said ..." credited the agent's words to the person. */
-  if (AGENT_NAMED.test(flat)) return saidText(words);
+  if (AGENT_NAMED.test(flat) || AGENT_SUBJECT.test(flat)) return saidText(words);
   const named = PERSON_THIRD.exec(flat) ?? BARE_SPEECH.exec(flat);
   if (named) {
     const rest = flat.slice(named[0].length);
@@ -311,6 +333,9 @@ export function askedText(words: string): string {
       ? `You ${verb}: ${rest.slice(1).trimStart()}`.trimEnd()
       : `You ${verb} ${rest}`.trimEnd();
   }
+  /* The person as the subject of a verb that is not speech: "The person chose 54 exceptions" is "You chose ...". */
+  const subject = PERSON_SUBJECT.exec(flat);
+  if (subject) return youSubject(flat.slice(subject[0].length));
   return `You said: ${words}`;
 }
 
@@ -326,7 +351,7 @@ export function bulletWords(kind: string, words: string): string {
   const flat = words.trim();
   /* A `said` line cites only the agent's words, so a line naming the person is the agent's report of them: it
      is told as the agent's and names the person as the card does, "you". */
-  if (kind === 'said' && PERSON_NAMED.test(flat)) {
+  if (kind === 'said' && (PERSON_NAMED.test(flat) || PERSON_SUBJECT.test(flat))) {
     const you = askedText(flat);
     return `The agent said ${(you[0] ?? '').toLowerCase()}${you.slice(1)}`;
   }
@@ -334,7 +359,8 @@ export function bulletWords(kind: string, words: string): string {
   if (kind === 'asked') return askedText(words);
   /* Work cited with words: a line that names its speaker is said as that speaker's, not in the summary's voice. */
   if (kind === 'did' && AGENT_NAMED.test(flat)) return saidText(words);
-  if (kind === 'did' && PERSON_NAMED.test(flat)) return askedText(words);
+  if (kind === 'did' && (PERSON_NAMED.test(flat) || PERSON_SUBJECT.test(flat)))
+    return askedText(words);
   if (kind === 'failed') return `${TOOL_REPORT.test(words) ? FAILED_SHORT : FAILED_MARK} ${words}`;
   return words;
 }

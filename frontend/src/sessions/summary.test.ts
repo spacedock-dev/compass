@@ -257,6 +257,54 @@ describe('what the card says', () => {
     );
     expect(askedText('You asked for tests.')).toBe('You asked for tests.');
   });
+  it('never draws a doubled subject: a line that names its subject takes no kind prefix', () => {
+    // Seen live on a freshly written summary: the model names its subject, and the page added "The agent said:" or
+    // "You said:" in front, and called the person "the person".
+    const drawn = [
+      bulletWords(
+        'said',
+        'The agent read the gate and its tests, then installed the pinned dependencies.',
+      ),
+      bulletWords('said', 'The agent opened draft PR #638 and said the gate was waiting.'),
+      bulletWords('asked', 'The person redirected the agent to the goal: gate and tests only.'),
+      bulletWords('asked', 'The person chose 54 named exceptions for the duplicates.'),
+      bulletWords('did', 'The person chose 54 named exceptions for the duplicates.'),
+      bulletWords('said', 'The person redirected the agent to the goal: gate and tests only.'),
+    ];
+    for (const line of drawn) {
+      expect(line).not.toContain('said: The agent');
+      expect(line).not.toContain('said: The person');
+      expect(line).not.toContain('You said: The person');
+    }
+    expect(drawn[0]).toBe(
+      'The agent read the gate and its tests, then installed the pinned dependencies.',
+    );
+    expect(drawn[1]).toBe('The agent opened draft PR #638 and said the gate was waiting.');
+    expect(drawn[2]).toBe('You redirected the agent to the goal: gate and tests only.');
+    expect(drawn[3]).toBe('You chose 54 named exceptions for the duplicates.');
+    expect(drawn[4]).toBe('You chose 54 named exceptions for the duplicates.');
+    expect(drawn[5]).toBe(
+      'The agent said you redirected the agent to the goal: gate and tests only.',
+    );
+  });
+  it('says "you" only for the subject, and agrees the verb with it', () => {
+    expect(askedText('The person wants the diff small.')).toBe('You want the diff small.');
+    expect(askedText('The person has not run it.')).toBe('You have not run it.');
+    // Inside quotes or later in the line the person keeps the name they were given.
+    expect(askedText('The person typed "the person is waiting" and left.')).toBe(
+      'You typed "the person is waiting" and left.',
+    );
+    expect(askedText('Wrapped it: the person is waiting.')).toBe(
+      'You said: Wrapped it: the person is waiting.',
+    );
+    // A possessive is not a subject, and a line already in "you" is left as written.
+    expect(askedText("The person's request was narrow.")).toBe(
+      "You said: The person's request was narrow.",
+    );
+    expect(askedText('You chose the narrow gate.')).toBe('You chose the narrow gate.');
+    // A tool or file that merely starts with the word is not the agent.
+    expect(saidText('Claude.md is ready.')).toBe('The agent said: Claude.md is ready.');
+  });
   it('never credits the agent’s words to the person, or the person’s to the agent', () => {
     // The sample's own line: an `asked` bullet whose text reports the agent read "You said: The agent said ...".
     expect(askedText('The agent said it also raised the billing rate.')).toBe(

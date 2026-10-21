@@ -166,6 +166,65 @@ export const Ready: Story = {
   },
 };
 
+/* A model-written line that already names its subject takes no kind prefix, and the person is "you". These four
+   are the lines a freshly written summary drew as "The agent said: The agent read ...", "The agent said: The agent
+   opened ...", "You said: The person redirected ..." and "You said: The person chose ...". */
+export const NamedSubjectsAreNotDoubled: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        blocks: [
+          block('p1', 'a2', 4, [
+            {
+              title: 'Reading the gate',
+              bullets: [
+                bullet(
+                  'The agent read the gate and its tests, then installed the pinned dependencies.',
+                  'said',
+                  ['a1'],
+                ),
+                bullet('The agent opened draft PR #638 and said the gate was waiting.', 'said', [
+                  'a2',
+                ]),
+                bullet(
+                  'The person redirected the agent to the goal: gate and tests only.',
+                  'asked',
+                  ['p1'],
+                ),
+                bullet('The person chose 54 named exceptions for the duplicates.', 'asked', ['p2']),
+              ],
+            },
+          ]),
+        ],
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    const lines = [
+      ...summary.querySelectorAll<HTMLElement>(
+        '[data-next-summary-bullet] [data-next-summary-text]',
+      ),
+    ].map((node) => node.textContent ?? '');
+    await expect(lines).toEqual([
+      'The agent read the gate and its tests, then installed the pinned dependencies.',
+      'The agent opened draft PR #638 and said the gate was waiting.',
+      'You redirected the agent to the goal: gate and tests only.',
+      'You chose 54 named exceptions for the duplicates.',
+    ]);
+    for (const line of lines) {
+      await expect(line).not.toContain('said: The agent');
+      await expect(line).not.toContain('said: The person');
+      await expect(line).not.toContain('You said: The person');
+    }
+    const asked = [
+      ...summary.querySelectorAll('[data-next-summary-bullet="asked"] [data-next-summary-text]'),
+    ];
+    for (const node of asked) await expect(node.textContent).toMatch(/^You /);
+  },
+};
+
 /* With Full activity closed, a chip opens it and the cited row lands on screen. A smooth scroll begun while
    the panel still grew was clamped at the foot of a page not yet tall enough and left the row at the edge. */
 export const ChipLandsOnScreenWithFullActivityClosed: Story = {
