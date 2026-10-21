@@ -7,8 +7,8 @@ import { board, control, goalBox, mountSession, text, type } from './panel.testi
    every sentence the server's. A double-click, a held key and a slip are all one press, never two. */
 
 const SENTENCES = {
-  why: 'This deletes every revision and the stored reading.',
-  armed: 'Nothing has been deleted yet. Press again to delete every revision.',
+  why: 'This deletes all you asked and the stored reading.',
+  armed: 'Nothing has been deleted yet. Press again to delete all you asked.',
   stored: 'Discarded. These words are gone.',
   refused: 'Nothing was discarded: the store refused.',
   unwritable: 'The discard could not be written.',
@@ -63,6 +63,23 @@ describe('Discard everything', () => {
       'Discard everything',
     );
     expect(discard()?.textContent).toBe('Discard everything');
+  });
+
+  it('draws no lone More under a discarded form that holds no words', async () => {
+    const page = mountSession({
+      session: {
+        first_prompt: '',
+        first_prompt_at: null,
+        annotation_discarded_at: 990,
+        annotation_revision_count: 0,
+        annotation_revision: 0,
+      },
+    });
+    await settle(page);
+    const kept = document.querySelector('[data-next-intent-kept]');
+    expect(kept).not.toBeNull();
+    expect(kept?.querySelector('button')).toBeNull();
+    expect(kept?.textContent).not.toContain('More');
   });
 
   it('arms on the first press, sends nothing, warns assertively and describes the armed control by the warning', async () => {

@@ -174,17 +174,14 @@ function Kept() {
   const menu = disclosureKey({ project, scope: compatSessKey(session), name: 'intent-menu' });
   /* The menu holds what acts on words that exist: Clear, the caveats, Discard everything, later directions.
      Under an empty or discarded form it held only the how-to and drew as a lone "More", so it is left out
-     until the box or the store holds words. */
+     until the box or the store holds words. A discard's own account is drawn by CaveatNotes, not here. */
   const changes = intentChanges(input);
   const offered = (nextNumber(input.annotation?.['revision_count']) ?? 0) > 0;
   const words =
     offered ||
     Boolean(changes.typed.trim()) ||
     linesToSend(linesDraft(input.held, session, input.annotation)).length > 0;
-  const stamped = Boolean(
-    revisionLine(input.annotation, nextNumber(payload['generated'])) ||
-      discardStamp(input.annotation, nextNumber(payload['generated'])),
-  );
+  const stamped = Boolean(revisionLine(input.annotation, nextNumber(payload['generated'])));
   return (
     <div
       className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label text-muted-foreground [&_.next-session-drift-caveats]:contents [&_.next-cockpit-held-discard]:mt-0 [&_.next-cockpit-held-hint]:flex-initial [&_.next-cockpit-held-hint]:text-label"

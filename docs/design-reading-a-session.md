@@ -6123,14 +6123,16 @@ What the first pass left, finished.
   button, or Escape) or the 30 second offer lapses. In the menu the warning was hidden whenever the
   menu was closed, and the menu moved between the first press and the second.
 - **No lone `More`.** The menu is left out while the store and the boxes hold no words, because it
-  held only the how-to there.
+  held only the how-to there. That includes a discarded form with nothing typed since: the account
+  of the discard is drawn in the card, and the menu has nothing to act on.
 - **`Save intent` looks inert when it is.** The accent border and text belong to a Save that would
   write something.
 - **No revision in a sentence the page words.** "Saved as a new revision." is "Saved."; the
   unchanged answer is "Already saved. These words match what is stored, so nothing new was saved."
   and the saved disclosure says "Each save is kept on its own." Revision stays the store's
-  bookkeeping. The discard account is the server's sentence and still says "revision"; it is held
-  in `annotations.DISCARD_SENTENCES`, not on the page.
+  bookkeeping, and that includes the discard sentences the server composes
+  (`annotations.DISCARD_SENTENCES`): they say "everything you asked of this session" and "your
+  earlier saves" in place of a revision.
 - **A direction is named by its time**, never `#n`: the picker reads `10:57 · the words`. When
   several are listed, the one `Add as a line` and `Make it the goal` act on is marked in the list
   ("the one the buttons below use") and carries `aria-current`.
@@ -6139,8 +6141,9 @@ What the first pass left, finished.
   adopted prompt's own time is used only when a save adopts one. The label and tooltip now say so.
 - **Held-refresh coverage.** A story holds the board refresh after saving an adopted prompt,
   the slow-save story releases its held fetch on failure, and a story asserts the 1,000-character
-  sentence in What is sent. `IntentVocabulary.test.tsx` holds the page's own sentences, and the card
-  as drawn, to no revision or entry number.
+  sentence in What is sent. `IntentVocabulary.test.tsx` holds the page's own sentences, the recorded discard
+  sentences, and the card as drawn (menu open, discard armed, discard landed), to no revision or entry
+  number.
 
 The on-demand browser proofs were brought forward to the new names and the card-level armed
 question; they were not run for this change.

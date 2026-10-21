@@ -36,13 +36,13 @@ function buildPayload(
     /* The server's own sentences, as `annotations.DISCARD_SENTENCES` words them: this page draws them and
        composes none, so a story that quotes them holds the page to what the server said it would remove and keep. */
     annotate_discard: {
-      why: 'Discarding everything deletes every revision of what you asked of this session, any reading of it, and this session’s summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps every earlier revision.',
+      why: 'Discarding everything deletes all you asked of this session, any reading of it, and this session’s summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps your earlier saves.',
       armed:
-        'Press it again to discard. Every revision of what you asked of this session will go, along with any reading of it and this session’s summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.',
+        'Press it again to discard. Everything you asked of this session will go, along with any reading of it and this session’s summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.',
       stored:
-        'Discarded. Every revision of what you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
+        'Discarded. Everything you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
       stored_no_summary:
-        'Discarded. Every revision of what you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
+        'Discarded. Everything you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
       refused: 'Could not discard.',
       unwritable: 'Could not write discard.',
       record:
@@ -1005,7 +1005,7 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
       (await quiet.findAllByRole('button', { name: 'Discard everything' }))[0] as HTMLElement,
     );
     // Before the press: what goes, and what stays.
-    const why = await quiet.findByText(/^Discarding everything deletes every revision/);
+    const why = await quiet.findByText(/^Discarding everything deletes all you asked/);
     for (const named of [
       'any reading of it',
       'this session’s summary',

@@ -17,6 +17,13 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-21, the discard sentences name no revision
+([the amendment](design-reading-a-session.md#amended-2026-10-21-the-edges-of-the-intent-card)):
+`annotations.DISCARD_SENTENCES` now say "everything you asked of this session" and "your earlier saves"
+where the earlier ones said "every revision". The recordings under `test/golden/e2e` that quote the old
+sentences are unchanged and are not compared by any test that runs in CI; the client-contract fixtures are
+regenerated from the live server, which is not a recorded answer of the retired page.
+
 2026-10-21, a later direction is quoted where it is settled
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-a-later-direction-is-quoted-where-it-is-settled)):
 a saved line's source reads "added from your 11:05 message" where the retired page said "added from #7".
