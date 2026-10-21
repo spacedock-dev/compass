@@ -1734,6 +1734,7 @@ def vocabulary() -> dict[str, Any]:
         "correctionCapChars": runtime_copied_corrections.CORRECTION_CAP_CHARS,
         "levelReasons": list(runtime_levels.REASONS),
         "annotationFields": sorted(annotation_store.published(None)),
+        "cueWindowSeconds": annotation_store.CUE_WINDOW_SECONDS,
         "unsafeChars": {
             "pattern": runtime_records._UNSAFE_CHARS.pattern,  # noqa: SLF001 - the rule is the contract
             "codePoints": _code_point_ranges(runtime_records._UNSAFE_CHARS),  # noqa: SLF001

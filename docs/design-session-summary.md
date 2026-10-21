@@ -139,6 +139,18 @@ had been kept.
   take it. The reply carries `summary`: `deleted`, `absent` (nothing was stored, or only a job was
   running), a refusal token from the store (`unwritable`, `unavailable`), or `untouched` where the
   press owed it nothing. The field is always present, so one key has one meaning.
+- Whether words existed is decided by the annotation store under its lock, on the revisions it
+  finds there, and not on the dashboard's cached copy, which a save from another tab can outrun. The
+  reply carries `removed`, the count of revisions that call took (null on any arm that is not a
+  discard, so zero is a discard that found nothing). A save that lands before the lock is a revision
+  the discard takes too, and one that lands after is a new revision over the discard record; neither
+  leaves the summary standing under words that went.
+- The page's sentence follows the summary's own answer, one sentence each: `deleted` says the summary
+  went; `absent` says no summary was stored and does not claim one went; `unwritable` says it could
+  not be deleted and names Delete summary; `unavailable` says the store could not be read, so whether
+  one exists is unknown, and names no remedy. Where the old summary is gone or never was, the sentence
+  adds that opening a finished session again writes a new one unless summaries are turned off (rule 5
+  above). A `removed` of zero says nothing was discarded.
 - A summary that cannot be deleted leaves the annotation discarded and the summary standing.
   The page then says so and names Delete summary as the way to finish, rather than the categorical
   sentence. When the departure store also failed to withdraw, that sentence wins, because it stops
@@ -158,7 +170,9 @@ below, and the store section's "Discard everything leaves it alone", which now r
 Delete summary is two presses. The first arms the control and says what goes (this machine's
 copy of the summary) and what does not (anything else), that Summarize writes a new one by sending
 the session to the model again, that nothing has been deleted yet, and that the offer lapses in
-30 seconds. Keep summary and Escape take it back, and a press inside the 1.2 second dwell after the
+the cue window, 30 seconds. The armed discard and this lapse both read it from one value: the
+server's `CUE_WINDOW_SECONDS` for the discard's sentence, the page's `CUE_TTL_MS` for Delete summary,
+and a vocabulary fixture test fails if they part. Keep summary and Escape take it back, and a press inside the 1.2 second dwell after the
 arm, or a double click, is another arm and never the deletion, as for Discard everything. The
 control sits quietly after What is sent. The second press shows its pending state, and the card
 then says "Summary deleted at 11:08. Summarize writes a new one." until a summary starts again, so

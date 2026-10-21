@@ -38,7 +38,9 @@ function buildPayload(
       armed:
         'Press it again to discard. Every revision of what you asked of this session will go, along with any reading of it and this session’s summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.',
       stored:
-        'Discarded. Every revision of what you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run.',
+        'Discarded. Every revision of what you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
+      stored_no_summary:
+        'Discarded. Every revision of what you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.',
       refused: 'Could not discard.',
       unwritable: 'Could not write discard.',
       record:
@@ -950,6 +952,8 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
     });
     await expect(said).toHaveTextContent('along with any reading of it and its summary');
     await expect(said).toHaveTextContent('The record that a check ran stays');
+    // And says a finished session is summarized again when it is opened, so a new one is no surprise.
+    await expect(said).toHaveTextContent('writes a new summary unless summaries are turned off');
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue('');
     await expect(canvasElement.textContent).not.toContain('Draft from your first prompt');
     await expect(canvasElement.textContent).not.toMatch(/\b0 drift checks? requested/);
@@ -957,6 +961,78 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
     await expect(canvasElement.textContent).not.toContain(
       'None of it is kept here: this record says only',
     );
+  },
+};
+
+/* A discard over a session that had no stored summary does not say "its summary" is gone: it says there was none,
+   and that opening the finished session again writes one. */
+export const DiscardEverythingOverNoSummaryClaimsNoSummaryGone: Story = {
+  args: {
+    setup: {
+      session: {
+        annotation_goal: 'Keep the parser small and pure',
+        annotation_goal_why: '',
+        annotation_revision: 2,
+        annotation_revision_count: 2,
+        annotation_at: 1_760_000_500,
+        annotation_goal_saved_at: 1_760_000_500,
+      },
+      onAnnotate: async (body) => {
+        if (body['clear'] === true) {
+          await (
+            window as unknown as {
+              __updateIntentSession: (patch: Record<string, unknown>) => Promise<void>;
+            }
+          ).__updateIntentSession({
+            annotation_goal: '',
+            annotation_goal_why: 'Discarded with everything else you asked of this session.',
+            annotation_revision: 0,
+            annotation_revision_count: 0,
+            annotation_discarded_at: 1_760_001_000,
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            outcome: 'stored',
+            persisted: true,
+            withdrew: true,
+            summary: 'absent',
+            discarded: 1_760_001_000,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const card = await page.findByRole('region', { name: 'Intent' });
+    const kept = card.querySelector('[data-next-intent-kept]') as HTMLElement;
+    await userEvent.click(within(kept).getByRole('button', { name: 'More about these words' }));
+    const quiet = within(canvasElement);
+    await userEvent.click(
+      (await quiet.findAllByRole('button', { name: 'Discard everything' }))[0] as HTMLElement,
+    );
+    await userEvent.click(
+      (await quiet.findAllByRole('button', { name: 'Discard everything' }))[1] as HTMLElement,
+    );
+    const confirm = await quiet.findByRole('button', { name: 'Confirm discard' });
+    (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
+      1_300,
+    );
+    await userEvent.click(confirm);
+    // After: one sentence naming what went and what stays, and a goal left empty.
+    const said = await waitFor(() => {
+      const node = card.querySelector<HTMLElement>(
+        '.next-cockpit-held-discard .next-cockpit-held-cue',
+      );
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(said).toHaveTextContent('This session had no stored summary');
+    await expect(said).not.toHaveTextContent('and its summary');
+    await expect(said).toHaveTextContent('writes a new summary unless summaries are turned off');
   },
 };
 

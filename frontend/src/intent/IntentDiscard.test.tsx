@@ -12,7 +12,11 @@ const SENTENCES = {
   stored: 'Discarded. These words are gone.',
   refused: 'Nothing was discarded: the store refused.',
   unwritable: 'The discard could not be written.',
+  stored_no_summary: 'Discarded. There was no stored summary.',
   summary_kept: 'Discarded, but the summary is still stored. Delete summary removes it.',
+  summary_unavailable: 'Discarded. The summary store could not be read.',
+  nothing: 'Nothing to discard.',
+  already: 'Already discarded. The earlier record stands.',
   record: 'You discarded these words.',
 };
 const withSentences = (data: object) => ({ ...data, annotate_discard: SENTENCES });
@@ -213,6 +217,88 @@ describe('Discard everything', () => {
     await press(discard());
     await settle(page);
     expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.summary_kept);
+  });
+
+  /* The sentence is chosen by what the server says happened to the summary store, never by the fact that one
+     was asked for: "its summary" over a session that had none was the defect. */
+  it.each([
+    ['deleted', { summary: 'deleted', removed: 2 }, 'stored'],
+    ['absent', { summary: 'absent', removed: 2 }, 'stored_no_summary'],
+    ['unavailable', { summary: 'unavailable', removed: 2 }, 'summary_unavailable'],
+    ['unwritable', { summary: 'unwritable', removed: 2 }, 'summary_kept'],
+    ['an older server that names neither', {}, 'stored'],
+  ] as const)('says what happened to the summary store: %s', async (_name, answer, sentence) => {
+    const DISCARDED = { annotation_discarded_at: 1000, annotation_revision_count: 0 };
+    const page = mount({
+      '/api/annotate': () => {
+        page.state.data = withSentences(board(DISCARDED));
+        return json({ ok: true, outcome: 'stored', persisted: true, withdrew: true, ...answer });
+      },
+    });
+    await settle(page);
+    await armed(page);
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES[sentence]);
+  });
+
+  it('says nothing was discarded when the store counted no revision, and keeps the drafts', async () => {
+    const page = mount({
+      '/api/annotate': () =>
+        json({
+          ok: true,
+          outcome: 'stored',
+          persisted: true,
+          withdrew: true,
+          summary: 'untouched',
+          removed: 0,
+        }),
+    });
+    await settle(page);
+    type(goalBox(), 'half-typed words');
+    page.state.data = withSentences(page.state.data as object);
+    await page.poll(page.state.data);
+    await press(discard());
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.nothing);
+    expect(goalBox().value).toBe('half-typed words');
+  });
+
+  /* A repeat press removes nothing, like a press over words never typed, but it is a different fact: the
+     reply's `discarded` stamp is set, so "nothing was typed" would be false. The drafts go, because a stale
+     tab still holding them would mint a new revision of words that were already discarded. */
+  it('says a repeat discard was already done, and drops the drafts over the discarded words', async () => {
+    const page = mount({
+      '/api/annotate': () =>
+        json({
+          ok: true,
+          outcome: 'stored',
+          persisted: true,
+          withdrew: true,
+          summary: 'untouched',
+          removed: 0,
+          discarded: 1_760_001_000,
+        }),
+    });
+    await settle(page);
+    type(goalBox(), 'half-typed words');
+    page.state.data = withSentences(page.state.data as object);
+    await page.poll(page.state.data);
+    await press(discard());
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.already);
+    expect(goalBox().value).not.toBe('half-typed words');
   });
 
   it('disarms on Escape without leaving the page, and the next arm is a new warning', async () => {

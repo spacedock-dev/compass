@@ -8,6 +8,7 @@ import type {
   SummaryJob,
   SummaryPlan,
 } from '../api/summary';
+import { CUE_TTL_MS } from '../controls/keyedState';
 import { clock } from '../observed';
 
 /* What the What the session has done card says about a summary. Every reason token the server can publish is
@@ -563,7 +564,7 @@ export const phaseId = (key: string, place: string) =>
 /* What the first press on Delete summary says before anything is deleted, and what the second leaves. Said in
    the page's own words and not the server's: the delete route answers a token, and the sentence claims nothing
    about another store. The wait it names is `CUE_TTL_MS`, the lifetime every armed control here shares. */
-export const DELETE_LAPSE_SECONDS = 30;
+export const DELETE_LAPSE_SECONDS = CUE_TTL_MS / 1000;
 export function deleteArmed(receiver: string): string {
   return `Press again to delete this summary from this machine. Nothing else is deleted. Summarize writes a new one, which sends the session to ${receiver} again. Nothing has been deleted yet, and this offer lapses in ${String(DELETE_LAPSE_SECONDS)} seconds.`;
 }

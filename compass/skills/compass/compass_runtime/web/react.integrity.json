@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2078147,
+    "bytes": 2077643,
     "file": "react.html",
-    "sha256": "26ed07f8f2f0314c6bfa3fd909400089655815352fc06c879db18b7249104d12"
+    "sha256": "59a8692569861d2d1f004c81b69b30db134c28d3ecb1e3eac19f44a0329859d5"
   },
   "format": 1,
   "frontend": "react",
@@ -299,7 +299,7 @@
       },
       {
         "file": "frontend/src/api/types.ts",
-        "sha256": "d8b071262de77d6a891433789ddac8c02e07f9a4242674b421b0804ccb13de58"
+        "sha256": "1db7e2600651ae587d0d78eda09ff0c7e18a21c399886e83d9fd1c38c648fb78"
       },
       {
         "file": "frontend/src/attention/AttentionAnnouncer.tsx",
@@ -583,7 +583,7 @@
       },
       {
         "file": "frontend/src/drift/MarkedNotice.tsx",
-        "sha256": "f606c6c2de83494ddb74456ca52f098fdb9c0110d2ff8f6dca7e8234c6b7b78a"
+        "sha256": "1fcec962a9fe869e8baffc912806b7c5f4cf1dd7a6b5fd72e1817fd17546a95d"
       },
       {
         "file": "frontend/src/drift/ModelNotice.tsx",
@@ -623,7 +623,7 @@
       },
       {
         "file": "frontend/src/drift/actions.ts",
-        "sha256": "cb867f99e813817734bb1f1898aba6eede40c7283cdfdb8c622cbec102ae1c54"
+        "sha256": "70e589e48438da3dd35342fa75ffe0a4832ca15cccaed68ca153091415468d26"
       },
       {
         "file": "frontend/src/drift/citations.ts",
@@ -695,7 +695,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "551d3d80f15fefb6606e5e105d1c9808fbf6984812d4467950e046b166207660"
+        "sha256": "6f040774f988af2a204c1377e875a0f2ad18f3bee1b2a941f65de609c767e654"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -703,7 +703,7 @@
       },
       {
         "file": "frontend/src/drift/state.ts",
-        "sha256": "5ab5aa41c8f7c91f8a27638f334c81729e653d6603e42088650bd1937a6281a4"
+        "sha256": "df67148a40abfa473aecf26a1c9a2fa69bab0d03d181244d8c62c7b09502d3f7"
       },
       {
         "file": "frontend/src/drift/steerActions.ts",
@@ -847,7 +847,7 @@
       },
       {
         "file": "frontend/src/intent/save.ts",
-        "sha256": "da680fccafde36dc0f8f32abc6e5db0779dc5da5e0ec5246ac6e84a2b86c3070"
+        "sha256": "893ac4ece888734c6a5a3c94ac9950be69e0e423b750b511fa2055cc613db1d8"
       },
       {
         "file": "frontend/src/intent/sentences.ts",
@@ -1183,7 +1183,7 @@
       },
       {
         "file": "frontend/src/sessions/summary.ts",
-        "sha256": "44c21bd28e836965514233bc8362480d918054e2e9662c128cc84ddce49f90d5"
+        "sha256": "09fa5c453df6c4d314e026476eeca04bd8cb5c603180312ecc22f4f8c55ab1a9"
       },
       {
         "file": "frontend/src/sessions/summaryActions.ts",

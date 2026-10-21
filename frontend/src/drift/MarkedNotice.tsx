@@ -3,19 +3,13 @@ import { ActionButton } from '../intent/ActionButton';
 import { markNotAccurate } from './actions';
 import { useDrift } from './context';
 import { RunPress } from './ReadingControl';
-import {
-  RERUN_CURRENT,
-  RESULT_MARK_UNSAVED,
-  RESULT_MARKED,
-  RESULT_UNMARK,
-  WRONG_CHOICES,
-  WRONG_LEGEND,
-} from './sentences';
+import { RERUN_CURRENT, RESULT_MARK_UNSAVED, RESULT_MARKED, RESULT_UNMARK } from './sentences';
 import { useRunBoard } from './useRunBoard';
 
 /* What stands where the level was once the reader has marked a reading inaccurate: the one message that says
-   so, with the way back (Undo) and the way forward (Analyze again) beside it, then the optional choice of what
-   was wrong. The reading's verdicts stay below it, dimmed, so the message is the only place that says they were
+   so, with the way back (Undo) and the way forward (Analyze again) beside it. It asks nothing it keeps nowhere:
+   an optional "what was wrong" choice lived in this tab, was sent to no one and outlived the reading, so it was
+   dropped rather than stored. The reading's verdicts stay below it, dimmed, so the message is the only place that says they were
    disowned. The Undo carries the focus key the mark's own press holds, so focus follows the press from the
    footer to here. */
 export function MarkedNotice() {
@@ -23,9 +17,7 @@ export function MarkedNotice() {
   const { board } = useRunBoard();
   const readAt = nextNumber(model.raw?.['read_at']);
   const key = model.key;
-  const picked = ctx.drift.wrong.get(key) ?? '';
   const unsaved = ctx.drift.notAccurate.has(key);
-  const legend = `marked-wrong:${key}`;
   return (
     <div className="flex flex-col gap-2" data-next-drift-marked>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -60,32 +52,6 @@ export function MarkedNotice() {
           {RESULT_MARK_UNSAVED}
         </p>
       ) : null}
-      <div
-        className="flex flex-wrap items-center gap-x-2 gap-y-1"
-        role="group"
-        aria-labelledby={legend}
-        data-next-marked-wrong
-      >
-        <span id={legend} className="next-cockpit-reading-why">
-          {WRONG_LEGEND}
-        </span>
-        {WRONG_CHOICES.map((choice) => (
-          <ActionButton
-            key={choice}
-            weight="quiet"
-            tone="muted"
-            label={choice}
-            ariaPressed={picked === choice}
-            action="marked-wrong"
-            arg={choice}
-            onPress={() => {
-              if (picked === choice) ctx.drift.wrong.delete(key);
-              else ctx.drift.wrong.set(key, choice);
-              ctx.drift.notify();
-            }}
-          />
-        ))}
-      </div>
     </div>
   );
 }

@@ -1159,7 +1159,7 @@
         "frontend/src/drift/DrawnPress.test.tsx",
         "frontend/e2e/drift-parity.mjs"
       ],
-      "contract": "Unsaved Not accurate error remains per session for tab; actual mark/aria-pressed derive from payload, not optimistic local state. The optional what-was-wrong choice is held per session beside it, dropped with the mark, and sent nowhere.",
+      "contract": "Unsaved Not accurate error remains per session for tab; actual mark/aria-pressed derive from payload, not optimistic local state. There is no what-was-wrong choice: it was held in memory, sent nowhere and outlived the reading, so it was dropped.",
       "disposition": "store-held"
     },
     {

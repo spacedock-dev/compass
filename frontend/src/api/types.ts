@@ -150,10 +150,13 @@ export interface AnnotateReceipt {
   readonly revision?: number;
   readonly saved_revision?: number;
   readonly revision_count?: number;
-  readonly discarded?: boolean;
+  /** When the session's discard record was made, or null where none exists. */
+  readonly discarded?: number | null;
   readonly withdrew?: boolean;
   /** What a discard did to the session's summary: `deleted`, `absent`, a refusal token, or `untouched`. */
   readonly summary?: string;
+  /** How many revisions a discard took, counted under the store's lock; null on an arm that is not a discard. */
+  readonly removed?: number | null;
 }
 
 export interface DirectionReceipt {
