@@ -589,3 +589,30 @@ describe('the Sessions first step', () => {
     },
   );
 });
+
+describe('two sessions in two worktrees of one repository', () => {
+  const tree = (sid: string, worktree: string | null) => ({
+    harness: 'claude',
+    sid,
+    project: 'one/compass',
+    project_key: 'git:abc',
+    worktree,
+    title: `Synthetic ${sid}`,
+    state: 'working',
+    last_activity: NOW - 5,
+  });
+
+  it('files both under one project and names each worktree on its row', async () => {
+    await open(board([tree('s1', 'haiku-a'), tree('s2', 'haiku-b'), tree('s3', null)]));
+    const facts = (sid: string) =>
+      document.querySelector(
+        `article[data-next-session="${sid}"] [data-next-operation-fact="where"]`,
+      )?.textContent;
+    expect(facts('s1')).toContain('one/compass');
+    expect(facts('s2')).toContain('one/compass');
+    expect(facts('s1')).toContain('haiku-a');
+    expect(facts('s2')).toContain('haiku-b');
+    // A main checkout publishes no worktree, so no worktree is drawn for it.
+    expect(facts('s3')).toBe('PROJECTone/compass');
+  });
+});

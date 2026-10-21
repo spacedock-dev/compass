@@ -554,3 +554,24 @@ Under the cap, live workers (`active is True`) are retained first, followed by t
 finished workers ordered by `started_at` descending. The honest difference is published in
 `subagents_omitted` on every session row (defaulting to 0), and rendered in the detail panel
 as `+N older finished worker(s) omitted` when positive.
+
+## D-7: a session in a linked worktree files under its repository
+
+The two-segment label of D-1 keeps sibling worktrees apart, and it did so by splitting one
+repository into one project per checkout: sessions started in `.claude/worktrees/<name>` were
+filed under `worktrees/<name>`. The project key already followed the worktree's `.git` pointer
+and its `commondir` back to the main checkout (`sessions.project_identity`), so the key was
+right and the label, which the board groups on, was not.
+
+`apply_project_identity` now gives a session whose working directory sits in a linked worktree
+the label of the main repository (`project_from_cwd` over the main root), and publishes the
+worktree's own directory name as `worktree`. A main checkout publishes `None`, so a reader can
+tell "not a worktree" from an empty name. Both pointers are plain files read with no
+subprocess, and the same two reads serve the key and the label.
+
+The worktree name sits beside the project on the Sessions row and in the session header, since
+the label no longer separates two sessions on one repository. It goes through the same
+credential sweep as `project_name`, because a directory name is operator text.
+
+Not changed: a session in a subdirectory of a main checkout keeps the label of its own working
+directory, as before. How writes inside an isolation worktree count is a separate ruling.

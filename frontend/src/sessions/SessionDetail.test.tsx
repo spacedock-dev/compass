@@ -53,6 +53,18 @@ describe('the session age in the header', () => {
   });
 });
 
+describe('the worktree in the header', () => {
+  it('a reader sees which worktree the session ran in beside its project', async () => {
+    await open(board([{ ...ONE, worktree: 'haiku-a' }]));
+    const identity = document.querySelector('.next-session-identity');
+    expect(identity?.textContent).toContain('worktree haiku-a');
+  });
+  it('a main checkout draws no worktree', async () => {
+    await open(board([ONE]));
+    expect(document.querySelector('.next-session-identity')?.textContent).not.toContain('worktree');
+  });
+});
+
 async function open(
   data: unknown,
   options: {

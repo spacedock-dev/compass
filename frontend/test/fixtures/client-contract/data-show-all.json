@@ -267,7 +267,8 @@
           "turn_end_at": null,
           "turn_output_tokens": null,
           "wait_unconfirmed": false,
-          "work_activity": null
+          "work_activity": null,
+          "worktree": null
         },
         {
           "acquisition": null,
@@ -412,7 +413,8 @@
           "turn_end_at": null,
           "turn_output_tokens": null,
           "wait_unconfirmed": false,
-          "work_activity": null
+          "work_activity": null,
+          "worktree": null
         },
         {
           "acquisition": null,
@@ -557,7 +559,8 @@
           "turn_end_at": null,
           "turn_output_tokens": null,
           "wait_unconfirmed": false,
-          "work_activity": null
+          "work_activity": null,
+          "worktree": null
         }
       ],
       "show_all": true,
@@ -596,7 +599,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "19359",
+      "Content-Length": "19413",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.2"

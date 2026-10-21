@@ -194,7 +194,11 @@ def _project_identity_key(prefix: str, path: str) -> str:
     return f"{prefix}{digest.hexdigest()}"
 
 
-def _git_identity_root(cwd: str) -> str | None:
+def _git_checkout(cwd: str) -> tuple[str | None, str | None]:
+    """The checkout holding ``cwd`` and the main repository root it belongs to.
+
+    The two differ only in a linked worktree, which is how a caller tells one.
+    """
     cursor = os.path.realpath(cwd)
     repo_root: str | None = None
     git_dir: str | None = None
@@ -219,7 +223,7 @@ def _git_identity_root(cwd: str) -> str | None:
             break
         cursor = parent
     if not git_dir:
-        return repo_root
+        return repo_root, repo_root
     common_file = os.path.join(git_dir, "commondir")
     try:
         with open(common_file, encoding="utf-8", errors="replace") as handle:
@@ -227,9 +231,14 @@ def _git_identity_root(cwd: str) -> str | None:
     except OSError:
         common = ""
     if not common:
-        return repo_root
+        return repo_root, repo_root
     common_dir = os.path.realpath(os.path.join(git_dir, common))
-    return os.path.dirname(common_dir) if os.path.basename(common_dir) == ".git" else repo_root
+    main = os.path.dirname(common_dir) if os.path.basename(common_dir) == ".git" else repo_root
+    return repo_root, main
+
+
+def _git_identity_root(cwd: str) -> str | None:
+    return _git_checkout(cwd)[1]
 
 
 def project_root(cwd: str) -> str | None:
@@ -278,6 +287,16 @@ def apply_project_identity(config: RuntimeConfig, session: Session, cwd: str) ->
     session["project_key"] = identity["key"]
     session["project_name"] = identity["name"]
     session["project_identity_source"] = identity["source"]
+    checkout, main = _git_checkout(cwd) if os.path.isabs(cwd) else (None, None)
+    if checkout and main and checkout != main:
+        # The label is what the board groups on, so a linked worktree files under
+        # its repository and the checkout's own name moves to `worktree`, which
+        # keeps two sessions on one repository distinguishable (DRC-4932).
+        label = project_from_cwd(config, main)
+        if label:
+            session["project"] = label
+            session["project_key"] = identity["key"]
+        session["worktree"] = os.path.basename(checkout.rstrip(os.sep)) or None
 
 
 def fmt_duration(seconds: float | None) -> str:
@@ -526,6 +545,9 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         "project_key": project,
         "project_name": project.rsplit("/", 1)[-1] or project,
         "project_identity_source": "collector project label",
+        # The linked worktree's directory name; None for a main checkout, so a
+        # reader of the row can tell "not a worktree" from an empty name.
+        "worktree": None,
         "provider": None,
         "model": None,
         "consumption": None,

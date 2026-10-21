@@ -446,6 +446,7 @@ _RAW_ROW_TEXT: Final = (
     "state_detail",
     "project_key",
     "project_name",
+    "worktree",
 )
 
 # `(the row field holding a list of dicts, the keys inside each one)`.
