@@ -1,3 +1,4 @@
+import { clock } from '../observed';
 /* The sentences the Intent panel prints more than once, spelt once. Each is the legacy page's own wording,
    because the same fact worded two ways is two promises, and a refusal always names the step that
    resolves it. */
@@ -82,6 +83,24 @@ export const HELD_CUES: Readonly<Record<string, string>> = {
   unreadable:
     "Not saved. This session's words were saved by a build of Compass that can read more than this one, so nothing was saved over them, and what you typed is still in the box. Save from that build, or remove this session's entry from compass-annotations.json.",
 };
+
+/* The cue Read from now earns carries the time it moved the start to, so its kind does too. A static table
+   cannot hold a time; the page reads it back from the refreshed row and stamps it here, in the one moment
+   the save is drawn. */
+export const READS_FROM_KIND = 'reads-from:';
+export const readsFromKind = (at: number): string => `${READS_FROM_KIND}${String(at)}`;
+export const isReadsFrom = (kind: string): boolean => kind.startsWith(READS_FROM_KIND);
+export function readsFromSentence(kind: string): string {
+  const at = Number(kind.slice(READS_FROM_KIND.length));
+  return Number.isFinite(at) && at > 0
+    ? `Saved. Compass now reads from ${clock(at)}. Work before that is not read.`
+    : '';
+}
+
+/* What Read from now does, said where the reader chooses it. Saving alone keeps the start the first reading
+   had, so the work already done toward earlier words stays read. */
+export const READ_FROM_NOW_WHY =
+  'Saves your intent and reads the session from now on. Work before that is not read. Save intent alone keeps reading from where it started.';
 
 /* The reply's `outcome` token to the cue it earns. An unknown token, from a server newer than this page,
    falls back on `persisted`, which keeps its meaning across builds. */

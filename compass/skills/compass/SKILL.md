@@ -322,7 +322,7 @@ reading reads each line on its own and shows one row per line.
 `POST /api/annotate` with a harness, a session id and `goal` or `lines` (a list of strings, the
 whole checklist) does the same thing without the page; `expected_revision` refuses a goal or a list
 saved from a view of an older revision (the page sends it with both and keeps what you typed), and
-a seventh line or a line over 240 characters is refused rather than clipped. It writes a numbered revision; an earlier revision is never edited, so anything citing
+a seventh line or a line over 240 characters is refused rather than clipped. `"read_from_now": true` beside them, or beside `adopt`, opens a new reading window as a first save does; without it a save over saved words keeps the window it had. It writes a numbered revision; an earlier revision is never edited, so anything citing
 revision 1 still means what it meant. Send `{"clear": true}` to forget a session's words entirely,
 or `settle_through` with a timestamp to mark the directions given up to that moment as settled
 against the current baseline. The reply says what happened: `persisted` is whether the words are
@@ -412,7 +412,7 @@ press `Analyze drift`, which adopts the draft. `Use your prompt` lists up to fiv
 prompts, and choosing one fills the goal box for you to save. Analyze drift, Keep and an added line's save are refused
 while the goal box or the outcome lines hold an edit you have not saved, because each would stand
 on words that are not on screen; your edit stays in the box. No drift level or pill is drawn over
-an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds the revision line. Adding or editing outcome lines keeps that window; new goal words open another.
+an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from now`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time.
 
 A direction you gave after your intent (after the saved goal's words, or after the drafted prompt)
 is asked about before the press, in the control's place: "You gave a later direction at #n" names

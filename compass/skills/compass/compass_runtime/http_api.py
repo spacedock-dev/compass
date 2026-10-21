@@ -117,6 +117,8 @@ def _annotation_body_refused(payload: dict[str, Any]) -> bool:
             replace is not None
             and (isinstance(replace, bool) or not isinstance(replace, int) or replace < 0)
         )
+        # Read from now is a switch the reader pressed, so it is a bool or absent.
+        or not isinstance(payload.get("read_from_now", False), bool)
         or (
             lines is not None
             and (not isinstance(lines, list) or not all(isinstance(line, str) for line in lines))
@@ -2064,6 +2066,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 origins=payload.get("origins"),
                 now=now,
                 window_start=self._typed_window_start(harness, sid, now),
+                read_from_now=payload.get("read_from_now") is True,
                 diagnostic_sink=application.diagnostic_sink,
             )
         return outcome, withdrew
@@ -2600,6 +2603,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             expected_revision=expected if guarded else None,
             settle_through=settle_through,
             receipt=receipt,
+            read_from_now=payload.get("read_from_now") is True,
             chosen=(
                 self._chosen_prompt(rows[0], payload.get("prompt_fact"))
                 if source == runtime_reading.PROMPT_CHOSEN

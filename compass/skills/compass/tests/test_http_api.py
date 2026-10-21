@@ -19,7 +19,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 from unittest import mock
 from urllib.parse import urlparse
 
@@ -4291,12 +4291,73 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude", row=self.WAITING)) as port,
         ):
             status, body = self._save(
-                port, {"harness": "claude", "sid": "s1", "goal": "add retry to the webhook"}
+                port,
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "goal": "add retry to the webhook",
+                    "read_from_now": True,
+                },
             )
         self.assertEqual(200, status, body)
         revision = self._saved_revision(config)
         self.assertEqual(1_700_000_100.0, revision["at"])
         self.assertEqual(1_700_000_040.0, revision["window_start"])
+
+    def _two_saves(self, first: dict[str, Any], second: dict[str, Any]) -> Any:
+        """Save `first` with one message of the reader's on record, then `second` with two.
+
+        One server for both, so the second save meets the first's revision on a
+        clock that does not step back, as it would not in life.
+        """
+        config, state = self._runtime()
+        facts: list[dict[str, Any]] = []
+
+        def message(index: int, moment: float) -> dict[str, Any]:
+            return {
+                **self.FACT,
+                "fact_id": f"f{index}",
+                "at": moment,
+                "source_session": {"harness": "claude", "sid": "s1"},
+            }
+
+        with (
+            self._counting_model(harness="claude", extra_facts=cast("Any", facts)),
+            self._serving(self._app(config, state, "claude", row=self.WAITING)) as port,
+        ):
+            facts.append(message(2, 1_700_000_040.0))
+            status, body = self._save(port, {"harness": "claude", "sid": "s1", **first})
+            self.assertEqual(200, status, body)
+            opened = self._saved_revision(config)["window_start"]
+            facts.append(message(3, 1_700_000_090.0))
+            status, body = self._save(port, {"harness": "claude", "sid": "s1", **second})
+            self.assertEqual(200, status, body)
+        return opened, self._saved_revision(config)
+
+    def test_editing_the_goal_keeps_the_original_reading_start(self) -> None:
+        opened, revision = self._two_saves(
+            {"goal": "add retry to the webhook", "read_from_now": True},
+            {"goal": "add retry to the webhook and record the ruling"},
+        )
+        self.assertEqual(1_700_000_040.0, opened)
+        self.assertEqual("add retry to the webhook and record the ruling", revision["goal"])
+        self.assertEqual(1_700_000_040.0, revision["window_start"])
+
+    def test_read_from_now_moves_the_reading_start_to_the_latest_message(self) -> None:
+        _, revision = self._two_saves(
+            {"goal": "add retry to the webhook", "read_from_now": True},
+            {"goal": "add retry to the webhook and record the ruling", "read_from_now": True},
+        )
+        self.assertEqual(1_700_000_090.0, revision["window_start"])
+
+    def test_read_from_now_must_be_a_boolean(self) -> None:
+        config, state = self._runtime()
+        with self._serving(self._app(config, state, "claude", row=self.WAITING)) as port:
+            status, _ = self._save(
+                port,
+                {"harness": "claude", "sid": "s1", "goal": "add retry", "read_from_now": "yes"},
+            )
+        self.assertEqual(400, status)
 
     def test_words_typed_from_the_all_sessions_view_read_from_your_latest_message(self) -> None:
         config, state = self._runtime()
@@ -4311,7 +4372,13 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude", row=self.WAITING, aged=True)) as port,
         ):
             status, body = self._save(
-                port, {"harness": "claude", "sid": "s1", "goal": "add retry to the webhook"}
+                port,
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "goal": "add retry to the webhook",
+                    "read_from_now": True,
+                },
             )
         self.assertEqual(200, status, body)
         self.assertEqual(1_700_000_040.0, self._saved_revision(config)["window_start"])
@@ -4350,7 +4417,13 @@ class ReadingRouteTest(unittest.TestCase):
             self._published_row(port, "claude")
             before, collected_before = len(variants), len(collections)
             status, body = self._save(
-                port, {"harness": "claude", "sid": "s1", "goal": "add retry to the webhook"}
+                port,
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "goal": "add retry to the webhook",
+                    "read_from_now": True,
+                },
             )
         self.assertEqual(200, status, body)
         self.assertNotIn(True, variants[before:], "the save collected every session")
@@ -4373,7 +4446,13 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude", row=self.WAITING)) as port,
         ):
             status, body = self._save(
-                port, {"harness": "claude", "sid": "s1", "goal": "add retry to the webhook"}
+                port,
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "goal": "add retry to the webhook",
+                    "read_from_now": True,
+                },
             )
         self.assertEqual(200, status, body)
         self.assertEqual("stored", json.loads(body)["outcome"])

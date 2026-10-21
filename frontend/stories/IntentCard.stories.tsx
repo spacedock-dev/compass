@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { App } from '../src/App';
 import { ENDED_CAVEAT, INTENT_LEDE, INTENT_MEASURED } from '../src/intent/sentences';
+import { clock } from '../src/observed';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
@@ -10,6 +11,9 @@ import { createFakeClock, createFakeEnvironment } from '../src/transport/testing
 import { fakeBackend } from '../test/storage_backends';
 
 const SESSION_ROUTE = '#n=session:alpha%2Fapp:claude:s1';
+/* The reader's latest message in the stories that move a reading's start, after the start they open at. */
+const LATEST_MESSAGE = 1_760_000_700;
+const FIRST_START = 1_760_000_200;
 
 interface CardSetup {
   readonly session?: Record<string, unknown>;
@@ -135,6 +139,16 @@ function IntentCardHarness({ setup }: { readonly setup?: CardSetup }) {
             return setup.onAnnotate(body);
           }
           const nextRev = Number(currentSession['annotation_revision'] ?? 0) + 1;
+          /* The server's rule (docs/design-reading-a-session.md, "Amended 2026-10-21 (owner): editing the goal
+             keeps the reading's start"): a save over a window keeps it, and only Read from now reopens it, at
+             the reader's latest message. A session that published no window keeps publishing none. */
+          const opened = Number(currentSession['annotation_window_start'] ?? 0);
+          const window =
+            opened > 0
+              ? {
+                  annotation_window_start: body['read_from_now'] === true ? LATEST_MESSAGE : opened,
+                }
+              : {};
           const adopt = typeof body['adopt'] === 'string' ? body['adopt'] : '';
           const goal = adopt
             ? String(body['expected_prompt'] ?? '')
@@ -148,6 +162,7 @@ function IntentCardHarness({ setup }: { readonly setup?: CardSetup }) {
             annotation_revision: nextRev,
             annotation_revision_count: nextRev,
             annotation_at: 1_760_000_950,
+            ...window,
             annotation_goal_saved_at: 1_760_000_950,
             annotation_goal_source: adopt || (typeof body['goal'] === 'string' ? 'typed' : ''),
             annotation_goal_source_at: adopt
@@ -450,6 +465,91 @@ export const ConcurrentRevisionKeepsUnsavedChanges: Story = {
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
       'Unsaved changes',
     );
+  },
+};
+
+const READING_FROM_ORIGINAL = {
+  annotation_goal: 'Keep the parser small and pure',
+  annotation_goal_why: '',
+  annotation_revision: 1,
+  annotation_revision_count: 1,
+  annotation_at: 1_760_000_500,
+  annotation_window_start: FIRST_START,
+};
+
+/* The owner's ruling of 2026-10-21: widening the goal does not move where the reading starts, so the work
+   already done toward it stays read. The start is the line "Saved · reads from" beside the card. */
+export const GoalEditKeepsTheReadingStart: Story = {
+  args: { setup: { session: READING_FROM_ORIGINAL } },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const card = await page.findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await expect(
+      view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(FIRST_START)}`) }),
+    ).toBeVisible();
+    const goal = view.getByRole('textbox', { name: 'Goal' });
+    await userEvent.type(goal, ' and record the ruling');
+    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await waitFor(async () => {
+      await expect(
+        card.querySelector('.next-cockpit-held-footer .next-cockpit-held-cue'),
+      ).toHaveTextContent('Saved as a new revision.');
+    });
+    await waitFor(async () => {
+      await expect(
+        view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(FIRST_START)}`) }),
+      ).toBeVisible();
+    });
+    await expect(view.queryByText(new RegExp(clock(LATEST_MESSAGE)))).toBeNull();
+  },
+};
+
+export const UsingAPromptAsTheGoalKeepsTheReadingStart: Story = {
+  args: { setup: { session: READING_FROM_ORIGINAL } },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const card = await page.findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await userEvent.click(view.getByRole('combobox', { name: 'Use your prompt' }));
+    const doc = within(canvasElement.ownerDocument.body);
+    await userEvent.click(
+      await doc.findByRole('option', { name: /Latest prompt · \d\d:\d\d · excerpt Add streaming/ }),
+    );
+    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await waitFor(async () => {
+      await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
+        'Add streaming tokenizer benchmarks before touching the AST',
+      );
+      await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
+    });
+    await expect(
+      view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(FIRST_START)}`) }),
+    ).toBeVisible();
+  },
+};
+
+export const ReadFromNowMovesTheStartAndSaysSo: Story = {
+  args: { setup: { session: READING_FROM_ORIGINAL } },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const card = await page.findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    const now = view.getByRole('button', { name: 'Read from now' });
+    await expect(now).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ' and record the ruling');
+    await expect(now).not.toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(now);
+    await waitFor(async () => {
+      await expect(
+        card.querySelector('.next-cockpit-held-footer .next-cockpit-held-cue'),
+      ).toHaveTextContent(
+        `Saved. Compass now reads from ${clock(LATEST_MESSAGE)}. Work before that is not read.`,
+      );
+    });
+    await expect(
+      view.getByRole('button', { name: new RegExp(`Saved · reads from ${clock(LATEST_MESSAGE)}`) }),
+    ).toBeVisible();
   },
 };
 

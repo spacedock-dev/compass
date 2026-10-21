@@ -32,6 +32,8 @@ export interface ActionButtonProps {
   readonly action?: string;
   readonly arg?: string;
   readonly ariaLabel?: string;
+  /** What the control does, for a pointer to rest on; the label stays the accessible name. */
+  readonly title?: string;
   /** A glyph drawn in place of the label. The label is then the control's accessible name. */
   readonly icon?: IconName;
   readonly ariaPressed?: boolean;
@@ -56,6 +58,7 @@ export function ActionButton({
   action,
   arg,
   ariaLabel,
+  title,
   icon,
   ariaPressed,
   onPress,
@@ -86,6 +89,7 @@ export function ActionButton({
       {...(reserve ? { 'data-next-reserve': '' } : {})}
       {...(ariaLabel || icon ? { 'aria-label': ariaLabel ?? label } : {})}
       {...(ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
+      {...(title ? { title } : {})}
       {...(hidden ? { hidden: true } : {})}
       {...(busy
         ? { 'aria-disabled': true, 'aria-busy': true, 'data-next-pending': '' }

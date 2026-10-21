@@ -326,7 +326,13 @@ export function resultStale(
   entries: readonly WorkEntry[],
 ): Stale | null {
   const current = nextNumber(annotation?.['revision']);
-  const superseded = revisionSuperseded('This reading', shape.revisionRead, current);
+  const superseded = revisionSuperseded(
+    'This reading',
+    shape.revisionRead,
+    current,
+    nextNumber(raw?.['read_at']),
+    nextNumber(annotation?.['at']),
+  );
   const evidence = nextNumber(raw?.['evidence_through']);
   const through = evidence !== null ? evidence : nextNumber(raw?.['read_at']);
   const newer =

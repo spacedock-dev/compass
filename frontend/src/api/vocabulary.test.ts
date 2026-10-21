@@ -5,7 +5,8 @@
    test here imports the React constant where it lives and compares it with the fixture, so a change on
    either side fails until the other follows. Nothing is copied into this file. These replaced the Python
    tests that compared the retired page's source text with the same constants. */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSESSMENT_KEYS } from '../drift/shape';
 import {
@@ -19,11 +20,17 @@ import {
   STORED_WHY,
 } from '../drift/sentences';
 import { toolReportLine } from '../drift/workList';
-import { ANNOTATION_FIELDS, HELD_UNSAFE, OUTCOME_LINES_MAX } from '../intent/annotation';
+import {
+  ANNOTATION_FIELDS,
+  HELD_UNSAFE,
+  OUTCOME_LINES_MAX,
+  revisionLine,
+} from '../intent/annotation';
 import { WORK_BY_HARNESS, type WorkEntry } from '../intent/work';
 import { askBanner, notifyEdge, sessionBanner } from '../notify/edges';
 import { READING_TURN_STOP_HARNESSES } from '../observed';
-import { askingTitle } from '../sessions/detail';
+import { askingTitle, departureRow } from '../sessions/detail';
+import { revisionSuperseded } from '../sessions/rows';
 import {
   PROMPT_CHOSEN,
   PROMPT_SOURCES,
@@ -208,5 +215,90 @@ describe('the alert the page and the server both compose', () => {
       const ask = { harness: 'claude', question, project, id: 'a' };
       expect(askBanner(labelled('Claude Code'), [ask]).body).toBe(detail);
     }
+  });
+});
+
+/* "Revision 2 is current" was the only sentence in the page that named a revision, and a reader cannot act
+   on it: the number appears nowhere else. A stale reading or raise names the moments instead (docs/design-reading-a-session.md,
+   "Amended 2026-10-21 (owner): editing the goal keeps the reading's start"). */
+describe('the sentences about words that moved on name times, not revision numbers', () => {
+  const NUMBERED = /revision\s*(?:\d|\$\{)/i;
+
+  it('says when a reading or a raise was made and when the intent changed', () => {
+    for (const subject of ['This reading', 'This raise']) {
+      const line = revisionSuperseded(subject, 2, 3, 1_700_000_000, 1_700_000_500);
+      expect(line).toMatch(
+        new RegExp(
+          `^${subject} was made at .+ against an earlier version of your intent\\. You changed it at .+, so it does not describe what you are asking for now\\.$`,
+        ),
+      );
+      expect(line).not.toMatch(NUMBERED);
+    }
+  });
+
+  it('leaves a moment out rather than inventing one, and says nothing when nothing moved', () => {
+    expect(revisionSuperseded('This reading', 2, 3)).toBe(
+      'This reading was made against an earlier version of your intent. You changed it, so it does not describe what you are asking for now.',
+    );
+    expect(revisionSuperseded('This reading', 3, 3, 1, 2)).toBe('');
+    expect(revisionSuperseded('This reading', null, 3, 1, 2)).toBe('');
+  });
+
+  it('words a raise’s baseline and its stale line without a number', () => {
+    for (const revision of [2, 0]) {
+      const row = departureRow({ at: 960, revision, constraint: 'TYPED GOAL' }, 3, 1000);
+      expect(`${row.base} ${row.stale}`).not.toMatch(NUMBERED);
+    }
+    expect(departureRow({ at: 960, revision: 2 }, 3, 1000).base).toBe(
+      'read against the intent as it stood then · the evidence window is not on record',
+    );
+    expect(departureRow({ at: 960, revision: 0 }, 3, 1000).base).toBe(
+      'the intent it read is not on record · the evidence window is not on record',
+    );
+  });
+
+  it('words the saved line under the goal as a time, and the store’s bound as dropped saves', () => {
+    const annotation = (extra: Record<string, unknown>) => ({
+      revision: 4,
+      revision_count: 4,
+      at: 700,
+      goal_source: '',
+      ...extra,
+    });
+    expect(revisionLine(annotation({}), 1000)).toBe('typed 5m ago');
+    expect(revisionLine(annotation({ goal_source: 'first-prompt' }), 1000)).toBe('saved 5m ago');
+    expect(revisionLine(annotation({ revision: 20, revision_count: 16 }), 1000)).toBe(
+      'typed 5m ago · older saves dropped',
+    );
+    expect(revisionLine(annotation({ at: null }), 1000)).toBe('typed, when not recorded');
+    expect(revisionLine(annotation({ revision_count: 0 }), 1000)).toBe('');
+  });
+
+  it('prints no revision number from any shipped source', () => {
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (
+          /\.tsx?$/.test(entry.name) &&
+          !/\.(test|testing|differential)\.|\.stories\./.test(entry.name)
+        )
+          files.push(path);
+      }
+    };
+    walk(new URL('..', import.meta.url).pathname);
+    expect(files.length).toBeGreaterThan(50);
+    const found = files.flatMap((path) => {
+      // Comments say why; only what is drawn is held to the vocabulary.
+      const code = readFileSync(path, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      return code
+        .split('\n')
+        .filter((line) => NUMBERED.test(line))
+        .map((line) => `${path}: ${line.trim()}`);
+    });
+    expect(found).toEqual([]);
   });
 });

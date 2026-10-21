@@ -8,6 +8,7 @@ import { loadLegacyViews } from '../observed/legacy.test.helper';
 import type { Row } from '../observed';
 import { DelegatedWorkLine, UnaskedDepartureBody } from './DepartureParts';
 import { retractSessionCopies } from '../../test/sessionCopyDeviation';
+import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
 /* The departure rows, the way back beside them and the delegated-work line, held to the legacy page's own
    functions over every session a generated payload carries. The comparison is the rendered text, plus the
@@ -56,10 +57,10 @@ describe('the departure rows read as the legacy rows do', () => {
             </StrictMode>,
           );
           const root = view.container.querySelector('[data-root]') as Element;
-          expect({ seed, sid: session['sid'], text: norm(root) }).toEqual({
+          expect({ seed, sid: session['sid'], text: maskRevisionWords(norm(root)) }).toEqual({
             seed,
             sid: session['sid'],
-            text: norm(template.content as unknown as Element),
+            text: maskRevisionWords(norm(template.content as unknown as Element)),
           });
           // `norm` of a fragment is its text; the controls are compared by what they are called.
           expect({ seed, controls: labels(root) }).toEqual({

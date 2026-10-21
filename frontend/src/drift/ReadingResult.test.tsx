@@ -153,7 +153,10 @@ describe('a stored reading', () => {
     const stale = document.querySelector('[data-next-result-stale]') as HTMLElement;
     expect(stale.getAttribute('data-next-result-stale')).toBe('intent');
     expect(stale.textContent).toContain('Your intent changed after this analysis.');
-    expect(stale.textContent).toContain('This reading read revision 3. Revision 4 is current');
+    expect(stale.textContent).toMatch(
+      /This reading was made at .+ against an earlier version of your intent\. You changed it at .+, so it does not describe what you are asking for now\./,
+    );
+    expect(stale.textContent).not.toMatch(/revision \d/i);
     expect(stale.querySelector('[data-next-cockpit-action="reading-ask"]')).not.toBeNull();
     expect(document.querySelectorAll('[data-next-cockpit-action="reading-ask"]')).toHaveLength(1);
   });

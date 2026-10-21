@@ -435,19 +435,23 @@ export interface DepartureRow {
   readonly followUp: string;
 }
 
-/* One raised departure, with the baseline it rested on. The revision and the cutoff are printed rather
-   than implied: by the time this is read the annotation may be at a later revision and the evidence
-   window has moved, so a row that does not say which words it read and where its evidence stopped cannot
-   be checked by the person it was raised to. A raise whose revision did not survive says so rather than
-   borrowing today's. */
-export function departureRow(row: Row, current: number | null): DepartureRow {
+/* One raised departure, with the baseline it rested on. The baseline and the cutoff are printed rather
+   than implied: by the time this is read the intent may have changed and the evidence window has moved, so
+   a row that does not say which words it read and where its evidence stopped cannot be checked by the
+   person it was raised to. A raise whose baseline did not survive says so rather than borrowing today's.
+   The stale line names times; the revision number only decides whether it shows. */
+export function departureRow(
+  row: Row,
+  current: number | null,
+  changedAt: number | null = null,
+): DepartureRow {
   const text = (key: string): string => published(row[key]);
   const revision = Number(row['revision']);
   const read = Number.isFinite(revision) && revision > 0 ? revision : null;
   const baseline =
     read !== null
-      ? `read against revision ${String(read)}`
-      : 'the revision it read is not on record';
+      ? 'read against the intent as it stood then'
+      : 'the intent it read is not on record';
   const cutoff = Number(row['cutoff']);
   const window =
     Number.isFinite(cutoff) && cutoff > 0
@@ -464,7 +468,7 @@ export function departureRow(row: Row, current: number | null): DepartureRow {
       window +
       (text('cutoff_text') ? ` · ${text('cutoff_text')}` : '') +
       (text('evidence') ? ` · ${text('evidence')}` : ''),
-    stale: revisionSuperseded('This raise', read, current),
+    stale: revisionSuperseded('This raise', read, current, nextNumber(row['at']), changedAt),
     followUp: text('follow_up'),
   };
 }
@@ -500,7 +504,9 @@ export function unaskedDepartures(session: Row): Departures | null {
       raised.length === 1
         ? 'One departure was raised'
         : `${String(raised.length)} departures were raised`,
-    rows: raised.map((row) => departureRow(isRecord(row) ? row : {}, current)),
+    rows: raised.map((row) =>
+      departureRow(isRecord(row) ? row : {}, current, nextNumber(session['annotation_at'])),
+    ),
     why,
     absence: deliveryAbsence(session, raised.length > 0),
   };
