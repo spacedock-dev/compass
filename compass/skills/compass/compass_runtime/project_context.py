@@ -547,17 +547,34 @@ def _unstripped_title(
 
     A fact id hashes the title (`_semantic_fact_from_event`), so a title the strip changed would
     move the id a stored reading cites. A message with no paste tag costs one failed substring
-    test and never reaches the second parse. Claude Code writes a paste into a string content
-    (docs/captures/claude/paste-wrapper-shape-2.1.305-macos.jsonl), so that is all this reads.
+    test per text and never reaches the second parse. The tag is looked for in a string content
+    (the shape recorded in docs/captures/claude/paste-wrapper-shape-2.1.305-macos.jsonl) and in
+    the text blocks of a list content, which the strip reads the same way.
     """
-    content = records.message_dict(record).get("content")
-    if not isinstance(content, str) or "pasted_content" not in content:
+    if not _carries_paste_tag(record):
         return ""
     held = observer.parse_reader_record(record, paste_tags=True)
     if held is None:
         return ""
     before = _message_title(config, held["text"].strip(), harness)
     return before if before and before != title else ""
+
+
+def _carries_paste_tag(record: dict[str, Any]) -> bool:
+    """Whether a message's content, or one of its text blocks, names a paste tag."""
+    content = records.message_dict(record).get("content")
+    if content is None:
+        content = records.as_dict(record.get("payload")).get("content")
+    if isinstance(content, str):
+        return "pasted_content" in content
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(block, dict)
+        and isinstance(block.get("text"), str)
+        and "pasted_content" in block["text"]
+        for block in content
+    )
 
 
 def _reader_stamp(record: dict[str, Any]) -> Any:

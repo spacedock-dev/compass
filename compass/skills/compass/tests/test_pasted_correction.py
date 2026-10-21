@@ -207,6 +207,25 @@ class AWrappedPastesFactIdIsTheOneItAlreadyHadTest(_App):
         self.assertNotIn("pasted_content", json.dumps(now))
         self.assertEqual(before, now["fact_id"])
 
+    def test_a_list_content_message_keeps_its_id_with_or_without_an_image_block(self) -> None:
+        blocks: dict[str, list[dict[str, Any]]] = {
+            "text alone": [{"type": "text", "text": INLINE}],
+            "text and image": [
+                {"type": "text", "text": INLINE},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png"}},
+            ],
+        }
+        for label, content in blocks.items():
+            with self.subTest(content=label):
+                self.register(now=START.timestamp() + self.session.seconds + 1)
+                at = _paste(self.session, "")
+                self.session.rows[-1]["message"]["content"] = content
+                self.session.save(self.path)
+                before = self.stored_id()
+                now = next(f for f in self.user_facts() if float(f["at"]) == at)
+                self.assertNotIn("pasted_content", json.dumps(now))
+                self.assertEqual(before, now["fact_id"])
+
     def test_a_paste_whose_title_the_strip_leaves_alone_keeps_its_id_too(self) -> None:
         at = self.paste(wrapped(OWN, before="Also:"))
         self.assertEqual(

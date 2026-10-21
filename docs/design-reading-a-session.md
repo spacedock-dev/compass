@@ -5990,11 +5990,13 @@ stored before the strip, lost its departure.
    a paste whose tag shares a line with the reader's typed words, so a reading stored before it cited an id
    that no longer existed and the page demoted the citation. The event now carries the title as it was hashed
    (`ID_TITLE_FIELD`, server-only and stripped by `for_page`) and only where the strip changed it, so the id
-   is the one the earlier build gave and the published title is clean. Mapping old ids to new on every read
+   is the one the earlier build gave and the published title is clean. The tag is looked for in a string
+   content and in the text blocks of a list content (a message that carries an image), because the strip
+   reads both. Mapping old ids to new on every read
    was rejected: it needs the stored reading to carry a second id per message, and the history store, which
    dedupes on the id, would hold the same message under both. A paste whose tag stands alone on its own
    line never moved, because a title skips a line that opens with `<`; the walked session was that shape,
-   so what its reading lost was the citation item 3 removes, not an id. `AWrappedPastesFactIdIsTheOneItAlreadyHadTest`
+   so what its reading lost was the citation the rule above removes for a recognised paste, not an id. `AWrappedPastesFactIdIsTheOneItAlreadyHadTest`
    holds a stored reading that cites a wrapped paste through the strip.
 2. The page draws a message's words from one entry list, so the tags come off where the list is made
    (`workEntries`, for a user message only: an agent's words are its own text). The direction select's
