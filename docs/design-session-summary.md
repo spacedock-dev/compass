@@ -1316,8 +1316,8 @@ redirect has no entry, and the part says nothing about it.
 A check is listed as failing once. A check still red in a later part is the failure of the part it
 first failed in; a later part does not list or count it again, and a pass between the two would have
 made the first one fixed. A failure in the opening part is `checks_unknown`, not failing, when the
-read ended inside that part or before the window began (`gap`): a pass in the unread work would fix
-it, and nothing in the outline can say. The card says it did not read whether a later run fixed it.
+read ended inside that part, before the window began, or held later work the outline drops (`gap`):
+a pass in that work would fix it, and nothing in the outline can say. The card says it did not read whether a later run fixed it.
 
 This is Compass's grouping, never a summary or a completion verdict. Its titles quote the
 existing masked evidence; its result tokens are as the tool reported. It authors no prose about

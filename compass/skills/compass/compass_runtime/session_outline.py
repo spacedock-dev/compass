@@ -219,7 +219,10 @@ def _head(
     groups = _groups(page.entries)
     for number, group in enumerate(groups):
         if group[0].kind == "person":
-            return _Opening(tuple(group), number == len(groups) - 1, gap), clipped
+            # Later groups the head read held are dropped from the outline, so a pass in one of
+            # them cannot be shown: the opening part's failures are then unknown, not failing.
+            dropped = number < len(groups) - 1
+            return _Opening(tuple(group), number == len(groups) - 1, gap or dropped), clipped
     return None, clipped
 
 

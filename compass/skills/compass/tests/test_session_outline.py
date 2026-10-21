@@ -178,6 +178,27 @@ class SessionOutlineTest(unittest.TestCase):
             ),
         )
 
+    def test_an_opening_failure_fixed_in_a_group_the_head_read_dropped_is_unknown(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Synthetic first request.")
+        transcript.bash("pytest tests", "1 failed", is_error=True)
+        transcript.prompt("Synthetic second request.")
+        transcript.bash("pytest tests", "1 passed")
+        for n in range(30):
+            transcript.prompt(f"Synthetic later request {n}: {'pad ' * 40}")
+            transcript.bash(f"ruff check {n}", "1 passed")
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=1_000_000
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            result, _plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        first = result["blocks"][0]
+        self.assertTrue(first["opening"])
+        self.assertEqual(
+            (0, 1), (first["counts"]["checks_failed"], first["counts"]["checks_unknown"])
+        )
+
     def test_the_head_read_spends_what_the_window_left_of_one_budget(self) -> None:
         self._large()
         config = dataclasses.replace(self.config, session_outline_max_bytes=6000)
