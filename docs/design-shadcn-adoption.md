@@ -681,7 +681,7 @@ chrome explicitly, while surface sheets retain grid columns, flex placement and 
 | Human-context note | Textarea memo owns sunk background, foreground ink, 8 px padding, radius, five-rem floor and 1.5 line height. Recovery keeps the field's grid column. |
 | Goal and outcome line | Textarea intent owns value ink, panel background, 7 px padding, 1.55 line height and vertical resizing. An untouched drafted goal uses sunk background. Intent keeps grid placement. |
 | Pending direction | The same intent recipe, with a 44 px floor. Content sizing no longer overrides a remembered drag. |
-| Correction to copy | Textarea correction owns the former panel/value recipe and 120 px floor. Its existing composition and paint-pause owner stays in place. |
+| Correction to paste | Textarea correction owns the former panel/value recipe and 120 px floor. Its existing composition and paint-pause owner stays in place. |
 | Prompt, stage and direction select | Base UI SelectTrigger owns token border, sunk background, sans sentence type and a 44 px floor. Prompt and stage keep medium weight. The prompt wrapper reserves 18rem on wide screens and the remaining row width on narrow screens, unchanged through loading. Flex placement and an eight-pixel gap keep the inline ten-pixel chevron clear of the value. |
 | Gallery draft | Textarea draft replaces the deleted ctl-draft chrome; the gallery choice uses Base UI Select. |
 

@@ -139,7 +139,7 @@ const PARTS: Readonly<Record<string, string>> = {
   summary: '[data-next-session-summary]',
   phase: '[data-next-summary-marked]',
   departure: '[data-next-departure="goal"]',
-  steer: '[data-next-result-primary]',
+  steer: '[data-next-steer-section]',
   sent: '[data-next-session-drift]',
   activity: '[data-next-session-full-activity]',
 };

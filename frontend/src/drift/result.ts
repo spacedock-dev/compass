@@ -627,14 +627,71 @@ const QUOTE_MAX = 200;
    result; it is said in words instead. */
 const CHECK_GLYPHS = /[\u221a\u2611\u2705\u2713\u2714\u{10102}\u{1f5f8}\u{1f5f9}\u{1fbb1}]/gu;
 
-function bounded(text: string): string {
+function bounded(text: string, max: number = QUOTE_MAX): string {
   const flat = text.replace(CHECK_GLYPHS, '[check mark]').replace(/\s+/g, ' ').trim();
   // Counted in code points, so an emoji at the cut is kept whole rather than left as a lone surrogate.
   const points = Array.from(flat);
-  if (points.length <= QUOTE_MAX) return flat;
-  const cut = points.slice(0, QUOTE_MAX).join('');
+  if (points.length <= max) return flat;
+  const cut = points.slice(0, max).join('');
+  /* At the last space, wherever it falls: a cut at the limit left "…and noth" in a departure's What (walk
+     record, 2026-10-21). A quote of one unbroken word, a URL, is cut where it stands, since there is no
+     whole word shorter than it to end on. */
   const space = cut.lastIndexOf(' ');
-  return `${(space > QUOTE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+  return `${(space > 0 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/* A departure's title, from what the cited entry is and never from the constraint it departs from: the goal's
+   whole sentence made every title the same. No model writes it: the stored reading keeps a `detail` and no
+   headline, so the title says only what the record itself shows, a write, a failed check or the agent's own
+   message. A write or a check outranks a message, which only reports on one. Empty where no cited entry is
+   held, and the card keeps the constraint's own words then. */
+const TITLE_WORDS = 60;
+function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
+  return (
+    entries.find((entry) => entry.subject === 'write' || entry.subject === 'check') ??
+    entries.find(agentMessage) ??
+    entries[0] ??
+    null
+  );
+}
+
+export function departureTitle(entries: readonly WorkEntry[]): string {
+  const entry = titledEntry(entries);
+  if (!entry) return '';
+  if (entry.subject === 'write') {
+    const path = bounded(String(entry.summary || ''), TITLE_WORDS);
+    return path ? `It changed ${path}` : 'It changed files';
+  }
+  if (entry.subject === 'check') {
+    return entry.result === 'failed' ? 'A check failed' : 'A check ran';
+  }
+  if (agentMessage(entry)) return 'What the agent said departs from this';
+  return personAuthored(entry)
+    ? 'Your own words depart from this'
+    : 'Something in the record departs from this';
+}
+
+/* A departure's What, one plain sentence about the same entry the title names: when, who and what, ending in
+   one stop. The agent's own words stay quoted and attributed, so a result never says for the agent that it
+   did the work. */
+export function departureWhat(entries: readonly WorkEntry[]): string {
+  const entry = titledEntry(entries);
+  if (!entry) return '';
+  const at = nextNumber(entry.at);
+  const when = at !== null && at > 0 ? `At ${clock(at)} ` : 'At a time not recorded ';
+  const words = bounded(String(entry.summary || ''));
+  const stop = (text: string): string => (/[.!?…”]$/.test(text) ? text : `${text}.`);
+  if (entry.subject === 'write') {
+    return `${when}the agent changed ${words ? stop(words) : 'files.'}`;
+  }
+  if (entry.subject === 'check') {
+    const failed = entry.result === 'failed';
+    return `${when}a ${failed ? 'check failed' : 'check ran'}${words ? `: ${stop(words)}` : '.'}`;
+  }
+  if (agentMessage(entry))
+    return `${when}the agent said ${words ? `“${words.replace(/\.+$/, '')}”` : 'something'}.`;
+  if (personAuthored(entry) && words) return `${when}you said “${words.replace(/\.+$/, '')}”.`;
+  return `${when}${citedKind(entry).toLowerCase()} was recorded.`;
 }
 
 export function citedLine(entry: WorkEntry): string {

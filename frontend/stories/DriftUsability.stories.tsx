@@ -93,7 +93,12 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     await expect(whats).toHaveLength(2);
     for (const what of whats) {
       await expect(what).toHaveTextContent(/\[\d+\]/);
-      await expect(within(what).getByText(`Agent said: “${SAID}”`)).toBeVisible();
+      await expect(what).toHaveTextContent(
+        `At ${clock(650)} the agent said “${SAID.replace(/\.$/, '')}”.`,
+      );
+      await expect(
+        within(what).getByRole('link', { name: /Show .* in Full activity/ }),
+      ).toBeVisible();
     }
     // Said once, inside Evidence and What the analysis read, not between the verdict and the cards.
     await expect(drift.querySelector('[data-next-departure-status]')).toBeNull();

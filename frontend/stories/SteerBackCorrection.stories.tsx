@@ -1,12 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { CORRECTION_CAP, CORRECTION_WHY_LABEL } from '../src/drift/sentences';
+import { CORRECTION_CAP, CORRECTION_WHY_LABEL, STEER_PURPOSE } from '../src/drift/sentences';
+import { clock } from '../src/observed';
 import {
   DEPARTURE_READING,
   DriftScenario,
   failedCheck,
   fact,
   passedCheck,
+  written,
   type Scenario,
 } from './drift.scenario';
 
@@ -78,7 +80,7 @@ const scenario = (value: Scenario): Pick<Story, 'args'> => ({ args: { scenario: 
 async function openBox(canvasElement: HTMLElement): Promise<HTMLTextAreaElement> {
   const canvas = within(canvasElement);
   await userEvent.click(await canvas.findByRole('button', { name: 'Steer back' }));
-  return (await canvas.findByLabelText('Correction to copy')) as HTMLTextAreaElement;
+  return (await canvas.findByLabelText('Correction to paste')) as HTMLTextAreaElement;
 }
 
 /* Owner, 2026-10-20: a placeholder is drawn as nothing; the agent never saw Compass's numbers. */
@@ -286,5 +288,111 @@ export const TheCapHoldsEveryExplanation: Story = {
     await waitFor(() => expect([...box.value].length).toBe(CORRECTION_CAP));
     await expect(box.value.startsWith(composedText)).toBe(true);
     await expect(count).toHaveTextContent(`${String(CORRECTION_CAP)}/${String(CORRECTION_CAP)}`);
+  },
+};
+
+const WROTE = written('w1', 420, 'src/queue.ts');
+/* The departure card as the design draws it (DRC-4927): a title for what happened and not the goal's own
+   sentence, one What sentence with its time, Why, then the Steer back section after the departures with the
+   correction under it, built from the reading and not from a check. */
+export const ADepartureReadsAsWhatHappened: Story = {
+  ...scenario({
+    session: session({
+      goal: departs(['c1'], GOAL_WHY, 'Ship the queue'),
+      line_1: { ...departs(['w1'], LINE_WHY, 'Tests pass'), why: 'recorded-write' },
+    }),
+    facts: [PERSON, WROTE, FAILED],
+    correction: { ok: true, parts: composed(GOAL_WHY, LINE_WHY) },
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const find = (key: string) =>
+      waitFor(() => {
+        const node = canvasElement.querySelector<HTMLElement>(`[data-next-departure="${key}"]`);
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+    const goal = await find('goal');
+    const line = await find('line_1');
+    // What happened, taken from the entry each departure cites; the goal's own words are not repeated.
+    await expect(within(goal).getByRole('heading', { level: 4 })).toHaveTextContent(
+      'A check failed',
+    );
+    await expect(goal).not.toHaveTextContent('Ship the queue');
+    await expect(within(line).getByRole('heading', { level: 4 })).toHaveTextContent(
+      'It changed src/queue.ts',
+    );
+    const what = line.querySelector<HTMLElement>('[data-next-departure-what]') as HTMLElement;
+    await expect(what).toHaveTextContent(`At ${clock(420)} the agent changed src/queue.ts.`);
+    await expect(what.querySelectorAll('p')).toHaveLength(2);
+    await expect(what.textContent).not.toMatch(/You said|Agent said/);
+    await expect(line.querySelector('[data-next-departure-why]')).toHaveTextContent(LINE_WHY);
+    await expect(goal.querySelector('[data-next-departure-why]')).toHaveTextContent(GOAL_WHY);
+    // Steer back is a section of its own after the departures, in the design's words.
+    const section = canvasElement.querySelector<HTMLElement>('[data-next-steer-section]');
+    await expect(section).not.toBeNull();
+    await expect(
+      canvasElement
+        .querySelector('[data-next-departures]')
+        ?.compareDocumentPosition(section as Node),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await expect(
+      within(section as HTMLElement).getByRole('heading', { name: 'Steer back' }),
+    ).toBeVisible();
+    await expect(section).toHaveTextContent(STEER_PURPOSE);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Steer back' }));
+    await expect(await canvas.findByLabelText('Correction to paste')).toBeVisible();
+    await expect(section?.querySelector('[data-next-steer-from]')).toHaveTextContent(
+      /^Built from your saved intent and the reading at /,
+    );
+    // Update intent instead is the quiet secondary, not a dashed twin of the press.
+    const update = within(section as HTMLElement).getByRole('button', {
+      name: 'Update intent instead',
+    });
+    await expect(getComputedStyle(update).borderStyle).toBe('solid');
+    await expect(update).toHaveAttribute('data-variant', 'quiet');
+  },
+};
+
+/* The counter reads the text in the box, after typing and when an open, untouched box is quietly rebuilt over
+   a record that moved: the box stays mounted and only its text changes, so the count has to follow the text. */
+export const TheCounterFollowsTheCorrection: Story = {
+  ...scenario({
+    session: session({
+      goal: departs(['c1'], GOAL_WHY, 'Ship the queue'),
+      line_1: departs(['c1'], LINE_WHY, 'Tests pass'),
+    }),
+    facts: [PERSON, FAILED, PASSED],
+    correction: { ok: true, parts: composed(GOAL_WHY, LINE_WHY) },
+    board: {},
+  }),
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    const shown = () => canvasElement.querySelector('[data-next-correction-count]');
+    const length = (box: HTMLTextAreaElement) => String([...box.value].length);
+    const field = () => canvas.getByLabelText('Correction to paste') as HTMLTextAreaElement;
+    const box = await openBox(canvasElement);
+    await expect(shown()).toHaveTextContent(`${length(box)}/${String(CORRECTION_CAP)}`);
+    // Left open and untouched: the next board follows the record, and the shorter text is the box's now.
+    const before = length(box);
+    const scripted = args.scenario as {
+      correction?: unknown;
+      session?: { annotation_assessment?: Record<string, unknown> };
+      board?: { refresh?: () => Promise<void> };
+    };
+    scripted.correction = { ok: true, parts: ['Back to my goal.'] };
+    scripted.session = {
+      ...scripted.session,
+      annotation_assessment: {
+        ...scripted.session?.annotation_assessment,
+        read_at: 9_999,
+      },
+    };
+    await userEvent.tab();
+    await scripted.board?.refresh?.();
+    await waitFor(() => expect(length(field())).not.toBe(before));
+    await waitFor(() =>
+      expect(shown()).toHaveTextContent(`${length(field())}/${String(CORRECTION_CAP)}`),
+    );
   },
 };

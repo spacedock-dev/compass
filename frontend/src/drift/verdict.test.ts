@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkEntry } from '../intent/work';
 import { clock } from '../observed';
-import { citedLine, indexEntries, localRecordedTime, verdictLine, type Answer } from './result';
+import {
+  citedLine,
+  departureTitle,
+  departureWhat,
+  indexEntries,
+  localRecordedTime,
+  verdictLine,
+  type Answer,
+} from './result';
 import type { Criterion } from './shape';
 
 const entry = (id: string, at: number, extra: Partial<WorkEntry> = {}): WorkEntry =>
@@ -182,5 +190,66 @@ describe('recorded times on the page', () => {
       `${String(date.getFullYear())}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${clock(at)}:${two(date.getSeconds())}`,
     );
     expect(localRecordedTime(null)).toBe('time not recorded');
+  });
+});
+
+describe('a departure titled by what happened', () => {
+  const write = entry('w', 900, { type: 'tool_report', subject: 'write', summary: 'src/a.ts' });
+  const failed = entry('c', 910, {
+    type: 'tool_report',
+    subject: 'check',
+    result: 'failed',
+    summary: 'pytest',
+  });
+  const said = entry('m', 920);
+
+  it('names the kind of thing the cited entry is, never the constraint', () => {
+    expect(departureTitle([write])).toBe('It changed src/a.ts');
+    expect(departureTitle([failed])).toBe('A check failed');
+    expect(departureTitle([said])).toBe('What the agent said departs from this');
+    expect(departureTitle([])).toBe('');
+  });
+
+  it('prefers a write or a check over a message, which only reports on one', () => {
+    expect(departureTitle([said, write])).toBe('It changed src/a.ts');
+    expect(departureWhat([said, write])).toContain('src/a.ts');
+  });
+
+  it("says what a departure on the reader's own words is, and lets the agent's message beside it title it", () => {
+    const you = entry('p', 800, {
+      type: 'user_message',
+      by: 'person:me',
+      summary: 'Ship the queue',
+    });
+    expect(departureTitle([you])).toBe('Your own words depart from this');
+    expect(departureWhat([you])).toBe(`At ${clock(800)} you said “Ship the queue”.`);
+    expect(departureTitle([you, said])).toBe('What the agent said departs from this');
+    expect(departureWhat([you, said])).toContain('the agent said');
+  });
+
+  it('says What as one sentence with the time, ending in a single stop', () => {
+    const line = departureWhat([said]);
+    expect(line).toBe(`At ${clock(920)} the agent said “Done: the billing rate is now 0.25”.`);
+    expect(departureWhat([write])).toBe(`At ${clock(900)} the agent changed src/a.ts.`);
+    expect(departureWhat([failed])).toBe(`At ${clock(910)} a check failed: pytest.`);
+    expect(departureWhat([])).toBe('');
+  });
+});
+
+describe('a quote is never cut inside a word', () => {
+  it('ends on a whole word before the ellipsis', () => {
+    const summary = `${'plain words and nothing else '.repeat(10)}`;
+    const line = citedLine(entry('m', 1, { summary }));
+    const inner = line.slice('Agent said: “'.length, -2);
+    expect(line.endsWith('…”')).toBe(true);
+    expect(inner.length).toBeLessThanOrEqual(200);
+    expect(
+      inner.split(' ').every((word) => ['plain', 'words', 'and', 'nothing', 'else'].includes(word)),
+    ).toBe(true);
+  });
+
+  it('cuts at the last space even when it falls before the halfway mark', () => {
+    const summary = `short ${'x'.repeat(300)}`;
+    expect(citedLine(entry('m', 1, { summary }))).toBe('Agent said: “short…”');
   });
 });

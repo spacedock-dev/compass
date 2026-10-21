@@ -17,6 +17,14 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-21, departure cards and Steer back read as the redesign draws them
+([the amendment](design-reading-a-session.md#amended-2026-10-21-departure-cards-and-steer-back-read-as-the-design-does)):
+a departure's headline says what happened and its What is one sentence, so the cards no longer carry the
+constraint's sentence as a title or a list of quotes, and the correction box is labelled "Correction to paste"
+where the recorded page said "Correction to copy". The recorded answers are unchanged: the only one that holds
+the old label is `frontend/test/golden/e2e/drift-parity.json`, which the on-demand browser proof reads and no
+test in the gate does.
+
 2026-10-21, the session header reads as one line, as the redesign draws it: the state, the identity, the measured words and the controls share one
 row under the title, and the measured line no longer opens with the harness's label, which the identity beside it
 already names. A session between turns shows no token rate, and a finished turn says "Turn ended 11:00 · waiting

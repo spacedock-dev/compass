@@ -11,7 +11,7 @@ import { DirectionActionButton } from '../intent/DirectionActionButton';
 import { useDrift } from './context';
 import { correctionLength, type HeldCorrection } from './correction';
 import { attachEditor } from './editor';
-import { CORRECTION_CAP, CORRECTION_HINT, CORRECTION_OLDER } from './sentences';
+import { CORRECTION_CAP, CORRECTION_HINT, CORRECTION_OLDER, STEER_PURPOSE } from './sentences';
 import {
   copyCorrection,
   correctionDraft,
@@ -26,14 +26,7 @@ import {
    words are the reader's to edit and to paste where they choose, and nothing here is ever sent to the
    session ([DEC-16](../../../docs/design-reading-a-session.md#dec-16-compass-does-not-write-into-a-session)). */
 
-export function SteerButton({
-  primary,
-  from = '',
-}: {
-  readonly primary: boolean;
-  /** Which check the correction comes from, "from the check at 09:16", where it comes from one. */
-  readonly from?: string;
-}) {
+export function SteerButton({ primary }: { readonly primary: boolean }) {
   const { ctx, model } = useDrift();
   const ref = useFocusKey<HTMLButtonElement>(
     ctx.shell.controls.focusLane,
@@ -62,11 +55,6 @@ export function SteerButton({
       >
         Steer back
       </Button>
-      {from ? (
-        <span className="next-cockpit-reading-why" data-next-steer-from>
-          {from}
-        </span>
-      ) : null}
       <SampleMark id="steer" />
     </>
   );
@@ -80,9 +68,9 @@ export function UpdateIntentButton({ factId }: { readonly factId: string }) {
   return (
     <DirectionActionButton
       feedbackKey={`update-intent:${model.key}`}
-      weight="secondary"
+      weight="quiet"
       fit
-      className="border-dashed font-bold text-label px-3"
+      className="text-label px-3"
       label="Update intent instead"
       busyLabel="Opening…"
       pendingKey={`update-intent:${model.key}`}
@@ -105,7 +93,7 @@ function correctionRows(text: string): number {
   return Math.min(CORRECTION_ROWS_MAX, Math.max(CORRECTION_ROWS_MIN, text.split('\n').length + 1));
 }
 
-function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
+function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly from: string }) {
   const { ctx, model } = useDrift();
   const { key, identity } = model;
   const draft = correctionDraft(held);
@@ -130,13 +118,19 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
     setMounted(current);
   }
   const initial = current.text;
-  const [count, setCount] = useState(() => correctionLength(initial));
+  /* The count belongs to the box it was typed in: a rebuilt correction remounts the textarea under a new
+     key, and a count carried over from the old one stood at 705/5140 over a text of another length. */
+  const boxKey = `${String(held.id)}\n${initial}`;
+  const [counted, setCounted] = useState<{ readonly box: string; readonly n: number } | null>(null);
+  const count = counted?.box === boxKey ? counted.n : correctionLength(initial);
   const attach = useCallback(
     (node: HTMLTextAreaElement | null) => {
       if (!node) return undefined;
-      return attachEditor(ctx, key, node, { onCount: setCount });
+      return attachEditor(ctx, key, node, {
+        onCount: (n) => setCounted({ box: boxKey, n }),
+      });
     },
-    [ctx, key],
+    [ctx, key, boxKey],
   );
   const focusRef = useFocusKey<HTMLTextAreaElement>(
     ctx.shell.controls.focusLane,
@@ -162,14 +156,21 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
   const stale = Boolean(held.stale);
   return (
     <Card variant="steer-box" className="next-cockpit-steer-box" data-next-steer-box>
-      <Label className="next-cockpit-held-label" htmlFor="next-cockpit-correction">
-        Correction to copy
-      </Label>
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <Label className="next-cockpit-held-label" htmlFor="next-cockpit-correction">
+          Correction to paste
+        </Label>
+        {from ? (
+          <span className="next-cockpit-reading-why" data-next-steer-from>
+            {from}
+          </span>
+        ) : null}
+      </div>
       {/* No `maxlength`: it counts UTF-16 units, and the cap is in characters. The editor holds the cap and
           the count says where it stands. */}
       <Textarea
         appearance="correction"
-        key={`${String(held.id)}\n${initial}`}
+        key={boxKey}
         ref={ref}
         id="next-cockpit-correction"
         rows={correctionRows(initial)}
@@ -237,9 +238,9 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
   );
 }
 
-/* The design's steer box with Copy-only wording: "Correction to copy" and the hint the issue gives in place of
-   the Send hint. Copy's label is its cue, the More menu's "Copied" and "Copy unavailable". */
-export function SteerBox(): ReactNode {
+/* The design's steer box with Copy-only wording: "Correction to paste", beside what it was built from, and the
+   hint the issue gives in place of the Send hint. Copy's label is its cue, the More menu's "Copied" and "Copy unavailable". */
+export function SteerBox({ from = '' }: { readonly from?: string }): ReactNode {
   const { ctx, model } = useDrift();
   const held = ctx.drift.corrections.get(model.key);
   if (!held || !held.open || held.pending) return null;
@@ -251,5 +252,37 @@ export function SteerBox(): ReactNode {
     );
   }
   if (!Array.isArray(held.parts)) return null;
-  return <CorrectionBox held={held} />;
+  return <CorrectionBox held={held} from={from} />;
+}
+
+/* Steer back as the design draws it, a section of its own after the departures it steers from: a heading, one
+   sentence saying what it does and does not do, the press, and the correction under it. Update intent instead
+   is the quiet secondary beside the press. */
+export function SteerSection({
+  buttons,
+  box,
+}: {
+  readonly buttons: ReactNode;
+  readonly box: ReactNode;
+}): ReactNode {
+  const { model } = useDrift();
+  const head = `steer-back-head:${model.key}`;
+  return (
+    <section
+      className="flex flex-col gap-2.5 border-t border-[var(--rule)] pt-3.5"
+      aria-labelledby={head}
+      data-next-steer-section
+    >
+      <h3 id={head} className="m-0 text-body font-semibold leading-[1.45] text-foreground">
+        Steer back
+      </h3>
+      <p className="m-0 max-w-[var(--measure)] text-body leading-[1.5] text-muted-foreground">
+        {STEER_PURPOSE}
+      </p>
+      <div className="next-cockpit-reading-ask" data-next-result-steer>
+        {buttons}
+      </div>
+      {box}
+    </section>
+  );
 }

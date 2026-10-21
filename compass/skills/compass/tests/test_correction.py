@@ -1014,3 +1014,29 @@ class LocalTimeAndQuotedWordsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JoinedPunctuationTest(unittest.TestCase):
+    """A saved line that ends in a stop keeps no second one where the state is joined to it (DRC-4927)."""
+
+    def test_no_state_is_joined_to_a_line_with_a_doubled_stop(self) -> None:
+        stopped = "The parser tests pass."
+        row = session_row(
+            annotation_line_1=stopped,
+            annotation_line_2=stopped.replace("parser", "lexer"),
+            annotation_line_3=stopped.replace("parser", "lint"),
+            annotation_assessment=reading(
+                goal=row_of(CONSISTENT, ("a1",), clause=GOAL),
+                line_1=row_of(DEPARTED, ("c-fail",), clause=L1),
+                line_2=row_of(UNVERIFIABLE, (), clause=L2, why="uncited"),
+                line_3=row_of(CONSISTENT, ("c-pass",), clause=L3),
+            ),
+        )
+        answer = compose(row)
+        self.assertIs(True, answer["ok"], answer)
+        text = words(answer["parts"])
+        self.assertIn("- The parser tests pass: departed at T110", text)
+        self.assertIn("- The lexer tests pass: can you show evidence for this?", text)
+        self.assertIn("- The lint tests pass: consistent with T115", text)
+        for doubled in (".:", ":.", "..", ",:", ";:"):
+            self.assertNotIn(doubled, text.replace("…", ""))

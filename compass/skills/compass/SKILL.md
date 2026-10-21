@@ -567,7 +567,7 @@ A withdrawn claim draws no row. Steer back is offered only with a departure from
 Short titles and bare URLs are not quoted in the correction. Times are your local clock, the
 correction names no Compass entry number, and a departure cited at one of the agent's messages
 quotes that message's first sentence ("where you said …"). While departures are listed, Steer back
-stays beside them, labelled "from the check at HH:MM", including once the session is idle; where
+is its own section after them, headed "Steer back", with the correction under it labelled "Built from your saved intent and the reading at HH:MM", including once the session is idle; where
 a mark or a reading of earlier words withholds it, a line beside the departures says why. "Where the work went" groups the written files by folder, under What the analysis read. The
 card header carries one re-run control once a reading exists: "Check again" when your intent changed
 after it or new work arrived since, "Analyze again" when it is current. It is inert, not gone, where a press cannot run. The request count stays beside it.

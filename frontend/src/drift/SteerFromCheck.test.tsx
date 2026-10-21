@@ -43,13 +43,17 @@ function mount(extra: Record<string, unknown> = {}) {
 }
 
 describe('Steer back from a check', () => {
-  it('names the check it comes from, in the reader’s own clock', async () => {
+  it('names the reading the correction is built from, in the reader’s own clock', async () => {
     const page = mount();
     await page.settle();
     await page.settle();
     expect(byAction('steer-back')).not.toBeNull();
-    // The page's own clock says the check was today, so the hours stand alone (`datedClock` below for a date).
-    expect(textOf('[data-next-steer-from]')).toBe(`from the check at ${datedClock(1000, 1000)}`);
+    (byAction('steer-back') as HTMLElement).click();
+    await page.settle();
+    // The page's own clock says the reading was today, so the hours stand alone (`datedClock` below for a date).
+    expect(textOf('[data-next-steer-from]')).toBe(
+      `Built from your saved intent and the reading at ${datedClock(1000, 1000)}`,
+    );
     expect(document.querySelector('[data-next-steer-off]')).toBeNull();
   });
 
@@ -62,7 +66,7 @@ describe('Steer back from a check', () => {
     );
     expect(steer).not.toBeNull();
     expect(steer?.getAttribute('data-variant')).not.toBe('primary');
-    expect(textOf('[data-next-result-steer]')).toContain('from the check at');
+    expect(document.querySelector('[data-next-steer-section] h3')?.textContent).toBe('Steer back');
     expect(
       document.querySelector('[data-next-result-steer] [data-next-cockpit-action="update-intent"]'),
     ).toBeNull();

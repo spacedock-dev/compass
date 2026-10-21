@@ -324,6 +324,35 @@ describe('a correction the reader opened follows the record, honestly', () => {
     expect(corrections(page).filter((r) => r.path === '/api/correction')).toHaveLength(2);
   });
 
+  it('counts the rebuilt correction, not the one it replaced', async () => {
+    const LONGER = [
+      ...PARTS,
+      ' Then run the whole suite again and tell me which of its checks still fail.',
+    ];
+    let calls = 0;
+    const page = mountSteer({
+      routes: {
+        '/api/correction': () => json({ ok: true, parts: ++calls === 1 ? PARTS : LONGER }),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    await openAndLeave(page);
+    /* Untouched, the box follows the record and is rebuilt in place: it stays mounted and only its text is
+       re-keyed, so the count has to follow the new text and not the one it was first given. */
+    const first = [...(box()?.value ?? '')].length;
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(first)}/5140`);
+    const moved = { ...ASSESSMENT, read_at: 1100 };
+    await page.poll({
+      ...driftBoard({ session: { ...session, annotation_assessment: moved } }),
+      generated: 1300,
+    });
+    await page.settle();
+    const now = [...(box()?.value ?? '')].length;
+    expect(now).toBeGreaterThan(first);
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(now)}/5140`);
+  });
+
   it('asks once while the recomposition is out, however many boards arrive meanwhile', async () => {
     let calls = 0;
     const page = mountSteer({
