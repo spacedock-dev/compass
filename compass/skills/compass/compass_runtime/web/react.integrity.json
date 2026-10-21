@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2073087,
+    "bytes": 2073167,
     "file": "react.html",
-    "sha256": "382cfb16ef4b934908f00d0e44a43b9424601c97bb4d6ea11ff06e0f42a63ceb"
+    "sha256": "d296e6367386437ccee29deca5fe680bcf193f67c227ae951c371a9f31253e7c"
   },
   "format": 1,
   "frontend": "react",
@@ -763,7 +763,7 @@
       },
       {
         "file": "frontend/src/intent/IntentSection.tsx",
-        "sha256": "84b87199e4bfe8188c10be05c5cf58eb2aa9a7363423151eea5bc7456c5a1ca6"
+        "sha256": "a65b8d6200eaeb7e44640711abf0626fff3c3e9fb745315f90dc613383902322"
       },
       {
         "file": "frontend/src/intent/LiveMonitorSwitch.tsx",
@@ -771,7 +771,7 @@
       },
       {
         "file": "frontend/src/intent/OutcomeLines.tsx",
-        "sha256": "76965bb5e003d5c13f28eec407e9c2b6397b3d2b3a48940f412abc0cfdb70de7"
+        "sha256": "e4d11b127ef503d730e6938374c3a9460ee1d3390c8a1c2f1ffe8fdec4b60b5b"
       },
       {
         "file": "frontend/src/intent/PromptSelect.tsx",
@@ -779,7 +779,7 @@
       },
       {
         "file": "frontend/src/intent/annotation.ts",
-        "sha256": "8ed5c95b68cdde0ff9732287ef273f9c10760810266c6077a2615edc9a6a73c3"
+        "sha256": "7ce3b530c5c5a45d8db11fe3b0269f5d8fecabc6b6dc00d2a636f98bdbbad918"
       },
       {
         "file": "frontend/src/intent/api.ts",
@@ -799,7 +799,7 @@
       },
       {
         "file": "frontend/src/intent/directions.ts",
-        "sha256": "d7ca39ecf382c417d8a3b58d68589e5f5412d691f844855a9a20761837922522"
+        "sha256": "558bd7b2e116b51f0e5e0cac25b4234727ea9a5bac50c7b659714bc78e42ee8b"
       },
       {
         "file": "frontend/src/intent/edit.ts",
