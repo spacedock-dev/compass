@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import importlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -38,6 +39,8 @@ ANSWER = "Defer to a follow-up"
 OTHER_ANSWER = "frontend/src/styles/"
 NOTE = "the second option, but only after the gate is green"
 IMAGE_DATA = "iVBORw0KGgoPLACEHOLDERIMAGEBYTES"
+RECOMMENDED = "Same folder in its checkout (Recommended)"
+CHOSEN = "Same folder in its checkout"
 
 
 def stamp(seconds: int) -> str:
@@ -317,11 +320,202 @@ class AnAnswerToTheAgentsQuestionIsTheReadersDirectionTest(_Case):
         self.assertEqual(reading.AUTHOR_PERSON, reading.author_of(fact))
         self.assertEqual(1, len([f for f in facts if f["summary"] != FIRST]))
 
+    def test_the_agents_recommendation_marker_is_not_the_readers_words(self) -> None:
+        # Seen live: `Ruling: (b) Same folder in its checkout (Recommended)`. The marker is the
+        # agent's own label on the option it preferred, so quoting it puts the agent's advice in
+        # the reader's mouth.
+        self.answer({QUESTION: RECOMMENDED})
+        (event,) = [e for e in self.events() if e["title"] != FIRST]
+        self.assertEqual(f"Provenance: {CHOSEN}", event[project_context.READER_WORDS_FIELD])
+        self.assertEqual(f"Provenance: {CHOSEN}", event["title"])
+        self.assertNotIn("Recommended", repr(event))
+
+    def test_the_marker_goes_from_every_choice_of_a_multiple_choice_answer(self) -> None:
+        self.answer({QUESTION: [RECOMMENDED, "Per-file sheets"]})
+        (event,) = [e for e in self.events() if e["title"] != FIRST]
+        self.assertEqual(
+            f"Provenance: {CHOSEN}, Per-file sheets", event[project_context.READER_WORDS_FIELD]
+        )
+
+    def test_only_the_trailing_marker_is_the_agents_and_a_reader_who_typed_it_keeps_the_word(
+        self,
+    ) -> None:
+        self.answer({QUESTION: "Recommended reading first, then the rest"})
+        (event,) = [e for e in self.events() if e["title"] != FIRST]
+        self.assertIn("Recommended reading first", event[project_context.READER_WORDS_FIELD])
+
+    def test_an_answer_that_was_only_the_marker_is_no_answer(self) -> None:
+        self.answer({QUESTION: "(Recommended)"})
+        self.assertEqual([FIRST], [e["title"] for e in self.events()])
+
+    def test_the_whole_text_read_for_review_has_no_marker_either(self) -> None:
+        self.answer({QUESTION: RECOMMENDED})
+        self.session.save(self.board.path)
+        row = next(r for r in self.session.rows if "answers" in (r.get("toolUseResult") or {}))
+        self.assertEqual(
+            f"Provenance: {CHOSEN}",
+            project_context.whole_message_words(self.config, row, "claude", 4096),
+        )
+
+    def test_an_answer_is_not_promoted_to_the_projects_intent_by_itself(self) -> None:
+        # It opens its own outline phase, which is the reader's choice shaping the work after it,
+        # and the reader may press `Use this as my goal`. What it does not do is stand in the
+        # project's recovered direction or its course without a press: "Provenance: Defer to a
+        # follow-up" says nothing a later session could act on alone.
+        self.session.queued(MID_TURN, typed=100, absorbed=160)
+        self.answer({QUESTION: ANSWER})
+        facts = {f["evidence"]["source"]: f for f in self.person_facts() if f["summary"] != FIRST}
+        self.assertIs(False, facts[observer.ANSWER_SOURCE]["intent_promoted"])
+        self.assertIs(True, facts[observer.MID_TURN_SOURCE]["intent_promoted"])
+
+    def test_the_answer_fact_says_what_it_is_not_that_it_was_a_typed_turn(self) -> None:
+        self.answer({QUESTION: ANSWER})
+        (fact,) = [f for f in self.person_facts() if f["summary"] != FIRST]
+        self.assertEqual("question tool result holding the reader's answers", fact["actor_claim"])
+
+    def test_a_giant_answer_is_an_unread_region_as_a_giant_message_is(self) -> None:
+        self.answer({QUESTION: "x" * (project_context.PRESS_TEXT_MAX_CHARS + 1)})
+        self.session.save(self.board.path)
+        row = next(r for r in self.session.rows if "answers" in (r.get("toolUseResult") or {}))
+        self.assertGreater(
+            project_context._message_text_chars(row),
+            project_context.PRESS_TEXT_MAX_CHARS,
+        )
+
+    def test_a_note_counts_toward_the_guard_with_the_answer(self) -> None:
+        self.answer({QUESTION: ANSWER}, {QUESTION: {"notes": "n" * 50}})
+        row = next(r for r in self.session.rows if "answers" in (r.get("toolUseResult") or {}))
+        self.assertEqual(
+            len(ANSWER) + 50,
+            project_context._message_text_chars(row),
+        )
+
     def test_the_tool_results_of_every_other_tool_are_still_not_directions(self) -> None:
         # The measured tool-result shapes carry `toolUseResult` too, and none is the reader's.
         self.session.bash("pytest", "5 passed")
         self.session.write(str(self.root / "work" / "billing" / "a.py"))
         self.assertEqual([FIRST], [e["title"] for e in self.events()])
+
+
+class OnlyTheQuestionToolsOwnResultIsAnAnswerTest(_Case):
+    """A `toolUseResult` with `questions` and `answers` is a direction only from the tool that asked."""
+
+    def qa(self, **answers: str) -> dict[str, Any]:
+        asked = [question(QUESTION, "Provenance", ANSWER, "Other")]
+        return {"questions": asked, "answers": {QUESTION: ANSWER}, "annotations": {}, **answers}
+
+    def test_a_typed_turn_carrying_the_same_fields_is_read_as_what_it_typed(self) -> None:
+        self.session.prompt("Run the migration tests next.")
+        self.session.rows[-1]["toolUseResult"] = self.qa()
+        row = self.session.rows[-1]
+        message = observer.parse_reader_record(row)
+        assert message is not None
+        self.assertEqual("Run the migration tests next.", message["text"])
+        self.assertNotIn("source", message)
+        self.assertEqual(
+            [FIRST, "Run the migration tests next."], [e["title"] for e in self.events()]
+        )
+
+    def test_a_tool_result_whose_answers_name_no_question_it_asked_is_no_direction(self) -> None:
+        call = self.session.call("SomeOtherTool", {})
+        result = self.qa()
+        result["answers"] = {"A question nobody asked": ANSWER}
+        self.session.result(call, "done", tool_use_result=result)
+        self.assertIsNone(observer.parse_reader_record(self.session.rows[-1]))
+        self.assertEqual([FIRST], [e["title"] for e in self.events()])
+
+    def test_a_tool_result_whose_questions_offer_no_options_is_no_direction(self) -> None:
+        call = self.session.call("SomeOtherTool", {})
+        result = self.qa()
+        result["questions"] = [{"question": QUESTION, "header": "Provenance"}]
+        self.session.result(call, "done", tool_use_result=result)
+        self.assertEqual([FIRST], [e["title"] for e in self.events()])
+
+    def test_a_record_that_is_not_a_tool_result_at_all_is_no_direction(self) -> None:
+        row = {
+            "type": "user",
+            "uuid": "u-x",
+            "timestamp": stamp(50),
+            "message": {"role": "user", "content": []},
+            "toolUseResult": self.qa(),
+        }
+        self.assertIsNone(observer.parse_reader_record(row))
+
+    def test_an_errored_tool_result_is_no_direction(self) -> None:
+        call = self.session.call("AskUserQuestion", {"questions": []})
+        self.session.result(call, "declined", is_error=True, tool_use_result=self.qa())
+        self.assertEqual([FIRST], [e["title"] for e in self.events()])
+
+    def test_the_real_tools_result_is_still_one(self) -> None:
+        questions = [question(QUESTION, "Provenance", ANSWER, "Other")]
+        call = self.session.asked(questions)
+        self.session.answered(call, questions, {QUESTION: ANSWER})
+        self.assertEqual([FIRST, f"Provenance: {ANSWER}"], [e["title"] for e in self.events()])
+
+
+class AMessageFromAnOlderClaudeCodeIsNotTheReadersTest(_Case):
+    """Claude Code 2.1.181 and older: no `origin`, so nothing says who sent the message."""
+
+    def test_an_attachment_with_no_origin_is_not_read_as_the_reader(self) -> None:
+        self.session.queued(MID_TURN, typed=100, absorbed=160)
+        del self.session.rows[-1]["attachment"]["origin"]
+        self.assertIsNone(observer.parse_reader_record(self.session.rows[-1]))
+        self.assertEqual([FIRST], [e["title"] for e in self.events()])
+
+    def test_the_same_message_with_the_field_is_read(self) -> None:
+        self.session.queued(MID_TURN, typed=100, absorbed=160)
+        self.assertEqual([FIRST, MID_TURN], [e["title"] for e in self.events()])
+
+    def test_a_message_from_another_session_is_not_the_readers_either(self) -> None:
+        # `origin.kind: peer` measured on 2.1.274: a prompt another agent sent in.
+        self.session.queued(MID_TURN, typed=100, absorbed=160, origin={"kind": "peer"})
+        self.assertEqual([FIRST], [e["title"] for e in self.events()])
+
+    def test_the_fact_says_it_came_from_a_human_origin(self) -> None:
+        self.session.queued(MID_TURN, typed=100, absorbed=160)
+        (fact,) = [f for f in self.person_facts() if f["summary"] == MID_TURN]
+        self.assertEqual("queued-command attachment with a human origin", fact["actor_claim"])
+
+
+class TheStoryReadsWhatTheCollectorPublishesTest(_Case):
+    """`DriftReaderDirections` is driven from this file, not from a reading written by hand.
+
+    The two facts are what the collector publishes (`for_page`: no whole words) for a message
+    sent mid-turn and for an answer the agent had marked `(Recommended)`, collected from a
+    transcript built above. The story builds its board from them, so a collector that again
+    quotes the marker, or again calls an answer a typed turn, changes this file and the story
+    asserts against the change. Regenerate with `COMPASS_WRITE_STORY_FIXTURE=1`.
+    """
+
+    FIXTURE = (
+        Path(__file__).resolve().parents[4] / "frontend/test/fixtures/collected-directions.json"
+    )
+
+    def collected(self) -> dict[str, Any]:
+        self.session.queued(MID_TURN, typed=100, absorbed=160)
+        questions = [question(QUESTION, "Ruling", RECOMMENDED, "Per-file sheets")]
+        call = self.session.asked(questions)
+        self.session.answered(call, questions, {QUESTION: RECOMMENDED})
+        facts = {
+            f["evidence"]["source"]: project_context.for_page(f)
+            for f in self.person_facts()
+            if f["summary"] != FIRST
+        }
+        return {
+            "mid_turn": facts[observer.MID_TURN_SOURCE],
+            "answer": facts[observer.ANSWER_SOURCE],
+        }
+
+    def test_the_committed_facts_are_what_the_collector_publishes_now(self) -> None:
+        collected = self.collected()
+        if os.environ.get("COMPASS_WRITE_STORY_FIXTURE") == "1":
+            self.FIXTURE.write_text(json.dumps(collected, indent=2) + "\n", encoding="utf-8")
+        self.assertEqual(json.loads(self.FIXTURE.read_text(encoding="utf-8")), collected)
+
+    def test_the_answer_it_publishes_has_no_marker_and_no_whole_words(self) -> None:
+        answer = self.collected()["answer"]
+        self.assertEqual(f"Ruling: {CHOSEN}", answer["summary"])
+        self.assertNotIn(project_context.READER_WORDS_FIELD, answer)
 
 
 class AMidTurnMessageNeverMovesTheGoalTest(_Case):
@@ -367,3 +561,12 @@ class TheCollectorReadsTheFieldsTheCaptureRecordsTest(unittest.TestCase):
         self.assertEqual(
             {}, self.shapes()["question-timed-out"]["entry"]["toolUseResult"]["answers"]
         )
+
+    def test_an_attachment_from_before_the_origin_field_is_recorded_without_it(self) -> None:
+        old = self.shapes()["queued-command-without-origin"]["entry"]["attachment"]
+        self.assertNotIn("origin", old)
+        self.assertNotIn("timestamp", old)
+        self.assertEqual("prompt" if "commandMode" in old else "", "prompt")
+        counts = self.shapes()["origin-field"]["counts"]
+        self.assertEqual("2.1.181", counts["newest_version_of_a_prompt_without_origin"])
+        self.assertIn("2026-10-21", self.shapes()["origin-field"]["note"])

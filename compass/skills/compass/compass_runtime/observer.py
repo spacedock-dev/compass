@@ -1130,12 +1130,74 @@ def _absorbed_message(record: dict[str, Any], cap: int) -> dict[str, str] | None
     return None if message is None else {**message, "source": MID_TURN_SOURCE}
 
 
+# The agent's own label on the option it preferred, appended to the option's label
+# ("Same folder in its checkout (Recommended)"). A reader who picks it gave the option, not the
+# agent's advice, so the marker comes off before the words are quoted or sent.
+_RECOMMENDED_MARKER = re.compile(r"\s*\(recommended\)\s*$", re.IGNORECASE)
+
+
 def _answer_text(answer: Any) -> str:
     if isinstance(answer, str):
-        return answer.strip()
+        return _RECOMMENDED_MARKER.sub("", answer.strip()).strip()
     if isinstance(answer, list):
-        return ", ".join(item.strip() for item in answer if isinstance(item, str) and item.strip())
+        return ", ".join(text for item in answer if (text := _answer_text(item)))
     return ""
+
+
+def question_result(record: Any) -> dict[str, Any] | None:
+    """`toolUseResult` of the question tool's own result, or None for any other record.
+
+    `questions` and `answers` are only fields, and a record the reader typed or another tool
+    wrote can carry them. What marks the tool's result is the whole shape: a user record whose
+    content holds a successful `tool_result` block, whose questions each offer options, and whose
+    answers are keyed by the text of a question that same result asked. The record names its
+    tool nowhere (the result's own sentence differs across Claude Code versions), and the call
+    sits in an earlier record this per-record reader never holds.
+    """
+    if (
+        not isinstance(record, dict)
+        or record.get("type") != "user"
+        or record.get("isSidechain")
+        or record.get("isMeta")
+    ):
+        return None
+    content = records.message_dict(record).get("content")
+    if not isinstance(content, list) or not any(
+        isinstance(block, dict) and block.get("type") == "tool_result" and not block.get("is_error")
+        for block in content
+    ):
+        return None
+    result = record.get("toolUseResult")
+    if not isinstance(result, dict) or not isinstance(result.get("questions"), list):
+        return None
+    answers = result.get("answers")
+    asked = {
+        question["question"]
+        for question in result["questions"]
+        if isinstance(question, dict)
+        and isinstance(question.get("question"), str)
+        and isinstance(question.get("options"), list)
+    }
+    if not isinstance(answers, dict) or not asked or not set(answers) <= asked:
+        return None
+    return result
+
+
+def answer_text_chars(record: Any) -> int:
+    """The characters of the reader's words an answer record holds: each answer and each note.
+
+    The press refuses a message too long to redact, and an answer's words sit in `toolUseResult`
+    beside a `tool_result` block that carries no `text`, so a guard counting `message.content`
+    alone reads every answer as empty.
+    """
+    result = question_result(record)
+    if result is None:
+        return 0
+    annotations = records.as_dict(result.get("annotations"))
+    notes = (records.as_dict(item).get("notes") for item in annotations.values())
+    return sum(len(_answer_text(answer)) for answer in result["answers"].values()) + sum(
+        len(note.strip()) for note in notes if isinstance(note, str)
+    )
 
 
 def _answer_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
@@ -1146,15 +1208,12 @@ def _answer_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
     line is the question's `header`, the agent's one-word label for what was asked, then the
     answer, so a bare option label such as "Defer to a follow-up" does not stand alone as an
     instruction. The question's own text and every option's `preview` are the agent's words and
-    stay out. The reader's `notes` on an answer are theirs and go in.
+    stay out, and so is the `(Recommended)` the agent put on an option. The reader's `notes` on
+    an answer are theirs and go in. Only the question tool's own result is read
+    (`question_result`).
     """
-    if record.get("type") != "user" or record.get("isSidechain") or record.get("isMeta"):
-        return None
-    result = record.get("toolUseResult")
-    if not isinstance(result, dict) or not isinstance(result.get("questions"), list):
-        return None
-    answers = result.get("answers")
-    if not isinstance(answers, dict):
+    result = question_result(record)
+    if result is None:
         return None
     headers = {
         question["question"]: question["header"]
@@ -1165,7 +1224,7 @@ def _answer_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
     }
     annotations = records.as_dict(result.get("annotations"))
     lines: list[str] = []
-    for asked, given in answers.items():
+    for asked, given in result["answers"].items():
         answer = _answer_text(given)
         if not answer:
             continue
@@ -1211,8 +1270,8 @@ def reader_source_content(record: Any) -> Any:
     attachment = records.as_dict(record.get("attachment"))
     if attachment.get("type") == "queued_command":
         return attachment.get("prompt")
-    result = record.get("toolUseResult")
-    if isinstance(result, dict) and isinstance(result.get("answers"), dict):
+    result = question_result(record)
+    if result is not None:
         return [result["answers"], result.get("annotations")]
     return None
 
