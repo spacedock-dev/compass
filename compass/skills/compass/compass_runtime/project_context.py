@@ -513,7 +513,9 @@ def _instruction_event(
         "source": message.get("source") or "timestamped non-meta user-role record",
         "harness": harness,
         "sid": sid,
-        "intent_promotable": _intent_promotable(text, title),
+        # An answer is the reader's choice among the agent's options and names no work alone.
+        "intent_promotable": message.get("source") != observer.ANSWER_SOURCE
+        and _intent_promotable(text, title),
     }
     record_id = record.get("id")
     if isinstance(record_id, str) and record_id:
@@ -722,6 +724,7 @@ class PressWindow(NamedTuple):
 
 def _message_text_chars(record: Mapping[str, Any]) -> int:
     """The characters of text a transcript record carries, which is what a reading would redact."""
+    answered = observer.answer_text_chars(record)
     message = record.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if content is None:
@@ -729,10 +732,10 @@ def _message_text_chars(record: Mapping[str, Any]) -> int:
         attachment = record.get("attachment")
         content = attachment.get("prompt") if isinstance(attachment, dict) else None
     if isinstance(content, str):
-        return len(content)
+        return answered + len(content)
     if not isinstance(content, list):
-        return 0
-    return sum(
+        return answered
+    return answered + sum(
         len(block["text"])
         for block in content
         if isinstance(block, dict) and isinstance(block.get("text"), str)
@@ -6829,9 +6832,20 @@ def _semantic_work_identity(
     )
 
 
+_STEER_ACTOR_CLAIMS = {
+    observer.MID_TURN_SOURCE: "queued-command attachment with a human origin",
+    observer.ANSWER_SOURCE: "question tool result holding the reader's answers",
+}
+
+
 def _semantic_actor_claim(source_event: dict[str, Any], raw_kind: str) -> str:
     if raw_kind == "steer":
-        return "timestamped non-meta user-role record"
+        # Said by source: the two records that carry the reader's words with no user turn are not
+        # the "user-role record" the ordinary claim names, and a reader of the fact should not
+        # have to infer which shape stands behind it.
+        return _STEER_ACTOR_CLAIMS.get(
+            str(source_event.get("source") or ""), "timestamped non-meta user-role record"
+        )
     if raw_kind == _AGENT_SAY:
         return "timestamped top-level assistant text record"
     if raw_kind in {"prepared_dispatch", "task_started", "task_result", "outcome"}:

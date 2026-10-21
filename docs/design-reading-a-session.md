@@ -1125,21 +1125,37 @@ only user turns, so neither reached a later direction, an outline phase or the r
 1. A message the agent took in mid-turn is read from its `queued_command` attachment, when
    `origin.kind` is `human` and `commandMode` is `prompt`. Not from the `queue-operation` rows: the
    same queue carries a finished background task's notification, 280 of the 297 `absorbed_mid_turn`
-   removals measured, and counting those would make the harness the reader. The direction is dated
+   removals measured on 2026-10-21 over this machine's 331 Claude Code transcripts, and counting those would make the harness the reader. The direction is dated
    by the attachment's own `timestamp`, which is when the reader typed it. The removal can come
    minutes later, so a reading that dated it there would put the reader's correction after work it
    had already shaped. Only the attachment's `text` blocks are read, never a pasted image's bytes.
 2. The answer is read from `toolUseResult.answers`, one line per answered question: the question's
    `header` (the agent's one-word label for what was asked), a colon, the answer, and the note the
-   reader attached in parentheses. The header keeps a bare option such as "Defer to a follow-up" from
+   reader attached in parentheses. A `(Recommended)` that ends the answer, or ends one choice of a comma-joined multiple-choice answer, comes off first: it is the
+   agent's own label on the option it preferred, so quoting it, or sending it to a reading, would put
+   the agent's advice in the reader's mouth (seen live as `Ruling: (b) Same folder in its checkout
+   (Recommended)`). A marker before a comma is the agent's. A reader who typed the word inside their own sentence keeps it. The header keeps a bare option such as "Defer to a follow-up" from
    standing alone as an instruction. The question's text and every option's `preview` are the
    agent's words and are never put in the reader's mouth. A question that timed out or was declined
-   has no answer and gives no direction.
+   has no answer and gives no direction. Only the question tool's own result is read: a user record
+   whose message holds a successful `tool_result` block, whose questions each carry options, and
+   whose answers are keyed by the text of a question that same result asked. The record names its
+   tool nowhere, and the result's own sentence differs across Claude Code versions, so the shape is
+   what is checked; a typed turn or another tool's result that happens to carry `questions` and
+   `answers` is read as what it is. The answer's characters count toward the press's text guard with
+   the notes beside them, since they sit in `toolUseResult` and not in the `tool_result` block's
+   text, and a record too long to redact is an unread region as a long message is.
 3. Both are user-role steers from the one reader every consumer already shares, so each is a later
    direction the reader settles with Keep or adds to their words, starts an outline phase titled with
    its words, and reaches the reading's ledger as a person's entry under the same 1,000-character
    words cap and redaction as a message typed at the prompt. The fact's `evidence.source` says which
-   it is. Neither is a copied correction, so neither is Compass's text.
+   it is. Neither is a copied correction, so neither is Compass's text. The answer opens its own outline
+   phase: the reader's choice shapes the work after it, and folding it into the phase that asked would
+   need the outline to carry a source label it does not. It is not promoted to the project's intent on
+   its own (`intent_promoted` is false), because "Provenance: Defer to a follow-up" names no work a
+   later session could act on alone. The reader's own `Use this as my goal` press still takes it. Each
+   fact's `actor_claim` says which record stands behind it, a `queued_command` attachment with a human
+   origin or the question tool's result, not the "user-role record" an ordinary turn is.
 4. `observer.parse_message_record` is unchanged and still picks the session's goal. A direction the
    agent took in mid-turn does not move a goal the reader set at the prompt: the reader decides
    that with `Use this as my goal`, as for any later direction. The two shapes arrive through
@@ -1149,7 +1165,13 @@ only user turns, so neither reached a later direction, an outline phase or the r
    says so and the short disclosure before the press keeps "your messages", which already means
    what the reader sent into the session. Rewording it would move the recorded client contract
    fixtures and the sample session's stored disclosure for no change in what is sent.
-6. Codex has no queue record in the 1,082 rollouts read; a message sent while a call is pending is
+6. Claude Code 2.1.181 and older write no `origin` on a `queued_command` attachment, and a prompt-mode
+   one there has no attachment `timestamp` either. Nothing in such a record says the reader sent it, so
+   none is read: a message sent mid-turn on those versions stays absent from the page, as it was before
+   this amendment, rather than being guessed at. On 2026-10-21, over 5,761 transcripts, 111 prompt-mode
+   attachments had no `origin` against 189 with a human one
+   ([recorded shapes](captures/README.md)). A later version is read as items 1 to 3 describe.
+7. Codex has no queue record in the 1,082 rollouts read on 2026-10-21; a message sent while a call is pending is
    an ordinary user message there, which its reader already takes. Its `request_user_input` answer
    is unmeasured and is left as it was, as are the other harnesses.
 
