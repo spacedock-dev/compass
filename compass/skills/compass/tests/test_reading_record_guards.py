@@ -349,10 +349,8 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
             ("ruff check .", "No lint rules are disabled"),
             ("pnpm build", "The build directory is not touched"),
             ("pnpm typecheck", "Type checks are described in the README"),
-            # A rule or an action that shares a result word is not a result either.
+            # An action that shares a result word is not a result either.
             ("pytest -q", "No failing tests are removed"),
-            ("pnpm build", "The build must never fail on lint warnings"),
-            ("pytest -q", "The tests should pass before anything merges"),
             ("ruff check .", "No lint errors are suppressed with ignore comments"),
         )
         for command, line in cases:
@@ -371,6 +369,11 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
     def test_a_line_that_claims_the_checks_result_is_covered_by_a_pass_of_its_kind(self) -> None:
         cases = (
             ("pytest -q", "All the tests pass"),
+            # The reader's own expected-outcome line, written as a requirement, is still a result.
+            ("pytest -q", "The tests should pass"),
+            ("pytest -q", "Tests must pass"),
+            ("pytest -q", "Make sure the tests pass"),
+            ("pytest -q", "The tests should pass before anything merges"),
             ("pytest -q", "The suite is green"),
             ("ruff check .", "Lint is clean"),
             ("ruff check .", "No lint errors remain"),

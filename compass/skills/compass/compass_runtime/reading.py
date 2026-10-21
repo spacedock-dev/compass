@@ -4122,12 +4122,12 @@ _RESULT_CLAIM = re.compile(
     r"|\wn['\u2019]t\s+fail(?:s|ed|ing)?\b",
     re.IGNORECASE,
 )
-# A clause that lays down a requirement or says what was done to something states no result, even
-# when it shares a word with one: "the build must never fail on lint warnings", "no failing tests
-# are removed". The action has to follow an auxiliary, so "the renamed tests pass" still claims one.
+# A clause that says what was done to something states no result, even when it shares a word with
+# one: "no failing tests are removed". The action has to follow an auxiliary, so "the renamed tests
+# pass" still claims one. A modal is not listed: "the tests should pass" is how a reader writes the
+# outcome they expect, and a recorded pass of that kind is what shows it.
 _NOT_A_RESULT = re.compile(
-    r"\b(?:must|should|shall|needs?\s+to|has\s+to|have\s+to|ensure|make\s+sure)\b"
-    r"|\b(?:is|are|was|were|be|been|get|gets)\s+(?:(?:not|never|also|still|just)\s+)?"
+    r"\b(?:is|are|was|were|be|been|get|gets)\s+(?:(?:not|never|also|still|just)\s+)?"
     r"(?:removed|deleted|disabled|skipped|suppressed|silenced|muted|ignored|renamed|touched"
     r"|changed|edited|modified|added)\b",
     re.IGNORECASE,
