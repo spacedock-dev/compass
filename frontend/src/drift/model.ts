@@ -168,7 +168,7 @@ function readingParts(input: ReadingInput) {
         entries,
         limit,
         unsettled,
-        (line) => lineSource(line, session, source, payload),
+        (line) => lineSource(line, source),
         lineRequestFloors(session, annotation, source),
       )
     : null;

@@ -5,8 +5,6 @@ import { nextNumber } from '../api/bootstrap';
 import { endedAt } from '../observed';
 import { datedClock } from '../observed/values';
 import { directionsOpen, intentUnsaved } from '../intent/derive';
-import type { DirectionReading } from '../intent/directions';
-import { keepReading } from './actions';
 import { useDrift } from './context';
 import {
   offeredDirection,
@@ -18,8 +16,8 @@ import {
 import { DriftLevelView } from './DriftLevelView';
 import type { Board } from './flip';
 import {
-  DISCLOSURE_ID,
   ReadingControl,
+  RunPress,
   ReadingCount,
   REFUSED_ID,
   JobBox,
@@ -217,7 +215,7 @@ function QuestionWithAnalysis({
   readonly primary: boolean;
 }) {
   const { ctx, model } = useDrift();
-  const { session, annotation, route, identity, job } = model;
+  const { session, annotation, route, job } = model;
   /* Over a reading the card's footer draws What is sent, once. */
   const kept = Boolean(model.raw && model.shape && !model.shape.malformed);
   const edited = intentUnsaved(model.input);
@@ -229,19 +227,19 @@ function QuestionWithAnalysis({
   const request = ctx.intent.held.requests.get(model.key);
   const count = Number(annotation?.['reading_count']) || 0;
   const running = endedAt(session) === null && session['state'] !== 'idle';
-  const reading: DirectionReading = {
-    reason,
-    job: Boolean(job),
-    ...(disclosure ? { disclosureId: DISCLOSURE_ID } : {}),
-    start: (request2) => {
-      if (!identity) throw new Error('no identity');
-      return keepReading(ctx, identity, request2);
-    },
-  };
   return (
     <DirectionQuestion
-      reading={reading}
       primary={primary}
+      buttons={
+        kept ? null : (
+          <RunPress
+            board={board}
+            weight="secondary"
+            label="Analyze drift"
+            focusKey={`reading:${model.key}`}
+          />
+        )
+      }
       before={job ? <JobBox job={job} running={running} again={kept} /> : null}
       after={
         off ? (

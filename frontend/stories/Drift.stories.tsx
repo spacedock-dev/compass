@@ -524,7 +524,7 @@ export const ReadingsOffWithARunningJobAndAnOpenDirection: Story = {
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
     await within(card).findByText(JOB_TITLE);
-    await expect(await within(card).findByText(/later direction/)).toBeVisible();
+    await expect(await within(card).findByText(/message adds:|later directions:/)).toBeVisible();
     // One box and one Cancel: the off state does not draw a second job box beside the question.
     await expect(within(card).getAllByText(JOB_TITLE)).toHaveLength(1);
     await expect(within(card).getAllByRole('button', { name: 'Cancel' })).toHaveLength(1);

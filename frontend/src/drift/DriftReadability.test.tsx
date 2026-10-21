@@ -54,12 +54,12 @@ describe('a press that cannot finish', () => {
   });
 });
 
-describe('what is sent, where Keep may analyze', () => {
+describe('what is sent, beside Analyze drift', () => {
   it('is one click away under "What is sent", not a paragraph under the buttons', async () => {
     const page = mountDrift({ facts: [LATER], session, routes: unreachable });
     await page.settle();
     await page.settle();
-    expect(byAction('direction-keep')?.textContent).toBe('Keep my intent and analyze');
+    expect(byAction('reading-ask')?.textContent).toBe('Analyze drift');
     expect(
       document.querySelector('p.next-cockpit-reading-why#next-cockpit-reading-disclosure'),
     ).toBe(null);
@@ -86,13 +86,13 @@ describe('a Keep that settles but does not analyze', () => {
   });
 });
 
-describe('Keep and analyze, described', () => {
+describe('Analyze drift, described beside a later direction', () => {
   it('points its description at the list of what is sent, which holds the server parts', async () => {
     const page = mountDrift({ facts: [LATER], session, routes: unreachable });
     await page.settle();
     await page.settle();
-    const keep = byAction('direction-keep') as HTMLButtonElement;
-    const described = document.getElementById(keep.getAttribute('aria-describedby') ?? '');
+    const analyze = byAction('reading-ask') as HTMLButtonElement;
+    const described = document.getElementById(analyze.getAttribute('aria-describedby') ?? '');
     expect(described?.tagName).toBe('UL');
     expect(described?.textContent).toContain('Your saved words.');
     expect(document.querySelectorAll('#next-cockpit-reading-disclosure')).toHaveLength(1);

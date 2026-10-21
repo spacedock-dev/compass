@@ -364,7 +364,15 @@ describe('the Intent derivations agree with the legacy page over generated state
             session,
           ),
         );
-        checks.push(['line source', lineSource(line, session, source, { annotate: true }), theirs]);
+        /* Departure (owner, 2026-10-21): the page names the message's time where the retired page named an entry
+           number the reader may never have been shown. Where the recording numbers the entry, the page's words
+           must be the time form and nothing else is compared. */
+        const ours = lineSource(line, source);
+        const numbered = typeof theirs === 'string' && /^added from #\d+$/.test(theirs);
+        if (numbered) {
+          if (!/^added from your (\d{4}-\d{2}-\d{2} )?\d{2}:\d{2} message$/.test(ours))
+            failures.push(`seed ${String(seed)} line source: ${ours}`);
+        } else checks.push(['line source', ours, theirs]);
       }
       if (mineDraft) note(`draft:${mineDraft.source}`);
       if (had) note('had chosen');

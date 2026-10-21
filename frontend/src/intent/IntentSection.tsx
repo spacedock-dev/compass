@@ -6,10 +6,17 @@ import { Disclosure, disclosureKey, useFocusKey } from '../controls';
 import { clock, endedAt } from '../observed';
 import { useDisplayed } from '../shell/context';
 import { ActionButton } from './ActionButton';
-import { annotationDiscarded, discardStamp, revisionLine, storeUnreadable } from './annotation';
+import {
+  annotationDiscarded,
+  discardStamp,
+  heldCap,
+  revisionLine,
+  storeUnreadable,
+} from './annotation';
 import { heldSentence } from './cues';
 import {
   directionLinesQuestion,
+  directionWhy,
   intentChanges,
   intentDrafted,
   intentKey,
@@ -22,8 +29,10 @@ import { CaveatNotes, Caveats, LaterDirections } from './Caveats';
 import { ClearGoal, GoalField } from './GoalField';
 import { OutcomeLines, AddOutcomeLine } from './OutcomeLines';
 import { saveIntent } from './save';
+import { saveIntentAndLine } from './directions';
 import {
   ENDED_CAVEAT,
+  INTENT_EDITED_ADD,
   INTENT_LEDE,
   INTENT_MEASURED,
   READ_FROM_NOW_WHY,
@@ -60,7 +69,16 @@ function Footer() {
     .filter(Boolean)
     .join(' ');
   const question = directionLinesQuestion(ctx.held, session);
-  const saveLive = (changes.any || changes.adoptable) && !question;
+  /* The one save for the card, and for a pending line beside it: an open later-direction line is added by this
+     same press, so the card never draws a second Save. */
+  const line = ctx.held.directions.get(compatSessKey(session));
+  const lineLive =
+    Boolean(line) &&
+    typeof line?.text === 'string' &&
+    Boolean(line.text.trim()) &&
+    !line.pending &&
+    [INTENT_EDITED_ADD, ''].includes(directionWhy(line, input, heldCap(input.payload)));
+  const saveLive = ((changes.any || changes.adoptable) && !question) || lineLive;
   /* Offered only over words that are saved: the first save opens the window by itself, so beside it the
      choice would be a second button for one act. `revision_count` is the store's own count and is 0 for none. */
   const reopenable =
@@ -81,7 +99,7 @@ function Footer() {
           inert={!saveLive}
           describedBy={absent.join(' ')}
           focusKey={`${key}:save`}
-          onPress={() => void saveIntent(ctx, session)}
+          onPress={() => void saveIntentAndLine(ctx, session)}
         />
         {reopenable ? (
           <ActionButton

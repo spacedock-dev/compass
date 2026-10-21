@@ -6086,3 +6086,28 @@ parts. It now matches the design's form, and a save no longer shows the draft wh
 
 No differential test over the recorded answers changed. The on-demand browser proofs under
 `frontend/e2e` still carry the old card's text and were not run for this change.
+
+### Amended 2026-10-21: a later direction is quoted where it is settled
+
+The question over a later direction used to name the number of an entry the reader had not been shown,
+quote only its first sentence, and offer `Keep my intent and analyze`, `Add it to my intent` and
+`Use this as my goal`. Its first press only revealed the whole message, so every choice took two
+presses, and two of the three edited a card above it.
+
+- **Quoted first.** "Your 11:05 message adds:" is followed by the message whole, under the time the
+  reader sent it; of several, each is quoted under its own time. Compass reads those words when the
+  question is drawn, one read of every open direction, because the reader must see what each choice
+  acts on before it acts ([DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)'s
+  rule that Keep settles only words it has drawn is kept). The read writes nothing and starts no model,
+  and a read that fails leaves the entry's first sentence quoted and Leave it to read again on its press.
+- **One press.** `Add as a line`, `Make it the goal` and `Leave it` each act on their first press. Add and
+  Make start from the rule in the message (its first sentence), not the whole of it, and both say "Write the
+  rule, not the moment." The rule is only where the reader starts: they edit it before anything is saved.
+- **Analyze drift stays.** `Keep my intent and analyze` is gone, so settling never starts a model. `Analyze
+  drift` sits beside the choices (and `Analyze again` stays in the card head over a stored reading)
+  and leaves the directions pending.
+- **One save.** The pending line draws no Save. The card's `Save intent` saves it, after any unsaved goal or
+  line words, in a second write that settles through that direction only. The two outcome-lines answers
+  after `Make it the goal` are buttons beside the question.
+- **A source is a time.** A saved line reads "added from your 11:05 message", where it read "added from
+  #7", a number the reader may never have been shown.

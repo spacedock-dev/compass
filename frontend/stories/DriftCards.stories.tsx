@@ -856,7 +856,7 @@ export const PendingLaterDirection: Story = {
   }),
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
-    const keep = await within(drift).findByRole('button', { name: /^Keep my intent/ });
+    const keep = await within(drift).findByRole('button', { name: 'Leave it' });
     const shown = await result(drift);
     await expect(shown.contains(keep)).toBe(true);
     await waitFor(() => expect(departures(shown)).toHaveLength(1));

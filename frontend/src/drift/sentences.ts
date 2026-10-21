@@ -363,7 +363,6 @@ export const NOTICE_SENT = 'This request sends:';
 export const RERUN_STALE = 'Check again';
 export const RERUN_CURRENT = 'Analyze again';
 export const SETTINGS = 'Drift settings';
-export const RERUN_AFTER_QUESTION = 'Answer the later direction below first.';
 export const NOTICE_WORDS = "The session's words, without the agent's messages.";
 export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
 export const READINGS_OFF_CONSOLE = 'Model calls are paused. Nothing is sent until you resume.';

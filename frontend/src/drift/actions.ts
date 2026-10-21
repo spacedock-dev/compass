@@ -15,7 +15,6 @@ import {
   refresh,
 } from '../intent/context';
 import { intentKey } from '../intent/derive';
-import type { KeepAnalyzeOutcome, KeepAnalyzeRequest } from '../intent/directions';
 import { intentForReading } from '../intent/api';
 import { KEEP_REFUSED } from '../intent/sentences';
 import { isRecord, type Row } from '../observed';
@@ -276,97 +275,6 @@ export async function askForReading(
     pendingEnd(intent, control, press);
     requestFocus(ctx, `reading:${key}`);
   }
-}
-
-/* What Keep's analysis asks of Analyze: one request, sent once, with the adoption and settlement a Keep
-   names, and never an Allow. `settle_through` is the newest direction the reader was shown, and the
-   revision is the one the list was drawn against. */
-export async function keepReading(
-  ctx: DriftCtx,
-  identity: SessionIdentity,
-  request: KeepAnalyzeRequest,
-): Promise<KeepAnalyzeOutcome> {
-  const { shell, intent } = ctx;
-  const read = pressDetails(ctx, identity);
-  if (!read) return { kind: 'refused' };
-  const { session, payload, input } = read;
-  const route = readingRoute(payload, session);
-  if (!route || !route['provider']) return { kind: 'refused' };
-  /* The card may still draw Analyze live while the board's close is held, and then Keep carries the Analyze
-     label. A press is answered by what is true now: where the board says no reading can start, Keep settles
-     and reads nothing, through the same route a Keep with no reading uses, and learns the board's state as
-     an Analyze press during a held close does. */
-  const now = shell.clock.now();
-  const note = intent.held.requests.get(compatSessKey(session));
-  const refusal = promptReadingRefusal({
-    input,
-    saving: pendingHas(intent, `${intentKey(session)}:save`),
-    answered: note,
-    nowMs: now,
-  });
-  if (refusal || readingJob(payload, session)) {
-    if (refusal && refusal === pressRefusal(session, note, now))
-      acknowledgeFlip(ctx, session, false);
-    const settle = answered(
-      await shell.runtime.client.postAnnotate(
-        {
-          ...identity,
-          ...request.adoption,
-          settle_through: request.through,
-          expected_revision: request.expected,
-        },
-        request.signal,
-      ),
-    );
-    const done = settle.kind === 'answered' && settle.ok ? (settle.body as Row | null) : null;
-    if (!done || done['ok'] !== true) throw new Error('not kept');
-    const outcome = String(done['outcome'] || '');
-    return ['stored', 'unchanged'].includes(outcome) && done['persisted'] !== false
-      ? { kind: 'ended', settled: true, why: '' }
-      : { kind: 'refused' };
-  }
-  const provider = String(route['provider']);
-  const body: Record<string, unknown> = {
-    harness: identity.harness,
-    sid: identity.sid,
-    provider,
-    press: true,
-    observer_model: 1,
-    ...request.adoption,
-    settle_through: request.through,
-    expected_revision: request.expected,
-    ...(provider === 'claude' ? { model: String(route['model'] || '') } : {}),
-  };
-  const reply = answered(
-    await shell.runtime.client.postReading(body as unknown as ReadingRequest, request.signal),
-  );
-  if (reply.kind === 'lost' || !reply.body) throw new Error('not confirmed');
-  const answer = reply.body as Row;
-  if (answer['adoption_refused'] || reply.status === 422) return { kind: 'refused' };
-  const key = compatSessKey(session);
-  const settledOutcome = ['stored', 'unchanged'].includes(String(answer['settled'] || ''));
-  if (isRecord(answer['route'])) showRoute(ctx, String(session['harness'] || ''), answer['route']);
-  if (isRecord(answer['reading'])) showReading(ctx, answer['reading']);
-  if (reply.ok && answer['ok'] === true && isRecord(answer['job'])) {
-    const note = intent.held.requests.get(key);
-    if (note) note.notice = isRecord(answer['notice']) ? answer['notice'] : null;
-    sayNotice(shell, answer['notice']);
-    showJob(ctx, key, answer['job']);
-    return { kind: 'started' };
-  }
-  if (reply.status === 409 && isRecord(answer['job'])) showJob(ctx, key, answer['job']);
-  const latest = currentPayload(ctx) ?? payload;
-  const why =
-    answer['reason'] === 'provider-changed'
-      ? PROVIDER_CHANGED
-      : answer['reason'] === 'destination-changed'
-        ? DESTINATION_CHANGED
-        : isRecord(answer['reading'])
-          ? policyReason(answer['reading'])
-          : isRecord(answer['route']) && !answer['route']['provider']
-            ? routeRefusal(latest, session)
-            : '';
-  return { kind: 'ended', settled: settledOutcome, why };
 }
 
 /* Cancel the running analysis this box shows. The job id goes with it, so a stale tab cannot cancel a newer

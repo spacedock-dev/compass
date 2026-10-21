@@ -17,6 +17,13 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-21, a later direction is quoted where it is settled
+([the amendment](design-reading-a-session.md#amended-2026-10-21-a-later-direction-is-quoted-where-it-is-settled)):
+a saved line's source reads "added from your 11:05 message" where the retired page said "added from #7".
+`derive.differential.test.ts` compares every other line source with the recording, and where the recording
+numbers the entry it requires the time form and nothing else. The question's words and controls changed
+with it and were never in a recording the differential tests compare. Golden files are unchanged.
+
 2026-10-21, editing the goal keeps the reading's start
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-owner-editing-the-goal-keeps-the-readings-start)):
 no sentence on the page names a revision number any more. The stale line under a reading or a raise says

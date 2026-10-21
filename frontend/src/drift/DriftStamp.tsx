@@ -1,5 +1,4 @@
 import { nextNumber } from '../api/bootstrap';
-import { directionsOpen } from '../intent/derive';
 import { clock } from '../observed';
 import { useDrift } from './context';
 import { RerunControl } from './ReadingControl';
@@ -20,7 +19,6 @@ export function DriftStamp() {
   const line = lastRunLine(shape.stamp, nextNumber(raw['read_at']));
   if (!line) return null;
   const stale = resultStale(shape, raw, annotation, entries);
-  const question = directionsOpen(model.input, model.source).length > 0;
   return (
     <div
       className="flex min-w-0 flex-col items-end gap-1 max-[760px]:items-start"
@@ -43,7 +41,7 @@ export function DriftStamp() {
               : stale.head}
           </p>
         ) : null}
-        <RerunControl board={board} stale={Boolean(stale)} question={question} />
+        <RerunControl board={board} stale={Boolean(stale)} />
       </div>
       {stale?.superseded ? (
         <p className="m-0 max-w-[var(--measure)] text-label text-muted-foreground">
