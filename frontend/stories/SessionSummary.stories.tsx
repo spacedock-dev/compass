@@ -372,6 +372,28 @@ export const NoSummaryOnAPartlyReadRecord: Story = {
   },
 };
 
+/* The newest page already reaches back past the intent's start, so Show more stops there, yet the older page is
+   unread: the header and the size beside Summarize still say the count is a floor, in one number. */
+export const NoSummaryOnAPartlyReadRecordWithAnIntent: Story = {
+  render: () => (
+    <SummaryPage
+      summary={ABSENT}
+      ended={false}
+      paged
+      session={{ annotation_window_start: G - 280, annotation_goal_saved_at: G - 280 }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const none = await stateOf(await card(canvasElement), 'none');
+    const size = none.querySelector('[data-next-summary-size]') as HTMLElement;
+    await waitFor(() => expect(size.textContent).toMatch(/^More than \d+ entries to read/));
+    const count = /^More than (\d+) entries/.exec(size.textContent ?? '')?.[1];
+    await expect(canvasElement.querySelector('.next-session-detail-meta')).toHaveTextContent(
+      new RegExp(`at least ${count ?? '?'} entries, \\d+ since`),
+    );
+  },
+};
+
 const PLAN = {
   reason: null,
   complete: true,

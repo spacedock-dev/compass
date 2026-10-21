@@ -15,7 +15,6 @@ import {
   conflictCandidates,
   entryLabel,
   entryNumbering,
-  olderEntriesRemain,
   workSource,
   type WorkEntry,
   type WorkSource,
@@ -312,7 +311,9 @@ export function buildModel(input: ModelInput): DriftModel {
     pill,
     pillSoFar,
     entryCount: read ? numbers.size + numbering.earlier.length : null,
-    entriesPartial: read && olderEntriesRemain(input.record, numbering.opened),
+    /* From the record alone: whether Show more still helps is a question about the intent window, but the
+       count is a floor for as long as any older page is unread, window or none. */
+    entriesPartial: read && input.record?.status === 'loaded' && !input.record.reachedStart,
     windowCount: read && numbering.earlier.length ? numbers.size : null,
   };
 }
