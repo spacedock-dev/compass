@@ -690,6 +690,20 @@ describe('the opening paragraph names you, not the person', () => {
       'You have a failing test and the agent waited for the person.',
     );
   });
+  it('folds only before a verb, never a noun, a clause or a comma', () => {
+    for (const text of [
+      'The user interface was redesigned.',
+      'The person who asked left.',
+      'The person, a reviewer, asked.',
+      'The user guide changed.',
+      'Done e.g. the person asked for X.',
+    ]) {
+      expect(ledeWords(text)).toBe(text);
+    }
+    expect(ledeWords('The person asked for X. The user guide changed.')).toBe(
+      'You asked for X. The user guide changed.',
+    );
+  });
   it('leaves a possessive, a mention inside a sentence and a line with no person alone', () => {
     const text = "The person's goal was a retry. The agent waited for the person to reply.";
     expect(ledeWords(text)).toBe(text);
@@ -698,6 +712,15 @@ describe('the opening paragraph names you, not the person', () => {
 });
 
 describe('the failure badge', () => {
+  it('still counts a real failure whose words contain "blocked" or "not allowed"', () => {
+    expect(isTestFailure('vitest reported failed: the test was blocked on a missing mock.')).toBe(
+      true,
+    );
+    expect(isTestFailure('pytest reported failed: expected not allowed value')).toBe(true);
+    expect(isTestFailure('pytest reported failed: operation not permitted in the sandbox')).toBe(
+      false,
+    );
+  });
   it('counts a failed test run, and no other failed check', () => {
     expect(isTestFailure('pnpm test:stories reported failed, as the tool reported.')).toBe(true);
     expect(isTestFailure('The agent ran pytest tests/test_webhook.py; it reported failed.')).toBe(

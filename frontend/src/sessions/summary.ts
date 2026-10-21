@@ -302,11 +302,20 @@ function youSubject(rest: string): string {
 /* The opening paragraph in the card's own voice: "The person" at the start of a sentence is "You", with its verb
    agreed as a person bullet's is. This is only how the page draws the words. The stored text keeps "the person",
    which is the form the server's completion check recognises, so the check is not weakened to match the page. */
-const SENTENCE_PERSON = /(^|[.!?]\s+)the\s+(?:person|user)\b(?!['’]s\b)\s*([^.!?]*)/gi;
+/* A sentence boundary is a stop, a space and a capital, so "e.g. the person" is not one. */
+const SENTENCE_PERSON = /(^|[.!?]\s+)The\s+(?:person|user)\b(?!['’]s\b)\s*([^.!?]*)/g;
+/* Only a verb follows the subject a fold turns into "You": "The user interface" and "The person who asked" name
+   a noun or open a clause, and folding them told the reader something the model did not write. The test is the
+   word's shape (past tense, a present "-s", a modal or an irregular past), not a list of every verb. */
+const VERB_AFTER_PERSON =
+  /^(?:\w+ed|\w+[^s'’]s|has|is|was|were|does|goes|will|would|can|could|should|must|may|might|did|had|chose|said|wrote|ran|took|made|saw|told|gave|got|found|felt|kept|left|began|went|knew|asked|wanted)$/i;
 export function ledeWords(words: string): string {
-  return words.replace(SENTENCE_PERSON, (whole, before: string, rest: string) =>
-    rest.trim() ? `${before}${youSubject(rest)}` : whole,
-  );
+  return words.replace(SENTENCE_PERSON, (whole, before: string, rest: string) => {
+    const first = /^[^\s,;:]+/.exec(rest.trim())?.[0] ?? '';
+    return rest.trim() && !/^[,;:]/.test(rest.trim()) && VERB_AFTER_PERSON.test(first)
+      ? `${before}${youSubject(rest)}`
+      : whole;
+  });
 }
 /* The person named as the speaker; "You <verb>" already reads in the card's own voice for the person. */
 const PERSON_YOU = new RegExp(`^you\\s+${ADVERB}${SPEECH_VERB}\\b`, 'i');
@@ -387,7 +396,7 @@ const TEST_RUN =
    refusals those produce (a denied or blocked call, a read-only disk, a browser that would not launch, a host it
    could not reach). The first walk's phrasing was the word "sandbox" alone; the rest read the same way. */
 const ENVIRONMENT =
-  /\b(?:sandbox(?:ed)?|environment|not-recorded|permission denied|operation not permitted|EPERM|EACCES|read-only file system|blocked|not allowed|(?:failed|unable|could not) to launch|could not launch|ECONNREFUSED|ENOTFOUND|network is unreachable|offline|no network)\b/i;
+  /\b(?:sandbox(?:ed)?|environment|not-recorded|permission denied|operation not permitted|EPERM|EACCES|read-only file system|(?:launch|call|command|request|access) (?:was|were) blocked|(?:blocked|denied) by (?:the )?(?:sandbox|policy|environment)|operation not (?:allowed|permitted)|not allowed (?:in|by) (?:the )?sandbox|(?:failed|unable|could not) to launch|could not launch|ECONNREFUSED|ENOTFOUND|network is unreachable|offline|no network)\b/i;
 const NOT_A_TEST =
   /\b(?:(?:pnpm|npm|yarn)\s+(?:run\s+)?(?:build|lint|typecheck|format|compile)|ruff|mypy|tsc|biome|eslint|prettier)\b/i;
 export const isTestFailure = (words: string): boolean =>

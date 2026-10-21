@@ -650,8 +650,8 @@ function bounded(text: string, max: number = QUOTE_MAX): string {
 function pathTail(text: string, max: number): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   if (Array.from(flat).length <= max || flat.includes(' ')) return bounded(flat, max);
-  const tail = flat.slice(flat.lastIndexOf('/', flat.length - max + 1));
-  const names = tail.startsWith('/') && tail.length <= max - 1 ? tail : flat.slice(-(max - 2));
+  const cut = flat.indexOf('/', flat.length - (max - 2));
+  const names = cut >= 0 ? flat.slice(cut) : flat.slice(-(max - 2));
   return `…${names.startsWith('/') ? names : `/${names}`}`;
 }
 

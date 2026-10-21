@@ -210,6 +210,20 @@ describe('a departure titled by what happened', () => {
     expect(departureTitle([])).toBe('');
   });
 
+  it('does not cut a long written path mid-name', () => {
+    const long = entry('l', 930, {
+      type: 'tool_report',
+      subject: 'write',
+      summary:
+        'src/components/session/summary/deeply/nested/folder/structure/here/WidgetContainerView.tsx',
+    });
+    const title = departureTitle([long]);
+    expect(title).toContain('…/');
+    expect(title).not.toMatch(/…\/eeply/);
+    expect(title).toMatch(/…(?:\/[A-Za-z.]+)+$/);
+    expect(title.endsWith('WidgetContainerView.tsx')).toBe(true);
+  });
+
   it('prefers a write or a check over a message, which only reports on one', () => {
     expect(departureTitle([said, write])).toBe('It changed src/a.ts');
     expect(departureWhat([said, write])).toContain('src/a.ts');
