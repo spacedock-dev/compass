@@ -193,10 +193,10 @@ an honest limit moves and is never deleted still holds.
 
 The owner and design lead settled on 2026-10-20 that What the session has done is the high-level
 play-by-play, and the page order puts it after the Drift card. The lede stays open. Each phase is an
-accordion closed by default, so the list of lines with their citations is one press away rather
-than the whole page. What a reader should know before opening a phase sits on its heading, outside
+accordion, which [the 2026-10-21 amendment](#amended-2026-10-21-the-card-reads-like-the-design) opens
+by default. What a reader should know about a phase sits on its heading, outside
 the fold and right-aligned as pills: one for each departure the phase holds evidence for, which goes to
-that card, and a red count of its failed lines. A phase with nothing to say has no pill. The open
+that card, and a red count of its failed test runs. A phase with nothing to say has no pill. The open
 state is the reader's own, kept in the disclosure store under the session and the phase's place.
 
 A citation is a bracketed number. Hovering or focusing it shows the cited entry's own words in a
@@ -565,9 +565,9 @@ context, not evidence and must not be cited. Earlier bullets and entries never e
 After the windows, one lede call receives only menu lines cited by surviving phases. Selection
 prefers the person's entries, then other entries in order, within one window's byte allowance;
 the selected lines retain source order and their original numbers. The prompt asks for two plain
-sentences within the lede character bound. The first says what the person set out to do; the
-second says what the agent did and where those entries end, as they report it, naming any
-correction or redirection they show. It carries the window prompt's forms except the title rule.
+sentences within the lede character bound. The first says what the agent did, with the agent as
+its subject; the person's goal is not asked for. The second says where those entries end, as they
+report it, naming any correction or redirection they show. It carries the window prompt's forms except the title rule.
 It receives no phase prose or titles. Its citations must name entries actually given to it. A failed lede leaves `lede: null`
 and `lede_reason`, preserving the phases.
 
@@ -607,8 +607,9 @@ cuts report how many were dropped. A cut reply is marked on its block.
 ### Amended 2026-10-20 (owner): withheld lines are shown collapsed
 
 The page draws a run of withheld bullets in a phase as one muted line: how many were hidden, why,
-in the reason table's words, and the range of entries they cite ("2 lines hidden: they said, in
-the summary's own voice, that work was done or working. Entries #50.1 to #55."). Each hidden
+in the reason table's words, and the range of entries they cite ("2 lines hidden: they cited no
+entry. Entries #50.1 to #55."; the 2026-10-21 amendment words a withheld completion claim as "2 lines were
+left out because the record does not back them"). Each hidden
 line's own reason and citations stay one keyboard-reachable press away under "Why each was
 hidden". A kept bullet between two runs splits them. No result label leads a hidden line: the page
 once drew "Failed as the tool reported: Withheld: ...". A withheld phase title keeps its own muted
@@ -616,8 +617,67 @@ marker. What the producer withholds, and why, is unchanged. The owner did not ch
 departures that share evidence into one card.
 
 The page also names the speaker a bullet's words name. An `asked` bullet whose text opens with
-"The agent said" reads "Said: ...", not "You said: The agent said ...", and a `said` bullet that
-names the person reads "Said: you asked ...". The code-set kind and its citations are unchanged.
+"The agent said" reads as written, not "You said: The agent said ...", and a `said` bullet that
+names the person reads "The agent said you asked ...". The code-set kind and its citations are
+unchanged. (This once drew a "Said:" label; the 2026-10-21 amendment removed it.)
+
+### Amended 2026-10-21: the card reads like the design
+
+The design review of finished and running summaries found the card accurate and hard to read. The
+page and the prompts changed as follows. The producer's check, its clause code, the kinds, the
+ceilings and every earlier ruling are unchanged.
+
+- **The Full activity limit is said once.** A citation to an earlier check or file has no entry in
+  Full activity, so no chip can open it. The page counted these after the opening and most bullets.
+  It now counts the distinct ids across the whole summary and says it in one line at the foot of
+  the card, before the relevance sentence. A chip still draws wherever the page can open one.
+- **Phases arrive open.** Each phase opens the first time its key is drawn, so a reader sees the
+  opening and its bullets with no press, and each phase appears open as a part lands. A phase the
+  reader closes stays closed through every later board, because the write that opens it is the
+  disclosure store's own and the reader's close is the next one. [The reader-state row](design-reader-state.md#the-inventory)
+  owns this. A phase that holds a departure is open for the same reason.
+- **The opening describes what the agent did.** The lede prompt's first sentence says what the
+  agent did with the agent as its subject; its second says where the entries end and names any
+  correction. What the person set out to do was the first sentence and is not asked for, because
+  the Intent card holds it.
+- **Bullets are short clauses with the agent as subject.** Both prompts ask for one short clause
+  per sentence, 15 words or fewer, the agent as subject, and no chains joined by "then", "while" or
+  a semicolon. The `Said:` label is gone. A stored line that names no speaker is drawn "The agent
+  said: ...", so it never reads as the summary's own claim, and a line that names its speaker is
+  drawn as written.
+- **A withheld completion claim is worded for the reader.** "One line was left out because the
+  record does not back it", with the entry range; each line's own reason stays under "Why each was
+  hidden".
+- **The failure badge counts failed test runs.** The producer marks a bullet `failed` when a
+  cited check failed, which includes a build and a browser run the agent's sandbox refused. The
+  page badges a `failed` bullet only when its words name a test run and do not put the failure down
+  to the sandbox or environment. It reads the producer's text because the page holds nothing else
+  of the check. The line itself is still drawn as a failure. A build, lint or type-check command
+  is never badged, even when its words name a test (`pnpm build:storybook`, `ruff check tests`).
+  The test is a word match, so it can miss a real test failure the agent never named as a test, and
+  it can still badge a sandbox failure the text does not name as the environment.
+- **The estimate and the progress agree.** A plan off a partial read counted a floor on the parts
+  ("at least 2 parts, up to 10 minutes") and the job then counted 3, and finished in about 30
+  seconds. The page now quotes parts and minutes only for a plan of a whole read, and otherwise says
+  what the outline counted and that Compass plans the parts when the summary starts. While a job
+  writes the summary the header says "summarizing…" and not "summarized at".
+- **Turn off summaries stands apart from Cancel.** It turns summaries off for every session where
+  Cancel stops one run, so it is a quiet control in its own row below Cancel.
+- **The notice folds once the summary stands.** While a request runs the notice is the whole card.
+  After it, the notice folds to "What this request sent to Claude Code", with Turn off summaries
+  inside, instead of staying open above the summary.
+- **A summary written again says it can group differently.** After Summarize again, or a start after a
+  delete made in this tab, the card says a summary written again can group the work into different
+  phases. The page holds that in memory for the tab; the server publishes no history of rewrites.
+
+**Measured.** The current and the previous prompts were run through the production producer and
+`observer.claude_exec` over the committed sample session (96 entries: two windows and a lede, three
+calls per run), two runs of each. The harness stayed in a local scratch directory and records counts
+only. Withheld strings, previous prompts: 3 of 43 and 10 of 41, 13 of 84 (15.5%). Current prompts: 1
+of 51 and 2 of 47, 3 of 98 (3.1%). The current prompts withheld nothing for a shape fault and
+nothing from a title, and the mean bullet fell from 20.7 words to 13.9. A first pair of runs
+miscounted the lede and is not used. Each arm is two runs of one session, so this shows that the
+rate is no worse than the 13.3% the earlier prompts reached, not by how much it improved.
 
 ### No completion words
 

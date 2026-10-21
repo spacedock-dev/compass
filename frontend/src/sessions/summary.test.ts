@@ -6,6 +6,7 @@ import {
   askedText,
   hiddenKey,
   hiddenSentence,
+  isTestFailure,
   bulletWords,
   SUMMARY_REASONS,
   WITHHELD_LINES,
@@ -221,20 +222,27 @@ describe('the parsers', () => {
 });
 
 describe('what the card says', () => {
-  it('opens a said bullet with Said, once', () => {
-    expect(saidText('Said the parser is ready.')).toBe('Said: the parser is ready.');
-    expect(saidText('Said: the parser is ready.')).toBe('Said: the parser is ready.');
-    expect(saidText('The parser is ready.')).toBe('Said: The parser is ready.');
+  it('names the agent as the speaker of a said bullet, with no Said label', () => {
+    // A line that already names its speaker is drawn as written: "Said:" was a kind marker leaking into the text.
     expect(saidText('The agent said it left the tests alone.')).toBe(
-      'Said: it left the tests alone.',
+      'The agent said it left the tests alone.',
     );
-    // An adverb the fold once missed stacked the speaker twice: "Said: The agent also said ...".
     expect(saidText('The agent also said it would move the chart.')).toBe(
-      'Said: it would move the chart.',
+      'The agent also said it would move the chart.',
     );
+    // A stored line with no named speaker gets one, so it never reads as the summary's own claim.
+    expect(saidText('The parser is ready.')).toBe('The agent said: The parser is ready.');
+    expect(saidText('Said the parser is ready.')).toBe('The agent said: the parser is ready.');
+    expect(saidText('Said: the parser is ready.')).toBe('The agent said: the parser is ready.');
     expect(saidText('The agent said that the tooltip formats dates.')).toBe(
-      'Said: the tooltip formats dates.',
+      'The agent said that the tooltip formats dates.',
     );
+    for (const line of [
+      saidText('The agent said it left the tests alone.'),
+      saidText('The parser is ready.'),
+      bulletWords('said', 'Ran pytest.'),
+    ])
+      expect(line).not.toMatch(/^Said:/);
   });
   it('names the person on an asked bullet, whatever verb it opens with', () => {
     expect(askedText('Asked for retry with backoff.')).toBe('You asked for retry with backoff.');
@@ -252,43 +260,40 @@ describe('what the card says', () => {
   it('never credits the agent’s words to the person, or the person’s to the agent', () => {
     // The sample's own line: an `asked` bullet whose text reports the agent read "You said: The agent said ...".
     expect(askedText('The agent said it also raised the billing rate.')).toBe(
-      'Said: it also raised the billing rate.',
+      'The agent said it also raised the billing rate.',
     );
     expect(bulletWords('asked', 'The agent also said it would first answer the question.')).toBe(
-      'Said: it would first answer the question.',
+      'The agent also said it would first answer the question.',
     );
     // A `said` bullet cites the agent alone: one naming the person stays the agent's report of them.
     expect(bulletWords('said', 'The user asked for a walk on a new port.')).toBe(
-      'Said: you asked for a walk on a new port.',
+      'The agent said you asked for a walk on a new port.',
     );
     // Work cited with words: a named speaker is said as that speaker's.
     expect(bulletWords('did', 'The agent said it ran the suite twice.')).toBe(
-      'Said: it ran the suite twice.',
+      'The agent said it ran the suite twice.',
     );
     expect(bulletWords('did', 'The person asked to keep the diff small.')).toBe(
       'You asked to keep the diff small.',
     );
     // Any speech verb, and any name for the agent, keeps the agent's words off the person.
     for (const [line, want] of [
-      [
-        'The agent asked whether to keep the cache.',
-        'Said: The agent asked whether to keep the cache.',
-      ],
-      ['The agent reported that tests failed.', 'Said: The agent reported that tests failed.'],
-      ['The agent replied that it would wait.', 'Said: The agent replied that it would wait.'],
-      ['The assistant said it would wait.', 'Said: it would wait.'],
-      ['Claude also said it would wait.', 'Said: it would wait.'],
-      ["The agent's reply said the cache stays.", 'Said: the cache stays.'],
+      ['The agent asked whether to keep the cache.', 'The agent asked whether to keep the cache.'],
+      ['The agent reported that tests failed.', 'The agent reported that tests failed.'],
+      ['The agent replied that it would wait.', 'The agent replied that it would wait.'],
+      ['The assistant said it would wait.', 'The assistant said it would wait.'],
+      ['Claude also said it would wait.', 'Claude also said it would wait.'],
+      ["The agent's reply said the cache stays.", "The agent's reply said the cache stays."],
     ] as const) {
       expect(bulletWords('asked', line)).toBe(want);
       expect(bulletWords('asked', line)).not.toMatch(/^You/);
     }
     // A line naming the person takes one speaker label, never two.
     expect(bulletWords('said', 'You confirmed the parser is fixed.')).toBe(
-      'Said: you confirmed the parser is fixed.',
+      'The agent said you confirmed the parser is fixed.',
     );
     expect(bulletWords('said', 'You reported failed tests.')).toBe(
-      'Said: you reported failed tests.',
+      'The agent said you reported failed tests.',
     );
     expect(bulletWords('did', 'You confirmed the parser is fixed.')).toBe(
       'You confirmed the parser is fixed.',
@@ -300,10 +305,10 @@ describe('what the card says', () => {
       'You also asked for a smaller diff.',
     );
     expect(bulletWords('said', 'The person also asked for a smaller diff.')).toBe(
-      'Said: you also asked for a smaller diff.',
+      'The agent said you also asked for a smaller diff.',
     );
     expect(bulletWords('did', 'The agent reported that tests failed.')).toBe(
-      'Said: The agent reported that tests failed.',
+      'The agent reported that tests failed.',
     );
     // A bare "Said" on an asked line is still the person's.
     expect(askedText('Said to keep going.')).toBe('You said to keep going.');
@@ -327,11 +332,8 @@ describe('what the card says', () => {
     expect(bulletWords('failed', 'pnpm test reported failed, as the tool reported.')).toBe(
       'Failed: pnpm test reported failed, as the tool reported.',
     );
-    expect(unlinkedSentence(2)).toBe(
-      '(2 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.)',
-    );
     expect(bulletWords('did', 'Ran pytest.')).toBe('Ran pytest.');
-    expect(bulletWords('said', 'Ran pytest.')).toBe('Said: Ran pytest.');
+    expect(bulletWords('said', 'Ran pytest.')).toBe('The agent said: Ran pytest.');
   });
   const base = parseFocusedSummary({
     sources: {
@@ -362,6 +364,9 @@ describe('what the card says', () => {
     if (!base) throw new Error('no summary');
     expect(summaryStamp(base, false, 'm')).toMatch(/^m · summarized at \d\d:\d\d$/);
     expect(summaryStamp(base, true, '')).toMatch(/^updated \d\d:\d\d · still running$/);
+    // While the job writes it, the header does not date a summary that is still being made.
+    expect(summaryStamp(base, false, 'm', true)).toBe('m · summarizing…');
+    expect(summaryStamp(base, true, '', true)).toBe('summarizing…');
   });
   it('says what is out of date and offers the one control for it', () => {
     if (!base) throw new Error('no summary');
@@ -538,9 +543,11 @@ describe('the focused summary plan before a start', () => {
     );
   });
 
-  it('gives a floor on the parts off a partial read', () => {
+  it('quotes no parts off a partial read, whose count the job may pass', () => {
+    // The count of parts off a partial read is a floor the job's own count can pass, so it is not quoted: the
+    // estimate said "at least 2 parts" and the progress said "part 1 of 3".
     expect(readSize(6, true, plan({ complete: false }))).toBe(
-      'More than 6 entries to read in at least 4 parts, up to 10 minutes.',
+      'More than 6 entries to read. Compass plans the parts when the summary starts, and shows them here.',
     );
   });
 
@@ -569,6 +576,22 @@ describe('a run of hidden lines', () => {
       '2 lines hidden: they cited no entry. Entries #2 to #3.',
     );
   });
+  it('says a line the record does not back as left out, in the reader’s words', () => {
+    expect(hiddenSentence(['completion_claim'], 'Entries #40.1 to #44, and 1 more')).toBe(
+      'One line was left out because the record does not back it. Entries #40.1 to #44, and 1 more.',
+    );
+    expect(hiddenSentence(['completion_claim', 'completion_claim'], '')).toBe(
+      '2 lines were left out because the record does not back them.',
+    );
+    expect(hiddenSentence(['completion_claim', 'no_citation'], '')).toBe(
+      '2 lines hidden: 1 was left out because the record does not back it; 1 cited no entry.',
+    );
+    for (const line of [
+      hiddenSentence(['completion_claim'], ''),
+      hiddenSentence(['completion_claim', 'no_citation'], ''),
+    ])
+      expect(line).not.toContain('summary’s own voice');
+  });
   it('names each reason with its count when the lines were hidden for different ones', () => {
     const line = hiddenSentence(['no_citation', 'too_long_cut', 'no_citation'], '');
     expect(line).toBe(
@@ -577,6 +600,47 @@ describe('a run of hidden lines', () => {
     expect(line).not.toContain('each broke a rule');
     expect(hiddenSentence(['odd', 'other', 'shape_fault'], '')).toBe(
       '3 lines hidden: 2 broke a rule a summary line must keep; 1 was not in the shape a summary line must take.',
+    );
+  });
+});
+
+describe('the failure badge', () => {
+  it('counts a failed test run, and no other failed check', () => {
+    expect(isTestFailure('pnpm test:stories reported failed, as the tool reported.')).toBe(true);
+    expect(isTestFailure('The agent ran pytest tests/test_webhook.py; it reported failed.')).toBe(
+      true,
+    );
+    expect(isTestFailure('ruff check src reported failed, as the tool reported.')).toBe(false);
+    expect(isTestFailure('pnpm build reported failed, as the tool reported.')).toBe(false);
+  });
+  it('does not count a failed build, lint or type check whose words name a test', () => {
+    expect(isTestFailure('pnpm build:storybook reported failed, as the tool reported.')).toBe(
+      false,
+    );
+    expect(isTestFailure('ruff check tests reported failed, as the tool reported.')).toBe(false);
+    expect(
+      isTestFailure('mypy compass/skills/compass/tests reported failed, as the tool reported.'),
+    ).toBe(false);
+  });
+  it('does not count a run the agent put down to its sandbox', () => {
+    expect(
+      isTestFailure(
+        'vitest run reported failed, as the tool reported, and the agent attributed the browser launch error to the sandbox.',
+      ),
+    ).toBe(false);
+    expect(
+      isTestFailure('pnpm test:stories reported failed in the agent’s environment, not-recorded.'),
+    ).toBe(false);
+  });
+});
+
+describe('the citations a chip cannot open', () => {
+  it('is said once, as a count of the entries Full activity does not list', () => {
+    expect(unlinkedSentence(1)).toBe(
+      '1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.',
+    );
+    expect(unlinkedSentence(3)).toBe(
+      '3 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.',
     );
   });
 });

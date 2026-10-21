@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2081643,
+    "bytes": 2083567,
     "file": "react.html",
-    "sha256": "259c6ff72fbf4105aa2198b11c11591865f5056b76a609c1838e13f0ae560c94"
+    "sha256": "7d99524bf81ad5bd5eca9bfd3ff58ed1ad209a9f715d7ac4a433ed7c5066fba9"
   },
   "format": 1,
   "frontend": "react",
@@ -391,7 +391,7 @@
       },
       {
         "file": "frontend/src/controls/Disclosure.tsx",
-        "sha256": "47489d993d1288f60ced683a635935c4f4fdd1c7158db763d659ea81ad8cce4b"
+        "sha256": "06b6453c4b1d8ea0e25fde99e4dbdd18363a87766059564c9d0b64a042840cbb"
       },
       {
         "file": "frontend/src/controls/DraftField.tsx",
@@ -1135,7 +1135,7 @@
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
-        "sha256": "6a023d6c6f4f8979f319293c209437b4d7cf72abb985530d8d50f3ac546e359b"
+        "sha256": "8125b82a5cce92cfe002ddcf24375b1d5ad7635f439b8c896f07334f83e7559a"
       },
       {
         "file": "frontend/src/sessions/WhatItDid.tsx",
@@ -1183,15 +1183,15 @@
       },
       {
         "file": "frontend/src/sessions/summary.ts",
-        "sha256": "09fa5c453df6c4d314e026476eeca04bd8cb5c603180312ecc22f4f8c55ab1a9"
+        "sha256": "9675ccc3d0fbea3a7ed304e352f77eade477377c5829271ebb3634c544e33765"
       },
       {
         "file": "frontend/src/sessions/summaryActions.ts",
-        "sha256": "1267848f6bc7c5fd3da1c8907be21e17f98794e3cfa3303a217a43f98cf77fe5"
+        "sha256": "60acd70dd83deffbdf202000e6383d093d847b93e525f9ef6735d096c7cfad1e"
       },
       {
         "file": "frontend/src/sessions/summaryHeld.ts",
-        "sha256": "1f0a9de0a1599c90d44596a8c675f96b1e2d765d3da539d562e06e338eceaa4a"
+        "sha256": "4edb51efc7addf0a7788f10cd99e24d179e7d012973396f4219d96d7f19ac5e1"
       },
       {
         "file": "frontend/src/sessions/summaryMarks.ts",
@@ -1199,7 +1199,7 @@
       },
       {
         "file": "frontend/src/sessions/summaryState.ts",
-        "sha256": "8bad4d03310be2401e1c3599c83122584d95a57d6b0e0617b6efe263b1ea97f9"
+        "sha256": "9d023ba6a95ae92b6c9ea965c4f51b796d66e9fee4ea36d37b5e04620f06e0cf"
       },
       {
         "file": "frontend/src/sessions/testing.tsx",

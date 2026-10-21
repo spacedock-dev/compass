@@ -9,7 +9,7 @@ import {
 } from '../api/summary';
 import { Disclosure, disclosureKey } from '../controls';
 import { useDrift } from '../drift/context';
-import { ModelNotice } from '../drift/ModelNotice';
+import { ModelNotice, NoticeBody } from '../drift/ModelNotice';
 import { Why } from '../drift/Why';
 import { ActionButton } from '../intent/ActionButton';
 import { SampleMark } from '../sample/SampleMark';
@@ -26,6 +26,7 @@ import {
   SUMMARY_NOT_CLAUDE,
   SUMMARY_OFF,
   SUMMARY_RELEVANCE,
+  SUMMARY_REWRITTEN,
   SUMMARY_STARTING,
   SUMMARY_WORKING_KEEP,
   deleteArmed,
@@ -35,6 +36,7 @@ import {
   blockName,
   bulletWords,
   gapSentence,
+  isTestFailure,
   hiddenRange,
   hiddenKey,
   hiddenSentence,
@@ -74,7 +76,16 @@ function Line({
   );
 }
 
-function Turn({ state, on }: { readonly state: SummaryState; readonly on: boolean }) {
+function Turn({
+  state,
+  on,
+  quiet = false,
+}: {
+  readonly state: SummaryState;
+  readonly on: boolean;
+  /** A control that must not read as one of the card's actions beside it: the off switch beside Cancel. */
+  readonly quiet?: boolean;
+}) {
   const shell = useShell();
   const control = `summary-grant:${state.key}`;
   const paused = state.grant?.reason === 'model-calls-paused';
@@ -82,7 +93,8 @@ function Turn({ state, on }: { readonly state: SummaryState; readonly on: boolea
   return (
     <>
       <ActionButton
-        weight="secondary"
+        weight={quiet ? 'quiet' : 'secondary'}
+        {...(quiet ? { tone: 'muted' as const } : {})}
         inert={paused}
         describedBy={reasonId}
         label={on ? 'Turn summaries on' : 'Turn off summaries'}
@@ -162,24 +174,48 @@ function noticeOf(state: SummaryState): Readonly<Record<string, unknown>> | null
     : null;
 }
 
-/* The off switch one press from the card wherever the notice, which carries its own, is not drawn. */
+/* The off switch one press from the card wherever the notice, which carries its own, is not drawn. It stands
+   apart from Cancel and quieter: it turns summaries off for every session, where Cancel stops this one run, and
+   the two once sat side by side as equal buttons. */
 function OffSwitch({ state }: { readonly state: SummaryState }) {
   if (!state.grant || summariesOff(state.grant) || noticeOf(state)) return null;
-  return <Turn state={state} on={false} />;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2" data-next-summary-off>
+      <Turn state={state} on={false} quiet />
+    </div>
+  );
 }
 
 /* The notice the first summary on this machine shows, and again when where it goes or what it sends changes:
-   the same notice card a reading's notice uses, with Turn off summaries beside it. */
-function Notice({ state }: { readonly state: SummaryState }) {
+   the same notice card a reading's notice uses, with Turn off summaries beside it. It is the whole card while a
+   request runs, and once the summary stands it folds to one line that names what it holds: it once stayed open
+   above the finished summary and pushed the opening down about 300px. */
+function Notice({
+  state,
+  collapsed = false,
+}: {
+  readonly state: SummaryState;
+  readonly collapsed?: boolean;
+}) {
   const notice = noticeOf(state);
   if (!notice || !state.grant) return null;
+  const parts = state.grant.disclosure ? [state.grant.disclosure] : [];
+  if (collapsed)
+    return (
+      <div data-next-summary-notice data-next-summary-notice-folded>
+        <Why name="summary-notice" summary="What this request sent to Claude Code">
+          <NoticeBody notice={notice} provider="Claude Code" parts={parts} />
+          <Turn state={state} on={false} />
+        </Why>
+      </div>
+    );
   return (
     <div data-next-summary-notice>
       <ModelNotice
         notice={notice}
         name="Summary request notice"
         provider="Claude Code"
-        parts={state.grant.disclosure ? [state.grant.disclosure] : []}
+        parts={parts}
       >
         <Turn state={state} on={false} />
       </ModelNotice>
@@ -215,8 +251,8 @@ export function SummaryControls({
           {progressLine(job)}
         </p>
         <Line>{SUMMARY_WORKING_KEEP}</Line>
-        <div className="flex flex-wrap items-center gap-2 empty:hidden">
-          {job.state === 'running' ? (
+        {job.state === 'running' ? (
+          <div className="flex flex-wrap items-center gap-2">
             <ActionButton
               weight="secondary"
               label="Cancel"
@@ -228,9 +264,9 @@ export function SummaryControls({
                 if (state.identity) void cancelSummary(shell, state.identity);
               }}
             />
-          ) : null}
-          <OffSwitch state={state} />
-        </div>
+          </div>
+        ) : null}
+        <OffSwitch state={state} />
         {failed}
       </div>
     );
@@ -250,6 +286,8 @@ export function SummaryControls({
       </div>
     );
   }
+  /* Above a saved summary the notice folds to a one-line control, because the full text once pushed the opening
+     down about 300px. The foot of the card holds the Sent disclosure, with Turn off summaries inside. */
   const notice = <Notice state={state} />;
   if (grant.reason) {
     return (
@@ -258,9 +296,7 @@ export function SummaryControls({
         <Line data-next-summary-reason={grant.reason}>
           {reasonSentence(grant.reason, state.reasons)}
         </Line>
-        <div className="flex flex-wrap items-center gap-2 empty:hidden">
-          <OffSwitch state={state} />
-        </div>
+        <OffSwitch state={state} />
         {failed}
       </div>
     );
@@ -277,7 +313,7 @@ export function SummaryControls({
     const again = outdated?.action !== 'rerun' && incomplete(stored, job);
     return (
       <div className="flex flex-col gap-2 empty:hidden" data-next-summary-state="ready">
-        {notice}
+        <Notice state={state} collapsed />
         {outdated ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2" data-next-summary-outdated>
             <p className="m-0 text-body text-foreground">{outdated.sentence}</p>
@@ -375,11 +411,18 @@ const spoken = (bullet: SummaryBullet): string =>
 
 const counted = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
 
-/* A chip for each citation the reader can follow. A message id is the record's own, so a chip on the agent's or
-   the person's words reads older record pages for it. Record pages hold no checks or files, so a line that may
-   cite one gets a chip only once the page holds an entry under that id, and its press reads nothing; an earlier
-   run or write has no entry of its own (docs/design-session-summary.md#source-and-outline-contract), so the
-   rest are counted, not dropped. */
+/* Whether a chip can follow a citation. A message id is the record's own, so a chip on the agent's or the
+   person's words reads older record pages for it. Record pages hold no checks or files, so a line that may cite
+   one gets a chip only once the page holds an entry under that id, and its press reads nothing; an earlier run or
+   write has no entry of its own (docs/design-session-summary.md#source-and-outline-contract). Those are counted
+   once at the foot of the card, not said after every line. */
+type Reads = boolean | ReadonlySet<string>;
+const followable = (
+  id: string,
+  reads: Reads,
+  known: ReadonlySet<string> | { has(id: string): boolean },
+) => reads === true || known.has(id) || (reads instanceof Set && reads.has(id));
+
 function Cites({
   cites,
   cut = 0,
@@ -391,15 +434,11 @@ function Cites({
   readonly cut?: number;
   readonly purpose: string;
   /** True when every id is a message id; a set names the ids known to be messages. */
-  readonly reads: boolean | ReadonlySet<string>;
+  readonly reads: Reads;
   readonly chip: (id: string, purpose: string) => ReactNode;
 }) {
   const { model } = useDrift();
-  const linked =
-    reads === true
-      ? cites
-      : cites.filter((id) => model.byId.has(id) || (reads instanceof Set && reads.has(id)));
-  const unlinked = cites.length - linked.length;
+  const linked = cites.filter((id) => followable(id, reads, model.byId));
   if (!cites.length && !cut) return null;
   return (
     <span className="[overflow-wrap:anywhere]" data-next-summary-cites>
@@ -408,11 +447,6 @@ function Cites({
           {chip(id, purpose)}
         </span>
       ))}
-      {unlinked ? (
-        <span className="text-label text-muted-foreground" data-next-summary-unlinked={unlinked}>
-          {unlinkedSentence(unlinked)}
-        </span>
-      ) : null}
       {cut ? (
         <span className="text-label text-muted-foreground" data-next-summary-cites-cut={cut}>
           {`${counted(cut, 'more citation was', 'more citations were')} cut`}
@@ -519,8 +553,9 @@ function Hidden({
 const PILL =
   'inline-flex min-h-0 min-w-0 items-center rounded-full px-2.5 py-0.5 text-label font-semibold [font-family:var(--mono)]';
 
-/* What a phase holds that a reader should know before opening it, drawn on its heading and right-aligned: the
-   departures its entries are evidence for, each a pill that goes to the card, and a count of its failed lines.
+/* What a phase holds that a reader should know, drawn on its heading and right-aligned: the
+   departures its entries are evidence for, each a pill that goes to the card, and a count of its failed test runs
+   (a failed build or a run the agent's sandbox refused is not badged as one).
    They sit outside the accordion's trigger so they stay in view while the lines are folded away. */
 function Mark({
   marks,
@@ -556,7 +591,7 @@ function Mark({
           className={`${PILL} border border-solid border-[var(--clay)] text-[var(--clay)]`}
           data-next-summary-failures={failures}
         >
-          {`${String(failures)} ${failures === 1 ? 'failure' : 'failures'}`}
+          {`${String(failures)} test ${failures === 1 ? 'failure' : 'failures'}`}
         </span>
       ) : null}
     </>
@@ -684,6 +719,16 @@ export function SummaryView({
       ),
     ),
   );
+  /* The citations no chip can follow, counted once for the whole summary and said at its foot. */
+  const unlinked = new Set<string>();
+  const countUnlinked = (cites: readonly string[], reads: Reads) => {
+    for (const id of cites) if (!followable(id, reads, model.byId)) unlinked.add(id);
+  };
+  countUnlinked(stored.ledeCites, messageIds);
+  for (const block of stored.blocks)
+    for (const phase of block.phases)
+      for (const row of phase.bullets)
+        countUnlinked(row.cites, row.kind === 'said' || row.kind === 'asked');
   /* The sample's tour notes the first phase that holds a departure, once. */
   const toured = stored.blocks.flatMap((block, b) =>
     block.gap
@@ -700,6 +745,7 @@ export function SummaryView({
       >
         {SUMMARY_LABEL}
       </p>
+      {state.held.rewritten ? <Line data-next-summary-rewritten>{SUMMARY_REWRITTEN}</Line> : null}
       {summaryNotes(stored, startsAt).map((note) => (
         <Line key={note} data-next-summary-note>
           {note}
@@ -756,6 +802,7 @@ export function SummaryView({
                       scope: model.key,
                       name: `summary-phase:${place}`,
                     })}
+                    openByDefault
                     className="next-summary-phase [&_[data-slot=accordion-trigger]]:min-h-[34px] [&_[data-slot=accordion-trigger]]:font-semibold [&_[data-slot=accordion-trigger]]:text-foreground"
                     headerProps={{
                       render: <h3 className="m-0 text-body font-semibold text-foreground" />,
@@ -777,7 +824,14 @@ export function SummaryView({
                     aside={
                       <Mark
                         marks={held}
-                        failures={phase.bullets.filter((line) => line.kind === 'failed').length}
+                        failures={
+                          phase.bullets.filter(
+                            (line) =>
+                              line.kind === 'failed' &&
+                              'text' in line.text &&
+                              isTestFailure(line.text.text),
+                          ).length
+                        }
                         tour={place === toured}
                       />
                     }
@@ -820,6 +874,9 @@ export function SummaryView({
         ),
       )}
       <Line>{SUMMARY_RELEVANCE}</Line>
+      {unlinked.size ? (
+        <Line data-next-summary-unlinked={unlinked.size}>{unlinkedSentence(unlinked.size)}</Line>
+      ) : null}
       {state.grant && !running ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Sent state={state} />

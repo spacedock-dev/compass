@@ -1108,7 +1108,7 @@
         "frontend/stories/SessionSummary.stories.tsx",
         "frontend/src/sessions/summary.test.ts"
       ],
-      "contract": "The notice the last summary start's reply carried is held per session in memory until a later start's reply replaces or clears it, or Turn off summaries clears every held notice; a running job's own notice stands in when none is held. The grant is the server's; a consent reply is drawn over only the board it answered. The once-per-page-load open start is marked in the same entry before anything is sent, and Delete summary sets it. Delete summary's arm (`deleteArmedAt`) lapses after 30 seconds, and the deletion's time (`deletedAt`) is said until the next start. Nothing reaches browser storage.",
+      "contract": "The notice the last summary start's reply carried is held per session in memory until a later start's reply replaces or clears it, or Turn off summaries clears every held notice; a running job's own notice stands in when none is held. The grant is the server's; a consent reply is drawn over only the board it answered. The once-per-page-load open start is marked in the same entry before anything is sent, and Delete summary sets it. Delete summary's arm (`deleteArmedAt`) lapses after 30 seconds, and the deletion's time (`deletedAt`) is said until the next start. A start made by Summarize again or after a delete here is held as `rewritten` and said until a later plain start. Once a summary stands the notice is folded under the `summary-notice` disclosure. Nothing reaches browser storage.",
       "disposition": "store-held"
     },
     {

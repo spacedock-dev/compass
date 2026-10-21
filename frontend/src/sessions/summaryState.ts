@@ -1,5 +1,6 @@
 import { use, useEffect } from 'react';
 import {
+  jobActive,
   parseFocusedSummary,
   parseGrant,
   stampModel,
@@ -100,5 +101,10 @@ export function useOpenSummary(state: SummaryState): void {
 
 export function summaryHeader(state: SummaryState): string {
   if (!state.stored) return '';
-  return summaryStamp(state.stored, state.running, stampModel(state.stored.modelStamp));
+  return summaryStamp(
+    state.stored,
+    state.running,
+    stampModel(state.stored.modelStamp),
+    jobActive(state.job),
+  );
 }

@@ -60,6 +60,8 @@ export async function startSummary(
     if (origin === 'open') held.patch(key, { opening: false });
     return;
   }
+  /* A start after a rerun, or after a delete made in this tab, writes a summary where one stood. */
+  const again = action === 'rerun' || held.get(key).deletedAt > 0;
   held.patch(key, { refusal: null, failed: '', deletedAt: 0 });
   try {
     const answer = bodyOf(await shell.runtime.client.postSummary({ ...identity, action, origin }));
@@ -80,6 +82,7 @@ export async function startSummary(
       held.patch(key, {
         job,
         jobAt: generatedOf(shell),
+        ...(action === 'update' ? {} : { rewritten: again }),
         ...(origin === 'press' || notice ? { notice } : {}),
       });
       if (notice) {

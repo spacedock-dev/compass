@@ -650,3 +650,45 @@ describe('controlled popovers keep the dismissal contract', () => {
     remove.mockRestore();
   });
 });
+
+describe('an accordion that opens by default', () => {
+  const accordion = (view: ReturnType<typeof mount>['view']) =>
+    view.getByText('Phase').closest('[data-slot=accordion]') as HTMLElement;
+
+  it('opens the first time its key is drawn and keeps a reader’s close through a redraw', () => {
+    const ui = (
+      <Disclosure disclosureKey={key('phase')} summary="Phase" openByDefault>
+        Lines
+      </Disclosure>
+    );
+    const { view, rerender, kit } = mount(ui);
+    expect(isOpen(accordion(view))).toBe(true);
+    toggle(accordion(view), false);
+    expect(isOpen(accordion(view))).toBe(false);
+    rerender(ui);
+    expect(isOpen(accordion(view))).toBe(false);
+    expect(kit.controls.disclosures.isOpen(key('phase'))).toBe(false);
+  });
+
+  it('does not reopen a key the reader has closed before it is drawn again', () => {
+    const kit = testControls();
+    kit.controls.disclosures.set(key('phase'), false);
+    const view = render(
+      <ControlsProvider controls={kit.controls}>
+        <Disclosure disclosureKey={key('phase')} summary="Phase" openByDefault>
+          Lines
+        </Disclosure>
+      </ControlsProvider>,
+    );
+    expect(isOpen(accordion(view as never))).toBe(false);
+  });
+
+  it('stays closed without the prop', () => {
+    const { view } = mount(
+      <Disclosure disclosureKey={key('phase')} summary="Phase">
+        Lines
+      </Disclosure>,
+    );
+    expect(isOpen(accordion(view))).toBe(false);
+  });
+});

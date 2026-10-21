@@ -134,8 +134,10 @@ describe('the summaries switch is nested under Pause model calls', () => {
       fireEvent.click(await within(region).findByRole('button', { name: 'Update summary' }));
     });
     await waitFor(() => expect(region.querySelector('[data-next-summary-notice]')).not.toBeNull());
-    /* Its own region name, so it is not a second "Model request notice" beside the drift card's. */
-    expect(within(region).getByRole('region', { name: 'Summary request notice' })).toBeVisible();
+    /* The summary stands, so the notice is folded to one line and is not a second "Model request notice"
+       region beside the drift card's. */
+    expect(region.querySelector('[data-next-summary-notice-folded]')).not.toBeNull();
+    expect(within(region).queryByRole('region', { name: /request notice/ })).toBeNull();
     const drift = await screen.findByRole('region', { name: 'Drift' });
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
