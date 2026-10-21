@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2077627,
+    "bytes": 2078063,
     "file": "react.html",
-    "sha256": "3e99810a01f1d28dfaa678881bede32117ed3c0c99a0c221184de06a37f6766f"
+    "sha256": "fd245cd640f3b1adeee7d49c4a4f66082a6c0c85bd17459f05bf571593895e58"
   },
   "format": 1,
   "frontend": "react",
@@ -767,7 +767,7 @@
       },
       {
         "file": "frontend/src/intent/IntentSection.tsx",
-        "sha256": "c0784685f9aeab76ba42672c2f1d41cf6503db3cd30541c3191698c30cdc7fff"
+        "sha256": "4b273d1eace2e8770ec693a029972e47ccde70c4156816931e31597b379ad817"
       },
       {
         "file": "frontend/src/intent/LiveMonitorSwitch.tsx",
@@ -1091,7 +1091,7 @@
       },
       {
         "file": "frontend/src/sample/session.fixture.json",
-        "sha256": "8fe5d1dcaf6dd201973aeb45511343134326f4e4a377d4cf045d0602ce9abd0f"
+        "sha256": "fcfe94b048aeb4f22e8687bb38ba15c29eedef0bb2eb98b550780de80fde294b"
       },
       {
         "file": "frontend/src/sample/tour.ts",
