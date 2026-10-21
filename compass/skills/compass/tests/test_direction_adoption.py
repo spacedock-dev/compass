@@ -208,6 +208,69 @@ class GoalEditWindowTest(unittest.TestCase):
         self.assertEqual(2, self._published()["revision"])
 
 
+class GoalAfterLinesWindowTest(unittest.TestCase):
+    """A line saved before any goal is not the start of the work the goal names."""
+
+    def setUp(self) -> None:
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, True)
+        self.config, self.state = make_runtime(state_home=home, state_dir=Path(home))
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            lines=["A line"],
+            now=FIRST_AT + 500,
+            window_start=FIRST_AT + 490,
+        )
+
+    def _published(self) -> Any:
+        return annotation_store.published(
+            annotation_store.find(annotation_store.load(self.config), "claude", SHORT)
+        )
+
+    def test_adopting_a_prompt_after_a_lines_only_save_opens_at_the_prompt(self) -> None:
+        outcome = annotation_store.adopt(
+            self.config,
+            self.state,
+            _row(),
+            source="first-prompt",
+            expected_text=FIRST,
+            expected_at=FIRST_AT,
+            now=FIRST_AT + 600,
+            expected_revision=1,
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        self.assertEqual(FIRST_AT, self._published()["window_start"])
+
+    def test_typed_goal_after_a_lines_only_save_opens_at_the_typed_window(self) -> None:
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            goal="Ship the placeholder parser",
+            now=FIRST_AT + 600,
+            window_start=FIRST_AT + 20,
+            expected_revision=1,
+        )
+        self.assertEqual(FIRST_AT + 20, self._published()["window_start"])
+
+    def test_a_second_lines_only_save_still_carries_the_start(self) -> None:
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            SHORT,
+            lines=["A line", "Another"],
+            now=FIRST_AT + 700,
+            window_start=FIRST_AT + 690,
+            expected_revision=1,
+        )
+        self.assertEqual(FIRST_AT + 490, self._published()["window_start"])
+
+
 class AddDirectionStoreTest(unittest.TestCase):
     def setUp(self) -> None:
         home = tempfile.mkdtemp()

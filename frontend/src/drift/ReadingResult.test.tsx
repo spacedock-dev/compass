@@ -457,7 +457,8 @@ describe('What the analysis read', () => {
     expect(section('model').textContent).toContain('claude-sonnet-5-5 · read at 09:38');
     const intent = section('intent');
     expect(intent.querySelector('h4')?.textContent).toBe('Your intent');
-    expect(intent.textContent).toContain('Version 3');
+    expect(intent.textContent).toMatch(/typed .+ ago/);
+    expect(intent.textContent).not.toContain('Version');
     expect([...intent.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
       'Goal “Ship the queue”',
       'Expected outcome “Tests pass”',

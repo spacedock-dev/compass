@@ -222,7 +222,7 @@ describe('the alert the page and the server both compose', () => {
    on it: the number appears nowhere else. A stale reading or raise names the moments instead (docs/design-reading-a-session.md,
    "Amended 2026-10-21 (owner): editing the goal keeps the reading's start"). */
 describe('the sentences about words that moved on name times, not revision numbers', () => {
-  const NUMBERED = /revision\s*(?:\d|\$\{)/i;
+  const NUMBERED = /(?:revision|version)\s*(?:\d|\$\{)/i;
 
   it('says when a reading or a raise was made and when the intent changed', () => {
     for (const subject of ['This reading', 'This raise']) {

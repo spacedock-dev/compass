@@ -210,7 +210,7 @@ export const WhatTheAnalysisRead: Story = {
     const headings = [...read.querySelectorAll('h4')].map((h) => h.textContent);
     await expect(headings).toEqual(['Model', 'Your intent', 'The session', 'Not read']);
     await expect(section('model')).toHaveTextContent('claude-sonnet-5-5 · read at 09:38');
-    await expect(section('intent')).toHaveTextContent(/Version 3 · typed .+ ago/);
+    await expect(section('intent')).toHaveTextContent(/typed .+ ago/);
     await expect([...section('intent').querySelectorAll('li')].map((li) => li.textContent)).toEqual(
       ['Goal “Ship the queue”', 'Expected outcome “Tests pass”'],
     );

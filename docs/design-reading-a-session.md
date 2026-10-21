@@ -3249,6 +3249,9 @@ to Can't tell. Editing the goal says the work already done still counts.
   adopting a prompt or a later direction as the goal with Use this as my goal all leave the start
   where it was, so the next reading reads from the original start. Only the first save of a session,
   and the first save after a discard, open a window of their own, by the rules above.
+  The first save that carries a goal opens the window, so a line saved before any goal does not
+  count as the start: adopting a prompt over a revision holding lines alone opens at the prompt's
+  own time, and typed goal words open at their own window.
 - Reading from the edit onwards is the reader's explicit choice, offered as Read from now beside Save
   intent. `POST /api/annotate` takes `read_from_now: true` on a typed save or an adoption, and the
   save then opens the window as a first save would: the reader's latest message at or before the save

@@ -2290,7 +2290,7 @@ def _annotate(  # noqa: PLR0913
                     source_fields if new_goal is not None else {},
                     window_start,
                     stamp,
-                    restart=restart,
+                    restart=restart or (not last["goal"].strip() and bool(text_goal.strip())),
                 ),
                 **_goal_saved_at(last, source_fields, text_goal, stamp),
                 "n": last["n"] + 1,
@@ -2681,7 +2681,9 @@ def _window_after(
     Editing the goal, adopting a prompt or a direction, and saving a line all
     keep the start the reading already had, so work done toward the earlier
     words stays read. `restart` is the reader's explicit Read from now, and
-    opens a window as a first save does. The carried start is clamped to the
+    opens a window as a first save does, and so does the first save that
+    carries a goal over a revision holding lines alone: a line saved before any
+    goal is not the start of the work. The carried start is clamped to the
     save, because a clock that stepped back would otherwise store a start
     after its own revision, which is refused on read.
     """
