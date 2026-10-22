@@ -580,6 +580,16 @@ class NamedFoldersTest(unittest.TestCase):
         self.assertTrue(levels.inside("web", ("web",)))
         self.assertFalse(levels.inside("website/app.js", ("web",)))
 
+    @unittest.expectedFailure  # DRC-4891: the ruling is recorded; levels.inside changes in its own PR.
+    def test_a_worktree_checkout_write_is_read_inside_its_checkout(self) -> None:
+        # Ruled 2026-10-21 (DRC-4891): the same folder inside its checkout, not outside it.
+        prefix = ".claude/worktrees/agent-a1"
+        self.assertTrue(levels.inside(f"{prefix}/src/m.py", ("src",)))
+        self.assertTrue(levels.inside(f"{prefix}/src", ("src",)))
+        self.assertFalse(levels.inside(f"{prefix}/web/m.py", ("src",)))
+        self.assertFalse(levels.inside(f"{prefix}/srcs/m.py", ("src",)))
+        self.assertFalse(levels.inside(".claude/worktrees/src/m.py", ("src",)))
+
 
 class CorrectionRoundTest(unittest.TestCase):
     """DRC-4692's review round. Every correction moves toward a higher level or Not enough."""

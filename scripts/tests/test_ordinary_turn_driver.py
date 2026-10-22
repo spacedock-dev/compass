@@ -794,7 +794,9 @@ class StubNativeProcess(ControlFixture):
         plan = self.stub(
             "import os,subprocess,sys,time\nfrom pathlib import Path\n"
             "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(10)'])\n"
-            "Path(os.environ['CHILD_RECEIPT']).write_text(str(child.pid))\ntime.sleep(10)\n"
+            "receipt=Path(os.environ['CHILD_RECEIPT'])\n"
+            "receipt.with_suffix('.tmp').write_text(str(child.pid))\n"
+            "receipt.with_suffix('.tmp').replace(receipt)\ntime.sleep(10)\n"
         )
         plan = dataclasses.replace(
             plan, environment={**plan.environment, "CHILD_RECEIPT": str(receipt)}
@@ -802,10 +804,14 @@ class StubNativeProcess(ControlFixture):
         driver.reserve(plan)
         process = driver.NativeProcess(StubGate())
         self.addCleanup(process.cleanup)
+        # Two seconds, not 0.1: on a loaded runner the limit fired after the stub created its receipt and before it
+        # wrote the PID, and the test read "" (Python 3.11 runtime floor, 2026-10-22). The receipt is also written by
+        # rename, so it is either absent or whole.
         with self.assertRaises(driver.RefusalError):
-            process.run(plan, driver.Limits(seconds=0.1))
+            process.run(plan, driver.Limits(seconds=2))
         self.assertTrue(process.cleanup())
         self.assertFalse(process.complete_descendant_proof)
+        self.assertTrue(receipt.exists(), "the stub did not spawn its child within the limit")
         child_pid = int(receipt.read_text())
         # Read only this fixture-owned PID. A zombie is stopped, not an exec/flow
         # observer proof; no global process list or application automation runs.
