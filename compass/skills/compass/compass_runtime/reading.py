@@ -4194,8 +4194,14 @@ GOAL_VERDICT_KEYS = ("at", "check", "why", "cites")
 _VERDICT_FILE = re.compile(r"(?:[\w\-]+/)*[\w\-]{2,}\.[A-Za-z][A-Za-z0-9]{0,4}")
 
 
+# The evaluator elides the head of a long path as ".../" (measured on a real session, 2026-10-22).
+# What is left is a tail of the real path, which `_same_path` already matches by its end.
+_ELIDED_HEAD = re.compile(r"(?:\.\.\.|\u2026)/")
+
+
 def _verdict_files(reason: str) -> tuple[str, ...]:
-    return tuple(path for path in _path_tokens(reason, files=True) if _VERDICT_FILE.fullmatch(path))
+    text = _ELIDED_HEAD.sub("", reason)
+    return tuple(path for path in _path_tokens(text, files=True) if _VERDICT_FILE.fullmatch(path))
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:

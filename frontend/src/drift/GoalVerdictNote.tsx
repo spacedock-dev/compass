@@ -3,7 +3,10 @@ import { harnessLabels } from '../sessions/rows';
 import { useDrift } from './context';
 import { harnessVerdict, verdictNote } from './goalVerdict';
 
-/* What the harness decided about the goal, under the Drift level it does not move. Drawn from the row alone, so
+/* The card's own margin class rather than the Intent reading's: that one carries a measure and no inset, so
+   the note hung left of the level above it and stopped short of the criteria rows below it.
+
+   What the harness decided about the goal, under the Drift level it does not move. Drawn from the row alone, so
    a session with a verdict and no analysis still says it, and always as the harness's claim; where a reading
    tested it, Compass's answer follows in Compass's own words. */
 export function GoalVerdictNote() {
@@ -19,7 +22,7 @@ export function GoalVerdictNote() {
   });
   return (
     <div
-      className="next-cockpit-reading-why"
+      className="next-session-drift-limit"
       data-next-goal-verdict
       data-next-goal-verdict-state={note.state}
     >

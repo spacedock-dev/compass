@@ -69,6 +69,14 @@ describe('the harness verdict on the Drift card', () => {
     expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
   });
 
+  it('keeps the card inset the level above it and the rows below it share', async () => {
+    const page = mountDrift({ session: withVerdict() });
+    await page.settle();
+    await page.settle();
+    expect(note()?.classList.contains('next-session-drift-limit')).toBe(true);
+    expect(note()?.classList.contains('next-cockpit-reading-why')).toBe(false);
+  });
+
   it('quotes the evaluator reason as text, never as markup', async () => {
     const page = mountDrift({
       session: withVerdict({

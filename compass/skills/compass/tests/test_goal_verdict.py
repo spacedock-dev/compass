@@ -95,6 +95,21 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
         )
         self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
 
+    def test_a_path_the_evaluator_elided_with_dots_matches_a_write_by_its_tail(self) -> None:
+        reason = "File created successfully at: .../scratchpad/e2e/goal/docs/e2e/findings.md"
+        self.assertEqual(
+            ("scratchpad/e2e/goal/docs/e2e/findings.md",), reading._verdict_files(reason)
+        )
+        checked = self._checked([write_fact("docs/e2e/findings.md", at=120.0)], reason)
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
+        self.assertEqual(reading.GOAL_VERDICT_WRITTEN, checked["why"])
+
+    def test_an_elided_path_written_again_after_the_verdict_disputes_it(self) -> None:
+        checked = self._checked(
+            [write_fact("docs/e2e/findings.md", at=170.0)], "wrote .../e2e/docs/e2e/findings.md"
+        )
+        self.assertEqual(reading.GOAL_VERDICT_DISPUTED, checked["check"])
+
     def test_a_passing_check_of_the_kind_the_reason_claims_agrees(self) -> None:
         checked = self._checked(
             [base.check_fact(result="passed", at=130.0)], "the retry tests pass"
