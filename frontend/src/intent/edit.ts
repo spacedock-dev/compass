@@ -128,10 +128,12 @@ export function addLine(ctx: Ctx, input: DraftInput): void {
     announce(ctx, key, LINES_FULL);
     return;
   }
-  // An empty list is drawn as one empty box, so adding to it adds the second.
-  if (!draft.length) {
-    draft.push('');
-    origins.push(null);
+  /* An empty list is drawn as one empty box, and a last row nobody has typed in is a box already waiting:
+     adding goes to that box rather than stacking a blank above the text the reader is about to type. */
+  const last = Math.max(0, draft.length - 1);
+  if (!draft.length || !String(draft[last] ?? '').trim()) {
+    held.requestFocus(`${key}:${String(last)}`);
+    return;
   }
   draft.push('');
   origins.push(null);
