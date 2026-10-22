@@ -106,6 +106,8 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   const cachedGoal = session?.['cached_deterministic_goal'];
   const cached = isRecord(cachedGoal) ? cachedGoal : null;
   const goal = String((cached && cached['goal']) || '').trim();
+  const stated = session?.['session_goal'];
+  const statedGoal = String((isRecord(stated) && stated['text']) || '').trim();
   const spacedock = session?.['spacedock'];
   const workflows =
     payload['spacedock_enabled'] === false
@@ -148,6 +150,9 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   } else {
     line('Cached deterministic goal', 'No cached deterministic goal available.');
   }
+  /* A Claude Code /goal is a fourth place a goal can live, so a session that states one never reads as
+     goal-less: the sentence below is scoped to the sources listed, and a reader takes it for the session. */
+  if (statedGoal) line('Goal stated with /goal', statedGoal);
   if (payload['spacedock_enabled'] === false)
     line('Workflow goal', 'Spacedock is off for this run.');
   else if (!workflows.length) line('Workflow goal', 'No workflow goal published.');
@@ -160,6 +165,7 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   if (
     !(typed && String(row['goal'] || '').trim()) &&
     !goal &&
+    !statedGoal &&
     !workflows.some((workflow) => String(workflow['goal'] || '').trim())
   ) {
     why('No goal available from these sources.');

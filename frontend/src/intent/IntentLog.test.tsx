@@ -55,6 +55,23 @@ describe('the Intent log route', () => {
     expect(page.posts()).toBe(0);
   });
 
+  it('names a /goal as a source and never says no goal is available for a session that holds one', async () => {
+    const board = {
+      ...BOARD,
+      sessions: [
+        { ...BOARD.sessions[0], session_goal: { text: 'The findings file exists', at: 900 } },
+        BOARD.sessions[1],
+      ],
+    };
+    const page = mountIntent({ data: board, routes: annotations([]) });
+    await page.settle();
+    expect(
+      screen.getByText('Goal stated with /goal: The findings file exists'),
+    ).toBeInTheDocument();
+    // The other session states none, so its row still says so.
+    expect(screen.getAllByText('No goal available from these sources.')).toHaveLength(1);
+  });
+
   it('waits while hidden: a board that arrives on another route fetches no retained words', async () => {
     const page = mountIntent({ hash: '#n=sessions', data: BOARD, routes: annotations() });
     await page.settle();

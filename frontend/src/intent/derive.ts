@@ -335,9 +335,13 @@ export function noDraftWhy(session: Row, annotation: Annotation | null, payload:
   const command = String(session['first_prompt'] || '')
     .trim()
     .split(/\s+/)[0];
-  return command
-    ? `This session opened with ${command}, so there is no first prompt to draft a goal from.`
-    : '';
+  if (!command) return '';
+  const stated = session['session_goal'];
+  const held = String((isRecord(stated) && stated['text']) || '').trim();
+  const lead = `This session opened with ${command}, so there is no first prompt to draft a goal from.`;
+  /* The session's own /goal is not a draft, but a reader told only "no first prompt" would take the
+     session for goal-less. */
+  return held ? `${lead} It holds this /goal: ${held}` : lead;
 }
 
 /* Where a saved line came from, named by when the reader said it: "added from your 14:04 message". An entry
