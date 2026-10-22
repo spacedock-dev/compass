@@ -425,7 +425,7 @@ goal. **Find goal**, beside it, shows while no goal is saved and the session set
 press it sends the prompts you typed in that session to the same reader Analyze would use, counts
 against the same daily limit, and does nothing while model calls are paused. If your own words
 state a clear end state it fills the box, marked **Goal detected**, with the prompts it quotes
-linked to their entries in Full activity. Otherwise it says no clear goal was found and leaves the
+linked to their entries in Full activity and the quoted words listed beneath. Otherwise it says no clear goal was found and leaves the
 box as it was. Nothing is saved until you press **Save intent**. An unavailable prompt time means you must type a goal instead. The notice is remembered
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed

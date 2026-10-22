@@ -5438,6 +5438,8 @@ and offers the goal when it can tie it to the reader's own words.
 - The found goal cites the prompts it quotes by the entry numbers Full activity shows (`entry_numbers`), drawn
   as the Drift card draws a cited entry, beside "Detected from your prompts" and the time it was found. Pressing
   one opens Full activity at that entry and reads older pages for it when the page does not hold it.
+  The checked quotes sit under that line, each led by its entry number, because the hover shows the entry as
+  the activity list abbreviates it and the quote is what ties the goal's wording to the prompt.
 - Precedence is the reader's saved goal, a `/goal`, a found goal, then the first or latest prompt drafts. A
   found goal stands only while the box holds its words, so an edit replaces it, and a result that arrives after
   a saved goal, a `/goal` or the reader's own typing does not touch the box.

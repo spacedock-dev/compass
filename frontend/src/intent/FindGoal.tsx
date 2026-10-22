@@ -51,7 +51,8 @@ export function FindGoalNote() {
   );
 }
 
-/* The prompts a found goal was found in, each as its entry number, drawn as the Drift card draws a cited entry:
+/* The prompts a found goal was found in, each as its entry number with the words quoted from it beneath. The
+   number is drawn as the Drift card draws a cited entry:
    hovering or focusing one shows the entry in place, and "See in context of the session" opens Full activity at
    that entry, reading older pages for it first where the page does not hold it yet. */
 export function FoundCites() {
@@ -94,6 +95,19 @@ export function FoundCites() {
           );
         })}
       </small>
+      {/* The words the goal was taken from, which the server checked as verbatim in each prompt. The popover
+          shows the entry as the activity list abbreviates it, so these are what tie the goal to the prompt. */}
+      {found.cites.flatMap((cite) => {
+        const n = number(cite.factId, cite.ordinal);
+        const where = n ? `#${n}` : clockText(cite.at ?? found.foundAt);
+        return cite.quotes.map((quote, index) => (
+          <small
+            key={`${cite.factId}:${index}`}
+            className="next-cockpit-held-source"
+            data-next-found-quote
+          >{`${where} “${quote}”`}</small>
+        ));
+      })}
       {missing ? (
         <p className="next-cockpit-held-absent" data-next-found-cites-missing>
           {missing}

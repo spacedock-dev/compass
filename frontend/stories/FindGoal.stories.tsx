@@ -297,6 +297,9 @@ export const AFoundGoalWithItsCitations: Story = {
       ...card.querySelectorAll<HTMLElement>('[data-next-found-cites] [data-next-cite]'),
     ];
     await expect(cites.map((cite) => cite.textContent)).toEqual(['[1]', '[3]']);
+    await expect(
+      [...card.querySelectorAll('[data-next-found-quote]')].map((quote) => quote.textContent),
+    ).toEqual(['#1 “add a retry to the upload client”', '#3 “make sure the existing tests”']);
     await expect(cites[0]?.getAttribute('aria-label')).toBe(
       'Show #1 in Full activity for the detected goal',
     );

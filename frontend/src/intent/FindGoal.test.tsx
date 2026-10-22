@@ -165,6 +165,20 @@ describe('a press', () => {
     ]);
   });
 
+  it('shows the quoted words under the entry number they were found in, so the goal ties to the prompt', async () => {
+    const page = mount({ find: () => json(FOUND) });
+    await settle(page);
+    await press(find());
+    await settle(page);
+    const quotes = [...document.querySelectorAll<HTMLElement>('[data-next-found-quote]')];
+    expect(quotes.map((quote) => quote.textContent)).toEqual([
+      '#1 “add a retry to the upload client”',
+      '#3 “make sure the tests still pass”',
+    ]);
+    type(goalBox(), `${GOAL}, and the report is linked`);
+    expect(document.querySelector('[data-next-found-quote]')).toBeNull();
+  });
+
   it('is replaced by an edit: the mark, the line and the citations go with the found words', async () => {
     const page = mount({ find: () => json(FOUND) });
     await settle(page);
