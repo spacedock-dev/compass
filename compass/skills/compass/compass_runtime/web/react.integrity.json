@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 1848315,
+    "bytes": 1848487,
     "file": "react.html",
-    "sha256": "7eaed1af1b6a1c5c109a2dd89dce35f2e237021b9a2caa2fe83c96260f6a1dad"
+    "sha256": "11e4717f8f0bfb9510dd9fa81209ed91a8086ce328e2037db6bba5c29a9ad70d"
   },
   "format": 1,
   "frontend": "react",
@@ -559,7 +559,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "9b39fe43f18cd6843e89c33f05dc36a1a1fd40cc99e357449a03a6fe0c0f759c"
+        "sha256": "05615410a57ec21560811396329d3cb42c0a8a3a5454d651c7ac452456238510"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -639,7 +639,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "160eae71ff7b01e70b2d8f0f52b9d5d0fa6cbf073609a4b3376b750cdee99f42"
+        "sha256": "953bbd89431f1d6b11af41f1bfccead06cab7f7120ec52f745cd3112dc78f7f5"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -1131,7 +1131,7 @@
       },
       {
         "file": "frontend/src/shell/ProjectTabs.tsx",
-        "sha256": "573568ffecc151cfdbd90b9ae5b25418c18914a47c367e3f53540c42abe79345"
+        "sha256": "ae707697227b6ce35ed2d5c1168affc9658319f61034572174517902be541774"
       },
       {
         "file": "frontend/src/shell/RouteLink.tsx",

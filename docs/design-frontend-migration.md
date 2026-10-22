@@ -617,6 +617,21 @@ had no such field, so both differentials drop it before a recorded answer's key 
 (`withoutKey` in `legacy.test.helper.ts`). The page still loads no record page by itself
 ([reader state](design-reader-state.md#the-inventory)).
 
+Departures the drift proof restates, 2026-10-21, with the recording unchanged. The retired page printed
+"N of M left today" under each reading; commit 4f6512bb removed that line, and under the cap the page prints no
+budget (`ReadingResult.test.tsx`). `session-deviations.mjs` retracts the sentence from the recorded side of the
+drift card, and only where the count is under the cap. Commit 4f6512bb also reworked the card's mark ("Not
+accurate?" became "Mark as inaccurate"), "What the analysis read", and the send disclosure, which the page now
+draws under "What is sent" (`DriftReadability.test.tsx`). The steps that show those wordings (a stored result, a
+marked result, a superseded reading, new work, a later direction and Steer back) still compare every other key
+of the recorded card and skip its text and buttons; each asserts the page's own words, and the vitest files and
+the Drift stories hold the states. The activity panel labels an agent message "said" beside its speaker
+(`WorkListView.test.tsx`), so the new-work state skips the panel and asserts its count line. With annotations
+off the server still publishes the session's observed record (only the analysis levels are gated in
+`http_api.py`), so the page reads it: a read record with no entry naming the session, where the retired page
+said the record had not been read. That sentence and the meta line's entry count are restated for that state
+alone, and the step asserts the page's sentence.
+
 DEC-27 row 3 removes Analyze again from a current result; the count, disclosure and cap stay.
 A stale result keeps one run control in its reason callout, and a direction question replaces it.
 Finding buttons jump by stored fact id to the current activity rows, reveal cited rows outside

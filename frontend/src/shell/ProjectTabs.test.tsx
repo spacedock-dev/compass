@@ -1,5 +1,7 @@
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { ShellContext } from './context';
+import { ProjectTabs } from './ProjectTabs';
 import { BOARD, mountShell } from './testing';
 
 /* A tab's accessible name carries its cue ("Course 0 No observed state changes observed"), so a tab is found by its label. */
@@ -112,8 +114,10 @@ describe('the project tab strip', () => {
   it('names the panel for the tab that is current, and draws what the tab holds inside it', async () => {
     await open('#n=project:alpha%2Fapp:course');
     const panel = screen.getByRole('tabpanel');
-    expect(panel.getAttribute('id')).toBe('next-cockpit-panel-course');
-    expect(panel.getAttribute('aria-labelledby')).toBe('next-cockpit-tab-course');
+    const tabId = tab('Course').getAttribute('id');
+    expect(panel.getAttribute('id')).toMatch(/^next-cockpit-\d+-panel-course$/);
+    expect(panel.getAttribute('aria-labelledby')).toBe(tabId);
+    expect(tab('Course').getAttribute('aria-controls')).toBe(panel.getAttribute('id'));
     expect(panel.querySelector('[data-next-cockpit-panel="course"]')).not.toBeNull();
     expect(panel.textContent).not.toMatch(/DRC-/);
   });
@@ -127,5 +131,61 @@ describe('the project tab strip', () => {
       expect(panel.textContent?.trim().length).toBeGreaterThan(0);
       page.unmount();
     }
+  });
+
+  it('gives each mounted strip its own ids, so every ARIA reference in the document resolves to one element', async () => {
+    const page = await open('#n=project:alpha%2Fapp:course');
+    const route = page.router.getRoute();
+    if (route.view !== 'project') throw new Error('the fixture route is not a project view');
+    // A second project view beside the first, in the same document and under the same shell: the page as it
+    // is when two views are mounted at once. The shell's own regions are page singletons and stay once.
+    const second = render(
+      <ShellContext.Provider value={page.shell}>
+        <ProjectTabs route={{ ...route, tab: 'decisions' }}>{(tab) => <p>{tab}</p>}</ProjectTabs>
+      </ShellContext.Provider>,
+    );
+    expect(screen.getAllByRole('tablist')).toHaveLength(2);
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(2);
+
+    const ids = [...document.querySelectorAll('[id]')].map((node) => node.id);
+    expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
+
+    const refs = [...document.querySelectorAll('[aria-controls], [aria-labelledby]')].flatMap(
+      (node) =>
+        ['aria-controls', 'aria-labelledby']
+          .map((attr) => node.getAttribute(attr))
+          .filter((value): value is string => value !== null)
+          .flatMap((value) => value.split(/\s+/)),
+    );
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      const matches = ids.filter((id) => id === ref);
+      expect(matches, `reference ${ref}`).toHaveLength(1);
+    }
+    second.unmount();
+  });
+
+  it('keeps focus lane targets per strip, so a key on one strip never moves focus to another', async () => {
+    const page = await open('#n=project:alpha%2Fapp:course');
+    const route = page.router.getRoute();
+    if (route.view !== 'project') throw new Error('the fixture route is not a project view');
+    const second = render(
+      <ShellContext.Provider value={page.shell}>
+        <ProjectTabs route={{ ...route, tab: 'decisions' }}>{(tab) => <p>{tab}</p>}</ProjectTabs>
+      </ShellContext.Provider>,
+    );
+    const [firstList, secondList] = screen.getAllByRole('tablist');
+    if (!firstList || !secondList) throw new Error('two tab strips must be mounted');
+    // Home on the first strip focuses its own first tab. With one shared key, the second strip's
+    // registration would have taken the entry and focus would land on the second strip's Now tab.
+    const firstCourse = within(firstList).getByRole('tab', { name: /^Course/ });
+    fireEvent.keyDown(firstCourse, { key: 'Home' });
+    expect(document.activeElement).toBe(within(firstList).getByRole('tab', { name: /^Now/ }));
+    expect(document.activeElement).not.toBe(within(secondList).getByRole('tab', { name: /^Now/ }));
+    // And End on the second strip stays on the second strip.
+    const secondDecisions = within(secondList).getByRole('tab', { name: /^Decisions/ });
+    fireEvent.keyDown(secondDecisions, { key: 'End' });
+    expect(document.activeElement).toBe(within(secondList).getByRole('tab', { name: /^Console/ }));
+    second.unmount();
   });
 });

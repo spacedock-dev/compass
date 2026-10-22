@@ -36,7 +36,6 @@ import {
   READ_MODEL,
   READ_NEVER,
   READ_NOT_READ,
-  READ_SCOPE,
   READ_SESSION,
   READ_SUMMARY,
   RESULT_CANT_TELL,
@@ -47,6 +46,7 @@ import {
   RESULT_NOT_ACCURATE_HINT,
   RESULT_NOTHING_FOUND,
   RESULT_UNMARK,
+  readScopeLine,
   unloadedCites,
 } from './sentences';
 import type { SteerSlot } from './ReadingControl';
@@ -439,7 +439,7 @@ function Baseline({ shape, arrived }: { readonly shape: Shape; readonly arrived:
           .join(' · ');
   const lines = shape.readClauses.filter(([label]) => intentLabel(label, 0) !== 'Goal').length;
   const session = [
-    READ_SCOPE[shape.scope] ?? shape.scopeText,
+    readScopeLine(shape.scope, shape.scopeText),
     ...readSentences(shape.cutoff),
     arrived,
   ].filter(Boolean);

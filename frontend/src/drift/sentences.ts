@@ -162,6 +162,12 @@ export const READ_SCOPE: Readonly<Record<string, string>> = {
   'last-turn': 'Everything up to the last finished turn.',
   withdrawn: 'The session end this analysis relied on is no longer reported.',
 };
+/* The scope arrives in the stored reading, so a name the table does not list (or one inherited from
+   Object.prototype, such as "constructor") falls back to the producer's own words rather than reading the
+   prototype. */
+export function readScopeLine(scope: string, fallback: string): string {
+  return Object.hasOwn(READ_SCOPE, scope) ? (READ_SCOPE[scope] as string) : fallback;
+}
 export const READING_FINISHED = 'The analysis finished. Its result is in the Drift section.';
 
 export const STEER_BY_HAND = 'Raised to you and nowhere else.';
