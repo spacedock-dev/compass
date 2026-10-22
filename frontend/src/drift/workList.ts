@@ -18,6 +18,7 @@ import {
   sessionStop,
   type Row,
 } from '../observed';
+import { PROMPT_SOURCES } from '../sessions/intent';
 import { harnessLabels } from '../sessions/rows';
 import { readingRoute } from './route';
 import { WORK_AS_REPORTED, WORK_READ_FROM, WORK_HARNESSES } from './sentences';
@@ -500,10 +501,7 @@ export function workList(input: WorkListInput): WorkList {
      for typed words, the prompt itself for adopted ones. A window at the save time is typed words with no
      earlier message, and nothing is expected there. */
   const promptSource = Boolean(
-    annotation &&
-      ['latest-prompt', 'first-prompt', 'chosen-prompt'].includes(
-        String(annotation['goal_source']),
-      ),
+    annotation && PROMPT_SOURCES.includes(String(annotation['goal_source'])),
   );
   const saved = nextNumber(annotation?.['at']);
   const expected = opened !== null && (promptSource || (saved !== null && opened < saved));

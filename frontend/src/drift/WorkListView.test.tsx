@@ -204,4 +204,29 @@ describe('the session activity list', () => {
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(row?.querySelector('[data-next-finding-entry]')).not.toBeNull();
   });
+
+  it('reads an adopted /goal as a prompt source when placing the window anchor, as it does a prompt', async () => {
+    const anchor = async (goalSource: string): Promise<string> => {
+      const page = mountDrift({
+        facts: [fact('p1', 900), fact('p2', 920)],
+        session: {
+          annotation_window_start: 800,
+          annotation_at: 800,
+          annotation_goal_saved_at: 800,
+          annotation_goal_source: goalSource,
+          annotation_reading_count: 0,
+        },
+      });
+      await page.settle();
+      await page.settle();
+      const text = document.body.textContent ?? '';
+      page.unmount();
+      return text.includes('no longer reaches back to where your intent’s window opens')
+        ? 'anchor'
+        : '';
+    };
+    expect(await anchor('first-prompt')).toBe('anchor');
+    expect(await anchor('session-goal')).toBe('anchor');
+    expect(await anchor('typed')).toBe('');
+  });
 });
