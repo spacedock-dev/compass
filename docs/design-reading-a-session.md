@@ -2746,7 +2746,33 @@ example `.claude/worktrees/<name>/src/m.py`, now publishes with that prefix. The
 folder share counts it as outside a named folder such as `src`, since the path no longer starts with
 `src`. That follows from keeping distinct checkouts distinct: two worktrees writing `src/m.py` are
 two files. A checkout outside the session directory is counted and not published, as any write
-outside it is. The share is not adjusted for worktrees here.
+outside it is. The share is not yet adjusted for worktrees; the 2026-10-21 ruling below decides how it will be.
+
+### Amended 2026-10-21 (owner): a worktree checkout counts as its folder inside it
+
+The question was whether a write in an isolation worktree under the session directory counts against
+the session's named folders (a), counts against the same folder inside its checkout (b), or is weighed
+separately (c). The owner chose (b).
+
+What it means. The published path keeps its prefix: `.claude/worktrees/<name>/src/m.py` is still the
+written path a reader sees under "Where the work went". Only the live folder share changes. Before
+testing a path against a named folder, the leading `.claude/worktrees/<name>/` is removed, so that
+write reads as `src/m.py` and counts inside `src`. A write in the same worktree to `web/m.py` still
+counts outside `src`, because it is outside the folder in its checkout too.
+
+Why (b). The subagent is doing the same work in the same folder, in its own copy of the tree. Counting
+it outside `src` raised the live share for delegated work that stayed where the intent named, which is
+the miscount this ruling corrects. Separate weighing (c) would add a state the live estimate and the
+rules must read, for no change in what a reader can act on. Counting it as (a) keeps the published
+prefix's error in the share.
+
+What stands. A checkout outside the session directory is still counted in `outside_paths` and never
+published. Two worktrees writing `src/m.py` are still two files; both count inside `src`, and the
+share does not de-duplicate them. The ruling applies to the folder share only and to no other rule.
+This record lands the ruling first. The code follows in a separate pull request: `levels.inside`
+will own the prefix. Until then the two tests that check it, `TheWorktreeSubagentWriteTest` and
+`test_a_worktree_checkout_write_is_read_inside_its_checkout`, are marked expected-to-fail, and the
+live share still counts a worktree write to a named folder as outside it.
 
 ### Amended 2026-10-14 (owner): a write outside a named folder does not settle a line
 
@@ -5070,7 +5096,7 @@ The owner's 2026-10-06 request for plain explanations and evidence times superse
 215 words outside field values. The canonical partial-departure fixture keeps its coverage
 limits visible and has a 295-word ceiling, replacing its earlier 270. The unchanged
 nondeparture fixtures retain 175. DEC-27 moves the idle explanation to the how-to popup;
-its opened body has a 150-word ceiling, including the board-derived limit line, replacing the 85-word idle explanation ceiling. HowTo.test.tsx and popover-continuity.mjs assert it. The historical ceilings above record
+its opened body has a 150-word ceiling, including the board-derived limit line, replacing the 85-word idle explanation ceiling. HowTo.test.tsx asserts it on the minimal payload; the real session page's how-to measures over it (178 words) and is a known follow-up. The historical ceilings above record
 what was agreed then; this amendment does not rewrite them. These are regression ceilings for
 those two canonical examples, not universal reading budgets or runtime citation limits. A
 valid reading with two or more citations keeps every surviving support and its recorded times,
