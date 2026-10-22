@@ -5451,6 +5451,43 @@ and offers the goal when it can tie it to the reader's own words.
   for the reason the amendment above gives. Rejected: running it unasked on open. The owner ruled a reader-started
   call, like Analyze drift.
 
+### Amended 2026-10-22: a goal met verdict is a claim
+
+DRC-4948, owner ruling of the same date. When a Claude Code session ran with `/goal`, its evaluator can write a
+`met` verdict. Compass shows that verdict and checks it, and relies on its own reading.
+
+- The row publishes the latest `met: true` verdict on the goal it belongs to, as `session_goal.verdict`
+  (`{met, at, reason}`). The key is absent before the evaluator decides, so no goal carries an empty one, and a
+  later `/goal` or a clear takes it away with the goal it was about. The reason is the evaluator model's own
+  sentence, masked, folded to one line and cut at 500 characters with an ellipsis. A not-met verdict is not
+  published: its shape was never captured (`docs/captures/claude/goal-2.1.308-macos.jsonl` lists it as not
+  captured), and a shape guessed at here would be a measurement the capture does not hold.
+- The card says it as the harness's claim, in the reader's words: "Claude Code marked this goal met at 16:44",
+  under the label "The harness's claim", with the reason quoted. It is drawn from the row alone, so a verdict
+  with no analysis yet reads as the claim with a line saying nothing has checked it and no level is implied.
+- The analysis tests the claim the way it tests an agent saying a task is done. The test is code over the
+  recorded writes and checks (`reading.check_goal_verdict`), never a model call, and it reads only the record
+  from the goal's own set time. The facts the reason cites are the files it names and the kinds of check it says
+  passed. A cited file recorded as written, or a claimed kind of check that passed, at or before the verdict
+  **agrees**, and a recorded fact that undoes it **disputes**: a cited file written again after the verdict, or
+  a check of a claimed kind whose latest run failed and that no later whole-suite run before the verdict
+  superseded. A dispute outweighs what agrees. Nothing found, or a reason that names nothing checkable, is
+  **unconfirmed**, and never disputed, because the listing is capped and absence of a write is not
+  contradiction (rule 3).
+- The result is stored beside the criteria as `goal_verdict` (`{at, check, why, cites}`), not among them. `at`
+  is the verdict's own time, so a reading that predates a verdict, or carries no test, leaves it unchecked and
+  the card says to analyze again. `check` and `why` are closed tokens; the page owns the sentences, as it does
+  for a criterion's `why`, and a stored value outside the tokens refuses the reading whole.
+- The verdict never lowers a level and never counts as a passing check. The producer builds the criteria
+  without reading it, and the check is not in `Recorded`, so nothing that cites a check can cite it. Where
+  Compass disagrees the card says "Compass disputes it", and "Compass's own reading stands": the level shown is
+  the analysis's and nothing else's.
+- Rejected: a model call to judge the reason. The reason is already a small model's summary, and a second
+  model reading it would add a reading of a reading. Rejected: reading an absent cited fact as a dispute. It
+  would turn a capped listing, or a file that existed before the session, into an accusation. Rejected:
+  letting a disputed verdict raise the level. A level rests on departures the record shows, and a claim the
+  record contradicts is a caution on the claim, as a contradicted agent claim is.
+
 ### The starting definitions
 
 These are what DRC-4692 validates, not a measured result. Medium: a pass is followed by writes, or

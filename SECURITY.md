@@ -3325,9 +3325,19 @@ is published as `session_goal`, `{text, at}`, masked by the same prose masking a
 gets and folded to one line, and a condition over 2,000 characters publishes nothing rather than an
 excerpt. A condition longer than the Goal field holds (240 characters) also carries `offered`, the
 bounded excerpt an adoption stores, and `cut: true`, so the page marks it cut and an adoption names
-exactly the words the store keeps; a shorter one carries neither key. A subagent's record is never the session's goal, and no verdict text (the evaluator's
-reason) is read. Like a first prompt it is not in session history, and it is stored only if the
-reader adopts it as their goal under the source token `session-goal`.
+exactly the words the store keeps; a shorter one carries neither key. A subagent's record is never the session's goal. Once the evaluator has decided, the latest `met: true`
+verdict joins the goal as `verdict`, `{met, at, reason}`. The reason is the evaluator model's own
+sentence, so it gets the same prose masking, is folded to one line and is cut at 500 characters with an
+ellipsis. The page draws it quoted, as text, under the label "The harness's claim", and never as Compass's
+own words. A not-met verdict is not read. Like a first prompt the goal is not in session history, and it is
+stored only if the reader adopts it as their goal under the source token `session-goal`.
+
+The verdict is a claim and Compass tests it. The test is code over the writes and checks the record already
+holds, with no model call and nothing new sent anywhere. It is stored beside a reading's criteria as
+`goal_verdict`, three closed values and a list of at most three fact ids, and a stored value outside them
+refuses the reading whole. The verdict never lowers a drift level and never counts as a passing check. A
+reason that names nothing the record can show is "unconfirmed", never "disputed", because a capped listing
+cannot prove absence.
 
 The revision number beside them, `annotation_revision`, is in the record and not on this list. It
 is an integer the board derives, not text anybody typed.

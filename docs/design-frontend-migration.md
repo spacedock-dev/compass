@@ -883,6 +883,10 @@ had no such field, so both differentials drop it before a recorded answer's key 
 (`withoutKey` in `legacy.test.helper.ts`). The page still loads no record page by itself
 ([reader state](design-reader-state.md#the-inventory)).
 
+One more departure, 2026-10-22. The shape carries `goalVerdict`, Compass's test of the harness's goal-met verdict
+(`reading.goal_verdict`), which the retired page never had, so `shape.differential.test.ts` and
+`result.differential.test.ts` drop it with `withoutKey` as they drop `unloaded`. No recorded answer changes.
+
 Departures the drift proof restates, 2026-10-21, with the recording unchanged. The retired page printed
 "N of M left today" under each reading; commit 4f6512bb removed that line, and under the cap the page prints no
 budget (`ReadingResult.test.tsx`). `session-deviations.mjs` retracts the sentence from the recorded side of the
