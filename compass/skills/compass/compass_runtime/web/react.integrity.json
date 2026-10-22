@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2096951,
+    "bytes": 2097643,
     "file": "react.html",
-    "sha256": "f10b75726b8257a5576a36ce2827a2d2b26a20579ac8c5abf863acea4fab8512"
+    "sha256": "d0e375bc9c819925ba007de44a64cb50ac8554032f7e54ac50ca91355c59fdaf"
   },
   "format": 1,
   "frontend": "react",
@@ -395,7 +395,7 @@
       },
       {
         "file": "frontend/src/controls/Disclosure.tsx",
-        "sha256": "06b6453c4b1d8ea0e25fde99e4dbdd18363a87766059564c9d0b64a042840cbb"
+        "sha256": "3a0659ed45b312b7d69072f20d24ec4b67e747f6bce7c8213d730a6f37d7e06c"
       },
       {
         "file": "frontend/src/controls/DraftField.tsx",
@@ -759,7 +759,7 @@
       },
       {
         "file": "frontend/src/intent/HowTo.tsx",
-        "sha256": "d5e5d9e2bb1cac373c2a0768a72cd4d5dc1e9e57cbe32e3838e27bec3be9040c"
+        "sha256": "b68f25fdfe3a8dfd5663669cbb4b459c1f6f407ed00cd1c434768c8314bf4c94"
       },
       {
         "file": "frontend/src/intent/IntentLog.tsx",
@@ -771,7 +771,7 @@
       },
       {
         "file": "frontend/src/intent/IntentSection.tsx",
-        "sha256": "4b273d1eace2e8770ec693a029972e47ccde70c4156816931e31597b379ad817"
+        "sha256": "15ae6f7dc08c3ac4fed11f19693dbe8fb199556e2b5e5455d69004835f0f5e4b"
       },
       {
         "file": "frontend/src/intent/LiveMonitorSwitch.tsx",
@@ -779,7 +779,7 @@
       },
       {
         "file": "frontend/src/intent/OutcomeLines.tsx",
-        "sha256": "e4d11b127ef503d730e6938374c3a9460ee1d3390c8a1c2f1ffe8fdec4b60b5b"
+        "sha256": "64b9786205643fcf9afea9ff9703ab345a90b90ac379b82332449d4aa58c3276"
       },
       {
         "file": "frontend/src/intent/PromptSelect.tsx",
