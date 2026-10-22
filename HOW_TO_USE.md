@@ -426,10 +426,12 @@ press it sends the prompts you typed in that session to the same reader Analyze 
 against the same daily limit, and does nothing while model calls are paused. If your own words
 state a clear end state it fills the box, marked **Goal detected**, with the prompts it quotes
 linked to their entries in Full activity and the quoted words listed beneath. Otherwise it says no clear goal was found and leaves the
-box as it was. Nothing is saved until you press **Save intent**. When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, the Drift card says so as the harness's claim, with the time and the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. The claim never changes the drift level and never counts as a passing check. An unavailable prompt time means you must type a goal instead. The notice is remembered
+box as it was. Nothing is saved until you press **Save intent**. An unavailable prompt time means you must type a goal instead. The notice is remembered
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
+When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, the Drift card says so as the harness's claim, with the time and the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. The claim never changes the drift level and never counts as a passing check.
+
 Use **Pause model calls** on a session page, under **Drift settings** at the top of the Drift card (it is also in the **What is sent** popover), to pause every model call. While paused, **Resume model calls** stands beside Drift settings. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
 read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever

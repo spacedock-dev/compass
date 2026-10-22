@@ -3329,7 +3329,8 @@ exactly the words the store keeps; a shorter one carries neither key. A subagent
 verdict joins the goal as `verdict`, `{met, at, reason}`. The reason is the evaluator model's own
 sentence, so it gets the same prose masking, is folded to one line and is cut at 500 characters with an
 ellipsis. The page draws it quoted, as text, under the label "The harness's claim", and never as Compass's
-own words. A not-met verdict is not read. Like a first prompt the goal is not in session history, and it is
+own words. A not-met verdict is not read: the evaluator repeats it on every iteration while the goal is open, so it
+is progress rather than an end state, and the card reports only the end state. Like a first prompt the goal is not in session history, and it is
 stored only if the reader adopts it as their goal under the source token `session-goal`.
 
 The verdict is a claim and Compass tests it. The test is code over the writes and checks the record already

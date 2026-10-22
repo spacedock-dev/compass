@@ -5460,8 +5460,8 @@ DRC-4948, owner ruling of the same date. When a Claude Code session ran with `/g
   (`{met, at, reason}`). The key is absent before the evaluator decides, so no goal carries an empty one, and a
   later `/goal` or a clear takes it away with the goal it was about. The reason is the evaluator model's own
   sentence, masked, folded to one line and cut at 500 characters with an ellipsis. A not-met verdict is not
-  published: its shape was never captured (`docs/captures/claude/goal-2.1.308-macos.jsonl` lists it as not
-  captured), and a shape guessed at here would be a measurement the capture does not hold.
+  published: the evaluator repeats it on every iteration while the goal is open (a real session holds
+  more than twenty), so it is progress rather than an end state, and the card reports only the end state.
 - The card says it as the harness's claim, in the reader's words: "Claude Code marked this goal met at 16:44",
   under the label "The harness's claim", with the reason quoted. It is drawn from the row alone, so a verdict
   with no analysis yet reads as the claim with a line saying nothing has checked it and no level is implied.
