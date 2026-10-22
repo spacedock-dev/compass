@@ -50,7 +50,6 @@ import {
   READ_MODEL,
   READ_NEVER,
   READ_NOT_READ,
-  READ_SCOPE,
   READ_SESSION,
   READ_SUMMARY,
   RESULT_CANT_TELL,
@@ -60,6 +59,7 @@ import {
   RESULT_NOT_ACCURATE_HINT,
   RESULT_NOTHING_FOUND,
   readIdle,
+  readScopeLine,
   SCOPE_TEXT_IDLE,
   unloadedCites,
 } from './sentences';
@@ -678,7 +678,7 @@ function Baseline({
      2026-10-20). */
   const level = model.analysis;
   const session = [
-    idleLine(shape, raw) || READ_SCOPE[shape.scope] || shape.scopeText,
+    idleLine(shape, raw) || readScopeLine(shape.scope, shape.scopeText),
     ...readSentences(shape.cutoff),
     level?.range ? `Entries read: ${level.range}.` : '',
     level?.reasons?.first ?? '',

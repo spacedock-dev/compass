@@ -288,3 +288,35 @@ export const WholeTurnFolded: Story = {
     await expect(trigger.querySelector('[data-check-run-turn]')).toBeVisible();
   },
 };
+
+const NOT_RECORDED_REASONS = [
+  ['several_checks', 'several checks in one call'],
+  ['directory_not_placeable', 'directory not placeable'],
+  ['piped_beside_other_commands', 'output is piped beside other commands'],
+] as const;
+export const NotRecordedReasons: Story = {
+  render: () => (
+    <TooltipProvider delay={0}>
+      <div role="list">
+        {NOT_RECORDED_REASONS.map(([token, words], index) => (
+          <div key={token} role="listitem" data-story-entry={token}>
+            <ActivityHead row={activityRow(index + 1, { resultReason: token })} />
+            <p>{`Ran, result not recorded: ${words}`}</p>
+          </div>
+        ))}
+      </div>
+    </TooltipProvider>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByLabelText('Ran, result not recorded: several checks in one call'),
+    ).toHaveTextContent('No result: several checks in one call');
+    await expect(
+      canvas.getByLabelText('Ran, result not recorded: directory not placeable'),
+    ).toHaveTextContent('No result: directory not placeable');
+    await expect(
+      canvas.getByLabelText('Ran, result not recorded: output is piped beside other commands'),
+    ).toHaveTextContent('No result: output is piped beside other commands');
+  },
+};

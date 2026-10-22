@@ -1,32 +1,44 @@
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useFocusKey } from '../controls/useFocusKey';
 import { cockpitTabs, type ProjectRoute, type ProjectTab } from '../router/grammar';
 import { useNavigate, useShell } from './context';
 
 const label = (tab: string): string => (tab ? (tab[0] ?? '').toUpperCase() + tab.slice(1) : 'Work');
 
+/* Every mounted strip takes its own prefix, so two project views on one page never share a tab or panel id.
+   A counter rather than `useId`: `useId` is unique only within one React root, and two views mounted into
+   separate roots would otherwise generate the same ids. */
+let mountedStrips = 0;
+
+/* The focus-lane key of one tab in one strip. The lane keeps one entry per key, so two strips sharing a key
+   would overwrite each other's entry and focus would land on whichever registered last. */
+const focusKey = (prefix: string, tab: string): string => `${prefix}:cockpit-tab:${tab}`;
+
 function Tab({
+  prefix,
   tab,
   selected,
   cue,
 }: {
+  readonly prefix: string;
   readonly tab: ProjectTab;
   readonly selected: boolean;
   readonly cue: ReactNode;
 }) {
   const { controls } = useShell();
-  const ref = useFocusKey<HTMLButtonElement>(controls.focusLane, `cockpit-tab:${tab}`);
+  const ref = useFocusKey<HTMLButtonElement>(controls.focusLane, focusKey(prefix, tab));
   return (
     <TabsTrigger
       value={tab}
       ref={ref}
       type="button"
       role="tab"
-      id={`next-cockpit-tab-${tab}`}
+      id={`${prefix}-tab-${tab}`}
       data-next-cockpit-action="tab"
       data-arg={tab}
-      aria-controls={`next-cockpit-panel-${tab}`}
+      // Only the tab whose panel is drawn names it: an unselected tab would point at an element that is not there.
+      aria-controls={selected ? `${prefix}-panel-${tab}` : undefined}
       aria-selected={selected}
       tabIndex={selected ? 0 : -1}
     >
@@ -52,6 +64,10 @@ export function ProjectTabs({
 }) {
   const navigate = useNavigate();
   const { controls } = useShell();
+  const [prefix] = useState(() => {
+    mountedStrips += 1;
+    return `next-cockpit-${String(mountedStrips)}`;
+  });
   const tabs = cockpitTabs(route.focus);
   const selected = route.tab && tabs.includes(route.tab) ? route.tab : 'now';
   const open = (tab: ProjectTab) =>
@@ -74,17 +90,23 @@ export function ProjectTabs({
           event.preventDefault();
           event.preventBaseUIHandler();
           open(target);
-          controls.focusLane.focus(`cockpit-tab:${target}`);
+          controls.focusLane.focus(focusKey(prefix, target));
         }}
       >
         {tabs.map((tab) => (
-          <Tab key={tab} tab={tab} selected={tab === selected} cue={cue ? cue(tab) : null} />
+          <Tab
+            key={tab}
+            prefix={prefix}
+            tab={tab}
+            selected={tab === selected}
+            cue={cue ? cue(tab) : null}
+          />
         ))}
       </TabsList>
       <div
         role="tabpanel"
-        id={`next-cockpit-panel-${selected}`}
-        aria-labelledby={`next-cockpit-tab-${selected}`}
+        id={`${prefix}-panel-${selected}`}
+        aria-labelledby={`${prefix}-tab-${selected}`}
       >
         {children(selected)}
       </div>

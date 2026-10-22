@@ -204,6 +204,12 @@ export const readIdle = (at: string): string =>
   at
     ? `Read up to the last recorded entry at ${at}; the last turn was not recorded as finished.`
     : 'Read up to the last recorded entry; the last turn was not recorded as finished.';
+/* The scope arrives in the stored reading, so a name the table does not list (or one inherited from
+   Object.prototype, such as "constructor") falls back to the producer's own words rather than reading the
+   prototype. */
+export function readScopeLine(scope: string, fallback: string): string {
+  return Object.hasOwn(READ_SCOPE, scope) ? (READ_SCOPE[scope] as string) : fallback;
+}
 export const READING_FINISHED = 'The analysis finished. Its result is in the Drift section.';
 
 export const STEER_BY_HAND = 'Raised to you and nowhere else.';

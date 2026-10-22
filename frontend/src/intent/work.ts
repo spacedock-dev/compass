@@ -42,6 +42,8 @@ export interface WorkEntry {
   readonly work: boolean;
   readonly result: string;
   readonly resultSource: string;
+  /** Why a rule withheld the result, as the collector's closed token; empty where no rule did. */
+  readonly resultReason: string;
   readonly earlierFailed: boolean;
   readonly beforeLastChange: boolean;
   readonly changedAfter: boolean;
@@ -113,6 +115,7 @@ export function workEntries(session: Row, semantic: unknown): WorkEntry[] {
         work: workOn(session['harness'], fact['type']),
         result: String(fact['result'] || ''),
         resultSource: String(fact['result_source'] || ''),
+        resultReason: String(fact['result_reason'] || ''),
         earlierFailed: fact['earlier_failed'] === true,
         beforeLastChange: fact['before_last_change'] === true,
         changedAfter: fact['changed_after'] === true,

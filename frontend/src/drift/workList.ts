@@ -55,6 +55,14 @@ const CHECK_RESULTS: Readonly<Record<string, string>> = {
   'failed marker': 'failed, per a failure line in its output',
 };
 
+/* Why a rule withheld a check's result, in the reader's words, keyed by the closed token the collector publishes
+   as `result_reason` (`CHECK_NOT_RECORDED_REASONS` in project_context.py). `vocabulary.json` pins the two together. */
+export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
+  several_checks: 'several checks in one call',
+  directory_not_placeable: 'directory not placeable',
+  piped_beside_other_commands: 'output is piped beside other commands',
+};
+
 /* A check's or a file's own line in parts: who, what it was, and the notes about its result. The row draws the
    notes at the right edge, as a reader's flag is, and `toolReportLine` is the same words in one line. */
 export type CheckResult = 'unrecorded' | 'passed' | 'failed';
@@ -110,7 +118,12 @@ export function toolReportParts(entry: WorkEntry): {
         ? 'passed'
         : 'unrecorded';
   const phrase = recorded ? (CHECK_RESULTS[key] as string) : 'ran, result not recorded';
-  const notes = [phrase];
+  const reason =
+    !recorded && Object.hasOwn(CHECK_NOT_RECORDED_REASONS, entry.resultReason)
+      ? (CHECK_NOT_RECORDED_REASONS[entry.resultReason] as string)
+      : '';
+  const notes = reason ? [phrase, reason] : [phrase];
+  const words = notes.join(': ');
   if (entry.earlierFailed) notes.push('an earlier run failed');
   if (entry.beforeLastChange) notes.push('before the last change');
   return {
@@ -122,7 +135,12 @@ export function toolReportParts(entry: WorkEntry): {
       stale: Boolean(entry.beforeLastChange),
       earlierFailed: Boolean(entry.earlierFailed),
       marks: [
-        { ...RESULT_MARKS[result], words: phrase[0]?.toUpperCase() + phrase.slice(1) },
+        /* The reason is part of the row's own mark, so a reader sees why there is no result without opening it. */
+        {
+          ...RESULT_MARKS[result],
+          short: reason ? `${RESULT_MARKS[result].short}: ${reason}` : RESULT_MARKS[result].short,
+          words: words[0]?.toUpperCase() + words.slice(1),
+        },
         ...(entry.earlierFailed ? [EARLIER_FAILED_MARK] : []),
         ...(entry.beforeLastChange ? [STALE_MARK] : []),
       ],

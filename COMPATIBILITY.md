@@ -144,7 +144,7 @@ Each release attaches `compass_<version>_<os>_<arch>.tar.gz` for `darwin` and `l
 and `amd64`, with a `checksums.txt` of their SHA-256 sums. One archive unpacks to a `compass/`
 directory whose `compass` program carries its own Python interpreter and the dashboard, built with
 [PyInstaller](https://pyinstaller.org/en/stable/), so nothing needs installing beside it. It takes
-the same options as `server.py`, daemon mode included.
+the same options as `server.py`, daemon mode included. `compass --version` prints the release the archive was built for.
 
 The release workflow builds under Python 3.12, so that is the interpreter in every binary. The 3.11
 floor above governs running `server.py` from source or a plugin; it does not constrain the binary,

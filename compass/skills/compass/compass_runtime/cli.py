@@ -54,6 +54,10 @@ JSON at /api/data.
 """
 
 LAUNCHER_PATH = Path(__file__).resolve().parents[1] / "server.py"
+# scripts/package-cli.sh writes the release version here. The binary is built before the release
+# job bumps the manifests, so the plugin manifest still names the previous release at that point.
+BUNDLED_VERSION_PATH = Path(__file__).with_name("release-version.txt")
+PLUGIN_MANIFEST_PATH = Path(__file__).resolve().parents[3] / ".claude-plugin" / "plugin.json"
 TOOL_OUTPUT_ENV = "COMPASS_ALLOW_TOOL_OUTPUT"
 
 
@@ -201,12 +205,38 @@ def claude_reading_model_arg(value: str) -> str:
         raise argparse.ArgumentTypeError(msg) from error
 
 
+def release_version() -> str | None:
+    """The Compass version: the stamp a standalone binary carries, else the plugin manifest."""
+    try:
+        stamped = BUNDLED_VERSION_PATH.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        stamped = ""
+    if stamped:
+        return stamped
+    try:
+        manifest = json.loads(PLUGIN_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        return None
+    version = manifest.get("version") if isinstance(manifest, dict) else None
+    return version if isinstance(version, str) and version else None
+
+
+def print_version() -> int:
+    version = release_version()
+    if version is None:
+        print("Compass: this installation does not record its version", file=sys.stderr)
+        return 1
+    print(version)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The CLI surface. argparse owns --help and its own usage errors."""
     # Abbreviations are off so a removed option stays refused: `--frontend` is a unique prefix of
     # `--frontend-dev-manifest`, and a habit from the retired renderer switch (`--frontend react`)
     # would otherwise be read as a development ticket path instead of an unknown option.
     parser = argparse.ArgumentParser(description=DESCRIPTION, allow_abbrev=False)
+    parser.add_argument("--version", action="store_true", help="print the Compass version and exit")
     parser.add_argument("--port", type=lifecycle.tcp_port, default=4553)
     parser.add_argument(
         "--frontend-dev-manifest",
@@ -842,6 +872,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     lifecycle.unignore_sigterm()
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.version:
+        return print_version()
     # Sampled before the combination check: the start stamp names this process,
     # and must not shift depending on which validation ran first.
     started = time.time()

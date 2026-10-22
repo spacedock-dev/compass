@@ -23,6 +23,7 @@ import { sessionDeviations } from './support/session-deviations.mjs';
  * matches.
  */
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -83,6 +84,9 @@ async function step(name, run) {
 const E = encodeURIComponent;
 const FRAGMENT = `#n=session:${E('w/alpha')}:${HARNESS}:${E(SID)}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/* The card keys commit 4f6512bb and the send disclosure reworked after these recordings: the mark and its undo, the
+   "What the analysis read" disclosure and the "What is sent" disclosure. Each step asserts its own React words. */
+const REWORKED = ['text', 'buttons'];
 
 /* ---- what a reader can read, reduced to data. These run IN the page, so they are self-contained. ---- */
 const summarizeCard = () => {
@@ -166,9 +170,18 @@ const summarizeCard = () => {
       else if (job || consent) (job || consent).after(row);
     }
   }
+  // The departures section is not always a direct child of the card (the React page wraps it), so the
+  // copied node goes before the card's child that holds it, never before a grandchild insertBefore rejects.
+  const beforeDepartures = (node) => {
+    const departures = card.querySelector('.next-cockpit-departures');
+    const anchor = departures
+      ? [...card.children].find((child) => child.contains(departures))
+      : null;
+    card.insertBefore(node, anchor ?? null);
+  };
   for (const selector of ['.next-cockpit-conflict', '.next-session-drift-caveats']) {
     const node = copy(selector);
-    if (node) card.insertBefore(node, card.querySelector('.next-cockpit-departures'));
+    if (node) beforeDepartures(node);
   }
   const button = (b) => [
     norm(b),
@@ -231,10 +244,13 @@ const summarizeCard = () => {
             const flags = [...head.querySelectorAll('[data-next-entry-flag]')];
             head.replaceChildren(document.createTextNode(words), ...flags);
             const add = body.querySelector('[data-next-cockpit-action="direction-add"]');
-            if (time) body.insertBefore(time, add);
+            // The add control sits inside a wrapper on the React page, so the restated order puts each node before
+            // the body's child that holds it (insertBefore rejects a grandchild).
+            const before = add ? [...body.children].find((child) => child.contains(add)) : null;
+            if (time) body.insertBefore(time, before ?? null);
             if (lastTurn) {
               lastTurn.textContent = 'from the last turn';
-              body.insertBefore(lastTurn, add);
+              body.insertBefore(lastTurn, before ?? null);
             }
           } else {
             // The same narrow recorded-side projection as recorded-activity.ts.
@@ -355,9 +371,12 @@ try {
   const react = await newPage();
 
   /* ===================== DIFFERENTIAL: the card, state by state ===================== */
-  async function compare(label, make, { text = true, ready = null } = {}) {
-    const old = golden.observe(`card: ${label}`);
-    const recordUnread = /has not been read yet|record is unread rather than empty/.test(old.work);
+  async function compare(label, make, { skip = [], ready = null, restate = null } = {}) {
+    const raw = golden.observe(`card: ${label}`);
+    const recordUnread = /has not been read yet|record is unread rather than empty/.test(raw.work);
+    // The recording is what the retired page said. `restate` changes only the words the React page is held to
+    // differently, and `skip` names the keys a later change reworked; the step asserts those words itself.
+    const old = restate ? restate(raw) : raw;
     const g = await clockOf();
     await setState(react, (o) => make(g, o));
     const draw = async (o) => {
@@ -367,22 +386,23 @@ try {
       return read(o, { expectUnread: recordUnread });
     };
     const mine = norm(await draw(react));
+    const differing = [];
     for (const key of Object.keys(old)) {
-      if (!text && key === 'text') continue;
+      if (skip.includes(key)) continue;
       if (typeof old[key] === 'string' && typeof mine[key] === 'string' && old[key] !== mine[key]) {
         let at = 0;
         while (old[key][at] === mine[key][at]) at += 1;
-        assert.fail(
-          `the card differs from the recorded card in ${key} (${label}) at ${at}: recorded ${JSON.stringify(old[key].slice(Math.max(0, at - 60), at + 120))} / react ${JSON.stringify(mine[key].slice(Math.max(0, at - 60), at + 120))}`,
+        differing.push(
+          `${key} at ${at}: recorded ${JSON.stringify(old[key].slice(Math.max(0, at - 60), at + 120))} / react ${JSON.stringify(mine[key].slice(Math.max(0, at - 60), at + 120))}`,
         );
-      }
-      assert.deepEqual(
-        mine[key],
-        old[key],
-        `the card differs from the recorded card in ${key} (${label})`,
-      );
+      } else if (!isDeepStrictEqual(mine[key], old[key])) differing.push(key);
     }
-    return old;
+    assert.ok(
+      differing.length === 0,
+      `the card differs from the recorded card (${label}): ${differing.join('; ')}`,
+    );
+    // What the React page reads, so a caller's assertion is about the page; equal to the recording wherever compared.
+    return mine;
   }
 
   const claude = (g, extra = {}) => ({
@@ -557,7 +577,9 @@ try {
   await step(
     'a stored result: the answer, each line by the list’s number, where the work went',
     async () => {
-      const state = await compare('stored result', (g) => stored(g));
+      // The card's text and buttons are not compared: the mark, its undo and the "What the analysis read" disclosure
+      // were reworked after this recording (commit 4f6512bb). ReadingResult.test.tsx holds the result's states.
+      const state = await compare('stored result', (g) => stored(g), { skip: REWORKED });
       assert.match(state.text, /Departs from your intent1 departure/);
       // Sorted as a copy: a golden observation is the stored value itself, and sorting it would change the recording.
       assert.deepEqual([...state.resultStates].sort(), ['consistent', 'departs']);
@@ -569,13 +591,20 @@ try {
   );
 
   await step('a result marked not accurate draws marked, and a withheld one says why', async () => {
-    const marked = await compare('not accurate', (g) =>
-      stored(g, { session: { annotation_not_accurate: true } }),
+    // The text and buttons are not compared: the mark's words were reworked after this recording (commit 4f6512bb).
+    // ReadingResult.test.tsx holds these sentences and DriftAnalysisResult.stories.tsx the mark and its undo.
+    const marked = await compare(
+      'not accurate',
+      (g) => stored(g, { session: { annotation_not_accurate: true } }),
+      {
+        skip: REWORKED,
+      },
     );
     assert.match(
       marked.text,
       /Marked inaccurate\. This analysis no longer sets the drift level or Steer back/,
     );
+    assert.match(marked.text, /Drift level hidden because you marked this analysis inaccurate\./);
     const withheld = await compare('withheld', (g) =>
       claude(g, {
         session: {
@@ -606,21 +635,33 @@ try {
   await step(
     'a reading of earlier words says so, and offers Analyze again in the callout',
     async () => {
-      const state = await compare('superseded', (g) =>
-        stored(g, { session: { annotation_revision: 4, annotation_revision_count: 4 } }),
+      // The text and buttons are not compared: the card's words were reworked after this recording (`Mark as
+      // inaccurate`, `What the analysis read`, commit 4f6512bb). The callout's words and its one Analyze again are
+      // asserted here and in ReadingResult.test.tsx ("says a reading of earlier words is of earlier words").
+      const state = await compare(
+        'superseded',
+        (g) => stored(g, { session: { annotation_revision: 4, annotation_revision_count: 4 } }),
+        { skip: REWORKED },
       );
       assert.deepEqual(state.stale, ['intent']);
+      assert.match(state.text, /Your intent changed after this analysis\./);
       assert.match(state.text, /Revision 4 is current/);
       assert.equal(await react.page.locator('[data-next-cockpit-action="reading-ask"]').count(), 1);
-      const work = await compare('new work', (g) =>
-        stored(g, {
-          facts: [
-            ...RECORD(g),
-            check('c3', g - 100, 'passed'),
-            fact('m1', g - 90, { type: 'agent_message', by: 'agent' }),
-          ],
-        }),
+      const work = await compare(
+        'new work',
+        (g) =>
+          stored(g, {
+            facts: [
+              ...RECORD(g),
+              check('c3', g - 100, 'passed'),
+              fact('m1', g - 90, { type: 'agent_message', by: 'agent' }),
+            ],
+          }),
+        // The activity panel labels an agent message "said" with the speaker beside it, which WorkListView.test.tsx
+        // ("reads Agent said once") holds; the recording says "Agent said". Its count line is asserted below.
+        { skip: [...REWORKED, 'work'] },
       );
+      assert.match(work.work, /4 entries · 1 message the agent wrote/);
       assert.deepEqual(work.stale, ['work']);
       assert.equal(await react.page.locator('[data-next-cockpit-action="reading-ask"]').count(), 1);
       assert.match(work.text, /New work since this analysis/);
@@ -808,19 +849,27 @@ try {
   await step(
     'a later direction is asked about before the press, with Analyze behind Keep',
     async () => {
-      const state = await compare('question', (g) =>
-        claude(g, {
-          facts: [fact('d1', g - 100, { summary: 'Keep the flag off by default.' })],
-          session: { annotation_goal_saved_at: g - 600 },
-        }),
+      // The text and buttons are not compared: the recorded card paints the send disclosure as a sentence under the
+      // buttons, and the page draws it under "What is sent" (DriftReadability.test.tsx).
+      const state = await compare(
+        'question',
+        (g) =>
+          claude(g, {
+            facts: [fact('d1', g - 100, { summary: 'Keep the flag off by default.' })],
+            session: { annotation_goal_saved_at: g - 600 },
+          }),
+        { skip: REWORKED },
       );
       assert.ok(state.buttons.some(([label]) => label === 'Keep my intent and analyze'));
       assert.ok(!state.buttons.some(([label]) => label === 'Analyze drift'));
-      const owed = await compare('question, an Allow owed', (g) =>
-        claude(g, {
-          payload: { reading: FIRST_PRESS },
-          facts: [fact('d1', g - 100, { summary: 'Keep the flag off by default.' })],
-        }),
+      const owed = await compare(
+        'question, an Allow owed',
+        (g) =>
+          claude(g, {
+            payload: { reading: FIRST_PRESS },
+            facts: [fact('d1', g - 100, { summary: 'Keep the flag off by default.' })],
+          }),
+        { skip: REWORKED },
       );
       assert.ok(owed.buttons.some(([label]) => label === 'Keep my intent'));
     },
@@ -829,10 +878,27 @@ try {
   await step(
     'with annotations off the check stays on the page, inert, with its one refusal',
     async () => {
-      const state = await compare('annotations off', (g) =>
-        claude(g, { payload: { annotate: false, reading_check: 'not-run' } }),
+      // The retired page gated the observed record behind annotations, so it said "has not been read yet". The
+      // server publishes the session's context whether annotations are on or not (only the analysis levels are
+      // gated, http_api.py), so this page read the record and its sentence is the one for a read record with no
+      // entry naming this session. That is restated here; the rest of the card is held to the recording.
+      const state = await compare(
+        'annotations off',
+        (g) => claude(g, { payload: { annotate: false, reading_check: 'not-run' } }),
+        {
+          restate: (old) => ({
+            ...old,
+            // The same read record, counted in the session's meta line: no entry names this session.
+            meta: `${old.meta} · 0 entries`,
+            work: old.work.replace(
+              'The observed record for this session has not been read yet.',
+              'No entry in the observed record names this session.',
+            ),
+          }),
+        },
       );
       assert.match(state.text, /Annotations are off for this run/);
+      assert.match(state.work, /^No entry in the observed record names this session\./);
     },
   );
 
@@ -889,17 +955,13 @@ try {
         '(#1 in Compass)',
         "(entry #1 in Compass's activity list)",
       );
-      // The box shows its character count. The recorded page counted the retired name, one letter longer
-      // than Compass, so only that number is restated, from the recorded text itself.
-      const retiredCount = retiredText.length + (retiredText.split('Compass').length - 1);
-      const old = {
-        ...recordedBox,
-        text: recordedBox.text
-          .replace(`${retiredCount}/2000`, `${recordedText.length}/2000`)
-          .replace(retiredText, recordedText),
-      };
+      // Only the box's own keys are compared: the card around it was reworked after this recording (the mark and
+      // its undo, commit 4f6512bb), so its text and buttons are not. SteerBack.test.tsx holds the count and the copy.
       const mine = norm(await read(react));
-      assert.deepEqual(mine, old, 'the steer box differs from the recorded box');
+      for (const key of Object.keys(recordedBox))
+        if (!REWORKED.includes(key))
+          assert.deepEqual(mine[key], recordedBox[key], `the steer box differs in ${key}`);
+      assert.match(mine.text, new RegExp(`${recordedText.length}/2000`));
       const text = await react.page.locator('#next-cockpit-correction').inputValue();
       assert.equal(text, recordedText);
       assert.match(

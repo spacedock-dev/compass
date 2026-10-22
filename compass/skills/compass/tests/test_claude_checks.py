@@ -1870,3 +1870,65 @@ class ACheckCarriesTheTimeItsResultArrived(ClaudeChecksTestCase):
             self.config, str(self.path), SID, until=until
         )
         self.assertEqual(START.timestamp() + 15, facts[0]["result_at"])
+
+
+class WhyACheckHasNoRecordedResult(ClaudeChecksTestCase):
+    """A withheld result names the rule that withheld it, as a closed token on the entry (DRC-4890)."""
+
+    def unflagged_bash(self, command: str, output: str) -> None:
+        # No error flag at all: the output alone would have to speak, so attribution decides.
+        self.session.result(self.session.call("Bash", {"command": command}), output)
+
+    def test_several_checks_in_one_call_publish_that_reason(self) -> None:
+        self.unflagged_bash("pytest -q && ruff check .", "2 failed, 3 passed")
+        checks = self.checks()
+        self.assertEqual(["pytest -q", "ruff check ."], [check["title"] for check in checks])
+        for check in checks:
+            self.assertEqual("not-recorded", check["result"])
+            self.assertEqual("several_checks", check["result_reason"])
+
+    def test_a_directory_the_shell_places_at_run_time_publishes_that_reason(self) -> None:
+        self.unflagged_bash('cd "$REPO" && pytest -q', "2 failed, 3 passed")
+        check = self.only_check()
+        self.assertEqual("not-recorded", check["result"])
+        self.assertEqual("directory_not_placeable", check["result_reason"])
+
+    def test_a_pipe_beside_another_printing_command_publishes_that_reason(self) -> None:
+        self.unflagged_bash(
+            "echo start && pytest -q 2>&1 | tail -3",
+            "FAILED tests/test_retry.py::test_backoff\n2 failed, 3 passed",
+        )
+        check = self.only_check()
+        self.assertEqual("not-recorded", check["result"])
+        self.assertEqual("piped_beside_other_commands", check["result_reason"])
+
+    def test_a_result_the_flag_decides_publishes_no_reason(self) -> None:
+        self.session.bash("pytest -q 2>&1 | tail -3", "2 failed, 3 passed", is_error=True)
+        check = self.only_check()
+        self.assertEqual("failed", check["result"])
+        self.assertNotIn("result_reason", check)
+
+    def test_output_that_records_nothing_is_not_blamed_on_a_rule(self) -> None:
+        # Attribution lifted, this still reads "ran, result not recorded": no rule withholds it.
+        self.unflagged_bash("pytest -q && ruff check .", "collected 5 items\n.....")
+        for check in self.checks():
+            self.assertEqual("not-recorded", check["result"])
+            self.assertNotIn("result_reason", check)
+
+    def test_the_pi_collector_publishes_the_same_reason(self) -> None:
+        runs = project_context._pi_check_runs(
+            "echo start && pytest -q 2>&1 | tail -3",
+            call_key="pi-call-1",
+            at=1.0,
+            result={
+                "status": "exited",
+                "at": 2.0,
+                "tail": "FAILED tests/test_retry.py::test_backoff\n2 failed, 3 passed",
+            },
+            harness="pi",
+            sid=SHORT,
+        )
+        self.assertEqual(1, len(runs))
+        run = runs[0][1]
+        self.assertEqual("not-recorded", run["result"])
+        self.assertEqual("piped_beside_other_commands", run["result_reason"])

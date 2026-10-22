@@ -23,6 +23,7 @@ export function activityRow(
     work: true,
     result: '',
     resultSource: '',
+    resultReason: '',
     earlierFailed: false,
     beforeLastChange: false,
     changedAfter: false,

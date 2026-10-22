@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 import unittest
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 
@@ -915,6 +916,66 @@ class TheRouteTest(_Replay):
         with self.serving() as port:
             focused = self.get(port, f"/api/project-context?project=billing&session=claude:{SHORT}")
         self.assertNotIn("live_levels", focused["sources"]["work"])
+
+
+class TheWorktreeSubagentWriteTest(_Replay):
+    """Ruled 2026-10-21 (owner, DRC-4891): a write in an isolation worktree counts against the
+    folder inside its checkout. The published path keeps the checkout prefix."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.session_dir = Path(self.session.cwd)
+        (self.session_dir / "src").mkdir()
+
+    def delegated_write(self, relative: str, agent_id: str = "a1b2c3d4e5f60718") -> str:
+        """A subagent whose own records are in `.claude/worktrees/agent-a1`, writing `relative`."""
+        worktree = self.session_dir / ".claude" / "worktrees" / "agent-a1"
+        call = self.session.call("Agent", {"description": "Edit", "prompt": "Edit."})
+        sub = Subagent(self.session, agent_id)
+        sub.cwd = str(worktree)
+        sub.prompt("Edit.")
+        sub.edit(str(worktree / relative))
+        sub.save(self.path.with_suffix("") / "subagents" / f"agent-{agent_id}.jsonl")
+        self.session.result(
+            call,
+            [{"type": "text", "text": "Done."}],
+            tool_use_result={"agentId": agent_id, "status": "completed"},
+        )
+        return agent_id
+
+    def live(self) -> levels.Level:
+        """The live level of the one estimate the test runs, read from the spy's return."""
+        seen: list[levels.Level] = []
+        live_level = levels.live_level
+
+        def spy(evidence: levels.Evidence, intent: levels.Intent) -> levels.Level:
+            got = live_level(evidence, intent)
+            seen.append(got)
+            return got
+
+        with mock.patch.object(levels, "live_level", spy):
+            self.estimate(saved_row(annotation_goal="Only edit src/ for the parser"))
+        self.assertTrue(seen)
+        return seen[-1]
+
+    def published_writes(self) -> list[str]:
+        return [f["summary"] for f in self.facts_now() if f.get("subject") == "write"]
+
+    @unittest.expectedFailure  # DRC-4891: the ruling is recorded here; levels.inside changes in its own PR.
+    def test_a_worktree_write_to_the_named_folder_counts_inside_it(self) -> None:
+        self.delegated_write("src/m.py")
+        self.assertEqual([".claude/worktrees/agent-a1/src/m.py"], self.published_writes())
+        got = self.live()
+        self.assertEqual(1, got.writes_total)
+        self.assertEqual(0, got.writes_outside)
+        self.assertNotIn(levels.REASON_SOME_OUTSIDE, got.reasons)
+
+    def test_a_worktree_write_outside_the_named_folder_still_counts_outside(self) -> None:
+        self.delegated_write("web/m.py")
+        self.assertEqual([".claude/worktrees/agent-a1/web/m.py"], self.published_writes())
+        got = self.live()
+        self.assertEqual(1, got.writes_total)
+        self.assertEqual(1, got.writes_outside)
 
 
 if __name__ == "__main__":

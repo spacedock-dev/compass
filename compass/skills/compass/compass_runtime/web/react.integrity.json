@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2091807,
+    "bytes": 2092403,
     "file": "react.html",
-    "sha256": "40c3f9078733cb91cb34fd90ef1fc56d8661f0b22ed83b1d9369ca510a15eefd"
+    "sha256": "cefa7046d60ebfd80515cb1d4abc264551606b941db365dd9ab353b6454b0aeb"
   },
   "format": 1,
   "frontend": "react",
@@ -603,7 +603,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "47246da87bbcf07f6b33d50f1a164678da4869b30aafeb38d168a43310e6e10d"
+        "sha256": "7a365fd2a789aa66983604ae17774332e3e6ceb7cbaf87d0e0d8e09e3c6e4440"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -699,7 +699,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "c773eb31acc0f1509245befa3079a0255f24e8eaf3cfd0362c7688a1d2295804"
+        "sha256": "f18fffe2a83e95ac60644175b5fbf39444613878e083e07ab57ab59a7bc0363b"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -727,7 +727,7 @@
       },
       {
         "file": "frontend/src/drift/workList.ts",
-        "sha256": "2e610ffa705eee216ba6189439cbcb8fa6dad042f842ceacd51ae5191e62310e"
+        "sha256": "08ddadabdfc6104b8c0ffe00aca78dacc1edafe426682dfac2840e172f578d3d"
       },
       {
         "file": "frontend/src/intent/ActionButton.tsx",
@@ -867,7 +867,7 @@
       },
       {
         "file": "frontend/src/intent/work.ts",
-        "sha256": "0fe7685edbfb96ad7ca4d500ba96a582179ab72099b233c2f973c55236009ccc"
+        "sha256": "30ef8aab23742816049e15f96fe1f39814af49cf0b1053bfb687fc3b2490598a"
       },
       {
         "file": "frontend/src/lib/utils.ts",
@@ -1243,7 +1243,7 @@
       },
       {
         "file": "frontend/src/shell/ProjectTabs.tsx",
-        "sha256": "573568ffecc151cfdbd90b9ae5b25418c18914a47c367e3f53540c42abe79345"
+        "sha256": "ae707697227b6ce35ed2d5c1168affc9658319f61034572174517902be541774"
       },
       {
         "file": "frontend/src/shell/RouteLink.tsx",

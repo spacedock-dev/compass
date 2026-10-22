@@ -50,13 +50,15 @@ to the nearest option. Arguments written in capitals are values you supply. Bool
 leaving an off switch out on a later start enables that feature again without deleting its store.
 Pass one operation flag at a time. If combined, the current implementation chooses `--diagnose`,
 then `--forget`, then `--stop`, then `--status`; it does not execute a sequence of operations.
-`--daemon` with any of those four operations is a usage error.
+`--daemon` with any of those four operations is a usage error. `--version` is checked before all of
+them and ignores the other flags, though their values must still parse.
 
 ### Starting and inspecting an instance
 
 | Option | Behavior and default |
 |---|---|
 | `-h`, `--help` | Print the launcher's current option list and exit. |
+| `--version` | Print the Compass version alone on one line and exit. The standalone binary prints the release it was built for. `server.py` prints the version of the plugin it sits in. Exits `1` with a message when an installation records no version. |
 | `--port PORT` | TCP port, an integer from 1 through 65535. Default: `4553`. Also selects the instance addressed by status, stop and forget. |
 | `--frontend-dev-manifest PATH` | Contributor-only startup ticket for an owned Vite child. Requires foreground operation and `127.0.0.1`; refuses diagnose/forget and disables model calls, quota fetching and native actions. Validates fixture locations and a fresh child handshake before serving. Status/stop do not read the ticket or probe Vite. Use the [frontend development command](CONTRIBUTING.md#frontend-development) to create and own it. |
 | `--host ADDRESS` | Accepts only `127.0.0.1` (default) or `0.0.0.0`. The latter exposes the dashboard on every IPv4 interface without authentication. Other addresses and IPv6 are rejected. Read [remote-access risks](SECURITY.md#known-and-accepted) before changing it; prefer an SSH tunnel. |
@@ -211,7 +213,7 @@ hours are forwarded.
 
 | Code | Meaning |
 |---|---|
-| `0` | Help or diagnosis completed; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
+| `0` | Help, the version or diagnosis completed; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
 | `1` | Status found no running Compass, or startup/stop/forget failed or was refused. A foreign process is not stopped. |
 | `2` | Invalid command-line syntax or rejected values/combinations, reported by the argument parser. |
 
