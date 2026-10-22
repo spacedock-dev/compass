@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2092359,
+    "bytes": 2092619,
     "file": "react.html",
-    "sha256": "0f3cea385c5f87dc903a48df7f64c01e0007595357d97621a25f78a394ec8fc3"
+    "sha256": "910ecaa3d455d3b5692d56dbdd110eadf35d5c86d920f8613fc0cfbcf976c991"
   },
   "format": 1,
   "frontend": "react",
@@ -803,7 +803,7 @@
       },
       {
         "file": "frontend/src/intent/derive.ts",
-        "sha256": "1eb67ea656e2f3fb9c581adc452764107026cead87daa260c9d59a1c680e3a3d"
+        "sha256": "ebd5b803ca304f8caa0c0b57a7877547f0f966300893d010a8942864aaeab529"
       },
       {
         "file": "frontend/src/intent/directions.ts",
@@ -835,7 +835,7 @@
       },
       {
         "file": "frontend/src/intent/logModel.ts",
-        "sha256": "042f2efa513f92fea24bd6316bbc6c6c49173921f0a30ec42ac49bde411f4234"
+        "sha256": "e96127166add074bb282372abc03a986b0bb81f6675b7cedab33778c19cb3a99"
       },
       {
         "file": "frontend/src/intent/logStore.ts",
