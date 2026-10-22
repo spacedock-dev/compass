@@ -63,6 +63,7 @@ class PackageCliTest(unittest.TestCase):
         self.src = self.root / "src"
         write_program(self.src / "compass/skills/compass/server.py", "")
         self.record = self.root / "pyinstaller-args"
+        self.stamp = self.root / "stamp-as-built"
         # The stand-in answers the two probes the script makes, then "builds" a one-file
         # onedir into whichever --distpath it was handed.
         self.python = write_program(
@@ -75,6 +76,7 @@ if [ "$3" = --version ]; then exit ${{FAKE_PYINSTALLER_MISSING:-0}}; fi
 printf '%s\\n' "$@" > '{self.record}'
 while [ $# -gt 0 ]; do
 	[ "$1" = --distpath ] && dist="$2"
+	case "$2" in */release-version.txt:*) [ "$1" = --add-data ] && cp "${{2%%:*}}" '{self.stamp}' ;; esac
 	shift
 done
 mkdir -p "$dist/compass/_internal"
@@ -112,6 +114,15 @@ chmod +x "$dist/compass/compass"
             f"{skill}/compass_runtime/web:compass_runtime/web", args[args.index("--add-data") + 1]
         )
         self.assertEqual(f"{skill}/server.py", args[-1])
+
+    def test_it_stamps_the_version_it_was_asked_for_into_the_runtime_package(self) -> None:
+        self.package("4.5.6")
+
+        args = self.record.read_text(encoding="utf-8").splitlines()
+        data = [args[i + 1] for i, arg in enumerate(args) if arg == "--add-data"]
+        self.assertEqual(2, len(data))
+        self.assertTrue(data[1].endswith("/release-version.txt:compass_runtime"), data[1])
+        self.assertEqual("4.5.6\n", self.stamp.read_text(encoding="utf-8"))
 
     def test_it_writes_nothing_into_the_source_tree(self) -> None:
         before = sorted(p.relative_to(self.src) for p in self.src.rglob("*"))
@@ -281,6 +292,43 @@ class SmokeCliTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode)
         self.assertIn("no compass/compass program", result.stderr)
+
+    def archive_with_program(self, root: Path, name: str, body: str) -> Path:
+        program = write_program(root / "stage" / "compass" / "compass", body)
+        archive = root / name
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(program.parent, arcname="compass")
+        return archive
+
+    def test_it_refuses_a_program_whose_version_is_not_the_one_the_archive_is_named_for(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            archive = self.archive_with_program(
+                Path(folder),
+                "compass_1.2.3_test.tar.gz",
+                'case "$1" in --version) echo 1.2.2 ;; esac',
+            )
+
+            result = run([str(SMOKE), str(archive)])
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(
+            "--version printed '1.2.2', but the archive is named for 1.2.3", result.stderr
+        )
+
+    def test_it_refuses_a_program_that_cannot_report_a_version(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            archive = self.archive_with_program(
+                Path(folder),
+                "compass_1.2.3_test.tar.gz",
+                'case "$1" in --version) exit 2 ;; esac',
+            )
+
+            result = run([str(SMOKE), str(archive)])
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("--version failed", result.stderr)
 
 
 if __name__ == "__main__":
