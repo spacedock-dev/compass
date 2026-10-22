@@ -1478,11 +1478,11 @@ class TheReplyAndThePromptHaveRoomForSevenTest(_ProducerCase):
 
         size = len(header.encode("utf-8"))
         self.assertLessEqual(size, reading.INTENT_SHARE_BYTES)
-        self.assertEqual(9_216, reading.INTENT_SHARE_BYTES)
-        self.assertGreaterEqual(observer.OBSERVER_MODEL_MAX_PROMPT_BYTES - size, 7_168)
+        self.assertEqual(9_728, reading.INTENT_SHARE_BYTES)
+        self.assertGreaterEqual(observer.OBSERVER_MODEL_MAX_PROMPT_BYTES - size, 6_656)
 
     def test_an_intent_between_its_share_and_the_budget_still_drops_every_line(self) -> None:
-        # Past 9,216 bytes and under 16,384, so only the share can be what refuses it.
+        # Past 9,728 bytes and under 16,384, so only the share can be what refuses it.
         wide = "\U0001f600" * 500
         ledger = reading.build_ledger([_pi_fact("f1", 100.0)], "pi", "p1")
         header = reading._header("G", (wide,) * 6, tool_note=False)

@@ -943,6 +943,16 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
     return assessment
 
 
+def _goal_unclear_elsewhere(
+    parsed: Mapping[str, reading.Criterion], claims: reading.Criterion | None
+) -> bool:
+    """Whether `goal_unclear` sits anywhere but the Goal, as `unsupported` sits only on claims."""
+    rows = [row for name, row in parsed.items() if name != reading.CONSTRAINT_GOAL]
+    if claims is not None:
+        rows.append(claims)
+    return any(row.get("result") == reading.RESULT_GOAL_UNCLEAR for row in rows)
+
+
 def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
     """A reading's criteria, keyed goal, each line in order, then any claims, or nothing.
 
@@ -968,7 +978,9 @@ def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
     claims = parsed.pop(reading.CONSTRAINT_CLAIMS, None)
     if claims is not None and claims.get("result") == reading.RESULT_NOT_REACHED:
         return None
-    if any(row.get("result") == reading.RESULT_UNSUPPORTED for row in parsed.values()):
+    if any(
+        row.get("result") == reading.RESULT_UNSUPPORTED for row in parsed.values()
+    ) or _goal_unclear_elsewhere(parsed, claims):
         return None
     if set(parsed) == {reading.CONSTRAINT_GOAL, reading.CONSTRAINT_OUTPUT}:
         output = parsed.pop(reading.CONSTRAINT_OUTPUT)

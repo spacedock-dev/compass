@@ -79,12 +79,19 @@ RESULT_UNSUPPORTED = "not shown by the record"
 # [Non-final readings](docs/design-reading-a-session.md#amended-2026-10-04-unfinished-work)
 # carry unfinished work separately from uncertainty and from departures.
 RESULT_NOT_REACHED = "not reached at this stop"
+# The fifth, and only ever on `CONSTRAINT_GOAL`: the model read the goal (and the outcome lines, if
+# any) before the session and found no end state to read the work against. It stands in place of
+# a level, so it takes no citation and carries no prose, and no word or length rule makes it (owner,
+# 2026-10-22):
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-22-a-goal-alone-is-read-or-refused)
+RESULT_GOAL_UNCLEAR = "goal too vague to analyze against"
 RESULTS = (
     RESULT_DEPARTURE,
     RESULT_CONSISTENT,
     RESULT_UNVERIFIABLE,
     RESULT_UNSUPPORTED,
     RESULT_NOT_REACHED,
+    RESULT_GOAL_UNCLEAR,
 )
 
 # What the model may say, and what each token becomes. A token outside this
@@ -104,6 +111,8 @@ CLAIMS_RESULT_BY_TOKEN = {
     **{key: result for key, result in RESULT_BY_TOKEN.items() if key != "not_reached"},
     "unsupported": RESULT_UNSUPPORTED,
 }
+# The Goal's: the shared set and `goal_unclear`, a token no outcome line or claims answer holds.
+GOAL_RESULT_BY_TOKEN = {**RESULT_BY_TOKEN, "goal_unclear": RESULT_GOAL_UNCLEAR}
 
 # Rule 6: the goal and each outcome line, each naming itself, never blended.
 # The reply schema is keyed on these, so there is no field a blended judgement
@@ -125,13 +134,13 @@ _OUTCOME_LINE = re.compile(r"line_([1-9][0-9]*)")
 # Two of the figures item 3 left to this layer, and they are written there. The
 # intent's share of `observer.OBSERVER_MODEL_MAX_PROMPT_BYTES`: the worst goal
 # and six lines at four bytes a character, with the claims question, measure
-# 9,189 bytes with the non-final scope, so this leaves at least 7,168 for the record.
+# 9,6xx bytes with the non-final scope, so this leaves at least 6,656 for the record.
 # The reply cap: eight answers with twelve four-digit citations and a
 # 240-character detail each measure 4,751 bytes compact and 5,664 indented in
 # raw two-byte UTF-8, and a
 # cut reply keeps every complete answer (`_members`), so the headroom is not
 # the only guard.
-INTENT_SHARE_BYTES = 9_216
+INTENT_SHARE_BYTES = 9_728
 REPLY_CAP_BYTES = 8_192
 # How far under the cap a reply may come back and still count as cut: the
 # exec layer strips trailing whitespace, and an indented reply cut inside its
@@ -174,14 +183,21 @@ def claim_title(fact: Mapping[str, Any]) -> str:
 
 def result_for(name: str, token: str) -> str | None:
     """The result a reply's token names on this constraint, or None outside its set."""
-    table = CLAIMS_RESULT_BY_TOKEN if name == CONSTRAINT_CLAIMS else RESULT_BY_TOKEN
+    table = (
+        CLAIMS_RESULT_BY_TOKEN
+        if name == CONSTRAINT_CLAIMS
+        else GOAL_RESULT_BY_TOKEN
+        if name == CONSTRAINT_GOAL
+        else RESULT_BY_TOKEN
+    )
     return table.get(token.strip().casefold())
 
 
 def token_for(result: Any) -> str:
     """The reply token a stored result reads back as, or "" for none."""
     return next(
-        (t for t, r in {**RESULT_BY_TOKEN, **CLAIMS_RESULT_BY_TOKEN}.items() if r == result), ""
+        (t for t, r in {**GOAL_RESULT_BY_TOKEN, **CLAIMS_RESULT_BY_TOKEN}.items() if r == result),
+        "",
     )
 
 
@@ -2462,6 +2478,20 @@ def _row_body(row: LedgerEntry) -> str:
     return row["summary"]
 
 
+# The refusal is decided from the words alone, before the record is read, and is the one answer that
+# takes no citation and no detail. The zero-line sentence is what makes a goal alone readable: its
+# own end state stands as the outcome, so the model has something to read the work against.
+GOAL_UNCLEAR_RULE = (
+    "Decide first, before reading the entries below, whether the goal and any outcome lines "
+    'state an end state the work can be read against. If none does, answer the goal "goal_unclear" '
+    "with no cites and no detail, and nothing else.\n"
+)
+NO_LINES_RULE = (
+    "No outcome lines are given. Read the goal's own stated end state as the outcome, "
+    "and answer the goal against it.\n"
+)
+
+
 def _header(
     goal_text: str,
     line_texts: Sequence[str],
@@ -2469,6 +2499,7 @@ def _header(
     tool_note: bool,
     claims: bool = False,
     scope: str = SCOPE_LAST_TURN,
+    no_lines: bool = False,
 ) -> str:
     ask_goal = asks_goal(goal_text)
     # The answer's shape is spelt once and named, where it was spelt per
@@ -2495,7 +2526,10 @@ def _header(
             else ""
         )
         + ('; "unsupported" for claims only' if claims else "")
+        + ('; "goal_unclear" for the goal only' if ask_goal else "")
         + ". "
+        + (GOAL_UNCLEAR_RULE if ask_goal else "")
+        + (NO_LINES_RULE if ask_goal and no_lines else "")
         + 'Use "unverifiable" whenever the entries below do not settle the question. '
         "Every <int> is an entry number from the list below; never cite a number that "
         "is not listed, and never name an entry any other way.\n"
@@ -2565,7 +2599,10 @@ def _wider_goal(
     words = _field_text(goal_words, LEDGER_WORDS_CAP_CHARS).strip() if goal_words else ""
     if not words or words == goal_text.strip() or not asks_goal(goal_text):
         return None
-    return _header(words, lines, tool_note=tool_note, claims=claims, scope=scope), words
+    return (
+        _header(words, lines, tool_note=tool_note, claims=claims, scope=scope, no_lines=not lines),
+        words,
+    )
 
 
 def _read_whole(  # noqa: C901 - reader-first lanes and one selected replacement share the budget
@@ -2782,8 +2819,19 @@ def build_prompt(
     )
     tool_note = any(entry["type"] == TOOL_REPORT_TYPE for entry in ledger)
     claims = any(entry["type"] == AGENT_MESSAGE_TYPE for entry in ledger)
-    without = _header(goal_text, (), tool_note=tool_note, claims=claims, scope=scope)
-    header = _header(goal_text, line_texts, tool_note=tool_note, claims=claims, scope=scope)
+    # Said only where no line was saved or read at all: a line the budget later sets aside is not
+    # "none given", and the rule's bytes were never in what that fallback header was sized with.
+    without = _header(
+        goal_text, (), tool_note=tool_note, claims=claims, scope=scope, no_lines=not line_texts
+    )
+    header = _header(
+        goal_text,
+        line_texts,
+        tool_note=tool_note,
+        claims=claims,
+        scope=scope,
+        no_lines=not line_texts,
+    )
     posed = bool(line_texts)
     if len(header.encode("utf-8", "replace")) > min(INTENT_SHARE_BYTES, budget):
         header, posed = without, False
@@ -2874,6 +2922,7 @@ def build_prompt(
             tool_note=tool_note,
             claims=asked_claims,
             scope=scope,
+            no_lines=not line_texts,
         )
     body = "".join(
         row_text(index, restored.get(id(row), row), whole=id(row) in whole)
@@ -4341,6 +4390,14 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
             else criterion
         )
 
+    # The refusal stands in place of every other answer: the model said it before the record,
+    # so a line verdict beside it was given about words it had just found nothing to read against.
+    # The other rows are published as not asked and never reach the record-settles-a-line guard, so
+    # no departure survives a refused goal.
+    refused = asks_goal(goal) and (
+        result_for(CONSTRAINT_GOAL, str((parsed.get(CONSTRAINT_GOAL) or {}).get("token") or ""))
+        == RESULT_GOAL_UNCLEAR
+    )
     for name in names:
         # Bounded and scrubbed like every other published string. It is the
         # reader's own text, but it arrives here as an argument and it was the
@@ -4348,6 +4405,15 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
         # keeping a bidi override that sits immediately before the verdict and
         # reorders it.
         clause = records.safe_text(clauses[name], detail_cap_chars)
+        if refused:
+            out[name] = {
+                "cites": (),
+                "detail": "",
+                "clause": clause,
+                "why": WHY_STANDS if name == CONSTRAINT_GOAL else WHY_NOT_ASKED,
+                "result": RESULT_GOAL_UNCLEAR if name == CONSTRAINT_GOAL else RESULT_UNVERIFIABLE,
+            }
+            continue
         # Not asked is not answered. The constraint the prompt never posed has
         # no token to resolve, whatever the reply volunteered. The lines come
         # from the prompt, never re-derived: the header it used is the
@@ -4681,6 +4747,7 @@ def produce(  # noqa: PLR0913
         window_start=window_start(latest),
     )
     cutoff += _goal_note(adopted=adopted, source=source, goal=goal, whole=selected.goal_whole)
+    cutoff += "" if outcome_lines(latest) else NO_OUTCOME_LINES_NOTE
     cutoff += _FINAL_NOTES.get(selected.newest_final or "", "")
     if tool_output is not None and not admitted and _has_reports(facts, harness, sid):
         cutoff += (
@@ -5019,6 +5086,11 @@ GOAL_SOURCE_UNROOMED = (
     " Your goal's whole prompt had no room in the reading, so only the goal box's words were "
     "read as the goal."
 )
+# Said in the cutoff when the revision read holds no outcome line, so a reader can tell a level
+# resting on the goal's own end state from one resting on lines (owner, 2026-10-22). Keyed on the
+# revision, not on what the press sent: a press that read the goal alone while lines were saved
+# did not read "no lines".
+NO_OUTCOME_LINES_NOTE = " Read against your goal; no expected outcome lines were saved."
 # Said in the cutoff when the newest final reply was not read whole (owner, 2026-10-05):
 # the agent's newest message that the transcript records as ending its turn goes whole where
 # its row fits, and otherwise its excerpt stands. Keyed by `Selection.newest_final`, and

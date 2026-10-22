@@ -103,10 +103,13 @@ class AFailureBelongsToThePersonsLastTurn(unittest.TestCase):
             levels.NOT_ENOUGH, levels.live_level(facts, tier.intent("Tests pass")).level
         )
 
-    def test_no_outcome_line_still_has_no_analysis_level_even_with_a_fresh_failure(self) -> None:
-        got = levels.analysis_level(tier.SUPPORTED, self.facts(tier.SAVE + 10), outcome_lines=0)
-        self.assertEqual(levels.NOT_ENOUGH, got.level)
-        self.assertEqual((levels.REASON_NO_OUTCOME_LINE,), got.reasons)
+    def test_no_outcome_line_no_longer_withholds_the_analysis_level_from_a_fresh_failure(
+        self,
+    ) -> None:
+        goal_only = tier.a_reading(goal=tier.criterion(reading.RESULT_CONSISTENT, "m1"))
+        got = levels.analysis_level(goal_only, self.facts(tier.SAVE + 10), outcome_lines=0)
+        self.assertEqual(levels.HIGH, got.level)
+        self.assertNotIn(levels.REASON_NO_OUTCOME_LINE, got.reasons)
 
 
 class AFolderSignalNamesARecordedPlace(unittest.TestCase):

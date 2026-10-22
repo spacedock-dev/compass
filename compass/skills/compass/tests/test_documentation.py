@@ -194,9 +194,9 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
         self.assertIn("intent-menu", reader_state)
 
     def test_what_a_goal_with_no_outcome_line_reads_is_the_pages(self) -> None:
-        # DRC-4922 stopped the card drawing "Not enough recorded yet" for a reading: it draws no level
-        # and says "Can't tell" unless the goal departs, because a departure on the goal row is answered
-        # before the missing outcome line is. The how-to on the page, the skill and the promise map say the same.
+        # A goal alone is read for its own end state, or refused as too vague (owner, 2026-10-22). The
+        # how-to on the page, the skill and the promise map say it in the same words, and none of them
+        # says an outcome line is needed for a level, as the 2026-10-21 wording did.
         root = SERVER_PATH.parents[3]
         for relative in (
             "compass/skills/compass/SKILL.md",
@@ -206,11 +206,16 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
             text = " ".join((root / relative).read_text(encoding="utf-8").split())
             with self.subTest(relative=relative):
                 self.assertNotIn("is normal until you add an expected outcome line", text)
+                self.assertNotIn("unless your goal departs", text)
                 self.assertRegex(
                     text,
-                    r"expected outcome line: no level, and "
-                    r"[\"“]Can't tell[\"”] unless your goal departs",
+                    r"(?i)no outcome line, Compass reads your goal's end state"
+                    r"[;,.] a goal too vague to read is\s+refused",
                 )
+        for relative in ("README.md", "docs/promise-map.md", "compass/skills/compass/SKILL.md"):
+            text = " ".join((root / relative).read_text(encoding="utf-8").split())
+            with self.subTest(relative=relative, sentence="needed"):
+                self.assertNotIn("why an expected outcome line is needed for a drift level", text)
 
     def test_documented_store_paths_are_the_ones_searched(self) -> None:
         # Every "~/..." path in the data-source list must be a real default.

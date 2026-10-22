@@ -68,7 +68,12 @@ REASON_LATER_DIRECTION = "later-direction"
 REASON_UNLISTED = "entries-not-listed"
 REASON_FLOOR_MET = "floor-met"
 REASON_NO_READING = "no-reading"
+# Retired as a published reason (owner, 2026-10-22): a goal alone is read against its own end state.
+# Kept as a known token because a reading stored before still carries it, and the page keeps the
+# sentence it was stored with.
 REASON_NO_OUTCOME_LINE = "no-outcome-line"
+# The model found no end state in the goal to read the work against: the analysis has no level.
+REASON_GOAL_UNCLEAR = "goal-unclear"
 REASON_DEPARTURE = "departure"
 REASON_LINE_NOT_SHOWN = "line-not-shown-by-a-check"
 REASON_OUTCOME_NOT_REACHED = "outcome-not-reached"
@@ -97,6 +102,7 @@ REASONS = (
     REASON_FLOOR_MET,
     REASON_NO_READING,
     REASON_NO_OUTCOME_LINE,
+    REASON_GOAL_UNCLEAR,
     REASON_DEPARTURE,
     REASON_LINE_NOT_SHOWN,
     REASON_OUTCOME_NOT_REACHED,
@@ -593,7 +599,9 @@ def analysis_level(
     (a message, the agent's own account) never shows an outcome line, so it
     never reaches the floor, though a departure resting on one reads Medium.
 
-    Zero outcome lines is too little whatever the Goal says (L7). Medium: a
+    Zero outcome lines no longer makes it too little (L7 is retired, owner, 2026-10-22): the Goal
+    then stands as the one line, its own end state the outcome. A Goal the model found no end
+    state in has no level (`REASON_GOAL_UNCLEAR`). Medium: a
     departure, a line whose cited pass was followed by a change, or a claim of
     the agent's that the record contradicts or does not show. High: a
     failed check in the evidence window, cited or not, where a check with no
@@ -611,16 +619,16 @@ def analysis_level(
     if not reading_row:
         return Level(NOT_ENOUGH, SOURCE_ANALYSIS, (REASON_NO_READING,))
     computed_at = _number(reading_row.get("read_at"))
-    if outcome_lines < 1:
-        return Level(
-            NOT_ENOUGH, SOURCE_ANALYSIS, (REASON_NO_OUTCOME_LINE,), computed_at=computed_at
-        )
     criteria = reading_row.get("criteria")
     if not _well_formed(criteria, outcome_lines, str(reading_row.get("scope") or "")):
         return Level(
             NOT_ENOUGH, SOURCE_ANALYSIS, (REASON_READING_MALFORMED,), computed_at=computed_at
         )
     rows: Mapping[str, Mapping[str, Any]] = criteria if isinstance(criteria, dict) else {}
+    if (rows.get(reading.CONSTRAINT_GOAL) or {}).get("result") == reading.RESULT_GOAL_UNCLEAR:
+        # Before any tally: the model found nothing to read the work against, so a failed check or
+        # a claim in the record has no intent to be a departure from, and no level is drawn.
+        return Level(NOT_ENOUGH, SOURCE_ANALYSIS, (REASON_GOAL_UNCLEAR,), computed_at=computed_at)
     window = _number(reading_row.get("window_start"))
     tally = _LineTally(
         _analysis_entries(evidence.facts), window, str(reading_row.get("scope") or "")
@@ -630,10 +638,14 @@ def analysis_level(
     if texts:
         by_name[reading.CONSTRAINT_OUTPUT] = texts[0]
     for name, row in rows.items():
+        # A goal with no outcome line stands as the one line (owner, 2026-10-22): the producer was
+        # told to read its own end state as the outcome, so the same rule keeps the agent's word
+        # alone, and a verdict the model could not settle, off None or low.
+        alone = outcome_lines < 1 and name == reading.CONSTRAINT_GOAL
         tally.read(
             row,
-            name=name,
-            line_text=by_name.get(name, ""),
+            name=reading.outcome_line(1) if alone else name,
+            line_text=str(row.get("clause") or "") if alone else by_name.get(name, ""),
             requested_at=(line_requests or {}).get(name) if reading.is_outcome_line(name) else None,
         )
 
