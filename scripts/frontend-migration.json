@@ -774,6 +774,17 @@
       "disposition": "stable-identity"
     },
     {
+      "name": "The Expected outcome accordion in the Intent card",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/intent/FirstView.test.tsx",
+        "frontend/src/controls/Disclosure.test.tsx",
+        "frontend/stories/IntentCard.stories.tsx"
+      ],
+      "contract": "The accordion's open flag is the shared disclosure store's, keyed by project and exact session. It is closed until a saved or drafted line, a pending later direction or a departure citing an outcome line is held, then opens on each rise of that condition; a reader's close holds while it stays true and a key the reader has written is not reopened on a first draw.",
+      "disposition": "store-held"
+    },
+    {
       "name": "An open run of checks",
       "owner": "DRC-4825",
       "oracles": [

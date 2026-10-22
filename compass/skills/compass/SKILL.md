@@ -313,7 +313,7 @@ leaves the other alone. Open the session's page: the fields are the first thing 
 block, for a session with or without a project. The how-to beside Intent says what an analysis
 reads and that Compass never writes into the session. Each box shows how many of its 240 characters
 you have used as you type. The Intent card shows the saved reads-from line beside its status word, and keeps `Clear` and `How Intent and drift works` in its `More` menu.
-Each outcome line has `Remove`, and `Add a line` sits beside `Save intent`, all drawn from the first view; Add adds another until there are six, where it stays
+The Expected outcome sits in an accordion under the Goal, labelled "Expected outcome (optional) · up to 6 lines" and closed until it has something to show: it opens by itself over saved lines, a line being edited, a pending later direction, or a departure that cites a line, and a close you make holds until one of those arises again. Inside it each outcome line has `Remove`, and `Add a line` sits under the list; Add adds another until there are six, where it stays
 on the page, refuses a seventh and says why (replace or merge a line instead). `Save intent` stays
 visible and saves the drafted goal or your edits. `Undo changes` is drawn beside it, inert until there is a goal edit or prompt
 choice to undo. The list saves as a whole, and Escape puts the stored words back. Each saved line shows where it came from: typed, or added from an entry. A

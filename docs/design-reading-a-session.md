@@ -3040,6 +3040,8 @@ stays as it is: a surviving model departure, a contradicted or unshown claim, a 
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
+Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
+
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): item 3's Expected outcome is one optional empty line by default, and the Direction question's summary shrinks to one line while Keep keeps its two presses.
 
 Decided 2026-09-24 (DRC-4675). It brings the Session Drift Detection design's option C, "Unified
