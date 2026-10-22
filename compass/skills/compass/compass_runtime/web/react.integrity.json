@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2107975,
+    "bytes": 2111395,
     "file": "react.html",
-    "sha256": "3481642a476404ba9f0bd4ac4b4a60fabba610b7e3ec2729278bfc044df7623e"
+    "sha256": "5ac80094a44cfa7a4f22e58fc0c7d8b8494c38b26058e0e29d6701916bc7f5e3"
   },
   "format": 1,
   "frontend": "react",
@@ -559,7 +559,7 @@
       },
       {
         "file": "frontend/src/drift/DriftBody.tsx",
-        "sha256": "af09258184e47340ceac3d8a724d2c4e64cbee8516ac65b890a09b7c38277f82"
+        "sha256": "4700b1bc606acb92e90bb756c3382358c3bc156cb87c04f2df7087fe0391c278"
       },
       {
         "file": "frontend/src/drift/DriftHead.tsx",
@@ -584,6 +584,10 @@
       {
         "file": "frontend/src/drift/Evidence.tsx",
         "sha256": "dbc7098697d79f59fadda7a1bd3bc213f4a631f387cd2f9c604a04d11f29b061"
+      },
+      {
+        "file": "frontend/src/drift/GoalVerdictNote.tsx",
+        "sha256": "79fbb7fdceb79023903ecc81cf2288b7c4844bf7d8c984c90a51b715bfd033af"
       },
       {
         "file": "frontend/src/drift/MarkedNotice.tsx",
@@ -658,6 +662,10 @@
         "sha256": "e8417bd1e9076943afadd9159303bce8c9d85b91521b4552a396bcd0d992743d"
       },
       {
+        "file": "frontend/src/drift/goalVerdict.ts",
+        "sha256": "843d20e1e0a0cfa537bf4e584e390b845fc910808a37671fb178fb43d23a6fb3"
+      },
+      {
         "file": "frontend/src/drift/index.ts",
         "sha256": "3dc2d4ad53fae04c92dd9f492f467eab2e5e877a8702defdd03193f6a0b324fd"
       },
@@ -699,11 +707,11 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "cc9961e899c4786257f106a608f166f9160fbae84c441fd41ee2f109140a6a77"
+        "sha256": "3a015820d7c616171a7483a7226c42b702821f0e5eade17a7fc3b70b1943abb0"
       },
       {
         "file": "frontend/src/drift/shape.ts",
-        "sha256": "bde5251e09a768d475fa31286e7bed4619b3113df1a9f2b230c1d81499d7e9cf"
+        "sha256": "626ca40d64f6b3978c49ac123c87a86dfa622303e99990106a08e2562e68a3bf"
       },
       {
         "file": "frontend/src/drift/state.ts",
@@ -1171,7 +1179,7 @@
       },
       {
         "file": "frontend/src/sessions/intent.ts",
-        "sha256": "e8cd30b511222e22b0ec9484b865431585b4a456f379fa6720e4f330f79339bf"
+        "sha256": "8d2cb3979ed57390108387f30a7a61a72906d9602bf7e15809fb7a54fd4d5cfc"
       },
       {
         "file": "frontend/src/sessions/notes.ts",
