@@ -41,13 +41,17 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # --collect-submodules: the collectors are imported by name at run time, which static analysis
-# does not see. --add-data: the page and its fonts are read from disk next to the package.
+# does not see. --add-data: the page and its fonts are read from disk next to the package, and
+# so is the version `compass --version` prints. The stamp comes from $version, not from the
+# manifests: the release job bumps them after the binaries are built.
 # Every output lands under $work, so the source tree is never written to.
+printf '%s\n' "$version" >"$work/release-version.txt"
 "$python" -m PyInstaller --noconfirm --clean --onedir --console --name compass \
 	--distpath "$work/dist" --workpath "$work/build" --specpath "$work/spec" \
 	--paths "$skill" \
 	--collect-submodules compass_runtime \
 	--add-data "$skill/compass_runtime/web:compass_runtime/web" \
+	--add-data "$work/release-version.txt:compass_runtime" \
 	"$skill/server.py" >"$work/pyinstaller.log" 2>&1 \
 	|| { cat "$work/pyinstaller.log" >&2; echo "package-cli.sh: PyInstaller failed" >&2; exit 1; }
 
