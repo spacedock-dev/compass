@@ -1401,6 +1401,47 @@ def _pi_check_title(result: str, *, failed: int, passed: int) -> str:
     return "Validation ran, result not recorded"
 
 
+def _pi_outcome(
+    call: _ShellCall,
+    index: int,
+    *,
+    rtk: bool,
+    tail: str,
+    result: dict[str, Any] | None,
+    flag: bool | None,
+    attributable: bool,
+    all_and: bool,
+) -> tuple[str, str, str]:
+    """One Pi check's outcome, its source, and the token for a result a rule withheld.
+
+    The reason is read before the caller's exit-line override, which only turns a pass into
+    "not-recorded": a withheld result is never the override's, so it keeps its token.
+    """
+    if result is None or call.background(index) or call.unestablished(index):
+        return "not-recorded", "", ""
+    if flag is None and result.get("status") == "stopped":
+        return "not-recorded", "", ""
+    flag_result = _flag_result(
+        flag,
+        last=index == len(call.parts) - 1,
+        all_and=all_and,
+        alone=len(call.meaningful) == 1,
+    )
+    outcome, source = _ToolReportTally._outcome(  # noqa: SLF001 - one rule, both harnesses
+        tail, rtk=rtk, attributable=attributable, flag_result=flag_result
+    )
+    reason = _withheld_reason(
+        call,
+        index,
+        outcome,
+        tail,
+        attributable=attributable,
+        rtk=rtk,
+        flag_result=flag_result,
+    )
+    return outcome, source, reason
+
+
 def _pi_check_runs(
     command: str,
     *,
@@ -1431,24 +1472,16 @@ def _pi_check_runs(
     runs = []
     for index in call.checks:
         words, rtk = call.words[index]
-        outcome, source = "not-recorded", ""
-        if (
-            result is not None
-            and not call.background(index)
-            and not call.unestablished(index)
-            and (flag is not None or result.get("status") != "stopped")
-        ):
-            outcome, source = _ToolReportTally._outcome(  # noqa: SLF001 - one rule, both harnesses
-                tail,
-                rtk=rtk,
-                attributable=attributable,
-                flag_result=_flag_result(
-                    flag,
-                    last=index == len(call.parts) - 1,
-                    all_and=all_and,
-                    alone=len(call.meaningful) == 1,
-                ),
-            )
+        outcome, source, reason = _pi_outcome(
+            call,
+            index,
+            rtk=rtk,
+            tail=tail,
+            result=result,
+            flag=flag,
+            attributable=attributable,
+            all_and=all_and,
+        )
         if outcome == "passed" and flag is None and result and result.get("status") == "exited":
             # The exit line says the call failed, so no output may say it passed.
             outcome, source = "not-recorded", ""
@@ -1470,6 +1503,8 @@ def _pi_check_runs(
         }
         if source:
             run["result_source"] = source
+        if reason:
+            run["result_reason"] = reason
         if outcome == "failed" and failed:
             run["checks_failed"] = failed
         if outcome == "passed" and passed:
@@ -3003,6 +3038,41 @@ def _placeable(target: str) -> bool:
     )
 
 
+# Why a check's result is withheld by the attribution rules, as the closed token its published
+# entry carries. The page words each one in its reason table (`CHECK_NOT_RECORDED_REASONS` in
+# frontend/src/drift/workList.ts); `frontend/test/fixtures/vocabulary.json` pins the two together.
+CHECK_NOT_RECORDED_REASONS = {
+    "several_checks": "several checks in one call",
+    "directory_not_placeable": "directory not placeable",
+    "piped_beside_other_commands": "output is piped beside other commands",
+}
+
+
+def _withheld_reason(
+    call: _ShellCall,
+    index: int,
+    outcome: str,
+    tail: str,
+    *,
+    attributable: bool,
+    rtk: bool,
+    flag_result: str,
+) -> str:
+    """The token for a check whose result a rule withheld, or "" where none did.
+
+    A rule withholds a result only when lifting it would publish one, so a
+    check the flag or the output's own wording already leaves unrecorded is
+    never blamed on attribution.
+    """
+    if outcome != "not-recorded" or attributable:
+        return ""
+    # The same read with attribution lifted: if that still withholds, the rule is not the cause.
+    lifted, _source = _ToolReportTally._outcome(  # noqa: SLF001 - one rule, both harnesses
+        tail, rtk=rtk, attributable=True, flag_result=flag_result
+    )
+    return call.unattributed_reason(index) if lifted != "not-recorded" else ""
+
+
 def _reads_only(redirects: list[_Redirect], words: list[str]) -> bool:
     """Whether one segment is on the closed read-only list.
 
@@ -3535,6 +3605,20 @@ class _ShellCall:
             for i, (words, _rtk) in enumerate(self.words)
         )
 
+    def unattributed_reason(self, index: int) -> str:
+        """The rule that keeps this check's output from speaking for it, as a
+        token in `CHECK_NOT_RECORDED_REASONS`, or "" where none of the three
+        applies. Read in the order a reader meets them: several checks, then a
+        directory the shell places at run time, then a pipe."""
+        if len(self.checks) != 1:
+            return "several_checks"
+        for words, _rtk in self.words[:index]:
+            if words[:1] == ["cd"] and not all(_placeable(word) for word in words[1:]):
+                return "directory_not_placeable"
+        if any(part.joiner == "|" for part in self.parts):
+            return "piped_beside_other_commands"
+        return ""
+
     def background(self, index: int) -> bool:
         return self.all_background or self.parts[index].background
 
@@ -3768,6 +3852,7 @@ class _ToolReportTally:
         for index in call.checks:
             words, rtk = call.words[index]
             background = call.background(index)
+            reason, flag_result = "", ""
             if background:
                 outcome, source = "not-recorded", ""
             else:
@@ -3775,16 +3860,23 @@ class _ToolReportTally:
                 if result is None or call.unestablished(index):
                     outcome, source = "not-recorded", ""
                 else:
+                    flag_result = _flag_result(
+                        flag,
+                        last=index == len(call.parts) - 1,
+                        all_and=all_and,
+                        alone=len(call.meaningful) == 1,
+                    )
                     outcome, source = self._outcome(
+                        tail, rtk=rtk, attributable=attributable, flag_result=flag_result
+                    )
+                    reason = _withheld_reason(
+                        call,
+                        index,
+                        outcome,
                         tail,
-                        rtk=rtk,
                         attributable=attributable,
-                        flag_result=_flag_result(
-                            flag,
-                            last=index == len(call.parts) - 1,
-                            all_and=all_and,
-                            alone=len(call.meaningful) == 1,
-                        ),
+                        rtk=rtk,
+                        flag_result=flag_result,
                     )
                 self.scan["unknown_flags"] += (
                     result is not None and not isinstance(flag, bool) and outcome == "not-recorded"
@@ -3804,6 +3896,7 @@ class _ToolReportTally:
                     "title": _check_line(words),
                     "result": outcome,
                     "result_source": source,
+                    "result_reason": reason,
                     "recorded": result is not None,
                     # When the result arrived (DRC-4702): it decides the window
                     # and which run is latest, never a change comparison.
@@ -3913,6 +4006,8 @@ class _ToolReportTally:
             entry["rank"] = _RESULT_ORDER["failed"]
         if latest["result_source"]:
             entry["result_source"] = latest["result_source"]
+        if latest["result_reason"]:
+            entry["result_reason"] = latest["result_reason"]
         if latest["result_at"] is not None:
             entry["result_at"] = latest["result_at"]
         if latest["worker"]:
@@ -6859,6 +6954,7 @@ def _semantic_fact_from_event(
         "subject",
         "result",
         "result_source",
+        "result_reason",
         "earlier_failed",
         "before_last_change",
         "changed_after",

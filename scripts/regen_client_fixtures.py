@@ -57,6 +57,7 @@ from compass_runtime import annotations as annotation_store  # noqa: E402 - skil
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
 from compass_runtime import observation as observation_module  # noqa: E402 - skill runtime path
+from compass_runtime import project_context as runtime_project_context  # noqa: E402
 from compass_runtime import reading as runtime_reading  # noqa: E402 - skill runtime path
 from compass_runtime import reading_jobs as runtime_reading_jobs  # noqa: E402 - skill runtime path
 from compass_runtime import reading_route as runtime_reading_route  # noqa: E402 - runtime path
@@ -1722,6 +1723,7 @@ def vocabulary() -> dict[str, Any]:
         "checkNotRecorded": reading.CHECK_NOT_RECORDED,
         "checkEarlierFailed": reading.CHECK_EARLIER_FAILED,
         "checkBeforeLastChange": reading.CHECK_BEFORE_LAST_CHANGE,
+        "checkNotRecordedReasons": dict(runtime_project_context.CHECK_NOT_RECORDED_REASONS),
         "results": list(reading.RESULTS),
         "promptSources": list(reading.PROMPT_SOURCES),
         "promptChosen": reading.PROMPT_CHOSEN,

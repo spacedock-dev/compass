@@ -16,7 +16,7 @@ import {
   SILENT_REASONS,
   STORED_WHY,
 } from '../drift/sentences';
-import { toolReportLine } from '../drift/workList';
+import { CHECK_NOT_RECORDED_REASONS, toolReportLine } from '../drift/workList';
 import { ANNOTATION_FIELDS, HELD_UNSAFE, OUTCOME_LINES_MAX } from '../intent/annotation';
 import { WORK_BY_HARNESS, type WorkEntry } from '../intent/work';
 import { askBanner, notifyEdge, sessionBanner } from '../notify/edges';
@@ -36,6 +36,7 @@ interface Vocabulary {
   readonly workEvidenceByHarness: Record<string, string[]>;
   readonly checkResultWords: Record<string, string>;
   readonly checkNotRecorded: string;
+  readonly checkNotRecordedReasons: Record<string, string>;
   readonly checkEarlierFailed: string;
   readonly checkBeforeLastChange: string;
   readonly results: string[];
@@ -115,6 +116,18 @@ describe('the words beside a check', () => {
     expect(toolReportLine(entry('', ''))).toBe(`Agent · check · ${vocabulary.checkNotRecorded}`);
     expect(toolReportLine(entry('', '', { earlierFailed: true, beforeLastChange: true }))).toBe(
       `Agent · check · ${vocabulary.checkNotRecorded} · ${vocabulary.checkEarlierFailed} · ${vocabulary.checkBeforeLastChange}`,
+    );
+  });
+
+  it('names the rule that withheld a result in the words the producer publishes, and no other', () => {
+    expect(CHECK_NOT_RECORDED_REASONS).toEqual(vocabulary.checkNotRecordedReasons);
+    for (const [token, words] of Object.entries(vocabulary.checkNotRecordedReasons)) {
+      expect(toolReportLine(entry('', '', { resultReason: token }))).toBe(
+        `Agent · check · ${vocabulary.checkNotRecorded} · ${words}`,
+      );
+    }
+    expect(toolReportLine(entry('', '', { resultReason: 'unknown-token' }))).toBe(
+      `Agent · check · ${vocabulary.checkNotRecorded}`,
     );
   });
 });

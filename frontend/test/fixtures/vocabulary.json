@@ -72,6 +72,11 @@
   "checkBeforeLastChange": "before the last change",
   "checkEarlierFailed": "an earlier run failed",
   "checkNotRecorded": "ran, result not recorded",
+  "checkNotRecordedReasons": {
+    "directory_not_placeable": "directory not placeable",
+    "piped_beside_other_commands": "output is piped beside other commands",
+    "several_checks": "several checks in one call"
+  },
   "checkResultWords": {
     "failed flag": "failed, as the tool reported",
     "failed marker": "failed, per a failure line in its output",
