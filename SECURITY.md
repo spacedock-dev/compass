@@ -166,7 +166,12 @@ The posture rests on two invariants:
    the random job id and attempt number, never a session id or source text, and is retained for
    30 days for restart accounting; the rolling cap reads only the newest 24 hours.
    All three summary POST routes are loopback-only, enforce Host/Origin and fetch-site checks,
-   and refuse document navigation before parsing a body or touching a store. The separate
+   and refuse document navigation before parsing a body or touching a store.
+   The tenth, `POST /api/goal/find`, sends one session's own prompts to the model on a press and
+   writes nothing to disk but the rolling-cap ledger row and, the first time, the goal notice in
+   the permission file. It is guarded as `POST /api/reading` is: loopback-only, Host/Origin and
+   fetch-site checks, a document navigation refused before the body is read, and a body that must
+   assert `press` and `observer_model`. [Find goal](#find-goal) owns what it sends and what it keeps. The separate
    **summary store**, `compass-summaries.json` under the same home, holds model-written
    summaries keyed by harness and session, without a saved intent. Discard everything removes the
    discarded session's entry and no other (owner's ruling, 2026-10-21; it reversed the earlier rule
@@ -283,6 +288,34 @@ whitelist of two scoped clauses and not a general permission to execute: written
 sentence would make documented security bugs of three paths Compass already ships, the native
 notifier's `osascript`, `--daemon`'s respawn of the server, and the quota fetcher's Keychain read.
 
+## Find goal
+
+`POST /api/goal/find` reads the prompts a reader typed in one Claude Code or Codex session and
+answers a goal, or nothing. It runs only on a press of Find goal, one call per press, and a second
+press while one runs is refused with 409 rather than charged again.
+
+- It sends the session's own person-authored prompts and nothing else: not an agent message, not
+  tool output, not a correction Compass wrote and the reader copied. Each prompt is masked by named
+  form and folded as a chosen goal is, then at most 40 of them (the first five and the latest) and
+  24,000 characters go in one message, with the rules and a boundary no prompt can close.
+- The receiver is the route Analyze names for that harness. A press names the provider and, for
+  Claude Code, the model the page drew, and a mismatch answers 409 before any call.
+- Every refusal that can be known without the model comes before the prompts are read: the
+  startup off switch, the stored pause, a spent day, a lured request. The charge is taken at the
+  model seam, the same reservation Analyze pays, so a press that runs counts against the same
+  rolling cap whether or not it finds a goal. A press with no prompts, or with the CLI missing,
+  sends nothing and is not charged.
+- A goal is shown only if it passes three mechanical rules: the model quotes the prompt words it
+  comes from, each quote is verbatim (whitespace aside) in the prompt it names as Compass sent it,
+  and the model calls the goal clear by the end-state rule a reading applies. A paraphrase, a quote
+  under the wrong prompt number, a goal too long for the Goal field and a reply of the wrong shape
+  are dropped.
+- The answer is held as words in the Goal field and is stored nowhere. Nothing is written into the
+  session, and nothing is saved until the reader presses Save intent.
+- The accepted limit: the third rule is the model's own judgement, carried in the same call, so a
+  goal a later analysis would call too vague can still be shown. The quotes are what the reader
+  checks it against.
+
 ## What launches and what sends
 
 [Scope](#scope) names the kinds of outbound request. This section is the other direction of the
@@ -308,6 +341,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. Off until the disclosure is answered. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
 | Reach nudge | Two counts, to an endpoint you configure. Nothing is sent without one. | `--no-reach` | `test_reach.ReachNudgeTest.test_no_reach_flag_never_attempts_post`, `test_reach.ReachNudgeTest.test_no_reach_switch_disables_url_resolution` |
 | A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. With a session summary, one of the two paths that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--unasked-readings` | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
+| A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause model calls) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |
 | An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
 | A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
 | The live drift estimate | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
@@ -3878,14 +3912,14 @@ that was.
 saying the machine's network may read the board, and there is no second gate behind it: everything
 the paragraph below grants another account on the machine, a non-default bind grants anything that
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
-project paths. Writing is the twenty POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
+project paths. Writing is the twenty-one POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Two of the twenty store nothing of their own: `POST /api/direction` returns the whole text
+somebody other than you. Two of the twenty-one store nothing of their own: `POST /api/direction` returns the whole text
 of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
 message's published title of at most 112 characters. Both answer only a loopback peer, so a non-default bind does not widen them; their
-bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on eighteen of them, for the reason the
+bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on nineteen of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client

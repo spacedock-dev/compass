@@ -5411,6 +5411,44 @@ DRC-4947, owner rulings of the same date. The page uses a detected goal and does
 - Rejected: Use this goal as an immediate write. A pick from the prompt list fills the box and saves
   nothing, and a second kind of pick that saves would make the list inconsistent with itself.
 
+### Amended 2026-10-22: Find goal reads your prompts
+
+DRC-4953, owner rulings of the same date. A session with no `/goal` and no saved goal can still state its
+goal across the prompts the reader typed. A button beside "Use your prompt", Find goal, reads those prompts
+and offers the goal when it can tie it to the reader's own words.
+
+- The call is the reader's. It runs only on a press, one call per press, and never on a render, a poll, a
+  focus change or a revision save. It is refused with the pause and counted against the same rolling cap as a
+  reading, at the same model seam (`reading_policy.GuardedModel`), so a press that finds nothing is charged
+  because the call was made. A press that sends nothing (no prompts, a missing CLI, a refusal known beforehand)
+  is not.
+- It reads the reader's prompts and nothing else: the person-authored messages `_prompt_facts` already
+  verifies, minus a correction the reader copied from Compass, masked and folded as a chosen goal is.
+  Agent messages, tool output and pasted content Compass strips are never sent. A session over 40 prompts
+  keeps the first five and the latest.
+- High confidence is three mechanical rules and not a score. The model must quote the words the goal comes
+  from. Each quote must be verbatim, whitespace aside, in the prompt it names, in the text Compass sent
+  (masked and clipped as sent); one paraphrased quote drops the goal, and so does a quote filed under another
+  prompt's number. The model must also call the goal clear by the end-state rule of
+  `reading.GOAL_UNCLEAR_RULE`. A goal over the Goal field's 240 characters is dropped and never cut.
+- The vague-goal test is the model's judgement made in the same call. No keyword or length rule makes it,
+  as for a saved goal, and a second model call over the same words would double the cost of a press. The
+  limit is accepted and written in SECURITY.md: a finder more lenient than a later analysis can show a goal
+  that analysis would call unclear, and the quotes are what the reader checks it against.
+- The found goal cites the prompts it quotes by the entry numbers Full activity shows (`entry_numbers`), drawn
+  as the Drift card draws a cited entry, beside "Detected from your prompts" and the time it was found. Pressing
+  one opens Full activity at that entry and reads older pages for it when the page does not hold it.
+- Precedence is the reader's saved goal, a `/goal`, a found goal, then the first or latest prompt drafts. A
+  found goal stands only while the box holds its words, so an edit replaces it, and a result that arrives after
+  a saved goal, a `/goal` or the reader's own typing does not touch the box.
+- Nothing is stored. The answer is held in the page as the box's pending words and saved, if at all, as typed
+  words by Save intent, so the store never holds a model's sentence the reader did not keep.
+- Rejected: a new adoption source resolved by the server, as `session-goal` is. The server would have to keep
+  the found goal between the press and the save, which is storing an assessment of the session before the
+  reader has kept it, or call the model again at save time. Rejected: a keyword or length rule for "vague",
+  for the reason the amendment above gives. Rejected: running it unasked on open. The owner ruled a reader-started
+  call, like Analyze drift.
+
 ### The starting definitions
 
 These are what DRC-4692 validates, not a measured result. Medium: a pass is followed by writes, or

@@ -421,7 +421,12 @@ permitted Claude Code or Codex prompt, or from your latest prompt where no first
 is published. **Use your prompt** beside the goal lists up to five of your own prompts from the
 session; choosing one fills the goal box without saving it, and **Save intent** saves it. You
 can also type your own goal. Adopted words say "from your prompt", and editing them makes a typed
-goal. An unavailable prompt time means you must type a goal instead. The notice is remembered
+goal. **Find goal**, beside it, shows while no goal is saved and the session set no `/goal`. On your
+press it sends the prompts you typed in that session to the same reader Analyze would use, counts
+against the same daily limit, and does nothing while model calls are paused. If your own words
+state a clear end state it fills the box, marked **Goal detected**, with the prompts it quotes
+linked to their entries in Full activity. Otherwise it says no clear goal was found and leaves the
+box as it was. Nothing is saved until you press **Save intent**. An unavailable prompt time means you must type a goal instead. The notice is remembered
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
