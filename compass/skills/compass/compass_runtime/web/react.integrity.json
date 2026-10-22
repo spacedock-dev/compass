@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 1847871,
+    "bytes": 1848315,
     "file": "react.html",
-    "sha256": "a15ff58d698179a3c04937016912c7115f41968a2a06bbfee38ed22c2f536e2b"
+    "sha256": "7eaed1af1b6a1c5c109a2dd89dce35f2e237021b9a2caa2fe83c96260f6a1dad"
   },
   "format": 1,
   "frontend": "react",
@@ -663,7 +663,7 @@
       },
       {
         "file": "frontend/src/drift/workList.ts",
-        "sha256": "88db50d5cfefdefb5904b40682a123a71949b392489376530d744226cf6ebafd"
+        "sha256": "5113d6ba907a84aafdd813de1a005acd5a6379931eb91f85a483b4bbfaec0158"
       },
       {
         "file": "frontend/src/intent/ActionButton.tsx",
@@ -807,7 +807,7 @@
       },
       {
         "file": "frontend/src/intent/work.ts",
-        "sha256": "d99f2d89a681abcf76689060de44b11b40d9946f7b27a7383ad277a5a708c4ba"
+        "sha256": "4858b6c91655e889d04dcebf4500e1c4c4910fccdd6f6f00e83dcc074f5ba355"
       },
       {
         "file": "frontend/src/lib/utils.ts",
