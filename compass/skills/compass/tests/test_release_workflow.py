@@ -70,12 +70,16 @@ class JobGraphTest(unittest.TestCase):
                 "release",
                 "attach-cli",
                 "marketplace",
+                "homebrew",
             },
             set(jobs()),
         )
         # The listing follows the release alone: it must see `stable` already advanced, and a
         # failed archive attach is no reason to hold it back.
         self.assertEqual({"resolve", "release"}, set(jobs()["marketplace"]["needs"]))
+        # The formula names the archives and their checksums, so it waits for them to be
+        # attached; it does not need the marketplace.
+        self.assertEqual({"resolve", "attach-cli"}, set(jobs()["homebrew"]["needs"]))
         self.assertEqual("resolve", jobs()["verify-frontend"]["needs"])
         self.assertEqual("resolve", jobs()["verify-tree"]["needs"])
         self.assertEqual("resolve", jobs()["build-cli"]["needs"])
@@ -170,24 +174,29 @@ class CiLimitsTest(unittest.TestCase):
 
 
 class CredentialBoundaryTest(unittest.TestCase):
-    def test_the_deploy_key_belongs_to_the_publishing_job_alone(self) -> None:
+    def test_each_deploy_key_belongs_to_its_one_job(self) -> None:
+        keys = {
+            "release": "RELEASE_DEPLOY_KEY",
+            "marketplace": "MARKETPLACE_DEPLOY_KEY",
+            "homebrew": "HOMEBREW_TAP_DEPLOY_KEY",
+        }
         for name, job in jobs().items():
             text = serialized(job)
             with self.subTest(job=name):
-                if name == "release":
-                    self.assertIn("RELEASE_DEPLOY_KEY", text)
-                    self.assertNotIn("MARKETPLACE_DEPLOY_KEY", text)
-                    self.assertEqual({"contents": "write"}, job["permissions"])
-                elif name == "marketplace":
-                    # A different key, on a different repository. It never stands in for the
-                    # release key, and it comes with no write access to this repository.
-                    self.assertIn("MARKETPLACE_DEPLOY_KEY", text)
-                    self.assertNotIn("RELEASE_DEPLOY_KEY", text)
-                    self.assertNotIn("ssh-key", text)
-                    self.assertEqual({"contents": "read"}, job["permissions"])
+                if name in keys:
+                    self.assertIn(keys[name], text)
+                    for other in set(keys.values()) - {keys[name]}:
+                        self.assertNotIn(other, text)
                 else:
                     self.assertNotIn("secrets.", text)
                     self.assertNotIn("ssh-key", text)
+                if name == "release":
+                    self.assertEqual({"contents": "write"}, job["permissions"])
+                elif name in keys:
+                    # A different key, on a different repository. It never stands in for the
+                    # release key, and it comes with no write access to this repository.
+                    self.assertNotIn("ssh-key", text)
+                    self.assertEqual({"contents": "read"}, job["permissions"])
 
     def test_the_write_token_belongs_to_the_two_jobs_that_write_to_the_release(self) -> None:
         # attach-cli is the second: it holds the token and never the key, so it can add
@@ -207,11 +216,12 @@ class CredentialBoundaryTest(unittest.TestCase):
         text = RELEASE.read_text()
         self.assertEqual(1, text.count("secrets.RELEASE_DEPLOY_KEY"))
         self.assertEqual(1, text.count("secrets.MARKETPLACE_DEPLOY_KEY"))
-        self.assertEqual(2, len(re.findall(r"secrets\.", text)), "no third secret")
+        self.assertEqual(1, text.count("secrets.HOMEBREW_TAP_DEPLOY_KEY"))
+        self.assertEqual(3, len(re.findall(r"secrets\.", text)), "no fourth secret")
 
     def test_credential_free_jobs_never_persist_credentials(self) -> None:
-        # The marketplace job is on the list: its key authenticates a different repository
-        # by environment variable, so nothing here needs the checkout's own credentials.
+        # The marketplace and homebrew jobs are on the list: each key authenticates a different
+        # repository by environment variable, so nothing here needs the checkout's own credentials.
         for name in (
             "resolve",
             "verify-frontend",
@@ -219,6 +229,7 @@ class CredentialBoundaryTest(unittest.TestCase):
             "build-cli",
             "attach-cli",
             "marketplace",
+            "homebrew",
         ):
             checkouts = uses(name, "actions/checkout")
             self.assertEqual(1, len(checkouts), name)
@@ -703,6 +714,56 @@ class MarketplaceJobTest(unittest.TestCase):
         text = (ROOT / "scripts/publish-marketplace.sh").read_text(encoding="utf-8")
         self.assertIn("spacedock-dev/marketplace.git", text)
         for hazard in ("GITHUB_TOKEN", "GH_TOKEN", "RELEASE_DEPLOY_KEY", "--force", "git tag"):
+            self.assertNotIn(hazard, text)
+
+
+class HomebrewJobTest(unittest.TestCase):
+    """The tap is written by a job that holds a key to another repository."""
+
+    def test_it_checks_out_exactly_the_target_before_anything_runs(self) -> None:
+        (checkout,) = uses("homebrew", "actions/checkout")
+        self.assertEqual("${{ needs.resolve.outputs.target }}", checkout["with"]["ref"])
+        self.assertEqual(checkout, steps("homebrew")[0], "nothing may run before the checkout")
+        self.assertIn("assert-head", commands("homebrew")[0])
+
+    def test_the_key_is_bound_at_the_one_step_that_runs_the_script(self) -> None:
+        holders = [s for s in steps("homebrew") if "env" in s]
+        self.assertEqual(1, len(holders))
+        self.assertEqual(
+            {"HOMEBREW_TAP_DEPLOY_KEY": "${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}"},
+            holders[0]["env"],
+        )
+        script = [line for line in code(holders[0]["run"]).splitlines() if "publish" in line]
+        self.assertEqual(['scripts/publish-homebrew.sh "$TAG"'], script)
+        self.assertEqual(
+            {
+                "TAG": "${{ github.ref_name }}",
+                "TARGET": "${{ needs.resolve.outputs.target }}",
+            },
+            jobs()["homebrew"]["env"],
+        )
+
+    def test_it_runs_no_dependency_code_beside_the_key(self) -> None:
+        for step in steps("homebrew"):
+            for tool in (*FRONTEND_TOOLS, "setup-python", "download-artifact"):
+                self.assertNotIn(tool, step.get("uses", ""))
+        for command in commands("homebrew"):
+            body = code(command)
+            with self.subTest(command=body[:60]):
+                self.assertIsNone(NODE_COMMAND.search(body))
+                self.assertNotRegex(body, r"\bpip\b|git\s+(-\S+\s+)*push|\bgh\b|\bcurl\b")
+
+    def test_the_script_it_runs_cannot_reach_this_repository_or_move_a_release(self) -> None:
+        text = (ROOT / "scripts/publish-homebrew.sh").read_text(encoding="utf-8")
+        self.assertIn("spacedock-dev/homebrew-tap.git", text)
+        for hazard in (
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "RELEASE_DEPLOY_KEY",
+            "MARKETPLACE_DEPLOY_KEY",
+            "--force",
+            "git tag",
+        ):
             self.assertNotIn(hazard, text)
 
 
