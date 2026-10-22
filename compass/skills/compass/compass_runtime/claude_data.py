@@ -328,27 +328,34 @@ def session_instruction(
 GOAL_CAP_CHARS = records.EXTRACT_TEXT_CAP_CHARS
 
 
-def _goal_attachment_event(
-    attachment: Any, at: float | None
-) -> tuple[str, str, float | None] | None:
+# The longest evaluator reason published. The reason is the small fast model's own sentence or two,
+# shown quoted on the card and read for the paths and checks it names; a cut one ends in an ellipsis
+# and the page reads it as cut (DRC-4948).
+VERDICT_REASON_CAP_CHARS = 500
+
+GoalEvent = tuple[str, str, float | None, str]
+
+
+def _goal_attachment_event(attachment: Any, at: float | None) -> GoalEvent | None:
     if not isinstance(attachment, dict) or attachment.get("type") != "goal_status":
         return None
     condition = attachment.get("condition")
     text = condition if isinstance(condition, str) else ""
     if attachment.get("sentinel") is True and attachment.get("met") is False:
-        return ("set", text, at)
+        return ("set", text, at, "")
     if attachment.get("met") is True:
-        return ("verdict", text, at)
+        reason = attachment.get("reason")
+        return ("verdict", text, at, reason if isinstance(reason, str) else "")
     return None
 
 
-def _goal_event(record: Any) -> tuple[str, str, float | None] | None:
-    """One goal-relevant record as `(kind, condition, at)`, or None.
+def _goal_event(record: Any) -> GoalEvent | None:
+    """One goal-relevant record as `(kind, condition, at, reason)`, or None.
 
     Kinds: `set` (the sentinel `goal_status` attachment that carries the condition and is
-    stamped the moment the command ran), `verdict` (the evaluator's `met: true`), `cleared`
-    (the command's own printed answer). A subagent's record is never the session's. Shapes:
-    docs/captures/claude/goal-2.1.308-macos.jsonl.
+    stamped the moment the command ran), `verdict` (the evaluator's `met: true`, with its
+    reason), `cleared` (the command's own printed answer). A subagent's record is never the
+    session's. Shapes: docs/captures/claude/goal-2.1.308-macos.jsonl.
     """
     if not isinstance(record, dict) or record.get("isSidechain") is True:
         return None
@@ -368,7 +375,7 @@ def _goal_event(record: Any) -> tuple[str, str, float | None] | None:
     printed = content.replace("<local-command-stdout>", "").strip()
     # `Goal cleared:` is the documented wording for an active goal and was not captured;
     # a met goal had already cleared itself and printed `No goal set`, which is not a clear.
-    return ("cleared", "", at) if printed.startswith("Goal cleared") else None
+    return ("cleared", "", at, "") if printed.startswith("Goal cleared") else None
 
 
 def _goal_words(condition: str) -> str:
@@ -379,23 +386,34 @@ def _goal_words(condition: str) -> str:
     return " ".join(masked.split())
 
 
-def _advance_goal(
-    goal: dict[str, Any] | None, event: tuple[str, str, float | None]
-) -> dict[str, Any] | None:
+def _verdict_reason(reason: str) -> str:
+    """The evaluator's reason as one masked line within its bound, ending in an ellipsis if cut."""
+    masked = " ".join(records.safe_text(records.mask_prose(reason), 2 * len(reason) + 64).split())
+    if len(masked) <= VERDICT_REASON_CAP_CHARS:
+        return masked
+    return masked[:VERDICT_REASON_CAP_CHARS].rstrip() + "…"
+
+
+def _advance_goal(goal: dict[str, Any] | None, event: GoalEvent) -> dict[str, Any] | None:
     """The session's goal after one more event: the latest set wins, a met one is kept.
 
-    A verdict only confirms a goal already held, by its words. One for words not held, or
-    with no set record behind it in the bytes read, has no known set time, and a time is
-    never taken from the verdict instead.
+    A verdict only confirms a goal already held, by its words, and is kept on it as the
+    harness's claim; a later set or clear takes it away with the goal it was about. One for
+    words not held, or with no set record behind it in the bytes read, has no known set
+    time, and a time is never taken from the verdict instead.
     """
-    kind, condition, at = event
+    kind, condition, at, reason = event
     if kind == "cleared":
         return None
     words = _goal_words(condition)
     if kind == "set":
         return {"text": words, "at": at} if words and at is not None else None
     if kind == "verdict":
-        return goal if goal is not None and goal["text"] == words else None
+        if goal is None or goal["text"] != words:
+            return None
+        if at is None:
+            return goal
+        return {**goal, "verdict": {"met": True, "at": at, "reason": _verdict_reason(reason)}}
     return goal
 
 
@@ -410,8 +428,9 @@ def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[
     count, so a half-written record is read once it finishes.
 
     The published mapping is `{"text", "at"}`, with `offered` and `cut` added when the condition
-    is longer than the Goal field holds (`_with_excerpt`), so a later verdict (met, when, the
-    evaluator's reason) joins it as keys, never as a rename.
+    is longer than the Goal field holds (`_with_excerpt`), and `verdict` (`{met, at, reason}`, the
+    harness's claim that the goal is met) once the evaluator has decided. The key is absent, not
+    empty, before then.
     """
     try:
         stat = os.stat(path)

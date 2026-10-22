@@ -867,6 +867,41 @@ def _criterion(value: Any, cap: int) -> reading.Criterion | None:
     return criterion
 
 
+class _VerdictKey(TypedDict, total=False):
+    """The one optional key of a stored reading that `_provenance` does not carry."""
+
+    goal_verdict: reading.GoalVerdictCheck
+
+
+def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
+    """One stored test of the harness's goal verdict, or nothing.
+
+    Closed tokens only, as a criterion's `why` is: the page maps a token to its own sentence, so a
+    sidecar rewritten to say something else refuses the reading whole rather than speaking for
+    Compass.
+    """
+    if not isinstance(value, dict) or set(value) != set(reading.GOAL_VERDICT_KEYS):
+        return None
+    at, cites = value["at"], value["cites"]
+    if (
+        isinstance(at, bool)
+        or not isinstance(at, (int, float))
+        or at <= 0
+        or value["check"] not in reading.GOAL_VERDICT_CHECKS
+        or value["why"] not in reading.GOAL_VERDICT_WHYS
+        or not isinstance(cites, (list, tuple))
+        or len(cites) > reading.MAX_RECORDED_CITES
+        or not all(isinstance(cite, str) for cite in cites)
+    ):
+        return None
+    return {
+        "at": float(at),
+        "check": value["check"],
+        "why": value["why"],
+        "cites": tuple(records.safe_text(cite, KEY_CAP_CHARS) for cite in cites),
+    }
+
+
 def _assessment(value: Any, cap: int) -> reading.Assessment | None:
     """One untrusted reading, or nothing at all.
 
@@ -892,8 +927,10 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         return None
     criteria = _criteria(value.get("criteria"), cap)
     coverage = reading.validate_coverage(value["coverage"]) if "coverage" in value else None
+    verdict = _goal_verdict(value["goal_verdict"]) if "goal_verdict" in value else None
     if (
         criteria is None
+        or ("goal_verdict" in value and verdict is None)
         or (value.get("coverage") is not None and coverage is None)
         or any(not reading.result_in_scope(row.get("result"), scope) for row in criteria.values())
     ):
@@ -914,6 +951,7 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         if not window_fields:
             return None
         window = window_fields["window_start"]
+    extra = _VerdictKey(goal_verdict=verdict) if verdict is not None else _VerdictKey()
     assessment: reading.Assessment = {
         **provenance,
         "revision_read": revision,
@@ -939,6 +977,7 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         "evidence_through": records.norm_epoch(value.get("evidence_through")) or None,
         "coverage": coverage,
         "criteria": criteria,
+        **extra,
     }
     return assessment
 

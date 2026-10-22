@@ -55,7 +55,13 @@ def set_goal(when: float, condition: str = CONDITION, **extra: Any) -> list[dict
     ]
 
 
-def verdict(when: float, condition: str = CONDITION, *, met: bool = True) -> dict[str, Any]:
+REASON = "placeholder reason"
+MET = {"met": True, "at": T0 + 30, "reason": REASON}
+
+
+def verdict(
+    when: float, condition: str = CONDITION, *, met: bool = True, reason: Any = REASON
+) -> dict[str, Any]:
     return {
         "type": "attachment",
         "timestamp": _iso(when),
@@ -63,7 +69,7 @@ def verdict(when: float, condition: str = CONDITION, *, met: bool = True) -> dic
             "type": "goal_status",
             "met": met,
             "condition": condition,
-            "reason": "placeholder reason",
+            "reason": reason,
             "iterations": 1,
             "durationMs": 1000,
             "tokens": 10,
@@ -127,13 +133,13 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
 
     def test_a_met_goal_keeps_its_condition_and_its_set_time(self) -> None:
         goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30)])
-        self.assertEqual({"text": CONDITION, "at": T0 + 5}, goal)
+        self.assertEqual({"text": CONDITION, "at": T0 + 5, "verdict": MET}, goal)
 
     def test_clearing_after_a_met_goal_changes_nothing(self) -> None:
         # Measured: a met goal had cleared itself, so the later command printed `No goal set`.
         nothing = command_answer(T0 + 60, "clear", "No goal set")
         goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30), nothing])
-        self.assertEqual({"text": CONDITION, "at": T0 + 5}, goal)
+        self.assertEqual({"text": CONDITION, "at": T0 + 5, "verdict": MET}, goal)
 
     def test_a_status_check_changes_nothing(self) -> None:
         goal = read_goal([*set_goal(T0 + 5), command_answer(T0 + 9, "", "placeholder status")])
@@ -148,6 +154,43 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
     def test_a_not_met_verdict_leaves_the_goal_as_it_was(self) -> None:
         goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30, met=False)])
         self.assertEqual({"text": CONDITION, "at": T0 + 5}, goal)
+
+    def test_a_goal_with_no_verdict_publishes_no_verdict_key(self) -> None:
+        # A key every goal carried would say nothing about this one.
+        goal = read_goal([*set_goal(T0 + 5)])
+        assert goal is not None
+        self.assertNotIn("verdict", goal)
+
+    def test_a_later_goal_does_not_inherit_the_earlier_ones_verdict(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30), *set_goal(T0 + 50, LATER_CONDITION)])
+        self.assertEqual({"text": LATER_CONDITION, "at": T0 + 50}, goal)
+
+    def test_the_verdict_carries_the_evaluators_reason_as_one_masked_line(self) -> None:
+        reason = "wrote notes.md and ran deploy with key AKIAIOSFODNN7EXAMPLE\n\nthen   checked"
+        goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30, reason=reason)])
+        assert goal is not None
+        text = goal["verdict"]["reason"]
+        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", text)
+        self.assertNotIn("\n", text)
+        self.assertTrue(text.startswith("wrote notes.md and ran deploy with key"))
+
+    def test_a_reason_over_the_bound_is_cut_and_says_so(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30, reason="word " * 400)])
+        assert goal is not None
+        self.assertLessEqual(
+            len(goal["verdict"]["reason"]), claude_data.VERDICT_REASON_CAP_CHARS + 1
+        )
+        self.assertTrue(goal["verdict"]["reason"].endswith("…"))
+
+    def test_a_reason_that_is_not_text_is_an_empty_one_and_the_verdict_stands(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30, reason=["not", "text"])])
+        assert goal is not None
+        self.assertEqual({"met": True, "at": T0 + 30, "reason": ""}, goal["verdict"])
+
+    def test_the_latest_verdict_wins(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30), verdict(T0 + 40, reason="again")])
+        assert goal is not None
+        self.assertEqual({"met": True, "at": T0 + 40, "reason": "again"}, goal["verdict"])
 
     def test_a_condition_too_long_to_hold_whole_publishes_none(self) -> None:
         self.assertIsNone(read_goal(set_goal(T0 + 5, "x" * 2001)))
@@ -240,7 +283,7 @@ class TheGoalIsReadOnAppendTest(unittest.TestCase):
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(verdict(T0 + 30)) + "\n")
             goal = claude_data.session_goal(config, state, str(path))
-        self.assertEqual({"text": CONDITION, "at": T0 + 5}, goal)
+        self.assertEqual({"text": CONDITION, "at": T0 + 5, "verdict": MET}, goal)
 
     def test_a_half_written_last_line_is_read_once_it_completes(self) -> None:
         with tempfile.TemporaryDirectory() as home:
@@ -285,6 +328,13 @@ class TheCollectorPublishesTheGoalTest(HarnessContractTestCase):
         when = self.NOW - 100
         row = self.row([prompt(when), *set_goal(when + 5), prompt(when + 10, "keep going")])
         self.assertEqual({"text": CONDITION, "at": when + 5}, row["session_goal"])
+
+    def test_a_met_goal_publishes_the_verdict_with_it(self) -> None:
+        when = self.NOW - 100
+        row = self.row([prompt(when), *set_goal(when + 5), verdict(when + 30)])
+        self.assertEqual(
+            {"met": True, "at": when + 30, "reason": REASON}, row["session_goal"]["verdict"]
+        )
 
     def test_a_session_with_no_goal_publishes_none_and_nothing_else_moves(self) -> None:
         when = self.NOW - 100

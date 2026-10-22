@@ -256,6 +256,7 @@ ASSESSMENT_KEYS = (
     "ended_at_read",
     "evidence_through",
     "coverage",
+    "goal_verdict",
     "criteria",
 )
 CRITERION_KEYS = ("result", "cites", "detail", "clause", "why")
@@ -1095,6 +1096,20 @@ class Criterion(TypedDict):
     why: str
 
 
+class GoalVerdictCheck(TypedDict):
+    """What the record said to the harness's claim that a `/goal` is met.
+
+    `at` is the verdict's own time, so the page can tell a check of the verdict it shows from one
+    of an earlier verdict. `check` and `why` are closed tokens the page maps to its own sentences,
+    as `Criterion.why` is: no producer prose reaches the card through this field.
+    """
+
+    at: float
+    check: str
+    why: str
+    cites: tuple[str, ...]
+
+
 class Assessment(TypedDict):
     """A whole reading, as published.
 
@@ -1134,6 +1149,9 @@ class Assessment(TypedDict):
     # usable time (item 6 of the ruling `MAX_OUTCOME_LINES` cites).
     evidence_through: float | None
     coverage: NotRequired[dict[str, Any] | None]
+    # Compass's test of the harness's own "goal met" verdict, present only where the session holds
+    # one. Beside the criteria and never among them, so it cannot move a level.
+    goal_verdict: NotRequired[GoalVerdictCheck]
     criteria: dict[str, Criterion]
 
 
@@ -4145,6 +4163,115 @@ def recorded_departure(
     return None
 
 
+# The harness's "goal met" verdict is a claim, tested the way an agent saying a task is done is
+# (owner, 2026-10-22):
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-22-a-goal-met-verdict-is-a-claim)
+# The result of the test, apart from every criterion, so the verdict can neither lower a level nor
+# stand in for a passing check. `agrees` and `disputed` are the two answers the record can give;
+# `unconfirmed` is what it gives when it holds neither the cited facts nor anything against them,
+# because absence never produces a dispute (rule 3).
+GOAL_VERDICT_AGREES = "agrees"
+GOAL_VERDICT_DISPUTED = "disputed"
+GOAL_VERDICT_UNCONFIRMED = "unconfirmed"
+GOAL_VERDICT_CHECKS = (GOAL_VERDICT_AGREES, GOAL_VERDICT_DISPUTED, GOAL_VERDICT_UNCONFIRMED)
+GOAL_VERDICT_WRITTEN = "written-before"
+GOAL_VERDICT_PASSED = "passed-before"
+GOAL_VERDICT_WRITTEN_AFTER = "written-after"
+GOAL_VERDICT_FAILED = "check-failed"
+GOAL_VERDICT_NOT_FOUND = "not-found"
+GOAL_VERDICT_NOTHING_CHECKABLE = "nothing-checkable"
+GOAL_VERDICT_WHYS = (
+    GOAL_VERDICT_WRITTEN,
+    GOAL_VERDICT_PASSED,
+    GOAL_VERDICT_WRITTEN_AFTER,
+    GOAL_VERDICT_FAILED,
+    GOAL_VERDICT_NOT_FOUND,
+    GOAL_VERDICT_NOTHING_CHECKABLE,
+)
+GOAL_VERDICT_KEYS = ("at", "check", "why", "cites")
+# A file name the evaluator's prose names: a stem of at least two characters and a lettered
+# extension, so "e.g." and a version such as "2.1" are not read as files.
+_VERDICT_FILE = re.compile(r"(?:[\w\-]+/)*[\w\-]{2,}\.[A-Za-z][A-Za-z0-9]{0,4}")
+
+
+def _verdict_files(reason: str) -> tuple[str, ...]:
+    return tuple(path for path in _path_tokens(reason, files=True) if _VERDICT_FILE.fullmatch(path))
+
+
+def _verdict_check_kinds(reason: str) -> frozenset[str]:
+    return frozenset(kind for kind in _LINE_KINDS if _claims_result(reason, kind))
+
+
+def check_goal_verdict(  # noqa: PLR0911 - one return per answer the record can give
+    goal: Any, recorded: Recorded
+) -> GoalVerdictCheck | None:
+    """Test the harness's `met` verdict on a session's goal against what the record holds.
+
+    The facts the evaluator's reason cites are the files it names and the kinds of check it says
+    passed. A cited file the record shows written, or a check of a claimed kind that passed, at or
+    before the verdict and since undone by nothing, agrees. A cited file written after the verdict,
+    or a check of a claimed kind whose latest run failed (and that no later whole-suite run before
+    the verdict superseded), disputes it, and a dispute outweighs what agrees. Nothing found, or
+    nothing checkable in the reason, is `unconfirmed`: the listing is capped, so the absence of a
+    write says nothing. Only the record from the goal's own set time is read. None where the row
+    holds no well-formed verdict.
+    """
+    if not isinstance(goal, dict) or not isinstance(goal.get("verdict"), dict):
+        return None
+    verdict = goal["verdict"]
+    set_at, at = _number(goal.get("at")), _number(verdict.get("at"))
+    reason = verdict.get("reason")
+    if verdict.get("met") is not True or not set_at or not at or not isinstance(reason, str):
+        return None
+
+    verdict_at: float = at
+
+    def result(check: str, why: str, cites: Sequence[str] = ()) -> GoalVerdictCheck:
+        return {
+            "at": verdict_at,
+            "check": check,
+            "why": why,
+            "cites": tuple(cites[:MAX_RECORDED_CITES]),
+        }
+
+    files, kinds = _verdict_files(reason), _verdict_check_kinds(reason)
+    if not files and not kinds:
+        return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOTHING_CHECKABLE)
+    writes = [
+        write
+        for write in recorded.writes
+        if write.at >= set_at and any(_same_path(path, write.path) for path in files)
+    ]
+    later = [write.id for write in writes if write.at > at]
+    if later:
+        return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_WRITTEN_AFTER, later)
+    checks = [
+        entry
+        for entry in recorded.checks
+        if (evidence_at(entry) or entry["at"]) >= set_at
+        and kinds & _check_kinds(_check_text(entry))
+    ]
+    failed = [
+        entry["id"]
+        for entry in checks
+        if entry.get("result") == RESULT_FAILED and not _superseded(entry, at, recorded.checks)
+    ]
+    if failed:
+        return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_FAILED, failed)
+    if writes:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_WRITTEN, [write.id for write in writes])
+    passed = [
+        entry["id"]
+        for entry in checks
+        if entry.get("result") == RESULT_PASSED
+        and (evidence_at(entry) or entry["at"]) <= at
+        and entry.get("changed_after") is not True
+    ]
+    if passed:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_PASSED, passed)
+    return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOT_FOUND)
+
+
 # The words of a line that say which kind of check would show it, and the words of a check's own
 # command that say which kind it is. Deliberately small: a check covers a line when the line claims
 # that kind's result (`_claims_result`), or when it names a path the check's command names. A line
@@ -4782,7 +4909,24 @@ def produce(  # noqa: PLR0913
     if latest.get("goal_source") in PROMPT_SOURCES:
         assessment["goal_source"] = str(latest["goal_source"])
         assessment["goal_source_at"] = baseline_at(latest)
+    _attach_verdict_check(assessment, row, facts, tool_output)
     return assessment, "", True
+
+
+def _attach_verdict_check(
+    assessment: Assessment,
+    row: Mapping[str, Any],
+    facts: Sequence[Mapping[str, Any]],
+    tool_output: ToolOutput | None,
+) -> None:
+    """Add the test of the row's harness verdict, only where the row holds one."""
+    goal = row.get("session_goal")
+    if not isinstance(goal, dict) or "verdict" not in goal:
+        return
+    harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
+    checked = check_goal_verdict(goal, recorded_from(facts, harness, sid, tool_output=tool_output))
+    if checked is not None:
+        assessment["goal_verdict"] = checked
 
 
 def _left_out(
