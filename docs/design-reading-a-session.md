@@ -5379,7 +5379,33 @@ local one, so the first-prompt read classes it as a control and drafts nothing f
   source fact for it and reads the goal box's words, with the existing sentence saying so.
 - Rejected: reading the condition out of the command record's `<command-args>`. The record reader cuts a
   message at 2,000 characters and drops the closing tag, and the attachment is not cut.
-- Not decided here: how the page offers the goal, which is the next issue's.
+- Not decided here: how the page offers the goal, which the next section records.
+
+### What offering a `/goal` decided, 2026-10-22
+
+DRC-4947, owner rulings of the same date. The page uses a detected goal and does not hold it back for a save.
+
+- A `/goal` is the working goal until the reader edits it. With no goal saved it is the draft, ahead of
+  the first and latest prompt and ahead of the harness-control check, because a session that opened with
+  `/goal` has no first prompt to draft and still has this goal. The box, Save intent and Analyze drift all
+  read it through `intentDraft`, so Analyze adopts it by name (`adopt: session-goal`, its words and its time)
+  as it does a drafted prompt. The server's later-direction floor takes the same draft time
+  (`annotations.direction_floor`), so the page and the store agree on which directions are later.
+- The page marks it "Goal detected" and the line under the box reads "From /goal", with the time. Typing
+  replaces it and the line says "From /goal, edited" or "Typed"; choosing a prompt replaces it and the line
+  names the prompt. The prompt list leads with it.
+- A `/goal` that appears after the reader saved a goal never replaces their words. The page offers it
+  beside the field, naming the condition and its time, with Use this goal and Keep my goal. "After" is the
+  moment the saved words stand at, as `direction_floor` reads it: an adopted goal by its source's time, typed
+  words by when they were saved. Use this goal fills the box as a pending adoption, so Save intent records the
+  new source and time; Keep my goal declines that `/goal` and any older one, and a later one asks again.
+- A condition over the Goal field's 240 characters is offered as the server's excerpt with a note that it
+  was cut. The row carries `offered` and `cut` only for such a goal, and `prompt_candidate` resolves `offered`,
+  so the words on screen, the words an adoption names and the words the store keeps are one string. The page
+  never clips on its own, and an adoption naming the whole words is refused.
+- Rejected: saving the detected goal on open. Nothing in Compass writes the reader's words without a press.
+- Rejected: Use this goal as an immediate write. A pick from the prompt list fills the box and saves
+  nothing, and a second kind of pick that saves would make the list inconsistent with itself.
 
 ### The starting definitions
 

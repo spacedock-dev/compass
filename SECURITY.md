@@ -3289,7 +3289,9 @@ records, not from the prompt: the `goal_status` attachment that carries the cond
 most the last 8 MiB, so a goal set before that and untouched since publishes nothing. The condition
 is published as `session_goal`, `{text, at}`, masked by the same prose masking a later direction
 gets and folded to one line, and a condition over 2,000 characters publishes nothing rather than an
-excerpt. A subagent's record is never the session's goal, and no verdict text (the evaluator's
+excerpt. A condition longer than the Goal field holds (240 characters) also carries `offered`, the
+bounded excerpt an adoption stores, and `cut: true`, so the page marks it cut and an adoption names
+exactly the words the store keeps; a shorter one carries neither key. A subagent's record is never the session's goal, and no verdict text (the evaluator's
 reason) is read. Like a first prompt it is not in session history, and it is stored only if the
 reader adopts it as their goal under the source token `session-goal`.
 
