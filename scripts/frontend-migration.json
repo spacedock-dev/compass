@@ -996,7 +996,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "A prompt chosen from \"Use your prompt\" or an explicit later direction, not yet saved",
+      "name": "A prompt chosen from \"Use your prompt\", the session's /goal taken from the list or from its update offer, or an explicit later direction, not yet saved",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/intent/IntentAdoption.test.tsx",
@@ -1004,6 +1004,16 @@
         "frontend/e2e/intent-parity.mjs"
       ],
       "contract": "Chosen adoption is fact id+words+source time, not typed draft; drop only matching adopted choice, never a newer in-flight choice.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "The /goal the reader declined to take as an update",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/DetectedGoal.test.tsx",
+        "frontend/stories/IntentCard.stories.tsx"
+      ],
+      "contract": "Keep the time of the declined /goal per session in memory; a /goal set later is offered again, and nothing is offered over a goal-less or discarded session.",
       "disposition": "store-held"
     },
     {
