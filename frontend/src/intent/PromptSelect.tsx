@@ -4,7 +4,8 @@ import { compatSessKey } from '../api/identity';
 import { buttonVariants } from '../ui/button';
 import { Popover, PopoverContent } from '../ui/popover';
 import { useFocusKey } from '../controls';
-import { goalKey, promptClip, promptMenu, promptChoices } from './derive';
+import { sessionGoalCandidate } from '../sessions/intent';
+import { goalKey, promptClip, promptMenu, promptChoices, SESSION_GOAL } from './derive';
 import { choosePrompt } from './edit';
 import { closePromptMenu, loadPromptChoices } from './prompts';
 import { usePanel } from './useIntent';
@@ -24,9 +25,13 @@ const PROMPT_SHOWN = 140;
 export function PromptSelect() {
   const { ctx, input, session, projectKey } = usePanel();
   const menu = promptMenu(input);
-  const texts = new Map(
-    promptChoices(ctx.held, input.contexts, session).map((choice) => [choice.factId, choice.text]),
-  );
+  const stated = sessionGoalCandidate(session);
+  const texts = new Map([
+    ...(stated ? [[SESSION_GOAL, stated.text] as const] : []),
+    ...promptChoices(ctx.held, input.contexts, session).map(
+      (choice) => [choice.factId, choice.text] as const,
+    ),
+  ]);
   const bounded = ctx.held.prompts.get(compatSessKey(session))?.bounded;
   /* One label whatever the box holds: the face used to change to "Replace with your prompt", which made the
      control read as two. */

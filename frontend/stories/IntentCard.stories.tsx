@@ -954,6 +954,104 @@ export const StateSaved: Story = {
   },
 };
 
+/* A /goal the session set is the working goal until the reader edits it, and a later one is offered over
+   saved words rather than written over them. */
+const DETECTED_GOAL = 'The findings file exists and every check in it passes';
+const LATER_GOAL = 'The findings file is split by area and every check passes';
+const goalSource = (card: HTMLElement) =>
+  (card.querySelector('[data-next-cockpit-goal-source]')?.textContent ?? '').trim();
+
+export const StateGoalDetected: Story = {
+  args: {
+    setup: { session: { session_goal: { text: DETECTED_GOAL, at: 1_760_000_300 } } },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    // Filled, marked and sourced without a keystroke, ahead of the session's first prompt.
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
+    await expect(card.querySelector('[data-next-goal-detected]')).toHaveTextContent(
+      'Goal detected',
+    );
+    await expect(goalSource(card)).toBe(`From /goal · ${clock(1_760_000_300)} · not saved`);
+    // Typing clears the mark and the line says the words are now the reader's.
+    await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ', and the report is linked');
+    await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
+    await expect(goalSource(card)).toBe('From /goal, edited · not saved');
+  },
+};
+
+export const StateGoalDetectedCut: Story = {
+  args: {
+    setup: {
+      session: {
+        session_goal: {
+          text: `${DETECTED_GOAL} ${DETECTED_GOAL} ${DETECTED_GOAL} ${DETECTED_GOAL} ${DETECTED_GOAL}`,
+          at: 1_760_000_300,
+          offered: DETECTED_GOAL,
+          cut: true,
+        },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    // The excerpt is what the box holds, and the line says it was cut rather than passing it off as whole.
+    await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
+    await expect(goalSource(card)).toMatch(/Cut to fit the goal limit/);
+  },
+};
+
+export const StateGoalUpdateOffered: Story = {
+  args: {
+    setup: {
+      session: {
+        annotation_goal: 'Keep the parser small and pure',
+        annotation_goal_why: '',
+        annotation_revision: 1,
+        annotation_revision_count: 1,
+        annotation_at: 1_760_000_500,
+        annotation_goal_saved_at: 1_760_000_500,
+        session_goal: { text: LATER_GOAL, at: 1_760_000_600 },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    const offer = card.querySelector('[data-next-goal-update]') as HTMLElement;
+    // The offer names the new condition and its time, and the saved words stay as they are.
+    await expect(offer).toHaveTextContent(
+      `Your /goal changed at ${clock(1_760_000_600)}: ${LATER_GOAL}`,
+    );
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
+      'Keep the parser small and pure',
+    );
+    await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
+    // Keeping the saved goal withdraws the offer and changes nothing.
+    await userEvent.click(within(offer).getByRole('button', { name: 'Keep my goal' }));
+    await expect(card.querySelector('[data-next-goal-update]')).toBeNull();
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
+      'Keep the parser small and pure',
+    );
+  },
+};
+
+export const StateGoalUpdateTaken: Story = {
+  args: { setup: StateGoalUpdateOffered.args?.setup as CardSetup },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await userEvent.click(view.getByRole('button', { name: 'Use this goal' }));
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(LATER_GOAL);
+    await expect(card.querySelector('[data-next-goal-update]')).toBeNull();
+    await expect(card.querySelector('[data-next-goal-detected]')).toHaveTextContent(
+      'Goal detected',
+    );
+    await expect(goalSource(card)).toBe(`From /goal · ${clock(1_760_000_600)} · not saved`);
+  },
+};
+
 /* Discard everything says what it removes and what it keeps before the second press, and once, after it. The form
    is left empty, not refilled from the session's first prompt, which stays one press away under Use your prompt. */
 export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {

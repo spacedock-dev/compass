@@ -49,14 +49,16 @@ export function IntentHowTo({
       focusKey={`intent-howto:${session ? compatSessKey(session) : 'sessions'}`}
     >
       <h3 className="text-body font-semibold">How Intent and drift works</h3>
-      <p>1. Give the goal. Compass drafts one from your first prompt; edit it if it is off.</p>
       <p>
-        2. Press Analyze drift. It asks once to allow the reading and counts against a daily cap,
-        both shown beside the button.
+        1. Give the goal. A session's /goal is detected and used until you edit it; else Compass
+        drafts from your first prompt.
       </p>
       <p>
-        3. Read where the work left your goal. On Claude Code you can copy a correction to steer the
-        session back.
+        2. Press Analyze drift. It asks once to allow the reading and counts against a daily cap,
+        shown beside the button.
+      </p>
+      <p>
+        3. Read where the work left your goal. On Claude Code, copy a correction to steer it back.
       </p>
       <p
         data-next-intent-howto-limit

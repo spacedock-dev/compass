@@ -1,16 +1,19 @@
 import { useId } from 'react';
 import { Label } from '../ui/label';
-import { endedAt } from '../observed';
+import { clock as clockText, endedAt } from '../observed';
+import { promptClip } from './derive';
 import { ActionButton } from './ActionButton';
 import { storeUnreadable } from './annotation';
 import { heldSentence } from './cues';
-import { clearGoal, escapeGoal, typeGoal } from './edit';
+import { clearGoal, escapeGoal, keepSavedGoal, takeDetectedGoal, typeGoal } from './edit';
 import {
   directionLinesQuestion,
   goalBaseline,
   goalKey,
   goalSourceLine,
+  goalUpdate,
   intentDraft,
+  SESSION_GOAL,
 } from './derive';
 import { answerLines } from './directions';
 import { HeldTextarea } from './HeldTextarea';
@@ -44,6 +47,42 @@ function LinesQuestion() {
   );
 }
 
+/* A /goal the session set after the reader saved their own goal: offered beside the field, naming the new
+   condition and its time. Taking it fills the box as a pending adoption, so the saved words stay what they
+   are until Save intent; keeping them declines this /goal and asks again only for a later one. */
+function GoalUpdateOffer() {
+  const { ctx, input } = usePanel();
+  const update = goalUpdate(input);
+  if (!update) return null;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1"
+      role="group"
+      aria-label="A newer goal from /goal"
+      data-next-goal-update
+    >
+      <p title={update.text}>
+        {`Your /goal changed at ${clockText(update.at)}: ${promptClip(update.text, 120)}`}
+        {update.cut ? ' (cut to fit the goal limit)' : ''}
+      </p>
+      <ActionButton
+        weight="secondary"
+        label="Use this goal"
+        action="goal-update-use"
+        focusKey="goal-update-use"
+        onPress={() => takeDetectedGoal(ctx, input)}
+      />
+      <ActionButton
+        weight="secondary"
+        label="Keep my goal"
+        action="goal-update-keep"
+        focusKey="goal-update-keep"
+        onPress={() => keepSavedGoal(ctx, input)}
+      />
+    </div>
+  );
+}
+
 export function GoalField() {
   const boxId = useId();
   const { ctx, input, session, cap } = usePanel();
@@ -66,6 +105,14 @@ export function GoalField() {
         <Label className="next-cockpit-held-label" htmlFor={boxId}>
           Goal
         </Label>
+        {untouched && drafted?.source === SESSION_GOAL ? (
+          <span
+            className="next-cockpit-held-detected text-label text-muted-foreground"
+            data-next-goal-detected
+          >
+            Goal detected
+          </span>
+        ) : null}
         <PromptSelect />
       </div>
       {endedAt(session) !== null ? (
@@ -124,6 +171,7 @@ export function GoalField() {
       {held.chosen.get(key)?.direction ? (
         <p className="next-cockpit-held-hint">{RULE_HINT}</p>
       ) : null}
+      <GoalUpdateOffer />
       <LinesQuestion />
       {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
     </div>

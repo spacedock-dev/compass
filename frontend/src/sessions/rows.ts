@@ -17,6 +17,7 @@ import {
   intentDraft,
   openedWithControl,
   PROMPT_CHOSEN,
+  SESSION_GOAL,
   PROMPT_SOURCES,
   READING_ASSESSMENT_KEYS,
   READING_CLAIMS,
@@ -253,11 +254,13 @@ export function goalCell(
       : 'GOAL · YOUR WORDS'
     : draft && draft.source === 'first-prompt'
       ? 'GOAL · YOUR FIRST PROMPT'
-      : draft && draft.source === PROMPT_CHOSEN
-        ? 'GOAL · YOUR CHOSEN PROMPT'
-        : text
-          ? 'GOAL · YOUR LATEST PROMPT'
-          : 'GOAL';
+      : draft && draft.source === SESSION_GOAL
+        ? 'GOAL · YOUR /GOAL'
+        : draft && draft.source === PROMPT_CHOSEN
+          ? 'GOAL · YOUR CHOSEN PROMPT'
+          : text
+            ? 'GOAL · YOUR LATEST PROMPT'
+            : 'GOAL';
   return typed
     ? { label, kind: 'link', text, known: true }
     : { label, kind: 'link', text: text || 'Add a goal', known: Boolean(text) };

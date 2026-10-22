@@ -26,11 +26,12 @@ import {
   linesOrigins,
   linesToSend,
   PROMPT_CHOSEN,
+  SESSION_GOAL,
   type Changes,
   type Draft,
   type DraftInput,
 } from './derive';
-import { promptCandidate } from '../sessions/intent';
+import { promptCandidate, sessionGoalCandidate } from '../sessions/intent';
 import { intentLogFor } from './logContext';
 import {
   ADOPT_CHANGED,
@@ -98,9 +99,10 @@ export function forgetChosen(ctx: Ctx, session: Row, adopted: Draft | null): voi
   const held = ctx.held.chosen.get(key);
   if (
     adopted &&
-    adopted.source === PROMPT_CHOSEN &&
+    (adopted.source === PROMPT_CHOSEN ||
+      (adopted.source === SESSION_GOAL && held?.source === SESSION_GOAL)) &&
     held &&
-    held.factId === adopted.factId &&
+    held.factId === (adopted.factId ?? '') &&
     held.text === adopted.text &&
     held.at === adopted.at
   ) {
@@ -112,6 +114,13 @@ export function forgetChosen(ctx: Ctx, session: Row, adopted: Draft | null): voi
 
 function candidateFor(ctx: Ctx, input: DraftInput, source: string): Draft | null {
   if (source === PROMPT_CHOSEN) return chosenCandidate(ctx.held, input.contexts, input.session);
+  if (source === SESSION_GOAL) {
+    /* The reader's own pick of it, or the draft itself: one set of words either way. */
+    return (
+      chosenCandidate(ctx.held, input.contexts, input.session) ??
+      sessionGoalCandidate(input.session)
+    );
+  }
   if (source === 'first-prompt' || source === 'latest-prompt') {
     return promptCandidate(input.session, source);
   }
@@ -290,7 +299,9 @@ async function saveWork(
        receipt. `/api/annotate` takes an adoption or typed words in one request, so changed lines must not
        leave the displayed draft unsaved. */
     const source =
-      changes.chosen || changes.pending ? PROMPT_CHOSEN : (intentDraft(input)?.source ?? '');
+      changes.chosen || changes.pending
+        ? (chosenCandidate(ctx.held, input.contexts, input.session)?.source ?? PROMPT_CHOSEN)
+        : (intentDraft(input)?.source ?? '');
     const minted = { revision: 0 };
     const adopted = await adoptPrompt(ctx, identity, row, source, signal, minted, fromNow);
     if (adopted === true && frozen) {

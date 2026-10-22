@@ -23,6 +23,9 @@ export interface ChosenPrompt {
   readonly at: number | null;
   readonly cut?: boolean;
   readonly direction?: boolean;
+  /** `session-goal` for the goal the session set with /goal, which has no fact id and is checked against the
+      row's own `session_goal` instead of the menu. Absent for a prompt. */
+  readonly source?: string;
   linesAnswer?: LinesAnswer;
 }
 
@@ -108,6 +111,9 @@ export function createHeld(deps: HeldDeps) {
      text: deleting the first of two lends the survivor its own entry, not the deleted one's. */
   const origins = new Map<string, (number | null)[]>();
   const chosen = new Map<string, ChosenPrompt>();
+  /* The time of the /goal the reader declined to take as an update, by goal key. A /goal set later than this
+     is offered again. */
+  const kept = new Map<string, number>();
   const picks = new Map<string, string>();
   const prompts = new Map<string, PromptList>();
   const directions = new Map<string, DirectionLine>();
@@ -157,6 +163,7 @@ export function createHeld(deps: HeldDeps) {
     lines,
     origins,
     chosen,
+    kept,
     picks,
     prompts,
     directions,

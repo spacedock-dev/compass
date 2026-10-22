@@ -43,6 +43,8 @@ export const INTENT_SAVING = 'Saving your intent…';
 export const INTENT_EDITED_ADD = 'Save your intent, or undo your edit, to add this direction.';
 export const INTENT_CHOSEN_SAID = 'Goal filled from your prompt. Not saved.';
 export const INTENT_MEASURED = 'Drift is measured against these. Edit anything that is off.';
+export const INTENT_DETECTED_SAID = 'Goal filled from your /goal. Not saved.';
+export const GOAL_CUT = 'Cut to fit the goal limit. Analyze reads this excerpt.';
 export const EXCERPT_READ_WHOLE = 'Excerpt. Analyze looks up the source when pressed.';
 /* `reading.LEDGER_WORDS_CAP_CHARS`, copied rather than fetched; `test_reader_words.py` holds the two equal.
    The ruled wording (docs/design-frontend-migration.md, 2026-10-13 departures): "up to" read as a limit that

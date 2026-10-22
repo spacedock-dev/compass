@@ -67,6 +67,10 @@ describe('the Intent how-to', () => {
       const popup = screen.getByRole('dialog', { name: 'How Intent and drift works' });
       expect((popup.textContent ?? '').split(/\s+/).length).toBeLessThanOrEqual(150);
       expect(popup.textContent).toContain('1. Give the goal.');
+      // Where a detected goal comes from, and that it stands until the reader edits it.
+      expect(popup.textContent).toContain(
+        "A session's /goal is detected and used until you edit it; else Compass drafts from your first prompt.",
+      );
       expect(popup.textContent).toContain('2. Press Analyze drift.');
       expect(popup.textContent).toContain('3. Read where the work left your goal.');
       expect(popup.textContent).toContain('Drift level: Claude Code and Pi sessions only.');
