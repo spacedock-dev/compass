@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2107655,
+    "bytes": 2107975,
     "file": "react.html",
-    "sha256": "5457c97670764746ccb48bf1e6a9ff0577fcfa9b866ad3bedc579f6b366da431"
+    "sha256": "3481642a476404ba9f0bd4ac4b4a60fabba610b7e3ec2729278bfc044df7623e"
   },
   "format": 1,
   "frontend": "react",
@@ -751,7 +751,7 @@
       },
       {
         "file": "frontend/src/intent/FindGoal.tsx",
-        "sha256": "b796cce8818b965ce8dc15c73ca204cc7eea57c73ddaca8f434908c8cd87fcaa"
+        "sha256": "400f0fbbf718da2cb6a501815b4d99ff698aaeb8d7baeb3434a57098cba81988"
       },
       {
         "file": "frontend/src/intent/GoalField.tsx",
