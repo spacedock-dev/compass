@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createAnnouncer } from '../shell/announcer';
 import { createFakeClock } from '../transport/testing';
-import { foundGoal, goalKey, intentDraft, type DraftInput } from './derive';
+import {
+  foundGoal,
+  goalKey,
+  intentChanges,
+  intentDraft,
+  intentUnsaved,
+  type DraftInput,
+} from './derive';
 import { createHeld, type FoundGoal } from './held';
 
 /* The working goal, in the order the owner ruled: the reader's saved goal, then a /goal, then a goal found in the
@@ -80,5 +87,21 @@ describe('a found goal', () => {
     const page = input({ box: null, found: null });
     expect(intentDraft(page)?.text).toBe('Ship the queue worker');
     expect(intentDraft(page)?.source).toBe('first-prompt');
+  });
+});
+
+describe('a found goal as the working goal', () => {
+  it('is not an unsaved edit, so Analyze drift is not refused over it, and Undo has nothing to undo', () => {
+    const page = input();
+    expect(intentUnsaved(page)).toBe(false);
+    expect(intentChanges(page).undoable).toBe(false);
+    // Save intent still stores it as the reader's typed words.
+    expect(intentChanges(page).goal).toBe(true);
+  });
+
+  it('is an edit again once the reader changes the words', () => {
+    const page = input({ box: `${FOUND.text}, and a test` });
+    expect(intentUnsaved(page)).toBe(true);
+    expect(intentChanges(page).undoable).toBe(true);
   });
 });

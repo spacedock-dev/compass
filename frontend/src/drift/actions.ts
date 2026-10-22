@@ -14,7 +14,8 @@ import {
   readInput,
   refresh,
 } from '../intent/context';
-import { intentKey } from '../intent/derive';
+import { foundGoal, intentKey } from '../intent/derive';
+import { saveFoundGoal } from '../intent/save';
 import { intentForReading } from '../intent/api';
 import { KEEP_REFUSED } from '../intent/sentences';
 import { isRecord, type Row } from '../observed';
@@ -133,14 +134,33 @@ export async function askForReading(
     return;
   }
   const provider = String(route['provider']);
-  const reading = intentForReading(shell, identity);
-  const adoption = reading?.adoption ?? {};
   /* The revision this panel drew, so a press from a page another tab has since moved on is refused before
      anything starts: the model would otherwise read words this reader never saw. */
-  const expected = drawn.revision;
+  let expected = drawn.revision;
   const control = `reading:${key}`;
   const press = pendingStart(intent, control, 'Starting…', 'Starting the analysis.');
   if (!press) return;
+  /* A found goal is the working goal until edited, but the server reads only a stored goal and adopts only a
+     prompt's own words, so the press stores it as typed words first and reads against the revision that
+     minted. A save that did not land starts nothing. */
+  if (foundGoal(input)) {
+    const saved = await saveFoundGoal(intent, identity, session, press.signal);
+    const fresh = saved ? pressDetails(ctx, identity) : null;
+    if (!fresh) {
+      pendingEnd(intent, control, press);
+      held.requests.set(key, {
+        ...request,
+        pending: false,
+        message: 'Your found goal could not be saved, so nothing was analyzed. Try again.',
+        refusal: true,
+      });
+      held.notify();
+      return;
+    }
+    expected = nextNumber(annotationOf(fresh.session)?.['revision']) || 0;
+  }
+  const reading = intentForReading(shell, identity);
+  const adoption = reading?.adoption ?? {};
   const note: Record<string, unknown> & { pending: boolean; message: string } = {
     ...(request?.notice !== undefined ? { notice: request.notice } : {}),
     pending: true,

@@ -351,7 +351,9 @@ export function intentUnsaved(input: DraftInput): boolean {
      save as a typed edit does. */
   if (chosenOverSaved(input)) return true;
   const typed = held.goals.get(goalKey(session));
-  if (typed !== undefined) {
+  /* A found goal standing in the box is the working goal, as a /goal is: it is not an edit, so a reading may
+     start on it (the press saves it first, as typed words). */
+  if (typed !== undefined && !foundGoal(input)) {
     const draft = intentDraft(input);
     const stands = draft ? draft.text : String(savedGoal(input) || '');
     if (typed !== stands) return true;
@@ -401,7 +403,8 @@ export function intentChanges(input: DraftInput): Changes {
     pending,
     adoptable,
     any: goal || lines || pending,
-    undoable: typed !== baseline || lines || pending,
+    // A found goal is not the reader's edit, so Undo has nothing to put back.
+    undoable: (typed !== baseline && !foundGoal(input)) || lines || pending,
   };
 }
 

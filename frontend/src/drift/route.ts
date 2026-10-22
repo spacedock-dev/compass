@@ -7,7 +7,13 @@ import {
   annotateOn,
   type Annotation,
 } from '../intent/annotation';
-import { editedRefusal, intentDraft, intentUnsaved, type DraftInput } from '../intent/derive';
+import {
+  editedRefusal,
+  foundGoal,
+  intentDraft,
+  intentUnsaved,
+  type DraftInput,
+} from '../intent/derive';
 import { isRecord, type Row } from '../observed';
 import { formatDuration } from '../shell/format';
 import { openedWithControl, promptCandidate } from '../sessions/intent';
@@ -237,7 +243,11 @@ export function promptReadingRefusal(
   if (press) return press;
   if (intentUnsaved(input)) return editedRefusal(saving);
   let annotation = input.annotation;
-  if (!String(annotation?.['goal'] || '').trim()) {
+  const found = foundGoal(input);
+  if (found) {
+    // The press saves a found goal as typed words before it reads, so it is read as the saved goal.
+    annotation = { ...annotation, goal: found.text, discarded_at: null, discarded_why: '' };
+  } else if (!String(annotation?.['goal'] || '').trim()) {
     const draft = intentDraft(input);
     /* Over a control-first session the latest prompt is no goal either, so the press falls to the refusal
        for nothing typed. */

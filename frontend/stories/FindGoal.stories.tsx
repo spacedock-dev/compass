@@ -114,6 +114,7 @@ function Harness({ setup }: { readonly setup?: Setup }) {
     const clock = createFakeClock();
     const history = fakeRouterEnvironment(SESSION_ROUTE);
     window.__findRequests = [];
+    let saved = false;
     return createShell({
       env: createFakeEnvironment({ clock }),
       router: createRouter(history.env),
@@ -134,6 +135,7 @@ function Harness({ setup }: { readonly setup?: Setup }) {
             generated: 1_760_001_000,
             annotate: true,
             annotate_cap: 240,
+            reading_check: 'passed',
             intent_revision: 'r1',
             reading: { ...POLICY, ...(setup?.policy ?? {}) },
             reading_routes: { claude: ROUTE },
@@ -154,12 +156,13 @@ function Harness({ setup }: { readonly setup?: Setup }) {
                 first_prompt_at: 1_760_000_100,
                 latest_prompt: SECOND,
                 latest_prompt_at: 1_760_000_300,
-                annotation_goal: '',
-                annotation_goal_why: 'No goal typed for this session.',
+                annotation_goal: saved ? GOAL : '',
+                annotation_goal_why: saved ? '' : 'No goal typed for this session.',
                 annotation_lines_why: 'No expected outcome typed.',
-                annotation_revision: 0,
-                annotation_revision_count: 0,
-                annotation_at: null,
+                annotation_revision: saved ? 1 : 0,
+                annotation_revision_count: saved ? 1 : 0,
+                annotation_at: saved ? 1_760_000_950 : null,
+                ...(saved ? { annotation_goal_saved_at: 1_760_000_950 } : {}),
                 annotation_goal_source: '',
                 annotation_goal_source_at: null,
                 annotation_settled_through: null,
@@ -179,6 +182,9 @@ function Harness({ setup }: { readonly setup?: Setup }) {
         if (url.startsWith('/api/session-record')) {
           return json({ state: 'ok', entries: [], next: null, reached_start: true });
         }
+        if (url === '/api/annotate') saved = true;
+        if (url === '/api/annotate') return json({ ok: true, persisted: true, outcome: 'saved' });
+        if (url === '/api/reading') return json({ ok: true, produced: false });
         if (url === '/api/goal/find') return (setup?.find ?? (() => json(FOUND)))();
         if (url.startsWith('/api/annotations')) {
           return json({ annotations: [], intent_revision: 'r1' });
@@ -305,6 +311,34 @@ export const AFoundGoalWithItsCitations: Story = {
     );
     // Found, so there is nothing left to find until the reader changes the words.
     await expect(view.queryByRole('button', { name: 'Find goal' })).toBeNull();
+  },
+};
+
+/* A found goal is the working goal, as a /goal is: Analyze drift is not refused over it, Undo has nothing to
+   undo, and the press stores the found words as typed words and then reads, adopting nothing. */
+export const AFoundGoalIsAnalyzedWithoutASaveFirst: Story = {
+  play: async ({ canvasElement }) => {
+    const card = await intentCard(canvasElement);
+    const view = within(card);
+    await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
+    await waitFor(() => expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(GOAL));
+    const analyze = await within(canvasElement).findByRole('button', { name: 'Analyze drift' });
+    await waitFor(() => expect(analyze).not.toHaveAttribute('aria-disabled', 'true'));
+    await expect(analyze).not.toBeDisabled();
+    await expect(canvasElement).not.toHaveTextContent('Save your intent, or undo your edit');
+    const undo = view.getByRole('button', { name: /Undo changes/ });
+    await expect(undo).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(analyze);
+    await waitFor(() =>
+      expect((window.__findRequests ?? []).some((r) => r.path === '/api/reading')).toBe(true),
+    );
+    const sent = window.__findRequests ?? [];
+    const paths = sent
+      .map((r) => r.path)
+      .filter((path) => path === '/api/annotate' || path === '/api/reading');
+    await expect(paths).toEqual(['/api/annotate', '/api/reading']);
+    await expect(sent.find((r) => r.path === '/api/annotate')?.body).toMatchObject({ goal: GOAL });
+    await expect(sent.find((r) => r.path === '/api/reading')?.body).not.toHaveProperty('adopt');
   },
 };
 

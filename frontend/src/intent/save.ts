@@ -403,6 +403,19 @@ function sayReadsFrom(ctx: Ctx, identity: SessionIdentity, key: string): string 
   return kind;
 }
 
+/* Saves the goal a "Find goal" press found as typed words, for the press that reads against it, and answers
+   whether it landed. The found source is not one the server adopts from (its words are a model's, not a prompt's
+   own), so it is stored as the reader's typed goal, which is what a saved found goal is. */
+export async function saveFoundGoal(
+  ctx: Ctx,
+  identity: SessionIdentity,
+  row: Row,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const kind = await saveWork(ctx, identity, row, signal, null);
+  return kind === 'saved';
+}
+
 /* Save intent: both fields in one write. The typed arm of `/api/annotate` takes `goal` and `lines` together,
    an absent or null field being "leave this one alone", so the press sends only what changed and a stale
    draft of one field cannot overwrite a save of the other. One request rather than two chained ones, so
