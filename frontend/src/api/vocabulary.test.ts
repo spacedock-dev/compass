@@ -37,6 +37,7 @@ import {
   PROMPT_CHOSEN,
   PROMPT_SOURCES,
   READING_ASSESSMENT_KEYS,
+  SESSION_GOAL,
   readingNamesConstraint,
 } from '../sessions/intent';
 
@@ -53,6 +54,7 @@ interface Vocabulary {
   readonly results: string[];
   readonly promptSources: string[];
   readonly promptChosen: string;
+  readonly sessionGoal: string;
   readonly maxOutcomeLines: number;
   readonly cueWindowSeconds: number;
   readonly turnStopHarnesses: string[];
@@ -158,6 +160,8 @@ describe('the goal and the annotation', () => {
     expect(sorted(PROMPT_SOURCES)).toEqual(sorted(vocabulary.promptSources));
     expect(PROMPT_CHOSEN).toBe(vocabulary.promptChosen);
     expect(PROMPT_SOURCES).toContain(PROMPT_CHOSEN);
+    expect(SESSION_GOAL).toBe(vocabulary.sessionGoal);
+    expect(PROMPT_SOURCES).toContain(SESSION_GOAL);
   });
 
   it('reads exactly the fields the store publishes', () => {

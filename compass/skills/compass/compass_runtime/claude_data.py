@@ -322,6 +322,145 @@ def session_instruction(
     return line
 
 
+# The longest `/goal` condition published whole. Claude Code accepts 4,000 characters; the record
+# reader's own message cap is 2,000, so a longer one could only be offered as an excerpt, and a
+# partial goal is worse than none (DRC-4946). A goal this long publishes nothing.
+GOAL_CAP_CHARS = records.EXTRACT_TEXT_CAP_CHARS
+
+
+def _goal_attachment_event(
+    attachment: Any, at: float | None
+) -> tuple[str, str, float | None] | None:
+    if not isinstance(attachment, dict) or attachment.get("type") != "goal_status":
+        return None
+    condition = attachment.get("condition")
+    text = condition if isinstance(condition, str) else ""
+    if attachment.get("sentinel") is True and attachment.get("met") is False:
+        return ("set", text, at)
+    if attachment.get("met") is True:
+        return ("verdict", text, at)
+    return None
+
+
+def _goal_event(record: Any) -> tuple[str, str, float | None] | None:
+    """One goal-relevant record as `(kind, condition, at)`, or None.
+
+    Kinds: `set` (the sentinel `goal_status` attachment that carries the condition and is
+    stamped the moment the command ran), `verdict` (the evaluator's `met: true`), `cleared`
+    (the command's own printed answer). A subagent's record is never the session's. Shapes:
+    docs/captures/claude/goal-2.1.308-macos.jsonl.
+    """
+    if not isinstance(record, dict) or record.get("isSidechain") is True:
+        return None
+    at = records.parse_ts(record.get("timestamp") or "")
+    if record.get("type") == "attachment":
+        return _goal_attachment_event(record.get("attachment"), at)
+    run = record.get("commandRun")
+    content = record.get("content")
+    if (
+        record.get("type") != "system"
+        or record.get("subtype") != "local_command"
+        or not isinstance(run, dict)
+        or run.get("command") != "goal"
+        or not isinstance(content, str)
+    ):
+        return None
+    printed = content.replace("<local-command-stdout>", "").strip()
+    # `Goal cleared:` is the documented wording for an active goal and was not captured;
+    # a met goal had already cleared itself and printed `No goal set`, which is not a clear.
+    return ("cleared", "", at) if printed.startswith("Goal cleared") else None
+
+
+def _goal_words(condition: str) -> str:
+    """The condition as the one masked line a row publishes, or "" if it cannot be held whole."""
+    if not condition.strip() or len(condition) > GOAL_CAP_CHARS:
+        return ""
+    masked = records.safe_text(records.mask_prose(condition), 2 * len(condition) + 64)
+    return " ".join(masked.split())
+
+
+def _advance_goal(
+    goal: dict[str, Any] | None, event: tuple[str, str, float | None]
+) -> dict[str, Any] | None:
+    """The session's goal after one more event: the latest set wins, a met one is kept.
+
+    A verdict only confirms a goal already held, by its words. One for words not held, or
+    with no set record behind it in the bytes read, has no known set time, and a time is
+    never taken from the verdict instead.
+    """
+    kind, condition, at = event
+    if kind == "cleared":
+        return None
+    words = _goal_words(condition)
+    if kind == "set":
+        return {"text": words, "at": at} if words and at is not None else None
+    if kind == "verdict":
+        return goal if goal is not None and goal["text"] == words else None
+    return goal
+
+
+def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any] | None:
+    """The `/goal` this Claude session holds, `{"text", "at"}`, or None.
+
+    Read forward and incrementally, as `turns.scan_turns` is: each call parses only the bytes
+    appended since the last, because the newest goal can sit anywhere in a long file and a
+    session with none would otherwise be reread end to end on every collection. A cold read
+    starts at most `config.turn_scan_max_bytes` from the end; a goal set before that and not
+    touched since is not seen, and publishes nothing rather than a guess. Only complete lines
+    count, so a half-written record is read once it finishes.
+
+    The published mapping is `{"text", "at"}` so a later verdict (met, when, the evaluator's
+    reason) joins it as keys, never as a rename.
+    """
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    key = f"session-goal:{path}"
+    with state.cache_lock:
+        cached = state.metadata_cache.get(key)
+    if (
+        cached is not None
+        and cached.get("ino") == stat.st_ino
+        and cached["pos"] <= stat.st_size
+        and stat.st_size - cached["pos"] <= config.turn_scan_max_bytes
+    ):
+        pos, goal, cold = cached["pos"], cached["goal"], False
+    else:
+        pos, goal, cold = max(0, stat.st_size - config.turn_scan_max_bytes), None, True
+    if pos < stat.st_size:
+        try:
+            with open(path, "rb") as source:
+                source.seek(pos)
+                data = source.read(stat.st_size - pos)
+        except OSError:
+            return None
+        if cold and pos > 0:
+            # A cold read that starts mid-file starts mid-line.
+            skip = data.find(b"\n")
+            data, pos = (b"", pos) if skip < 0 else (data[skip + 1 :], pos + skip + 1)
+        end = data.rfind(b"\n")
+        if end >= 0:
+            for raw in data[:end].split(b"\n"):
+                if b"goal" not in raw or not raw.startswith(b"{"):
+                    continue
+                try:
+                    event = _goal_event(json.loads(raw))
+                except (ValueError, RecursionError):
+                    continue
+                if event is not None:
+                    goal = _advance_goal(goal, event)
+            pos += end + 1
+    with state.cache_lock:
+        runtime_state.bounded_put(
+            state.metadata_cache,
+            key,
+            {"ino": stat.st_ino, "pos": pos, "goal": goal},
+            limit=config.max_cache_entries,
+        )
+    return dict(goal) if goal is not None else None
+
+
 def last_user_event(config: RuntimeConfig, state: RuntimeState, path: str) -> str | None:
     """Identity of the newest user record, independent of record timestamps."""
     try:

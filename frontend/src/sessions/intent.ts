@@ -11,7 +11,15 @@ import { isRecord, promptCopied, type Row } from '../observed';
 /* The closed goal-source tokens an adopted goal carries, spelt as the server's `reading.PROMPT_SOURCES`
    spells them; the legacy page's test compares the two. */
 export const PROMPT_CHOSEN = 'chosen-prompt';
-export const PROMPT_SOURCES: readonly string[] = ['latest-prompt', 'first-prompt', PROMPT_CHOSEN];
+/* The goal a Claude Code session states itself with `/goal`: the reader typed that command, so it reads
+   as their prompt (the same tags, the same baseline at its own time). It is the server's `reading.SESSION_GOAL`. */
+export const SESSION_GOAL = 'session-goal';
+export const PROMPT_SOURCES: readonly string[] = [
+  'latest-prompt',
+  'first-prompt',
+  PROMPT_CHOSEN,
+  SESSION_GOAL,
+];
 
 /* `reading.CONSTRAINT_CLAIMS`: what the agent claimed about the work. A contradicted claim is not drift
    from the intent, so it never makes a row say Drift. */

@@ -5881,7 +5881,7 @@ def _assessment_window_start(session: Mapping[str, Any]) -> float | None:
         return opened
     fallback = (
         assessment.get("goal_source_at")
-        if assessment.get("goal_source") in {"latest-prompt", "first-prompt", "chosen-prompt"}
+        if assessment.get("goal_source") in records.PROMPT_SOURCES
         else assessment.get("revision_read_at")
     )
     return _window_start(fallback)

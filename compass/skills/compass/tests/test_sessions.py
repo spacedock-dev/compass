@@ -61,6 +61,7 @@ DECLARED_SESSION_FIELDS = frozenset(
         "first_prompt",
         "first_prompt_at",
         "first_prompt_control",
+        "session_goal",
         "last_output",
         "instruction",
         "state",

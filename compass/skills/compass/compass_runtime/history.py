@@ -841,12 +841,7 @@ class Lane:
 
 
 def _goal_source(value: Any) -> str | None:
-    return (
-        value
-        if isinstance(value, str)
-        and value in {"typed", "latest-prompt", "first-prompt", "chosen-prompt"}
-        else None
-    )
+    return value if isinstance(value, str) and value in {"typed", *records.PROMPT_SOURCES} else None
 
 
 def _first_prompt_text(value: Any) -> str:

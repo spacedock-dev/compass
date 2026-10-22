@@ -124,7 +124,8 @@
   "promptSources": [
     "latest-prompt",
     "first-prompt",
-    "chosen-prompt"
+    "chosen-prompt",
+    "session-goal"
   ],
   "results": [
     "departure",
@@ -134,6 +135,7 @@
     "not reached at this stop"
   ],
   "scopeTextMidFlightIdle": "The session was idle and its last turn was not recorded as finished, so this covers the work up to the last recorded entry. It is not a reading of how the turn or the session ended.",
+  "sessionGoal": "session-goal",
   "titles": {
     "asking": {
       "": "An agent is asking you",

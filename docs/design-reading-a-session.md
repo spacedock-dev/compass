@@ -5352,6 +5352,35 @@ check's latest passing run, blocks the live estimate's "None or low" and is neve
 the line "reads checks and file paths, not what the intent says" is the live estimate's alone (items
 1 and 6).
 
+### What reading a `/goal` decided, 2026-10-22
+
+DRC-4946, built against the shapes recorded in `docs/captures/claude/goal-2.1.308-macos.jsonl`. A
+reader who gave Claude Code a goal with `/goal` has said what done looks like, and the command is a
+local one, so the first-prompt read classes it as a control and drafts nothing from it.
+
+- The goal is read from the transcript's own records and not from the command's prompt text. The set
+  record is a `goal_status` attachment with `sentinel: true` that carries the condition and the
+  instant the command ran, which is also the instant of the command's `user` record. The evaluator's
+  verdict is a second attachment with `met: true` and no sentinel.
+- The latest set wins. A `Goal cleared:` answer publishes nothing. A met goal keeps its condition,
+  because the harness clears a met goal from itself and the session was still for it; the capture's
+  `/goal clear` after a met goal printed `No goal set`, and that changes nothing. A verdict with no
+  set record behind it in the bytes read has no known set time, and a time is never taken from the
+  verdict instead, so it publishes nothing.
+- A condition that cannot be held whole publishes nothing, as the first-prompt read refuses a cut
+  prompt: over 2,000 characters here, though the harness accepts 4,000, because the longer words
+  could only be offered as an excerpt.
+- The published field is one mapping, `session_goal`, `{text, at}`. The harness verdict (met, when,
+  the evaluator's reason) joins it as keys later, and nothing is renamed.
+- The source token is `session-goal`, in `reading.PROMPT_SOURCES`. The reader typed the command, so it
+  is adopted words keyed on their own time like the other sources, and every place that branches on
+  the closed list reads it that way: the window baseline is the command's instant and a saved one is
+  "saved" and not "typed". It is not a person's message in the observed record, so a reading finds no
+  source fact for it and reads the goal box's words, with the existing sentence saying so.
+- Rejected: reading the condition out of the command record's `<command-args>`. The record reader cuts a
+  message at 2,000 characters and drops the closing tag, and the attachment is not cut.
+- Not decided here: how the page offers the goal, which is the next issue's.
+
 ### The starting definitions
 
 These are what DRC-4692 validates, not a measured result. Medium: a pass is followed by writes, or

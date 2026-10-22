@@ -214,8 +214,17 @@ def outcome_lines(revision: Mapping[str, Any]) -> tuple[str, ...]:
 # record (`annotations.prompt_choices`, owner ruling Q7, 2026-10-01): adopted
 # words like the other two, keyed on their own time. The page spells the same
 # three, held equal to this tuple by the same vocabulary fixture.
-PROMPT_CHOSEN = "chosen-prompt"
-PROMPT_SOURCES = ("latest-prompt", "first-prompt", PROMPT_CHOSEN)
+PROMPT_CHOSEN = records.PROMPT_CHOSEN
+# `session-goal` is the goal a Claude Code session states itself with `/goal`
+# (`claude_data.session_goal`). The reader typed that command, so it is adopted words like the
+# others, keyed on the moment the command ran; it is not a person's message in the observed
+# record, so `adopted_prompt` finds no source fact and the reading falls back to the clip it
+# already reads for any prompt it cannot find (`GOAL_SOURCE_GONE`).
+SESSION_GOAL = records.SESSION_GOAL
+# Spelt once in `records`, which `history` and `project_context` already import, because
+# neither may import `reading` (the reviewed import allowlist). A literal copy of this tuple
+# in each is how a new source would stay missing from a window baseline.
+PROMPT_SOURCES = records.PROMPT_SOURCES
 
 ASSESSMENT_KEYS = (
     "goal_source",

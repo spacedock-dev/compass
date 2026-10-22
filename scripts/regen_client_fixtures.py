@@ -1730,6 +1730,7 @@ def vocabulary() -> dict[str, Any]:
         "results": list(reading.RESULTS),
         "promptSources": list(reading.PROMPT_SOURCES),
         "promptChosen": reading.PROMPT_CHOSEN,
+        "sessionGoal": reading.SESSION_GOAL,
         "maxOutcomeLines": reading.MAX_OUTCOME_LINES,
         "turnStopHarnesses": list(reading.TURN_STOP_HARNESSES),
         "scopeTextMidFlightIdle": reading.SCOPE_TEXT_MID_FLIGHT_IDLE,

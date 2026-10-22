@@ -2839,6 +2839,9 @@ def prompt_candidate(row: dict[str, Any], source: str) -> tuple[str, float | Non
         text, at = instruction.get("text"), instruction.get("at")
     elif source == "latest-prompt" and row.get("prompt_states_work") is True:
         text, at = row.get("title"), row.get("prompt_at")
+    elif source == reading.SESSION_GOAL and harness == "claude":
+        goal = records.as_dict(row.get("session_goal"))
+        text, at = goal.get("text"), goal.get("at")
     else:
         return "", None
     return (text if isinstance(text, str) else "", reading.valid_prompt_time(at))

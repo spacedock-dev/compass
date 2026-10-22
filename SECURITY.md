@@ -3283,6 +3283,16 @@ prompt, published with the boolean `first_prompt_control`. No goal is drafted fr
 drafted from a later record in its place, and the server refuses to adopt it. Source text is at most 140 characters plus the clipping mark. The page names an
 excerpt rather than silently adopting a longer prompt. Missing source times prevent adoption.
 
+A Claude Code session that states a goal with `/goal` has it read from the transcript's own
+records, not from the prompt: the `goal_status` attachment that carries the condition, and the
+`local_command` record that prints the command's answer. The read is forward and incremental over at
+most the last 8 MiB, so a goal set before that and untouched since publishes nothing. The condition
+is published as `session_goal`, `{text, at}`, masked by the same prose masking a later direction
+gets and folded to one line, and a condition over 2,000 characters publishes nothing rather than an
+excerpt. A subagent's record is never the session's goal, and no verdict text (the evaluator's
+reason) is read. Like a first prompt it is not in session history, and it is stored only if the
+reader adopts it as their goal under the source token `session-goal`.
+
 The revision number beside them, `annotation_revision`, is in the record and not on this list. It
 is an integer the board derives, not text anybody typed.
 

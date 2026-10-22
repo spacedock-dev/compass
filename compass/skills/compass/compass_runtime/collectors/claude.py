@@ -1014,6 +1014,13 @@ def collect(
                     if info and transcript
                     else {}
                 ),
+                # The session's own `/goal`, from its record. Behind the same guard as the
+                # prompt above, so a row the transcript was not read for publishes none.
+                "session_goal": (
+                    claude_data.session_goal(config, state, transcript)
+                    if info and transcript
+                    else None
+                ),
                 # Line 1 above is the session's identity — the `ai-title`, fixed
                 # before the second prompt on 200 of 204 long sessions — and this
                 # is the line that says what it is doing now. Behind the same
