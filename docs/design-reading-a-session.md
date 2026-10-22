@@ -3091,7 +3091,7 @@ the later-direction floor (item 9).
      when it cannot fit even alone, nothing is written and the save answers `unwritable`.
    - The history copy is one flat field per line, at most 256 characters each, with a closed
      source token beside it and no entry id.
-   - The goal and the lines take at most 9,216 of 16,384 bytes of the prompt. Over that share,
+   - The goal and the lines take at most 9,728 of 16,384 bytes of the prompt. Over that share,
      every line is dropped together as not asked, never some of them.
    - The reply cap is 8,192 bytes, and a reply cut at the cap keeps each answer that arrived
      whole.
@@ -5268,6 +5268,8 @@ types one.
 
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): the live monitor switch moves into More (placement only), and an intent with no outcome line is stated in the how-to as a valid "Not enough recorded yet".
 
+Amended 2026-10-22 by [the amendment at the end of this decision](#amended-2026-10-22-a-goal-alone-is-read-or-refused): an analysis no longer needs an outcome line, so item 1's "zero is too little" and rule L7 hold for the live estimate only, and a goal too vague to read against is refused.
+
 Decided 2026-09-24 (DRC-4691). DRC-4692 defines and validates the levels on recorded Claude Code
 sessions. DRC-4696 builds the live estimate in the panel and the header, and amends the skill body's
 sentence "Nothing here evaluates on a cadence" when it ships, not before, because the skill body
@@ -5647,6 +5649,56 @@ what was agreed then; this amendment does not rewrite them. These are regression
 those two canonical examples, not universal reading budgets or runtime citation limits. A
 valid reading with two or more citations keeps every surviving support and its recorded times,
 even when its explanation needs more words than the one-citation example.
+
+### Amended 2026-10-22: a goal alone is read or refused
+
+Decided by the owner on 2026-10-22. A goal almost always carries its expected outcome, so a reader
+who saves only a Goal and presses Analyze drift gets a drift level. This retires rule L7 for the
+analysis: `levels.analysis_level` no longer returns "Not enough recorded yet" with `no-outcome-line`
+when the intent read holds no outcome line, and item 1's "an analysis needs at least one outcome
+line" no longer holds. The live estimate is unchanged (it never read the lines). The other rules
+stand: a level needs a departure or a failed check ([2026-10-21](#amended-2026-10-21-a-level-needs-a-departure)),
+the evidence floor, and the stored-reading checks.
+
+- **The Goal stands as the one line.** With no outcome line the producer's prompt says so ("No outcome
+  lines are given. Read the goal's own stated end state as the outcome, and answer the goal against
+  it."), and the level rules treat the Goal row as the one line: `None or low` still needs a
+  `consistent` that cites a passing check, so the agent's word alone, or a verdict the model could not
+  settle, leaves "Not enough recorded yet" with `line-not-shown-by-a-check`. A departure reads Medium
+  and a fresh failed check High, as with a line. No analysis is ever Extreme; that was never changed.
+  An outcome line, where one is saved, is read as before and the Goal is not also treated as a line.
+- **The reading says which it read.** The cutoff gains "Read against your goal; no expected outcome
+  lines were saved." when the revision read holds none. It is keyed on the revision and not on what the
+  press sent, because the unasked lane reads the goal alone while lines are saved, and that is not the
+  same statement.
+- **`no-outcome-line` stays a known token.** A reading's level is recomputed from the stored reading
+  on every collection and never stored, so a level published before this change is recomputed
+  under the new rule. The token stays in `levels.REASONS` and the page keeps its sentence ("No
+  expected outcome line was saved."), so a stored or older payload that carries it still renders its
+  original sentence and not a blank.
+- **A fifth result, `goal_unclear`, on the Goal row alone.** Where the shape contract's rule 1 holds
+  three results per constraint and the claims row adds a fourth, the Goal row may now answer
+  "goal too vague to analyze against" (`reading.RESULT_GOAL_UNCLEAR`, the token `goal_unclear`). It is
+  the model's judgement of the words alone, made before it reads the entries, from the Goal and the
+  outcome lines if there are any: no keyword and no length rule makes it, and the resolver cannot tell
+  a vague goal from a clear one. Like `unsupported` on claims, the token means nothing on an outcome
+  line or the claims row, and the store refuses a reading that carries it elsewhere.
+- **It stands in place of everything else.** The row takes no citation and no prose. Every other row
+  of that reading is published as `not verifiable` with the reason `not-asked`, whatever the reply held,
+  so no departure, level, claim or Steer back is drawn for that run. `levels.analysis_level` returns
+  "Not enough recorded yet" with the reason `goal-unclear` before any tally.
+- **The page says it under the Goal field**, in Compass's voice: "This goal is too vague to analyze
+  against. Rewrite it with what should be true when the work is done, then try again." It is read from
+  the stored reading, so it stays while the saved goal is the one read and clears the moment the goal
+  box is edited or a new revision is saved. A refused run is stored like any reading and counts against
+  the daily cap, because the model call was made and the reader's capacity spent.
+- **What it cost the prompt.** The trusted header gained two instructions, so the worst header
+  measures 9,475 bytes of the share. `INTENT_SHARE_BYTES` rises from 9,216 to 9,728 and the record keeps
+  at least 6,656 bytes where it kept 7,168. The final-scope header digests the suite pins changed
+  with it and were re-pinned.
+- **Not changed.** The abstention study tooling (`mark_abstention.py`, `score_abstention.py`) still
+  freezes cases with no outcome line as having no analysis question: it measures a frozen method, and
+  amending it is a separate decision.
 
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 

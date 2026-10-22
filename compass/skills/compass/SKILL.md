@@ -8,7 +8,7 @@ license: Apache-2.0 AND OFL-1.1
 
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
 goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
-reading's limits and why an expected outcome line is needed for a drift level.
+reading's limits and what a goal with no expected outcome line is read against.
 New to it? `See a sample session (view only)`, above the Sessions list, opens an anonymized session
 that drifted, with a stored summary of what it did, its stored reading, the correction Compass
 composed and numbered (i) marks that explain each part. It is static page data: nothing in it is saved, sent or run.
@@ -139,7 +139,7 @@ reader is named. With no reader on this machine, the reason stands where the con
 page has at most one primary run control. No answer option is ever emphasised: a session blocked on
 you gives the primary to the terminal raise when one is offered, and otherwise nothing is primary
 while its question is open.
-With no expected outcome line: no level, and "Can't tell" unless your goal departs. A link to a session
+With no outcome line, Compass reads your goal's end state; a goal too vague to read is refused. The refusal reads "This goal is too vague to analyze against. Rewrite it with what should be true when the work is done, then try again." under the Goal field, shows no level, departures or Steer back for that run, clears when you edit the goal, and counts against the daily cap like any press. A link to a session
 the board no longer holds names that session and says it is not in the current payload.
 
 The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention`, `#n=intent`,

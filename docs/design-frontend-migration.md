@@ -109,6 +109,19 @@ which is untouched. The card also draws no "Not enough recorded yet" bar or "Why
 under a reading that stands (the live estimate keeps both), and the header pill says "so far"
 while the session runs; neither is in a recording. Golden files are unchanged.
 
+2026-10-22, a goal alone gets a level or is refused
+([the amendment](design-reading-a-session.md#amended-2026-10-22-a-goal-alone-is-read-or-refused)):
+the retired page's answer reducer read a reading with no outcome line as "Can't tell" whatever its goal
+row said, and `driftAnswer` now answers from the goal row alone, so a goal that departs, a failed check
+or a goal consistent with a check each answer as they do over a line. A goal the model refused as too
+vague (`goal too vague to analyze against`, on the goal row only) answers `goal-unclear` before every
+other rule, draws no quiet row, level or Steer back, and its sentence stands under the Goal field and
+clears when the goal is edited. The how-to's two sentences about an outcome line are rewritten.
+`result.differential.test.ts` and `level.differential.test.ts` pass unchanged over their generated
+readings, which never reach the new result and did not exercise the goal-only answer, so neither
+comparison was edited and the recordings are untouched. The new
+result and reason are held to the producer's by `api/vocabulary.test.ts`. Golden files are unchanged.
+
 2026-10-20, from the usability review: Full activity draws its rows in number order, so a check
 sits under the message whose number it carries even when it last ran later; it says "Last turn"
 once, on the turn's newest row, with the numbers the turn spans; it puts each row's source sentence
