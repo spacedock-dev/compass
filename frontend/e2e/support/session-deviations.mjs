@@ -64,6 +64,10 @@ export function normaliseSessionRecord(record, evidence = {}) {
           "Last turn isn't recorded as finished. Run another turn to open Analyze.",
           'Analyze opens while this session runs.',
         );
+        // The retired page printed "N of 10 left today" under every reading; the React page prints the budget only
+        // at the cap (`readingCap` in frontend/src/drift/route.ts), and ReadingResult.test.tsx holds that under the
+        // cap it is not mentioned anywhere. Only the recorded side loses it, and only under the cap.
+        if (driftCard) value = value.replace(/\d+ of \d+ left today/g, '');
         if (driftCard)
           value = value.replace(
             'You gave a later direction at #1: "Keep the flag off by default."',
