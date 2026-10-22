@@ -1,6 +1,6 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { mountDrift } from '../drift/testing';
+import { check, mountDrift } from '../drift/testing';
 import { control, goalBox, lineBoxes, mountSession, text, type } from './panel.testing';
 
 const settle = async (page: { settle: () => Promise<void> }) => {
@@ -8,12 +8,89 @@ const settle = async (page: { settle: () => Promise<void> }) => {
   await page.settle();
 };
 
+const outcomes = () =>
+  document.querySelector<HTMLElement>('.next-cockpit-held-lines [data-slot="accordion-trigger"]');
+
 describe('the first view of a session', () => {
+  it('folds the expected outcome into a closed accordion, and keeps Add a line inside it', async () => {
+    const page = mountSession();
+    await settle(page);
+    expect(outcomes()?.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('[data-next-cockpit-held-field="goal"]')).not.toBeNull();
+    const add = control('held-line-add');
+    expect(add?.closest('[data-slot="accordion-content"]')).not.toBeNull();
+    expect(add?.closest('.next-cockpit-held-footer')).toBeNull();
+    await act(async () => {
+      fireEvent.click(outcomes() as HTMLElement);
+    });
+    await page.settle();
+    expect(outcomes()?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens by itself when a departure on show cites an outcome line nothing saves now', async () => {
+    const page = mountDrift({
+      store: { lines: [] },
+      session: {
+        annotation_assessment: {
+          revision_read: 3,
+          revision_read_at: 990,
+          window_start: 100,
+          read_at: 1000,
+          evidence_through: 1000,
+          goal_source: 'typed',
+          scope: 'last-turn',
+          scope_text: 'Read up to its last turn.',
+          stamp: 'model · m',
+          cutoff: 'Evidence read to its end.',
+          coverage: {
+            tail_truncated: false,
+            tail_start: null,
+            unlisted: 0,
+            unread_checks: 0,
+            goal_source: 'typed',
+          },
+          criteria: {
+            goal: {
+              result: 'consistent with the evidence read',
+              cites: [],
+              detail: '',
+              clause: 'Ship',
+            },
+            line_1: {
+              result: 'departure',
+              cites: ['c1'],
+              detail: 'It stopped running the tests.',
+              clause: 'Tests pass',
+            },
+          },
+        },
+        annotation_window_start: 100,
+        annotation_reading_count: 1,
+      },
+      facts: [check('c1', 500, 'failed', { result_source: 'failed flag', summary: 'pytest -q' })],
+    });
+    await settle(page);
+    expect(outcomes()?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens by itself over saved outcome lines, and a reader who closes it keeps it closed', async () => {
+    const page = mountSession({ session: { annotation_line_1: 'A passing check' } });
+    await settle(page);
+    expect(outcomes()?.getAttribute('aria-expanded')).toBe('true');
+    await act(async () => {
+      fireEvent.click(outcomes() as HTMLElement);
+    });
+    await page.settle();
+    expect(outcomes()?.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('offers one optional outcome field and draws its tools from the first view', async () => {
     const page = mountSession();
     await settle(page);
     expect(lineBoxes()).toHaveLength(1);
-    expect(text('.next-cockpit-held-lines label')).toBe('Expected outcome · up to 6 lines');
+    expect(text('.next-cockpit-held-lines [data-slot="accordion-trigger"]')).toBe(
+      'Expected outcome (optional) · up to 6 lines',
+    );
     // Drawn before the reader types, as the design has them.
     expect(control('held-line-add')).not.toBeNull();
     expect(control('held-line-remove')).not.toBeNull();

@@ -691,4 +691,35 @@ describe('an accordion that opens by default', () => {
     );
     expect(isOpen(accordion(view))).toBe(false);
   });
+
+  it('opens on each rise of openWhen, and a reader’s close holds while it stays true', () => {
+    const make = (when: boolean) => (
+      <Disclosure disclosureKey={key('phase')} summary="Phase" openWhen={when}>
+        Lines
+      </Disclosure>
+    );
+    const { view, rerender } = mount(make(false));
+    expect(isOpen(accordion(view))).toBe(false);
+    rerender(make(true));
+    expect(isOpen(accordion(view))).toBe(true);
+    toggle(accordion(view), false);
+    rerender(make(true));
+    expect(isOpen(accordion(view))).toBe(false);
+    rerender(make(false));
+    rerender(make(true));
+    expect(isOpen(accordion(view))).toBe(true);
+  });
+
+  it('does not reopen over openWhen a key the reader closed before it was drawn again', () => {
+    const kit = testControls();
+    kit.controls.disclosures.set(key('phase'), false);
+    const view = render(
+      <ControlsProvider controls={kit.controls}>
+        <Disclosure disclosureKey={key('phase')} summary="Phase" openWhen>
+          Lines
+        </Disclosure>
+      </ControlsProvider>,
+    );
+    expect(isOpen(accordion(view as never))).toBe(false);
+  });
 });

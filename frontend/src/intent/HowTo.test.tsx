@@ -67,6 +67,7 @@ describe('the Intent how-to', () => {
       const popup = screen.getByRole('dialog', { name: 'How Intent and drift works' });
       expect((popup.textContent ?? '').split(/\s+/).length).toBeLessThanOrEqual(150);
       expect(popup.textContent).toContain('1. Give the goal.');
+      expect(popup.textContent).toContain('Expected outcome is optional.');
       // Where a detected goal comes from, and that it stands until the reader edits it.
       expect(popup.textContent).toContain(
         "A session's /goal is detected and used until you edit it; else Compass drafts from your first prompt.",

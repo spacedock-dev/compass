@@ -39,6 +39,10 @@ export interface DisclosureProps {
   /** Opens the first time this key is drawn, and never again: a reader who closes it keeps it closed, because
    * the write that opened it is the store's own and the reader's close is the next one. Accordion only. */
   readonly openByDefault?: boolean;
+  /** Opens the panel when something the reader must not miss is in it: on the first draw of a key nothing has
+   * written yet, and again each time this turns from false to true. A reader's own close holds while it stays
+   * true, because the opening is an edge and not a state. Accordion only. */
+  readonly openWhen?: boolean;
   readonly children: ReactNode;
 }
 
@@ -61,16 +65,27 @@ function AccordionDisclosure({
   aside,
   headerProps,
   openByDefault = false,
+  openWhen = false,
   children,
 }: DisclosureProps) {
   const controls = useControls();
   const open = useControlledDisclosureState(controls.disclosures, disclosureKey);
+  const wasWhen = useRef<boolean | null>(null);
   /* `version` is zero until some write names the key, so a key the reader has opened or closed is never opened
      again, and one never touched opens exactly once. */
   useLayoutEffect(() => {
     if (openByDefault && controls.disclosures.version(disclosureKey) === 0)
       controls.disclosures.set(disclosureKey, true);
   }, [openByDefault, controls.disclosures, disclosureKey]);
+  /* A first draw honours a reader's earlier close (the key has a version), and a later rise does not: it is a
+     new fact the reader has not yet seen the panel hold. */
+  useLayoutEffect(() => {
+    const before = wasWhen.current;
+    wasWhen.current = openWhen;
+    if (!openWhen || before === true) return;
+    if (before === null && controls.disclosures.version(disclosureKey) !== 0) return;
+    controls.disclosures.set(disclosureKey, true);
+  }, [openWhen, controls.disclosures, disclosureKey]);
   const triggerRef = useFocusKey<HTMLButtonElement>(controls.focusLane, focusKey ?? null);
   const panelRef = useRevealFragment(disclosureKey);
   return (

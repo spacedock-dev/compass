@@ -50,12 +50,11 @@ export function IntentHowTo({
     >
       <h3 className="text-body font-semibold">How Intent and drift works</h3>
       <p>
-        1. Give the goal. A session's /goal is detected and used until you edit it; else Compass
-        drafts from your first prompt.
+        1. Give the goal. Expected outcome is optional. A session's /goal is detected and used until
+        you edit it; else Compass drafts from your first prompt.
       </p>
       <p>
-        2. Press Analyze drift. It asks once to allow the reading and counts against a daily cap,
-        shown beside the button.
+        2. Press Analyze drift. It asks once to allow the reading and counts against a daily cap.
       </p>
       <p>
         3. Read where the work left your goal. On Claude Code, copy a correction to steer it back.

@@ -268,7 +268,8 @@ export const AddAsALineOneSave: Story = {
     await userEvent.click(await canvas.findByRole('button', { name: 'Add as a line' }));
     const line = await canvas.findByDisplayValue('Build synthetic outcome 2.');
     await expect(line.tagName).toBe('TEXTAREA');
-    await expect(canvas.getByText('Write the rule, not the moment.')).toBeVisible();
+    // A pending line opens the Expected outcome accordion, which eases open.
+    await waitFor(() => expect(canvas.getByText('Write the rule, not the moment.')).toBeVisible());
     await expect(canvas.getAllByRole('button', { name: /^Save\b/ })).toHaveLength(1);
     await expect(canvas.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
       'aria-disabled',
@@ -292,7 +293,8 @@ export const MakeItTheGoalOneSave: Story = {
         'Build synthetic outcome 1.',
       ),
     );
-    await expect(canvas.getByText('Write the rule, not the moment.')).toBeVisible();
+    // A pending line opens the Expected outcome accordion, which eases open.
+    await waitFor(() => expect(canvas.getByText('Write the rule, not the moment.')).toBeVisible());
     await expect(canvas.getAllByRole('button', { name: /^Save\b/ })).toHaveLength(1);
   },
 };

@@ -245,12 +245,10 @@ export const TypedSourceAndSavedStatus: Story = {
     const card = await page.findByRole('region', { name: 'Intent' });
     const view = within(card);
     await expect(view.getByText(INTENT_LEDE)).toBeVisible();
-    await expect(view.getByText(/Expected outcome/)).toHaveTextContent(
-      'Expected outcome · up to 6 lines',
+    await expect(outcomesTrigger(view)).toHaveTextContent(
+      'Expected outcome (optional) · up to 6 lines',
     );
-    await expect(card.querySelector('[data-next-cockpit-held-line-number="0"]')).toHaveTextContent(
-      '1',
-    );
+    await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'false');
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await expect(goal).toHaveAttribute('placeholder', 'What should this session achieve?');
     await userEvent.type(goal, 'Keep the parser small and pure');
@@ -723,6 +721,7 @@ export const TypedWordsStayThroughSlowSave: Story = {
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.clear(goal);
     await userEvent.type(goal, 'Keep the parser pure and small');
+    await openOutcomes(view);
     await userEvent.type(
       view.getByRole('textbox', { name: 'Expected outcome line 1' }),
       'Tests pass',
@@ -815,29 +814,50 @@ export const AdoptedPromptStaysThroughSlowSave: Story = {
   },
 };
 
-/* The five states of the card, each held to the design: a three-row goal, Add a line, Save intent and Undo
-   changes together on the left and drawn from the first view, one word of status, and the card's meta row
-   reduced to the reading start beside one quiet menu. */
-async function controlsTogether(card: HTMLElement) {
+/* The Expected outcome accordion's trigger, by the name a reader hears. */
+const outcomesTrigger = (view: ReturnType<typeof within>) =>
+  view.getByRole('button', { name: /^Expected outcome \(optional\)/ });
+
+/* Opens the accordion the way a reader does, for a story that types a line into it. */
+async function openOutcomes(view: ReturnType<typeof within>) {
+  const trigger = outcomesTrigger(view);
+  if (trigger.getAttribute('aria-expanded') !== 'true') await userEvent.click(trigger);
+  await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
+}
+
+/* The five states of the card, each held to the design: a three-row goal, Save intent and Undo changes
+   together on the left and drawn from the first view, one word of status, the card's meta row reduced to the
+   reading start beside one quiet menu, and Expected outcome folded into an accordion that holds Add a line.
+   Closed, it draws nothing but its trigger; open, Add a line and each line's Remove are drawn in it. */
+async function controlsTogether(card: HTMLElement, outcomes: 'open' | 'closed') {
   const view = within(card);
-  const add = view.getByRole('button', { name: '+ Add a line' });
   const save = view.getByRole('button', { name: 'Save intent' });
   const undo = view.getByRole('button', { name: 'Undo changes' });
-  await expect(add).toBeVisible();
   await expect(save).toBeVisible();
   await expect(undo).toBeVisible();
-  const [a, s, u] = [add, save, undo].map((node) => node.getBoundingClientRect());
+  const [s, u] = [save, undo].map((node) => node.getBoundingClientRect());
   // One row, in the design's order, starting at the card's left edge rather than split to its two ends.
-  await expect(Math.abs((a?.top ?? 0) - (s?.top ?? 1))).toBeLessThan(4);
-  await expect((a?.right ?? 0) <= (s?.left ?? 0)).toBe(true);
+  await expect(Math.abs((s?.top ?? 0) - (u?.top ?? 1))).toBeLessThan(4);
   await expect((s?.right ?? 0) <= (u?.left ?? 0)).toBe(true);
   // Left-hand and short of the far edge, with Read from my latest message among them once words are saved.
-  await expect((u?.right ?? 0) - (a?.left ?? 0)).toBeLessThan(
+  await expect((u?.right ?? 0) - (s?.left ?? 0)).toBeLessThan(
     (card.getBoundingClientRect().width * 3) / 4,
   );
+  const trigger = outcomesTrigger(view);
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toHaveTextContent('Expected outcome (optional) · up to 6 lines');
+  await expect(trigger).toHaveAttribute('aria-expanded', outcomes === 'open' ? 'true' : 'false');
+  const add = card.querySelector('[data-next-cockpit-action="held-line-add"]') as HTMLElement;
+  if (outcomes === 'open') {
+    // The panel eases open, so its contents are visible once the motion has run.
+    await waitFor(() => expect(view.getByRole('button', { name: '+ Add a line' })).toBeVisible());
+    await expect(view.getByRole('button', { name: 'Remove line 1' })).toBeVisible();
+  } else {
+    // Closed, the panel is hidden-until-found: Add a line and the empty box are in it, out of sight.
+    await expect(add).not.toBeVisible();
+  }
   const goal = view.getByRole('textbox', { name: 'Goal' });
   await expect(goal.getBoundingClientRect().height).toBeGreaterThan(60);
-  await expect(view.getByRole('button', { name: 'Remove line 1' })).toBeVisible();
   await expect(view.queryByRole('button', { name: 'Replace with your prompt' })).toBeNull();
   await expect(card.querySelector('[data-next-intent-status]')?.textContent ?? '').not.toMatch(
     /how intent/i,
@@ -863,7 +883,7 @@ export const StateEmpty: Story = {
   },
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
-    const { save, undo } = await controlsTogether(card);
+    const { save, undo } = await controlsTogether(card, 'closed');
     await expect(card.querySelector('[data-next-intent-status]')).toBeNull();
     await expect(inert(save)).toBe(true);
     await expect(inert(undo)).toBe(true);
@@ -888,7 +908,7 @@ export const StateDrafted: Story = {
   },
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
-    const { view, save } = await controlsTogether(card);
+    const { view, save } = await controlsTogether(card, 'closed');
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
       'Keep the parser small and pure',
     );
@@ -913,7 +933,7 @@ export const StateEdited: Story = {
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
       /^Unsaved changes$/,
     );
-    const { undo } = await controlsTogether(card);
+    const { undo } = await controlsTogether(card, 'closed');
     await expect(inert(undo)).toBe(false);
     await userEvent.click(undo);
     await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
@@ -950,7 +970,7 @@ export const StateSaved: Story = {
         .getAllByRole('button')
         .map((node) => node.textContent),
     ).toEqual([expect.stringMatching(/^Saved · reads from/), 'More']);
-    await controlsTogether(card);
+    await controlsTogether(card, 'open');
   },
 };
 
@@ -1330,6 +1350,98 @@ export const StateDiscarded: Story = {
     await expect(card.querySelector('[data-next-intent-status]')?.textContent ?? '').not.toBe(
       'Saved',
     );
-    await controlsTogether(card);
+    await controlsTogether(card, 'closed');
+  },
+};
+
+/* Expected outcome is optional: with nothing saved the card shows the Goal and one closed trigger, and the
+   accordion opens over saved lines so nothing saved is hidden. */
+export const OutcomeAccordionClosedWithNoLines: Story = {
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    const trigger = outcomesTrigger(view);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toBeVisible();
+    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).not.toBeVisible();
+  },
+};
+
+export const OutcomeAccordionOpenOverSavedLines: Story = {
+  args: {
+    setup: {
+      session: {
+        annotation_goal: 'Keep the parser small and pure',
+        annotation_goal_why: '',
+        annotation_line_1: 'All parser unit tests pass',
+        annotation_lines_why: '',
+        annotation_revision: 1,
+        annotation_revision_count: 1,
+        annotation_at: 1_760_000_500,
+        annotation_goal_saved_at: 1_760_000_500,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'true');
+    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
+      'All parser unit tests pass',
+    );
+    // A reader who closes it keeps it closed over a board refresh.
+    await userEvent.click(outcomesTrigger(view));
+    await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'false');
+    await (
+      window as unknown as {
+        __updateIntentSession: (patch: Record<string, unknown>) => Promise<void>;
+      }
+    ).__updateIntentSession({ annotation_at: 1_760_000_600 });
+    await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'false');
+  },
+};
+
+export const AddingALineInsideTheAccordionSaves: Story = {
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await openOutcomes(view);
+    await userEvent.type(
+      view.getByRole('textbox', { name: 'Expected outcome line 1' }),
+      'Tests pass',
+    );
+    await userEvent.click(view.getByRole('button', { name: '+ Add a line' }));
+    await userEvent.type(
+      await view.findByRole('textbox', { name: 'Expected outcome line 2' }),
+      'Benchmarks run',
+    );
+    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await waitFor(async () => {
+      await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
+    });
+    await expect(outcomesTrigger(view)).toHaveAttribute('aria-expanded', 'true');
+  },
+};
+
+/* The trigger is a button: Enter and Space open and close it, and focus stays on it. */
+export const OutcomeAccordionKeyboard: Story = {
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    const trigger = outcomesTrigger(view);
+    trigger.focus();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.keyboard('{Enter}');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(trigger).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger).toHaveFocus();
+    await userEvent.keyboard(' ');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(trigger).toHaveFocus();
+    await userEvent.keyboard(' ');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger).toHaveFocus();
   },
 };

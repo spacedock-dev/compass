@@ -342,7 +342,9 @@ export const OlderDirectionDraftSurvivesNavigation: Story = {
     );
     const row = canvasElement.querySelector('[data-next-entry-id="e50"]') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: 'Add to my intent' }));
-    await expect(await canvas.findByDisplayValue('Synthetic older direction')).toBeVisible();
+    // The pending line opens the Expected outcome accordion, which eases open.
+    const opened = await canvas.findByDisplayValue('Synthetic older direction');
+    await waitFor(() => expect(opened).toBeVisible());
     // Primary links belong to browser hashchange; this isolated router owns its keyboard path.
     await userEvent.click(canvas.getByRole('heading', { name: 'Drift' }));
     await userEvent.keyboard('s');
@@ -350,7 +352,9 @@ export const OlderDirectionDraftSurvivesNavigation: Story = {
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(50),
     );
-    await expect(await canvas.findByDisplayValue('Synthetic older direction')).toBeVisible();
+    // The pending line opens the Expected outcome accordion, which eases open.
+    const pending = await canvas.findByDisplayValue('Synthetic older direction');
+    await waitFor(() => expect(pending).toBeVisible());
     await expect(canvasElement.querySelector('[data-next-entry-id="e50"]')).toBeNull();
   },
 };
