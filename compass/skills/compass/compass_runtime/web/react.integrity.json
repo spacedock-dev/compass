@@ -2,7 +2,7 @@
   "document": {
     "bytes": 2111395,
     "file": "react.html",
-    "sha256": "5ac80094a44cfa7a4f22e58fc0c7d8b8494c38b26058e0e29d6701916bc7f5e3"
+    "sha256": "0d075aefb3402e20bd0ce35c7b37825e8a978a6b3da1deddc8f322f25e3c7d72"
   },
   "format": 1,
   "frontend": "react",
@@ -587,7 +587,7 @@
       },
       {
         "file": "frontend/src/drift/GoalVerdictNote.tsx",
-        "sha256": "79fbb7fdceb79023903ecc81cf2288b7c4844bf7d8c984c90a51b715bfd033af"
+        "sha256": "62052b13788bd221c4ebae224e178e4b6d5f3f9563425bb78759869e808bbd04"
       },
       {
         "file": "frontend/src/drift/MarkedNotice.tsx",
