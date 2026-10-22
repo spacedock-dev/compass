@@ -104,6 +104,20 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
         self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
         self.assertEqual(reading.GOAL_VERDICT_WRITTEN, checked["why"])
 
+    def test_a_path_followed_by_a_closing_quote_bracket_or_period_is_still_named(self) -> None:
+        for reason, expected in (
+            ('wrote docs/plans/DRC-4754-b.md".', "docs/plans/DRC-4754-b.md"),
+            ('the file "docs/plans/DRC-4754-b.md".', "docs/plans/DRC-4754-b.md"),
+            ('created .../plans/DRC-4754-b.md".', "plans/DRC-4754-b.md"),
+            ("see 'DRC-4754-b.md'.", "DRC-4754-b.md"),
+            ("file docs/DRC-4754-b.md).", "docs/DRC-4754-b.md"),
+            ('wrote "docs/DRC-4754-b.md",', "docs/DRC-4754-b.md"),
+            ("see \u201cDRC-4754-b.md\u201d.", "DRC-4754-b.md"),
+            ("file DRC-4754-b.md.", "DRC-4754-b.md"),
+        ):
+            with self.subTest(reason=reason):
+                self.assertEqual((expected,), reading._verdict_files(reason))
+
     def test_an_elided_path_written_again_after_the_verdict_disputes_it(self) -> None:
         checked = self._checked(
             [write_fact("docs/e2e/findings.md", at=170.0)], "wrote .../e2e/docs/e2e/findings.md"

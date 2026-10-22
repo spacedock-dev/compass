@@ -3948,6 +3948,24 @@ _RULE_OUTSIDE = re.compile(
 _FILE_NAME = re.compile(r"\.\w{1,5}$")
 
 
+_WORD_WRAP = "`'\"()[]{},;:!?\u2018\u2019\u201c\u201d"
+
+
+def _trim_word(raw: str) -> str:
+    """A word without the quotes, brackets and sentence stops around it, in any order.
+
+    One pass of strip then rstrip(".") left `md".` as `md"`: the period sat outside the strip
+    set, so the closing quote shielded it. Alternating until nothing changes handles a quoted
+    path ending a sentence, which is how an evaluator's reason usually names a file.
+    """
+    word = raw
+    while True:
+        trimmed = word.strip(_WORD_WRAP).rstrip(".")
+        if trimmed == word:
+            return word
+        word = trimmed
+
+
 def _path_tokens(text: str, *, files: bool = False) -> tuple[str, ...]:
     """The paths a line's own words name, as written relative to the session's directory.
 
@@ -3957,7 +3975,7 @@ def _path_tokens(text: str, *, files: bool = False) -> tuple[str, ...]:
     """
     found: list[str] = []
     for raw in text.split():
-        word = raw.strip("`'\"()[]{},;:!?").rstrip(".")
+        word = _trim_word(raw)
         for tail in ("/**", "/*"):
             word = word.removesuffix(tail)
         word = word.removeprefix("./")
