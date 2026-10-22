@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2097495,
+    "bytes": 2099507,
     "file": "react.html",
-    "sha256": "70cde5dc1a32c7fdf69bb6be678a600773b73319368ae50049749b4eaca98c1a"
+    "sha256": "d568c40b2ad5bb08d41dfceca4abe90af66e694c2284322aba7b6fdd4a43b80b"
   },
   "format": 1,
   "frontend": "react",
@@ -603,7 +603,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "7a365fd2a789aa66983604ae17774332e3e6ceb7cbaf87d0e0d8e09e3c6e4440"
+        "sha256": "faec9b9e474c8f6b89343d89eb059c8675645b9c4cb6ac6b9c7b11b7fd5f3e30"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -639,7 +639,7 @@
       },
       {
         "file": "frontend/src/drift/correction.ts",
-        "sha256": "6b7502a03a343df8873b568b2a93a61809ae2c897b1f1fa037bdac4790207d57"
+        "sha256": "3acb5819e9f8c4d6b8f11e8fdc28f95fb92fe195483447422f0c614273d5aa71"
       },
       {
         "file": "frontend/src/drift/drift.css",
@@ -691,7 +691,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "2582ff1dc7ab622110ff9e4e8d26b230080c610dc464d3612686721cfb054db3"
+        "sha256": "3ce3f20ee878b37530ee83fbd93d40b9b86fff4adddcbb38c4f3d6089d146330"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -699,11 +699,11 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "f18fffe2a83e95ac60644175b5fbf39444613878e083e07ab57ab59a7bc0363b"
+        "sha256": "c7d094b8062a906f0733975abb900af036a467cf75bb837b9551c52608d2588b"
       },
       {
         "file": "frontend/src/drift/shape.ts",
-        "sha256": "e4bebec41ddaf378688bb8ea20b95e1d3f1d9e087a63f52fd51ca33ae12e19f5"
+        "sha256": "bde5251e09a768d475fa31286e7bed4619b3113df1a9f2b230c1d81499d7e9cf"
       },
       {
         "file": "frontend/src/drift/state.ts",
@@ -751,7 +751,7 @@
       },
       {
         "file": "frontend/src/intent/GoalField.tsx",
-        "sha256": "8bf042b0fd46eb93b7d417b1a50f92cf6edd727156e7264682e6d54bb2cbf8b9"
+        "sha256": "264743797fe350992d25e5e37e9b16c4e6a3243088fc54347269387973682767"
       },
       {
         "file": "frontend/src/intent/HeldTextarea.tsx",
@@ -759,7 +759,7 @@
       },
       {
         "file": "frontend/src/intent/HowTo.tsx",
-        "sha256": "16faa6a255e0d23f9ba7f06d53109d70f8d1e9badecab86bceea5e18bf52d0b1"
+        "sha256": "676d6f4cc2b01307752552714f618fb752e835e031681fe4ec85fec78fe93351"
       },
       {
         "file": "frontend/src/intent/IntentLog.tsx",
@@ -803,7 +803,7 @@
       },
       {
         "file": "frontend/src/intent/derive.ts",
-        "sha256": "9f52db7926e17f13aa707b57405257a30d680d4e120edc8a32fd2e6b3ddde539"
+        "sha256": "bda824c5c4ddb095d5e701f9e9ae9a481edec99e09b680cf5abdbe3f05e7f0ad"
       },
       {
         "file": "frontend/src/intent/directions.ts",
