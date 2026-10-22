@@ -21,10 +21,11 @@ import {
   OUTCOME_LINES_MAX,
   type Annotation,
 } from './annotation';
-import type { Held, PromptChoice } from './held';
+import type { FoundGoal, Held, PromptChoice } from './held';
 import {
   ADOPT_CHANGED,
   ADOPT_REFUSED,
+  DETECTED_FROM_PROMPTS,
   DIRECTION_CLIPPED,
   EXCERPT_READ_WHOLE,
   GOAL_CUT,
@@ -46,6 +47,9 @@ export { PROMPT_CHOSEN, PROMPT_SOURCES, SESSION_GOAL };
 export function heldKey(session: Row | null | undefined, kind: string): string {
   return `held:${String(session?.['harness'] || '')}:${String(session?.['sid'] || '')}:${kind}`;
 }
+
+/* Not a goal source the server knows: a found goal is typed words once saved. It names where the box's words began. */
+const FOUND_FROM_PROMPTS = 'found-from-prompts';
 
 export const goalKey = (session: Row): string => heldKey(session, 'goal');
 export const linesKey = (session: Row): string => heldKey(session, 'lines');
@@ -212,6 +216,33 @@ export function chosenIsStale(input: DraftInput): boolean {
   // A /goal choice is checked against the row itself, so it needs no settled menu to be known gone.
   if (held.chosen.get(goalKey(session))?.source === SESSION_GOAL) return true;
   return Boolean(chosenCandidate(held, contexts, session)) || choicesSettled(contexts, session);
+}
+
+/* The goal a "Find goal" press found in the reader's prompts, while it stands. The order the owner ruled is the
+   reader's saved goal, then a /goal, then this, then today's drafts, so it stands only where none of the first
+   two exists. It was written into the box as the reader's pending words, and it stands only while the box still
+   holds exactly those words: an edit replaces it, and the same words typed back are the same words. Derived on
+   every render and never written. */
+export function foundGoal(input: DraftInput): FoundGoal | null {
+  const { held, payload, session } = input;
+  if (!annotateOn(payload) || storeUnreadable(payload)) return null;
+  const found = held.found.get(compatSessKey(session));
+  if (!found) return null;
+  if (String(savedGoal(input) || '').trim()) return null;
+  if (sessionGoalCandidate(session)) return null;
+  return held.goals.get(goalKey(session)) === found.text ? found : null;
+}
+
+/* Whether "Find goal" is offered: while the reader has saved no goal, the session set no /goal, and no found
+   goal is in the box, on a harness whose prompts Compass reads. The press is the reader's own, so this says only
+   whether the control is drawn and whether a press is taken. */
+export function findGoalOffered(input: DraftInput): boolean {
+  const { payload, session } = input;
+  if (!annotateOn(payload) || storeUnreadable(payload)) return false;
+  if (!['claude', 'codex'].includes(String(session['harness']))) return false;
+  if (String(savedGoal(input) || '').trim()) return false;
+  if (sessionGoalCandidate(session)) return false;
+  return foundGoal(input) === null;
 }
 
 /* The goal a goal-less session arrives with: the first prompt as Compass publishes it, or the latest where
@@ -621,6 +652,8 @@ export function intentStatus(
   if (requestMessage === ADOPT_CHANGED || Object.values(ADOPT_REFUSED).includes(requestMessage)) {
     return 'Not saved';
   }
+  /* A goal found in the prompts is used until edited, as a /goal is, and is the same kind of draft. */
+  if (foundGoal(input)) return DRAFT_UNSAVED;
   const changes = intentChanges(input);
   /* Only what Save intent would write. An undoable-only box (a draft emptied over a goal-less session, or the
      stored goal typed back over a choice) writes nothing, and "Unsaved changes" beside an inert Save misled. */
@@ -675,6 +708,8 @@ export function goalSourceLine(input: DraftInput): string {
   const stored = discarded ? '' : String(annotation?.['goal'] || '');
   const text = held.goals.has(key) ? (held.goals.get(key) ?? baseline) : baseline;
   if (!text.trim()) return '';
+  const found = foundGoal(input);
+  if (found) return `${DETECTED_FROM_PROMPTS} · ${clockText(found.foundAt)} · not saved`;
   if (drafted && text === drafted.text) {
     const at = nextNumber(drafted.at);
     if (drafted.source === SESSION_GOAL) {
@@ -695,16 +730,30 @@ export function goalSourceLine(input: DraftInput): string {
   }
   const savedFromPrompt =
     !discarded && PROMPT_SOURCES.includes(String(annotation?.['goal_source'] || ''));
-  const origin = held.chosen.get(key)?.text ?? drafted?.text ?? (savedFromPrompt ? stored : '');
+  /* A goal found in the prompts that the reader has since edited is still where their words began, ahead of the
+     prompt the box would otherwise draft from. */
+  const foundFrom = held.found.get(compatSessKey(session));
+  const origin =
+    held.chosen.get(key)?.text ??
+    foundFrom?.text ??
+    drafted?.text ??
+    (savedFromPrompt ? stored : '');
   const chosenFrom = held.chosen.get(key);
   const originSource = chosenFrom
     ? (chosenFrom.source ?? PROMPT_CHOSEN)
-    : drafted
-      ? drafted.source
-      : savedFromPrompt
-        ? String(annotation?.['goal_source'] || '')
-        : '';
-  const named = originSource === SESSION_GOAL ? 'From /goal' : 'From your prompt';
+    : foundFrom
+      ? FOUND_FROM_PROMPTS
+      : drafted
+        ? drafted.source
+        : savedFromPrompt
+          ? String(annotation?.['goal_source'] || '')
+          : '';
+  const named =
+    originSource === SESSION_GOAL
+      ? 'From /goal'
+      : originSource === FOUND_FROM_PROMPTS
+        ? DETECTED_FROM_PROMPTS
+        : 'From your prompt';
   /* By overlap and not by history alone: words typed over a selected-all prompt replace it in one change
      event, never pass through an empty box, and are the reader's own. */
   const startedFromPrompt = !held.cleared.has(key) && sharesWords(text, origin);

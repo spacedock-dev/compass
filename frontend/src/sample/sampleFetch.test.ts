@@ -98,6 +98,7 @@ describe('the sample session server', () => {
     '/api/reading',
     '/api/direction',
     '/api/reading/cancel',
+    '/api/goal/find',
     '/api/focus',
     '/api/summary',
     '/api/summary/cancel',

@@ -44,6 +44,26 @@ export const INTENT_EDITED_ADD = 'Save your intent, or undo your edit, to add th
 export const INTENT_CHOSEN_SAID = 'Goal filled from your prompt. Not saved.';
 export const INTENT_MEASURED = 'Drift is measured against these. Edit anything that is off.';
 export const INTENT_DETECTED_SAID = 'Goal filled from your /goal. Not saved.';
+/* A goal found in the reader's prompts is a draft like a /goal, and says where it came from in its own words. */
+export const DETECTED_FROM_PROMPTS = 'Detected from your prompts';
+export const INTENT_FOUND_SAID = 'Goal found in your prompts. Not saved.';
+export const FIND_GOAL_NOTHING = 'No clear goal in your prompts. Type one or use a prompt.';
+export const FIND_GOAL_NO_PROMPTS =
+  'Compass found no prompts of yours in this session to read. Type a goal.';
+export const FIND_GOAL_LEFT =
+  'A goal was found, but you had started typing one, so the box was left as it is.';
+export const FIND_GOAL_OUTRANKED =
+  'A goal was found, but this session already has one, so it was not used.';
+export const FIND_GOAL_LOST =
+  'Could not confirm the search for a goal. It has not been retried and nothing was changed.';
+export const FIND_GOAL_REFUSED = 'Compass could not look for a goal just now. Nothing was changed.';
+export const FIND_GOAL_RUNNING = 'A search for a goal is already running for this session.';
+export const FIND_GOAL_FAILED = (label: string): string =>
+  `${label} did not answer, so no goal was found. Nothing was changed. Press Find goal to try again.`;
+export const FIND_GOAL_UNAVAILABLE = (label: string): string =>
+  `${label} is not available here, so nothing was sent.`;
+export const FIND_GOAL_TITLE = (label: string): string =>
+  `Sends the prompts you typed in this session to ${label} to look for a goal. Nothing is sent until you press.`;
 export const GOAL_CUT = 'Cut to fit the goal limit. Analyze reads this excerpt.';
 export const EXCERPT_READ_WHOLE = 'Excerpt. Analyze looks up the source when pressed.';
 /* `reading.LEDGER_WORDS_CAP_CHARS`, copied rather than fetched; `test_reader_words.py` holds the two equal.

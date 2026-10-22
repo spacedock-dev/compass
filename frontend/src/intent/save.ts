@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { compatSessKey } from '../api/identity';
 import type { AnnotateReceipt, SessionIdentity } from '../api/types';
 import type { Row } from '../observed';
 import { annotateOn, annotationLines } from './annotation';
@@ -252,6 +253,8 @@ function forgetSent(
   if (changes.goal) {
     ctx.held.cleared.delete(goal);
     ctx.held.chosen.delete(goal);
+    // A found goal that was saved is the reader's saved words, and no longer a found one.
+    ctx.held.found.delete(compatSessKey(row));
   }
   const held = ctx.held.lines.get(lines);
   if (sent && held && JSON.stringify(linesToSend(held)) === JSON.stringify(sent)) {

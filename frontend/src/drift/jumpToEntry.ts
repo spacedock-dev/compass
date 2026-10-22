@@ -1,6 +1,7 @@
 import { afterPanelSettles } from './panelSettle';
 import type { DriftValue } from './context';
 import { fullActivityKey } from '../sessions/fullActivityKey';
+import { entriesHeld } from './citations';
 
 const LAND_SETTLE_MS = 1500;
 
@@ -46,5 +47,28 @@ export function jumpToEntry(drift: DriftValue, id: string): void {
         landOnEntry(id);
       });
     });
+  });
+}
+
+/* A press on an entry the page may not hold yet, from a citation outside the reading: the older record pages are
+   read for it first, as Show cited entries reads them, because the reader asked for this entry; then Full
+   activity opens and the row is placed once its panel has finished easing open. Resolves whether the row is
+   drawn, so the caller can say where it is not. */
+export async function openEntry(drift: DriftValue, id: string): Promise<boolean> {
+  const { ctx, model } = drift;
+  ctx.shell.controls.disclosures.set(fullActivityKey(model.project, model.session), true);
+  if (!model.byId.has(id) && model.identity) {
+    const scope = { projectKey: model.projectKey, session: model.session, cited: [id] };
+    await ctx.shell.runtime.resolveRecord(
+      { projectKey: model.projectKey, focus: model.identity },
+      (snapshot) => entriesHeld(snapshot, scope),
+    );
+  }
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const panel = document.querySelector('[data-next-full-activity-body]');
+  const growing = panel?.getAnimations?.() ?? [];
+  await Promise.allSettled(growing.map((animation) => animation.finished));
+  return new Promise<boolean>((resolve) => {
+    afterPanelSettles(() => resolve(landOnEntry(id)));
   });
 }

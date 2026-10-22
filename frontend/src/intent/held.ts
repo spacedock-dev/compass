@@ -36,6 +36,30 @@ export interface PromptChoice {
   readonly cut: boolean;
 }
 
+/* A prompt a found goal quotes: the entry it is in the activity list, as the server numbered it, and the words
+   that were checked as verbatim in it. */
+export interface FoundCite {
+  readonly factId: string;
+  readonly ordinal: number | null;
+  readonly at: number | null;
+  readonly quotes: readonly string[];
+}
+
+/* The goal one "Find goal" press found in the reader's prompts, with the prompts it quotes and when it was
+   found. A press's answer, held for the life of the tab and never stored: it stands in the goal box only while
+   the box still holds exactly these words (`derive.foundGoal`), so the box, and not this, is the reader's word. */
+export interface FoundGoal {
+  readonly text: string;
+  readonly foundAt: number;
+  readonly label: string;
+  readonly cites: readonly FoundCite[];
+}
+
+/* What the last "Find goal" press said, beside the button, until the reader types or presses again. */
+export interface FindNote {
+  message: string;
+}
+
 /* The prompt menu's list, fetched once per opening and never by a poll. `open` is whether the reader's
    own opening gesture is still standing, so a list that arrives after the menu was dismissed does not pop
    it open again. */
@@ -114,6 +138,9 @@ export function createHeld(deps: HeldDeps) {
   /* The time of the /goal the reader declined to take as an update, by goal key. A /goal set later than this
      is offered again. */
   const kept = new Map<string, number>();
+  /* The goal each session's "Find goal" press found, and what the press last said, by session. */
+  const found = new Map<string, FoundGoal>();
+  const finds = new Map<string, FindNote>();
   const picks = new Map<string, string>();
   const prompts = new Map<string, PromptList>();
   const directions = new Map<string, DirectionLine>();
@@ -164,6 +191,8 @@ export function createHeld(deps: HeldDeps) {
     origins,
     chosen,
     kept,
+    found,
+    finds,
     picks,
     prompts,
     directions,
@@ -181,6 +210,8 @@ export function createHeld(deps: HeldDeps) {
       }
       const request = requests.get(sessionKey);
       if (request && !request.pending) request.message = '';
+      // What the last "Find goal" press said goes with the next edit of the box it was about.
+      finds.delete(sessionKey);
       announcer.forget(`keep:${sessionKey}`);
     },
     cues,

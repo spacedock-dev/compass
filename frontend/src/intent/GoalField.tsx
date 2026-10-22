@@ -8,6 +8,7 @@ import { heldSentence } from './cues';
 import { clearGoal, escapeGoal, keepSavedGoal, takeDetectedGoal, typeGoal } from './edit';
 import {
   directionLinesQuestion,
+  foundGoal,
   goalBaseline,
   goalKey,
   goalRefused,
@@ -19,6 +20,7 @@ import {
 import { GOAL_UNCLEAR } from '../drift/sentences';
 import { answerLines } from './directions';
 import { HeldTextarea } from './HeldTextarea';
+import { FindGoal, FindGoalNote, FoundCites } from './FindGoal';
 import { PromptSelect } from './PromptSelect';
 import { ENDED_CAVEAT, RULE_HINT } from './sentences';
 import { usePanel } from './useIntent';
@@ -94,6 +96,8 @@ export function GoalField() {
   const saved = goalBaseline(input);
   const text = held.goals.has(key) ? (held.goals.get(key) ?? saved) : saved;
   const untouched = Boolean(drafted) && text === drafted?.text;
+  /* A goal found in the prompts is marked as a /goal is, for as long as the box holds its words. */
+  const found = foundGoal(input);
   const sourceLine = goalSourceLine(input);
   const why = storeUnreadable(input.payload) ? '' : String(input.annotation?.['goal_why'] || '');
   const cue = heldSentence(held.kind(key), null);
@@ -103,13 +107,13 @@ export function GoalField() {
     <div
       className="next-cockpit-held-field"
       data-next-cockpit-held-field="goal"
-      {...(untouched ? { 'data-next-cockpit-drafted': '' } : {})}
+      {...(untouched || found ? { 'data-next-cockpit-drafted': '' } : {})}
     >
       <div className="next-cockpit-held-heading flex-nowrap [&_.next-intent-prompt-pick]:flex-none max-[760px]:[&_.next-intent-prompt-pick]:flex-1">
         <Label className="next-cockpit-held-label" htmlFor={boxId}>
           Goal
         </Label>
-        {untouched && drafted?.source === SESSION_GOAL ? (
+        {found || (untouched && drafted?.source === SESSION_GOAL) ? (
           <span
             className="next-cockpit-held-detected text-label text-muted-foreground"
             data-next-goal-detected
@@ -117,8 +121,12 @@ export function GoalField() {
             Goal detected
           </span>
         ) : null}
-        <PromptSelect />
+        <span className="ms-auto flex min-w-0 max-w-full items-center gap-2 max-[760px]:w-full [&_.next-intent-prompt-pick]:ms-0">
+          <FindGoal />
+          <PromptSelect />
+        </span>
       </div>
+      <FindGoalNote />
       {endedAt(session) !== null ? (
         <p className="next-cockpit-held-absent" data-next-ended-goal>
           {ENDED_CAVEAT}
@@ -159,11 +167,12 @@ export function GoalField() {
           <small
             className="next-cockpit-held-source"
             data-next-cockpit-goal-source
-            {...(untouched && drafted ? { 'data-next-cockpit-draft-marks': '' } : {})}
+            {...((untouched && drafted) || found ? { 'data-next-cockpit-draft-marks': '' } : {})}
           >
             {sourceLine}
           </small>
         ) : null}
+        <FoundCites />
         <span className="next-cockpit-held-count ms-auto" data-next-cockpit-held-count="goal">
           {`${String(text.length)} / ${String(cap)}`}
         </span>

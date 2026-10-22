@@ -187,6 +187,20 @@ export interface ReadingReceipt {
   readonly job?: unknown;
 }
 
+/* `POST /api/goal/find`: what one "Find goal" press answers. `found` is the goal and the prompts it quotes, or
+   null with `why` naming the closed reason none was shown. A refusal answers `reading`, the policy, as a
+   reading's does. */
+export interface GoalFindReceipt {
+  readonly ok?: boolean;
+  readonly produced?: boolean;
+  readonly reason?: string;
+  readonly why?: string;
+  readonly found?: unknown;
+  readonly route?: unknown;
+  readonly reading?: unknown;
+  readonly notice?: ModelNoticeRecord;
+}
+
 export interface ReadingCancelReceipt {
   readonly ok?: boolean;
   readonly cancelling?: boolean;
@@ -247,6 +261,13 @@ export interface ReadingRequest {
   readonly settle_through?: unknown;
   readonly model?: string;
   readonly [adoption: string]: unknown;
+}
+
+export interface GoalFindRequest extends SessionIdentity {
+  readonly provider: string;
+  readonly model?: string;
+  readonly press: true;
+  readonly observer_model: 1;
 }
 
 export interface AnnotateRequest {

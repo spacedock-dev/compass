@@ -16,6 +16,8 @@ import type {
   PayloadData,
   ProjectContext,
   ReadingCancelReceipt,
+  GoalFindReceipt,
+  GoalFindRequest,
   ReadingReceipt,
   ReadingRequest,
   UnaskedGrantRequest,
@@ -202,6 +204,9 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
     ) => post<DirectionBatchReceipt>('/api/direction', body, signal),
     postReading: (body: ReadingRequest | UnaskedGrantRequest, signal?: AbortSignal) =>
       post<ReadingReceipt>('/api/reading', body, signal),
+    /* "Find goal": the reader's prompts read for a goal, on one press (docs/design-reading-a-session.md). */
+    postGoalFind: (body: GoalFindRequest, signal?: AbortSignal) =>
+      post<GoalFindReceipt>('/api/goal/find', body, signal),
     postReadingCancel: (
       body: SessionIdentity & {
         readonly job: string;

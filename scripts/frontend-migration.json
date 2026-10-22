@@ -1028,6 +1028,17 @@
       "disposition": "store-held"
     },
     {
+      "name": "A goal found in the reader's prompts, and what the press that found it said",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/FindGoal.test.tsx",
+        "frontend/src/intent/foundGoal.test.ts",
+        "frontend/stories/FindGoal.stories.tsx"
+      ],
+      "contract": "Keep the found goal and the press's last sentence per session in memory. The goal stands only while the box holds its words, a saved goal or a /goal outranks it, and nothing is stored.",
+      "disposition": "store-held"
+    },
+    {
       "name": "Selected later direction and prompt-menu choices",
       "owner": "DRC-4825",
       "oracles": [
