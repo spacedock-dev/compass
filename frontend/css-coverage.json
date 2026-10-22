@@ -1647,6 +1647,7 @@
     "frontend/src/styles/shell.css|@keyframes next-live-pulse|0%,100%": "Shell retains the live dot animation; CDP does not report individual keyframe declarations.",
     "frontend/src/styles/shell.css|@keyframes next-live-pulse|50%": "Shell retains the live dot animation; CDP does not report individual keyframe declarations.",
     "frontend/src/styles/shell.css||.next-placeholder": "SlotPlaceholders and IntentPanel retain an explicit unavailable-surface sentence before a slot is mounted.",
+    "frontend/src/styles/shell.css||.next-crumb:hover,.next-breadcrumb [aria-current=\"page\"]": "Breadcrumb renders the current-page crumb and its narrow-width rule is recorded used; this desktop rule was certified by its :hover partner before every selector in a list had to be, and the record holds no used entry for the [aria-current] half until coverage is collected again.",
     "frontend/src/timeline/timeline.css||.pc-entry-source-list": "EventRow retains multiple source occurrences for one timeline entry; reached rows have one source.",
     "frontend/src/attention/attention.css||.next-attention-section": "Identical rule also in sessions/sessions.css; the record cannot attribute which copy renders, so this copy is held to an exception.",
     "frontend/src/sessions/sessions.css||.next-attention-section": "Identical rule also in attention/attention.css; the record cannot attribute which copy renders, so this copy is held to an exception.",
