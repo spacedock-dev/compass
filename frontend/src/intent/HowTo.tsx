@@ -50,8 +50,8 @@ export function IntentHowTo({
     >
       <h3 className="text-body font-semibold">How Intent and drift works</h3>
       <p>
-        1. Give the goal. Expected outcome is optional. A session's /goal is detected and used until
-        you edit it; else Compass drafts from your first prompt.
+        1. Give the goal. Expected outcome is optional, but a level needs one. A session's /goal is
+        used until you edit it; else Compass drafts from your first prompt.
       </p>
       <p>
         2. Press Analyze drift. It asks once to allow the reading and counts against a daily cap.
@@ -63,7 +63,7 @@ export function IntentHowTo({
         data-next-intent-howto-limit
       >{`Drift level: ${WORK_HARNESSES.map(label).join(' and ')} sessions only. Analyze drift here: ${reader}${reader.endsWith('.') ? '' : '.'} Steer back: ${steer}. Compass never writes into sessions.`}</p>
       <p data-next-intent-howto-no-line>
-        With no expected outcome line: no level, and “Can't tell” unless your goal departs.
+        Without one: no level, and “Can't tell” unless your goal departs.
       </p>
       <p data-next-intent-howto-settle>
         Readings settle a command's latest unpiped run, failed or passed with nothing written after
