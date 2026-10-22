@@ -18,6 +18,9 @@ import {
   FAILED_CHECK_ON_RECORD,
   FAILED_CHECK_UNREAD,
   GOAL_UNCLEAR_RESULT,
+  GOAL_VERDICT_CHECKS,
+  GOAL_VERDICT_KEYS,
+  GOAL_VERDICT_WHY,
   MALFORMED,
   NOT_REACHED,
   OWN_WORDS_ONLY,
@@ -561,6 +564,39 @@ export function readingCoverage(raw: unknown): Coverage | null {
     : null;
 }
 
+/* Compass's test of the harness's goal verdict, as a reading stored it: the verdict's own time and two closed
+   tokens. Anything else is a reading this build cannot read, not one with a check missing. */
+export interface GoalVerdictCheck {
+  readonly at: number;
+  readonly check: string;
+  readonly why: string;
+  readonly cites: readonly string[];
+}
+
+export function readingGoalVerdict(raw: unknown): GoalVerdictCheck | null {
+  if (
+    !isRecord(raw) ||
+    Object.keys(raw).length !== GOAL_VERDICT_KEYS.length ||
+    GOAL_VERDICT_KEYS.some((key) => !Object.hasOwn(raw, key))
+  ) {
+    return null;
+  }
+  const at = raw['at'];
+  const cites = raw['cites'];
+  if (
+    typeof at !== 'number' ||
+    !Number.isFinite(at) ||
+    at <= 0 ||
+    !GOAL_VERDICT_CHECKS.includes(raw['check'] as string) ||
+    !Object.hasOwn(GOAL_VERDICT_WHY, raw['why'] as string) ||
+    !Array.isArray(cites) ||
+    cites.some((cite) => typeof cite !== 'string')
+  ) {
+    return null;
+  }
+  return raw as unknown as GoalVerdictCheck;
+}
+
 export function windowPartial(shape: {
   readonly coverage: Coverage | null;
   readonly windowStart: number | null;
@@ -617,6 +653,8 @@ export interface Shape {
   readonly windowStart: number | null;
   readonly coverage: Coverage | null;
   readonly promptSource: boolean;
+  /** Compass's test of the harness's goal verdict, where the reading made one. */
+  readonly goalVerdict: GoalVerdictCheck | null;
   readonly readClauses: readonly (readonly [string, string])[];
   readonly stamp: string;
   readonly cutoff: string;
@@ -639,6 +677,7 @@ export const ASSESSMENT_KEYS = [
   'ended_at_read',
   'evidence_through',
   'coverage',
+  'goal_verdict',
   'criteria',
 ];
 
@@ -660,8 +699,11 @@ export function readingShape(
   if (source['coverage'] !== null && source['coverage'] !== undefined && !coverage) {
     unknown.push('coverage');
   }
+  const goalVerdict = readingGoalVerdict(source['goal_verdict']);
+  if (source['goal_verdict'] !== undefined && !goalVerdict) unknown.push('goal_verdict');
   if (unknown.length) {
     return {
+      goalVerdict: null,
       criteria: [],
       departures: [],
       malformed: unknown.slice(0, 4).join(', '),
@@ -749,6 +791,7 @@ export function readingShape(
     windowStart,
     coverage,
     promptSource,
+    goalVerdict,
     /* The reader's words only: the claims question has none to show. */
     readClauses: constraints
       .filter(([key]) => key !== CLAIMS)

@@ -1719,6 +1719,9 @@ def vocabulary() -> dict[str, Any]:
         "criterionKeys": list(reading.CRITERION_KEYS),
         "whyTokens": [token for token in reading.WHY_TOKENS if token != reading.WHY_STANDS],
         "whyStands": reading.WHY_STANDS,
+        "goalVerdictKeys": list(reading.GOAL_VERDICT_KEYS),
+        "goalVerdictChecks": list(reading.GOAL_VERDICT_CHECKS),
+        "goalVerdictWhys": list(reading.GOAL_VERDICT_WHYS),
         "workEvidenceByHarness": {
             harness: sorted(types) for harness, types in reading.WORK_EVIDENCE_BY_HARNESS.items()
         },

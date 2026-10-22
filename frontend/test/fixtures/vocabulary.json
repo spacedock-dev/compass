@@ -67,6 +67,7 @@
     "ended_at_read",
     "evidence_through",
     "coverage",
+    "goal_verdict",
     "criteria"
   ],
   "checkBeforeLastChange": "before the last change",
@@ -94,6 +95,25 @@
   ],
   "cueWindowSeconds": 30,
   "format": 1,
+  "goalVerdictChecks": [
+    "agrees",
+    "disputed",
+    "unconfirmed"
+  ],
+  "goalVerdictKeys": [
+    "at",
+    "check",
+    "why",
+    "cites"
+  ],
+  "goalVerdictWhys": [
+    "written-before",
+    "passed-before",
+    "written-after",
+    "check-failed",
+    "not-found",
+    "nothing-checkable"
+  ],
   "levelReasons": [
     "draft-unsaved",
     "failed-check",

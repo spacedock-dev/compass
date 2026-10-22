@@ -162,6 +162,35 @@ export const STORED_WHY: Readonly<Record<string, string>> = {
   [RECORDED_WRITE]: RECORDED_WRITE_UNHELD,
 };
 
+/* The harness's own "goal met" verdict, and Compass's test of it (`reading.GOAL_VERDICT_*`). The verdict is
+   always the harness's claim and the sentences here are Compass's: the producer's `check` and `why` are
+   closed tokens, and its prose never reaches the page through them. A claim never moves a level and is never
+   a passing check, and the sentences say so where a reader might take it for either
+   ([DEC-26](../../../docs/design-reading-a-session.md#amended-2026-10-22-a-goal-met-verdict-is-a-claim)). */
+export const GOAL_VERDICT_KEYS: readonly string[] = ['at', 'check', 'why', 'cites'];
+export const GOAL_VERDICT_CHECKS: readonly string[] = ['agrees', 'disputed', 'unconfirmed'];
+export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
+  'written-before': 'the file its reason names is recorded as written before the verdict',
+  'passed-before': 'a check of the kind its reason names is recorded as passing before the verdict',
+  'written-after': 'the file its reason names was written again after the verdict',
+  'check-failed': 'a check of the kind its reason names has a failing latest run',
+  'not-found': 'the record Compass read does not show what its reason names',
+  'nothing-checkable': 'its reason names no file or check Compass can look for',
+};
+export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
+export const goalVerdictClaim = (harness: string, at: string): string =>
+  `${harness} marked this goal met at ${at}.`;
+export const GOAL_VERDICT_LINES: Readonly<Record<string, (why: string) => string>> = {
+  'claim-only': () =>
+    'Compass has not analyzed this session, so nothing has checked it and no level is implied.',
+  unchecked: () =>
+    'Compass’s reading does not cover this verdict, so nothing has checked it. Analyze again to check it.',
+  agrees: (why) =>
+    `Compass agrees: ${why}. This does not change the level and is not a passing check.`,
+  disputed: (why) => `Compass disputes it: ${why}. Compass’s own reading stands.`,
+  unconfirmed: (why) => `Compass could not confirm it: ${why}. This does not change the level.`,
+};
+
 /* Said once, on the reading that no longer finds a departure the one before it did, with that reading's time:
    a departure that clears names itself, since nothing else on the card says the earlier one ended. When the
    reader pasted corrections between the two readings it says they named it, in the singular for the one. */
