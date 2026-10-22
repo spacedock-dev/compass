@@ -2220,6 +2220,11 @@ def direction_floor(
     latest = entry["revisions"][-1] if entry and entry["revisions"] else None
     if latest and str(latest.get("goal") or "").strip():
         return float(latest.get("goal_source_at") or latest.get("goal_saved_at") or latest["at"])
+    # The session's own /goal is the draft ahead of the prompts, and ahead of the control check:
+    # a session that opened with `/goal` has no first prompt, and still has this goal.
+    text, at = prompt_candidate(dict(row), reading.SESSION_GOAL)
+    if text and at is not None:
+        return at
     # A control-first session drafts nothing, so it has no draft time either (DRC-4766).
     if row.get("first_prompt_control") is True:
         return None
@@ -2841,7 +2846,9 @@ def prompt_candidate(row: dict[str, Any], source: str) -> tuple[str, float | Non
         text, at = row.get("title"), row.get("prompt_at")
     elif source == reading.SESSION_GOAL and harness == "claude":
         goal = records.as_dict(row.get("session_goal"))
-        text, at = goal.get("text"), goal.get("at")
+        # The excerpt where the goal is longer than the Goal field holds, so the words the page
+        # offers, the words an adoption names and the words the store keeps are one string.
+        text, at = goal.get("offered") or goal.get("text"), goal.get("at")
     else:
         return "", None
     return (text if isinstance(text, str) else "", reading.valid_prompt_time(at))

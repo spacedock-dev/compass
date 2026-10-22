@@ -409,8 +409,9 @@ def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[
     touched since is not seen, and publishes nothing rather than a guess. Only complete lines
     count, so a half-written record is read once it finishes.
 
-    The published mapping is `{"text", "at"}` so a later verdict (met, when, the evaluator's
-    reason) joins it as keys, never as a rename.
+    The published mapping is `{"text", "at"}`, with `offered` and `cut` added when the condition
+    is longer than the Goal field holds (`_with_excerpt`), so a later verdict (met, when, the
+    evaluator's reason) joins it as keys, never as a rename.
     """
     try:
         stat = os.stat(path)
@@ -458,7 +459,21 @@ def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[
             {"ino": stat.st_ino, "pos": pos, "goal": goal},
             limit=config.max_cache_entries,
         )
-    return dict(goal) if goal is not None else None
+    return _with_excerpt(goal, config.annotation_text_cap_chars) if goal is not None else None
+
+
+def _with_excerpt(goal: dict[str, Any], cap: int) -> dict[str, Any]:
+    """The goal as published, plus the excerpt the Goal field can hold when it cannot hold it whole.
+
+    `offered` is what an adoption stores (`records.safe_text` at the store's own bound), so the page
+    and the server agree on the words without either clipping on its own. It and `cut` exist only
+    for a goal over the bound: a key every row carried would say nothing about this goal.
+    """
+    words = goal["text"]
+    offered = records.safe_text(words, cap).strip()
+    if offered == words:
+        return dict(goal)
+    return {**goal, "offered": offered, "cut": True}
 
 
 def last_user_event(config: RuntimeConfig, state: RuntimeState, path: str) -> str | None:

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import claude_data, history, project_context, reading
+from compass_runtime import claude_data, history, project_context, reading, records
 from compass_runtime import sessions as runtime_sessions
 
 from .fixtures import _iso, _jsonl
@@ -174,6 +174,46 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
         records = set_goal(T0 + 5)
         records[0]["timestamp"] = "not a time"
         self.assertIsNone(read_goal(records))
+
+
+class AGoalOverTheGoalLimitIsOfferedCutTest(unittest.TestCase):
+    """The Goal field holds 240 characters. A longer `/goal` is offered as an excerpt marked cut."""
+
+    LONG = "the placeholder parser handles every token type and " * 8
+
+    def test_a_goal_within_the_limit_publishes_no_excerpt(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5)])
+        assert goal is not None
+        self.assertNotIn("cut", goal)
+        self.assertNotIn("offered", goal)
+
+    def test_a_longer_goal_publishes_the_whole_words_and_an_excerpt_marked_cut(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5, self.LONG)])
+        assert goal is not None
+        self.assertEqual(" ".join(self.LONG.split()), goal["text"])
+        self.assertTrue(goal["cut"])
+        self.assertLessEqual(len(goal["offered"]), 240)
+        self.assertTrue(goal["text"].startswith(goal["offered"]))
+
+    def test_the_server_resolves_the_excerpt_and_never_the_whole_words_for_adoption(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5, self.LONG)])
+        row = {"harness": "claude", "session_goal": goal}
+        text, at = annotation_store.prompt_candidate(row, "session-goal")
+        assert goal is not None
+        self.assertEqual((goal["offered"], T0 + 5), (text, at))
+
+    def test_an_adoption_naming_the_excerpt_stores_exactly_it(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5, self.LONG)])
+        assert goal is not None
+        row = {"harness": "claude", "session_goal": goal}
+        adopted = annotation_store._adoption(row, "session-goal", goal["offered"], T0 + 5, T0 + 9)
+        assert adopted is not None
+        self.assertEqual(goal["offered"], adopted["goal"])
+        self.assertEqual(goal["offered"], records.safe_text(adopted["goal"], 240))
+        # Naming the whole words is a stale or forged adoption: refused, never clipped to fit.
+        self.assertIsNone(
+            annotation_store._adoption(row, "session-goal", goal["text"], T0 + 5, T0 + 9)
+        )
 
 
 class TheGoalIsReadOnAppendTest(unittest.TestCase):
