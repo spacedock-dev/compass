@@ -248,6 +248,12 @@ class AnAdoptedGoalIsReadWholeTest(_Producer):
         self.assertEqual(CLIP, self.goal_block())
         self.assertIn(reading.GOAL_SOURCE_GONE.strip(), assessment["cutoff"])
 
+    def test_a_goal_from_the_goal_command_has_no_prompt_to_be_missing(self) -> None:
+        stated = {**ADOPTED, "goal_source": reading.SESSION_GOAL}
+        assessment, _, _ = self.produce([_agent("a1", 90.0, "I wired it.")], revision=stated)
+        self.assertEqual(CLIP, self.goal_block())
+        self.assertNotIn("prompt your goal came from", assessment["cutoff"])
+
     def test_a_typed_goal_is_never_replaced(self) -> None:
         typed = {k: v for k, v in ADOPTED.items() if not k.startswith("goal_source")}
         typed["at"] = 60.0

@@ -349,6 +349,8 @@ export const REASON_LINES: Readonly<Record<string, (n: string) => string>> = {
    one. Every reason has exactly one home, a line, a blocker or this list, and
    `api/vocabulary.test.ts` holds the three to the producer's list. */
 export const SILENT_REASONS: readonly string[] = ['draft-unsaved', 'floor-met', 'no-reading'];
+/* The same blocker for a reading of the goal alone, where no outcome line was saved. */
+export const GOAL_NOT_SHOWN = 'Your goal is not shown by any check.';
 export const BLOCKER_LINES: Readonly<Record<string, string>> = {
   'no-passing-check': 'No check has passed yet.',
   'check-not-recorded': 'A check ran and its result was not recorded.',

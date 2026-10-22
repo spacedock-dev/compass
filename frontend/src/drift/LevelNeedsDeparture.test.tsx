@@ -66,8 +66,8 @@ const row = (level: string) => ({
 });
 
 describe('the analysis level', () => {
-  const derive = (results: readonly string[], level: string) => {
-    const session = { ...SESSION, annotation_assessment: assessment(results) };
+  const derive = (results: readonly string[], level: string, own: Record<string, unknown> = {}) => {
+    const session = { ...SESSION, annotation_assessment: assessment(results), ...own };
     const annotation = annotationOf(session as never);
     const contexts = new Map<string, ContextEntry>([
       [
@@ -110,6 +110,18 @@ describe('the analysis level', () => {
       expect(result?.level).toBe('not_enough');
     },
   );
+
+  it('names the goal, not a line, when a goal-only reading has no check showing it', () => {
+    const goalOnly = derive([CANT_TELL], 'none_or_low', { annotation_line_1: '' });
+    expect(goalOnly?.reasons.blockers).toContain('Your goal is not shown by any check.');
+    expect(goalOnly?.reasons.blockers).not.toContain(
+      'A line of your intent is not shown by any check.',
+    );
+    const withLine = derive([CANT_TELL, CANT_TELL], 'none_or_low');
+    expect(withLine?.reasons.blockers).toContain(
+      'A line of your intent is not shown by any check.',
+    );
+  });
 
   it.each(['medium', 'high', 'extreme'])('keeps %s over a reading that departs', (level) => {
     const result = derive([DEPARTS, CANT_TELL], level);

@@ -8,6 +8,7 @@ import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { entryWindow, olderEntriesRemain, type WorkEntry } from '../intent/work';
 import { markNotAccurate } from './actions';
+import { SESSION_GOAL } from '../sessions/intent';
 import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
 import { EvidenceList } from './Evidence';
@@ -548,7 +549,12 @@ function ResultFoot() {
     const moved = node.getBoundingClientRect().top - hold.top;
     if (moved) window.scrollBy(0, moved);
   }, [marked]);
-  if (readAt === null || !model.annotate) return null;
+  /* A refusal sets no level and offers no Steer back, so there is nothing for the mark to stop; the Undo of
+     one already made stays. */
+  const refused =
+    model.shape !== null &&
+    driftAnswer(model.shape, model.entries, model.source.scan).kind === 'goal-unclear';
+  if (readAt === null || !model.annotate || (refused && !marked)) return null;
   const unsaved = ctx.drift.notAccurate.has(model.key);
   const hintId = `not-accurate-why:${model.key}`;
   const control = (
@@ -667,7 +673,11 @@ function Baseline({
           shape.revisionReadAt !== null
             ? `${shape.promptSource ? 'saved' : 'typed'} ${fmtDur(Math.max(0, model.generated - shape.revisionReadAt))} ago`
             : `${shape.promptSource ? 'save time' : 'time'} not recorded`,
-          shape.promptSource ? 'drafted from your prompt' : '',
+          raw['goal_source'] === SESSION_GOAL
+            ? 'from /goal'
+            : shape.promptSource
+              ? 'drafted from your prompt'
+              : '',
           /* Both times where they differ: typed words read work from the reader's latest message before the
              save. Adopted words already name their prompt. */
           !shape.promptSource &&

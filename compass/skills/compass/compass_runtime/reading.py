@@ -4746,7 +4746,14 @@ def produce(  # noqa: PLR0913
         coverage=coverage,
         window_start=window_start(latest),
     )
-    cutoff += _goal_note(adopted=adopted, source=source, goal=goal, whole=selected.goal_whole)
+    # A `/goal` is stated in the session, with no prompt of the reader's behind it to go missing
+    # (owner feedback, 2026-10-22): the note would name a prompt that never existed.
+    cutoff += _goal_note(
+        adopted=adopted and latest.get("goal_source") != SESSION_GOAL,
+        source=source,
+        goal=goal,
+        whole=selected.goal_whole,
+    )
     cutoff += "" if outcome_lines(latest) else NO_OUTCOME_LINES_NOTE
     cutoff += _FINAL_NOTES.get(selected.newest_final or "", "")
     if tool_output is not None and not admitted and _has_reports(facts, harness, sid):

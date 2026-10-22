@@ -456,6 +456,7 @@ export const AGoalTooVagueIsRefused: Story = {
     await expect(shown.querySelector('[data-next-result-quiet]')).toBeNull();
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await expect(within(drift).queryByRole('button', { name: 'Mark as inaccurate' })).toBeNull();
     await expect(drift).not.toHaveTextContent("Can't tell");
   },
 };

@@ -387,6 +387,52 @@ describe('a finding jump', () => {
   });
 });
 
+describe('a goal stated with /goal', () => {
+  const goalCommand = {
+    ...ASSESSMENT,
+    goal_source: 'session-goal',
+    goal_source_at: 980,
+  };
+
+  it('says it came from /goal, never from a prompt', async () => {
+    const page = mountDrift({
+      session: stored({
+        annotation_assessment: goalCommand,
+        annotation_goal_source: 'session-goal',
+      }),
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    const read = textOf('[data-next-read]');
+    expect(read).toContain('from /goal');
+    expect(read).not.toContain('drafted from your prompt');
+  });
+});
+
+describe('a refusal of a goal too vague to analyze', () => {
+  const refused = {
+    ...ASSESSMENT,
+    criteria: {
+      goal: {
+        result: 'goal too vague to analyze against',
+        cites: [],
+        detail: '',
+        clause: 'testing',
+      },
+    },
+  };
+
+  it('offers no mark of inaccuracy, because it sets no level and offers no Steer back', async () => {
+    const page = mountDrift({ session: stored({ annotation_assessment: refused }), facts: FACTS });
+    await page.settle();
+    await page.settle();
+    expect(document.querySelector('[data-next-result]')).not.toBeNull();
+    expect(byAction('not-accurate')).toBeFalsy();
+    expect(document.body.textContent).not.toContain('Mark as inaccurate');
+  });
+});
+
 const foot = () => document.querySelector('[data-next-result-mark]') as HTMLElement | null;
 
 describe('Not accurate', () => {

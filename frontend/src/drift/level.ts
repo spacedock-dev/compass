@@ -12,12 +12,13 @@ import {
   CLAIMS,
   CONSISTENT,
   DEPARTURE,
+  GOAL_NOT_SHOWN,
   LEVEL_SCALE,
   LIVE_LEVEL_NAMES,
   REASON_LINES,
   UNSUPPORTED,
 } from './sentences';
-import { agentMessage, evidenceAt, type Shape } from './shape';
+import { agentMessage, evidenceAt, isOutcomeLine, type Shape } from './shape';
 
 /* The Drift level: the live estimate (deterministic, from checks and file paths, never a model) and the
    analysis-derived level (the server's `levels.analysis_level` over the stored reading and the record as it
@@ -321,6 +322,18 @@ function recordedSignals(
   return { lines, evidence, limits };
 }
 
+/* A reading of the goal alone has no outcome line to be unshown, so "a line of your intent" would name
+   something the reader never saved; the goal is the line no check shows (owner feedback, 2026-10-22). */
+function goalAloneBlockers(reasons: Reasons, shape: Shape): Reasons {
+  const goalAlone = !shape.criteria.some((line) => isOutcomeLine(line.key));
+  return {
+    first: reasons.first,
+    blockers: reasons.blockers.map((line) =>
+      goalAlone && line === BLOCKER_LINES['line-not-shown-by-a-check'] ? GOAL_NOT_SHOWN : line,
+    ),
+  };
+}
+
 export interface DriftLevel {
   readonly level: string;
   readonly label: string;
@@ -483,19 +496,22 @@ export function analysisLevel(input: AnalysisInput): DriftLevel | null {
       nextNumber(raw['window_start']),
       nextNumber(raw['evidence_through']) ?? readAt,
     ),
-    reasons: driftReasons(
-      level,
-      tokens,
-      row['cites'],
-      held,
-      numbers,
-      new Set(
-        shape.criteria
-          .filter((line) => line.result === DEPARTURE && line.key !== CLAIMS)
-          .flatMap((line) => line.citedIds || [])
-          .map(String),
+    reasons: goalAloneBlockers(
+      driftReasons(
+        level,
+        tokens,
+        row['cites'],
+        held,
+        numbers,
+        new Set(
+          shape.criteria
+            .filter((line) => line.result === DEPARTURE && line.key !== CLAIMS)
+            .flatMap((line) => line.citedIds || [])
+            .map(String),
+        ),
+        input.generated,
       ),
-      input.generated,
+      shape,
     ),
   };
 }
