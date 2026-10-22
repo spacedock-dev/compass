@@ -818,6 +818,7 @@ class ThePostRoutesAreTheListedOnesTest(unittest.TestCase):
             "/api/dismiss",
             "/api/events/",
             "/api/focus",
+            "/api/goal/find",
             "/api/interaction/",
             "/api/lane",
             "/api/notify",

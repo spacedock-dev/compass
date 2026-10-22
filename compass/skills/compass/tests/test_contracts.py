@@ -1537,6 +1537,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # Each message's fixed number on the record pages and the focused context (DRC-4897).
             "compass_runtime.entry_numbers",
             "compass_runtime.record_pages",
+            # `POST /api/goal/find`: the reader's prompts read for a goal on a press.
+            "compass_runtime.goal_find",
             # The immutable admitted identity selects stricter dev authority.
             "compass_runtime.frontend_dev",
             "compass_runtime.reading_policy",
@@ -1633,6 +1635,11 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.config",
             "compass_runtime.record_pages",
             "compass_runtime.state",
+        },
+        "compass_runtime.goal_find": {
+            "compass_runtime.annotations",
+            "compass_runtime.reading",
+            "compass_runtime.records",
         },
         # Project context shares the stateless chunk walker through a local import;
         # pages still reach its fact builders, without an import-time cycle.
