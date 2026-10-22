@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2111939,
+    "bytes": 2112039,
     "file": "react.html",
-    "sha256": "afaccce427232b2266bbf2c3acf2e71a2aced412a9b6710d8df5822a2aac391f"
+    "sha256": "a0850837d4b8874eddbaef390804455b22df09a06132e776b81f9dadf952bc9c"
   },
   "format": 1,
   "frontend": "react",
@@ -823,7 +823,7 @@
       },
       {
         "file": "frontend/src/intent/edit.ts",
-        "sha256": "0c67f678bc87b806d72314dd4e70d5557d5479a859d3b888584261dc58c46b07"
+        "sha256": "b873980f8e1760c991de2c490d8cfdb81307057b2ccb2ae1a14bc3c17a471ddb"
       },
       {
         "file": "frontend/src/intent/find.ts",
