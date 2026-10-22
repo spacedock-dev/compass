@@ -21,6 +21,11 @@ tar -xzf "$archive" -C "$work/unpacked"
 [ -x "$work/unpacked/compass/compass" ] || { echo "smoke-cli.sh: the archive has no compass/compass program" >&2; exit 1; }
 
 run --help >/dev/null || { echo "smoke-cli.sh: --help failed" >&2; exit 1; }
+want="$(basename "$archive")"
+want="${want#compass_}"
+want="${want%%_*}"
+got="$(run --version)" || { echo "smoke-cli.sh: --version failed" >&2; exit 1; }
+[ "$got" = "$want" ] || { echo "smoke-cli.sh: --version printed '$got', but the archive is named for $want" >&2; exit 1; }
 run --port "$port" --daemon >"$work/daemon.out" 2>&1 \
 	|| { cat "$work/daemon.out" >&2; echo "smoke-cli.sh: the daemon did not start" >&2; exit 1; }
 

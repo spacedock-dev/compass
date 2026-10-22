@@ -132,10 +132,11 @@ jobs:
         run: |
           set -euo pipefail
           agy plugin validate ./compass | tee /tmp/compass-agy.txt
-          # Anchor on the success shape ("N processed"); a plain substring
-          # grep also matches AGY's "skipped (not found)" failure output.
+          # Anchor on the success shape; a plain substring grep also matches AGY's
+          # "skipped (not found)" failure output. Older AGY printed "skills : N processed"
+          # and the current one prints a summary line, "skills N · agents 0 · ...".
           SKILLS=$(find compass/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l | tr -d ' ')
-          grep -E "skills[[:space:]]+: ${SKILLS} processed" /tmp/compass-agy.txt
+          grep -E "skills[[:space:]]+(: ${SKILLS} processed|${SKILLS} ·)" /tmp/compass-agy.txt
 
           # Isolated HOME so the runner's real AGY state is never touched.
           export HOME="$RUNNER_TEMP/agy-home"
