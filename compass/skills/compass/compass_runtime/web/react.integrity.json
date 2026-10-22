@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 1847943,
+    "bytes": 1848039,
     "file": "react.html",
-    "sha256": "269d400a6741bb69cd871cbabc8bf7602b7f5a4fa634c377540eb081e1ae8813"
+    "sha256": "4036610b16a1331d751c3cf9831e31eba0409725b3f6bc40e4f3eedba9509f76"
   },
   "format": 1,
   "frontend": "react",
@@ -1131,7 +1131,7 @@
       },
       {
         "file": "frontend/src/shell/ProjectTabs.tsx",
-        "sha256": "573568ffecc151cfdbd90b9ae5b25418c18914a47c367e3f53540c42abe79345"
+        "sha256": "ae707697227b6ce35ed2d5c1168affc9658319f61034572174517902be541774"
       },
       {
         "file": "frontend/src/shell/RouteLink.tsx",
