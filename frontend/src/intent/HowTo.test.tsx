@@ -67,7 +67,7 @@ describe('the Intent how-to', () => {
       const popup = screen.getByRole('dialog', { name: 'How Intent and drift works' });
       expect((popup.textContent ?? '').split(/\s+/).length).toBeLessThanOrEqual(150);
       expect(popup.textContent).toContain('1. Give the goal.');
-      expect(popup.textContent).toContain('Expected outcome is optional, but a level needs one.');
+      expect(popup.textContent).toContain('Expected outcome is optional; a level needs one.');
       // Where a detected goal comes from, and that it stands until the reader edits it.
       expect(popup.textContent).toContain(
         "A session's /goal is used until you edit it; else Compass drafts from your first prompt.",
@@ -85,7 +85,7 @@ describe('the Intent how-to', () => {
       );
       expect(popup.textContent).toContain('Compass never writes into sessions.');
       expect(popup.querySelector('[data-next-intent-howto-no-line]')?.textContent).toBe(
-        "Without one: no level, and “Can't tell” unless your goal departs.",
+        "With no expected outcome line: no level, and “Can't tell” unless your goal departs.",
       );
       expect(popup.textContent).not.toContain('Not enough recorded yet');
       expect(popup.querySelector('[data-next-intent-howto-settle]')?.textContent).toBe(
