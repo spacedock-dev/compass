@@ -7,7 +7,6 @@
 .next-session-panel .next-cockpit-held-fields{grid-template-columns:minmax(0,1fr);gap:16px}
 .next-session-panel .next-cockpit-held-list{gap:2px}
 .next-session-panel .next-cockpit-held-heading>.next-cockpit-held-label{display:inline-flex;min-height:44px;align-items:center}
-.next-session-panel .next-cockpit-held-lines>.next-cockpit-held-heading>.next-cockpit-held-label{min-height:0}
 .next-cockpit-held-stamp{display:block}
 .next-cockpit-held-stamp [data-slot="accordion-content"]>span{display:block}
 .next-session-drift-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:16px 12px;padding:16px 16px 12px}
