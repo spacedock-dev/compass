@@ -7,8 +7,9 @@ shows a goal only when the model can tie it to words the reader wrote. Three rul
 - the model must quote the prompt words the goal comes from;
 - each quote must appear verbatim in the prompt it names, in the text Compass sent, or the whole
   goal is dropped (a paraphrase is the model's words, not the reader's);
-- the model must call the goal clear, by the same end-state rule a reading applies to a saved
-  goal (`reading.GOAL_UNCLEAR_RULE`), or it is not shown.
+- the model must call the goal clear, or it is not shown. The prompt carries the same end-state
+  wording as a reading's `reading.GOAL_UNCLEAR_RULE` but does not import it; the shared phrase
+  is held together by a test in test_goal_find.py, not by code.
 
 Nothing here reads the agent's messages, tool output or a pasted correction: `prompts_from_facts`
 admits a person's own messages and nothing else. A found goal is an answer to one press and is

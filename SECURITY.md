@@ -307,7 +307,7 @@ press while one runs is refused with 409 rather than charged again.
   sends nothing and is not charged.
 - A goal is shown only if it passes three mechanical rules: the model quotes the prompt words it
   comes from, each quote is verbatim (whitespace aside) in the prompt it names as Compass sent it,
-  and the model calls the goal clear by the end-state rule a reading applies. A paraphrase, a quote
+  and the model calls the goal clear, asked in end-state wording matching a reading's. A paraphrase, a quote
   under the wrong prompt number, a goal too long for the Goal field and a reply of the wrong shape
   are dropped.
 - The answer is held as words in the Goal field and is stored nowhere. Nothing is written into the

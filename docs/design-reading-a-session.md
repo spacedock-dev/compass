@@ -5429,8 +5429,8 @@ and offers the goal when it can tie it to the reader's own words.
 - High confidence is three mechanical rules and not a score. The model must quote the words the goal comes
   from. Each quote must be verbatim, whitespace aside, in the prompt it names, in the text Compass sent
   (masked and clipped as sent); one paraphrased quote drops the goal, and so does a quote filed under another
-  prompt's number. The model must also call the goal clear by the end-state rule of
-  `reading.GOAL_UNCLEAR_RULE`. A goal over the Goal field's 240 characters is dropped and never cut.
+  prompt's number. The model must also call the goal clear. The prompt carries the same end-state
+  wording as a reading's `reading.GOAL_UNCLEAR_RULE`, without importing it; a test holds the shared phrase. A goal over the Goal field's 240 characters is dropped and never cut.
 - The vague-goal test is the model's judgement made in the same call. No keyword or length rule makes it,
   as for a saved goal, and a second model call over the same words would double the cost of a press. The
   limit is accepted and written in SECURITY.md: a finder more lenient than a later analysis can show a goal
