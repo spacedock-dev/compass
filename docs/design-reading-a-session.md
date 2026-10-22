@@ -6316,7 +6316,7 @@ parts. It now matches the design's form, and a save no longer shows the draft wh
   chosen prompt. `+ Add a line`, `Save intent` and `Undo changes` sit together on the left and are
   drawn from the first view, the last two inert until there is something to write or undo, and each
   line's `×` is drawn before the reader types.
-- **Status is a word.** `Saved`, `Unsaved changes`, `Draft` over a goal drafted from a prompt, and
+- **Status is a word.** `Saved`, `Unsaved changes`, `Draft` over a goal drafted from a prompt or detected from a `/goal`, and
   the refusals `Not saved` and `Not confirmed`. Which prompt a draft came from is the goal's source
   line, and `How Intent and drift works` is in the menu below.
 - **The goal's hint** no longer carries the prompt-length sentence. "Analyze reads at most the
