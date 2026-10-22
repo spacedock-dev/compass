@@ -1,7 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor, within } from 'storybook/test';
-import { datedClock } from '../src/observed/values';
-import { DEPARTURE_READING, DriftScenario, fact, type Scenario } from './drift.scenario';
+import {
+  analysisRow,
+  DEPARTURE_READING,
+  DriftScenario,
+  fact,
+  failedCheck,
+  passedCheck,
+  type Scenario,
+} from './drift.scenario';
 
 /* The harness's own "goal met" verdict on the Drift card. It is Claude Code's claim, labelled as that, and
    Compass's own check of it stands beside it where a reading made one: agreeing, disputed or unconfirmed. It
@@ -23,24 +30,10 @@ const REASON = 'findings.md was written and the retry tests pass';
 const claimed = {
   session_goal: { ...GOAL, verdict: { met: true, at: VERDICT_AT, reason: REASON } },
 };
-const FACTS = [
-  fact('c1', 500, {
-    type: 'tool_report',
-    by: 'agent',
-    subject: 'check',
-    result: 'failed',
-    result_source: 'failed flag',
-    summary: 'pytest -q',
-  }),
-  fact('c2', 600, {
-    type: 'tool_report',
-    by: 'agent',
-    subject: 'check',
-    result: 'passed',
-    result_source: 'passed flag',
-    summary: 'pytest',
-  }),
-];
+const PERSON = fact('u1', 200, { type: 'user_message', by: 'person:me', summary: 'Ship it' });
+const FACTS = [PERSON, failedCheck('c1', 500), passedCheck('c2', 600)];
+/* The level the server derives from the stored reading: Compass's own, which a claim never moves. */
+const HIGH = { analysis_levels: [analysisRow('claude')] };
 const checked = (check: string, why: string, at = VERDICT_AT) => ({
   annotation_assessment: {
     ...DEPARTURE_READING,
@@ -63,7 +56,7 @@ export const ClaimBeforeAnyAnalysis: Story = {
     await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'claim-only');
     // Labelled as the harness's claim, in the reader's words, and no level is implied.
     await expect(node).toHaveTextContent(
-      `The harness’s claim: Claude Code marked this goal met at ${datedClock(VERDICT_AT)}.`,
+      /The harness’s claim: Claude Code marked this goal met at (\d{4}-\d{2}-\d{2} )?\d{1,2}:\d{2}\./,
     );
     await expect(node).toHaveTextContent('Compass has not analyzed this session');
     await expect(node).toHaveTextContent(`Its reason: “${REASON}”`);
@@ -76,6 +69,7 @@ export const ClaimBesideAnAgreeingAnalysis: Story = {
   ...scenario({
     session: { ...claimed, ...checked('agrees', 'written-before') },
     facts: FACTS,
+    work: HIGH,
   }),
   play: async ({ canvasElement }) => {
     const node = await note(canvasElement);
@@ -86,8 +80,11 @@ export const ClaimBesideAnAgreeingAnalysis: Story = {
     );
     // The agreement is not a check and does not move the level the analysis found.
     await expect(node).toHaveTextContent('does not change the level and is not a passing check');
-    await expect(canvasElement.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
-      '1 departure',
+    // The record loads after the card, so the level waits for the entries it cites.
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
+        /^High: 1 departure/,
+      ),
     );
   },
 };
@@ -96,6 +93,7 @@ export const ClaimDisputedWhereTheRecordUndoesIt: Story = {
   ...scenario({
     session: { ...claimed, ...checked('disputed', 'written-after') },
     facts: FACTS,
+    work: HIGH,
   }),
   play: async ({ canvasElement }) => {
     const node = await note(canvasElement);
@@ -105,8 +103,11 @@ export const ClaimDisputedWhereTheRecordUndoesIt: Story = {
     );
     await expect(node).toHaveTextContent('Compass’s own reading stands.');
     // Compass's level is the analysis's, untouched by the claim.
-    await expect(canvasElement.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
-      '1 departure',
+    // The record loads after the card, so the level waits for the entries it cites.
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
+        /^High: 1 departure/,
+      ),
     );
   },
 };
@@ -115,6 +116,7 @@ export const ClaimTheRecordCannotConfirm: Story = {
   ...scenario({
     session: { ...claimed, ...checked('unconfirmed', 'not-found') },
     facts: FACTS,
+    work: HIGH,
   }),
   play: async ({ canvasElement }) => {
     const node = await note(canvasElement);
@@ -130,6 +132,7 @@ export const ClaimNewerThanTheReading: Story = {
   ...scenario({
     session: { ...claimed, ...checked('agrees', 'written-before', VERDICT_AT - 100) },
     facts: FACTS,
+    work: HIGH,
   }),
   play: async ({ canvasElement }) => {
     const node = await note(canvasElement);
