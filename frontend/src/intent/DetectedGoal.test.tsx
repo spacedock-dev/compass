@@ -41,6 +41,14 @@ describe('a /goal over a session with no saved goal', () => {
     expect(page.posts()).toBe(0);
   });
 
+  it('calls the untouched detected goal a draft, and an edit of it unsaved changes', async () => {
+    const page = mountSession({ session: { session_goal: DETECTED } });
+    await settle(page);
+    expect(text('[data-next-intent-status]')).toBe('Draft');
+    type(goalBox(), `${GOAL}, and the report is linked`);
+    expect(text('[data-next-intent-status]')).toBe('Unsaved changes');
+  });
+
   it('is drafted ahead of the first prompt, and where the session opened with a harness command', async () => {
     const page = mountSession({
       session: { session_goal: DETECTED, first_prompt: '/goal', first_prompt_control: true },
@@ -121,6 +129,26 @@ describe('a /goal over a session with no saved goal', () => {
     await settle(page);
     expect(goalBox().value).toBe(excerpt);
     expect(source()).toMatch(/Cut to fit the goal limit/);
+  });
+
+  it('keeps the cut note once the cut goal is saved, while the session still states that /goal', async () => {
+    const excerpt = GOAL.slice(0, 30);
+    const cutGoal = { text: `${GOAL} ${GOAL}`, at: 500, offered: excerpt, cut: true };
+    const page = mountSession({
+      store: { goal: excerpt, revision: 1, goal_source: 'session-goal', goal_source_at: 500 },
+      session: { session_goal: cutGoal },
+    });
+    await settle(page);
+    expect(source()).toMatch(/· saved\. Cut to fit the goal limit/);
+  });
+
+  it('says nothing of a cut once the saved words are not the session’s cut goal', async () => {
+    const page = mountSession({
+      store: { goal: GOAL, revision: 1, goal_source: 'session-goal', goal_source_at: 500 },
+      session: { session_goal: DETECTED },
+    });
+    await settle(page);
+    expect(source()).toMatch(/· saved$/);
   });
 
   it('reads no goal into a session that is not a Claude Code session', async () => {

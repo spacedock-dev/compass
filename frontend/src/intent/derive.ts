@@ -607,10 +607,16 @@ export function intentStatus(
   if (changes.any || changes.chosen) return 'Unsaved changes';
   /* A goal drafted from the prompt is Compass's suggestion, not an edit: "Unsaved changes" on opening a
      session, before the reader typed anything, read as work of theirs at risk (usability review,
-     2026-10-20). It still says it is not saved, because Save intent is what adopts it. */
+     2026-10-20). A detected /goal is the same: it is used until edited, and "Unsaved changes" beside a
+     disabled Undo changes disagreed about whether the reader had changed anything. It still says it is not
+     saved, because Save intent is what adopts it. */
   if (changes.adoptable) {
     const drafted = intentDraft(input);
-    if (drafted?.source === 'first-prompt' || drafted?.source === 'latest-prompt') {
+    if (
+      drafted?.source === 'first-prompt' ||
+      drafted?.source === 'latest-prompt' ||
+      drafted?.source === SESSION_GOAL
+    ) {
       return DRAFT_UNSAVED;
     }
     return 'Unsaved changes';
@@ -690,7 +696,11 @@ export function goalSourceLine(input: DraftInput): string {
       const source = annotation?.['goal_source'];
       const at = nextNumber(annotation?.['goal_source_at']);
       if (source === SESSION_GOAL) {
-        return `From /goal${at !== null && at > 0 ? ` · ${clockText(at)}` : ''} · saved`;
+        /* The saved words are still the cut excerpt while the row states the same /goal at the same time, and
+           the annotation does not record the cut, so the row is where it is read from. */
+        const stated = sessionGoalCandidate(session);
+        const stillCut = stated?.cut === true && stated.text === stored && stated.at === at;
+        return `From /goal${at !== null && at > 0 ? ` · ${clockText(at)}` : ''} · saved${stillCut ? `. ${GOAL_CUT}` : ''}`;
       }
       const which =
         source === 'first-prompt'
