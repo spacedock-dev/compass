@@ -4464,6 +4464,31 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual({"codex": False, "claude": False}, self._consents(config))
         self.assertEqual([], calls)
 
+    def test_turning_readings_off_withdraws_the_launch_grant_the_card_words(self) -> None:
+        # The card says "allowed when this dashboard started" from the flag, so the flag must
+        # go with the stored grant, on the config the next route and board read.
+        config, state = self._runtime(tool_output_pre_grant=True)
+        reading_policy.set_consent(config, True, now=1_700_000_100.0, provider="claude")
+        application = self._app(config, state, "claude")
+        with self._serving(application) as port:
+            status, _ = self._post(port, {"consent": "off", "press": True, "observer_model": 1})
+        self.assertEqual(200, status)
+        self.assertFalse(application.config.tool_output_pre_grant)
+        self.assertFalse(application.state.config.tool_output_pre_grant)
+
+    def test_a_revoke_the_store_refused_keeps_the_launch_grant_the_card_words(self) -> None:
+        # The store still holds the grant when the revoke fails, so the card must keep saying so.
+        config, state = self._runtime(tool_output_pre_grant=True)
+        application = self._app(config, state, "claude")
+        refused = {"reason": "store-unavailable"}
+        with (
+            mock.patch.object(reading_policy, "set_consent", return_value=refused),
+            self._serving(application) as port,
+        ):
+            self._post(port, {"consent": "off", "press": True, "observer_model": 1})
+        self.assertTrue(application.config.tool_output_pre_grant)
+        self.assertTrue(application.state.config.tool_output_pre_grant)
+
     CHECKS: ClassVar[tuple[dict[str, Any], ...]] = tuple(
         {
             "fact_id": f"check-{index}",

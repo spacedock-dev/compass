@@ -4,9 +4,11 @@ import assert from 'node:assert/strict';
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from '@playwright/test';
-import { freePorts, openPage, REPOSITORY } from './support/browser.mjs';
+import { freePorts, openPage, refreshReact, REPOSITORY } from './support/browser.mjs';
 import { startReactWorld } from './support/world.mjs';
 import { copyProofPath } from './support/proof-copy.mjs';
+import { startIntentBoard } from './intent-board.mjs';
+import { SID } from './drift-board.mjs';
 
 const mutation = process.env.POPOVER_MUTATION || '';
 const MUTATIONS = {
@@ -87,6 +89,8 @@ const MUTATIONS = {
     "region.setAttribute('aria-live', 'off');",
   ],
   'popup-chrome': ['ui/popover.tsx', 'bg-[var(--raise)]', 'bg-[var(--sunk)]'],
+  // The production Intent heading row; without the wrap the how-to trigger shares its line at 320 px.
+  'intent-wrap': ['intent/IntentSection.tsx', '<header className="flex-wrap">', '<header>'],
   modal: [
     'controls/Disclosure.tsx',
     'open={open}\n        triggerId=',
@@ -111,9 +115,12 @@ const patience = (ms) => (process.env.CI ? ms * 3 : ms);
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, patience(ms)));
 const scratch = join(REPOSITORY, 'docs/screenshots/popover-layer');
 await mkdir(scratch, { recursive: true });
-const copy = await mkdtemp(join(scratch, 'proof-'));
-let world, browser, opened;
-try {
+const copies = [];
+// Each world runs in its own scratch copy. The gallery replaces the app's entry point; the Intent proof
+// keeps the real entry point so it reaches the production session header. The mutation lands in every copy.
+const makeCopy = async ({ gallery }) => {
+  const copy = await mkdtemp(join(scratch, 'proof-'));
+  copies.push(copy);
   for (const directory of ['frontend', 'compass'])
     await cp(join(REPOSITORY, directory), join(copy, directory), {
       recursive: true,
@@ -124,20 +131,11 @@ try {
     join(copy, 'node_modules'),
     process.platform === 'win32' ? 'junction' : 'dir',
   );
-  await writeFile(
-    join(copy, 'frontend/src/main.tsx'),
-    "import { mountGallery } from './controls/gallery';\nmountGallery(document.getElementById('root')!);\n",
-  );
-  const galleryPath = join(copy, 'frontend/src/controls/GalleryBoard.tsx');
-  const gallery = await readFile(galleryPath, 'utf8');
-  await writeFile(
-    galleryPath,
-    "import { IntentHowTo } from '../intent/HowTo';\nimport '../intent/intent.css';\n" +
-      gallery.replace(
-        '<h1>Shared controls</h1>',
-        `<h1>Shared controls</h1><section className="next-cockpit-held"><header className="flex-wrap"><h2>Intent</h2><IntentHowTo project="alpha/app" session={{ harness: 'claude', sid: 'howto' }} payload={{ reading_routes: { claude: { provider: 'claude', label: 'Claude Code' } } }} /></header></section>`,
-      ),
-  );
+  if (gallery)
+    await writeFile(
+      join(copy, 'frontend/src/main.tsx'),
+      "import { mountGallery } from './controls/gallery';\nmountGallery(document.getElementById('root')!);\n",
+    );
   if (mutation) {
     const [file, needle, replacement] = MUTATIONS[mutation];
     const path = join(copy, 'frontend/src', file);
@@ -158,6 +156,11 @@ try {
       );
     }
   }
+  return copy;
+};
+let world, browser, opened;
+try {
+  const copy = await makeCopy({ gallery: true });
   const [port, vitePort] = await freePorts(2);
   world = await startReactWorld({
     root: copy,
@@ -542,51 +545,114 @@ try {
     },
   );
   await step(
-    'Intent how-to opens by click and keyboard, keeps state on redraw and fits at 320 px',
+    'Intent how-to on the real session page wraps the Intent heading row, stays over the content beneath at 320 px, and keeps state on redraw',
     async () => {
-      await page.setViewportSize({ width: 320, height: 700 });
-      await load();
-      const name = 'How Intent and drift works';
-      const howto = trigger(name);
-      assert.equal(
-        await howto
-          .locator('xpath=../..')
-          .getByRole('heading', { name: 'Intent', exact: true })
-          .count(),
-        1,
-      );
-      await howto.click();
-      await waitOpen(name);
-      const panel = page.getByRole('dialog', { name, exact: true });
-      assert.match(await panel.innerText(), /Compass never writes into sessions/);
-      assert.match(await panel.innerText(), /Not enough recorded yet/);
-      assert.ok((await panel.innerText()).split(/\s+/).length <= 150, 'how-to word ceiling');
-      const box = await panel.boundingBox();
-      assert.ok(
-        box.x >= 0 && box.x + box.width <= 320 && box.y >= 0 && box.y + box.height <= 700,
-        'how-to left 320 px viewport',
-      );
-      await panel.screenshot({ path: join(scratch, 'intent-howto-320.png') });
-      const before = Number(await page.locator('[data-readout=displayed-accepted]').textContent());
-      await page.evaluate(() => globalThis.__gallery.runtime.refresh({ manual: true }));
-      await page.waitForFunction(
-        (number) =>
-          Number(document.querySelector('[data-readout=displayed-accepted]')?.textContent) > number,
-        before,
-        { timeout: patience(5000) },
-      );
-      await waitOpen(name);
-      await page.keyboard.press('Escape');
-      await waitOpen(name, false);
-      await waitFocus(name);
-      await howto.press('Enter');
-      await waitOpen(name);
-      await howto.press('Space');
-      await waitOpen(name, false);
-      await howto.press('Space');
-      await waitOpen(name);
-      await page.getByRole('heading', { name: 'Shared controls' }).click();
-      await waitOpen(name, false);
+      // The production session page, not the gallery: its Intent heading row is the one a reader sees.
+      const sessionCopy = await makeCopy({ gallery: false });
+      const board = await startIntentBoard({ root: sessionCopy });
+      let session;
+      try {
+        session = await openPage(browser, [board.react.origin, board.react.viteOrigin], {
+          viewport: { width: 320, height: 700 },
+          reducedMotion: 'reduce',
+        });
+        const sessionPage = session.page;
+        await sessionPage.goto(`${board.react.origin}/#n=session:w%2Falpha:claude:${SID}`);
+        const name = 'How Intent and drift works';
+        const howto = sessionPage.getByRole('button', { name, exact: true });
+        const panel = sessionPage.getByRole('dialog', { name, exact: true });
+        const heading = sessionPage.locator('#next-session-intent-heading');
+        const isOpen = async () => (await howto.getAttribute('aria-expanded')) === 'true';
+        const waitOpenHowTo = async (open = true) => {
+          await sessionPage.waitForFunction(
+            ({ name, open }) =>
+              [...document.querySelectorAll('[data-slot=popover-trigger]')].some(
+                (el) =>
+                  el.textContent.trim() === name &&
+                  el.getAttribute('aria-expanded') === String(open),
+              ),
+            { name, open },
+            { timeout: patience(5000) },
+          );
+          await panel.waitFor({ state: open ? 'visible' : 'hidden', timeout: patience(5000) });
+        };
+        const waitFocusHowTo = () =>
+          sessionPage.waitForFunction(
+            (name) => document.activeElement?.textContent.trim() === name,
+            name,
+            { timeout: patience(5000) },
+          );
+        await heading.waitFor({ timeout: patience(5000) });
+        await howto.waitFor({ state: 'visible', timeout: patience(5000) });
+        // At 100 percent text a 320 px header holds the heading and trigger on one line, so the wrap class only
+        // matters once the text is 200 percent, the reflow condition the popover step below also uses.
+        await sessionPage.evaluate(() => {
+          document.documentElement.style.fontSize = '200%';
+        });
+        await pause(200);
+        assert.equal(
+          await heading.evaluate((el) => getComputedStyle(el.parentElement).flexWrap),
+          'wrap',
+          'the Intent heading row no longer wraps',
+        );
+        const headingBox = await heading.boundingBox();
+        const triggerBox = await howto.boundingBox();
+        assert.ok(
+          triggerBox.y >= headingBox.y + headingBox.height - 1,
+          `the how-to trigger shares the Intent heading line at 320 px: ${JSON.stringify({ headingBox, triggerBox })}`,
+        );
+        await howto.click();
+        await waitOpenHowTo();
+        assert.equal(await isOpen(), true, 'trigger press did not open the how-to');
+        assert.match(await panel.innerText(), /Compass never writes into sessions/);
+        assert.match(await panel.innerText(), /Not enough recorded yet/);
+        const box = await panel.boundingBox();
+        assert.ok(
+          box.x >= 0 && box.x + box.width <= 320 && box.y >= 0 && box.y + box.height <= 700,
+          'how-to left 320 px viewport',
+        );
+        // The popup must be painted over the Intent card it opens from: the point at the centre of their
+        // overlap has to hit the popup, not the content beneath it.
+        const beneath = await sessionPage.locator('.next-cockpit-held').boundingBox();
+        const left = Math.max(box.x, beneath.x);
+        const right = Math.min(box.x + box.width, beneath.x + beneath.width);
+        const top = Math.max(box.y, beneath.y);
+        const bottom = Math.min(box.y + box.height, beneath.y + beneath.height);
+        assert.ok(right > left && bottom > top, 'the how-to popup overlaps no content beneath it');
+        assert.equal(
+          await panel.evaluate(
+            (el, [x, y]) => el.contains(document.elementFromPoint(x, y)),
+            [(left + right) / 2, (top + bottom) / 2],
+          ),
+          true,
+          'content beneath the how-to paints over the popup',
+        );
+        await panel.screenshot({ path: join(scratch, 'intent-howto-320.png') });
+        const update = sessionPage.waitForResponse((response) =>
+          response.url().includes('/api/data'),
+        );
+        await refreshReact(sessionPage, true);
+        await update;
+        await pause(500);
+        await waitOpenHowTo();
+        await sessionPage.keyboard.press('Escape');
+        await waitOpenHowTo(false);
+        await waitFocusHowTo();
+        await howto.press('Enter');
+        await waitOpenHowTo();
+        await howto.press('Space');
+        await waitOpenHowTo(false);
+        await howto.press('Space');
+        await waitOpenHowTo();
+        await heading.click();
+        await waitOpenHowTo(false);
+        assert.deepEqual(session.log.externalRequests, []);
+        assert.deepEqual(session.log.pageErrors, []);
+        assert.deepEqual(session.log.consoleErrors, []);
+      } finally {
+        await session?.close();
+        await board.close();
+      }
     },
   );
   assert.deepEqual(opened.log.externalRequests, []);
@@ -603,5 +669,5 @@ try {
   await opened?.close();
   await browser?.close();
   await world?.close();
-  await rm(copy, { recursive: true, force: true });
+  for (const copy of copies) await rm(copy, { recursive: true, force: true });
 }
