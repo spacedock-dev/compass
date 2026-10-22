@@ -5,7 +5,7 @@ name: Release
 #
 #     git tag v0.2.0 && git push origin v0.2.0
 #
-# Seven jobs, split by what each may hold:
+# Eight jobs, split by what each may hold:
 #
 #   resolve          read-only token, no Node, no key. Fixes ONE commit (the target)
 #                    before anything runs: for a fresh release the main tip, captured
@@ -41,6 +41,10 @@ name: Release
 #                    spacedock-dev/marketplace. Runs after `release`, so `stable` already
 #                    serves the version it stamps onto the listing, and runs no dependency
 #                    code: git, ssh and the Python standard library.
+#   homebrew         read-only repository token and the tap deploy key, a third credential
+#                    that reaches only spacedock-dev/homebrew-tap. Runs after `attach-cli`,
+#                    because the formula it writes names the archives and their checksums.
+#                    Like `marketplace`, it runs no dependency code.
 #
 # The binary embeds the interpreter and the runtime package and carries no manifest, so
 # building the target (before the bump) and building the bump commit produce the same
@@ -54,7 +58,9 @@ name: Release
 # that job keeps the displayed version, which an installed copy compares against to notice an
 # update, in step. It follows `release` only, so a failed archive attach does not hold the
 # listing back, and a failure there leaves the published release in place: re-run just that job,
-# which is safe because the stamp never moves the version backwards.
+# which is safe because the stamp never moves the version backwards. `homebrew` is the same:
+# a failure leaves the release and the tap's previous formula in place, and a re-run of that
+# job alone is safe because the formula never moves the tap backwards.
 # The price is that releases/latest has no archives for the minute attach-cli takes; the
 # installer reports a missing archive and installs the rest. If this repository ever turns
 # on immutable releases, assets must go up with the release instead. A resume of a release
@@ -87,8 +93,8 @@ name: Release
 # Security model:
 #   - The release key exists in one job, and the write token in two: `release`, and
 #     `attach-cli`, which has no key and runs no dependency code. The marketplace key
-#     exists in one other job, `marketplace`, which has `contents: read` and cannot touch
-#     this repository. Every job that runs dependency code has `contents: read` and a
+#     exists in one other job, `marketplace`, and the tap key in `homebrew`; each has
+#     `contents: read` and cannot touch this repository. Every job that runs dependency code has `contents: read` and a
 #     checkout with persist-credentials: false; tests pin that boundary
 #     (compass/skills/compass/tests/test_release_workflow.py).
 #   - Tag names reach shell only through env: and are validated against a strict
@@ -633,3 +639,39 @@ jobs:
           set -euo pipefail
           # An unchanged or newer listing is a no-op, so a re-run of this job is safe.
           scripts/publish-marketplace.sh "$VERSION"
+
+  homebrew:
+    name: Write the Homebrew formula
+    needs: [resolve, attach-cli]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The tap key and a read-only token. The key is a deploy key on spacedock-dev/homebrew-tap
+    # alone, so it cannot push to main here or move a tag. It follows `attach-cli` because the
+    # formula names the archives and their published checksums. The job runs one shell script
+    # from the verified target and no dependency code.
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.ref_name }}
+      TARGET: ${{ needs.resolve.outputs.target }}
+    steps:
+      - name: Checkout exactly the target, without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.target }}
+          persist-credentials: false
+
+      - name: Confirm the checkout is the target
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 scripts/release_transition.py assert-head --expected "$TARGET"
+
+      - name: Write the released version's formula into the tap
+        timeout-minutes: 5
+        env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          # An unchanged or newer formula is a no-op, so a re-run of this job is safe.
+          scripts/publish-homebrew.sh "$TAG"

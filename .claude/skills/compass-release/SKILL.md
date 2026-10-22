@@ -208,7 +208,8 @@ The proposal carries:
 6. What pushing the tag will do, in one line each: validate the tag and fix the commit to release,
    verify the frontend and the tree on exactly that commit without credentials, write one
    `chore(release)` bump commit, prove its `git archive` with Python only, then move the tag onto
-   it, advance `stable`, publish the Release, then stamp the version onto the marketplace listing.
+   it, advance `stable`, publish the Release, then stamp the version onto the marketplace listing and
+   write it into the Homebrew formula.
 7. The question: cut it, and separately, do you want release notes posted to Slack afterwards?
 
 Prepare the complete public note before asking, including any generated changelog to be retained.
@@ -297,6 +298,14 @@ gh api repos/spacedock-dev/marketplace/contents/.claude-plugin/marketplace.json 
   | base64 -d | jq -r '.plugins[] | select(.name == "compass") | .version'   # equals $VERSION
 ```
 
+The Homebrew formula is written by the `homebrew` job, after `attach-cli`. Confirm the tap shows the
+version too, because the release and `stable` are fine without it and only `brew` users would lag:
+
+```bash
+gh api repos/spacedock-dev/homebrew-tap/contents/Formula/compass.rb --jq .content \
+  | base64 -d | grep -m1 '  version '   # equals $VERSION
+```
+
 The bump commit is the one outcome that is conditional: the workflow skips it when the manifests
 already carry the tagged version, which is the initial-release path and the resume path. Step 1's
 parity check is what makes it unconditional on every normal release.
@@ -342,6 +351,11 @@ Read which job failed first:
   that it found no `compass` entry, the marketplace listing has drifted from this repository, and the
   entry needs a pull request there before any re-run can pass. A rejected push three times means the
   marketplace's `main` is busy or the deploy key was removed; check the key on that repository.
+- **`homebrew` failed.** The release and `stable` are fine; only `brew` users lag. If the log says
+  `HOMEBREW_TAP_DEPLOY_KEY is empty`, add the secret, then re-run that job alone: the formula never
+  moves backwards, so it is safe. A rejected push three times means the tap's `main` is busy or the
+  deploy key was removed; check the key on that repository. After **Re-run all jobs** the archives
+  are rebuilt, so `brew install` fails on a sha256 mismatch until `homebrew` succeeds again.
 - **A later step failed (push, tag, `stable`, publish).** Re-run all jobs: the workflow finds this
   tag's release commit on `main`, verifies that commit, and publishes it, never a newer `main`. It
   moves `stable` forward only, so resuming an older release after a newer one leaves `stable` where
