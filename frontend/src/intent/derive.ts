@@ -11,6 +11,7 @@ import {
   sessionGoalCandidate,
   type PromptCandidate,
 } from '../sessions/intent';
+import { GOAL_UNCLEAR_RESULT } from '../drift/sentences';
 import type { ContextEntry } from '../store/board';
 import {
   annotateOn,
@@ -249,6 +250,25 @@ export function intentDraft(input: DraftInput): Draft | null {
 export function goalBaseline(input: DraftInput): string {
   const drafted = intentDraft(input);
   return drafted ? drafted.text : String(input.annotation?.['goal'] || '');
+}
+
+/* Whether the stored reading refused the saved goal as too vague to analyze against. Read from the stored
+   reading itself, not from the level: the level is recomputed per collection and only a loaded context
+   carries it. The refusal is about the words it read, so it holds only while the reading is of the revision
+   saved now; a new save, however small, is a new goal, and the reader editing the box clears it where it is
+   drawn (`GoalField`). */
+export function goalRefused(input: DraftInput): boolean {
+  const annotation = input.annotation;
+  if (!annotation || storeUnreadable(input.payload) || annotation['not_accurate'] === true) {
+    return false;
+  }
+  const raw = annotation['assessment'];
+  if (!isRecord(raw)) return false;
+  const read = nextNumber(raw['revision_read']);
+  if (read === null || read !== nextNumber(annotation['revision'])) return false;
+  const criteria = raw['criteria'];
+  const goal = isRecord(criteria) ? criteria['goal'] : null;
+  return isRecord(goal) && goal['result'] === GOAL_UNCLEAR_RESULT;
 }
 
 export function chosenOverSaved(input: DraftInput): boolean {

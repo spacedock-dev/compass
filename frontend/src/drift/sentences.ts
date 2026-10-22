@@ -10,13 +10,24 @@ export const UNVERIFIABLE = 'not verifiable from available evidence';
    on the claims row. */
 export const UNSUPPORTED = 'not shown by the record';
 export const NOT_REACHED = 'not reached at this stop';
+/* `reading.RESULT_GOAL_UNCLEAR`: the model read the goal, and the outcome lines if any, before the session
+   and found no end state to read the work against. The goal row's alone, and it stands in place of a level:
+   `levels.REASON_GOAL_UNCLEAR` is the reason the level carries. */
+export const GOAL_UNCLEAR_RESULT = 'goal too vague to analyze against';
 export const RESULTS: readonly string[] = [
   DEPARTURE,
   CONSISTENT,
   UNVERIFIABLE,
   UNSUPPORTED,
   NOT_REACHED,
+  GOAL_UNCLEAR_RESULT,
 ];
+/* The warning under the Goal field, in Compass's voice (owner, 2026-10-22). Its one home: the level's
+   blocker line below says it too, so the sentence cannot drift between the two. */
+export const GOAL_UNCLEAR =
+  'This goal is too vague to analyze against. Rewrite it with what should be true when the work is done, then try again.';
+/* The Drift card's own answer over a refused goal, where a level would stand. */
+export const GOAL_UNCLEAR_VERDICT = 'No level: the goal is too vague to analyze against.';
 export const CLAIMS = 'claims';
 
 /* The published shape, spelt once on each side: a producer and a renderer disagreeing about a key name
@@ -350,7 +361,10 @@ export const BLOCKER_LINES: Readonly<Record<string, string>> = {
   'scan-incomplete': 'The record was not read in full.',
   'line-not-shown-by-a-check': 'A line of your intent is not shown by any check.',
   'outcome-not-reached': 'Work against your intent was not reached at this stop.',
+  /* Retired as a reason a new reading carries, kept for the payloads a reading stored before it still
+     publishes: they keep the sentence they were stored with. */
   'no-outcome-line': 'No expected outcome line was saved.',
+  'goal-unclear': GOAL_UNCLEAR,
   'reading-malformed': 'Part of the stored analysis could not be read.',
 };
 

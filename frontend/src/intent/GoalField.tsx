@@ -10,11 +10,13 @@ import {
   directionLinesQuestion,
   goalBaseline,
   goalKey,
+  goalRefused,
   goalSourceLine,
   goalUpdate,
   intentDraft,
   SESSION_GOAL,
 } from './derive';
+import { GOAL_UNCLEAR } from '../drift/sentences';
 import { answerLines } from './directions';
 import { HeldTextarea } from './HeldTextarea';
 import { PromptSelect } from './PromptSelect';
@@ -95,6 +97,8 @@ export function GoalField() {
   const sourceLine = goalSourceLine(input);
   const why = storeUnreadable(input.payload) ? '' : String(input.annotation?.['goal_why'] || '');
   const cue = heldSentence(held.kind(key), null);
+  /* The refusal says it for the words that were read, so it goes the moment the box differs from them. */
+  const refused = goalRefused(input) && !drafted && text === saved;
   return (
     <div
       className="next-cockpit-held-field"
@@ -140,6 +144,14 @@ export function GoalField() {
           escapeGoal(ctx, input);
         }}
       />
+      {refused ? (
+        <p
+          className="m-0 py-0.5 pl-2.5 text-body leading-[1.5] text-foreground [border-left:3px_solid_var(--clay)]"
+          data-next-goal-unclear
+        >
+          {GOAL_UNCLEAR}
+        </p>
+      ) : null}
       <div className="next-cockpit-held-under min-h-0 flex-wrap justify-between">
         {/* The source stays beside the count: in the label row it moved the box 25px down and back up on
             the first keystroke. */}

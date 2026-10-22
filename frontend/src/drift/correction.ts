@@ -6,6 +6,7 @@ import {
   CORRECTION_CAP,
   CLAIMS,
   DEPARTURE,
+  GOAL_UNCLEAR_RESULT,
   STEER_HARNESSES,
   STEER_LEAVES_MARKED,
   STEER_LEAVES_OLDER,
@@ -280,6 +281,15 @@ export function steerOffer(input: {
       shape.revisionRead !== null &&
       shape.revisionRead === nextNumber(annotation['revision']),
   );
+  /* A refused goal gives no Steer back for that run: with no end state to read the work against there is
+     nothing the reading can steer from, and a failed check on its own would steer from nothing the reader
+     asked for. It clears with the goal, as the refusal itself does. */
+  if (
+    current &&
+    shape?.criteria.some((row) => row.key === 'goal' && row.result === GOAL_UNCLEAR_RESULT)
+  ) {
+    return null;
+  }
   const departed = current && Boolean(shape) && (shape?.departures.length ?? 0) > 0;
   /* A claim the record contradicts or does not show is something to steer from too (`correction._claim_line`),
      read from the claims row itself: it is not a departure from the intent, so it never offers "Update

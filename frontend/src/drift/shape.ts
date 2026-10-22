@@ -17,6 +17,7 @@ import {
   DERIVED_ONLY,
   FAILED_CHECK_ON_RECORD,
   FAILED_CHECK_UNREAD,
+  GOAL_UNCLEAR_RESULT,
   MALFORMED,
   NOT_REACHED,
   OWN_WORDS_ONLY,
@@ -300,9 +301,11 @@ export function criterion(
   let limitText = limit || '';
   const claims = key === CLAIMS;
   /* `unsupported` is the claims row's alone; anywhere else it is a result outside the row's set. */
-  const known = claims
-    ? RESULTS.filter((name) => name !== NOT_REACHED)
-    : RESULTS.filter((name) => name !== UNSUPPORTED);
+  const known = (
+    claims
+      ? RESULTS.filter((name) => name !== NOT_REACHED)
+      : RESULTS.filter((name) => name !== UNSUPPORTED)
+  ).filter((name) => name !== GOAL_UNCLEAR_RESULT || key === 'goal');
   let result = known.includes(declared) ? declared : UNVERIFIABLE;
   /* Rule 2, and the reason the default above is not `consistent`: silence is not a pass. */
   let why = result === declared ? '' : MALFORMED;
@@ -310,11 +313,14 @@ export function criterion(
     result = UNVERIFIABLE;
     why = MALFORMED;
   }
-  if (result !== UNVERIFIABLE && !cited.length) {
+  /* The refusal takes no citation and no limit, and a later direction does not unsettle it: it is about the
+     words alone, which the producer judged before it read the record. */
+  const refused = result === GOAL_UNCLEAR_RESULT;
+  if (result !== UNVERIFIABLE && !refused && !cited.length) {
     result = UNVERIFIABLE;
     why = UNCITED;
   }
-  if (result !== UNVERIFIABLE && limit) {
+  if (result !== UNVERIFIABLE && !refused && limit) {
     /* Rule 5. A departure is demoted too, which is stricter than the letter and the direction the ruling
        calls safe. `why` stays empty: the limit has its own row, and setting both printed the same sentence
        twice. */
@@ -322,7 +328,7 @@ export function criterion(
     why = '';
   }
   /* The claims row is independent of the intent, so an unsettled later direction never demotes it. */
-  if (result !== UNVERIFIABLE && unsettled && !claims) {
+  if (result !== UNVERIFIABLE && !refused && unsettled && !claims) {
     result = UNVERIFIABLE;
     why = BASELINE_OPEN;
   }
@@ -333,6 +339,26 @@ export function criterion(
   if (stored && !hasOwn(STORED_WHY, stored)) {
     result = UNVERIFIABLE;
     why = MALFORMED;
+  }
+  if (result === GOAL_UNCLEAR_RESULT) {
+    return {
+      key,
+      label,
+      clause: clause || CLAUSE_UNRETAINED,
+      clauseKnown: Boolean(clause),
+      claimEntry: null,
+      recordEntry: null,
+      result,
+      declared: true,
+      detail: '',
+      why: '',
+      restsOn: '',
+      restsOnEntry: null,
+      limit: '',
+      evidence: [],
+      citedIds: [],
+      unloaded: 0,
+    };
   }
   let droppedCheck = false;
   let failedCited = false;

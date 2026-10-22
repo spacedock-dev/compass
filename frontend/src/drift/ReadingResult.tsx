@@ -52,6 +52,7 @@ import {
   READ_NOT_READ,
   READ_SESSION,
   READ_SUMMARY,
+  GOAL_UNCLEAR_VERDICT,
   RESULT_CANT_TELL,
   RESULT_DEPARTS,
   RESULT_MARK_UNSAVED,
@@ -469,6 +470,12 @@ function ResultAnswer({
         Not reached at this stop.
       </h3>
     );
+  } else if (answer.kind === 'goal-unclear') {
+    body = (
+      <h3 {...headingProps} className={`next-cockpit-result-line ${ring}`}>
+        {GOAL_UNCLEAR_VERDICT}
+      </h3>
+    );
   } else {
     body = (
       <h3 {...headingProps} className={`next-cockpit-result-line ${ring}`}>
@@ -775,10 +782,15 @@ export function ReadingResult({
   /* The answer's own departures, in the reading's order: the goal, then each outcome line. */
   const departures = answer?.kind === 'departs' ? answer.departures : [];
   const departed = new Set(departures.map((row) => row.key));
-  const goal = intent.filter((row) => row.key === 'goal' && !departed.has(row.key));
-  const lines = intent.filter((row) => isOutcomeLine(row.key) && !departed.has(row.key));
+  /* A refused goal is said under the Goal field and in the verdict; no row repeats it, and no line or claim
+     of that run is drawn, because the reading found nothing to read them against. */
+  const refused = answer?.kind === 'goal-unclear';
+  const goal = refused ? [] : intent.filter((row) => row.key === 'goal' && !departed.has(row.key));
+  const lines = refused
+    ? []
+    : intent.filter((row) => isOutcomeLine(row.key) && !departed.has(row.key));
   /* What the agent claimed, after the intent it is independent of. */
-  const claimed = claimsDrawn(shape);
+  const claimed = refused ? [] : claimsDrawn(shape);
   const quiet = goal.length + lines.length + claimed.length > 0;
   /* A current result keeps the disclosure and accounting without a second run control: the card header holds
      the one, in every state. A direction question owns the run path while it stands.

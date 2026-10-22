@@ -312,6 +312,98 @@ export const AdoptedThenEditedSource: Story = {
   },
 };
 
+/* The stored reading refused the saved goal: the sentence stands under the Goal field, in Compass's voice, and
+   clears the moment the reader edits the goal. A reading that found an end state shows none. */
+const REFUSED_READING = {
+  revision_read: 1,
+  revision_read_at: 1_760_000_500,
+  window_start: 1_760_000_100,
+  read_at: 1_760_000_900,
+  evidence_through: 1_760_000_900,
+  goal_source: 'typed',
+  scope: 'last-turn',
+  scope_text: 'Read up to its last turn.',
+  stamp: 'model · m',
+  cutoff: 'Evidence read to its end. Read against your goal; no expected outcome lines were saved.',
+  coverage: {
+    tail_truncated: false,
+    tail_start: null,
+    unlisted: 0,
+    unread_checks: 0,
+    goal_source: 'typed',
+  },
+  criteria: {
+    goal: {
+      result: 'goal too vague to analyze against',
+      cites: [],
+      detail: '',
+      clause: 'testing',
+      why: '',
+    },
+  },
+};
+const VAGUE_GOAL = {
+  annotation_goal: 'testing',
+  annotation_goal_why: '',
+  annotation_revision: 1,
+  annotation_revision_count: 1,
+  annotation_at: 1_760_000_500,
+  annotation_goal_saved_at: 1_760_000_500,
+  annotation_reading_count: 1,
+};
+const WARNING =
+  'This goal is too vague to analyze against. Rewrite it with what should be true when the work is done, then try again.';
+
+export const AGoalTooVagueWarnsUnderTheGoalField: Story = {
+  args: { setup: { session: { ...VAGUE_GOAL, annotation_assessment: REFUSED_READING } } },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    const goal = view.getByRole('textbox', { name: 'Goal' });
+    const warning = await waitFor(() => {
+      const node = card.querySelector<HTMLElement>('[data-next-goal-unclear]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(warning).toHaveTextContent(WARNING);
+    // Under the field, after the box and before the next field.
+    await expect(
+      goal.compareDocumentPosition(warning) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await userEvent.type(goal, ' the queue worker retries');
+    await waitFor(() => expect(card.querySelector('[data-next-goal-unclear]')).toBeNull());
+    await expect(card).not.toHaveTextContent('too vague to analyze against');
+  },
+};
+
+export const AGoalWithAnEndStateIsNotWarned: Story = {
+  args: {
+    setup: {
+      session: {
+        ...VAGUE_GOAL,
+        annotation_goal: 'Retry a 5xx three times',
+        annotation_assessment: {
+          ...REFUSED_READING,
+          criteria: {
+            goal: {
+              result: 'not verifiable from available evidence',
+              cites: [],
+              detail: '',
+              clause: 'Retry a 5xx three times',
+              why: '',
+            },
+          },
+        },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    await within(card).findByRole('textbox', { name: 'Goal' });
+    await expect(card.querySelector('[data-next-goal-unclear]')).toBeNull();
+  },
+};
+
 export const SavingStatus: Story = {
   render: () => {
     let releaseSave: (() => void) | null = null;

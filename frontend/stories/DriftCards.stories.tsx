@@ -3,6 +3,7 @@ import { seeInContext } from './citation';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import {
   CHECK_DOES_NOT_SHOW_IT,
+  GOAL_UNCLEAR_VERDICT,
   READ_NEVER,
   READ_SUMMARY,
   READING_DEFINITION,
@@ -405,6 +406,57 @@ export const NotReachedAndConsistentWithACheck: Story = {
     await waitFor(() => expect(goal).toHaveTextContent('as the tool reported; not inspected'));
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await neverDone(shown);
+  },
+};
+
+/* A goal the model found no end state in is refused in place of a level (owner, 2026-10-22). The card says so
+   once, draws no level, departure, quiet row or Steer back for that run, even over a failed check; the sentence
+   under the Goal field is the Intent card's, held by IntentCard.stories. */
+export const AGoalTooVagueIsRefused: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: {
+          result: 'goal too vague to analyze against',
+          cites: [],
+          detail: '',
+          clause: 'Ship the queue',
+          why: '',
+        },
+        line_1: {
+          result: 'not verifiable from available evidence',
+          cites: [],
+          detail: '',
+          clause: 'Tests pass',
+          why: 'not-asked',
+        },
+      }),
+    ),
+    facts: [PERSON, FAILED],
+    work: {
+      analysis_levels: [
+        {
+          harness: 'claude',
+          sid: 's1',
+          revision_read: 3,
+          read_at: 1000,
+          computed_at: 1000,
+          level: 'not_enough',
+          reasons: ['goal-unclear'],
+          cites: [],
+        },
+      ],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await expect(await verdictOf(drift)).toHaveTextContent(GOAL_UNCLEAR_VERDICT);
+    await expect(departures(shown)).toHaveLength(0);
+    await expect(shown.querySelector('[data-next-result-quiet]')).toBeNull();
+    await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
+    await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    await expect(drift).not.toHaveTextContent("Can't tell");
   },
 };
 
