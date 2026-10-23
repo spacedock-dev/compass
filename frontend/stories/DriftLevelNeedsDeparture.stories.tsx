@@ -156,6 +156,34 @@ export const ConsistentButHeldBackSaysWhyInTheSentence: Story = {
   },
 };
 
+/* A goal alone, nothing departing and no check showing it done: the sentence says so and says what would let a
+   level be drawn (owner decision, 2026-10-23: the evidence floor stands). */
+export const GoalOnlyHeldBackNamesTheCheckItNeeds: Story = {
+  ...scenario({
+    session: {
+      ...READ({ goal: { ...CONSISTENT, clause: 'Ship the queue' } }),
+      annotation_line_1: '',
+    },
+    facts: [PERSON, PASSED, AGENT],
+    work: {
+      analysis_levels: [
+        {
+          ...analysisRow('claude', 'not_enough'),
+          reasons: ['line-not-shown-by-a-check'],
+          cites: ['c2'],
+        },
+      ],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    await expect(await verdictOf(drift)).toHaveTextContent(
+      'Nothing departs from your goal, but no check shows it done, so no level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again.',
+    );
+    await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
+  },
+};
+
 /* A Medium the server read from a contradicted claim, with nothing departing: no level, and the sentence says
    what the reading did find. */
 export const AContradictedClaimAloneDrawsNoMedium: Story = {

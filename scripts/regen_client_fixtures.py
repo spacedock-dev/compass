@@ -1722,6 +1722,8 @@ def vocabulary() -> dict[str, Any]:
         "goalVerdictKeys": list(reading.GOAL_VERDICT_KEYS),
         "goalVerdictChecks": list(reading.GOAL_VERDICT_CHECKS),
         "goalVerdictWhys": list(reading.GOAL_VERDICT_WHYS),
+        "goalVerdictRemovalKeys": list(reading.GOAL_VERDICT_REMOVAL_KEYS),
+        "goalVerdictRemovalWhys": list(reading.GOAL_VERDICT_REMOVAL_WHYS),
         "workEvidenceByHarness": {
             harness: sorted(types) for harness, types in reading.WORK_EVIDENCE_BY_HARNESS.items()
         },

@@ -44,7 +44,11 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
     }
 
     def _read(
-        self, facts: list[dict[str, Any]], row: dict[str, Any], answer: Any = None
+        self,
+        facts: list[dict[str, Any]],
+        row: dict[str, Any],
+        answer: Any = None,
+        tool_output: reading.ToolOutput | None = None,
     ) -> dict[str, Any]:
         assessment, why, _spent = reading.produce(
             self.config,  # type: ignore[arg-type]
@@ -56,14 +60,101 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
             model=self._model(json.dumps(self.ANSWER if answer is None else answer)),
             read_lines=True,
             read_agent_words=True,
+            tool_output=tool_output,
         )
         self.assertEqual("", why)
         self.assertIsNotNone(assessment)
         return cast("dict[str, Any]", assessment)
 
-    def _checked(self, facts: list[dict[str, Any]], reason: str, **kw: Any) -> dict[str, Any]:
-        read = self._read([base.WORDS_FACT, *facts], goal_row(reason, **kw))
+    def _checked(
+        self,
+        facts: list[dict[str, Any]],
+        reason: str,
+        removals: tuple[tuple[str, float, str], ...] = (),
+        **kw: Any,
+    ) -> dict[str, Any]:
+        output = (
+            reading.ToolOutput(destination="", label="x", removals=removals) if removals else None
+        )
+        read = self._read([base.WORDS_FACT, *facts], goal_row(reason, **kw), tool_output=output)
         return cast("dict[str, Any]", read["goal_verdict"])
+
+    def test_a_file_the_reason_names_that_was_deleted_after_the_verdict_disputes_it(self) -> None:
+        # DRC-4948 on a real session: notes.md was created, the harness said met, a later turn rm'd it.
+        checked = self._checked(
+            [write_fact("docs/e2e/notes.md", at=120.0)],
+            "the file docs/e2e/notes.md was created and read back",
+            removals=(("docs/e2e/notes.md", 170.0, "deleted"),),
+        )
+        self.assertEqual(
+            {
+                "at": VERDICT_AT,
+                "check": reading.GOAL_VERDICT_DISPUTED,
+                "why": reading.GOAL_VERDICT_DELETED_AFTER,
+                "cites": (),
+                "path": "docs/e2e/notes.md",
+                "changed_at": 170.0,
+            },
+            checked,
+        )
+
+    def test_a_move_away_after_the_verdict_disputes_it_as_moved(self) -> None:
+        checked = self._checked(
+            [write_fact("findings.md", at=120.0)],
+            "findings.md was written",
+            removals=(("findings.md", 170.0, "moved"),),
+        )
+        self.assertEqual(reading.GOAL_VERDICT_MOVED_AFTER, checked["why"])
+        self.assertEqual("findings.md", checked["path"])
+
+    def test_deleting_the_folder_that_holds_the_file_disputes_it(self) -> None:
+        checked = self._checked(
+            [write_fact("docs/e2e/notes.md", at=120.0)],
+            "docs/e2e/notes.md exists",
+            removals=(("docs/e2e", 170.0, "deleted"),),
+        )
+        self.assertEqual(reading.GOAL_VERDICT_DELETED_AFTER, checked["why"])
+        self.assertEqual("docs/e2e", checked["path"])
+
+    def test_the_condition_naming_the_file_is_enough_when_the_reason_names_none(self) -> None:
+        # GOAL names findings.md; the reason only says tests passed.
+        checked = self._checked(
+            [], "the retry tests pass", removals=(("findings.md", 170.0, "deleted"),)
+        )
+        self.assertEqual(reading.GOAL_VERDICT_DISPUTED, checked["check"])
+        self.assertEqual(reading.GOAL_VERDICT_DELETED_AFTER, checked["why"])
+
+    def test_a_removal_from_before_the_verdict_does_not_dispute_it(self) -> None:
+        checked = self._checked(
+            [write_fact("findings.md", at=120.0)],
+            "findings.md was written",
+            removals=(("findings.md", 100.0, "deleted"),),
+        )
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
+        self.assertNotIn("path", checked)
+
+    def test_a_file_written_again_after_the_removal_is_written_after_not_deleted(self) -> None:
+        checked = self._checked(
+            [
+                write_fact("findings.md", at=120.0),
+                write_fact("findings.md", fact_id="w2", at=190.0),
+            ],
+            "findings.md was written",
+            removals=(("findings.md", 170.0, "deleted"),),
+        )
+        self.assertEqual(reading.GOAL_VERDICT_WRITTEN_AFTER, checked["why"])
+
+    def test_a_removal_of_an_unrelated_file_leaves_the_verdict_alone(self) -> None:
+        checked = self._checked(
+            [write_fact("findings.md", at=120.0)],
+            "findings.md was written",
+            removals=(("scratch.txt", 170.0, "deleted"),),
+        )
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
+
+    def test_nothing_in_the_record_for_or_against_stays_unconfirmed(self) -> None:
+        checked = self._checked([], "findings.md was written")
+        self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, checked["check"])
 
     def test_a_file_the_reason_cites_that_the_record_shows_written_agrees(self) -> None:
         checked = self._checked([write_fact("findings.md", at=120.0)], "findings.md was written")
@@ -262,6 +353,34 @@ class TheStoredCheckIsValidatedOnTheWayBackIn(base.AClaudeCodeReadingProducer):
         back = annotation_store._assessment(stored, 240)
         assert back is not None
         self.assertNotIn("goal_verdict", back)
+
+    def test_a_stored_removal_dispute_reads_back_whole_with_its_file_and_time(self) -> None:
+        stored = self._stored()
+        stored["goal_verdict"] = {
+            "at": VERDICT_AT,
+            "check": "disputed",
+            "why": "deleted-after",
+            "cites": [],
+            "path": "docs/e2e/notes.md",
+            "changed_at": 170.0,
+        }
+        back = annotation_store._assessment(stored, 240)
+        assert back is not None
+        self.assertEqual("docs/e2e/notes.md", back["goal_verdict"]["path"])
+        self.assertEqual(170.0, back["goal_verdict"]["changed_at"])
+
+    def test_the_file_and_time_travel_together_and_only_with_a_removal(self) -> None:
+        for patch in (
+            {"path": "a.md"},
+            {"changed_at": 170.0},
+            {"why": "written-after", "path": "a.md", "changed_at": 170.0},
+            {"why": "deleted-after", "path": 5, "changed_at": 170.0},
+            {"why": "deleted-after", "path": "a.md", "changed_at": "late"},
+        ):
+            with self.subTest(patch=patch):
+                stored = self._stored()
+                stored["goal_verdict"] = {**stored["goal_verdict"], **patch}
+                self.assertIsNone(annotation_store._assessment(stored, 240))
 
     def test_a_token_the_producer_never_writes_refuses_the_reading_whole(self) -> None:
         for patch in (

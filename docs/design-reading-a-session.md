@@ -5488,6 +5488,21 @@ DRC-4948, owner ruling of the same date. When a Claude Code session ran with `/g
   letting a disputed verdict raise the level. A level rests on departures the record shows, and a claim the
   record contradicts is a caution on the claim, as a contradicted agent claim is.
 
+Amended 2026-10-23 (owner feedback, DRC-4948): a file taken away disputes the claim too. A real session
+had the evaluator say met over a file a later turn removed with `rm`, and the card said only that Compass
+could not confirm it, because a deletion was nowhere in the record the test read. The scan of the
+transcript's shell calls now notes each file `rm`, `unlink`, `rmdir` or `mv` took away (a `mv` removes its
+sources, not its destination; globs, unplaceable targets, a `-t` move and `git rm` are not read), skipping
+a call whose own output reports that command failing. The notes are read at the press and go to no model.
+They are not facts: a published fact is a closed kind, and the removal exists only to test this claim.
+Where a file the reason or the goal's condition names, or a folder holding it, was taken away after the
+verdict and not written again after that, the test **disputes** it with `deleted-after` or `moved-after`,
+stored with the one file and the moment (`{at, check, why, cites, path, changed_at}`, the two extra keys
+together and only beside those tokens), so the card can say "Compass disputes it: docs/e2e/notes.md was
+deleted at 22:59, after the verdict." A file written again after its removal stays the `written-after`
+dispute. "Could not confirm it" remains the answer where nothing in the record supports or contradicts the
+claim, and Compass's own level stands either way.
+
 ### The starting definitions
 
 These are what DRC-4692 validates, not a measured result. Medium: a pass is followed by writes, or
@@ -5776,6 +5791,14 @@ the evidence floor, and the stored-reading checks.
 - **Not changed.** The abstention study tooling (`mark_abstention.py`, `score_abstention.py`) still
   freezes cases with no outcome line as having no analysis question: it measures a frozen method, and
   amending it is a separate decision.
+
+Amended 2026-10-23 (owner, DRC-4950): the evidence floor stays. A goal-only reading that finds nothing
+still draws no level until a passing check shows the goal done, and the card now says so plainly and
+says what would let a level be drawn: "Nothing departs from your goal, but no check shows it done, so no
+level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again."
+The sentence is the verdict line's own for the goal-only blocker; where outcome lines exist the existing
+wording ("Nothing found against what it read, but no level is drawn: a line of your intent is not shown
+by any check.") is unchanged.
 
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 

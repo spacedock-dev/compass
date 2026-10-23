@@ -3516,6 +3516,46 @@ def _written_path(raw: object, cwd: str, session_dir: str = "") -> str | None:
     return relative.replace(os.sep, "/")
 
 
+# The commands that take a file away from where it was, for the press alone: the record a harness's
+# "goal met" verdict is tested against. A file a command removes cannot be read back from the
+# writes the facts carry, and no write is published for it.
+_REMOVING_COMMANDS = {"rm": "deleted", "unlink": "deleted", "rmdir": "deleted", "mv": "moved"}
+_GLOB_MARKS = ("*", "?", "[", "{")
+
+
+def _removed_targets(words: list[str]) -> list[tuple[str, str]]:
+    """The operands one segment deletes or moves away, each with `deleted` or `moved`.
+
+    A `mv` removes its sources and not its destination, and one that names its destination with a
+    flag (`-t`) is not read, because which operands are sources is then the shell's. A glob is a
+    set of files this scan cannot name. `git rm` is not read either: a shipped source names the
+    git program only in the one probe the invocation oracle in `test_git_status` permits.
+    """
+    if not words:
+        return []
+    head, rest = words[0], words[1:]
+    kind = _REMOVING_COMMANDS.get(head)
+    if kind is None:
+        return []
+    operands: list[str] = []
+    options_end = False
+    for word in rest:
+        if not options_end and word == "--":
+            options_end = True
+        elif not options_end and word.startswith("-"):
+            if head == "mv" and (word == "-t" or word.startswith("--target")):
+                return []
+        else:
+            operands.append(word)
+    if kind == "moved":
+        operands = operands[:-1]
+    return [
+        (operand, kind)
+        for operand in operands
+        if _placeable(operand) and not any(mark in operand for mark in _GLOB_MARKS)
+    ]
+
+
 def _is_fixer(words: list[str]) -> bool:
     """A formatter or fixer run: a change that ages every pass (verifier,
     2026-09-24), whether or not it is also a check."""
@@ -3586,6 +3626,11 @@ class _ShellCall:
         # A changing substitution runs even in a check's own arguments or an
         # assignment-only segment (review, 2026-09-27; DRC-4724).
         self.substituted = [i for i, part in enumerate(self.parts) if part.hides_change]
+        self.removals = [
+            (i, target, kind)
+            for i in self.meaningful
+            for target, kind in _removed_targets(self.words[i][0])
+        ]
         # `> build/output` alone truncates the file: no words, but a write.
         self.substituted += [
             i
@@ -3730,6 +3775,8 @@ class _ToolReportTally:
         # invalidates the whole private, bounded candidate cache.
         self._entry_cache: dict[str, dict[str, Any]] = {}
         self.writes: dict[str, dict[str, Any]] = {}
+        # The latest delete or move away of each path, for the press alone (`removals`).
+        self.removed: dict[str, dict[str, Any]] = {}
         # (time, call id) of every recorded write and fixer run. A pass is aged
         # by one from another call at or after its own time, since recorded
         # time cannot order two calls that share it (DRC-4709); its own call is
@@ -3898,6 +3945,7 @@ class _ToolReportTally:
         self.scan["shell_calls"] += 1
         if call.fixers:
             self.write_calls.append((at, call_id))
+        self._record_removals(call, at, cwd, call_id, text, result)
         for _index, target, start in call.redirect_writes:
             # Owner, 2026-09-27: published only inside the working directory;
             # a target outside it, or one the shell decides, counts as outside.
@@ -3909,6 +3957,43 @@ class _ToolReportTally:
             self.scan["other_commands"] += 1
             self.scan["read_only_commands"] += not call.changes()
         self._add_runs(call, call_id, result, text, found.at if found is not None else None, worker)
+
+    def _record_removals(
+        self,
+        call: _ShellCall,
+        at: float,
+        cwd: str,
+        call_id: str,
+        text: str,
+        result: dict[str, Any] | None,
+    ) -> None:
+        """Each path a segment that ran deleted or moved away.
+
+        A call's error flag is its last command's, so an `ls` of the folder just removed marks a
+        call whose `rm` worked. The command's own failure is what shows it did not remove: a line
+        of the output that begins with its name.
+        """
+        errored = result is not None and result.get("is_error") is True
+        for index, target, kind in call.removals:
+            head = call.words[index][0][0]
+            if (
+                call.background(index)
+                or call.unestablished(index)
+                or (errored and re.search(rf"(?m)^(?:{re.escape(head)}|fatal|error): ", text))
+            ):
+                continue
+            path = call.written_path(target, index, cwd, self.session_dir)
+            if path is not None:
+                self.removed[path] = {"at": at, "record_id": call_id, "kind": kind}
+
+    def removals(self) -> tuple[tuple[str, float, str], ...]:
+        """(path, time, `deleted` or `moved`) of the latest removal of each path."""
+        return tuple(
+            sorted(
+                ((path, float(row["at"]), str(row["kind"])) for path, row in self.removed.items()),
+                key=lambda row: (row[1], row[0]),
+            )
+        )
 
     def _add_runs(
         self,
@@ -4279,6 +4364,9 @@ class PressChecks(NamedTuple):
     # (record id, title, time) of each latest pass and each write
     # (`_ToolReportTally.passes_and_writes`): the same titles the facts carry.
     passes_and_writes: tuple[tuple[str, str, float], ...] = ()
+    # (path, time, "deleted" or "moved") of the latest removal of each path
+    # (`_ToolReportTally.removals`), for testing a harness verdict against.
+    removals: tuple[tuple[str, float, str], ...] = ()
 
 
 def claude_check_press(
@@ -4300,7 +4388,11 @@ def claude_check_press(
 
 def _press(tally: _ToolReportTally) -> PressChecks:
     return PressChecks(
-        tally.tails(), tally.changed_after(), tally.read_incomplete(), tally.passes_and_writes()
+        tally.tails(),
+        tally.changed_after(),
+        tally.read_incomplete(),
+        tally.passes_and_writes(),
+        tally.removals(),
     )
 
 

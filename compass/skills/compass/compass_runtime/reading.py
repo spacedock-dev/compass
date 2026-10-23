@@ -458,6 +458,10 @@ class ToolOutput:
     # read at the press and never sent or stored; `produce` keeps those its
     # prompt did not carry.
     passes_and_writes: tuple[tuple[str, str, float], ...] = ()
+    # (path, time, "deleted" or "moved") of the latest removal of each path the
+    # shell took away, read at the press for testing a harness verdict. Never
+    # sent to a model and never stored except as the one file a dispute names.
+    removals: tuple[tuple[str, float, str], ...] = ()
 
 
 SCOPE_MID_FLIGHT = "mid-flight"
@@ -1108,6 +1112,8 @@ class GoalVerdictCheck(TypedDict):
     check: str
     why: str
     cites: tuple[str, ...]
+    path: NotRequired[str]
+    changed_at: NotRequired[float]
 
 
 class Assessment(TypedDict):
@@ -4072,6 +4078,15 @@ class RecordedWrite:
 
 
 @dataclass(frozen=True)
+class RecordedRemoval:
+    """A path the shell took away: `deleted`, or `moved` from where it was."""
+
+    path: str
+    at: float
+    kind: str
+
+
+@dataclass(frozen=True)
 class Recorded:
     """The writes and checks the session's record holds, whether or not a prompt carried them.
 
@@ -4081,6 +4096,7 @@ class Recorded:
 
     writes: tuple[RecordedWrite, ...] = ()
     checks: tuple[LedgerEntry, ...] = ()
+    removals: tuple[RecordedRemoval, ...] = ()
 
 
 def recorded_from(
@@ -4134,7 +4150,11 @@ def recorded_from(
                     fact.get("changed_after") is True
                 )
                 checks.append(row)
-    return Recorded(tuple(writes), tuple(checks))
+    removals = tuple(
+        RecordedRemoval(path, at, kind)
+        for path, at, kind in (tool_output.removals if tool_output is not None else ())
+    )
+    return Recorded(tuple(writes), tuple(checks), removals)
 
 
 def recorded_departure(
@@ -4196,17 +4216,26 @@ GOAL_VERDICT_WRITTEN = "written-before"
 GOAL_VERDICT_PASSED = "passed-before"
 GOAL_VERDICT_WRITTEN_AFTER = "written-after"
 GOAL_VERDICT_FAILED = "check-failed"
+GOAL_VERDICT_DELETED_AFTER = "deleted-after"
+GOAL_VERDICT_MOVED_AFTER = "moved-after"
 GOAL_VERDICT_NOT_FOUND = "not-found"
 GOAL_VERDICT_NOTHING_CHECKABLE = "nothing-checkable"
 GOAL_VERDICT_WHYS = (
     GOAL_VERDICT_WRITTEN,
     GOAL_VERDICT_PASSED,
     GOAL_VERDICT_WRITTEN_AFTER,
+    GOAL_VERDICT_DELETED_AFTER,
+    GOAL_VERDICT_MOVED_AFTER,
     GOAL_VERDICT_FAILED,
     GOAL_VERDICT_NOT_FOUND,
     GOAL_VERDICT_NOTHING_CHECKABLE,
 )
 GOAL_VERDICT_KEYS = ("at", "check", "why", "cites")
+# A dispute that rests on a file taken away names the file and the moment, so the card can say which
+# and when. Both or neither, and only beside the two removal tokens.
+VERDICT_PATH_CAP_CHARS = 240
+GOAL_VERDICT_REMOVAL_KEYS = ("path", "changed_at")
+GOAL_VERDICT_REMOVAL_WHYS = (GOAL_VERDICT_DELETED_AFTER, GOAL_VERDICT_MOVED_AFTER)
 # A file name the evaluator's prose names: a stem of at least two characters and a lettered
 # extension, so "e.g." and a version such as "2.1" are not read as files.
 _VERDICT_FILE = re.compile(r"(?:[\w\-]+/)*[\w\-]{2,}\.[A-Za-z][A-Za-z0-9]{0,4}")
@@ -4224,6 +4253,35 @@ def _verdict_files(reason: str) -> tuple[str, ...]:
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:
     return frozenset(kind for kind in _LINE_KINDS if _claims_result(reason, kind))
+
+
+def _removed_after(
+    named: Sequence[str], recorded: Recorded, set_at: float, verdict_at: float
+) -> RecordedRemoval | None:
+    """The latest removal after the verdict of a named file, or of a folder holding it.
+
+    A file written again after the removal stands again, so that is a write after the verdict and
+    not a removal. Nothing found is None: no recorded removal says nothing about the file.
+    """
+    hits = [
+        removal
+        for removal in recorded.removals
+        if removal.at > verdict_at
+        and removal.at >= set_at
+        and any(_removal_covers(removal.path, path) for path in named)
+        and not any(
+            write.at > removal.at and _removal_covers(removal.path, write.path)
+            for write in recorded.writes
+        )
+    ]
+    return max(hits, key=lambda removal: removal.at) if hits else None
+
+
+def _removal_covers(removed: str, path: str) -> bool:
+    """Whether taking `removed` away takes `path` with it: that file, or the folder holding it."""
+    return (
+        _same_path(removed, path) or f"/{removed}/" in f"/{path}/" or path.startswith(f"{removed}/")
+    )
 
 
 def check_goal_verdict(  # noqa: PLR0911 - one return per answer the record can give
@@ -4259,6 +4317,19 @@ def check_goal_verdict(  # noqa: PLR0911 - one return per answer the record can 
         }
 
     files, kinds = _verdict_files(reason), _verdict_check_kinds(reason)
+    # The condition names files too ("the file docs/e2e/notes.md exists"), and a file it names that
+    # the record shows taken away after the verdict contradicts the claim whatever the reason said.
+    named = tuple(dict.fromkeys((*files, *_verdict_files(str(goal.get("text") or "")))))
+    taken = _removed_after(named, recorded, set_at, at)
+    if taken is not None:
+        return {
+            **result(
+                GOAL_VERDICT_DISPUTED,
+                GOAL_VERDICT_DELETED_AFTER if taken.kind == "deleted" else GOAL_VERDICT_MOVED_AFTER,
+            ),
+            "path": records.safe_text(taken.path, VERDICT_PATH_CAP_CHARS),
+            "changed_at": taken.at,
+        }
     if not files and not kinds:
         return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOTHING_CHECKABLE)
     writes = [
@@ -4834,6 +4905,8 @@ def produce(  # noqa: PLR0913
         else (),
     )
     measured = record_coverage_lookup() if record_coverage_lookup is not None else {}
+    # A /goal has no prompt behind it to find, so a missing source is not a cut: only the
+    # excerpt's own ellipsis says the stated condition was longer than the Goal field held.
     coverage = {
         "tail_truncated": measured.get("tail_truncated"),
         "tail_start": measured.get("tail_start"),
@@ -4842,6 +4915,8 @@ def produce(  # noqa: PLR0913
         "goal_source": (
             "typed"
             if not adopted
+            else ("excerpt" if goal.endswith("\u2026") else "whole")
+            if latest.get("goal_source") == SESSION_GOAL
             else "excerpt"
             if source is None
             else "whole"

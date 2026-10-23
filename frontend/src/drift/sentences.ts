@@ -168,15 +168,23 @@ export const STORED_WHY: Readonly<Record<string, string>> = {
    a passing check, and the sentences say so where a reader might take it for either
    ([DEC-26](../../../docs/design-reading-a-session.md#amended-2026-10-22-a-goal-met-verdict-is-a-claim)). */
 export const GOAL_VERDICT_KEYS: readonly string[] = ['at', 'check', 'why', 'cites'];
+/* A dispute that rests on a file taken away names the file and the moment, both or neither. */
+export const GOAL_VERDICT_REMOVAL_KEYS: readonly string[] = ['path', 'changed_at'];
+export const GOAL_VERDICT_REMOVAL_WHYS: readonly string[] = ['deleted-after', 'moved-after'];
 export const GOAL_VERDICT_CHECKS: readonly string[] = ['agrees', 'disputed', 'unconfirmed'];
 export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
   'written-before': 'the file its reason names is recorded as written before the verdict',
   'passed-before': 'a check of the kind its reason names is recorded as passing before the verdict',
   'written-after': 'the file its reason names was written again after the verdict',
+  'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
+  'moved-after': 'a file its reason or the goal names was moved away after the verdict',
   'check-failed': 'a check of the kind its reason names has a failing latest run',
   'not-found': 'the record Compass read does not show what its reason names',
   'nothing-checkable': 'its reason names no file or check Compass can look for',
 };
+/* "docs/e2e/notes.md was deleted at 22:59, after the verdict": the file and the moment the record shows. */
+export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
+  `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;
 export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
 export const goalVerdictClaim = (harness: string, at: string): string =>
   `${harness} marked this goal met at ${at}.`;
@@ -380,6 +388,11 @@ export const REASON_LINES: Readonly<Record<string, (n: string) => string>> = {
 export const SILENT_REASONS: readonly string[] = ['draft-unsaved', 'floor-met', 'no-reading'];
 /* The same blocker for a reading of the goal alone, where no outcome line was saved. */
 export const GOAL_NOT_SHOWN = 'Your goal is not shown by any check.';
+/* The verdict's own sentence over a goal-only reading that found nothing: what the reading did find, why
+   there is no level, and what would let one be drawn (owner decision, 2026-10-23: the evidence floor stands,
+   a level still needs a passing check). */
+export const GOAL_ONLY_NO_LEVEL =
+  'Nothing departs from your goal, but no check shows it done, so no level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again.';
 export const BLOCKER_LINES: Readonly<Record<string, string>> = {
   'no-passing-check': 'No check has passed yet.',
   'check-not-recorded': 'A check ran and its result was not recorded.',

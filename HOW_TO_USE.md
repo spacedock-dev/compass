@@ -430,7 +430,7 @@ box as it was. Nothing is saved until you press **Save intent**. An unavailable 
 across tabs and restarts and shown again if the destination or content tier changes. Where Compass
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
-When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, the Drift card says so as the harness's claim, with the time and the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. The claim never changes the drift level and never counts as a passing check.
+When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, the Drift card says so as the harness's claim, with the time and the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. A file the claim names that a later command deleted or moved away is a dispute, and the card names the file and the time. The claim never changes the drift level and never counts as a passing check.
 
 Use **Pause model calls** on a session page, under **Drift settings** at the top of the Drift card (it is also in the **What is sent** popover), to pause every model call. While paused, **Resume model calls** stands beside Drift settings. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is

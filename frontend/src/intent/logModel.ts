@@ -3,7 +3,7 @@ import { compatSessKey } from '../api/identity';
 import { isRecord, records, type Row } from '../observed';
 import { datedClock } from '../observed/values';
 import { LANE_OFF_RECORD } from '../sessions/detail';
-import { PROMPT_SOURCES } from '../sessions/intent';
+import { PROMPT_SOURCES, SESSION_GOAL } from '../sessions/intent';
 import {
   annotationDiscarded,
   annotationLines,
@@ -122,9 +122,11 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   if (discarded) line('Your words', String(row['discarded_why'] || ''));
   if (typed) {
     line(
-      PROMPT_SOURCES.includes(row['goal_source'] as string)
-        ? 'Goal from your prompt'
-        : 'Typed goal',
+      row['goal_source'] === SESSION_GOAL
+        ? 'Goal from /goal'
+        : PROMPT_SOURCES.includes(row['goal_source'] as string)
+          ? 'Goal from your prompt'
+          : 'Typed goal',
       String(row['goal'] || row['goal_why'] || 'No goal typed for this session.'),
     );
     const lines = annotationLines(row);

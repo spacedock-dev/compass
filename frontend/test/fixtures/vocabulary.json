@@ -106,10 +106,20 @@
     "why",
     "cites"
   ],
+  "goalVerdictRemovalKeys": [
+    "path",
+    "changed_at"
+  ],
+  "goalVerdictRemovalWhys": [
+    "deleted-after",
+    "moved-after"
+  ],
   "goalVerdictWhys": [
     "written-before",
     "passed-before",
     "written-after",
+    "deleted-after",
+    "moved-after",
     "check-failed",
     "not-found",
     "nothing-checkable"

@@ -880,7 +880,23 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     sidecar rewritten to say something else refuses the reading whole rather than speaking for
     Compass.
     """
-    if not isinstance(value, dict) or set(value) != set(reading.GOAL_VERDICT_KEYS):
+    if not isinstance(value, dict):
+        return None
+    removal = set(value) - set(reading.GOAL_VERDICT_KEYS)
+    # The file and the moment a removal dispute names come together, and only with a removal token.
+    if set(value) - set(reading.GOAL_VERDICT_KEYS) - set(reading.GOAL_VERDICT_REMOVAL_KEYS) or (
+        set(reading.GOAL_VERDICT_KEYS) - set(value)
+    ):
+        return None
+    if removal and (
+        removal != set(reading.GOAL_VERDICT_REMOVAL_KEYS)
+        or value["why"] not in reading.GOAL_VERDICT_REMOVAL_WHYS
+        or not isinstance(value["path"], str)
+        or not value["path"].strip()
+        or isinstance(value["changed_at"], bool)
+        or not isinstance(value["changed_at"], (int, float))
+        or value["changed_at"] <= 0
+    ):
         return None
     at, cites = value["at"], value["cites"]
     if (
@@ -894,12 +910,16 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
         or not all(isinstance(cite, str) for cite in cites)
     ):
         return None
-    return {
+    checked: reading.GoalVerdictCheck = {
         "at": float(at),
         "check": value["check"],
         "why": value["why"],
         "cites": tuple(records.safe_text(cite, KEY_CAP_CHARS) for cite in cites),
     }
+    if removal:
+        checked["path"] = records.safe_text(value["path"], reading.VERDICT_PATH_CAP_CHARS)
+        checked["changed_at"] = float(value["changed_at"])
+    return checked
 
 
 def _assessment(value: Any, cap: int) -> reading.Assessment | None:

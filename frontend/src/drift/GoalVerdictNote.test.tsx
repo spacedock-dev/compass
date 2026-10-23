@@ -47,8 +47,13 @@ const FACTS = [
   check('c1', 500, 'failed', { result_source: 'failed flag', summary: 'pytest -q' }),
   check('c2', 600, 'passed'),
 ];
-const checked = (check: string, why: string, at = VERDICT_AT) => ({
-  annotation_assessment: { ...ASSESSMENT, goal_verdict: { at, check, why, cites: [] } },
+const checked = (
+  check: string,
+  why: string,
+  at = VERDICT_AT,
+  extra: Record<string, unknown> = {},
+) => ({
+  annotation_assessment: { ...ASSESSMENT, goal_verdict: { at, check, why, cites: [], ...extra } },
   annotation_window_start: 100,
   annotation_reading_count: 1,
 });
@@ -116,6 +121,49 @@ describe('the harness verdict on the Drift card', () => {
     expect(text).toContain('written again after the verdict');
     expect(text).toContain('Compass’s own reading stands');
     expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
+  });
+
+  it.each([
+    ['deleted-after', 'deleted'],
+    ['moved-after', 'moved away'],
+  ])('names the file and the time where it was %s the verdict', async (why, verb) => {
+    const page = mountDrift({
+      session: {
+        ...withVerdict(),
+        ...checked('disputed', why, VERDICT_AT, {
+          path: 'docs/e2e/notes.md',
+          changed_at: VERDICT_AT + 90,
+        }),
+      },
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    expect(state()).toBe('disputed');
+    const text = textOf('[data-next-goal-verdict]');
+    expect(text).toMatch(
+      new RegExp(
+        `Compass disputes it: docs/e2e/notes\\.md was ${verb} at (\\d{4}-\\d{2}-\\d{2} )?\\d{1,2}:\\d{2}, after the verdict\\. Compass’s own reading stands`,
+      ),
+    );
+    expect(text).not.toContain('could not confirm');
+  });
+
+  it.each([
+    ['a removal token with no moment', 'deleted-after', { path: 'a.md' }],
+    [
+      'a file beside a token that is not a removal',
+      'written-after',
+      { path: 'a.md', changed_at: 1_700_000_400 },
+    ],
+  ])('refuses %s, and takes no check from it', async (_name, why, extra) => {
+    const page = mountDrift({
+      session: { ...withVerdict(), ...checked('disputed', why, VERDICT_AT, extra) },
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    expect(state()).toBe('unchecked');
   });
 
   it('says unconfirmed, not disputed, where the record holds neither side', async () => {

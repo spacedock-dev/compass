@@ -9,6 +9,8 @@ import {
   CONSISTENT,
   DEPARTURE,
   GOAL_UNCLEAR_RESULT,
+  GOAL_NOT_SHOWN,
+  GOAL_ONLY_NO_LEVEL,
   GOAL_UNCLEAR_VERDICT,
   NOT_REACHED,
   RESULT_CANT_TELL,
@@ -589,11 +591,14 @@ export function coverageLimits(shape: Shape): string {
 /* What the analysis did with an adopted prompt. Said under What the analysis read rather than beside the
    answer (usability review, 2026-10-20): it is about the reading's input, and above the departures it stood
    between the reader and the verdict. */
-export function goalSourceLine(shape: Shape): string {
+export function goalSourceLine(shape: Shape, statedGoal = false): string {
   const measured = shape.coverage;
   if (measured && ['excerpt', 'unroomed'].includes(measured.goal_source)) {
     return 'The adopted source could not be read whole; this reading used the saved excerpt. Put the instruction you meant in the goal box, then analyze again.';
   }
+  /* A /goal has no source prompt to have found, so the "found" sentence does not apply to it; one that was
+     cut is still said above, from the producer's coverage. */
+  if (statedGoal) return '';
   if (measured && measured.goal_source === 'whole') {
     return 'The adopted source was found. Analyze reads at most the first 1,000 characters of any prompt.';
   }
@@ -810,9 +815,15 @@ export function verdictLine({
     /* A level above None or low stands on a departure, so none is drawn here, and when the level is held
        back the same sentence says why: behind a "Why not None or low" disclosure it read as a missing
        answer. A held-back reason is a sentence of the page's own, lowercased into this one. */
-    const why = heldBack.map((line) =>
-      `${line.charAt(0).toLowerCase()}${line.slice(1)}`.replace(/\.$/, ''),
-    );
+    const goalOnly = heldBack.includes(GOAL_NOT_SHOWN);
+    const why = heldBack
+      .filter((line) => line !== GOAL_NOT_SHOWN)
+      .map((line) => `${line.charAt(0).toLowerCase()}${line.slice(1)}`.replace(/\.$/, ''));
+    if (goalOnly) {
+      return levelled(
+        why.length ? `${GOAL_ONLY_NO_LEVEL} Also: ${why.join('; ')}.` : GOAL_ONLY_NO_LEVEL,
+      );
+    }
     return levelled(
       why.length
         ? `Nothing found against what it read, but no level is drawn: ${why.join('; ')}.`

@@ -179,6 +179,27 @@ describe('a press', () => {
     expect(document.querySelector('[data-next-found-quote]')).toBeNull();
   });
 
+  it('groups several quoted sentences of one prompt under one entry number', async () => {
+    const found = {
+      ...FOUND.found,
+      cites: [
+        { fact_id: 'f1', ordinal: 1, at: 100, quotes: ['first sentence', 'second sentence'] },
+        { fact_id: 'f1', ordinal: 1, at: 100, quotes: ['third sentence'] },
+        { fact_id: 'f2', ordinal: 3, at: 200, quotes: ['make sure the tests still pass'] },
+      ],
+    };
+    const page = mount({ find: () => json({ ...FOUND, found }) });
+    await settle(page);
+    await press(find());
+    await settle(page);
+    expect(cites().map((cite) => cite.textContent)).toEqual(['[1]', '[3]']);
+    const quotes = [...document.querySelectorAll<HTMLElement>('[data-next-found-quote]')];
+    expect(quotes.map((quote) => quote.textContent)).toEqual([
+      '#1 “first sentence” “second sentence” “third sentence”',
+      '#3 “make sure the tests still pass”',
+    ]);
+  });
+
   it('is replaced by an edit: the mark, the line and the citations go with the found words', async () => {
     const page = mount({ find: () => json(FOUND) });
     await settle(page);

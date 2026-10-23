@@ -56,9 +56,20 @@ export function parseFound(raw: unknown, label: string): FoundGoal | null {
   if (!isRecord(raw)) return null;
   const text = textOf(raw['goal']).trim();
   const foundAt = nextNumber(raw['found_at']);
-  const cites = Array.isArray(raw['cites'])
-    ? raw['cites'].map(cite).filter((entry): entry is FoundCite => entry !== null)
-    : [];
+  /* One entry per prompt: a response that names the same prompt once per quoted sentence is one citation
+     with each sentence under it, in the order they came. */
+  const cites: FoundCite[] = [];
+  for (const entry of Array.isArray(raw['cites']) ? raw['cites'].map(cite) : []) {
+    if (!entry) continue;
+    const at = cites.findIndex((held) => held.factId === entry.factId);
+    const held = cites[at];
+    if (held) {
+      cites[at] = {
+        ...held,
+        quotes: [...held.quotes, ...entry.quotes.filter((q) => !held.quotes.includes(q))],
+      };
+    } else cites.push(entry);
+  }
   return text && foundAt !== null && foundAt > 0 && cites.length
     ? { text, foundAt, label, cites }
     : null;

@@ -3591,7 +3591,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES and not where:
             # Nothing to grant: the reading runs on the reader's words and its
             # cutoff says the checks were not sent and why (owner, Q5).
-            tool_output = runtime_reading.ToolOutput(destination="", label=route["label"])
+            # The shell's removals are read here too: they test the harness's own verdict against
+            # the record and go to no model, so a missing grant does not blind that test.
+            press = runtime_project_context.press_checks(
+                application.config, application.state, harness, sid
+            )
+            tool_output = runtime_reading.ToolOutput(
+                destination="", label=route["label"], removals=press.removals
+            )
         elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
             press = runtime_project_context.press_checks(
                 application.config, application.state, harness, sid
@@ -3603,6 +3610,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 changed_after=press.changed_after,
                 read_incomplete=press.read_incomplete,
                 passes_and_writes=press.passes_and_writes,
+                removals=press.removals,
             )
         return {
             "tool_output": tool_output,

@@ -249,9 +249,11 @@ export function goalCell(
       : intentDraft(source, { annotate: context.annotate, unreadable: context.unreadable }, chosen);
   const text = typed || (draft ? draft.text : openedWithControl(source) ? '' : prompt);
   const label = typed
-    ? PROMPT_SOURCES.includes(String(source?.['annotation_goal_source']))
-      ? 'GOAL · FROM YOUR PROMPT'
-      : 'GOAL · YOUR WORDS'
+    ? String(source?.['annotation_goal_source']) === SESSION_GOAL
+      ? 'GOAL · FROM /GOAL'
+      : PROMPT_SOURCES.includes(String(source?.['annotation_goal_source']))
+        ? 'GOAL · FROM YOUR PROMPT'
+        : 'GOAL · YOUR WORDS'
     : draft && draft.source === 'first-prompt'
       ? 'GOAL · YOUR FIRST PROMPT'
       : draft && draft.source === SESSION_GOAL

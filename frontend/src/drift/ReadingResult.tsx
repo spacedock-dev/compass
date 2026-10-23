@@ -699,7 +699,7 @@ function Baseline({
     ...readSentences(shape.cutoff),
     level?.range ? `Entries read: ${level.range}.` : '',
     level?.reasons?.first ?? '',
-    goalSourceLine(shape),
+    goalSourceLine(shape, raw['goal_source'] === SESSION_GOAL),
     arrived,
   ].filter(Boolean);
   return (

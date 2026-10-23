@@ -5,6 +5,7 @@ import {
   GOAL_VERDICT_LINES,
   GOAL_VERDICT_WHY,
   goalVerdictClaim,
+  goalVerdictRemoval,
 } from './sentences';
 import type { Shape } from './shape';
 
@@ -51,6 +52,8 @@ export function verdictNote(input: {
   readonly shape: Shape | null;
   readonly harness: string;
   readonly clock: string;
+  /** The time a removal dispute names, drawn as the card draws times; empty where the test names none. */
+  readonly changedClock?: string;
 }): VerdictNote {
   const { verdict, shape } = input;
   const test = shape && !shape.malformed ? shape.goalVerdict : null;
@@ -59,7 +62,12 @@ export function verdictNote(input: {
     : test && test.at === verdict.at
       ? (test.check as VerdictState)
       : 'unchecked';
-  const why = test && test.at === verdict.at ? (GOAL_VERDICT_WHY[test.why] ?? '') : '';
+  const tested = test && test.at === verdict.at ? test : null;
+  const why = tested
+    ? tested.path && input.changedClock
+      ? goalVerdictRemoval(tested.why, tested.path, input.changedClock)
+      : (GOAL_VERDICT_WHY[tested.why] ?? '')
+    : '';
   const line = GOAL_VERDICT_LINES[state];
   return {
     state,

@@ -13,12 +13,14 @@ export function GoalVerdictNote() {
   const { ctx, model } = useDrift();
   const verdict = harnessVerdict(model.session);
   if (!verdict) return null;
+  const changed = model.shape?.goalVerdict?.changed_at ?? null;
   const note = verdictNote({
     verdict,
     analyzed: model.raw !== null,
     shape: model.shape,
     harness: harnessLabels(model.payload).get(model.harness) || 'Claude Code',
     clock: datedClock(verdict.at, ctx.shell.clock.now() / 1000),
+    changedClock: changed ? datedClock(changed, ctx.shell.clock.now() / 1000) : '',
   });
   return (
     <div

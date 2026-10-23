@@ -151,6 +151,37 @@ describe('the adopted-source note', () => {
   });
 });
 
+describe('the adopted-source note over a /goal', () => {
+  const stated = (goalSource: string) => ({
+    ...session,
+    annotation_assessment: {
+      ...ASSESSMENT,
+      goal_source: 'session-goal',
+      goal_source_at: 100,
+      coverage: { ...ASSESSMENT.coverage, goal_source: goalSource },
+      criteria: { goal: { ...ASSESSMENT.criteria.goal, cites: ['c2'] } },
+    },
+  });
+  const noteOf = async (goalSource: string) => {
+    const page = mountDrift({ session: stated(goalSource), facts: FACTS });
+    await page.settle();
+    await openActivity();
+    await page.settle();
+    await openActivity();
+    return document.body.textContent ?? '';
+  };
+
+  it('does not say a /goal that was not cut could not be read whole', async () => {
+    const text = await noteOf('whole');
+    expect(text).not.toContain('could not be read whole');
+    expect(text).not.toContain('The adopted source was found');
+  });
+
+  it('still says so for a /goal the producer measured as cut', async () => {
+    expect(await noteOf('excerpt')).toContain('The adopted source could not be read whole');
+  });
+});
+
 /* The one read the page makes for the reader: the press they started has stored a reading that cites entries
    the board does not hold. Nothing else loads a page. */
 describe('a finished press that cites an entry the page does not list', () => {

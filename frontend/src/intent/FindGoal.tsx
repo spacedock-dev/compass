@@ -97,16 +97,16 @@ export function FoundCites() {
       </small>
       {/* The words the goal was taken from, which the server checked as verbatim in each prompt. The popover
           shows the entry as the activity list abbreviates it, so these are what tie the goal to the prompt. */}
-      {found.cites.flatMap((cite) => {
+      {found.cites.map((cite) => {
         const n = number(cite.factId, cite.ordinal);
         const where = n ? `#${n}` : clockText(cite.at ?? found.foundAt);
-        return cite.quotes.map((quote, index) => (
+        return (
           <small
-            key={`${cite.factId}:${index}`}
+            key={cite.factId}
             className="next-cockpit-held-source"
             data-next-found-quote
-          >{`${where} “${quote}”`}</small>
-        ));
+          >{`${where} ${cite.quotes.map((quote) => `“${quote}”`).join(' ')}`}</small>
+        );
       })}
       {missing ? (
         <p className="next-cockpit-held-absent" data-next-found-cites-missing>

@@ -15,6 +15,8 @@ import {
   CRITERION_KEYS,
   GOAL_VERDICT_CHECKS,
   GOAL_VERDICT_KEYS,
+  GOAL_VERDICT_REMOVAL_KEYS,
+  GOAL_VERDICT_REMOVAL_WHYS,
   GOAL_VERDICT_WHY,
   REASON_LINES,
   RESULTS,
@@ -51,6 +53,8 @@ interface Vocabulary {
   readonly goalVerdictKeys: string[];
   readonly goalVerdictChecks: string[];
   readonly goalVerdictWhys: string[];
+  readonly goalVerdictRemovalKeys: string[];
+  readonly goalVerdictRemovalWhys: string[];
   readonly workEvidenceByHarness: Record<string, string[]>;
   readonly checkResultWords: Record<string, string>;
   readonly checkNotRecorded: string;
@@ -108,6 +112,8 @@ describe('the reading vocabulary', () => {
     expect(sorted(GOAL_VERDICT_KEYS)).toEqual(sorted(vocabulary.goalVerdictKeys));
     expect(sorted(GOAL_VERDICT_CHECKS)).toEqual(sorted(vocabulary.goalVerdictChecks));
     expect(sorted(Object.keys(GOAL_VERDICT_WHY))).toEqual(sorted(vocabulary.goalVerdictWhys));
+    expect(sorted(GOAL_VERDICT_REMOVAL_KEYS)).toEqual(sorted(vocabulary.goalVerdictRemovalKeys));
+    expect(sorted(GOAL_VERDICT_REMOVAL_WHYS)).toEqual(sorted(vocabulary.goalVerdictRemovalWhys));
   });
 
   it('agrees on which entries demonstrate work, for every harness', () => {

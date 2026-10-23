@@ -34,10 +34,15 @@ const PERSON = fact('u1', 200, { type: 'user_message', by: 'person:me', summary:
 const FACTS = [PERSON, failedCheck('c1', 500), passedCheck('c2', 600)];
 /* The level the server derives from the stored reading: Compass's own, which a claim never moves. */
 const HIGH = { analysis_levels: [analysisRow('claude')] };
-const checked = (check: string, why: string, at = VERDICT_AT) => ({
+const checked = (
+  check: string,
+  why: string,
+  at = VERDICT_AT,
+  extra: Record<string, unknown> = {},
+) => ({
   annotation_assessment: {
     ...DEPARTURE_READING,
-    goal_verdict: { at, check, why, cites: [] },
+    goal_verdict: { at, check, why, cites: [], ...extra },
   },
   annotation_reading_count: 1,
 });
@@ -109,6 +114,31 @@ export const ClaimDisputedWhereTheRecordUndoesIt: Story = {
         /^High: 1 departure/,
       ),
     );
+  },
+};
+
+/* The record after the verdict deletes a file the reason names (a real session: the harness said met over a file
+   a later turn removed). Compass says disputed and names the file and the moment, where it would otherwise only
+   say it could not confirm. */
+export const ClaimDisputedByAFileTakenAway: Story = {
+  ...scenario({
+    session: {
+      ...claimed,
+      ...checked('disputed', 'deleted-after', VERDICT_AT, {
+        path: 'docs/e2e/notes.md',
+        changed_at: VERDICT_AT + 90,
+      }),
+    },
+    facts: FACTS,
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'disputed');
+    await expect(node).toHaveTextContent(
+      /Compass disputes it: docs\/e2e\/notes\.md was deleted at (\d{4}-\d{2}-\d{2} )?\d{1,2}:\d{2}, after the verdict\. Compass’s own reading stands\./,
+    );
+    await expect(node.textContent).not.toContain('could not confirm');
   },
 };
 

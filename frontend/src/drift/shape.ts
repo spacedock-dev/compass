@@ -2,7 +2,7 @@ import { nextNumber } from '../api/bootstrap';
 import { annotationLines, OUTCOME_LINES_MAX, type Annotation } from '../intent/annotation';
 import { conflictCandidates, type WorkEntry } from '../intent/work';
 import { isRecord, type Row } from '../observed';
-import { PROMPT_SOURCES } from '../sessions/intent';
+import { PROMPT_SOURCES, SESSION_GOAL } from '../sessions/intent';
 import {
   ASSISTANT_ONLY,
   BASELINE_OPEN,
@@ -20,6 +20,8 @@ import {
   GOAL_UNCLEAR_RESULT,
   GOAL_VERDICT_CHECKS,
   GOAL_VERDICT_KEYS,
+  GOAL_VERDICT_REMOVAL_KEYS,
+  GOAL_VERDICT_REMOVAL_WHYS,
   GOAL_VERDICT_WHY,
   MALFORMED,
   NOT_REACHED,
@@ -571,13 +573,26 @@ export interface GoalVerdictCheck {
   readonly check: string;
   readonly why: string;
   readonly cites: readonly string[];
+  /** The file a removal dispute rests on and when the record shows it taken away. */
+  readonly path?: string;
+  readonly changed_at?: number;
 }
 
 export function readingGoalVerdict(raw: unknown): GoalVerdictCheck | null {
+  if (!isRecord(raw) || GOAL_VERDICT_KEYS.some((key) => !Object.hasOwn(raw, key))) return null;
+  const extra = Object.keys(raw).filter((key) => !GOAL_VERDICT_KEYS.includes(key));
+  /* The file and the moment come together and only with a removal token; anything else is a reading this
+     build cannot read. */
   if (
-    !isRecord(raw) ||
-    Object.keys(raw).length !== GOAL_VERDICT_KEYS.length ||
-    GOAL_VERDICT_KEYS.some((key) => !Object.hasOwn(raw, key))
+    extra.length &&
+    (extra.length !== GOAL_VERDICT_REMOVAL_KEYS.length ||
+      extra.some((key) => !GOAL_VERDICT_REMOVAL_KEYS.includes(key)) ||
+      !GOAL_VERDICT_REMOVAL_WHYS.includes(raw['why'] as string) ||
+      typeof raw['path'] !== 'string' ||
+      !raw['path'] ||
+      typeof raw['changed_at'] !== 'number' ||
+      !Number.isFinite(raw['changed_at']) ||
+      raw['changed_at'] <= 0)
   ) {
     return null;
   }
@@ -614,6 +629,12 @@ export function windowPartial(shape: {
 
 /* A line's row names where the line came from, but only while the reading read the words shown now: under a
    reading of an older revision today's source would be a claim about words it never read. */
+/* The goal line's heading by where the adopted words came from: a /goal the session set is named for it,
+   not for the reader's prompt. */
+function promptGoalLabel(source: Row): string {
+  return source['goal_source'] === SESSION_GOAL ? 'GOAL FROM /GOAL' : 'GOAL FROM YOUR PROMPT';
+}
+
 function lineLabel(
   key: string,
   label: string,
@@ -755,7 +776,7 @@ export function readingShape(
       return criterion(
         key,
         key === 'goal' && promptSource
-          ? 'GOAL FROM YOUR PROMPT'
+          ? promptGoalLabel(source)
           : lineLabel(key, label, row, annotation, historical, lineSource),
         readingClause(key, row, annotation, historical),
         row,
@@ -796,7 +817,7 @@ export function readingShape(
     readClauses: constraints
       .filter(([key]) => key !== CLAIMS)
       .map(([key, label]): readonly [string, string] => [
-        key === 'goal' && promptSource ? 'GOAL FROM YOUR PROMPT' : label,
+        key === 'goal' && promptSource ? promptGoalLabel(source) : label,
         readingClause(key, rows[key] as Row | undefined, annotation, historical),
       ]),
     stamp: String(source['stamp'] || ''),

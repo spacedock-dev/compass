@@ -57,7 +57,7 @@ const FOUND = {
         fact_id: 'f1',
         ordinal: 1,
         at: 1_760_000_100,
-        quotes: ['add a retry to the upload client'],
+        quotes: ['add a retry to the upload client', 'resume where it stopped'],
       },
       { fact_id: 'f2', ordinal: 3, at: 1_760_000_300, quotes: ['make sure the existing tests'] },
     ],
@@ -305,7 +305,10 @@ export const AFoundGoalWithItsCitations: Story = {
     await expect(cites.map((cite) => cite.textContent)).toEqual(['[1]', '[3]']);
     await expect(
       [...card.querySelectorAll('[data-next-found-quote]')].map((quote) => quote.textContent),
-    ).toEqual(['#1 “add a retry to the upload client”', '#3 “make sure the existing tests”']);
+    ).toEqual([
+      '#1 “add a retry to the upload client” “resume where it stopped”',
+      '#3 “make sure the existing tests”',
+    ]);
     await expect(cites[0]?.getAttribute('aria-label')).toBe(
       'Show #1 in Full activity for the detected goal',
     );
