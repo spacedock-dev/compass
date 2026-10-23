@@ -22,8 +22,11 @@ session page's heading, the browser tab title and the breadcrumb, a session with
 was a command (`first_prompt_control`) reads "No name: the session opened with a command" where the
 recording says "Title not published", since the prompt was published and Compass declined to name the session
 by it. `detail.differential.test.tsx` restates that heading on the recorded side
-(`projectRecordedCommandOpener`) so every other word stays held to the recording. A Sessions row keeps the
-title as published, as above. Golden files are unchanged.
+(`projectRecordedCommandOpener`) so every other word stays held to the recording. A Sessions row, the
+project and activity lists and the waiting panel say the same, because every surface that names a session says
+the same thing for it. The generated differential tests restate the phrase on the recorded side for exactly the
+rows marked `first_prompt_control` (`frontend/test/recordedCommandOpener.ts`), including the one coverage
+caveat that lists each distinct reason a title is missing. Golden files are unchanged.
 
 2026-10-21, departure cards and Steer back read as the redesign draws them
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-departure-cards-and-steer-back-read-as-the-design-does)):

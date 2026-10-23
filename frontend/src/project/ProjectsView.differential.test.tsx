@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { genPayload } from '../observed/generate.test.helper';
+import { restateLiveOpener } from '../../test/recordedCommandOpener';
 import { mountShell } from '../shell/testing';
 import { genBoard, scenarios } from './generate.test.helper';
 import { loadLegacyApp, parseHtml } from './legacy.test.helper';
@@ -74,6 +75,7 @@ async function mine(payload: unknown): Promise<Summary> {
   await page.settle();
   const root = page.container.querySelector('[data-next-view-body="projects"]');
   if (!root) throw new Error('The Projects list did not draw.');
+  restateLiveOpener(root);
   const result = summarize(root);
   page.unmount();
   return result;

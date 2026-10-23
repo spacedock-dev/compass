@@ -244,7 +244,7 @@ export function observeSession(
     project: labelOf(source),
     focusable: source['focusable'] == null ? false : source['focusable'],
     resume_id: source['resume_id'] == null ? null : source['resume_id'],
-    ...pair('title', source['title'], 'Title not published'),
+    ...pair('title', source['title'], noTitleText(source)),
     ...pair('prompt', source['last_prompt'], 'Last prompt not published'),
     ...pair('now', nowValue, stateKnown ? 'Activity not published' : 'No state published'),
     ...pair('next', pending?.['subject'], 'No pending step published'),

@@ -134,6 +134,27 @@ describe('the groups', () => {
     );
   });
 
+  it('words a session that opened with a command as the page heading does, on its row and its link', async () => {
+    await open(
+      board([
+        {
+          harness: 'claude',
+          sid: 'cmd',
+          project: 'p',
+          state: 'idle',
+          first_prompt: '/goal a file exists',
+          first_prompt_control: true,
+        },
+      ]),
+    );
+    const row = document.querySelector('article[data-next-session="cmd"]');
+    expect(row?.textContent).toContain('No name: the session opened with a command');
+    expect(row?.textContent).not.toContain('Title not published');
+    expect(row?.querySelector('a.next-operation-route')?.getAttribute('aria-label')).toContain(
+      'No name: the session opened with a command',
+    );
+  });
+
   it('leads each row with one state word and shows the project label alone as where', async () => {
     await open(data);
     const state = (sid: string) =>

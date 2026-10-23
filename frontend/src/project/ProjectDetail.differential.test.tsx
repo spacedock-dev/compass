@@ -10,6 +10,7 @@ import { arrange, labelsOf } from './arrange.test.helper';
 import { genBoard, genContext, parityBoard, scenarios } from './generate.test.helper';
 import { sessKey, stableKey } from './group';
 import { parseHtml } from './legacy.test.helper';
+import { restateLiveOpener } from '../../test/recordedCommandOpener';
 import { memoKey } from '../storage';
 import { mountProject } from './testing';
 
@@ -238,6 +239,7 @@ describe('the project page reads as the legacy page does, over generated boards'
         if (failures.length >= 3) break;
         continue;
       }
+      restateLiveOpener(article);
       const mine = summarize(article, tab);
       page.unmount();
       compared += 1;
@@ -297,6 +299,7 @@ describe('the browser proof’s own board reads the same on both pages', () => {
         if (!context) page.state.held.add(`${stable}\n`);
         await page.settle();
         const article = page.container.querySelector('article.next-project-detail');
+        if (article) restateLiveOpener(article);
         const mine = article ? summarize(article, tab) : null;
         page.unmount();
         compared += 1;

@@ -140,6 +140,27 @@ describe('an end is only what was observed', () => {
   });
 });
 
+describe('a session that opened with a command is worded the same on its row as on its page', () => {
+  it('says it was not named, not that no title was published', () => {
+    const [row] = observe(
+      board([
+        {
+          harness: 'claude',
+          sid: 'g',
+          project: 'p',
+          state: 'idle',
+          first_prompt: '/goal a file exists',
+          first_prompt_control: true,
+        },
+      ]),
+    ).sessions;
+    expect(row).toMatchObject({
+      titleText: 'No name: the session opened with a command',
+      titleKnown: false,
+    });
+  });
+});
+
 describe('a fact that was not measured says why, and never reads as a figure', () => {
   const [row] = observe(
     board([{ harness: 'cursor', sid: 's', project: 'p', state: 'working' }]),
