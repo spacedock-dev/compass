@@ -118,7 +118,7 @@ requires both interaction flags and registration from inside the selected sessio
 and accepts no input. Its xterm assets are vendored and served from loopback.
 
 Exact session detail is reachable from Sessions, cockpit session links and the Intent log. The
-page is one column at every width. It opens with the session's name, its state beside a status dot
+page is one column at every width. It opens with the session's name (a Claude Code session holding a `/goal` is named by that goal, so a replaced or cleared `/goal` never names it; a generated title still wins), its state beside a status dot
 and what it is doing, then the question first when the session is waiting on you. Then come the
 **Intent** card with the goal and the expected outcome lines you typed, a **What the session has
 done** card, and a **Drift** card with the `Analyze drift` control, what an analysis reads and
