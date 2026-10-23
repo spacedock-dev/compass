@@ -69,31 +69,31 @@ disabled rather than silently missing.
 current turn it is, and an estimate of when that turn ends. It tells you when that changes instead
 of making you poll. The first screen sets your goal or a permitted prompt beside current activity
 and brings recorded departures forward. The session page tells you once what a reading sends and
-where, without steering it for you. Pause model calls stops Analyze drift, goal summaries and
-session summaries until Resume model calls. Turn off summaries stops session summaries only;
-while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
-press Analyze drift. The How Intent and drift works entry in the Intent card's More menu explains the steps and
-the limits; with no outcome line, Compass reads your goal's end state; a goal too vague to read is
-refused under the Goal field, with no level for that run.
-On Claude Code sessions, you can turn on a live drift estimate in the panel and header after every
-turn, based on recorded checks and file paths rather than the meaning of your intent. An analysis
-shows its level, each outcome line against the recorded work and what the agent said with its
-source, where files were written, and why a result is stale. Recorded checks and file paths include subagent work, labelled
-as such.
-On Claude Code sessions, What the session has done tells the session as a short story in phases,
-each line citing the entries it rests on, written by a model through your own Claude Code. A finished
-session is summarized when you open it and a running one when you press Summarize or Update summary;
-the first summary says what is sent and where, with Turn off summaries beside it. A summary does not
-say in its own voice that the work is done, and a citation shows where a line came from, not that the
-line is right.
-Reader-requested readings are capped at 100 attempts per rolling twenty-four hours. With no saved
-goal, a check adopts the goal drafted from your first Claude Code or Codex prompt (your latest
-where no first one with a time is published); the goal field also offers your latest prompt.
-Adopted words are marked, and missing source times refuse adoption.
-Claude Code and Codex hooks also report matched destructive command shapes; a match does not
-prove success. Compass saves a stage you choose for a Spacedock workflow and alerts once when
-it observes an entity enter that stage; gaps and unavailable sources are stated, and a
-notification request does not prove a banner appeared.
+where, without steering it for you. Pause model calls stops Analyze drift, goal summaries, session
+summaries and the Live monitor until Resume model calls. Turn off summaries stops session summaries
+only; while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
+press Analyze drift. The How Intent and drift works entry in the Intent card's More menu explains
+the steps and the limits; with no outcome line, Compass reads your goal's end state; a goal too
+vague to read is refused under the Goal field, with no level for that run. On Claude Code sessions,
+you can turn on the Live monitor: about once a minute while you view the session, a Haiku check
+through your own Claude Code gives the level shown in the panel and header, labelled Live monitor ·
+Haiku, and its accuracy check has not been run yet. Until a check returns, or when it is paused,
+capped or fails, the level is the estimate from recorded checks and file paths rather than the
+meaning of your intent. An analysis shows its level, each outcome line against the recorded work and
+what the agent said with its source, where files were written, and why a result is stale. Recorded
+checks and file paths include subagent work, labelled as such. On Claude Code sessions, What the
+session has done tells the session as a short story in phases, each line citing the entries it rests
+on, written by a model through your own Claude Code. A finished session is summarized when you open
+it and a running one when you press Summarize or Update summary; the first summary says what is sent
+and where, with Turn off summaries beside it. A summary does not say in its own voice that the work
+is done, and a citation shows where a line came from, not that the line is right. Reader-requested
+readings are capped at 100 attempts per rolling twenty-four hours. With no saved goal, a check
+adopts the goal drafted from your first Claude Code or Codex prompt (your latest where no first one
+with a time is published); the goal field also offers your latest prompt. Adopted words are marked,
+and missing source times refuse adoption. Claude Code and Codex hooks also report matched
+destructive command shapes; a match does not prove success. Compass saves a stage you choose for a
+Spacedock workflow and alerts once when it observes an entity enter that stage; gaps and unavailable
+sources are stated, and a notification request does not prove a banner appeared.
 
 Backed by the current-turn elapsed and ETA estimate with its progress bar, the warning that fires
 when a request runs or is projected to run past fifteen minutes, a pill per subagent carrying its
@@ -107,9 +107,11 @@ the source disappears. The first qualifying entity trips it once until Rearm; fi
 establish a baseline, skipped stages imply nothing, and notification service acceptance does not
 prove a banner appeared. See [workflow stage conditions](design-tripwires.md).
 
-The Claude Code live monitor is off by default and remembered for the session in your browser.
-It calls no model and raises no notification. An analysis result keeps the source beside each
-outcome line, groups written paths by folder, and states whether your words changed or new work
+The Claude Code live monitor is off by default and is not remembered across reloads. It calls Haiku
+only while you view the session with its tab visible, asks whether you still want it after 20
+minutes, and raises no notification. Its checks have limits of their own, 30 per session in a window
+and a rolling 24-hour limit across the board, apart from Analyze's 100 attempts. An analysis result
+keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
 Once a reading exists the card header carries a re-run control: `Check again` when new work or
 changed words came after the reading, `Analyze again` when it is current. It is inert, not gone,
@@ -202,7 +204,8 @@ answering, as the [ask lane design](design-ask-lane.md) describes.
 
 Compass can now check a session against your words while you are away and raise a departure
 without being asked, which is off by default and the only thing here that spends your model capacity
-with nobody watching. Where it stops is the part worth reading: it raises a departure and never a
+with nobody watching. The Live monitor does not: it calls a model only while a reader is viewing the
+session. Where it stops is the part worth reading: it raises a departure and never a
 reassurance, because an unasked "this looks fine" is the output the evidence-floor ruling called
 most damaging and it is worth nothing to someone who is not at the desk. It sends a check only
 with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and other

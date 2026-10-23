@@ -2422,3 +2422,97 @@ class ClaudeReaderLimitIsSaidInTwoPlacesTest(unittest.TestCase):
         self.assertIn(f'CLAUDE_READER_LIMIT =\n  "{self.SENTENCE}"', sentences)
         how_to = (self.ROOT / "frontend/src/intent/HowTo.tsx").read_text(encoding="utf-8")
         self.assertIn("{CLAUDE_READER_LIMIT}", how_to)
+
+
+class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
+    """The Live monitor calls Haiku about once a minute while a session is viewed, and every page says so.
+
+    The owner ruled it on 2026-10-23 (DEC-26's amendment of that date). The model-free estimate is the
+    monitor's fallback and still calls no model, so a sentence may say that of the estimate and may not say
+    it of the monitor.
+    """
+
+    ROOT = SERVER_PATH.parents[3]
+    PAGES = (
+        "README.md",
+        "HOW_TO_USE.md",
+        "MANUAL.md",
+        "SECURITY.md",
+        "docs/promise-map.md",
+        "compass/skills/compass/SKILL.md",
+    )
+
+    def _text(self, relative: str) -> str:
+        return re.sub(r"\s+", " ", (self.ROOT / relative).read_text(encoding="utf-8"))
+
+    def test_no_user_facing_page_says_the_monitor_calls_no_model(self) -> None:
+        retired = re.compile(
+            r"(?i)live monitor[^.]{0,240}(calls no model|with no model call|needs no model|never sent to the server)"
+        )
+        for relative in self.PAGES:
+            with self.subTest(page=relative):
+                self.assertIsNone(retired.search(self._text(relative)))
+
+    def test_no_shipped_docstring_says_the_monitor_calls_no_model(self) -> None:
+        runtime = SERVER_PATH.parent / "compass_runtime"
+        retired = re.compile(
+            r"(?i)live monitor[^.]{0,200}(calls no model|with no model call|needs no model)"
+        )
+        for path in sorted(runtime.glob("*.py")):
+            with self.subTest(module=path.name):
+                self.assertIsNone(
+                    retired.search(re.sub(r"\s+", " ", path.read_text(encoding="utf-8")))
+                )
+
+    def test_the_pages_say_it_calls_haiku_and_the_accuracy_check_has_not_run(self) -> None:
+        for relative in ("README.md", "docs/promise-map.md", "compass/skills/compass/SKILL.md"):
+            text = self._text(relative)
+            with self.subTest(page=relative):
+                self.assertIn("Live monitor · Haiku", text)
+                self.assertRegex(text, r"(?i)accuracy check has not been run")
+                self.assertRegex(text, r"(?i)about once a minute")
+
+    def test_security_lists_the_monitor_with_what_it_sends_and_every_stop(self) -> None:
+        text = self._text("SECURITY.md")
+        raw = (self.ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        row = next(line for line in raw.splitlines() if line.startswith("| A Live monitor check"))
+        for stop in (
+            "the switch",
+            "leaving the session",
+            "hiding the tab",
+            "the session ending",
+            "Pause model calls",
+            "`--no-observer-model`",
+            "the 20-minute question",
+        ):
+            self.assertIn(stop, row)
+        self.assertIn("--claude-monitor-model", text)
+        self.assertIn("Haiku", row)
+
+    def test_pause_lists_the_monitor_and_the_amendment_heading_is_unchanged(self) -> None:
+        summary = (self.ROOT / "docs/design-session-summary.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "### Amended 2026-10-19: Pause model calls, with the summaries switch nested under it",
+            summary,
+        )
+        later = summary.split("### Amended 2026-10-19: Pause model calls", 1)[1]
+        heading = re.search(
+            r"^### Amended 2026-10-23 \(owner\): the Live monitor[^\n]*$", later, re.MULTILINE
+        )
+        self.assertIsNotNone(heading)
+        self.assertIn(
+            "Pause model calls",
+            later.split(heading.group(0), 1)[1].split("\n### ", 1)[0] if heading else "",
+        )
+        self.assertIn("the Live monitor", self._text("docs/promise-map.md"))
+        self.assertRegex(
+            self._text("docs/promise-map.md"),
+            r"Pause model calls stops Analyze drift, goal summaries, session summaries and the Live monitor",
+        )
+
+    def test_the_unasked_lane_stays_the_only_path_that_spends_with_nobody_watching(self) -> None:
+        text = self._text("docs/promise-map.md")
+        self.assertIn(
+            "The Live monitor does not: it calls a model only while a reader is viewing the session.",
+            text,
+        )

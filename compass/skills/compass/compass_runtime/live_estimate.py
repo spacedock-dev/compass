@@ -1,5 +1,9 @@
 """The live drift estimate for one Claude Code session, replayed without a model (DRC-4696).
 
+This is the model-free level, and it still calls no model. It is the fallback the Live monitor uses:
+the monitor's own Haiku check is `live_monitor`, and its level replaces this one on the page once a
+check has returned.
+
 Items 2 to 6 of
 [DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn).
 `levels.live_level` is the estimate; this module feeds it. It replays the session's calls through

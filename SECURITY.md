@@ -11,7 +11,8 @@ data. The model lane is the one path that can send session content off this mach
 reader's action starts (a focused refresh for a goal line, a press for a reading, or the open of a
 finished session or a press for a session summary) runs without a prior question and shows a
 one-time, non-blocking notice naming what is sent and where, with its off switch beside it: Pause
-model calls for a reading or a goal line, Turn off summaries for a summary. Unasked drift checks stay off by default, and `--no-observer-model` refuses
+model calls for a reading or a goal line, Turn off summaries for a summary. Turning on the Live monitor
+starts a Haiku check about once a minute for as long as the session is viewed, and shows its own notice. Unasked drift checks stay off by default, and `--no-observer-model` refuses
 every model call.
 [Observer model calls](#observer-model-calls) states its bounds;
 [Light harness usage](#light-harness-usage-asking-a-harness-a-bounded-question) states the notice rule.
@@ -344,7 +345,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause model calls) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |
 | An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
 | A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
-| The live drift estimate | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
+| The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
 | A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
@@ -1333,7 +1334,9 @@ that could drift. These are the paths that can send session content off the
 machine. A reading of a Claude Code session is made by Claude Code when `claude` is on the
 server's PATH, and by Codex when it is not: Codex then spends the operator's Codex capacity and
 sends that session's evidence to OpenAI, and the disclosure before the press says which. A reader-requested reading requires the remembered answer and rolling budget above; an
-unasked reading requires `--unasked-readings`. `--no-observer-model` always wins over both.
+unasked reading requires `--unasked-readings`. `--no-observer-model` always wins over both. The Live
+monitor is a third reader-started path, to Claude Code and on to Haiku only; [The Live
+monitor](#the-live-monitor) states what it sends and every way it stops.
 
 Two requests can reach the model. A focused `/api/project-context` refresh can summarize the
 focused session and up to three active children whose assignment is unavailable.
@@ -2296,8 +2299,9 @@ with a `monitor` notice shown before the first charged call.
   this session's own record only. The recent window is sent again by each later check, and again each
   time the switch is turned off and on. Where Compass cannot name the destination, checks and paths are
   not sent, as for Analyze. No command output, file contents or other tool output is sent.
-- How it runs. A supervised `claude --print` child on an explicit Haiku id, with no tools and no session
-  persistence, in a private working directory. It is never resumed into or injected into the watched
+- How it runs. A supervised `claude --print` child on an explicit Haiku id, set with `--claude-monitor-model`
+  (default `claude-haiku-5-5`; only an explicit Haiku id is accepted, and the reading model's Sonnet floor is
+  unchanged), with no tools and no session persistence, in a private working directory. It is never resumed into or injected into the watched
   session. Nothing is written into the session.
 - What holds it. A lease in memory, one per session, held by any number of tabs. A tab beats about every
   20 seconds, and a visible tab that stops for 50 seconds has left. A hidden tab pauses the checks and
@@ -2305,8 +2309,11 @@ with a `monitor` notice shown before the first charged call.
   nobody answers the 20-minute question within 10 minutes, or a cap is spent. A restart starts with no
   lease and makes no check until a page starts one.
 - What caps it. At least 60 seconds between two checks of a session, 30 checks per session per window,
-  and its own rolling 24-hour cap across the board, kept apart from Analyze's. A check cancelled by an
+  and its own rolling 24-hour cap across the board (240 checks at present), kept apart from Analyze's. A check cancelled by an
   Analyze press is not refunded.
+- What is not known yet. The page labels its level `Live monitor · Haiku`, and its accuracy check has not
+  been run: it ships labelled and is qualified later, so read its level as an account of the latest turns,
+  not a measurement.
 - What it never does. It never feeds or triggers the unasked lane and never raises a notification.
   The estimate stays as the level when the check is paused, capped, failed or has not run.
 

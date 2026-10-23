@@ -116,6 +116,24 @@ The earlier explicit `allow: true` request remains accepted for older pages, inc
 its destination checks. Summary presses keep `{consent: "off"}` and `{consent: "on"}`;
 while paused they answer 403 without changing the saved summary answer.
 
+### Amended 2026-10-23 (owner): the Live monitor is a call a reader starts, and Pause stops it
+
+The Live monitor's Haiku check is a model call a reader's action starts, in the sense of
+[the widening](#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts): the reader turns the
+switch on, and a `monitor` notice names what is sent and where. It has its own notice kind, its own rolling
+cap, apart from Analyze's, and no grant of its own, so consent for it means model calls are not paused.
+[The ruling](design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)
+holds the cadence, the caps and the stops.
+
+- **Paused:** Pause model calls stops the monitor with the other calls. Every lease ends `paused`, a check in
+  flight is killed and its reply cannot publish, and a start is refused while paused. The estimate from
+  checks and file paths stays as the level.
+- **Resumed:** the monitor does not restart. Resume changes permission only, so a reader turns the switch on
+  again, and nothing is remembered across a reload.
+- **Startup refusal:** `--no-observer-model` refuses the monitor like every other call, and a start under it
+  is refused.
+- **Turn off summaries:** does not touch the monitor, as it does not touch Analyze.
+
 ### Amended 2026-10-21 (owner): Discard everything also deletes the summary
 
 The owner reversed the part of answer 3 that kept the summary through Discard everything. A reader
