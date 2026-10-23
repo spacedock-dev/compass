@@ -1789,15 +1789,17 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
     def test_the_pull_request_and_skill_reads_are_named_and_counted(self) -> None:
         # Neither read matches the `input` / `arguments` pattern above: the skill's name is read from
         # an input the check scan already holds, and a pull request from a result's
-        # `gitOperation`. They are counted here so a second place that reads either fails until
+        # `gitOperation`, through `toolUseResult`. They are counted here so a second place that reads either fails until
         # SECURITY.md names it (owner, 2026-10-23).
-        pattern = r'"gitOperation"|\.get\("skill"\)'
+        pattern = r'"gitOperation"|\.get\("skill"\)|\.get\("toolUseResult"\)'
         found = {
             path.name: len(re.findall(pattern, text))
             for path in sorted(self.RUNTIME.rglob("*.py"))
             if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
         }
-        self.assertEqual({"project_context.py": 2}, found)
+        # `observer.py` reads the question tool's own result and `project_context.py` three others
+        # besides the pull request read; each is another place a result's structured field is read.
+        self.assertEqual({"observer.py": 1, "project_context.py": 5}, found)
         for phrase in (
             "the `skill` name of a `Skill` call",
             "`toolUseResult.gitOperation.pr` (`number`, `url`, `action`)",

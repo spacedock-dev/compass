@@ -3104,8 +3104,13 @@ and neither read from shell text.
 
 Both are `tool_report` facts (subjects `pr` and `skill`), so they ride the existing admission: a reading is sent
 them only under the tool-output grant for a named destination, beside checks and written paths, and the
-unasked lane never receives them. They count within the same twelve-entry cap, ranked with the passes (a pull
-request) and the written paths (a skill). A reading may cite either as `consistent` for a line the fact
+unasked lane never receives them. The consent sentence says so: "the repository and number of a pull request
+it created, and the names of skills it used", and because the sentence changed, a reader who allowed tool output
+before is asked again. A pull request ranks with the passes and is listed beside the twelve-entry cap when newer
+entries would push it out (up to twelve more), because the verdict check reads the listing. A skill ranks after
+every other entry, so it can never push out a written path; a dropped path would be counted as outside the named
+folders and raise the live level. Under the prompt's byte bound a pull request is reserved like a pass and a
+skill after a write. A reading may cite either as `consistent` for a line the fact
 shows done, inside the evidence window. Neither can carry a departure, since neither has a result that can fail.
 
 The owner also ruled that `git commit` and `git push` keep counting as commands that may change files. That rule
@@ -5611,7 +5616,7 @@ claim, and Compass's own level stands either way.
 [The 2026-10-22 amendment](#amended-2026-10-22-a-goal-met-verdict-is-a-claim) lists the facts a verdict's reason
 may cite as the files it names and the kinds of check it says passed. A third is added by
 [the pull request and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts) to DEC-23: a pull request
-the reason names, as `PR #7`, `pull request #7`, `pull/7` or a `github.com/<owner>/<repo>/pull/7` URL, which
+the reason names, as `PR #7`, `PR 7`, `PR (#7)`, `pull request #7`, a list (`PRs #6 and #7`, `PRs #7, #8`), `pull/7` or a `github.com/<owner>/<repo>/pull/7` URL (a bare `#7` is not read, because it is as often an issue), which
 agrees when the record holds a created-pull-request fact for that number (and that repository, where the reason
 gives one) at or before the verdict and no earlier than the goal's own set time. The stored `why` for it is
 `pr-created-before`. A written file the reason names still agrees first, and a failed check of a claimed kind

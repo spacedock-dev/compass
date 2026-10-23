@@ -2461,7 +2461,7 @@ NONFINAL_CLAIMS_RULE = (
 )
 
 
-def _priority(entry: LedgerEntry) -> int:
+def _priority(entry: LedgerEntry) -> int:  # noqa: PLR0911 - one return per kind of entry
     """Which entries the byte bound reserves first (lower is earlier)."""
     if entry["author"] == AUTHOR_PERSON:
         return 0
@@ -2473,6 +2473,12 @@ def _priority(entry: LedgerEntry) -> int:
         return _CHECK_PRIORITY.get(entry.get("result", ""), _CHECK_PRIORITY["not-recorded"])
     if entry.get("subject") == WRITE_SUBJECT:
         return _WRITE_PRIORITY
+    # A created pull request is reserved like a pass, so no write outlasts it; a skill after a write
+    # (owner review, 2026-10-23), as the collector's own cap ranks them.
+    if entry.get("subject") == PR_SUBJECT:
+        return _CHECK_PRIORITY[RESULT_PASSED]
+    if entry.get("subject") == SKILL_SUBJECT:
+        return _WRITE_PRIORITY + 1
     # The agent's messages last, below a write: a long session says far more
     # than it does, and a hundred newer messages dropped the older write that
     # showed what it did (review, 2026-10-03).
@@ -4323,22 +4329,29 @@ def _verdict_files(reason: str) -> tuple[str, ...]:
     return tuple(path for path in _path_tokens(text, files=True) if _VERDICT_FILE.fullmatch(path))
 
 
-# A pull request the evaluator's prose names: "PR #7", "pull request #7", or a `pull/7` path,
-# which may carry the repository before it (owner, 2026-10-23).
-_VERDICT_PR = re.compile(
-    r"(?:github\.com/(?P<repo>[\w.-]+/[\w.-]+)/pull/|\bpull/|\bPRs?\s*#|\bpull\s+requests?\s*#)"
-    r"(?P<number>\d+)\b",
+# A pull request the evaluator's prose names: "PR #7", "PR 7", "PR (#7)", "pull request #7", a list
+# of them ("PRs #6 and #7", "PRs #7, #8"), or a `pull/7` path, which may carry the repository
+# before it (owner, 2026-10-23). A bare "#7" is not read: it is as often an issue.
+_VERDICT_PR_URL = re.compile(
+    r"(?:github\.com/(?P<repo>[\w.-]+/[\w.-]+)/pull/|\bpull/)(?P<number>\d+)\b", re.IGNORECASE
+)
+_VERDICT_PR_LIST = re.compile(
+    r"\b(?:PRs?|pull\s+requests?)\s*\(?\s*(?P<list>#?\d+\b(?:\s*(?:,|and|&)\s*#?\d+\b)*)",
     re.IGNORECASE,
 )
 
 
 def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
-    return tuple(
-        dict.fromkeys(
-            ((found["repo"] or "").lower(), int(found["number"]))
-            for found in _VERDICT_PR.finditer(reason)
-        )
+    named = [
+        ((found["repo"] or "").lower(), int(found["number"]))
+        for found in _VERDICT_PR_URL.finditer(reason)
+    ]
+    named.extend(
+        ("", int(number))
+        for found in _VERDICT_PR_LIST.finditer(reason)
+        for number in re.findall(r"\d+", found["list"])
     )
+    return tuple(dict.fromkeys(named))
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:

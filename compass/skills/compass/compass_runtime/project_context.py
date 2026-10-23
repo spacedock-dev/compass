@@ -2166,13 +2166,15 @@ _WRITE_RANK = 2
 # A created pull request ranks with the passes: it is the outcome a goal such as "create a PR" asks
 # for, so a cap of twelve may not drop it behind written paths. A skill ranks with the paths.
 _PR_RANK = 1
-_SKILL_RANK = 2
+# After the launches and every counted entry: `_folder_share` counts a written path the cap dropped
+# as outside the named folders, so a skill ranked with the writes could raise the live level.
+_SKILL_RANK = 5
 # Closed shapes: the only text of a PR or a skill that reaches a record. The URL is rebuilt from
 # the matched parts, so nothing past the number (a line break, an instruction) is ever kept.
 _PR_URL_RE = re.compile(
-    r"^https://github\.com/(?P<repo>[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100})/pull/(?P<number>[1-9][0-9]{0,8})$"
+    r"https://github\.com/(?P<repo>[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100})/pull/(?P<number>[1-9][0-9]{0,8})"
 )
-_SKILL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
+_SKILL_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}")
 # A true error flag is a run that exited nonzero only when Claude Code says so;
 # any other flagged result is a call that never ran: a rejection, a cancelled
 # parallel call, a sibling error, a hook block or an input error (measured:
@@ -3833,6 +3835,7 @@ class _ToolReportTally:
                     "outside_paths", "write_attempts", "not_run", "failed", "passed",
                     "not_recorded",
                     "listed", "more", "subagent_transcripts", "subagent_transcripts_unread",
+                    "pull_requests", "skills_used",
                 ),
                 0,
             ),
@@ -3880,11 +3883,13 @@ class _ToolReportTally:
         if not isinstance(pr, dict):
             return
         url = pr.get("url")
-        matched = _PR_URL_RE.match(url) if isinstance(url, str) else None
+        matched = _PR_URL_RE.fullmatch(url) if isinstance(url, str) else None
         if (
             matched is None
             or pr.get("action") != "created"
             or pr.get("number") != int(matched["number"])
+            # `.` and `..` are path steps, not names: nothing is built from them.
+            or any(set(part) == {"."} for part in matched["repo"].split("/"))
         ):
             return
         key = f"{matched['repo']}#{matched['number']}"
@@ -3909,7 +3914,7 @@ class _ToolReportTally:
             found is None
             or found.block.get("is_error") is True
             or not isinstance(name, str)
-            or _SKILL_NAME_RE.match(name) is None
+            or _SKILL_NAME_RE.fullmatch(name) is None
         ):
             return
         self.skills.setdefault(
@@ -4286,11 +4291,21 @@ class _ToolReportTally:
             if entry["subject"] == "check":
                 self.scan[str(entry["result"]).replace("-", "_")] += 1
         listed = candidates[:TOOL_REPORT_MAX_ENTRIES]
+        # A created pull request is what a goal such as "create a PR" rests on, and the verdict
+        # check reads the listing, so newer checks may not evict it: the newest of those the cap
+        # dropped are listed beside it, up to the cap again (owner review, 2026-10-23).
+        kept = [row for row in candidates[TOOL_REPORT_MAX_ENTRIES:] if row["subject"] == "pr"]
+        listed += kept[:TOOL_REPORT_MAX_ENTRIES]
         self.scan.update(
             distinct_checks=len(histories),
             written_paths=len(self.writes),
+            pull_requests=len(self.prs),
+            skills_used=len(self.skills),
             listed=len(listed),
-            more=sum(row["subject"] != "launch" for row in candidates[TOOL_REPORT_MAX_ENTRIES:]),
+            more=sum(
+                row["subject"] != "launch" and row not in listed
+                for row in candidates[TOOL_REPORT_MAX_ENTRIES:]
+            ),
             background_unpaired=sum(
                 row["count"] for row in self.launches.values() if row["completed_at"] is None
             ),

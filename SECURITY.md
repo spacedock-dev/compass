@@ -358,7 +358,8 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 ### The launch grant for tool output
 
 Tool output is included by default in a reader-pressed Claude Code reading when Compass can name
-its destination: a check's command, result, last 180 characters of output and written paths.
+its destination: a check's command, result, last 180 characters of output, written paths, the
+repository and number of a pull request it created, and the names of skills it used.
 [Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns the content bounds.
 `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do nothing for one release;
 they will be removed in a later release. They write no grant and need no forwarding on respawn.

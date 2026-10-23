@@ -185,7 +185,9 @@ export function checkScan(scan: Row | null | undefined): string {
   const other = nextNumber(scan['other_commands']) || 0;
   const more = nextNumber(scan['more']) || 0;
   const outside = nextNumber(scan['outside_paths']) || 0;
-  if (!runs && !background && !written && !other && !outside) {
+  const pulls = nextNumber(scan['pull_requests']) || 0;
+  const skills = nextNumber(scan['skills_used']) || 0;
+  if (!runs && !background && !written && !other && !outside && !pulls && !skills) {
     return 'No check ran in the part of the transcript read.';
   }
   /* The latest results, always, so a failure is never left for the listed rows alone to carry; the files are a
@@ -197,6 +199,10 @@ export function checkScan(scan: Row | null | undefined): string {
   if (written) files.push(count(written, 'file written', 'files written'));
   if (outside)
     files.push(`${count(outside, 'file', 'files')} written outside the working directory`);
+  /* Said apart from the files and the latest runs: neither is a check, and neither has a result to fail. */
+  const done: string[] = [];
+  if (pulls) done.push(count(pulls, 'pull request created', 'pull requests created'));
+  if (skills) done.push(count(skills, 'skill used', 'skills used'));
   const counted: string[] = [];
   if (background) {
     counted.push(
@@ -207,6 +213,7 @@ export function checkScan(scan: Row | null | undefined): string {
   return (
     `From the part of the transcript read: ${checks}.` +
     (files.length ? ` ${files.join(', ').replace(/^./, (c) => c.toUpperCase())}.` : '') +
+    (done.length ? ` ${done.join(', ').replace(/^./, (c) => c.toUpperCase())}.` : '') +
     (counted.length ? ` Counted and not listed: ${counted.join('; ')}.` : '') +
     (more ? ` Failures are listed first, and ${String(more)} more are counted and not listed.` : '')
   );

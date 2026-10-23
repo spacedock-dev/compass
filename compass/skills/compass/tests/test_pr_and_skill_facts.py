@@ -134,6 +134,54 @@ class PullRequestAndSkillFacts(ClaudeChecksTestCase):
         self.session.result(odd, "Launching skill", tool_use_result={"success": True})
         self.assertEqual([], self.facts("skill"))
 
+    def test_a_skill_name_or_url_with_a_trailing_line_break_is_not_a_fact(self) -> None:
+        call_id = self.session.call("Skill", {"skill": "evil\n"})
+        self.session.result(call_id, "Launching skill", tool_use_result={"success": True})
+        self.assertEqual([], self.facts("skill"))
+        self.created(url=PR_URL + "\n", number=7)
+        self.assertEqual([], self.facts("pr"))
+
+    def test_a_repository_made_only_of_dots_is_not_a_fact(self) -> None:
+        for url in (
+            "https://github.com/../../pull/1",
+            "https://github.com/./x/pull/1",
+            "https://github.com/x/.../pull/1",
+        ):
+            with self.subTest(url=url):
+                self.setUp()
+                self.created(url=url, number=1)
+                self.assertEqual([], self.facts("pr"))
+
+    def test_a_failing_segment_after_the_create_publishes_no_pull_request(self) -> None:
+        call_id = self.session.call("Bash", {"command": f"{COMMAND} && false"})
+        self.session.result(
+            call_id, "Exit code 1\n" + OUTPUT, is_error=True, tool_use_result=pr_result()
+        )
+        self.assertEqual([], self.facts("pr"))
+
+    def test_newer_checks_cannot_push_the_pull_request_out_of_the_listing(self) -> None:
+        self.created()
+        for n in range(14):
+            self.session.bash(f"pytest tests/test_{n}.py", "1 passed in 0.1s", is_error=False)
+        self.assertEqual([f"{REPOSITORY}#7"], [f["title"] for f in self.facts("pr")])
+
+    def test_a_skill_cannot_push_a_written_path_out_of_the_listing(self) -> None:
+        for n in range(12):
+            self.session.write(self.file(f"src/f{n}.py"))
+        call_id = self.session.call("Skill", {"skill": "linear-deep-dive"})
+        self.session.result(call_id, "Launching skill", tool_use_result={"success": True})
+        events, scan = self.read()
+        self.assertEqual(12, len([e for e in events if e["subject"] == "write"]))
+        self.assertEqual(12, scan["written_paths"])
+
+    def test_the_scan_counts_the_pull_requests_and_skills_it_found(self) -> None:
+        self.created()
+        call_id = self.session.call("Skill", {"skill": "linear-deep-dive"})
+        self.session.result(call_id, "Launching skill", tool_use_result={"success": True})
+        _events, scan = self.read()
+        self.assertEqual(1, scan["pull_requests"])
+        self.assertEqual(1, scan["skills_used"])
+
     def test_the_listing_cap_never_counts_these_as_checks(self) -> None:
         self.created()
         self.session.bash("pytest -q", "3 passed in 0.1s", is_error=False)
@@ -250,6 +298,21 @@ class AReadingIsSentThePullRequestAndSkillFacts(base.AClaudeCodeReadingProducer)
         self.assertNotEqual(reading.RESULT_DEPARTURE, row["result"])
 
 
+class TheByteBoundKeepsAPullRequestWithThePasses(unittest.TestCase):
+    def _row(self, subject: str) -> reading.LedgerEntry:
+        rows = reading.build_ledger(
+            [pr_fact() if subject == "pr" else skill_fact()], "claude", "s1", tool_output={}
+        )
+        return rows[0]
+
+    def test_a_pull_request_is_reserved_like_a_pass_and_a_skill_after_a_write(self) -> None:
+        self.assertEqual(
+            reading._CHECK_PRIORITY[reading.RESULT_PASSED], reading._priority(self._row("pr"))
+        )
+        self.assertGreater(reading._priority(self._row("skill")), reading._WRITE_PRIORITY)
+        self.assertLess(reading._priority(self._row("skill")), 5)
+
+
 class TheGoalVerdictCheckKnowsAPullRequest(base.AClaudeCodeReadingProducer):
     def _checked(self, facts: list[dict[str, Any]], reason: str) -> dict[str, Any]:
         assessment, why, _spent = reading.produce(
@@ -294,6 +357,22 @@ class TheGoalVerdictCheckKnowsAPullRequest(base.AClaudeCodeReadingProducer):
             with self.subTest(reason=reason, at=facts[0]["at"]):
                 checked = self._checked(facts, reason)
                 self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, checked["check"])
+
+    def test_the_phrasings_a_reason_may_use_to_name_pull_requests(self) -> None:
+        for reason, number, agrees in (
+            ("created PR #7", 7, True),
+            ("created PR 7", 7, True),
+            ("created PR (#7)", 7, True),
+            ("opened PRs #6 and #7", 7, True),
+            ("opened PRs #7, #8", 8, True),
+            ("opened pull request 7", 7, True),
+            ("opened #7", 7, False),
+            ("created PR #70", 7, False),
+            ("the PR was created", 7, False),
+        ):
+            with self.subTest(reason=reason):
+                checked = self._checked([pr_fact(number, at=120.0)], reason)
+                self.assertIs(agrees, checked["check"] == reading.GOAL_VERDICT_AGREES, checked)
 
     def test_a_written_file_and_a_pull_request_both_named_agree(self) -> None:
         checked = self._checked(
