@@ -807,6 +807,11 @@ class GuardedModel:
         unasked: bool = False,
         reserve_with: Callable[..., Status] | None = None,
     ) -> None:
+        if reserve_with is not None and before_reserve is not None:
+            # `before_reserve` returns the job id the charge is recorded under, and a ledger of
+            # its own records none, so the pair would drop the marker's promise silently.
+            msg = "A ledger of its own takes no job marker"
+            raise ValueError(msg)
         self.config = config
         self.content = content
         self.unasked = unasked

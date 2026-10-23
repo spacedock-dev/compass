@@ -73,6 +73,14 @@ class TheMonitorValidatorAdmitsOnlyAnExplicitHaikuId(unittest.TestCase):
         self.assertIn("CLAUDE_MONITOR_DEFAULT_MODEL", pre_flight)
         self.assertIn("newer Haiku", pre_flight)
 
+    def test_the_prompt_is_bounded_at_six_thousand_characters(self) -> None:
+        self.assertEqual(6_000, make_config().live_monitor_prompt_cap_chars)
+
+    def test_the_manual_says_the_flag_takes_effect_once_the_monitor_runs_the_check(self) -> None:
+        manual = (Path(__file__).parents[4] / "MANUAL.md").read_text(encoding="utf-8")
+        row = next(line for line in manual.splitlines() if "`--claude-monitor-model MODEL`" in line)
+        self.assertIn("takes effect once Live monitor runs the check", row)
+
     def test_a_bad_monitor_model_is_refused_when_the_config_is_built(self) -> None:
         with self.assertRaises(ValueError):
             config.build_runtime_config(

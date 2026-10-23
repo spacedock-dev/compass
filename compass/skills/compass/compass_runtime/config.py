@@ -686,14 +686,16 @@ class RuntimeConfig:
     # the floor between two checks of one session, the call's timeout, the prompt and output
     # bounds, the two caps (ticks per session per TTL window, ticks across the board per rolling
     # 24 h) and how many checks may run at once on the board. The window is the banner's 20
-    # minutes plus its 10. The 240 board cap is the owner's to set; none was given, and it is a
-    # sixth of a day of once-a-minute checks.
+    # minutes plus its 10. The 240 board cap is PENDING THE OWNER'S FIGURE: none was given, and
+    # 240 is a sixth of a day of once-a-minute checks. The 6,000-character prompt cap holds the
+    # recent window a check re-sends beside its new turns.
     claude_monitor_model: str
     live_monitor_interval_sec: float
     live_monitor_timeout_sec: float
     live_monitor_prompt_cap_chars: int
     live_monitor_output_cap_bytes: int
     live_monitor_session_tick_cap: int
+    live_monitor_banner_sec: float
     live_monitor_window_sec: float
     live_monitor_daily_cap: int
     live_monitor_in_flight_limit: int
@@ -1090,9 +1092,10 @@ def build_runtime_config(
         claude_monitor_model=selected_monitor_model,
         live_monitor_interval_sec=60.0,
         live_monitor_timeout_sec=45.0,
-        live_monitor_prompt_cap_chars=12_000,
+        live_monitor_prompt_cap_chars=6_000,
         live_monitor_output_cap_bytes=2_048,
         live_monitor_session_tick_cap=30,
+        live_monitor_banner_sec=1_200.0,
         live_monitor_window_sec=1_800.0,
         live_monitor_daily_cap=240,
         live_monitor_in_flight_limit=1,

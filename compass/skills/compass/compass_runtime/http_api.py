@@ -3340,11 +3340,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         key = f"{harness}:{sid}"
         # A press outranks a Live monitor tick holding this session's slot: the tick is
-        # cancelled and its spend is not refunded, then the press takes the slot.
+        # cancelled and waited for, its spend is not refunded, and the press takes the slot.
+        # This is after Analyze's own route, consent and cap checks, so a refused press never
+        # costs a tick.
         # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
-        live_monitor.preempt(config, key)
-        job = runtime_reading.start_job(
-            config, key, provider=route["provider"], label=route["label"], now=application.clock()
+        job = live_monitor.start_with_priority(
+            config,
+            key,
+            lambda: runtime_reading.start_job(
+                config,
+                key,
+                provider=route["provider"],
+                label=route["label"],
+                now=application.clock(),
+            ),
         )
         if job is None:
             # One in flight per session, and no retry: a second press starts

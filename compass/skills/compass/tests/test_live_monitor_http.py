@@ -45,7 +45,7 @@ class APressEndsATickInFlight(unittest.TestCase):
                     KEY,
                     now=NOW,
                     transcript_path=str(self.transcript),
-                    facts=facts(),
+                    facts=facts(sid="s1"),
                     intent=GOAL,
                     estimate={"level": "none_or_low"},
                     runner=runner,
@@ -78,7 +78,7 @@ class APressEndsATickInFlight(unittest.TestCase):
             KEY,
             now=NOW + 120,
             transcript_path=str(self.transcript),
-            facts=facts(),
+            facts=facts(sid="s1"),
             intent=GOAL,
             estimate={"level": "none_or_low"},
             runner=runner,
@@ -107,6 +107,63 @@ class APressEndsATickInFlight(unittest.TestCase):
         self.assertEqual(1, reading_policy.monitor_status(self.config, now=NOW)["used"])
         self.assertTrue(reading.claim(self.config, KEY))
         reading.release(self.config, KEY)
+
+
+class AnalyzeThatIsRefusedAnywayDoesNotWasteATick(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fixture = test_http_api.ReadingRouteTest()
+        self.addCleanup(self.fixture.doCleanups)
+        self.config, self.state = self.fixture._runtime()
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.transcript = Path(home.name) / "session.jsonl"
+        self.transcript.write_text('{"n":1}\n', encoding="utf-8")
+        patch = mock.patch.object(reading_route, "destination", return_value="")
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def _press_with_a_tick_running(self, *, installed: tuple[str, ...]) -> tuple[int, FakeRunner]:
+        runner = FakeRunner(hold=True)
+        live_monitor.begin_window(self.config, KEY, now=NOW)
+        thread = threading.Thread(
+            target=lambda: live_monitor.tick(
+                self.config,
+                KEY,
+                now=NOW,
+                transcript_path=str(self.transcript),
+                facts=facts(sid="s1"),
+                intent=GOAL,
+                estimate={"level": "none_or_low"},
+                runner=runner,
+                binary_resolver=lambda _name: "/synthetic/bin/claude",
+            )
+        )
+        thread.start()
+        self.assertTrue(runner.started.wait(timeout=10))
+        with (
+            self.fixture._counting_model(installed, harness="claude"),
+            self.fixture._serving(
+                self.fixture._app(self.config, self.state, harness="claude")
+            ) as port,
+        ):
+            status, _raw = self.fixture._post(
+                port, self.fixture._press(harness="claude", provider="claude"), settle=False
+            )
+            still_running = not runner.groups[0].cancelled.is_set()
+            live_monitor.cancel_all(self.config, "test-cleanup")
+        thread.join(timeout=10)
+        self.assertTrue(still_running, "the press was refused, so it must not cancel the tick")
+        return status, runner
+
+    def test_a_spent_analyze_cap_leaves_the_tick_running(self) -> None:
+        for count in range(reading_policy.DAILY_CAP):
+            reading_policy.reserve(self.config, now=NOW + count, provider="claude")
+        status, _runner = self._press_with_a_tick_running(installed=("claude",))
+        self.assertNotEqual(202, status)
+
+    def test_a_missing_claude_cli_leaves_the_tick_running(self) -> None:
+        status, _runner = self._press_with_a_tick_running(installed=())
+        self.assertNotEqual(202, status)
 
 
 if __name__ == "__main__":

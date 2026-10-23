@@ -21,7 +21,14 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import live_monitor, reading, reading_policy, reading_route, supervise
+from compass_runtime import (
+    live_estimate,
+    live_monitor,
+    reading,
+    reading_policy,
+    reading_route,
+    supervise,
+)
 
 from .support import make_config
 
@@ -32,7 +39,7 @@ GOAL = "Make the parser accept trailing commas."
 OK_ESTIMATE = {"level": "none_or_low"}
 
 
-def facts(*extra: dict[str, Any]) -> list[dict[str, Any]]:
+def facts(*extra: dict[str, Any], sid: str = "one") -> list[dict[str, Any]]:
     base: list[dict[str, Any]] = [
         {"fact_id": "u1", "type": "user_message", "at": NOW - 90, "reader_words": GOAL},
         {
@@ -50,7 +57,9 @@ def facts(*extra: dict[str, Any]) -> list[dict[str, Any]]:
             "at": NOW - 30,
         },
     ]
-    return [*base, *extra]
+    return [
+        {"source_session": {"harness": "claude", "sid": sid}, **fact} for fact in [*base, *extra]
+    ]
 
 
 def reply(
@@ -72,9 +81,10 @@ class FakeGroup:
 class FakeRunner:
     """Stands in for `supervise.run`: records each call, and may hold it until cancelled."""
 
-    def __init__(self, text: str = "", *, hold: bool = False) -> None:
+    def __init__(self, text: str = "", *, hold: bool = False, release_delay: float = 0.0) -> None:
         self.text = text or reply()
         self.hold = hold
+        self.release_delay = release_delay
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
         self.started = threading.Event()
         self.groups: list[FakeGroup] = []
@@ -89,6 +99,7 @@ class FakeRunner:
         self.started.set()
         if self.hold:
             group.cancelled.wait(timeout=10)
+            threading.Event().wait(self.release_delay)
             return subprocess.CompletedProcess(argv, -15)
         kwargs["stdout"].write(self.text.encode())
         return subprocess.CompletedProcess(argv, 0)
@@ -144,17 +155,20 @@ class Case(unittest.TestCase):
         estimate: dict[str, Any] | None = None,
         turns: list[dict[str, Any]] | None = None,
         config: Any = None,
+        ended: bool = False,
     ) -> live_monitor.Tick:
+        sid = key.partition(":")[2]
         return live_monitor.tick(
             config or self.config,
             key,
             now=now,
             transcript_path=str(self.transcript),
-            facts=turns if turns is not None else facts(*self.extra),
+            facts=turns if turns is not None else facts(*self.extra, sid=sid),
             intent=GOAL,
             estimate=estimate or OK_ESTIMATE,
             runner=runner or self.runner,
             binary_resolver=lambda _name: "/synthetic/bin/claude",
+            ended=ended,
         )
 
 
@@ -264,7 +278,9 @@ class AnUnchangedTranscriptCostsNothing(Case):
         self.assertEqual(("skipped", "no-new-turns"), (skipped.status, skipped.reason))
         self.assertEqual(1, len(self.runner.calls))
 
-    def test_only_the_turns_since_the_last_check_are_sent(self) -> None:
+    def test_a_later_tick_resends_the_recent_window_so_one_quiet_turn_cannot_flip_the_level(
+        self,
+    ) -> None:
         self.begin()
         self.tick(NOW)
         self.grow()
@@ -272,12 +288,33 @@ class AnUnchangedTranscriptCostsNothing(Case):
             "fact_id": "u2",
             "type": "user_message",
             "at": NOW + 70,
-            "reader_words": "Also add tests.",
+            "reader_words": "ok",
+            "source_session": {"harness": "claude", "sid": "one"},
         }
         self.tick(NOW + 120, turns=facts(fresh))
         sent = self.runner.calls[1][1]["input"]
-        self.assertIn("Also add tests.", sent)
-        self.assertNotIn("I changed the tokenizer.", sent)
+        # The check sees the earlier turns beside the new one, so a one-word turn does not
+        # stand alone as the whole of what Haiku read.
+        self.assertIn("I changed the tokenizer.", sent)
+        self.assertIn("pytest -q: passed", sent)
+        self.assertLess(sent.index("I changed the tokenizer."), sent.rindex("ok"))
+
+    def test_the_resent_window_is_bounded_by_the_prompt_cap(self) -> None:
+        capped = dataclasses.replace(self.config, live_monitor_prompt_cap_chars=500)
+        live_monitor.begin_window(capped, KEY, now=NOW)
+        for index in range(6):
+            self.touch()
+            turn = {
+                "fact_id": f"big{index}",
+                "type": "user_message",
+                "at": NOW + index,
+                "reader_words": f"turn{index} " + "Q" * 300,
+                "source_session": {"harness": "claude", "sid": "one"},
+            }
+            self.tick(NOW + 60 * index, turns=[turn], config=capped)
+        for _argv, kwargs in self.runner.calls:
+            self.assertLessEqual(kwargs["input"].count("Q"), 500)
+        self.assertIn("turn5", self.runner.calls[-1][1]["input"])
 
     def test_an_unsaved_intent_is_never_checked(self) -> None:
         self.begin()
@@ -314,7 +351,7 @@ class TheCaps(Case):
         self.assertEqual("ran", self.tick(NOW, config=capped).status)
         self.grow()
         self.assertEqual("cap", self.tick(NOW + 60, config=capped).reason)
-        live_monitor.begin_window(capped, KEY, now=NOW + 61)
+        live_monitor.begin_window(capped, KEY, now=NOW + 61, renew=True)
         self.assertEqual("ran", self.tick(NOW + 122, config=capped).status)
 
     def test_the_board_stops_at_its_rolling_cap_whichever_session_asks(self) -> None:
@@ -358,7 +395,7 @@ class RefusalsPrecedeEverything(Case):
         self.assertEqual(("refused", "run-disabled"), (refused.status, refused.reason))
         self.assertEqual([], self.runner.calls)
 
-    def test_a_store_that_cannot_be_read_refuses_for_want_of_consent(self) -> None:
+    def test_an_unreadable_store_refuses_and_says_so(self) -> None:
         blocked = dataclasses.replace(self.config, state_dir=Path("/nonexistent-compass/none"))
         live_monitor.begin_window(blocked, KEY, now=NOW)
         refused = self.tick(NOW + 1, config=blocked)
@@ -382,6 +419,160 @@ class RefusalsPrecedeEverything(Case):
         # Released, so the next press or tick can take the slot.
         self.assertTrue(reading.claim(self.config, KEY))
         reading.release(self.config, KEY)
+
+
+class OnlyThisSessionsFactsAreSent(Case):
+    def test_another_sessions_facts_and_unlabelled_ones_are_never_sent(self) -> None:
+        self.begin()
+        elsewhere = {
+            "fact_id": "x1",
+            "type": "user_message",
+            "at": NOW - 5,
+            "reader_words": "From another session entirely.",
+            "source_session": {"harness": "claude", "sid": "two"},
+        }
+        unlabelled = {
+            "fact_id": "x2",
+            "type": "user_message",
+            "at": NOW - 4,
+            "reader_words": "From nowhere in particular.",
+        }
+        self.tick(NOW, turns=[*facts(), elsewhere, unlabelled])
+        sent = self.runner.calls[0][1]["input"]
+        self.assertNotIn("another session entirely", sent)
+        self.assertNotIn("nowhere in particular", sent)
+        self.assertIn("I changed the tokenizer.", sent)
+
+
+class TheLeaseInterface(Case):
+    def test_the_window_accessor_holds_the_only_clock(self) -> None:
+        self.assertIsNone(live_monitor.window(self.config, KEY))
+        self.begin()
+        self.assertEqual(
+            {
+                "started_at": NOW,
+                "banner_due_at": NOW + 1200.0,
+                "deadline": NOW + 1800.0,
+            },
+            live_monitor.window(self.config, KEY),
+        )
+        self.assertEqual(1200.0, self.config.live_monitor_banner_sec)
+
+    def test_one_tab_leaving_does_not_stop_another_tabs_monitor(self) -> None:
+        live_monitor.begin_window(self.config, KEY, now=NOW, holder="tab-a")
+        live_monitor.begin_window(self.config, KEY, now=NOW + 5, holder="tab-b")
+        # A second tab does not move the first one's clock.
+        self.assertEqual(NOW, (live_monitor.window(self.config, KEY) or {})["started_at"])
+        self.assertFalse(live_monitor.end(self.config, KEY, holder="tab-a"))
+        self.assertEqual("ran", self.tick(NOW + 10).status)
+        self.assertTrue(live_monitor.end(self.config, KEY, holder="tab-b"))
+        self.assertEqual("not-monitored", self.tick(NOW + 80).reason)
+        self.assertIsNone(live_monitor.published(self.config, KEY))
+
+    def test_a_yes_resets_the_clock_and_the_tick_count_before_the_deadline(self) -> None:
+        capped = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        live_monitor.begin_window(capped, KEY, now=NOW)
+        self.assertEqual("ran", self.tick(NOW, config=capped).status)
+        self.grow()
+        self.assertEqual("cap", self.tick(NOW + 60, config=capped).reason)
+        self.assertTrue(live_monitor.begin_window(capped, KEY, now=NOW + 1199, renew=True))
+        self.assertEqual(NOW + 1199, (live_monitor.window(capped, KEY) or {})["started_at"])
+        self.assertEqual("ran", self.tick(NOW + 1260, config=capped).status)
+
+    def test_a_yes_after_the_deadline_is_refused_and_the_monitor_is_off(self) -> None:
+        self.begin()
+        self.tick(NOW)
+        self.assertFalse(live_monitor.begin_window(self.config, KEY, now=NOW + 1800, renew=True))
+        self.assertIsNone(live_monitor.window(self.config, KEY))
+        self.assertIsNone(live_monitor.published(self.config, KEY))
+        # A fresh start is the reader switching it on again, which is allowed.
+        self.assertTrue(live_monitor.begin_window(self.config, KEY, now=NOW + 1900))
+
+    def test_a_yes_for_a_session_not_monitored_is_refused(self) -> None:
+        self.assertFalse(live_monitor.begin_window(self.config, KEY, now=NOW, renew=True))
+
+    def test_a_window_that_runs_out_drops_its_entry_and_its_level(self) -> None:
+        self.begin()
+        self.tick(NOW)
+        self.assertIsNotNone(live_monitor.published(self.config, KEY))
+        over = self.tick(NOW + self.config.live_monitor_window_sec)
+        self.assertEqual("window-ended", over.reason)
+        self.assertIsNone(live_monitor.published(self.config, KEY))
+        self.assertIsNone(live_monitor.window(self.config, KEY))
+
+    def test_an_ended_session_refuses_and_turns_the_monitor_off(self) -> None:
+        self.begin()
+        self.tick(NOW)
+        refused = self.tick(NOW + 60, ended=True)
+        self.assertEqual(("refused", "session-ended"), (refused.status, refused.reason))
+        self.assertEqual(1, len(self.runner.calls))
+        self.assertIsNone(live_monitor.published(self.config, KEY))
+        self.assertIsNone(live_monitor.window(self.config, KEY))
+
+    def test_an_end_between_the_gate_and_the_slot_neither_launches_nor_charges(self) -> None:
+        self.begin()
+        real = live_estimate._live_signature
+
+        def ending(config: Any, path: str) -> Any:
+            live_monitor.end(config, KEY)
+            return real(config, path)
+
+        with mock.patch.object(live_estimate, "_live_signature", ending):
+            result = self.tick(NOW)
+        self.assertEqual(("refused", "not-monitored"), (result.status, result.reason))
+        self.assertEqual([], self.runner.calls)
+        self.assertEqual(0, reading_policy.monitor_status(self.config, now=NOW + 1)["used"])
+        self.assertTrue(reading.claim(self.config, KEY))
+        reading.release(self.config, KEY)
+
+
+class AnAnalyzePressIsNeverRefusedBecauseOfATick(Case):
+    def test_the_wait_covers_a_tick_that_is_queued_behind_the_stores_write_lock(self) -> None:
+        self.assertGreaterEqual(live_monitor.PRESS_WAIT_SEC, reading_policy.WRITE_WAIT_SEC + 5)
+
+    def test_a_tick_cannot_take_the_slot_between_the_cancel_and_the_press(self) -> None:
+        self.begin()
+        seen: list[live_monitor.Tick] = []
+
+        def start() -> str:
+            # The press has not taken the slot yet: a tick arriving now must be turned away.
+            seen.append(self.tick(NOW))
+            return "job"
+
+        self.assertEqual("job", live_monitor.start_with_priority(self.config, KEY, start))
+        self.assertEqual(("refused", "busy"), (seen[0].status, seen[0].reason))
+        self.assertEqual([], self.runner.calls)
+        # And the mark is gone afterwards.
+        self.assertEqual("ran", self.tick(NOW + 61).status)
+
+    def test_a_slow_release_is_waited_for_and_the_start_is_retried_once(self) -> None:
+        self.begin()
+        runner = FakeRunner(hold=True, release_delay=0.6)
+        thread = threading.Thread(target=lambda: self.tick(NOW, runner=runner))
+        thread.start()
+        self.assertTrue(runner.started.wait(timeout=10))
+        attempts: list[bool] = []
+
+        def start() -> str | None:
+            taken = reading.claim(self.config, KEY)
+            attempts.append(taken)
+            return "job" if taken else None
+
+        with mock.patch.object(live_monitor, "PRESS_WAIT_SEC", 0.4):
+            job = live_monitor.start_with_priority(self.config, KEY, start)
+        thread.join(timeout=10)
+        self.assertEqual("job", job)
+        self.assertEqual([False, True], attempts)
+        reading.release(self.config, KEY)
+
+    def test_with_no_tick_the_start_is_tried_once(self) -> None:
+        calls: list[int] = []
+
+        def start() -> None:
+            calls.append(1)
+
+        self.assertIsNone(live_monitor.start_with_priority(self.config, KEY, start))
+        self.assertEqual([1], calls)
 
 
 class ReservationBeforeLaunch(Case):
@@ -441,8 +632,47 @@ class TheNoticeAndTheProvenance(Case):
 
     def test_the_disclosure_names_what_is_sent_and_where(self) -> None:
         text = live_monitor.disclosure("api.anthropic.com")
-        for phrase in ("Haiku", "api.anthropic.com", "once a minute", "No command", "redacted"):
+        for phrase in (
+            "Haiku",
+            "api.anthropic.com",
+            "once a minute",
+            "commands of checks with their result",
+            "paths of files written",
+            "sent again",
+            "turned off and on",
+            "redacted",
+            "Pause model calls",
+        ):
             self.assertIn(phrase, text)
+        self.assertNotIn("No command", text)
+
+    def test_the_notice_names_the_tool_output_class_as_analyze_does(self) -> None:
+        self.begin()
+        first = self.tick(NOW)
+        assert first.notice is not None
+        self.assertEqual("api.anthropic.com", first.notice["tool_output"])
+
+    def test_with_no_nameable_destination_checks_and_paths_are_not_sent(self) -> None:
+        self.begin()
+        self.extra.append(
+            {
+                "fact_id": "w1",
+                "type": "tool_report",
+                "subject": "write",
+                "summary": "src/p.py",
+                "at": NOW - 10,
+            }
+        )
+        with mock.patch.object(reading_route, "destination", return_value=""):
+            first = self.tick(NOW)
+        sent = self.runner.calls[0][1]["input"]
+        self.assertNotIn("pytest -q", sent)
+        self.assertNotIn("src/p.py", sent)
+        self.assertIn(GOAL.split(maxsplit=1)[0], sent)
+        self.assertIn("I changed the tokenizer.", sent)
+        assert first.notice is not None
+        self.assertEqual("", first.notice["tool_output"])
+        self.assertNotIn("commands of checks", first.disclosure)
 
     def test_each_tick_records_the_model_it_asked_for(self) -> None:
         self.begin()
@@ -471,23 +701,88 @@ class TheReplyIsHeldToTheShapeContract(Case):
         self.assertEqual(["a1"], [cite["fact_id"] for cite in result.level["cites"]])
         self.assertEqual((1, 1), (result.level["checks"], result.level["findings"]))
 
-    def test_none_or_low_stands_only_where_the_floor_is_met(self) -> None:
-        for estimate, expected in (
-            ({"level": "none_or_low"}, "none_or_low"),
-            ({"level": "not_enough"}, "not_enough"),
-            ({"level": "high"}, "high"),
+    def test_the_owners_case_a_pull_request_and_no_check_still_reads_none_or_low(self) -> None:
+        # No check ran, so the estimate has too little (no passing check). That does not block
+        # Haiku's own None or low when it cites a turn it was sent.
+        result = self._ran(
+            reply("none_or_low", "A pull request was opened and nothing else moved.", (2,)),
+            estimate={
+                "level": "not_enough",
+                "reasons": ["no-passing-check", "intent-names-no-folder"],
+            },
+        )
+        assert result.level is not None
+        self.assertEqual("none_or_low", result.level["level"])
+        self.assertFalse(result.level["floor_applied"])
+
+    def test_a_failed_check_or_an_unsettled_direction_blocks_the_models_none_or_low(self) -> None:
+        for reasons, expected in (
+            (["failed-check"], "not_enough"),
+            (["later-direction", "no-passing-check"], "not_enough"),
         ):
-            with self.subTest(estimate=estimate["level"]):
+            with self.subTest(reasons=reasons):
                 live_monitor._SESSIONS.clear()
-                result = self._ran(reply("none_or_low"), estimate=estimate)
+                result = self._ran(
+                    reply("none_or_low"), estimate={"level": "not_enough", "reasons": reasons}
+                )
                 assert result.level is not None
                 self.assertEqual(expected, result.level["level"])
-                self.assertEqual(estimate["level"] != "none_or_low", result.level["floor_applied"])
+                self.assertTrue(result.level["floor_applied"])
+
+    def test_the_other_blockers_of_the_estimate_do_not_block_it(self) -> None:
+        # The shell-command blocker is the live estimate's own (DEC-26 item 1 names it for
+        # "the live estimate", not for every source), so it does not bind a model level.
+        for reasons in (
+            ["command-after-pass"],
+            ["check-not-recorded"],
+            ["background-run", "entries-not-listed"],
+            ["scan-incomplete"],
+        ):
+            with self.subTest(reasons=reasons):
+                live_monitor._SESSIONS.clear()
+                result = self._ran(
+                    reply("none_or_low"), estimate={"level": "not_enough", "reasons": reasons}
+                )
+                assert result.level is not None
+                self.assertEqual("none_or_low", result.level["level"])
+
+    def test_the_floor_works_both_ways_a_higher_estimate_is_never_hidden(self) -> None:
+        failed = {"level": "high", "reasons": ["failed-check"]}
+        for model, estimate, expected in (
+            ("medium", failed, "high"),
+            ("not_enough", failed, "high"),
+            ("none_or_low", failed, "high"),
+            ("medium", {"level": "extreme", "reasons": ["failed-check"]}, "extreme"),
+            ("high", {"level": "medium", "reasons": ["pass-then-write"]}, "high"),
+            ("medium", {"level": "none_or_low", "reasons": ["floor-met"]}, "medium"),
+            ("not_enough", {"level": "none_or_low", "reasons": ["floor-met"]}, "not_enough"),
+            ("not_enough", {"level": "not_enough", "reasons": []}, "not_enough"),
+        ):
+            with self.subTest(model=model, estimate=estimate["level"]):
+                live_monitor._SESSIONS.clear()
+                cites = () if model == "not_enough" else (1,)
+                result = self._ran(reply(model, "A turn moved.", cites), estimate=estimate)
+                assert result.level is not None
+                self.assertEqual(expected, result.level["level"])
+                self.assertEqual(model, result.level["model_level"])
 
     def test_a_reply_that_states_a_verdict_is_refused(self) -> None:
         result = self._ran(reply("none_or_low", "The work is complete and every goal was met."))
         self.assertEqual(("failed", "verdict-stated"), (result.status, result.reason))
         self.assertIsNone(live_monitor.published(self.config, KEY))
+
+    def test_a_success_word_is_a_verdict_however_it_is_qualified(self) -> None:
+        for reason in (
+            "PR opened; goal achieved, no problems",
+            "Goal achieved with no drift.",
+            "The work is completed and nothing is missing.",
+            "Everything works and no check failed.",
+        ):
+            with self.subTest(reason=reason):
+                live_monitor._SESSIONS.clear()
+                result = self._ran(reply("none_or_low", reason))
+                self.assertEqual(("failed", "verdict-stated"), (result.status, result.reason))
+                self.assertIsNone(live_monitor.published(self.config, KEY))
 
     def test_malformed_replies_publish_nothing(self) -> None:
         bad = (
@@ -518,7 +813,13 @@ class TheReplyIsHeldToTheShapeContract(Case):
         capped = dataclasses.replace(self.config, live_monitor_prompt_cap_chars=600)
         live_monitor.begin_window(capped, KEY, now=NOW)
         long_run = [
-            {"fact_id": f"u{n}", "type": "user_message", "at": NOW - n, "reader_words": "Q" * 300}
+            {
+                "fact_id": f"u{n}",
+                "type": "user_message",
+                "at": NOW - n,
+                "reader_words": "Q" * 300,
+                "source_session": {"harness": "claude", "sid": "one"},
+            }
             for n in range(1, 9)
         ]
         self.tick(NOW, turns=long_run, config=capped)

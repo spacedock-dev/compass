@@ -131,5 +131,17 @@ class TheMonitorNotice(_Store):
         self.assertIsNotNone(self._note(NOW + 3))
 
 
+class TheGuardedSeamTakesOneReservationRule(_Store):
+    def test_a_ledger_of_its_own_cannot_be_combined_with_a_job_marker(self) -> None:
+        with self.assertRaises(ValueError):
+            reading_policy.GuardedModel(
+                self.config,
+                lambda _prompt, **_kw: ("", "ok"),
+                lambda: NOW,
+                reserve_with=reading_policy.reserve_monitor,
+                before_reserve=lambda: "job",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
