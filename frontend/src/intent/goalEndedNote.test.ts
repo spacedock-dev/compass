@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { createAnnouncer } from '../shell/announcer';
 import { createFakeClock } from '../transport/testing';
-import { goalEndedNote, goalKey, intentDrafted, noDraftWhy, type DraftInput } from './derive';
+import { compatSessKey } from '../api/identity';
+import {
+  goalEndedNote,
+  goalKey,
+  goalUpdate,
+  intentDrafted,
+  noDraftWhy,
+  type DraftInput,
+} from './derive';
 import { createHeld } from './held';
 
 /* A cleared /goal over a session that opened with /goal is said once: in the "opened with /goal" sentence while
@@ -108,9 +116,37 @@ describe('goalEndedNote over a cleared /goal and a prompt draft', () => {
     );
   });
 
-  it('stays empty while the update offer is shown', () => {
-    const input = plain({ session_goal: { text: 'A newer goal', at: 600 } });
-    input.held.goals.set(goalKey(input.session), 'My own words');
-    expect(goalEndedNote(input)).not.toContain('cleared');
+  it('stays empty while the update offer is shown, and says the earlier end once it is not', () => {
+    const offered = (savedAt: number): DraftInput => ({
+      ...plain({
+        session_goal: { text: 'A newer goal', at: 600, earlier: { how: 'replaced', at: 550 } },
+      }),
+      annotation: { goal: 'My own goal', goal_saved_at: savedAt, at: savedAt },
+    });
+    const input = offered(400);
+    expect(goalUpdate(input)).not.toBeNull();
+    expect(goalEndedNote(input)).toBe('');
+    const settled = offered(700);
+    expect(goalUpdate(settled)).toBeNull();
+    expect(goalEndedNote(settled)).toMatch(/^Replaced an earlier \/goal at /);
+  });
+
+  it('names a goal found in the prompts while the box holds it, and drops it once edited', () => {
+    const input = plain({});
+    const key = goalKey(input.session);
+    input.held.found.set(compatSessKey(input.session), {
+      text: 'Add a retry to the upload client',
+      foundAt: 900,
+      label: 'Detected from your prompts',
+      cites: [],
+    });
+    input.held.goals.set(key, 'Add a retry to the upload client');
+    expect(goalEndedNote(input)).toMatch(
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d; the draft below is a goal found in your prompts$/,
+    );
+    input.held.goals.set(key, 'Add a retry to the upload client, logged');
+    expect(goalEndedNote(input)).toMatch(
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
+    );
   });
 });

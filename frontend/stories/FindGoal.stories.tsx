@@ -393,6 +393,28 @@ export const EditingAFoundGoalReplacesIt: Story = {
   },
 };
 
+/* Over a cleared /goal the note names what the box holds, and editing the found words drops that name. */
+export const AClearedGoalNoteNamesAFoundGoalUntilItIsEdited: Story = {
+  args: {
+    setup: { session: { session_goal: null, session_goal_cleared: { at: 1_760_000_450 } } },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await intentCard(canvasElement);
+    const view = within(card);
+    const ended = () => card.querySelector('[data-next-goal-ended]')?.textContent ?? '';
+    await expect(ended()).toMatch(/was cleared at .*; the draft below is your first prompt$/);
+    await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
+    await waitFor(() => expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(GOAL));
+    await waitFor(() =>
+      expect(ended()).toMatch(
+        /was cleared at .*; the draft below is a goal found in your prompts$/,
+      ),
+    );
+    await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ' It is logged.');
+    await waitFor(() => expect(ended()).toMatch(/was cleared at [^;]*$/));
+  },
+};
+
 /* When the prompts do not make the goal clear the press says so beside the button, and the field stays as it was:
    the first prompt Compass drafted from, untouched. */
 export const NothingFound: Story = {
