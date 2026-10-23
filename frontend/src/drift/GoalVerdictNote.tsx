@@ -1,5 +1,4 @@
 import { datedClock } from '../observed/values';
-import { harnessLabels } from '../sessions/rows';
 import { useDrift } from './context';
 import { harnessGaveUp, harnessVerdict, verdictNote } from './goalVerdict';
 import { GOAL_GAVE_UP_LINE, GOAL_VERDICT_LABEL, goalGaveUpClaim } from './sentences';
@@ -14,7 +13,6 @@ export function GoalVerdictNote() {
   const { ctx, model } = useDrift();
   const verdict = harnessVerdict(model.session);
   const gaveUp = harnessGaveUp(model.session);
-  const harness = harnessLabels(model.payload).get(model.harness) || 'Claude Code';
   if (!verdict && gaveUp) {
     return (
       <div className="next-session-drift-limit" data-next-goal-gave-up>
@@ -32,7 +30,6 @@ export function GoalVerdictNote() {
     verdict,
     analyzed: model.raw !== null,
     shape: model.shape,
-    harness,
     clock: datedClock(verdict.at, ctx.shell.clock.now() / 1000),
     changedClock: changed ? datedClock(changed, ctx.shell.clock.now() / 1000) : '',
   });

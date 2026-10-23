@@ -94,6 +94,18 @@ describe('the harness verdict on the Drift card', () => {
     expect(note()?.querySelector('b')).toBeNull();
   });
 
+  it('names Claude Code even where the payload labels the harness just Claude', async () => {
+    const page = mountDrift({
+      payload: { harnesses: [{ key: 'claude', label: 'Claude' }] },
+      session: withVerdict(),
+    });
+    await page.settle();
+    await page.settle();
+    const text = textOf('[data-next-goal-verdict]');
+    expect(text).toContain('Claude Code marked this goal met');
+    expect(text).not.toMatch(/Claude marked/);
+  });
+
   it('stands beside an agreeing analysis, still the harness claim', async () => {
     const page = mountDrift({
       session: { ...withVerdict(), ...checked('agrees', 'written-before') },

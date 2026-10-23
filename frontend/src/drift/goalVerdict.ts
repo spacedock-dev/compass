@@ -67,7 +67,6 @@ export function verdictNote(input: {
   readonly verdict: HarnessVerdict;
   readonly analyzed: boolean;
   readonly shape: Shape | null;
-  readonly harness: string;
   readonly clock: string;
   /** The time a removal dispute names, drawn as the card draws times; empty where the test names none. */
   readonly changedClock?: string;
@@ -89,7 +88,7 @@ export function verdictNote(input: {
   return {
     state,
     label: GOAL_VERDICT_LABEL,
-    claim: goalVerdictClaim(input.harness, input.clock),
+    claim: goalVerdictClaim(input.clock),
     line: line ? line(why) : '',
     reason: verdict.reason,
   };

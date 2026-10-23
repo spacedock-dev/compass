@@ -1255,6 +1255,42 @@ export const StateGoalClearedWhereTheSessionOpenedWithGoal: Story = {
   },
 };
 
+/* A chosen prompt fills the box, and the opened-with sentence is not drawn over a drafted box: the clear is
+   then said beside the Goal field instead, still once. */
+export const StateGoalClearedStaysSaidAfterAPromptIsChosen: Story = {
+  args: {
+    setup: {
+      session: {
+        session_goal: null,
+        session_goal_cleared: { at: 1_760_000_450 },
+        first_prompt: '/goal a file exists',
+        first_prompt_control: true,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await expect(endedNote(card)).toBeNull();
+    await userEvent.click(await view.findByRole('button', { name: 'Use your prompt' }));
+    const doc = within(canvasElement.ownerDocument.body);
+    await userEvent.click(
+      await doc.findByRole('option', {
+        name: /Latest prompt · \d\d:\d\d · excerpt Add streaming tokenizer benchmarks/,
+      }),
+    );
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(
+      'Add streaming tokenizer benchmarks before touching the AST',
+    );
+    await waitFor(async () => {
+      await expect(endedNote(card)).toHaveTextContent(
+        `Your /goal was cleared at ${datedClock(1_760_000_450)}`,
+      );
+    });
+    await expect(card.textContent?.match(/was cleared at/g)).toHaveLength(1);
+  },
+};
+
 export const StateEarlierGoalNoteWaitsForTheUpdateOffer: Story = {
   args: {
     setup: {
