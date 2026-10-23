@@ -2277,7 +2277,7 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
         gated = len(re.findall(r"\bcoordinator\.(?:focus_)?authorized\(", source))
         self.assertEqual(21, routes)
         self.assertEqual(2, gated)
-        self.assertIn("Writing is the twenty-one POST routes", self.FLAT)
+        self.assertIn("Writing is the twenty-two POST routes", self.FLAT)
         self.assertIn("There is nothing to authenticate with on nineteen of them", self.FLAT)
         self.assertIn("Two carry a capability and they are not worth the same.", self.FLAT)
 

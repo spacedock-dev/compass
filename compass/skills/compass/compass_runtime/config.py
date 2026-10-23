@@ -686,15 +686,18 @@ class RuntimeConfig:
     # the floor between two checks of one session, the call's timeout, the prompt and output
     # bounds, the two caps (ticks per session per TTL window, ticks across the board per rolling
     # 24 h) and how many checks may run at once on the board. The window is the banner's 20
-    # minutes plus its 10. The 240 board cap is PENDING THE OWNER'S FIGURE: none was given, and
-    # 240 is a sixth of a day of once-a-minute checks. The 6,000-character prompt cap holds the
-    # recent window a check re-sends beside its new turns.
+    # minutes plus its 10. A tab beats about every 20 s, a visible tab that stops for 50 s has
+    # left, and the ticker wakes every 5 s. The 240 board cap is PENDING THE OWNER'S FIGURE: none
+    # was given, and 240 is a sixth of a day of once-a-minute checks. The 6,000-character prompt
+    # cap holds the recent window a check re-sends beside its new turns.
     claude_monitor_model: str
     live_monitor_interval_sec: float
     live_monitor_timeout_sec: float
     live_monitor_prompt_cap_chars: int
     live_monitor_output_cap_bytes: int
     live_monitor_session_tick_cap: int
+    live_monitor_lapse_sec: float
+    live_monitor_ticker_sec: float
     live_monitor_banner_sec: float
     live_monitor_window_sec: float
     live_monitor_daily_cap: int
@@ -1095,6 +1098,8 @@ def build_runtime_config(
         live_monitor_prompt_cap_chars=6_000,
         live_monitor_output_cap_bytes=2_048,
         live_monitor_session_tick_cap=30,
+        live_monitor_lapse_sec=50.0,
+        live_monitor_ticker_sec=5.0,
         live_monitor_banner_sec=1_200.0,
         live_monitor_window_sec=1_800.0,
         live_monitor_daily_cap=240,

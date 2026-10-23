@@ -469,6 +469,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/reading_route.py",
     "skills/compass/compass_runtime/levels.py",
     "skills/compass/compass_runtime/live_estimate.py",
+    "skills/compass/compass_runtime/live_lease.py",
     "skills/compass/compass_runtime/live_monitor.py",
     "skills/compass/compass_runtime/reach.py",
     "skills/compass/compass_runtime/semantic_history.py",

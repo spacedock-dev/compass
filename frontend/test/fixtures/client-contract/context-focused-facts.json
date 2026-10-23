@@ -354,6 +354,22 @@
               "sid": "a1b2c3d4"
             }
           ],
+          "live_monitor": {
+            "banner_due_at": null,
+            "confirm_by": null,
+            "deadline": null,
+            "destination": null,
+            "disclosure": null,
+            "interval_sec": 60.0,
+            "label": "Live monitor · Haiku",
+            "last_end": null,
+            "level": null,
+            "model": "claude-haiku-5-5",
+            "now": 1900000000.0,
+            "on": false,
+            "started_at": null,
+            "visible": false
+          },
           "omitted": [],
           "support": {
             "collapsed_contributors": 0,
@@ -407,7 +423,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "7350",
+      "Content-Length": "7631",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },
