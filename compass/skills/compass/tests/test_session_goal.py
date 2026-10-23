@@ -135,7 +135,10 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
 
     def test_a_replaced_goal_publishes_the_later_one(self) -> None:
         goal = read_goal([*set_goal(T0 + 5), *set_goal(T0 + 50, LATER_CONDITION)])
-        self.assertEqual({"text": LATER_CONDITION, "at": T0 + 50}, goal)
+        self.assertEqual(
+            {"text": LATER_CONDITION, "at": T0 + 50, "earlier": {"how": "replaced", "at": T0 + 50}},
+            goal,
+        )
 
     def test_a_cleared_goal_publishes_none(self) -> None:
         # The wording is the documented one; the uncaptured shape is on the capture's list.
@@ -182,9 +185,9 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
         )
         self.assertEqual({"text": LATER_CONDITION, "at": T0 + 40}, goal)
 
-    def test_an_impossible_verdict_is_not_a_met_one_and_the_goal_stays(self) -> None:
-        goal = read_goal([*set_goal(T0 + 5), impossible(T0 + 30)])
-        self.assertEqual({"text": CONDITION, "at": T0 + 5}, goal)
+    def test_an_impossible_verdict_ends_the_goal_and_is_not_a_met_one(self) -> None:
+        # Measured (2.1.309): after `failed: true` the goal is ended, so it is not held.
+        self.assertIsNone(read_goal([*set_goal(T0 + 5), impossible(T0 + 30)]))
 
     def test_a_replaced_goal_met_later_carries_the_verdict_for_the_second_only(self) -> None:
         goal = read_goal(
@@ -198,6 +201,7 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
         assert goal is not None
         self.assertEqual(LATER_CONDITION, goal["text"])
         self.assertEqual(T0 + 90, goal["verdict"]["at"])
+        self.assertEqual({"how": "replaced", "at": T0 + 50}, goal["earlier"])
 
     def test_every_documented_alias_of_clear_clears(self) -> None:
         for alias in ("stop", "off", "reset", "none", "cancel"):
@@ -242,7 +246,10 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
 
     def test_a_later_goal_does_not_inherit_the_earlier_ones_verdict(self) -> None:
         goal = read_goal([*set_goal(T0 + 5), verdict(T0 + 30), *set_goal(T0 + 50, LATER_CONDITION)])
-        self.assertEqual({"text": LATER_CONDITION, "at": T0 + 50}, goal)
+        self.assertEqual(
+            {"text": LATER_CONDITION, "at": T0 + 50, "earlier": {"how": "met", "at": T0 + 30}},
+            goal,
+        )
 
     def test_the_verdict_carries_the_evaluators_reason_as_one_masked_line(self) -> None:
         reason = "wrote notes.md and ran deploy with key AKIAIOSFODNN7EXAMPLE\n\nthen   checked"
@@ -358,7 +365,10 @@ class TheGoalIsReadOnAppendTest(unittest.TestCase):
                 for record in set_goal(T0 + 50, LATER_CONDITION):
                     handle.write(json.dumps(record) + "\n")
             goal = claude_data.session_goal(config, state, str(path))
-        self.assertEqual({"text": LATER_CONDITION, "at": T0 + 50}, goal)
+        self.assertEqual(
+            {"text": LATER_CONDITION, "at": T0 + 50, "earlier": {"how": "replaced", "at": T0 + 50}},
+            goal,
+        )
 
     def test_a_verdict_appended_later_still_finds_the_set_time_read_earlier(self) -> None:
         with tempfile.TemporaryDirectory() as home:
@@ -504,6 +514,246 @@ class AGoalSessionIsNamedByTheGoalItHoldsTest(HarnessContractTestCase):
         ai = {"type": "ai-title", "aiTitle": "Generated name", "timestamp": _iso(when + 2)}
         records = [prompt(when, f"/goal {CONDITION}"), *set_goal(when + 1), ai]
         self.assertEqual("Generated name", self.title(records))
+
+
+def read_all(
+    records: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
+    """The goal, the clear and the give-up one read of these records publishes."""
+    with tempfile.TemporaryDirectory() as home:
+        config, state = make_runtime()
+        path = Path(home, "claude.jsonl")
+        _jsonl(path, records, T0)
+        goal = claude_data.session_goal(config, state, str(path))
+        return (
+            goal,
+            claude_data.session_goal_cleared(state, str(path)),
+            claude_data.session_goal_gave_up(state, str(path)),
+        )
+
+
+class AGoalThatEndedIsSaidToHaveEndedTest(unittest.TestCase):
+    """DRC-4956: a give-up, a clear and a replacement are published beside the goal, never as it."""
+
+    def test_a_give_up_ends_the_goal_and_publishes_its_time_and_masked_reason(self) -> None:
+        record = impossible(T0 + 30)
+        record["attachment"]["reason"] = "no such path\n\nkey AKIAIOSFODNN7EXAMPLE"
+        goal, cleared, gave_up = read_all([*set_goal(T0 + 5), record])
+        self.assertIsNone(goal)
+        self.assertIsNone(cleared)
+        assert gave_up is not None
+        self.assertEqual({"at", "reason"}, set(gave_up))
+        self.assertEqual(T0 + 30, gave_up["at"])
+        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", gave_up["reason"])
+        self.assertNotIn("\n", gave_up["reason"])
+
+    def test_a_give_up_publishes_no_iterations_tokens_or_duration(self) -> None:
+        _goal, _cleared, gave_up = read_all([*set_goal(T0 + 5), impossible(T0 + 30)])
+        assert gave_up is not None
+        self.assertEqual({"at", "reason"}, set(gave_up))
+
+    def test_a_give_up_is_never_a_verdict_or_a_met_goal(self) -> None:
+        goal, _cleared, gave_up = read_all([*set_goal(T0 + 5), impossible(T0 + 30)])
+        self.assertIsNone(goal)
+        assert gave_up is not None
+        self.assertNotIn("met", gave_up)
+        self.assertNotIn("verdict", gave_up)
+
+    def test_a_give_up_reason_is_cut_at_the_bound(self) -> None:
+        record = impossible(T0 + 30)
+        record["attachment"]["reason"] = "word " * 400
+        _goal, _cleared, gave_up = read_all([*set_goal(T0 + 5), record])
+        assert gave_up is not None
+        self.assertLessEqual(len(gave_up["reason"]), claude_data.VERDICT_REASON_CAP_CHARS + 1)
+        self.assertTrue(gave_up["reason"].endswith("…"))
+
+    def test_a_reason_that_is_not_text_is_an_empty_one_and_the_give_up_stands(self) -> None:
+        record = impossible(T0 + 30)
+        record["attachment"]["reason"] = ["not", "text"]
+        _goal, _cleared, gave_up = read_all([*set_goal(T0 + 5), record])
+        self.assertEqual({"at": T0 + 30, "reason": ""}, gave_up)
+
+    def test_a_give_up_for_a_goal_not_held_is_not_published(self) -> None:
+        # No set record in the bytes read, or another condition: absent means unknown.
+        self.assertEqual((None, None, None), read_all([prompt(T0), impossible(T0 + 30)]))
+        other = impossible(T0 + 30, LATER_CONDITION)
+        self.assertEqual((None, None, None), read_all([*set_goal(T0 + 5), other]))
+
+    def test_a_goal_set_after_a_give_up_says_the_earlier_one_was_given_up(self) -> None:
+        goal, cleared, gave_up = read_all(
+            [*set_goal(T0 + 5), impossible(T0 + 30), *set_goal(T0 + 60, LATER_CONDITION)]
+        )
+        self.assertEqual(
+            {"text": LATER_CONDITION, "at": T0 + 60, "earlier": {"how": "gave-up", "at": T0 + 30}},
+            goal,
+        )
+        self.assertIsNone(cleared)
+        self.assertIsNone(gave_up)
+
+    def test_a_clear_publishes_its_time_and_leaves_no_goal(self) -> None:
+        goal, cleared, gave_up = read_all([*set_goal(T0 + 5), clear_sentinel(T0 + 20)])
+        self.assertIsNone(goal)
+        self.assertEqual({"at": T0 + 20}, cleared)
+        self.assertIsNone(gave_up)
+
+    def test_the_first_of_two_clear_signals_wins(self) -> None:
+        printed = command_answer(T0 + 21, "clear", f"Goal cleared: {CONDITION}")
+        _goal, cleared, _gave_up = read_all([*set_goal(T0 + 5), clear_sentinel(T0 + 20), printed])
+        self.assertEqual({"at": T0 + 20}, cleared)
+
+    def test_the_printed_clear_alone_publishes_its_time(self) -> None:
+        printed = command_answer(T0 + 21, "clear", f"Goal cleared: {CONDITION}")
+        _goal, cleared, _gave_up = read_all([*set_goal(T0 + 5), printed])
+        self.assertEqual({"at": T0 + 21}, cleared)
+
+    def test_a_goal_set_after_a_clear_is_held_and_the_clear_is_no_longer_published(self) -> None:
+        goal, cleared, _gave_up = read_all(
+            [*set_goal(T0 + 5), clear_sentinel(T0 + 20), *set_goal(T0 + 40, LATER_CONDITION)]
+        )
+        self.assertEqual({"text": LATER_CONDITION, "at": T0 + 40}, goal)
+        self.assertIsNone(cleared)
+
+    def test_a_clear_that_leaves_a_goal_is_none_for_a_session_with_no_goal_events(self) -> None:
+        self.assertEqual((None, None, None), read_all([prompt(T0)]))
+
+    def test_a_status_check_or_a_no_goal_answer_is_not_a_clear(self) -> None:
+        nothing = command_answer(T0 + 40, "clear", "No goal set")
+        goal, cleared, gave_up = read_all([*set_goal(T0 + 5), impossible(T0 + 30), nothing])
+        self.assertIsNone(goal)
+        self.assertIsNone(cleared)
+        assert gave_up is not None
+
+    def test_a_replacement_while_the_goal_was_active_names_the_moment_of_the_replacement(
+        self,
+    ) -> None:
+        goal, _cleared, _gave_up = read_all(
+            [*set_goal(T0 + 5), verdict(T0 + 10, met=False), *set_goal(T0 + 50, LATER_CONDITION)]
+        )
+        assert goal is not None
+        self.assertEqual({"how": "replaced", "at": T0 + 50}, goal["earlier"])
+
+    def test_the_earlier_goals_words_are_never_published(self) -> None:
+        goal, _cleared, _gave_up = read_all(
+            [*set_goal(T0 + 5), *set_goal(T0 + 50, LATER_CONDITION)]
+        )
+        assert goal is not None
+        self.assertEqual({"how", "at"}, set(goal["earlier"]))
+        self.assertNotIn(CONDITION[:20], json.dumps(goal))
+
+    def test_a_same_moment_re_set_of_the_same_words_is_not_a_replacement(self) -> None:
+        goal, _cleared, _gave_up = read_all([*set_goal(T0 + 5), *set_goal(T0 + 5)])
+        self.assertEqual({"text": CONDITION, "at": T0 + 5}, goal)
+
+    def test_the_same_words_set_again_later_is_a_replacement(self) -> None:
+        goal, _cleared, _gave_up = read_all([*set_goal(T0 + 5), *set_goal(T0 + 50)])
+        assert goal is not None
+        self.assertEqual({"how": "replaced", "at": T0 + 50}, goal["earlier"])
+
+    def test_a_goal_with_no_earlier_one_publishes_no_earlier_key(self) -> None:
+        goal, _cleared, _gave_up = read_all([*set_goal(T0 + 5)])
+        assert goal is not None
+        self.assertNotIn("earlier", goal)
+
+    def test_a_set_after_a_give_up_then_a_clear_publishes_no_earlier_key(self) -> None:
+        # Measured: the clear after a give-up prints `No goal set` and writes nothing, so the
+        # give-up stands as the earlier goal's end.
+        nothing = command_answer(T0 + 40, "clear", "No goal set")
+        goal, _cleared, _gave_up = read_all(
+            [
+                *set_goal(T0 + 5),
+                impossible(T0 + 30),
+                nothing,
+                *set_goal(T0 + 60, LATER_CONDITION),
+            ]
+        )
+        assert goal is not None
+        self.assertEqual({"how": "gave-up", "at": T0 + 30}, goal["earlier"])
+
+    def test_every_new_note_survives_an_append_without_a_rescan(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            config, state = make_runtime()
+            path = Path(home, "claude.jsonl")
+            _jsonl(path, [*set_goal(T0 + 5), impossible(T0 + 30)], T0)
+            claude_data.session_goal(config, state, str(path))
+            with path.open("a", encoding="utf-8") as handle:
+                for record in set_goal(T0 + 60, LATER_CONDITION):
+                    handle.write(json.dumps(record) + "\n")
+            goal = claude_data.session_goal(config, state, str(path))
+            gave_up = claude_data.session_goal_gave_up(state, str(path))
+        assert goal is not None
+        self.assertEqual({"how": "gave-up", "at": T0 + 30}, goal["earlier"])
+        self.assertIsNone(gave_up)
+
+    def test_a_cold_read_that_starts_mid_file_publishes_none_of_it(self) -> None:
+        # The set and the give-up sit before the window; absent means unknown.
+        records = [*set_goal(T0 + 1), impossible(T0 + 2)]
+        records += [prompt(T0 + 3 + n, "x" * 400) for n in range(40)]
+        with tempfile.TemporaryDirectory() as home:
+            config, state = make_runtime(turn_scan_max_bytes=4096)
+            path = Path(home, "claude.jsonl")
+            _jsonl(path, records, T0)
+            self.assertGreater(path.stat().st_size, config.turn_scan_max_bytes)
+            self.assertIsNone(claude_data.session_goal(config, state, str(path)))
+            self.assertIsNone(claude_data.session_goal_cleared(state, str(path)))
+            self.assertIsNone(claude_data.session_goal_gave_up(state, str(path)))
+
+    def test_a_subagents_give_up_or_clear_is_not_the_sessions(self) -> None:
+        sub = impossible(T0 + 30)
+        sub["isSidechain"] = True
+        self.assertEqual((None, None, None), read_all([sub]))
+        goal, cleared, gave_up = read_all(
+            [*set_goal(T0 + 5), {**clear_sentinel(T0 + 9), "isSidechain": True}]
+        )
+        assert goal is not None
+        self.assertIsNone(cleared)
+        self.assertIsNone(gave_up)
+
+    def test_a_met_goal_is_not_a_give_up(self) -> None:
+        goal, cleared, gave_up = read_all([*set_goal(T0 + 5), verdict(T0 + 30)])
+        assert goal is not None
+        self.assertIsNone(cleared)
+        self.assertIsNone(gave_up)
+
+
+class TheCollectorPublishesTheEndingsTest(HarnessContractTestCase):
+    def row(self, records: list[dict[str, Any]]) -> dict[str, Any]:
+        (row,) = self.sessions_for(self.collect(_store(records), when=self.NOW), "claude")
+        return row
+
+    def test_a_give_up_is_on_the_row_beside_a_goal_that_is_none(self) -> None:
+        when = self.NOW - 100
+        row = self.row([prompt(when), *set_goal(when + 5), impossible(when + 30)])
+        self.assertIsNone(row["session_goal"])
+        self.assertEqual({"at": when + 30, "reason": REASON}, row["session_goal_gave_up"])
+        self.assertIsNone(row["session_goal_cleared"])
+
+    def test_a_clear_is_on_the_row_and_the_goal_does_not_name_the_session(self) -> None:
+        when = self.NOW - 100
+        row = self.row(
+            [prompt(when, f"/goal {CONDITION}"), *set_goal(when + 1), clear_sentinel(when + 20)]
+        )
+        self.assertIsNone(row["session_goal"])
+        self.assertEqual({"at": when + 20}, row["session_goal_cleared"])
+        self.assertIsNone(row["session_goal_gave_up"])
+        self.assertNotIn(CONDITION[:20], row["title"] or "")
+
+    def test_a_given_up_goal_does_not_name_the_session(self) -> None:
+        when = self.NOW - 100
+        row = self.row(
+            [prompt(when, f"/goal {CONDITION}"), *set_goal(when + 1), impossible(when + 20)]
+        )
+        self.assertFalse((row["title"] or "").startswith("/goal"))
+        self.assertNotIn(CONDITION[:20], row["title"] or "")
+
+    def test_a_session_with_neither_publishes_none_for_both(self) -> None:
+        row = self.row([prompt(self.NOW - 100)])
+        self.assertIsNone(row["session_goal_cleared"])
+        self.assertIsNone(row["session_goal_gave_up"])
+
+    def test_the_absent_values_are_none(self) -> None:
+        base = runtime_sessions.base_session("claude", "s", "p")
+        self.assertIsNone(base["session_goal_cleared"])
+        self.assertIsNone(base["session_goal_gave_up"])
 
 
 class TheSourceIsInTheClosedVocabularyTest(unittest.TestCase):
