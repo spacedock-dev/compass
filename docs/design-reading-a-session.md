@@ -3082,6 +3082,39 @@ went red and then green; neither run was counted. The attribution rule is unchan
 call piped beside other `&&` segments still reads `piped_beside_other_commands`, and a lone one
 piped only to an output filter reads its summary line as the `exec` form does.
 
+### Amended 2026-10-23 (owner): PR and skill facts
+
+Two things become evidence on Claude Code, each a closed fact kind added to [the closed lists](#the-closed-lists)
+and neither read from shell text.
+
+- **A pull request created.** The source is Claude Code's own structured record of creating it: the shell
+  call's result carries `toolUseResult.gitOperation.pr` with `action: created`, and the same pull request is
+  written again as a top-level `pr-link` record
+  ([the capture](captures/claude/pr-and-skill-shapes-2.1.309-macos.jsonl), taken against a stub `gh` in a
+  scratch repository). Compass reads the result alone, because the `pr-link` record repeats what the result
+  holds and is written twice per pull request. A call that errored, an action other than `created`, and any URL
+  that is not `https://github.com/<owner>/<repo>/pull/<number>` with a number matching the record publish
+  nothing. The fact carries the repository, the number, the URL rebuilt from those parts, and the time the
+  result was recorded (`pr_repository`, `pr_number`, `pr_url`, `at`). The command line and the output are not
+  read: `gh pr create` is still not a check, and DEC-23 items 3 and 5 keep the rest of the command and its
+  output out of every prompt. One pull request is one fact however many records name it.
+- **A skill used.** The source is a `Skill` tool call whose result did not error, and only the skill's name is
+  read, held to `[A-Za-z0-9][A-Za-z0-9_.:-]` up to 80 characters. The call's arguments are never read. One
+  fact per name, at its first use.
+
+Both are `tool_report` facts (subjects `pr` and `skill`), so they ride the existing admission: a reading is sent
+them only under the tool-output grant for a named destination, beside checks and written paths, and the
+unasked lane never receives them. They count within the same twelve-entry cap, ranked with the passes (a pull
+request) and the written paths (a skill). A reading may cite either as `consistent` for a line the fact
+shows done, inside the evidence window. Neither can carry a departure, since neither has a result that can fail.
+
+The owner also ruled that `git commit` and `git push` keep counting as commands that may change files. That rule
+is unchanged: a pull request created is a fact beside them and not a reason to read their text.
+
+Found on a real session whose goal was to use a skill and create a pull request: the agent did both, Claude
+Code recorded its own goal as met with a reason naming the pull request, and the analysis said Can't tell,
+because neither the pull request nor the skill was anywhere in what a reading is sent.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
@@ -5572,6 +5605,21 @@ deleted at 22:59, after the verdict." A file written again after its removal sta
 dispute. "Could not confirm it" remains the answer where nothing in the record supports or contradicts the
 claim, and Compass's own level stands either way.
 
+
+### Amended 2026-10-23: a verdict may name a pull request
+
+[The 2026-10-22 amendment](#amended-2026-10-22-a-goal-met-verdict-is-a-claim) lists the facts a verdict's reason
+may cite as the files it names and the kinds of check it says passed. A third is added by
+[the pull request and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts) to DEC-23: a pull request
+the reason names, as `PR #7`, `pull request #7`, `pull/7` or a `github.com/<owner>/<repo>/pull/7` URL, which
+agrees when the record holds a created-pull-request fact for that number (and that repository, where the reason
+gives one) at or before the verdict and no earlier than the goal's own set time. The stored `why` for it is
+`pr-created-before`. A written file the reason names still agrees first, and a failed check of a claimed kind
+still disputes before either. Without the fact the result stays **unconfirmed** with `not-found`, never
+disputed: absence is not contradiction (rule 3). A reason that names none of a file, a check kind or a pull
+request number is still `nothing-checkable`.
+
+A pull request cannot be disputed by a later record, because the record holds no event that undoes a creation.
 
 ### Amended 2026-10-23: a goal that ended is said to have ended
 

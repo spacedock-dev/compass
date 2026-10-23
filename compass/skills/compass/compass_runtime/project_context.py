@@ -144,6 +144,10 @@ _SEMANTIC_FACT_TYPES = {
     "check_run": "tool_report",
     "path_written": "tool_report",
     "background_launch": "tool_report",
+    # Two more subjects of the same type (owner, 2026-10-23):
+    # [DEC-23](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)
+    "pr_created": "tool_report",
+    "skill_used": "tool_report",
 }
 _DISPATCH_BUILD_RE = re.compile(r"^\s*spacedock\s+dispatch\s+build(?:\s+(.*))?$", re.IGNORECASE)
 # This is transcript grammar from the dispatch contract, not a location we create or write.
@@ -2034,7 +2038,9 @@ def work_events(
 # Called from `collect` only, never from `_semantic_history_source_events`, so
 # the history store never sees these facts; `semantic_history._FACT_EVENT_TYPES`
 # not naming the type is the second wall (item 6).
-_TOOL_REPORT_KINDS = frozenset({"check_run", "path_written", "background_launch"})
+_TOOL_REPORT_KINDS = frozenset(
+    {"check_run", "path_written", "background_launch", "pr_created", "skill_used"}
+)
 TOOL_REPORT_MAX_ENTRIES = 12
 TOOL_REPORT_LINE_CHARS = 120
 # The existing ledger cap (`reading.LEDGER_SUMMARY_CAP_CHARS`), which item 5 names.
@@ -2157,6 +2163,16 @@ _GO_OK = re.compile(r"^ok\s", re.MULTILINE)
 # [DEC-23](docs/design-reading-a-session.md#amended-2026-10-04-no-recorded-result-is-listed-last)
 _RESULT_ORDER = {"failed": 0, "passed": 1, "not-recorded": 3}
 _WRITE_RANK = 2
+# A created pull request ranks with the passes: it is the outcome a goal such as "create a PR" asks
+# for, so a cap of twelve may not drop it behind written paths. A skill ranks with the paths.
+_PR_RANK = 1
+_SKILL_RANK = 2
+# Closed shapes: the only text of a PR or a skill that reaches a record. The URL is rebuilt from
+# the matched parts, so nothing past the number (a line break, an instruction) is ever kept.
+_PR_URL_RE = re.compile(
+    r"^https://github\.com/(?P<repo>[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100})/pull/(?P<number>[1-9][0-9]{0,8})$"
+)
+_SKILL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
 # A true error flag is a run that exited nonzero only when Claude Code says so;
 # any other flagged result is a call that never ran: a rejection, a cancelled
 # parallel call, a sibling error, a hook block or an input error (measured:
@@ -3351,6 +3367,8 @@ class _Result(NamedTuple):
 
     block: dict[str, Any]
     at: float | None
+    # The record's own `toolUseResult`, read for `gitOperation.pr` and nothing else.
+    meta: dict[str, Any] | None = None
 
 
 def _tool_result_blocks(
@@ -3368,7 +3386,8 @@ def _tool_result_blocks(
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 call_id = block.get("tool_use_id")
                 if isinstance(call_id, str) and call_id:
-                    results[call_id] = _Result(block, at)
+                    meta = record.get("toolUseResult")
+                    results[call_id] = _Result(block, at, meta if isinstance(meta, dict) else None)
     return results
 
 
@@ -3783,6 +3802,10 @@ class _ToolReportTally:
         # invalidates the whole private, bounded candidate cache.
         self._entry_cache: dict[str, dict[str, Any]] = {}
         self.writes: dict[str, dict[str, Any]] = {}
+        # Pull requests Claude Code recorded as created, by repository and number, and the skills
+        # a Skill call launched, by name. The first of each is kept: it is when the work was done.
+        self.prs: dict[str, dict[str, Any]] = {}
+        self.skills: dict[str, dict[str, Any]] = {}
         # The latest delete or move away of each path, for the press alone (`removals`).
         self.removed: dict[str, dict[str, Any]] = {}
         # (time, call id) of every recorded write and fixer run. A pass is aged
@@ -3834,12 +3857,64 @@ class _ToolReportTally:
             self._add_write(at, cwd, call_id, name, tool_input, worker)
         elif name == "Bash":
             self._add_shell(at, cwd, call_id, tool_input, worker, stream)
+            self._add_pull_request(at, call_id, worker)
+        elif name == "Skill":
+            self._add_skill(at, call_id, tool_input, worker)
         elif name in {"Agent", "Task", "Monitor"} and tool_input.get("run_in_background") is True:
             found = self.results.get(_launch_record_id(call_id, stream or "parent"))
             if found is None or found.block.get("is_error") is not True:
                 self._add_launch(at, call_id, name, 1, worker, stream)
         if changes_before != (len(self.write_calls), len(self.changing_seqs)):
             self._entry_cache.clear()
+
+    def _add_pull_request(self, at: float, call_id: str, worker: str) -> None:
+        """A pull request Claude Code says a ran Bash call created.
+
+        Read from the result's structured `gitOperation.pr` alone, never the command or its output.
+        """
+        found = self.results.get(call_id)
+        if found is None or found.block.get("is_error") is True or found.meta is None:
+            return
+        operation = found.meta.get("gitOperation")
+        pr = operation.get("pr") if isinstance(operation, dict) else None
+        if not isinstance(pr, dict):
+            return
+        url = pr.get("url")
+        matched = _PR_URL_RE.match(url) if isinstance(url, str) else None
+        if (
+            matched is None
+            or pr.get("action") != "created"
+            or pr.get("number") != int(matched["number"])
+        ):
+            return
+        key = f"{matched['repo']}#{matched['number']}"
+        self.prs.setdefault(
+            key,
+            {
+                "at": found.at if found.at is not None else at,
+                "record_id": call_id,
+                "title": key,
+                "repository": matched["repo"],
+                "number": int(matched["number"]),
+                "url": f"https://github.com/{matched['repo']}/pull/{matched['number']}",
+                "worker": worker,
+            },
+        )
+
+    def _add_skill(self, at: float, call_id: str, tool_input: dict[str, Any], worker: str) -> None:
+        """A skill a Skill call launched: its name, never its arguments."""
+        found = self.results.get(call_id)
+        name = tool_input.get("skill")
+        if (
+            found is None
+            or found.block.get("is_error") is True
+            or not isinstance(name, str)
+            or _SKILL_NAME_RE.match(name) is None
+        ):
+            return
+        self.skills.setdefault(
+            name, {"at": at, "record_id": call_id, "title": name, "worker": worker}
+        )
 
     def _add_launch(
         self, at: float, call_id: str, tool: str, count: int, worker: str, stream: str
@@ -4270,6 +4345,41 @@ class _ToolReportTally:
             **({"worker_kind": write["worker"]} if write["worker"] else {}),
         }
 
+    @staticmethod
+    def _pr_entry(key: str, pr: dict[str, Any]) -> dict[str, Any]:
+        who = "Claude subagent" if pr["worker"] else "Claude"
+        return {
+            "kind": "pr_created",
+            "subject": "pr",
+            "at": pr["at"],
+            "record_id": pr["record_id"],
+            "title": pr["title"],
+            "pr_repository": pr["repository"],
+            "pr_number": pr["number"],
+            "pr_url": pr["url"],
+            "source": f"{who} Bash call result's structured pull request record",
+            "rank": _PR_RANK,
+            "_key": f"pr:{key}",
+            "_first_at": pr["at"],
+            **({"worker_kind": pr["worker"]} if pr["worker"] else {}),
+        }
+
+    @staticmethod
+    def _skill_entry(name: str, skill: dict[str, Any]) -> dict[str, Any]:
+        who = "Claude subagent" if skill["worker"] else "Claude"
+        return {
+            "kind": "skill_used",
+            "subject": "skill",
+            "at": skill["at"],
+            "record_id": skill["record_id"],
+            "title": skill["title"],
+            "source": f"{who} Skill call",
+            "rank": _SKILL_RANK,
+            "_key": f"skill:{name}",
+            "_first_at": skill["at"],
+            **({"worker_kind": skill["worker"]} if skill["worker"] else {}),
+        }
+
     def _ranked(self, histories: list[tuple[str, list[dict[str, Any]]]]) -> list[dict[str, Any]]:
         """Every check's entry and every written path, in the order item 4 keeps them."""
         candidates: list[dict[str, Any]] = []
@@ -4289,6 +4399,8 @@ class _ToolReportTally:
                 }
             )
         candidates.extend(self._write_entry(path, write) for path, write in self.writes.items())
+        candidates.extend(self._pr_entry(key, pr) for key, pr in self.prs.items())
+        candidates.extend(self._skill_entry(name, skill) for name, skill in self.skills.items())
         candidates.extend(
             {**launch, "rank": 4, "_key": f"launch:{call_id}", "_first_at": launch["at"]}
             for call_id, launch in self.launches.items()
@@ -7212,6 +7324,9 @@ def _semantic_fact_from_event(
         "changed_after",
         "read_incomplete",
         "result_at",
+        "pr_repository",
+        "pr_number",
+        "pr_url",
         "count",
         "completed_at",
         "last_activity_at",

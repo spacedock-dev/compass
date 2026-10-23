@@ -207,6 +207,13 @@ export function checkSupports(
 ): boolean {
   const report = String(entry.type || '') === 'tool_report';
   if (!report && entry.subject !== 'check') return !subjectlessPiCheck(entry);
+  if (entry.subject === 'pr' || entry.subject === 'skill') {
+    /* A created pull request or a launched skill shows something done and has no result to fail: it carries a
+       consistent inside the window and nothing else
+       ([DEC-23](../../../docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)). */
+    const at = evidenceAt(entry);
+    return result === CONSISTENT && at !== null && at > 0 && !beforeWindow(entry, windowStart);
+  }
   if (entry.subject !== 'check') {
     const at = evidenceAt(entry);
     return (

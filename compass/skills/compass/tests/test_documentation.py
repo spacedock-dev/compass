@@ -1786,6 +1786,26 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
             with self.subTest(read=named):
                 self.assertIn(named, self.FLAT)
 
+    def test_the_pull_request_and_skill_reads_are_named_and_counted(self) -> None:
+        # Neither read matches the `input` / `arguments` pattern above: the skill's name is read from
+        # an input the check scan already holds, and a pull request from a result's
+        # `gitOperation`. They are counted here so a second place that reads either fails until
+        # SECURITY.md names it (owner, 2026-10-23).
+        pattern = r'"gitOperation"|\.get\("skill"\)'
+        found = {
+            path.name: len(re.findall(pattern, text))
+            for path in sorted(self.RUNTIME.rglob("*.py"))
+            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
+        }
+        self.assertEqual({"project_context.py": 2}, found)
+        for phrase in (
+            "the `skill` name of a `Skill` call",
+            "`toolUseResult.gitOperation.pr` (`number`, `url`, `action`)",
+            "never the command or its output",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.SECTION)
+
     def test_the_claude_check_read_is_bounded_to_the_caps_the_section_states(self) -> None:
         # DEC-23 item 5's bounds, read out of the module rather than restated.
         for phrase in (

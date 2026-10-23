@@ -244,9 +244,13 @@ export function evidenceRows(
       ? `${entry.result || 'Recorded'} check`
       : entry.subject === 'write'
         ? 'File write'
-        : agentMessage(entry)
-          ? 'Agent message'
-          : String(entry.type || 'Recorded entry');
+        : entry.subject === 'pr'
+          ? 'Pull request created'
+          : entry.subject === 'skill'
+            ? 'Skill used'
+            : agentMessage(entry)
+              ? 'Agent message'
+              : String(entry.type || 'Recorded entry');
     return {
       id: String(entry.id || ''),
       label: [

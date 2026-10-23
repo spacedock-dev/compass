@@ -175,6 +175,8 @@ export const GOAL_VERDICT_CHECKS: readonly string[] = ['agrees', 'disputed', 'un
 export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
   'written-before': 'the file its reason names is recorded as written before the verdict',
   'passed-before': 'a check of the kind its reason names is recorded as passing before the verdict',
+  'pr-created-before':
+    'the pull request its reason names is recorded as created before the verdict',
   'written-after': 'the file its reason names was written again after the verdict',
   'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
   'moved-after': 'a file its reason or the goal names was moved away after the verdict',
@@ -182,6 +184,10 @@ export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
   'not-found': 'the record Compass read does not show what its reason names',
   'nothing-checkable': 'its reason names no file or check Compass can look for',
 };
+/* "the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict":
+   the pull request fact the test confirmed, named from the entry it cites. */
+export const goalVerdictPullRequest = (name: string): string =>
+  `the pull request its reason names, ${name}, is recorded as created before the verdict`;
 /* "docs/e2e/notes.md was deleted at 22:59, after the verdict": the file and the moment the record shows. */
 export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
   `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;

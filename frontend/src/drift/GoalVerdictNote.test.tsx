@@ -120,6 +120,39 @@ describe('the harness verdict on the Drift card', () => {
     expect(text).toContain('does not change the level');
   });
 
+  it('names the pull request fact it confirmed, from the entry the test cites', async () => {
+    const pr = check('pr1', 550, '', {
+      subject: 'pr',
+      summary: 'example-org/example-repo#7',
+      result_source: '',
+    });
+    const page = mountDrift({
+      session: {
+        ...withVerdict({ verdict: { met: true, at: VERDICT_AT, reason: 'created PR #7' } }),
+        ...checked('agrees', 'pr-created-before', VERDICT_AT, { cites: ['pr1'] }),
+      },
+      facts: [...FACTS, pr],
+    });
+    await page.settle();
+    await page.settle();
+    expect(state()).toBe('agrees');
+    expect(textOf('[data-next-goal-verdict]')).toContain(
+      'Compass agrees: the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict.',
+    );
+  });
+
+  it('says the pull request in general words where the cited entry is not held', async () => {
+    const page = mountDrift({
+      session: { ...withVerdict(), ...checked('agrees', 'pr-created-before') },
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    expect(textOf('[data-next-goal-verdict]')).toContain(
+      'Compass agrees: the pull request its reason names is recorded as created before the verdict.',
+    );
+  });
+
   it('says disputed where the record undoes it, and the level stays the analysis', async () => {
     const page = mountDrift({
       session: { ...withVerdict(), ...checked('disputed', 'written-after') },

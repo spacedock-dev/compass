@@ -1781,6 +1781,16 @@ session history. Launch facts are excluded from every Analyze ledger, including
 one carrying tool output. Terminal task notifications pair only within the
 originating admitted stream, and their text is never published or stored.
 
+Two more kinds join it by the owner's ruling of 2026-10-23
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)): a pull
+request Claude Code recorded as created, and a skill it launched. A pull request is read from the
+structured `gitOperation.pr` on a shell call's result alone, and published as its repository, number, a
+URL rebuilt from those two and the time, only when the URL is `https://github.com/<owner>/<repo>/pull/<number>`
+with a matching number and the action is `created`. A skill is read from a `Skill` call whose result did not
+error, and published as its name alone, in a closed character set of at most 80 characters. Neither reads a
+command, an output tail or a skill's arguments. Like a check, each reaches a prompt only under the same
+grant for a named destination, and the unasked lane never receives them.
+
 The content class is what a Claude Code transcript recorded about the checks a session ran and the
 files it wrote. Since 2026-09-28 that includes the session's subagents, read from their own
 transcripts under the session's directory. One check-evidence scan spends at most the configured
@@ -3475,8 +3485,11 @@ The operator-cockpit prototype also reads dispatch evidence:
   of its `Write`, `Edit`, `MultiEdit` and `NotebookEdit` calls (`file_path`, or `notebook_path`),
   for the checks it ran and the files it wrote, its subagents' calls included through the same
   expression. Of a file-write call it reads the path, and of its
-  result the error flag alone. [Tool output in a Claude Code
-  reading](#tool-output-in-a-claude-code-reading) states its bounds and where the result may go.
+  result the error flag alone. Since 2026-10-23 it also reads the `skill` name of a `Skill` call
+  (never its arguments), and of a `Bash` call's result only the structured
+  `toolUseResult.gitOperation.pr` (`number`, `url`, `action`), never the command or its output. Both
+  go through closed shapes and publish nothing that does not match them. [Tool output in a Claude
+  Code reading](#tool-output-in-a-claude-code-reading) states its bounds and where the result may go.
 
 These are evidence reads, not command execution. In total, eight expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.

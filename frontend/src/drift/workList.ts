@@ -109,7 +109,17 @@ export function toolReportParts(entry: WorkEntry): {
   readonly check: CheckMarks | null;
 } {
   if (entry.subject !== 'check')
-    return { actor: 'Agent', type: 'file written', notes: [], check: null };
+    return {
+      actor: 'Agent',
+      type:
+        entry.subject === 'pr'
+          ? 'pull request created'
+          : entry.subject === 'skill'
+            ? 'skill used'
+            : 'file written',
+      notes: [],
+      check: null,
+    };
   const key = `${entry.result} ${entry.resultSource}`;
   const recorded = Object.hasOwn(CHECK_RESULTS, key);
   const result: CheckResult =
