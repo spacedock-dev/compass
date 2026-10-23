@@ -3,7 +3,7 @@ import { useHoldStill } from './useHoldStill';
 import { Card } from '../ui/card';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Disclosure, RaiseControl, disclosureKey, useFocusKey } from '../controls';
-import { endedAt, pageTitleOf, type ObservedSession, type Row } from '../observed';
+import { endedAt, noTitleText, pageTitleOf, type ObservedSession, type Row } from '../observed';
 import { selectObserved } from '../observed/select';
 import { sessionHome, type SessionRoute } from '../router/grammar';
 import { useDisplayed, useShell } from '../shell/context';
@@ -222,9 +222,9 @@ function Header({
           ref={titleRef}
           tabIndex={-1}
           className={`${title ? '' : 'next-session-absent'}${observed.isNeeds || observed.askKnown ? ' line-clamp-2' : ''}`}
-          title={title || observed.titleText}
+          title={title || noTitleText(session)}
         >
-          {title || observed.titleText}
+          {title || noTitleText(session)}
         </h1>
       </div>
       <div className="next-session-detail-bar">

@@ -6,7 +6,7 @@ import { loadLegacyViews } from '../observed/legacy.test.helper';
 import { mountShell } from '../shell/testing';
 import { formatDuration } from '../shell/format';
 import { retractSessionCopies } from '../../test/sessionCopyDeviation';
-import type { Row } from '../observed';
+import { noTitleText, type Row } from '../observed';
 import { turnEndedSentence } from './detail';
 import { harnessLabels } from './rows';
 
@@ -178,6 +178,28 @@ function projectRecordedTurnEnd(
   }
 }
 
+/* A session with no title whose only prompt was a harness command reads "No name: the session opened with a
+   command", where the retired page said no title was published (docs/design-frontend-migration.md#held-to-recorded-answers).
+   The recorded heading is restated where the page now says it. */
+function projectRecordedCommandOpener(
+  root: ParentNode,
+  payload: Record<string, unknown>,
+  route: { project: string; harness?: string; session: string },
+): void {
+  const rows = Array.isArray(payload['sessions']) ? (payload['sessions'] as Row[]) : [];
+  const row = rows.find(
+    (candidate) =>
+      candidate &&
+      String(candidate['project'] ?? '') === route.project &&
+      String(candidate['sid'] ?? '') === route.session &&
+      (!route.harness || candidate['harness'] === route.harness),
+  );
+  if (!row || row['first_prompt_control'] !== true) return;
+  const heading = root.querySelector('.next-session-detail-title h1');
+  if (heading && heading.textContent === 'Title not published')
+    heading.textContent = noTitleText(row);
+}
+
 function legacySummary(
   payload: unknown,
   route: { project: string; harness?: string; session: string; from?: string },
@@ -194,6 +216,7 @@ function legacySummary(
     harnessLabels(payload as Row).get(route.harness ?? '') ?? '',
   );
   projectRecordedTurnEnd(template.content, payload as Record<string, unknown>, route);
+  projectRecordedCommandOpener(template.content, payload as Record<string, unknown>, route);
 
   return summarize(template.content);
 }

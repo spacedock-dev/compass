@@ -75,6 +75,13 @@ const ISSUE_KEY = /^[A-Z][A-Z0-9]{1,9}-\d{2,}$/;
 const HEX_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){0,4}(?:-[0-9a-f]{12})?$/i;
 const TITLE_WIDTH = 120;
 
+/* Why a session has no title. A session whose only prompt was a harness command did publish that prompt;
+   Compass declines to name it by a command, so "not published" would say something untrue. */
+export const NO_NAME_COMMAND = 'No name: the session opened with a command';
+export function noTitleText(source: Row): string {
+  return source['first_prompt_control'] === true ? NO_NAME_COMMAND : 'Title not published';
+}
+
 export function pageTitleOf(source: Row): string {
   const goal = goalOf(source);
   const title = trimmed(source['title']);

@@ -490,6 +490,25 @@ describe('what the page says about what it could not see', () => {
     expect(text).toContain('Session facts: No stop or end observed · Git state was not measured');
   });
 
+  it('says a session that opened with a command was not named, not that no title was published', async () => {
+    await open(
+      board([
+        {
+          harness: 'claude',
+          sid: 'g',
+          project: 'p',
+          state: 'idle',
+          first_prompt: '/goal a file exists',
+          first_prompt_control: true,
+        },
+      ]),
+      { hash: '#n=session:p:claude:g' },
+    );
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+      'No name: the session opened with a command',
+    );
+  });
+
   it('draws the command-shape reports as off, with the sentence and the caveats behind one summary', async () => {
     await open(board([ONE]));
     const section = document.querySelector('[data-next-command-reports]');

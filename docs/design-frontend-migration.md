@@ -17,6 +17,14 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-23, a session whose only prompt was a harness command is not said to have an unpublished title: on the
+session page's heading, the browser tab title and the breadcrumb, a session with no title whose first prompt
+was a command (`first_prompt_control`) reads "No name: the session opened with a command" where the
+recording says "Title not published", since the prompt was published and Compass declined to name the session
+by it. `detail.differential.test.tsx` restates that heading on the recorded side
+(`projectRecordedCommandOpener`) so every other word stays held to the recording. A Sessions row keeps the
+title as published, as above. Golden files are unchanged.
+
 2026-10-21, departure cards and Steer back read as the redesign draws them
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-departure-cards-and-steer-back-read-as-the-design-does)):
 a departure's headline says what happened and its What is one sentence, so the cards no longer carry the

@@ -153,6 +153,11 @@ describe('finding the one session a route names', () => {
     expect(sessionTitle(findSession(sessions, 'alpha', 'claude', 'shared'))).toBe('Claude title');
   });
 
+  it('does not call a command opener an unpublished title', () => {
+    const opened = { harness: 'claude', sid: 'c', first_prompt_control: true } as never;
+    expect(sessionTitle(opened)).toBe('No name: the session opened with a command');
+  });
+
   it('stands in for an identifier-only title with the first prompt, as the session heading does', () => {
     const keyed = {
       harness: 'claude',
