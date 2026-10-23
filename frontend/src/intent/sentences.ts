@@ -80,7 +80,7 @@ export const GOAL_HINT =
    instead. Said only beside a confirmed save on an ended session. The goal box shows the same sentence, so
    the short form, which reads as "nothing can be read", is not used. */
 export const ENDED_CAVEAT =
-  'This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.';
+  'This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.';
 
 /* What the last save attempt is still worth saying. `persisted:false` is its own cue and not a success: the
    annotation is then held only in this process, and the next collection reloads the store from disk and

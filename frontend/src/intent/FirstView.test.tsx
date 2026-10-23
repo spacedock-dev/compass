@@ -133,7 +133,7 @@ describe('the first view of a session', () => {
     const page = mountSession({ session: { ended_at: 999 } });
     await settle(page);
     expect(text('[data-next-cockpit-held-field="goal"]')).toContain(
-      'This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.',
+      'This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.',
     );
     expect(goalBox().value).toBe('Ship the queue worker');
   });
@@ -152,7 +152,7 @@ describe('the first view of a session', () => {
     expect(control('reading-ask')).not.toBeNull();
     expect(control('reading-ask')?.getAttribute('aria-disabled')).not.toBe('true');
     expect(text('[data-next-ended-goal]')).toContain(
-      'your saved intent and the goal drafted from your prompt still can',
+      'Analyze still uses the intent you saved before the session ended',
     );
     expect(text('[data-next-ended-goal]')).not.toContain('can only read');
   });

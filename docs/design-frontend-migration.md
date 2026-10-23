@@ -992,7 +992,7 @@ The nondeparture fixture keeps the same three-click ceiling and reads the cited 
 Session activity without another press; a departure is not required to qualify as a result.
 
 Two refusal fixtures also remain on the path: a goal typed on an ended session states before
-typing that words saved now cannot be read against it, then says "saved after this session ended"
+typing that what they save now is kept but will not be checked against, then says "saved after this session ended"
 with no result; idle without a recorded stop keeps Analyze inert and shows its refusal sentence.
 Their attempted paths cost four and two activations respectively, without a model request.
 

@@ -2,7 +2,14 @@ import { act, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BOARD, mountShell } from '../shell/testing';
 import { SAMPLE_FRAGMENT } from './ids';
+import fixture from './session.fixture.json';
 import { TOUR } from './tour';
+
+const row = fixture.board.sessions[0] as Record<string, unknown> & {
+  annotation_goal: string;
+  annotation_line_1: string;
+  annotation_assessment: unknown;
+};
 
 /* The sample session as a new reader meets it: opened by its link, in the page's own Session view, over
    its own shell. The board the page itself is polling has nothing to do with it. */
@@ -27,10 +34,42 @@ describe('the sample session', () => {
     );
   });
 
+  it('says what the sample shows, then the steps that reach the same page with your own session, in order', async () => {
+    await mountSample();
+    const banner = document.querySelector('[data-sample-banner]') as HTMLElement;
+    const steps = [...banner.querySelectorAll('[data-sample-steps] li')].map(
+      (li) => li.textContent ?? '',
+    );
+    expect(steps).toHaveLength(4);
+    expect(steps[0]).toContain('Open a session from Sessions');
+    expect(steps[1]).toMatch(/Set its goal/);
+    for (const way of ['type', 'one of your prompts', 'Find goal', '/goal']) {
+      expect(steps[1]).toContain(way);
+    }
+    expect(steps[2]).toContain('Analyze drift');
+    expect(steps[3]).toContain('Steer back');
+  });
+
+  it('names no expected outcome on any surface the sample adds or stores', async () => {
+    await mountSample();
+    const banner = document.querySelector('[data-sample-banner]') as HTMLElement;
+    const added = [banner.textContent ?? '', ...TOUR.map((note) => `${note.title} ${note.body}`)];
+    for (const text of added) expect(text).not.toMatch(/outcome|expected/i);
+    // The stored intent, reading and correction are what the Intent and Drift cards draw.
+    const stored = JSON.stringify([
+      row.annotation_goal,
+      row.annotation_line_1,
+      row.annotation_assessment,
+      fixture.correction,
+    ]);
+    expect(stored).not.toMatch(/outcome|read against/i);
+    expect(row.annotation_line_1).toBe('');
+  });
+
   it('draws the real Session page over the stored session: its entries, its intent, its summary and its reading', async () => {
     await mountSample();
     expect(document.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThanOrEqual(18);
-    expect(document.body.textContent).toContain('Burn down fully the');
+    expect(document.body.textContent).toContain('Every issue in the');
     expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain('Medium');
     expect(document.querySelector('[data-next-finding]')).not.toBeNull();
     await waitFor(() => expect(document.querySelector('[data-next-summary]')).not.toBeNull());

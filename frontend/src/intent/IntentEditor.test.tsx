@@ -185,7 +185,7 @@ describe('Save intent', () => {
     await settle(page);
     expect(footerCue()).toBe(
       caveat
-        ? 'Saved. This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.'
+        ? 'Saved. This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.'
         : 'Saved.',
     );
   });

@@ -508,3 +508,39 @@ export const SessionsInvitesAReader: Story = {
     await expect(link).toHaveAttribute('href', SAMPLE_FRAGMENT);
   },
 };
+
+/* The banner says how to reach the same page with a reader's own session, in the order they do it. */
+export const BannerSaysHowToReachThePage: Story = {
+  render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
+  play: async ({ canvasElement }) => {
+    await loaded(canvasElement);
+    const steps = [...canvasElement.querySelectorAll('[data-sample-steps] li')];
+    await expect(steps).toHaveLength(4);
+    await expect(steps[0]).toHaveTextContent('Open a session from Sessions');
+    await expect(steps[1]).toHaveTextContent('Set its goal');
+    await expect(steps[2]).toHaveTextContent('Analyze drift');
+    await expect(steps[3]).toHaveTextContent('Steer back');
+    await expect(canvasElement.querySelector('[data-sample-banner]')).not.toHaveTextContent(
+      /outcome/i,
+    );
+  },
+};
+
+/* Owner, 2026-10-23: the sample saves a goal alone, written as an end state, so its Drift card shows the
+   departure from that goal and no departure from an expected outcome. */
+export const IntentIsAGoalAloneAndTheDepartureIsFromIt: Story = {
+  render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
+  play: async ({ canvasElement }) => {
+    await loaded(canvasElement);
+    const goal = canvasElement.querySelector('textarea') as HTMLTextAreaElement;
+    await expect(goal.value).toMatch(/^Every issue in the ".+" milestone is closed$/);
+    const departures = [...canvasElement.querySelectorAll('[data-next-finding]')].map((node) =>
+      node.getAttribute('data-next-finding'),
+    );
+    await expect(departures).toContain('goal');
+    await expect(departures.filter((kind) => kind !== 'goal' && kind !== 'claims')).toEqual([]);
+    await expect(canvasElement.querySelectorAll('[data-next-summary-marked]')).toHaveLength(3);
+    for (const phase of canvasElement.querySelectorAll('[data-next-summary-marked]'))
+      await expect(phase).toHaveTextContent('Departure · Goal');
+  },
+};

@@ -30,11 +30,29 @@ function Banner() {
         </RouteLink>
       </p>
       <p className="m-0 text-muted-foreground">
-        About ninety minutes of an anonymized Claude Code session, an agent burning down a
-        milestone, with its real stored summary and drift reading, so you can see what the Session
-        page and Intent and drift show. Nothing here is saved, sent or run. Hover or press the
-        numbered (i) marks for a short tour.
+        This is a real Claude Code session, anonymized and cut to about ninety minutes: an agent
+        working through a milestone. It shows the goal that was set, the summary of what the agent
+        did, and the one place it departed from that goal. Nothing here is saved, sent or run. Hover
+        or press the numbered (i) marks for a short tour.
       </p>
+      <div className="flex flex-col gap-1">
+        <p className="m-0 text-foreground">To get this page for your own session:</p>
+        <ol
+          className="m-0 flex list-decimal flex-col gap-1 pl-[22px] text-muted-foreground"
+          data-sample-steps
+        >
+          <li>Open a session from Sessions.</li>
+          <li>
+            Set its goal: type what should be true when the work is done, use one of your prompts,
+            press Find goal, or let Compass pick up a goal you set with /goal in Claude Code.
+          </li>
+          <li>Press Analyze drift.</li>
+          <li>
+            Read where the session departed from the goal. Press Steer back if you want a correction
+            to paste into the session.
+          </li>
+        </ol>
+      </div>
       <details data-sample-tour>
         <summary className="cursor-pointer text-muted-foreground">Read the tour as text</summary>
         <ol className="my-2 flex list-none flex-col gap-2 p-0">
