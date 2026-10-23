@@ -323,9 +323,11 @@ export const ADepartureReadsAsWhatHappened: Story = {
       'It changed src/queue.ts',
     );
     const what = line.querySelector<HTMLElement>('[data-next-departure-what]') as HTMLElement;
-    await expect(what).toHaveTextContent(`At ${clock(420)} the agent changed src/queue.ts.`);
-    await expect(what.querySelectorAll('p')).toHaveLength(2);
-    await expect(what.textContent).not.toMatch(/You said|Agent said/);
+    await expect(what).toHaveTextContent('File write: src/queue.ts');
+    await expect(what).toHaveTextContent(clock(420));
+    // The label, then one line for the one entry the departure cites.
+    await expect(what.querySelectorAll('p')).toHaveLength(1);
+    await expect(what.querySelectorAll('li')).toHaveLength(1);
     await expect(line.querySelector('[data-next-departure-why]')).toHaveTextContent(LINE_WHY);
     await expect(goal.querySelector('[data-next-departure-why]')).toHaveTextContent(GOAL_WHY);
     // Steer back is a section of its own after the departures, in the design's words.

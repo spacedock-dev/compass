@@ -79,12 +79,19 @@ RESULT_UNSUPPORTED = "not shown by the record"
 # [Non-final readings](docs/design-reading-a-session.md#amended-2026-10-04-unfinished-work)
 # carry unfinished work separately from uncertainty and from departures.
 RESULT_NOT_REACHED = "not reached at this stop"
+# The fifth, and only ever on `CONSTRAINT_GOAL`: the model read the goal (and the outcome lines, if
+# any) before the session and found no end state to read the work against. It stands in place of
+# a level, so it takes no citation and carries no prose, and no word or length rule makes it (owner,
+# 2026-10-22):
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-22-a-goal-alone-is-read-or-refused)
+RESULT_GOAL_UNCLEAR = "goal too vague to analyze against"
 RESULTS = (
     RESULT_DEPARTURE,
     RESULT_CONSISTENT,
     RESULT_UNVERIFIABLE,
     RESULT_UNSUPPORTED,
     RESULT_NOT_REACHED,
+    RESULT_GOAL_UNCLEAR,
 )
 
 # What the model may say, and what each token becomes. A token outside this
@@ -104,6 +111,8 @@ CLAIMS_RESULT_BY_TOKEN = {
     **{key: result for key, result in RESULT_BY_TOKEN.items() if key != "not_reached"},
     "unsupported": RESULT_UNSUPPORTED,
 }
+# The Goal's: the shared set and `goal_unclear`, a token no outcome line or claims answer holds.
+GOAL_RESULT_BY_TOKEN = {**RESULT_BY_TOKEN, "goal_unclear": RESULT_GOAL_UNCLEAR}
 
 # Rule 6: the goal and each outcome line, each naming itself, never blended.
 # The reply schema is keyed on these, so there is no field a blended judgement
@@ -125,13 +134,13 @@ _OUTCOME_LINE = re.compile(r"line_([1-9][0-9]*)")
 # Two of the figures item 3 left to this layer, and they are written there. The
 # intent's share of `observer.OBSERVER_MODEL_MAX_PROMPT_BYTES`: the worst goal
 # and six lines at four bytes a character, with the claims question, measure
-# 9,189 bytes with the non-final scope, so this leaves at least 7,168 for the record.
+# 9,6xx bytes with the non-final scope, so this leaves at least 6,656 for the record.
 # The reply cap: eight answers with twelve four-digit citations and a
 # 240-character detail each measure 4,751 bytes compact and 5,664 indented in
 # raw two-byte UTF-8, and a
 # cut reply keeps every complete answer (`_members`), so the headroom is not
 # the only guard.
-INTENT_SHARE_BYTES = 9_216
+INTENT_SHARE_BYTES = 9_728
 REPLY_CAP_BYTES = 8_192
 # How far under the cap a reply may come back and still count as cut: the
 # exec layer strips trailing whitespace, and an indented reply cut inside its
@@ -174,14 +183,21 @@ def claim_title(fact: Mapping[str, Any]) -> str:
 
 def result_for(name: str, token: str) -> str | None:
     """The result a reply's token names on this constraint, or None outside its set."""
-    table = CLAIMS_RESULT_BY_TOKEN if name == CONSTRAINT_CLAIMS else RESULT_BY_TOKEN
+    table = (
+        CLAIMS_RESULT_BY_TOKEN
+        if name == CONSTRAINT_CLAIMS
+        else GOAL_RESULT_BY_TOKEN
+        if name == CONSTRAINT_GOAL
+        else RESULT_BY_TOKEN
+    )
     return table.get(token.strip().casefold())
 
 
 def token_for(result: Any) -> str:
     """The reply token a stored result reads back as, or "" for none."""
     return next(
-        (t for t, r in {**RESULT_BY_TOKEN, **CLAIMS_RESULT_BY_TOKEN}.items() if r == result), ""
+        (t for t, r in {**GOAL_RESULT_BY_TOKEN, **CLAIMS_RESULT_BY_TOKEN}.items() if r == result),
+        "",
     )
 
 
@@ -214,8 +230,17 @@ def outcome_lines(revision: Mapping[str, Any]) -> tuple[str, ...]:
 # record (`annotations.prompt_choices`, owner ruling Q7, 2026-10-01): adopted
 # words like the other two, keyed on their own time. The page spells the same
 # three, held equal to this tuple by the same vocabulary fixture.
-PROMPT_CHOSEN = "chosen-prompt"
-PROMPT_SOURCES = ("latest-prompt", "first-prompt", PROMPT_CHOSEN)
+PROMPT_CHOSEN = records.PROMPT_CHOSEN
+# `session-goal` is the goal a Claude Code session states itself with `/goal`
+# (`claude_data.session_goal`). The reader typed that command, so it is adopted words like the
+# others, keyed on the moment the command ran; it is not a person's message in the observed
+# record, so `adopted_prompt` finds no source fact and the reading falls back to the clip it
+# already reads for any prompt it cannot find (`GOAL_SOURCE_GONE`).
+SESSION_GOAL = records.SESSION_GOAL
+# Spelt once in `records`, which `history` and `project_context` already import, because
+# neither may import `reading` (the reviewed import allowlist). A literal copy of this tuple
+# in each is how a new source would stay missing from a window baseline.
+PROMPT_SOURCES = records.PROMPT_SOURCES
 
 ASSESSMENT_KEYS = (
     "goal_source",
@@ -231,6 +256,7 @@ ASSESSMENT_KEYS = (
     "ended_at_read",
     "evidence_through",
     "coverage",
+    "goal_verdict",
     "criteria",
 )
 CRITERION_KEYS = ("result", "cites", "detail", "clause", "why")
@@ -432,6 +458,10 @@ class ToolOutput:
     # read at the press and never sent or stored; `produce` keeps those its
     # prompt did not carry.
     passes_and_writes: tuple[tuple[str, str, float], ...] = ()
+    # (path, time, "deleted" or "moved") of the latest removal of each path the
+    # shell took away, read at the press for testing a harness verdict. Never
+    # sent to a model and never stored except as the one file a dispute names.
+    removals: tuple[tuple[str, float, str], ...] = ()
 
 
 SCOPE_MID_FLIGHT = "mid-flight"
@@ -1070,6 +1100,22 @@ class Criterion(TypedDict):
     why: str
 
 
+class GoalVerdictCheck(TypedDict):
+    """What the record said to the harness's claim that a `/goal` is met.
+
+    `at` is the verdict's own time, so the page can tell a check of the verdict it shows from one
+    of an earlier verdict. `check` and `why` are closed tokens the page maps to its own sentences,
+    as `Criterion.why` is: no producer prose reaches the card through this field.
+    """
+
+    at: float
+    check: str
+    why: str
+    cites: tuple[str, ...]
+    path: NotRequired[str]
+    changed_at: NotRequired[float]
+
+
 class Assessment(TypedDict):
     """A whole reading, as published.
 
@@ -1109,6 +1155,9 @@ class Assessment(TypedDict):
     # usable time (item 6 of the ruling `MAX_OUTCOME_LINES` cites).
     evidence_through: float | None
     coverage: NotRequired[dict[str, Any] | None]
+    # Compass's test of the harness's own "goal met" verdict, present only where the session holds
+    # one. Beside the criteria and never among them, so it cannot move a level.
+    goal_verdict: NotRequired[GoalVerdictCheck]
     criteria: dict[str, Criterion]
 
 
@@ -2453,6 +2502,20 @@ def _row_body(row: LedgerEntry) -> str:
     return row["summary"]
 
 
+# The refusal is decided from the words alone, before the record is read, and is the one answer that
+# takes no citation and no detail. The zero-line sentence is what makes a goal alone readable: its
+# own end state stands as the outcome, so the model has something to read the work against.
+GOAL_UNCLEAR_RULE = (
+    "Decide first, before reading the entries below, whether the goal and any outcome lines "
+    'state an end state the work can be read against. If none does, answer the goal "goal_unclear" '
+    "with no cites and no detail, and nothing else.\n"
+)
+NO_LINES_RULE = (
+    "No outcome lines are given. Read the goal's own stated end state as the outcome, "
+    "and answer the goal against it.\n"
+)
+
+
 def _header(
     goal_text: str,
     line_texts: Sequence[str],
@@ -2460,6 +2523,7 @@ def _header(
     tool_note: bool,
     claims: bool = False,
     scope: str = SCOPE_LAST_TURN,
+    no_lines: bool = False,
 ) -> str:
     ask_goal = asks_goal(goal_text)
     # The answer's shape is spelt once and named, where it was spelt per
@@ -2486,7 +2550,10 @@ def _header(
             else ""
         )
         + ('; "unsupported" for claims only' if claims else "")
+        + ('; "goal_unclear" for the goal only' if ask_goal else "")
         + ". "
+        + (GOAL_UNCLEAR_RULE if ask_goal else "")
+        + (NO_LINES_RULE if ask_goal and no_lines else "")
         + 'Use "unverifiable" whenever the entries below do not settle the question. '
         "Every <int> is an entry number from the list below; never cite a number that "
         "is not listed, and never name an entry any other way.\n"
@@ -2556,7 +2623,10 @@ def _wider_goal(
     words = _field_text(goal_words, LEDGER_WORDS_CAP_CHARS).strip() if goal_words else ""
     if not words or words == goal_text.strip() or not asks_goal(goal_text):
         return None
-    return _header(words, lines, tool_note=tool_note, claims=claims, scope=scope), words
+    return (
+        _header(words, lines, tool_note=tool_note, claims=claims, scope=scope, no_lines=not lines),
+        words,
+    )
 
 
 def _read_whole(  # noqa: C901 - reader-first lanes and one selected replacement share the budget
@@ -2773,8 +2843,19 @@ def build_prompt(
     )
     tool_note = any(entry["type"] == TOOL_REPORT_TYPE for entry in ledger)
     claims = any(entry["type"] == AGENT_MESSAGE_TYPE for entry in ledger)
-    without = _header(goal_text, (), tool_note=tool_note, claims=claims, scope=scope)
-    header = _header(goal_text, line_texts, tool_note=tool_note, claims=claims, scope=scope)
+    # Said only where no line was saved or read at all: a line the budget later sets aside is not
+    # "none given", and the rule's bytes were never in what that fallback header was sized with.
+    without = _header(
+        goal_text, (), tool_note=tool_note, claims=claims, scope=scope, no_lines=not line_texts
+    )
+    header = _header(
+        goal_text,
+        line_texts,
+        tool_note=tool_note,
+        claims=claims,
+        scope=scope,
+        no_lines=not line_texts,
+    )
     posed = bool(line_texts)
     if len(header.encode("utf-8", "replace")) > min(INTENT_SHARE_BYTES, budget):
         header, posed = without, False
@@ -2865,6 +2946,7 @@ def build_prompt(
             tool_note=tool_note,
             claims=asked_claims,
             scope=scope,
+            no_lines=not line_texts,
         )
     body = "".join(
         row_text(index, restored.get(id(row), row), whole=id(row) in whole)
@@ -3872,6 +3954,24 @@ _RULE_OUTSIDE = re.compile(
 _FILE_NAME = re.compile(r"\.\w{1,5}$")
 
 
+_WORD_WRAP = "`'\"()[]{},;:!?\u2018\u2019\u201c\u201d"
+
+
+def _trim_word(raw: str) -> str:
+    """A word without the quotes, brackets and sentence stops around it, in any order.
+
+    One pass of strip then rstrip(".") left `md".` as `md"`: the period sat outside the strip
+    set, so the closing quote shielded it. Alternating until nothing changes handles a quoted
+    path ending a sentence, which is how an evaluator's reason usually names a file.
+    """
+    word = raw
+    while True:
+        trimmed = word.strip(_WORD_WRAP).rstrip(".")
+        if trimmed == word:
+            return word
+        word = trimmed
+
+
 def _path_tokens(text: str, *, files: bool = False) -> tuple[str, ...]:
     """The paths a line's own words name, as written relative to the session's directory.
 
@@ -3881,7 +3981,7 @@ def _path_tokens(text: str, *, files: bool = False) -> tuple[str, ...]:
     """
     found: list[str] = []
     for raw in text.split():
-        word = raw.strip("`'\"()[]{},;:!?").rstrip(".")
+        word = _trim_word(raw)
         for tail in ("/**", "/*"):
             word = word.removesuffix(tail)
         word = word.removeprefix("./")
@@ -3978,6 +4078,15 @@ class RecordedWrite:
 
 
 @dataclass(frozen=True)
+class RecordedRemoval:
+    """A path the shell took away: `deleted`, or `moved` from where it was."""
+
+    path: str
+    at: float
+    kind: str
+
+
+@dataclass(frozen=True)
 class Recorded:
     """The writes and checks the session's record holds, whether or not a prompt carried them.
 
@@ -3987,6 +4096,7 @@ class Recorded:
 
     writes: tuple[RecordedWrite, ...] = ()
     checks: tuple[LedgerEntry, ...] = ()
+    removals: tuple[RecordedRemoval, ...] = ()
 
 
 def recorded_from(
@@ -4040,7 +4150,11 @@ def recorded_from(
                     fact.get("changed_after") is True
                 )
                 checks.append(row)
-    return Recorded(tuple(writes), tuple(checks))
+    removals = tuple(
+        RecordedRemoval(path, at, kind)
+        for path, at, kind in (tool_output.removals if tool_output is not None else ())
+    )
+    return Recorded(tuple(writes), tuple(checks), removals)
 
 
 def recorded_departure(
@@ -4085,6 +4199,180 @@ def recorded_departure(
             "why": WHY_RECORDED_WRITE,
         }
     return None
+
+
+# The harness's "goal met" verdict is a claim, tested the way an agent saying a task is done is
+# (owner, 2026-10-22):
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-22-a-goal-met-verdict-is-a-claim)
+# The result of the test, apart from every criterion, so the verdict can neither lower a level nor
+# stand in for a passing check. `agrees` and `disputed` are the two answers the record can give;
+# `unconfirmed` is what it gives when it holds neither the cited facts nor anything against them,
+# because absence never produces a dispute (rule 3).
+GOAL_VERDICT_AGREES = "agrees"
+GOAL_VERDICT_DISPUTED = "disputed"
+GOAL_VERDICT_UNCONFIRMED = "unconfirmed"
+GOAL_VERDICT_CHECKS = (GOAL_VERDICT_AGREES, GOAL_VERDICT_DISPUTED, GOAL_VERDICT_UNCONFIRMED)
+GOAL_VERDICT_WRITTEN = "written-before"
+GOAL_VERDICT_PASSED = "passed-before"
+GOAL_VERDICT_WRITTEN_AFTER = "written-after"
+GOAL_VERDICT_FAILED = "check-failed"
+GOAL_VERDICT_DELETED_AFTER = "deleted-after"
+GOAL_VERDICT_MOVED_AFTER = "moved-after"
+GOAL_VERDICT_NOT_FOUND = "not-found"
+GOAL_VERDICT_NOTHING_CHECKABLE = "nothing-checkable"
+GOAL_VERDICT_WHYS = (
+    GOAL_VERDICT_WRITTEN,
+    GOAL_VERDICT_PASSED,
+    GOAL_VERDICT_WRITTEN_AFTER,
+    GOAL_VERDICT_DELETED_AFTER,
+    GOAL_VERDICT_MOVED_AFTER,
+    GOAL_VERDICT_FAILED,
+    GOAL_VERDICT_NOT_FOUND,
+    GOAL_VERDICT_NOTHING_CHECKABLE,
+)
+GOAL_VERDICT_KEYS = ("at", "check", "why", "cites")
+# A dispute that rests on a file taken away names the file and the moment, so the card can say which
+# and when. Both or neither, and only beside the two removal tokens.
+VERDICT_PATH_CAP_CHARS = 240
+GOAL_VERDICT_REMOVAL_KEYS = ("path", "changed_at")
+GOAL_VERDICT_REMOVAL_WHYS = (GOAL_VERDICT_DELETED_AFTER, GOAL_VERDICT_MOVED_AFTER)
+# A file name the evaluator's prose names: a stem of at least two characters and a lettered
+# extension, so "e.g." and a version such as "2.1" are not read as files.
+_VERDICT_FILE = re.compile(r"(?:[\w\-]+/)*[\w\-]{2,}\.[A-Za-z][A-Za-z0-9]{0,4}")
+
+
+# The evaluator elides the head of a long path as ".../" (measured on a real session, 2026-10-22).
+# What is left is a tail of the real path, which `_same_path` already matches by its end.
+_ELIDED_HEAD = re.compile(r"(?:\.\.\.|\u2026)/")
+
+
+def _verdict_files(reason: str) -> tuple[str, ...]:
+    text = _ELIDED_HEAD.sub("", reason)
+    return tuple(path for path in _path_tokens(text, files=True) if _VERDICT_FILE.fullmatch(path))
+
+
+def _verdict_check_kinds(reason: str) -> frozenset[str]:
+    return frozenset(kind for kind in _LINE_KINDS if _claims_result(reason, kind))
+
+
+def _removed_after(
+    named: Sequence[str], recorded: Recorded, set_at: float, verdict_at: float
+) -> RecordedRemoval | None:
+    """The latest removal after the verdict of a named file, or of a folder holding it.
+
+    A file written again after the removal stands again, so that is a write after the verdict and
+    not a removal. Nothing found is None: no recorded removal says nothing about the file.
+    """
+    hits = [
+        removal
+        for removal in recorded.removals
+        if removal.at > verdict_at
+        and removal.at >= set_at
+        and any(_removal_covers(removal.path, path) for path in named)
+        and not any(
+            write.at > removal.at and _removal_covers(removal.path, write.path)
+            for write in recorded.writes
+        )
+    ]
+    # `rm file && rmdir folder` records both at one time; name the file the verdict relied on.
+    return (
+        max(
+            hits,
+            key=lambda removal: (removal.at, any(_same_path(removal.path, p) for p in named)),
+        )
+        if hits
+        else None
+    )
+
+
+def _removal_covers(removed: str, path: str) -> bool:
+    """Whether taking `removed` away takes `path` with it: that file, or the folder holding it."""
+    return (
+        _same_path(removed, path) or f"/{removed}/" in f"/{path}/" or path.startswith(f"{removed}/")
+    )
+
+
+def check_goal_verdict(  # noqa: PLR0911 - one return per answer the record can give
+    goal: Any, recorded: Recorded
+) -> GoalVerdictCheck | None:
+    """Test the harness's `met` verdict on a session's goal against what the record holds.
+
+    The facts the evaluator's reason cites are the files it names and the kinds of check it says
+    passed. A cited file the record shows written, or a check of a claimed kind that passed, at or
+    before the verdict and since undone by nothing, agrees. A cited file written after the verdict,
+    or a check of a claimed kind whose latest run failed (and that no later whole-suite run before
+    the verdict superseded), disputes it, and a dispute outweighs what agrees. Nothing found, or
+    nothing checkable in the reason, is `unconfirmed`: the listing is capped, so the absence of a
+    write says nothing. Only the record from the goal's own set time is read. None where the row
+    holds no well-formed verdict.
+    """
+    if not isinstance(goal, dict) or not isinstance(goal.get("verdict"), dict):
+        return None
+    verdict = goal["verdict"]
+    set_at, at = _number(goal.get("at")), _number(verdict.get("at"))
+    reason = verdict.get("reason")
+    if verdict.get("met") is not True or not set_at or not at or not isinstance(reason, str):
+        return None
+
+    verdict_at: float = at
+
+    def result(check: str, why: str, cites: Sequence[str] = ()) -> GoalVerdictCheck:
+        return {
+            "at": verdict_at,
+            "check": check,
+            "why": why,
+            "cites": tuple(cites[:MAX_RECORDED_CITES]),
+        }
+
+    files, kinds = _verdict_files(reason), _verdict_check_kinds(reason)
+    # The condition names files too ("the file docs/e2e/notes.md exists"), and a file it names that
+    # the record shows taken away after the verdict contradicts the claim whatever the reason said.
+    named = tuple(dict.fromkeys((*files, *_verdict_files(str(goal.get("text") or "")))))
+    taken = _removed_after(named, recorded, set_at, at)
+    if taken is not None:
+        return {
+            **result(
+                GOAL_VERDICT_DISPUTED,
+                GOAL_VERDICT_DELETED_AFTER if taken.kind == "deleted" else GOAL_VERDICT_MOVED_AFTER,
+            ),
+            "path": records.safe_text(taken.path, VERDICT_PATH_CAP_CHARS),
+            "changed_at": taken.at,
+        }
+    if not files and not kinds:
+        return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOTHING_CHECKABLE)
+    writes = [
+        write
+        for write in recorded.writes
+        if write.at >= set_at and any(_same_path(path, write.path) for path in files)
+    ]
+    later = [write.id for write in writes if write.at > at]
+    if later:
+        return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_WRITTEN_AFTER, later)
+    checks = [
+        entry
+        for entry in recorded.checks
+        if (evidence_at(entry) or entry["at"]) >= set_at
+        and kinds & _check_kinds(_check_text(entry))
+    ]
+    failed = [
+        entry["id"]
+        for entry in checks
+        if entry.get("result") == RESULT_FAILED and not _superseded(entry, at, recorded.checks)
+    ]
+    if failed:
+        return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_FAILED, failed)
+    if writes:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_WRITTEN, [write.id for write in writes])
+    passed = [
+        entry["id"]
+        for entry in checks
+        if entry.get("result") == RESULT_PASSED
+        and (evidence_at(entry) or entry["at"]) <= at
+        and entry.get("changed_after") is not True
+    ]
+    if passed:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_PASSED, passed)
+    return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOT_FOUND)
 
 
 # The words of a line that say which kind of check would show it, and the words of a check's own
@@ -4332,6 +4620,14 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
             else criterion
         )
 
+    # The refusal stands in place of every other answer: the model said it before the record,
+    # so a line verdict beside it was given about words it had just found nothing to read against.
+    # The other rows are published as not asked and never reach the record-settles-a-line guard, so
+    # no departure survives a refused goal.
+    refused = asks_goal(goal) and (
+        result_for(CONSTRAINT_GOAL, str((parsed.get(CONSTRAINT_GOAL) or {}).get("token") or ""))
+        == RESULT_GOAL_UNCLEAR
+    )
     for name in names:
         # Bounded and scrubbed like every other published string. It is the
         # reader's own text, but it arrives here as an argument and it was the
@@ -4339,6 +4635,15 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
         # keeping a bidi override that sits immediately before the verdict and
         # reorders it.
         clause = records.safe_text(clauses[name], detail_cap_chars)
+        if refused:
+            out[name] = {
+                "cites": (),
+                "detail": "",
+                "clause": clause,
+                "why": WHY_STANDS if name == CONSTRAINT_GOAL else WHY_NOT_ASKED,
+                "result": RESULT_GOAL_UNCLEAR if name == CONSTRAINT_GOAL else RESULT_UNVERIFIABLE,
+            }
+            continue
         # Not asked is not answered. The constraint the prompt never posed has
         # no token to resolve, whatever the reply volunteered. The lines come
         # from the prompt, never re-derived: the header it used is the
@@ -4608,6 +4913,8 @@ def produce(  # noqa: PLR0913
         else (),
     )
     measured = record_coverage_lookup() if record_coverage_lookup is not None else {}
+    # A /goal has no prompt behind it to find, so a missing source is not a cut: only the
+    # excerpt's own ellipsis says the stated condition was longer than the Goal field held.
     coverage = {
         "tail_truncated": measured.get("tail_truncated"),
         "tail_start": measured.get("tail_start"),
@@ -4616,6 +4923,8 @@ def produce(  # noqa: PLR0913
         "goal_source": (
             "typed"
             if not adopted
+            else ("excerpt" if goal.endswith("\u2026") else "whole")
+            if latest.get("goal_source") == SESSION_GOAL
             else "excerpt"
             if source is None
             else "whole"
@@ -4671,7 +4980,15 @@ def produce(  # noqa: PLR0913
         coverage=coverage,
         window_start=window_start(latest),
     )
-    cutoff += _goal_note(adopted=adopted, source=source, goal=goal, whole=selected.goal_whole)
+    # A `/goal` is stated in the session, with no prompt of the reader's behind it to go missing
+    # (owner feedback, 2026-10-22): the note would name a prompt that never existed.
+    cutoff += _goal_note(
+        adopted=adopted and latest.get("goal_source") != SESSION_GOAL,
+        source=source,
+        goal=goal,
+        whole=selected.goal_whole,
+    )
+    cutoff += "" if outcome_lines(latest) else NO_OUTCOME_LINES_NOTE
     cutoff += _FINAL_NOTES.get(selected.newest_final or "", "")
     if tool_output is not None and not admitted and _has_reports(facts, harness, sid):
         cutoff += (
@@ -4699,7 +5016,24 @@ def produce(  # noqa: PLR0913
     if latest.get("goal_source") in PROMPT_SOURCES:
         assessment["goal_source"] = str(latest["goal_source"])
         assessment["goal_source_at"] = baseline_at(latest)
+    _attach_verdict_check(assessment, row, facts, tool_output)
     return assessment, "", True
+
+
+def _attach_verdict_check(
+    assessment: Assessment,
+    row: Mapping[str, Any],
+    facts: Sequence[Mapping[str, Any]],
+    tool_output: ToolOutput | None,
+) -> None:
+    """Add the test of the row's harness verdict, only where the row holds one."""
+    goal = row.get("session_goal")
+    if not isinstance(goal, dict) or "verdict" not in goal:
+        return
+    harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
+    checked = check_goal_verdict(goal, recorded_from(facts, harness, sid, tool_output=tool_output))
+    if checked is not None:
+        assessment["goal_verdict"] = checked
 
 
 def _left_out(
@@ -5010,6 +5344,12 @@ GOAL_SOURCE_UNROOMED = (
     " Your goal's whole prompt had no room in the reading, so only the goal box's words were "
     "read as the goal."
 )
+# Said in the cutoff when the revision read holds no outcome line, so a reader can tell a level
+# resting on the goal's own end state from one resting on lines (owner, 2026-10-22). Keyed on the
+# revision, not on what the press sent: a press that read the goal alone while lines were saved
+# did not read "no lines". It names the goal and not the absent line, since noting an optional
+# field that was not filled in tells a reader nothing (owner, 2026-10-23).
+NO_OUTCOME_LINES_NOTE = " Read against your goal."
 # Said in the cutoff when the newest final reply was not read whole (owner, 2026-10-05):
 # the agent's newest message that the transcript records as ending its turn goes whole where
 # its row fits, and otherwise its excerpt stands. Keyed by `Selection.newest_final`, and

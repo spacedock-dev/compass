@@ -8,7 +8,7 @@ license: Apache-2.0 AND OFL-1.1
 
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
 goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
-reading's limits and why an expected outcome line is needed for a drift level.
+reading's limits and what a goal with no expected outcome line is read against.
 New to it? `See a sample session (view only)`, above the Sessions list, opens an anonymized session
 that drifted, with a stored summary of what it did, its stored reading, the correction Compass
 composed and numbered (i) marks that explain each part. It is static page data: nothing in it is saved, sent or run.
@@ -118,7 +118,7 @@ requires both interaction flags and registration from inside the selected sessio
 and accepts no input. Its xterm assets are vendored and served from loopback.
 
 Exact session detail is reachable from Sessions, cockpit session links and the Intent log. The
-page is one column at every width. It opens with the session's name, its state beside a status dot
+page is one column at every width. It opens with the session's name (a Claude Code session holding a `/goal` is named by that goal, so a replaced or cleared `/goal` never names it; a generated title still wins), its state beside a status dot
 and what it is doing, then the question first when the session is waiting on you. Then come the
 **Intent** card with the goal and the expected outcome lines you typed, a **What the session has
 done** card, and a **Drift** card with the `Analyze drift` control, what an analysis reads and
@@ -139,7 +139,7 @@ reader is named. With no reader on this machine, the reason stands where the con
 page has at most one primary run control. No answer option is ever emphasised: a session blocked on
 you gives the primary to the terminal raise when one is offered, and otherwise nothing is primary
 while its question is open.
-With no expected outcome line: no level, and "Can't tell" unless your goal departs. A link to a session
+With no outcome line, Compass reads your goal's end state; a goal too vague to read is refused. The refusal reads "This goal is too vague to analyze against. Rewrite it with what should be true when the work is done, then try again." under the Goal field, shows no level, departures or Steer back for that run, clears when you edit the goal, and counts against the daily cap like any press. A link to a session
 the board no longer holds names that session and says it is not in the current payload.
 
 The route lives in the URL fragment: `#n=sessions`, `#n=projects`, `#n=attention`, `#n=intent`,
@@ -312,8 +312,8 @@ characters. The goal is a three-row box of at most 240. Both are optional and se
 leaves the other alone. Open the session's page: the fields are the first thing in its drift
 block, for a session with or without a project. The how-to beside Intent says what an analysis
 reads and that Compass never writes into the session. Each box shows how many of its 240 characters
-you have used as you type. The Intent card shows the saved reads-from line beside its status word, and keeps `Clear` and `How Intent and drift works` in its `More` menu.
-Each outcome line has `Remove`, and `Add a line` sits beside `Save intent`, all drawn from the first view; Add adds another until there are six, where it stays
+you have used as you type, and a hint under the goal box says what to write there. The Intent card shows the saved reads-from line beside its status word, and keeps `Clear` and `How Intent and drift works` in its `More` menu.
+The Expected outcome sits in an accordion under the Goal, labelled "Expected outcome (optional) · up to 6 lines" and closed until it has something to show: it opens by itself over saved lines, a line being edited, a pending later direction, or a departure that cites a line, and a close you make holds until one of those arises again. Inside it each outcome line has `Remove`, and `Add a line` sits under the list; Add adds another until there are six, where it stays
 on the page, refuses a seventh and says why (replace or merge a line instead). `Save intent` stays
 visible and saves the drafted goal or your edits. `Undo changes` is drawn beside it, inert until there is a goal edit or prompt
 choice to undo. The list saves as a whole, and Escape puts the stored words back. Each saved line shows where it came from: typed, or added from an entry. A
@@ -405,14 +405,15 @@ A goal-less Claude Code or Codex session arrives with its goal drafted from your
 Compass publishes it, or from your latest prompt, marked "latest", where no first prompt with a
 time is published. A session that opened with a harness control such as `/clear` drafts nothing,
 not even the latest prompt, and says there is no first prompt to draft from, so you type a goal.
-The draft is marked "from your prompt", an excerpt says "Excerpt. Analyze reads up to 1,000 characters."
+A line above the box says where the words came from, "Drafted from your first prompt · not saved", and an
+excerpt adds "Shortened here; Analyze reads the whole prompt"
 (the goal keeps the excerpt, and a reading reads the prompt it came from whole, up to 1,000
 characters, or says in what it read that it could not), and the box is tinted: nothing is saved until you press Save intent, edit the box and save, or
 press `Analyze drift`, which adopts the draft. `Use your prompt` lists up to five of your own
-prompts, and choosing one fills the goal box for you to save. Analyze drift, Keep and an added line's save are refused
+prompts, and choosing one fills the goal box for you to save. While no goal is saved and no `/goal` was detected, `Find goal` beside it reads the prompts you typed in the session, on your press only, and fills the box when it can quote your own words for a goal: it says "Found in your prompts at" the time and the prompt entries it quotes, each a link to that entry in Full activity, and editing the words replaces it. It sends your prompts to the model Analyze names, counts against the same daily limit, is refused while model calls are paused, and says so beside the button when it finds nothing clear. Analyze drift, Keep and an added line's save are refused
 while the goal box or the outcome lines hold an edit you have not saved, because each would stand
 on words that are not on screen; your edit stays in the box. No drift level or pill is drawn over
-an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from my latest message`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time.
+an unsaved draft. Once a goal is saved, "Saved" names the window's opening time and holds when the words were saved. Editing the goal, using a prompt or a later direction as the goal, and adding or editing outcome lines all keep that window, so work already done toward the earlier words stays read. `Read from my latest message`, beside Save intent over saved words, saves and opens a new window at your latest message, and says so with its time. A `/goal` Claude Code gave up on, or the reader cleared, ends that goal: the Drift card says a give-up as the harness's claim with its time, never as met and never as a level or a check, and the Intent card says under the Goal field that an earlier `/goal` was replaced, met, given up or cleared, with the time and never its words.
 
 A direction you gave after your intent (after the saved goal's words, or after the drafted prompt)
 is asked about before the press, in the control's place: "Your 11:05 message adds:" quotes the
@@ -538,14 +539,14 @@ when it cannot. An idle Claude Code session whose last turn has no recorded fini
 its last recorded entry, and the result says so with that entry's time, never as a final verdict. General scope and the
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state
-tokens and changes no verdict. Each line reads "Departs; evidence #n", "Consistent with
+tokens and changes no verdict. A departure is a card whose What gives each cited entry as one line in its own words with its number (the
+agent said, you said, a failed check, a file write), with no Evidence or Source fold; the claims row and every quiet row do the same, and a number opens Full activity on that entry. Each other line reads "Consistent with
 #n, as the tool reported; not inspected", "Consistent with what the agent said at #n; not a
 check" where it rests on the agent's messages alone, "Consistent with what the session said at #n;
-not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it, never
-"Done". A line that rules out a folder, or limits the work to one, departs on a file write the record holds
+not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it; the result's own words never say "Done" (an agent message it cites is quoted and attributed to the agent). A line that rules out a folder, or limits the work to one, departs on a file write the record holds
 there, whatever the reading said; a recorded passing check that covers a line is cited ahead of the agent's
 message on it, which it does only where the line claims that kind of check's result ("the tests pass"), never for a line that merely names the subject ("the lint config is left alone"). Unfinished work in flight
-at a non-final stop has its own result and cited explanation under Evidence. It raises no
+at a non-final stop has its own result and cited explanation in view. It raises no
 departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
 counts as departure. While a turn is open, a departure that rests on messages alone is stored as not
@@ -831,6 +832,7 @@ Paths 2 and 3 are complementary and can both be installed. Keep `Notification` o
 | `/api/cleared` | The sessions marked handled: a harness key, a session id and when each was marked, and nothing else. 503 under `--no-dismiss`. |
 | `/api/annotations` | Every session you have typed a goal or an expected outcome line against, including sessions no longer on the board, with what an unasked check raised against each. Serves the words themselves, so it is read when the Intent log is opened rather than on the refresh loop. 503 under `--no-annotations`. |
 | `POST /api/reading` | Ask for one reading against the words typed against a session. Body is `{"harness", "sid", "provider", "press": true, "observer_model": 1}`, where `provider` is the one the page's route for that harness named (`codex` or `claude`); no prior Allow is needed. A press never records an Allow: an older page's `"allow": true` is read as a plain press, so it lifts no pause (it answers 403 with `model-calls-paused` until Resume model calls) and grants no unasked lane. Such an Allow naming a destination that is no longer the route's still answers 409 with `"reason": "destination-changed"`, and one with no `words_destination` at all, which a page older than the binding sends, answers 400 with `"reason": "page-outdated"` and a `route` whose note says to reload. `{"consent":"off","press":true,"observer_model":1}` is Pause model calls. The same request with `consent:"on"` is Resume model calls and starts no call. With `--unasked-readings` on, a separate body carrying `unasked_grant: true` or `false`, the session identity, `provider`, `model`, `words_destination`, `press: true` and `observer_model: 1` grants or revokes unasked checks for that provider and destination, without analysis. A revoke deletes the stored Codex grant whatever provider checks that session today. It is refused with 409 and `model-calls-paused` while paused, and 503 without the flag, under `--no-annotations` (which turns `--unasked-readings` off) or under the model off switch. A grant is also refused with 409 and `no-grant-needed` for a session Claude Code checks, and with 409 for a stale provider, model or destination. Neither changes the saved summary answer. Pause and Resume model calls are accepted without annotations or a reading provider, including under `--no-observer-model`, which still refuses calls. `settle_through` with `expected_revision` settles later directions before anything else in the press, adopting a draft with it when `adopt` is sent, and every reply then carries the store's token as `settled`; a refused one answers 422. Without `settle_through`, an `expected_revision` that is not the stored revision answers 409 with `"reason": "revision-changed"` before anything else in the press, so nothing is allowed, adopted or started; the page sends the revision it drew. Bodies are capped at 12,288 bytes, loopback-only and refused on a document navigation. 503 under `--no-annotations`, the explicit model off switch, a closed reading gate, or unavailable permission storage; 403 with `model-calls-paused` after Pause model calls; 429 at the rolling cap, with its retry time; each of these permission refusals carries the press's current `route`, so a page drawn before the destination moved shows where the words go now. 409 while that session has a reading in flight. 409 with `"reason": "provider-changed"` and the current `route` when `provider` is missing or no longer the one that would run: nothing was saved or spent, so read the route's disclosure and press again. 503 with the `route` and its `reason` when no provider can read that harness on this machine. 200 with `produced: false` when no annotated session by that name exists. |
+| `POST /api/goal/find` | Look for a session's goal in the prompts you typed in it, on one press. Body is `{"harness", "sid", "provider", "press": true, "observer_model": 1}` (and `model` for Claude Code), where `provider` is the one the page's route for that harness named. It reads your own prompts only, never the agent's messages or tool output, and answers `{"ok", "produced", "found", "why"}`: `found` is one goal sentence with the prompts it quotes (each quote verbatim in a prompt Compass sent, each prompt with its entry number), or null with `why` naming why none was shown. Nothing is stored. It counts against the same rolling cap as a reading. 403 with `model-calls-paused` while model calls are paused and 429 with `daily-cap` at the cap, both before any prompt is read; 409 with `provider-changed`, `destination-changed` or `in-flight`; 502 when the model did not answer; 503 under `--no-annotations`, `--no-observer-model` or a closed reading gate, and 503 when the model could not be started. 200 with `produced: false` for an unknown session, a harness whose prompts are not read and a session with none of your prompts. Loopback-only, with Host, Origin and fetch-site checks, and a document navigation is refused before the body is read. |
 | `POST /api/summary`, `/api/summary/cancel`, `/api/summary/delete` | Start, cancel or delete one Claude Code session summary. A start is `{"harness", "sid", "action", "origin"}`, where `action` is `start`, `update` or `rerun` and `origin` is `press` or `open` (an open only starts); `{"consent": "off"}` or `"on"` is Turn off summaries or Turn summaries on for every session. A start answers 403 with `model-calls-paused` while model calls are paused, even at the cap; 429 with `daily-cap` at the 200-call rolling cap, even with summaries off; 403 with `summaries-off` while summaries are off; and 503 with `run-disabled` under `--no-observer-model`. Cancel and delete take `{"harness", "sid"}`. Loopback-only, with Host, Origin and fetch-site checks, and a document navigation is refused before the body is read; the summary is kept in its own store, not with your annotations. |
 
 ## Interpretation notes (share with the user if asked)

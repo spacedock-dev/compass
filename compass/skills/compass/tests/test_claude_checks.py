@@ -1093,6 +1093,57 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
                 self.assertIsNotNone(scan["last_changing_command_at"])
 
 
+class WhichFilesAShellCallRemoved(ClaudeChecksTestCase):
+    """Deletions and moves, read for the press alone: the record the goal verdict is tested against."""
+
+    def removals(self) -> tuple[tuple[str, float, str], ...]:
+        self.session.save(self.path)
+        return project_context.claude_check_press(self.config, str(self.path)).removals
+
+    def test_rm_records_the_file_it_deleted(self) -> None:
+        self.session.bash(
+            "ls docs/e2e && rm docs/e2e/notes.md && rmdir docs/e2e", "", is_error=False
+        )
+        found = self.removals()
+        self.assertEqual(
+            [("docs/e2e", "deleted"), ("docs/e2e/notes.md", "deleted")],
+            sorted((p, k) for p, _at, k in found),
+        )
+        self.assertGreater(found[0][1], 0)
+
+    def test_a_call_that_errored_after_the_rm_still_records_it(self) -> None:
+        # The last command (`ls` of the removed folder) set the exit status, not the rm.
+        self.session.bash(
+            "rm docs/e2e/notes.md && ls docs/e2e", "ls: docs/e2e: No such file", is_error=True
+        )
+        self.assertEqual(["docs/e2e/notes.md"], [p for p, _at, _k in self.removals()])
+
+    def test_an_rm_that_reported_its_own_failure_is_no_removal(self) -> None:
+        self.session.bash(
+            "rm docs/notes.md", "rm: docs/notes.md: Operation not permitted", is_error=True
+        )
+        self.assertEqual((), self.removals())
+
+    def test_mv_records_its_source_as_moved_and_not_its_destination(self) -> None:
+        self.session.bash("mv docs/notes.md docs/old/notes.md", "", is_error=False)
+        self.assertEqual([("docs/notes.md", "moved")], [(p, k) for p, _at, k in self.removals()])
+
+    def test_unlink_counts_and_flags_are_not_files(self) -> None:
+        self.session.bash("unlink b.md && rm -rf -- c.md", "", is_error=False)
+        self.assertEqual(
+            [("b.md", "deleted"), ("c.md", "deleted")],
+            sorted((p, k) for p, _at, k in self.removals()),
+        )
+
+    def test_a_target_outside_the_session_or_a_glob_is_not_published(self) -> None:
+        self.session.bash("rm /etc/hosts ../elsewhere.md docs/*.md", "", is_error=False)
+        self.assertEqual((), self.removals())
+
+    def test_a_read_only_command_removes_nothing(self) -> None:
+        self.session.bash("cat docs/notes.md && ls docs", "", is_error=False)
+        self.assertEqual((), self.removals())
+
+
 class WhichOrderTheEntriesAreKeptIn(ClaudeChecksTestCase):
     def left_out(self, events: list[dict[str, Any]]) -> tuple[float, ...]:
         """What the reading counts as not carried, when the prompt carried every listed event."""

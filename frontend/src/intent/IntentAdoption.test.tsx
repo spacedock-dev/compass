@@ -71,7 +71,7 @@ describe('the "Use your prompt" menu', () => {
       routes: { '/api/project-context': menu },
     });
     await settle(page);
-    expect(text('[data-next-cockpit-goal-source]')).toMatch(/^Typed · saved/);
+    expect(text('[data-next-cockpit-goal-source]')).toMatch(/^You typed this · saved/);
     expect(select().textContent).toBe('Use your prompt');
     expect(select().getAttribute('aria-label')).toBe('Use your prompt');
   });
@@ -177,7 +177,7 @@ describe('Save intent over an adopted prompt', () => {
     });
     expect(goalBox().value).toBe('Fix the login redirect');
     expect(text('.next-cockpit-held-field[data-next-cockpit-held-field="goal"] small')).toMatch(
-      /^From your prompt · \d\d:\d\d · saved$/,
+      /^From the prompt you chose · saved$/,
     );
   });
 

@@ -67,6 +67,7 @@
     "ended_at_read",
     "evidence_through",
     "coverage",
+    "goal_verdict",
     "criteria"
   ],
   "checkBeforeLastChange": "before the last change",
@@ -94,6 +95,35 @@
   ],
   "cueWindowSeconds": 30,
   "format": 1,
+  "goalVerdictChecks": [
+    "agrees",
+    "disputed",
+    "unconfirmed"
+  ],
+  "goalVerdictKeys": [
+    "at",
+    "check",
+    "why",
+    "cites"
+  ],
+  "goalVerdictRemovalKeys": [
+    "path",
+    "changed_at"
+  ],
+  "goalVerdictRemovalWhys": [
+    "deleted-after",
+    "moved-after"
+  ],
+  "goalVerdictWhys": [
+    "written-before",
+    "passed-before",
+    "written-after",
+    "deleted-after",
+    "moved-after",
+    "check-failed",
+    "not-found",
+    "nothing-checkable"
+  ],
   "levelReasons": [
     "draft-unsaved",
     "failed-check",
@@ -111,6 +141,7 @@
     "floor-met",
     "no-reading",
     "no-outcome-line",
+    "goal-unclear",
     "departure",
     "line-not-shown-by-a-check",
     "outcome-not-reached",
@@ -124,16 +155,19 @@
   "promptSources": [
     "latest-prompt",
     "first-prompt",
-    "chosen-prompt"
+    "chosen-prompt",
+    "session-goal"
   ],
   "results": [
     "departure",
     "consistent with the evidence read",
     "not verifiable from available evidence",
     "not shown by the record",
-    "not reached at this stop"
+    "not reached at this stop",
+    "goal too vague to analyze against"
   ],
   "scopeTextMidFlightIdle": "The session was idle and its last turn was not recorded as finished, so this covers the work up to the last recorded entry. It is not a reading of how the turn or the session ended.",
+  "sessionGoal": "session-goal",
   "titles": {
     "asking": {
       "": "An agent is asking you",

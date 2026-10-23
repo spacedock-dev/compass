@@ -1,5 +1,8 @@
-import { useId } from 'react';
+import { useContext, useId } from 'react';
 import { Label } from '../ui/label';
+import { Disclosure, disclosureKey } from '../controls';
+import { DriftContext } from '../drift/context';
+import { isOutcomeLine } from '../drift/shape';
 import { compatSessKey } from '../api/identity';
 import { annotationLines, storeUnreadable, OUTCOME_LINES_MAX } from './annotation';
 import { heldSentence } from './cues';
@@ -232,9 +235,22 @@ function LineRow({
   );
 }
 
+/* Whether the card holds an outcome line the reader should not have to open the accordion to find: a saved
+   or drafted line, a later direction pending as one, or a departure in the reading on show that cites one.
+   The accordion opens on each rise of this, not whenever it holds, so a reader who closes it keeps it closed
+   [the open-disclosure row](../../../docs/design-reader-state.md#the-inventory). */
+function useOutcomesHeld(): boolean {
+  const { ctx, input, session } = usePanel();
+  const drift = useContext(DriftContext);
+  const key = compatSessKey(session);
+  const draft = linesDraft(ctx.held, session, input.annotation);
+  const departed = (drift?.model.shape?.departures ?? []).some((row) => isOutcomeLine(row.key));
+  return draft.length > 0 || ctx.held.directions.has(key) || departed;
+}
+
 export function OutcomeLines() {
   const firstBoxId = useId();
-  const { ctx, input, session, payload, cap } = usePanel();
+  const { ctx, input, session, payload, cap, project } = usePanel();
   const { held } = ctx;
   const key = linesKey(session);
   const annotation = input.annotation;
@@ -244,6 +260,7 @@ export function OutcomeLines() {
   const line = held.directions.get(compatSessKey(session));
   const why = storeUnreadable(payload) ? '' : String(annotation?.['lines_why'] || '');
   const cue = heldSentence(held.kind(key), null);
+  const holds = useOutcomesHeld();
   /* Where an open later direction already says the list is full beside its own save, the list's sentence is
      hidden rather than drawn twice. Only then: the line checks saved lines and the list counts draft lines,
      and a line giving another reason would leave the disabled add control with none. It stays in the DOM for
@@ -257,32 +274,44 @@ export function OutcomeLines() {
       className="next-cockpit-held-field next-cockpit-held-lines"
       data-next-cockpit-held-field="lines"
     >
-      <div className="next-cockpit-held-heading">
-        <Label className="next-cockpit-held-label" htmlFor={firstBoxId}>
-          Expected outcome{' '}
-          <span className="ms-1 font-normal text-[var(--ink3)]">{`· up to ${String(OUTCOME_LINES_MAX)} lines`}</span>
-        </Label>
-      </div>
-      <ol className="next-cockpit-held-list">
-        {boxes.map((text, index) => (
-          // A line is its position: the list holds no ids, and an index is what the store sends.
-          <LineRow
-            key={index}
-            index={index}
-            text={text}
-            boxId={index === 0 ? firstBoxId : undefined}
-          />
-        ))}
-        <DirectionLineView />
-      </ol>
-      <p
-        className="next-cockpit-held-full"
-        id="next-cockpit-held-full"
-        data-next-cockpit-held-full
-        hidden={!(full && !said)}
+      <Disclosure
+        disclosureKey={disclosureKey({
+          project,
+          scope: compatSessKey(session),
+          name: 'outcome-lines',
+        })}
+        openWhen={holds}
+        summary={
+          <span className="next-cockpit-held-label" data-next-cockpit-held-label>
+            {'Expected outcome (optional) '}
+            <span className="ms-1 font-normal text-[var(--ink3)]">{`· up to ${String(OUTCOME_LINES_MAX)} lines`}</span>
+          </span>
+        }
+        focusKey={`${key}:outcomes`}
       >
-        {LINES_FULL}
-      </p>
+        <ol className="next-cockpit-held-list">
+          {boxes.map((text, index) => (
+            // A line is its position: the list holds no ids, and an index is what the store sends.
+            <LineRow
+              key={index}
+              index={index}
+              text={text}
+              boxId={index === 0 ? firstBoxId : undefined}
+            />
+          ))}
+          <DirectionLineView />
+        </ol>
+        <p
+          className="next-cockpit-held-full"
+          id="next-cockpit-held-full"
+          data-next-cockpit-held-full
+          hidden={!(full && !said)}
+        >
+          {LINES_FULL}
+        </p>
+        <AddOutcomeLine />
+        {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
+      </Disclosure>
       {why ? (
         <p
           className="next-cockpit-held-absent next-visually-hidden"
@@ -293,7 +322,6 @@ export function OutcomeLines() {
           {why}
         </p>
       ) : null}
-      {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
     </div>
   );
 }

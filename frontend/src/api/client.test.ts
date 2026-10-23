@@ -168,6 +168,7 @@ describe('POST adapters', () => {
     await client.postDirection({ ...identity, fact_id: 'f' });
     await client.postReading({ ...identity, provider: 'claude', press: true, observer_model: 1 });
     await client.postReadingCancel({ ...identity, job: 'j', press: true, observer_model: 1 });
+    await client.postGoalFind({ ...identity, provider: 'claude', press: true, observer_model: 1 });
     await client.postCorrection(identity);
     await client.postCorrectionCopied({ ...identity, text: 't' });
     await client.postTripwire({ action: 'save', id: 'r', stage: 'x', expected_revision: '' });
@@ -180,6 +181,7 @@ describe('POST adapters', () => {
       '/api/direction',
       '/api/reading',
       '/api/reading/cancel',
+      '/api/goal/find',
       '/api/correction',
       '/api/correction/copied',
       '/api/tripwire',
@@ -304,6 +306,8 @@ describe('no adapter ever retries an action', () => {
         c.postReading({ ...identity, provider: 'claude', press: true, observer_model: 1 }),
       postReadingCancel: (c) =>
         c.postReadingCancel({ ...identity, job: 'j', press: true, observer_model: 1 }),
+      postGoalFind: (c) =>
+        c.postGoalFind({ ...identity, provider: 'claude', press: true, observer_model: 1 }),
       postCorrection: (c) => c.postCorrection(identity),
       postCorrectionCopied: (c) => c.postCorrectionCopied({ ...identity, text: 't' }),
       postTripwire: (c) =>

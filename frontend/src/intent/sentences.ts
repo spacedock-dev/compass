@@ -43,21 +43,44 @@ export const INTENT_SAVING = 'Saving your intent…';
 export const INTENT_EDITED_ADD = 'Save your intent, or undo your edit, to add this direction.';
 export const INTENT_CHOSEN_SAID = 'Goal filled from your prompt. Not saved.';
 export const INTENT_MEASURED = 'Drift is measured against these. Edit anything that is off.';
-export const EXCERPT_READ_WHOLE = 'Excerpt. Analyze looks up the source when pressed.';
+export const INTENT_DETECTED_SAID = 'Goal filled from your /goal. Not saved.';
+/* A goal found in the reader's prompts is a draft like a /goal, and says where it came from in its own words. */
+export const INTENT_FOUND_SAID = 'Goal found in your prompts. Not saved.';
+export const FIND_GOAL_NOTHING = 'No clear goal in your prompts. Type one or use a prompt.';
+export const FIND_GOAL_NO_PROMPTS =
+  'Compass found no prompts of yours in this session to read. Type a goal.';
+export const FIND_GOAL_LEFT =
+  'A goal was found, but you had started typing one, so the box was left as it is.';
+export const FIND_GOAL_OUTRANKED =
+  'A goal was found, but this session already has one, so it was not used.';
+export const FIND_GOAL_LOST =
+  'Could not confirm the search for a goal. It has not been retried and nothing was changed.';
+export const FIND_GOAL_REFUSED = 'Compass could not look for a goal just now. Nothing was changed.';
+export const FIND_GOAL_RUNNING = 'A search for a goal is already running for this session.';
+export const FIND_GOAL_FAILED = (label: string): string =>
+  `${label} did not answer, so no goal was found. Nothing was changed. Press Find goal to try again.`;
+export const FIND_GOAL_UNAVAILABLE = (label: string): string =>
+  `${label} is not available here, so nothing was sent.`;
+export const FIND_GOAL_TITLE = (label: string): string =>
+  `Sends the prompts you typed in this session to ${label} to look for a goal. Nothing is sent until you press.`;
+/* Appended to a source line whose words were cut; `cap` is the box's own limit, never a literal. */
+export const goalCut = (cap: number): string =>
+  ` · Shortened to fit ${String(cap)} characters; Analyze reads this shortened goal`;
+export const EXCERPT_READ_WHOLE = ' · Shortened here; Analyze reads the whole prompt';
 /* `reading.LEDGER_WORDS_CAP_CHARS`, copied rather than fetched; `test_reader_words.py` holds the two equal.
    The ruled wording (docs/design-frontend-migration.md, 2026-10-13 departures): "up to" read as a limit that
    had bitten, so the sentence says it is how every prompt is read. */
 export const ANALYZE_PROMPT_CAP_CHARS = 1_000;
 export const ANALYZE_READS_PROMPT = `Analyze reads at most the first ${ANALYZE_PROMPT_CAP_CHARS.toLocaleString('en-US')} characters of any prompt.`;
-export const INTENT_LEDE =
-  'Say what this session should achieve. Type it, or start from a prompt you gave the session. Compass reads the session against these words and never writes into the session.';
+export const GOAL_HINT =
+  "Write what should be true when this session is done. Compass checks the session's work against it and never writes into the session.";
 
 /* The ended-session caveat the goal box already carries, repeated where the save is confirmed: a reader who
    saved late read "Saved." and had no sign that Analyze would still read the drafted goal
    instead. Said only beside a confirmed save on an ended session. The goal box shows the same sentence, so
    the short form, which reads as "nothing can be read", is not used. */
 export const ENDED_CAVEAT =
-  'This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.';
+  'This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.';
 
 /* What the last save attempt is still worth saying. `persisted:false` is its own cue and not a success: the
    annotation is then held only in this process, and the next collection reloads the store from disk and

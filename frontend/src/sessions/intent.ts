@@ -11,7 +11,15 @@ import { isRecord, promptCopied, type Row } from '../observed';
 /* The closed goal-source tokens an adopted goal carries, spelt as the server's `reading.PROMPT_SOURCES`
    spells them; the legacy page's test compares the two. */
 export const PROMPT_CHOSEN = 'chosen-prompt';
-export const PROMPT_SOURCES: readonly string[] = ['latest-prompt', 'first-prompt', PROMPT_CHOSEN];
+/* The goal a Claude Code session states itself with `/goal`: the reader typed that command, so it reads
+   as their prompt (the same tags, the same baseline at its own time). It is the server's `reading.SESSION_GOAL`. */
+export const SESSION_GOAL = 'session-goal';
+export const PROMPT_SOURCES: readonly string[] = [
+  'latest-prompt',
+  'first-prompt',
+  PROMPT_CHOSEN,
+  SESSION_GOAL,
+];
 
 /* `reading.CONSTRAINT_CLAIMS`: what the agent claimed about the work. A contradicted claim is not drift
    from the intent, so it never makes a row say Drift. */
@@ -35,6 +43,7 @@ export const READING_ASSESSMENT_KEYS: readonly string[] = [
   'ended_at_read',
   'evidence_through',
   'coverage',
+  'goal_verdict',
   'criteria',
 ];
 
@@ -98,6 +107,26 @@ export function promptCandidate(
   return text ? { text, at: at !== null && at > 0 ? at : null, source } : null;
 }
 
+export interface SessionGoalCandidate extends PromptCandidate {
+  /** The condition is longer than the Goal field holds, so `text` is the server's excerpt of it. */
+  readonly cut: boolean;
+}
+
+/* The goal a Claude Code session set with `/goal`, as the Goal field can hold it: the server's excerpt where
+   the condition is longer than the field (`cut`), so the page, an adoption and the store agree on the words
+   and none clips on its own. Null for another harness, no goal, or one with no moment, which an adoption
+   refuses. */
+export function sessionGoalCandidate(session: Row | null | undefined): SessionGoalCandidate | null {
+  if (!session || session['harness'] !== 'claude') return null;
+  const stated = session['session_goal'];
+  if (!isRecord(stated)) return null;
+  const cut = stated['cut'] === true && typeof stated['offered'] === 'string';
+  const words = cut ? stated['offered'] : stated['text'];
+  const text = typeof words === 'string' ? words.trim() : '';
+  const at = nextNumber(stated['at']);
+  return text && at !== null && at > 0 ? { text, at, source: SESSION_GOAL, cut } : null;
+}
+
 export interface DraftOptions {
   /** The annotation store is on for this run: `annotate === true` in the payload. */
   readonly annotate: boolean;
@@ -117,6 +146,10 @@ export function intentDraft(
   if (!options.annotate || options.unreadable) return null;
   if (chosen) return chosen;
   if (String(session['annotation_goal'] || '').trim()) return null;
+  /* Ahead of the prompts, and ahead of the control check: a session that opened with `/goal` has no first
+     prompt to draft, and its `/goal` is the goal it was given. */
+  const stated = sessionGoalCandidate(session);
+  if (stated) return stated;
   if (openedWithControl(session)) return null;
   for (const source of ['first-prompt', 'latest-prompt'] as const) {
     const candidate = promptCandidate(session, source);

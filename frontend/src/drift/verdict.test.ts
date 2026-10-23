@@ -100,6 +100,20 @@ describe('the Drift card verdict sentence', () => {
     expect(text).toBe('Nothing found against what it read.');
   });
 
+  it('tells a goal-only reader that no check shows the goal done and what would let a level be drawn', () => {
+    expect(
+      verdictLine({
+        answer: { kind: 'nothing-found' },
+        level: '',
+        heldBack: ['Your goal is not shown by any check.'],
+        byId,
+        midFlight: false,
+      }),
+    ).toBe(
+      'Nothing departs from your goal, but no check shows it done, so no level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again.',
+    );
+  });
+
   it('says in the same sentence why no level is drawn when every line is consistent', () => {
     expect(
       verdictLine({

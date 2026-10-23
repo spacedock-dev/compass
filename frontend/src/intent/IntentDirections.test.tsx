@@ -365,7 +365,7 @@ describe('Add as a line', () => {
     );
   });
 
-  it('opens an empty line when there is no direction to offer', async () => {
+  it('goes to the empty line already drawn when there is no direction to offer', async () => {
     const page = mountSession({
       store: SAVED,
       session: SAVED_AT,
@@ -375,7 +375,8 @@ describe('Add as a line', () => {
     await act(async () => {
       await openPendingDirection(page.shell, { harness: 'claude', sid: 's1' }, null);
     });
-    expect(lineBoxes()).toHaveLength(2);
+    expect(lineBoxes()).toHaveLength(1);
+    expect(document.activeElement).toBe(lineBoxes()[0]);
     expect(page.posts()).toBe(0);
   });
 });

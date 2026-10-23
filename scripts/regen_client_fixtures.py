@@ -1719,6 +1719,11 @@ def vocabulary() -> dict[str, Any]:
         "criterionKeys": list(reading.CRITERION_KEYS),
         "whyTokens": [token for token in reading.WHY_TOKENS if token != reading.WHY_STANDS],
         "whyStands": reading.WHY_STANDS,
+        "goalVerdictKeys": list(reading.GOAL_VERDICT_KEYS),
+        "goalVerdictChecks": list(reading.GOAL_VERDICT_CHECKS),
+        "goalVerdictWhys": list(reading.GOAL_VERDICT_WHYS),
+        "goalVerdictRemovalKeys": list(reading.GOAL_VERDICT_REMOVAL_KEYS),
+        "goalVerdictRemovalWhys": list(reading.GOAL_VERDICT_REMOVAL_WHYS),
         "workEvidenceByHarness": {
             harness: sorted(types) for harness, types in reading.WORK_EVIDENCE_BY_HARNESS.items()
         },
@@ -1730,6 +1735,7 @@ def vocabulary() -> dict[str, Any]:
         "results": list(reading.RESULTS),
         "promptSources": list(reading.PROMPT_SOURCES),
         "promptChosen": reading.PROMPT_CHOSEN,
+        "sessionGoal": reading.SESSION_GOAL,
         "maxOutcomeLines": reading.MAX_OUTCOME_LINES,
         "turnStopHarnesses": list(reading.TURN_STOP_HARNESSES),
         "scopeTextMidFlightIdle": reading.SCOPE_TEXT_MID_FLIGHT_IDLE,

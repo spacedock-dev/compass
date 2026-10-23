@@ -13,6 +13,11 @@ import {
   BLOCKER_LINES,
   CORRECTION_CAP,
   CRITERION_KEYS,
+  GOAL_VERDICT_CHECKS,
+  GOAL_VERDICT_KEYS,
+  GOAL_VERDICT_REMOVAL_KEYS,
+  GOAL_VERDICT_REMOVAL_WHYS,
+  GOAL_VERDICT_WHY,
   REASON_LINES,
   RESULTS,
   SCOPE_TEXT_IDLE,
@@ -37,6 +42,7 @@ import {
   PROMPT_CHOSEN,
   PROMPT_SOURCES,
   READING_ASSESSMENT_KEYS,
+  SESSION_GOAL,
   readingNamesConstraint,
 } from '../sessions/intent';
 
@@ -44,6 +50,11 @@ interface Vocabulary {
   readonly assessmentKeys: string[];
   readonly criterionKeys: string[];
   readonly whyTokens: string[];
+  readonly goalVerdictKeys: string[];
+  readonly goalVerdictChecks: string[];
+  readonly goalVerdictWhys: string[];
+  readonly goalVerdictRemovalKeys: string[];
+  readonly goalVerdictRemovalWhys: string[];
   readonly workEvidenceByHarness: Record<string, string[]>;
   readonly checkResultWords: Record<string, string>;
   readonly checkNotRecorded: string;
@@ -53,6 +64,7 @@ interface Vocabulary {
   readonly results: string[];
   readonly promptSources: string[];
   readonly promptChosen: string;
+  readonly sessionGoal: string;
   readonly maxOutcomeLines: number;
   readonly cueWindowSeconds: number;
   readonly turnStopHarnesses: string[];
@@ -94,6 +106,14 @@ describe('the reading vocabulary', () => {
 
   it('has a sentence for every reason a stored row may give, and none the producer lacks', () => {
     expect(sorted(Object.keys(STORED_WHY))).toEqual(sorted(vocabulary.whyTokens));
+  });
+
+  it("spells the harness verdict's test as the producer does, with a sentence for every reason", () => {
+    expect(sorted(GOAL_VERDICT_KEYS)).toEqual(sorted(vocabulary.goalVerdictKeys));
+    expect(sorted(GOAL_VERDICT_CHECKS)).toEqual(sorted(vocabulary.goalVerdictChecks));
+    expect(sorted(Object.keys(GOAL_VERDICT_WHY))).toEqual(sorted(vocabulary.goalVerdictWhys));
+    expect(sorted(GOAL_VERDICT_REMOVAL_KEYS)).toEqual(sorted(vocabulary.goalVerdictRemovalKeys));
+    expect(sorted(GOAL_VERDICT_REMOVAL_WHYS)).toEqual(sorted(vocabulary.goalVerdictRemovalWhys));
   });
 
   it('agrees on which entries demonstrate work, for every harness', () => {
@@ -158,6 +178,8 @@ describe('the goal and the annotation', () => {
     expect(sorted(PROMPT_SOURCES)).toEqual(sorted(vocabulary.promptSources));
     expect(PROMPT_CHOSEN).toBe(vocabulary.promptChosen);
     expect(PROMPT_SOURCES).toContain(PROMPT_CHOSEN);
+    expect(SESSION_GOAL).toBe(vocabulary.sessionGoal);
+    expect(PROMPT_SOURCES).toContain(SESSION_GOAL);
   });
 
   it('reads exactly the fields the store publishes', () => {

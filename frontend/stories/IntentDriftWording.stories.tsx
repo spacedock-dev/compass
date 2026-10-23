@@ -194,7 +194,8 @@ async function evidenceOf(canvasElement: HTMLElement) {
     ),
   );
   const goal = canvasElement.querySelector('[data-next-result-goal]') as HTMLElement;
-  await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
+  // The reason is in view under the line; no Evidence fold holds it (owner, 2026-10-23).
+  await expect(within(goal).queryByRole('button', { name: /^(Evidence|Source)/ })).toBeNull();
   return goal;
 }
 
@@ -253,7 +254,7 @@ export const SavingOnAnEndedSessionRepeatsTheCaveat: Story = {
   play: async ({ canvasElement }) => {
     const footer = await saveTyped(canvasElement);
     await expect(footer.querySelector('.next-cockpit-held-cue')).toHaveTextContent(
-      'Saved. This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.',
+      'Saved. This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.',
     );
   },
 };

@@ -345,7 +345,7 @@ try {
     async () => {
       const drafted = await compareEditor('drafted', 'intent-2');
       assert.equal(drafted.fields[0].boxes[0], 'Ship the queue worker behind a flag.');
-      assert.match(drafted.fields[0].marks, /from your prompt/);
+      assert.match(drafted.fields[0].marks, /Drafted from your first prompt/);
       const typed = await compareEditor('typed', 'intent-2', async (o) => {
         const box = o.page.locator('textarea[data-next-cockpit-held-kind="goal"]');
         await box.click();

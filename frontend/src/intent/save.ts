@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { compatSessKey } from '../api/identity';
 import type { AnnotateReceipt, SessionIdentity } from '../api/types';
 import type { Row } from '../observed';
 import { annotateOn, annotationLines } from './annotation';
@@ -26,11 +27,12 @@ import {
   linesOrigins,
   linesToSend,
   PROMPT_CHOSEN,
+  SESSION_GOAL,
   type Changes,
   type Draft,
   type DraftInput,
 } from './derive';
-import { promptCandidate } from '../sessions/intent';
+import { promptCandidate, sessionGoalCandidate } from '../sessions/intent';
 import { intentLogFor } from './logContext';
 import {
   ADOPT_CHANGED,
@@ -98,9 +100,10 @@ export function forgetChosen(ctx: Ctx, session: Row, adopted: Draft | null): voi
   const held = ctx.held.chosen.get(key);
   if (
     adopted &&
-    adopted.source === PROMPT_CHOSEN &&
+    (adopted.source === PROMPT_CHOSEN ||
+      (adopted.source === SESSION_GOAL && held?.source === SESSION_GOAL)) &&
     held &&
-    held.factId === adopted.factId &&
+    held.factId === (adopted.factId ?? '') &&
     held.text === adopted.text &&
     held.at === adopted.at
   ) {
@@ -112,6 +115,13 @@ export function forgetChosen(ctx: Ctx, session: Row, adopted: Draft | null): voi
 
 function candidateFor(ctx: Ctx, input: DraftInput, source: string): Draft | null {
   if (source === PROMPT_CHOSEN) return chosenCandidate(ctx.held, input.contexts, input.session);
+  if (source === SESSION_GOAL) {
+    /* The reader's own pick of it, or the draft itself: one set of words either way. */
+    return (
+      chosenCandidate(ctx.held, input.contexts, input.session) ??
+      sessionGoalCandidate(input.session)
+    );
+  }
   if (source === 'first-prompt' || source === 'latest-prompt') {
     return promptCandidate(input.session, source);
   }
@@ -243,6 +253,8 @@ function forgetSent(
   if (changes.goal) {
     ctx.held.cleared.delete(goal);
     ctx.held.chosen.delete(goal);
+    // A found goal that was saved is the reader's saved words, and no longer a found one.
+    ctx.held.found.delete(compatSessKey(row));
   }
   const held = ctx.held.lines.get(lines);
   if (sent && held && JSON.stringify(linesToSend(held)) === JSON.stringify(sent)) {
@@ -290,7 +302,9 @@ async function saveWork(
        receipt. `/api/annotate` takes an adoption or typed words in one request, so changed lines must not
        leave the displayed draft unsaved. */
     const source =
-      changes.chosen || changes.pending ? PROMPT_CHOSEN : (intentDraft(input)?.source ?? '');
+      changes.chosen || changes.pending
+        ? (chosenCandidate(ctx.held, input.contexts, input.session)?.source ?? PROMPT_CHOSEN)
+        : (intentDraft(input)?.source ?? '');
     const minted = { revision: 0 };
     const adopted = await adoptPrompt(ctx, identity, row, source, signal, minted, fromNow);
     if (adopted === true && frozen) {
@@ -387,6 +401,19 @@ function sayReadsFrom(ctx: Ctx, identity: SessionIdentity, key: string): string 
   const kind = readsFromKind(at);
   ctx.held.mark(key, kind);
   return kind;
+}
+
+/* Saves the goal a "Find goal" press found as typed words, for the press that reads against it, and answers
+   whether it landed. The found source is not one the server adopts from (its words are a model's, not a prompt's
+   own), so it is stored as the reader's typed goal, which is what a saved found goal is. */
+export async function saveFoundGoal(
+  ctx: Ctx,
+  identity: SessionIdentity,
+  row: Row,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const kind = await saveWork(ctx, identity, row, signal, null);
+  return kind === 'saved';
 }
 
 /* Save intent: both fields in one write. The typed arm of `/api/annotate` takes `goal` and `lines` together,

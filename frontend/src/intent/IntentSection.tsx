@@ -29,13 +29,12 @@ import {
 import { undoChanges } from './edit';
 import { ArmedDiscard, CaveatNotes, Caveats, LaterDirections } from './Caveats';
 import { ClearGoal, GoalField } from './GoalField';
-import { OutcomeLines, AddOutcomeLine } from './OutcomeLines';
+import { OutcomeLines } from './OutcomeLines';
 import { saveIntent } from './save';
 import { saveIntentAndLine } from './directions';
 import {
   ENDED_CAVEAT,
   INTENT_EDITED_ADD,
-  INTENT_LEDE,
   INTENT_MEASURED,
   READ_FROM_NOW_WHY,
   isReadsFrom,
@@ -44,8 +43,8 @@ import { REVISION_DEFINITION } from '../drift/sentences';
 import { usePanel } from './useIntent';
 import { HowTo } from './HowTo';
 
-/* The three controls sit together on the left and are always drawn, as the design has them: Add a line, Save
-   intent, and Undo changes, inert until there is something to undo. */
+/* The controls sit together on the left and are always drawn, as the design has them: Save intent and Undo
+   changes, inert until there is something to undo. Add a line lives inside the Expected outcome accordion. */
 function Footer() {
   const { ctx, input, session, payload } = usePanel();
   const key = intentKey(session);
@@ -92,7 +91,6 @@ function Footer() {
   return (
     <div className="next-cockpit-held-footer">
       <span className="next-cockpit-held-tools">
-        <AddOutcomeLine />
         <ActionButton
           label="Save intent"
           className={`font-bold px-4 ${saveLive || saving ? 'border-[var(--accent)] text-[color:var(--accent)]' : ''}`}
@@ -256,9 +254,6 @@ export function IntentSection() {
           ) : null}
         </span>
       </header>
-      <p className="next-cockpit-held-lede text-muted-foreground" data-next-intent-lede>
-        {INTENT_LEDE}
-      </p>
       {/* Under the heading rather than in its header, so the revision line keeps the sentence tier. */}
       {why ? (
         <p className="next-cockpit-held-lede" data-next-intent-no-draft>

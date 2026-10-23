@@ -4,6 +4,7 @@ import { genPayload } from '../observed/generate.test.helper';
 import { loadLegacyViews } from '../observed/legacy.test.helper';
 import { mountShell } from '../shell/testing';
 import { retractSessionCopies } from '../../test/sessionCopyDeviation';
+import { projectRecordedRowOpener } from '../../test/recordedCommandOpener';
 import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
 /* The Sessions screen, held to the legacy page by what a reader can read. The legacy `nextSessionsView`
@@ -90,6 +91,7 @@ function summarize(source: Element | DocumentFragment): Summary {
 function legacySummary(payload: unknown, raw?: (html: string) => void): Summary {
   const template = document.createElement('template');
   template.innerHTML = legacy.sessionsHtml(payload);
+  projectRecordedRowOpener(template.content, payload);
   raw?.(template.innerHTML);
   retractSessionCopies(template.content);
   const header = template.content.querySelector('.next-operations-header');

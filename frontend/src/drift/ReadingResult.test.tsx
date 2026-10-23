@@ -71,7 +71,9 @@ describe('a stored reading', () => {
     expect(document.querySelector('[data-next-result-heading]')).toBeNull();
     const goal = document.querySelector('[data-next-result-goal]') as HTMLElement;
     expect(goal.getAttribute('data-next-result-state')).toBe('departs');
-    expect(goal.textContent).toContain('Departs; evidence [1]');
+    // The card's What is the cited entry, with its number; no Evidence fold restates it as a status.
+    expect(goal.textContent).toContain('Failed check: pytest -q[1]');
+    expect(goal.textContent).not.toContain('Departs; evidence');
     const line = document.querySelector('.next-cockpit-result-lines li') as HTMLElement;
     expect(line.getAttribute('data-next-result-state')).toBe('consistent');
     expect(line.textContent).toContain('Consistent with [2]');
@@ -384,6 +386,52 @@ describe('a finding jump', () => {
     expect(
       document.querySelector('[data-next-entry-id="c2"] [data-next-finding-entry]'),
     ).toBeNull();
+  });
+});
+
+describe('a goal stated with /goal', () => {
+  const goalCommand = {
+    ...ASSESSMENT,
+    goal_source: 'session-goal',
+    goal_source_at: 980,
+  };
+
+  it('says it came from /goal, never from a prompt', async () => {
+    const page = mountDrift({
+      session: stored({
+        annotation_assessment: goalCommand,
+        annotation_goal_source: 'session-goal',
+      }),
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    const read = textOf('[data-next-read]');
+    expect(read).toContain('from /goal');
+    expect(read).not.toContain('drafted from your prompt');
+  });
+});
+
+describe('a refusal of a goal too vague to analyze', () => {
+  const refused = {
+    ...ASSESSMENT,
+    criteria: {
+      goal: {
+        result: 'goal too vague to analyze against',
+        cites: [],
+        detail: '',
+        clause: 'testing',
+      },
+    },
+  };
+
+  it('offers no mark of inaccuracy, because it sets no level and offers no Steer back', async () => {
+    const page = mountDrift({ session: stored({ annotation_assessment: refused }), facts: FACTS });
+    await page.settle();
+    await page.settle();
+    expect(document.querySelector('[data-next-result]')).not.toBeNull();
+    expect(byAction('not-accurate')).toBeFalsy();
+    expect(document.body.textContent).not.toContain('Mark as inaccurate');
   });
 });
 

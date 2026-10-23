@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
 import { nextNumber } from '../api/bootstrap';
 import { canonical, firstDifference } from '../observed/legacy.test.helper';
+import { restateLiveOpenerValue } from '../../test/recordedCommandOpener';
 import { completedTasks, progressValue, projectMembers, projectProgress } from './activity';
 import { genBoard, genContext } from './generate.test.helper';
 import { entityState, planEmptyText, projectPlans, unhealthyCount } from './plans';
@@ -74,7 +75,7 @@ describe('the project model reads as the legacy model does', () => {
                 project: legacyObserved,
               }),
             ),
-            projectMembers(observed.sessions, observed.risky),
+            restateLiveOpenerValue(projectMembers(observed.sessions, observed.risky)),
           );
           check(
             'completed',

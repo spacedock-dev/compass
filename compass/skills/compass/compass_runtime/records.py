@@ -16,6 +16,11 @@ from typing import Any, Final
 
 # Private goal-source metadata; never part of the Analyze words or their cache.
 GOAL_SOURCE_CUT_FIELD: Final = "goal_source_cut"
+# The closed goal-source tokens an adopted goal carries; `reading` re-exports them and the page
+# mirrors them (`vocabulary.json`). `typed`, the fallback, is not one of them.
+PROMPT_CHOSEN: Final = "chosen-prompt"
+SESSION_GOAL: Final = "session-goal"
+PROMPT_SOURCES: Final = ("latest-prompt", "first-prompt", PROMPT_CHOSEN, SESSION_GOAL)
 
 # C0 and DEL, the zero-width space, the two directional marks, and the bidi
 # embedding and isolate ranges. Listed one by one across U+200B to U+200F rather

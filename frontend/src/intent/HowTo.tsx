@@ -49,20 +49,18 @@ export function IntentHowTo({
       focusKey={`intent-howto:${session ? compatSessKey(session) : 'sessions'}`}
     >
       <h3 className="text-body font-semibold">How Intent and drift works</h3>
-      <p>1. Give the goal. Compass drafts one from your first prompt; edit it if it is off.</p>
       <p>
-        2. Press Analyze drift. It asks once to allow the reading and counts against a daily cap,
-        both shown beside the button.
+        1. Give the goal. Expected outcome is optional. A session's /goal is used until you edit it;
+        else Compass drafts from your first prompt.
       </p>
-      <p>
-        3. Read where the work left your goal. On Claude Code you can copy a correction to steer the
-        session back.
-      </p>
+      <p>2. Press Analyze drift. It asks once to allow reading and counts against a daily cap.</p>
+      <p>3. Read where the work left your goal. On Claude Code, copy a correction to steer back.</p>
       <p
         data-next-intent-howto-limit
       >{`Drift level: ${WORK_HARNESSES.map(label).join(' and ')} sessions only. Analyze drift here: ${reader}${reader.endsWith('.') ? '' : '.'} Steer back: ${steer}. Compass never writes into sessions.`}</p>
       <p data-next-intent-howto-no-line>
-        With no expected outcome line: no level, and “Can't tell” unless your goal departs.
+        With no outcome line, Compass reads your goal's end state; a goal too vague to read is
+        refused.
       </p>
       <p data-next-intent-howto-settle>
         Readings settle a command's latest unpiped run, failed or passed with nothing written after

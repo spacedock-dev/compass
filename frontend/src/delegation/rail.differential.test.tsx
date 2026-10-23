@@ -4,6 +4,7 @@ import { firstShapeDifference, shape } from './dom.test.helper';
 import { ProjectConsole } from './Console';
 import { genRailCase } from './rail.generate.test.helper';
 import { loadLegacyRail } from './legacy.rail.test.helper';
+import { restateLiveOpener } from '../../test/recordedCommandOpener';
 
 /* The Console's rail is held to the legacy page by what a reader can read and press. The page's own
    `nextProjectRail` runs over a generated board, after the same two payloads this tab accepted, and so does
@@ -54,6 +55,7 @@ describe('the Console rail agrees with the legacy page', () => {
           );
           continue;
         }
+        restateLiveOpener(mine);
         const found = firstShapeDifference(shape(theirs), shape(mine));
         if (found)
           failures.push(`seed ${String(seed)} project ${JSON.stringify(project)}: ${found}`);

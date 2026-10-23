@@ -599,6 +599,7 @@ CONTEXT_READERS = {
     "_correction": "Steer back's parts, from the reader's saved lines and fact ids",
     "_chosen_prompt": "one `prompt_choices` entry, bounded at the goal's cap, adopted, not answered",
     "_add_direction": "verifies request lineage and stores a line, answers only an outcome token",
+    "_goal_find_prompts": "the reader's own prompts, sent to the model; the page gets only a goal that quotes them",
 }
 # The one published carrier of a reader message's words, by the owner's ruling Q7 of
 # 2026-10-01: up to five prompts, each clipped to the goal's 240-character cap, on the

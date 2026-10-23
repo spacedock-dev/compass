@@ -2817,7 +2817,7 @@ class YourOwnWordsAreAlwaysInThePrompt(unittest.TestCase):
 
     def test_a_failed_check_is_chosen_before_any_passing_one(self) -> None:
         _prompt, selection = reading.build_prompt(
-            self._ledger(), goal="add retry", lines=["tests pass"], max_bytes=2500
+            self._ledger(), goal="add retry", lines=["tests pass"], max_bytes=3000
         )
         chosen = [row["id"] for row in selection.entries]
         self.assertIn("check-0", chosen)
@@ -3467,7 +3467,7 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                                 goal, [words] * count, tool_note=tool, claims=claims, scope=scope
                             )
                             measured.append(len(header.encode()))
-                            self.assertLessEqual(len(header.encode()), 9216)
+                            self.assertLessEqual(len(header.encode()), 9728)
                             self.assertEqual(count, header.count('<outcome_line n="'))
                             self.assertEqual(count + bool(goal), header.count(words))
                             self.assertIn(reading.EVIDENCE_RULES, header)
@@ -3485,8 +3485,9 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                                     self.assertIn("no copied Goal/line verdict", header)
         self.assertEqual(168, len(measured))
         self.assertEqual(56, len(finals))
+        # Re-pinned on 2026-10-22 with the final-scope header above, for the same reason.
         self.assertEqual(
-            "3424f852823746c0578c14e3c61ab98a8e569abeba76e157691f77b91ecd8a7f",
+            "9037b0379a9d5457c1148d1b5c10f60f1b4ce86796e64a00a0942d2ddfc443ef",
             hashlib.sha256(
                 original_product_name(
                     json.dumps(finals, ensure_ascii=False, separators=(",", ":"))
@@ -3510,11 +3511,11 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                 self.assertEqual({1, 2, 3}, set(selected.by_index()))
                 self.assertLessEqual(len(prompt.encode("utf-8")), 16_384)
                 trusted_header = prompt.split(reading.MENU_HEADING, 1)[0]
-                self.assertLessEqual(len(trusted_header.encode("utf-8")), 9_216)
+                self.assertLessEqual(len(trusted_header.encode("utf-8")), 9_728)
                 full_header = reading._header(
                     words, [words] * 6, tool_note=True, claims=True, scope=scope
                 )
-                self.assertLessEqual(len(full_header.encode("utf-8")), 9_216)
+                self.assertLessEqual(len(full_header.encode("utf-8")), 9_728)
 
     def test_final_readings_keep_their_existing_scope_and_token_set(self) -> None:
         prompt, selected = reading.build_prompt(
@@ -3535,8 +3536,10 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
         header = reading._header(
             self.goal, self.lines, tool_note=True, claims=True, scope=reading.SCOPE_FINAL
         )
+        # Re-pinned on 2026-10-22: the header now offers `goal_unclear` and says to decide it before
+        # the entries, in every scope (docs/design-reading-a-session.md, DEC-26 amendment).
         self.assertEqual(
-            "4633789558cbda57c7fe90765b0a2e5a09430804b3a7a5aabc8fda3cfa444a9b",
+            "5890eaebae6eaaead3999d1d5d8c20716e0cb612caea46103cef2b14a42d8c8c",
             hashlib.sha256(original_product_name(header).encode()).hexdigest(),
         )
 
@@ -3937,6 +3940,119 @@ class TheResolverTakesTheQuestionFromThePrompt(unittest.TestCase):
             window_start=0.0,
         )["line_1"]
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+
+
+NO_LINES_NOTE = "Read against your goal."
+
+
+class AGoalAloneIsReadAgainstItsOwnEndState(AClaudeCodeReadingProducer):
+    """A goal with no outcome line is read for the end state it states, or refused as too vague.
+
+    The goal-unclear verdict is the model's to give, on the goal row alone, before it reads the
+    session; no keyword or length rule in this module decides it.
+    """
+
+    def _read(
+        self,
+        goal: str,
+        answer: str,
+        *,
+        lines: list[str] | None = None,
+        read_lines: bool = True,
+    ) -> tuple[Any, str, bool]:
+        revision: dict[str, Any] = {"n": 1, "at": 50.0, "goal": goal}
+        if lines:
+            revision["lines"] = lines
+        return reading.produce(
+            cast("Any", self.config),
+            {"harness": "claude", "sid": "s1", "state": "working", "ended_at": None},
+            [revision],
+            [WORDS_FACT, check_fact(result="passed")],
+            now=200.0,
+            stamp_text="synthetic reading",
+            model=self._model(answer),
+            tool_output=ADMITTED,
+            read_lines=read_lines,
+        )
+
+    def test_the_prompt_for_a_goal_alone_asks_for_the_goals_end_state_and_poses_no_empty_line(
+        self,
+    ) -> None:
+        self._read("add retry to the webhook so a 5xx is retried three times", "{}")
+        instructions, values = self.prompts[0].split("<goal>\n", 1)
+        self.assertRegex(instructions, r"No outcome lines are given")
+        self.assertRegex(instructions, r"goal's own stated end state")
+        self.assertNotIn("<outcome_line", values)
+        self.assertNotIn("Answer each line", instructions)
+        self.assertNotIn('"line_1"', instructions)
+
+    def test_the_prompt_with_outcome_lines_does_not_tell_the_model_to_read_the_goal_as_one(
+        self,
+    ) -> None:
+        self._read("add retry", "{}", lines=["a 5xx is retried three times"])
+        instructions, values = self.prompts[0].split("<goal>\n", 1)
+        self.assertNotIn("No outcome lines are given", instructions)
+        self.assertEqual(1, values.count("<outcome_line"))
+
+    def test_the_goal_unclear_token_is_offered_for_the_goal_only_before_the_session_is_read(
+        self,
+    ) -> None:
+        for lines in (None, ["a 5xx is retried three times"]):
+            with self.subTest(lines=lines):
+                self.prompts.clear()
+                self._read("testing", "{}", lines=lines)
+                instructions = self.prompts[0].split("<goal>\n", 1)[0]
+                self.assertRegex(instructions, r'"goal_unclear" for the goal only')
+                self.assertRegex(instructions, r"before reading the entries")
+
+    def test_a_goal_without_a_stated_end_state_is_refused_with_no_other_verdict(self) -> None:
+        assessment, why, spent = self._read(
+            "testing",
+            '{"goal": {"result": "goal_unclear", "cites": [1], "detail": "too vague"},'
+            ' "line_1": {"result": "departure", "cites": [1], "detail": "x"}}',
+            lines=["a 5xx is retried three times"],
+        )
+        self.assertEqual("", why)
+        self.assertTrue(spent)
+        criteria = assessment["criteria"]
+        self.assertEqual(reading.RESULT_GOAL_UNCLEAR, criteria["goal"]["result"])
+        self.assertEqual((), criteria["goal"]["cites"])
+        self.assertEqual("", criteria["goal"]["detail"])
+        self.assertEqual(reading.WHY_STANDS, criteria["goal"]["why"])
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, criteria["line_1"]["result"])
+        self.assertEqual(reading.WHY_NOT_ASKED, criteria["line_1"]["why"])
+        self.assertEqual((), criteria["line_1"]["cites"])
+
+    def test_a_goal_with_a_stated_end_state_and_no_line_is_not_refused(self) -> None:
+        assessment, why, spent = self._read(
+            "add retry to the webhook so a 5xx is retried three times",
+            '{"goal": {"result": "unverifiable", "cites": [], "detail": ""}}',
+        )
+        self.assertEqual("", why)
+        self.assertTrue(spent)
+        self.assertEqual(["goal"], list(assessment["criteria"]))
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, assessment["criteria"]["goal"]["result"])
+
+    def test_the_token_means_nothing_on_an_outcome_line_or_the_claims_row(self) -> None:
+        self.assertIsNone(reading.result_for("line_1", "goal_unclear"))
+        self.assertIsNone(reading.result_for("claims", "goal_unclear"))
+        self.assertEqual(reading.RESULT_GOAL_UNCLEAR, reading.result_for("goal", " Goal_Unclear "))
+        self.assertEqual("goal_unclear", reading.token_for(reading.RESULT_GOAL_UNCLEAR))
+
+    def test_the_closed_result_set_carries_the_new_verdict(self) -> None:
+        self.assertIn(reading.RESULT_GOAL_UNCLEAR, reading.RESULTS)
+
+    def test_the_reading_says_it_read_the_goal_when_no_outcome_line_was_saved(self) -> None:
+        assessment, _why, _spent = self._read("add retry so a 5xx is retried", "{}")
+        self.assertIn(NO_LINES_NOTE, assessment["cutoff"])
+
+    def test_the_reading_does_not_say_it_when_the_lines_were_saved_or_merely_not_read(self) -> None:
+        saved, _why, _spent = self._read("add retry", "{}", lines=["a 5xx is retried"])
+        self.assertNotIn(NO_LINES_NOTE, saved["cutoff"])
+        unread, _why, _spent = self._read(
+            "add retry", "{}", lines=["a 5xx is retried"], read_lines=False
+        )
+        self.assertNotIn(NO_LINES_NOTE, unread["cutoff"])
 
 
 if __name__ == "__main__":

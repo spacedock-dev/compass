@@ -478,6 +478,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/summary_store.py",
     "skills/compass/compass_runtime/summary_jobs.py",
     "skills/compass/compass_runtime/entry_numbers.py",
+    "skills/compass/compass_runtime/goal_find.py",
     "skills/compass/compass_runtime/interaction_prototype.py",
     "skills/compass/compass_runtime/project_context.py",
     "skills/compass/compass_runtime/collectors/__init__.py",

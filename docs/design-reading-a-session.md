@@ -1916,7 +1916,7 @@ join on newlines where the typed fields are one line each.
    silently, and adopting on an ended session would have withheld the reading with a false reason.
    Codex now publishes the timestamp paired with its latest and first prompts. A missing or
    invalid source time still refuses adoption with a sentence saying why.
-4. The mark, "from your prompt", shows in the goal's source line, in the reading's evidence line and
+4. The mark, "from your prompt" (since 2026-10-23 the source line reads "Drafted from your first prompt"), shows in the goal's source line, in the reading's evidence line and
    in one sentence of the board-wide disclosure. Editing adopted words makes an ordinary typed
    revision, because the reader has then typed them.
 5. Adopted words do not make a session eligible for the unasked lane, so one press on many rows
@@ -2090,7 +2090,8 @@ in one session cut off the instruction that mattered and in another kept only pl
   box is now "Excerpt. Analyze reads up to 1,000 characters.", in the draft's marks and in the saved
   goal's source line alike, true past 1,000 characters and on the fallback alike. Short, because
   that row holds one control's height; the 375px layout was not re-measured in a browser for this
-  change. "Use your prompt" still names an excerpt "· excerpt" in its option.
+  change. "Use your prompt" still names an excerpt "· excerpt" in its option. (Since 2026-10-23 the cue
+  reads "Shortened here; Analyze reads the whole prompt" and sits on the source line above the box.)
 
 What is sent does not change in kind: the reader's own messages already go whole up to 1,000
 characters ([the 2026-10-01 amendment](#amended-2026-10-01-a-reading-sees-the-readers-whole-message)),
@@ -3040,6 +3041,8 @@ stays as it is: a surviving model departure, a contradicted or unshown claim, a 
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
+Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
+
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): item 3's Expected outcome is one optional empty line by default, and the Direction question's summary shrinks to one line while Keep keeps its two presses.
 
 Decided 2026-09-24 (DRC-4675). It brings the Session Drift Detection design's option C, "Unified
@@ -3089,7 +3092,7 @@ the later-direction floor (item 9).
      when it cannot fit even alone, nothing is written and the save answers `unwritable`.
    - The history copy is one flat field per line, at most 256 characters each, with a closed
      source token beside it and no entry id.
-   - The goal and the lines take at most 9,216 of 16,384 bytes of the prompt. Over that share,
+   - The goal and the lines take at most 9,728 of 16,384 bytes of the prompt. Over that share,
      every line is dropped together as not asked, never some of them.
    - The reply cap is 8,192 bytes, and a reply cut at the cap keeps each answer that arrived
      whole.
@@ -5266,6 +5269,8 @@ types one.
 
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): the live monitor switch moves into More (placement only), and an intent with no outcome line is stated in the how-to as a valid "Not enough recorded yet".
 
+Amended 2026-10-22 by [the amendment at the end of this decision](#amended-2026-10-22-a-goal-alone-is-read-or-refused): an analysis no longer needs an outcome line, so item 1's "zero is too little" and rule L7 hold for the live estimate only, and a goal too vague to read against is refused.
+
 Decided 2026-09-24 (DRC-4691). DRC-4692 defines and validates the levels on recorded Claude Code
 sessions. DRC-4696 builds the live estimate in the panel and the header, and amends the skill body's
 sentence "Nothing here evaluates on a cadence" when it ships, not before, because the skill body
@@ -5351,6 +5356,219 @@ check's latest passing run, blocks the live estimate's "None or low" and is neve
 3; the read-only list is in DEC-23's closed lists). The analysis level has its own source line, and
 the line "reads checks and file paths, not what the intent says" is the live estimate's alone (items
 1 and 6).
+
+### What reading a `/goal` decided, 2026-10-22
+
+DRC-4946, built against the shapes recorded in `docs/captures/claude/goal-2.1.308-macos.jsonl`. A
+reader who gave Claude Code a goal with `/goal` has said what done looks like, and the command is a
+local one, so the first-prompt read classes it as a control and drafts nothing from it.
+
+- The goal is read from the transcript's own records and not from the command's prompt text. The set
+  record is a `goal_status` attachment with `sentinel: true` that carries the condition and the
+  instant the command ran, which is also the instant of the command's `user` record. The evaluator's
+  verdict is a second attachment with `met: true` and no sentinel.
+- The latest set wins. A `Goal cleared:` answer publishes nothing. A met goal keeps its condition,
+  because the harness clears a met goal from itself and the session was still for it; the capture's
+  `/goal clear` after a met goal printed `No goal set`, and that changes nothing. A verdict with no
+  set record behind it in the bytes read has no known set time, and a time is never taken from the
+  verdict instead, so it publishes nothing.
+- A condition that cannot be held whole publishes nothing, as the first-prompt read refuses a cut
+  prompt: over 2,000 characters here, though the harness accepts 4,000, because the longer words
+  could only be offered as an excerpt.
+- The published field is one mapping, `session_goal`, `{text, at}`. The harness verdict (met, when,
+  the evaluator's reason) joins it as keys later, and nothing is renamed.
+- The source token is `session-goal`, in `reading.PROMPT_SOURCES`. The reader typed the command, so it
+  is adopted words keyed on their own time like the other sources, and every place that branches on
+  the closed list reads it that way: the window baseline is the command's instant and a saved one is
+  "saved" and not "typed". It is not a person's message in the observed record, so a reading finds no
+  source fact for it and reads the goal box's words, with the existing sentence saying so.
+- Rejected: reading the condition out of the command record's `<command-args>`. The record reader cuts a
+  message at 2,000 characters and drops the closing tag, and the attachment is not cut.
+- Not decided here: how the page offers the goal, which the next section records.
+
+### What the measured `/goal` shapes changed, 2026-10-23
+
+Amends the section above, built against `docs/captures/claude/goal-clear-replace-verdicts-2.1.309-macos.jsonl`.
+
+- A clear is the set sentinel with `met: true` and no reason. The section above read every `met: true`
+  attachment as the evaluator's verdict, so an interactive clear, which writes nothing else, showed the
+  cleared goal as marked met. The `Goal cleared:` answer is kept as a second signal; `claude -p` writes both.
+- The length limit is 4,000 characters, from the harness: 4,001 is refused with a printed sentence and
+  no record. The 2,000 above was the record reader's own cap and had no basis in the command, so a
+  3,000-character goal, accepted by Claude Code, published nothing. The cap is now 4,000, and the Goal
+  field's own excerpt (`offered`, `cut`) carries the words it cannot hold. The reader-side message cap is
+  unchanged, which is why the condition is still never read from `<command-args>`.
+- An impossible verdict is `met: false` with `failed: true`. It joins no verdict, as a not-met one does,
+  so the card never says the harness marked it met. Whether the goal still stands afterwards was not
+  measured; it stays published. Superseded by the amendment of
+  2026-10-23 below: it was measured, the goal is ended, and the give-up is published as its own claim.
+- Left as they were, now measured: a replacement is a second set, the latest wins; a resume writes no
+  goal record, so an active goal survives it; an untimed set publishes nothing, because every captured
+  record carries a time and one without cannot be given a guessed one.
+- A goal set before the 8 MiB the cold read covers publishes nothing, so the Goal field offers no
+  detected goal and the reader types or adopts one. Reading the head of the file instead was rejected:
+  it would make every collection of a large transcript read it end to end.
+
+### What offering a `/goal` decided, 2026-10-22
+
+DRC-4947, owner rulings of the same date. The page uses a detected goal and does not hold it back for a save.
+
+- A `/goal` is the working goal until the reader edits it. With no goal saved it is the draft, ahead of
+  the first and latest prompt and ahead of the harness-control check, because a session that opened with
+  `/goal` has no first prompt to draft and still has this goal. The box, Save intent and Analyze drift all
+  read it through `intentDraft`, so Analyze adopts it by name (`adopt: session-goal`, its words and its time)
+  as it does a drafted prompt. The server's later-direction floor takes the same draft time
+  (`annotations.direction_floor`), so the page and the store agree on which directions are later.
+- The page marks it "Goal detected" and the line under the box reads "From /goal", with the time. Typing
+  replaces it and the line says "From /goal, edited" or "Typed"; choosing a prompt replaces it and the line
+  names the prompt. The prompt list leads with it. (Wording since 2026-10-23, and the line sits above the box:
+  "From your /goal at 11:53 · not saved", "Your edit of your /goal · not saved", "You typed this · not saved",
+  "Drafted from the prompt you chose · not saved".)
+- A `/goal` that appears after the reader saved a goal never replaces their words. The page offers it
+  beside the field, naming the condition and its time, with Use this goal and Keep my goal. "After" is the
+  moment the saved words stand at, as `direction_floor` reads it: an adopted goal by its source's time, typed
+  words by when they were saved. Use this goal fills the box as a pending adoption, so Save intent records the
+  new source and time; Keep my goal declines that `/goal` and any older one, and a later one asks again.
+- A condition over the Goal field's 240 characters is offered as the server's excerpt with a note that it
+  was cut. The row carries `offered` and `cut` only for such a goal, and `prompt_candidate` resolves `offered`,
+  so the words on screen, the words an adoption names and the words the store keeps are one string. The page
+  never clips on its own, and an adoption naming the whole words is refused.
+- Rejected: saving the detected goal on open. Nothing in Compass writes the reader's words without a press.
+- Rejected: Use this goal as an immediate write. A pick from the prompt list fills the box and saves
+  nothing, and a second kind of pick that saves would make the list inconsistent with itself.
+
+### Amended 2026-10-22: Find goal reads your prompts
+
+DRC-4953, owner rulings of the same date. A session with no `/goal` and no saved goal can still state its
+goal across the prompts the reader typed. A button beside "Use your prompt", Find goal, reads those prompts
+and offers the goal when it can tie it to the reader's own words.
+
+- The call is the reader's. It runs only on a press, one call per press, and never on a render, a poll, a
+  focus change or a revision save. It is refused with the pause and counted against the same rolling cap as a
+  reading, at the same model seam (`reading_policy.GuardedModel`), so a press that finds nothing is charged
+  because the call was made. A press that sends nothing (no prompts, a missing CLI, a refusal known beforehand)
+  is not.
+- It reads the reader's prompts and nothing else: the person-authored messages `_prompt_facts` already
+  verifies, minus a correction the reader copied from Compass, masked and folded as a chosen goal is.
+  Agent messages, tool output and pasted content Compass strips are never sent. A session over 40 prompts
+  keeps the first five and the latest.
+- High confidence is three mechanical rules and not a score. The model must quote the words the goal comes
+  from. Each quote must be verbatim, whitespace aside, in the prompt it names, in the text Compass sent
+  (masked and clipped as sent); one paraphrased quote drops the goal, and so does a quote filed under another
+  prompt's number. The model must also call the goal clear. The prompt carries the same end-state
+  wording as a reading's `reading.GOAL_UNCLEAR_RULE`, without importing it; a test holds the shared phrase. A goal over the Goal field's 240 characters is dropped and never cut.
+- The vague-goal test is the model's judgement made in the same call. No keyword or length rule makes it,
+  as for a saved goal, and a second model call over the same words would double the cost of a press. The
+  limit is accepted and written in SECURITY.md: a finder more lenient than a later analysis can show a goal
+  that analysis would call unclear, and the quotes are what the reader checks it against.
+- The found goal cites the prompts it quotes by the entry numbers Full activity shows (`entry_numbers`), drawn
+  as the Drift card draws a cited entry, beside the source line, which since 2026-10-23 reads "Found in your prompts at" the time it was found. Pressing
+  one opens Full activity at that entry and reads older pages for it when the page does not hold it.
+  The checked quotes sit under that line, each led by its entry number, because the hover shows the entry as
+  the activity list abbreviates it and the quote is what ties the goal's wording to the prompt.
+- Precedence is the reader's saved goal, a `/goal`, a found goal, then the first or latest prompt drafts. A
+  found goal stands only while the box holds its words, so an edit replaces it, and a result that arrives after
+  a saved goal, a `/goal` or the reader's own typing does not touch the box.
+- Nothing is stored. The answer is held in the page as the box's pending words and saved, if at all, as typed
+  words by Save intent, so the store never holds a model's sentence the reader did not keep.
+- Rejected: a new adoption source resolved by the server, as `session-goal` is. The server would have to keep
+  the found goal between the press and the save, which is storing an assessment of the session before the
+  reader has kept it, or call the model again at save time. Rejected: a keyword or length rule for "vague",
+  for the reason the amendment above gives. Rejected: running it unasked on open. The owner ruled a reader-started
+  call, like Analyze drift.
+
+### Amended 2026-10-22: a goal met verdict is a claim
+
+DRC-4948, owner ruling of the same date. When a Claude Code session ran with `/goal`, its evaluator can write a
+`met` verdict. Compass shows that verdict and checks it, and relies on its own reading.
+
+- The row publishes the latest `met: true` verdict on the goal it belongs to, as `session_goal.verdict`
+  (`{met, at, reason}`). The key is absent before the evaluator decides, so no goal carries an empty one, and a
+  later `/goal` or a clear takes it away with the goal it was about. The reason is the evaluator model's own
+  sentence, masked, folded to one line and cut at 500 characters with an ellipsis. A not-met verdict is not
+  published (a give-up is, as its own claim: see the amendment of 2026-10-23 below): the evaluator repeats it on every iteration while the goal is open (a real session holds
+  more than twenty), so it is progress rather than an end state, and the card reports only the end state.
+- The card says it as the harness's claim, in the reader's words: "Claude Code marked this goal met at 16:44",
+  under the label "The harness's claim", with the reason quoted. It is drawn from the row alone, so a verdict
+  with no analysis yet reads as the claim with a line saying nothing has checked it and no level is implied.
+- The analysis tests the claim the way it tests an agent saying a task is done. The test is code over the
+  recorded writes and checks (`reading.check_goal_verdict`), never a model call, and it reads only the record
+  from the goal's own set time. The facts the reason cites are the files it names and the kinds of check it says
+  passed. A cited file recorded as written, or a claimed kind of check that passed, at or before the verdict
+  **agrees**, and a recorded fact that undoes it **disputes**: a cited file written again after the verdict, or
+  a check of a claimed kind whose latest run failed and that no later whole-suite run before the verdict
+  superseded. A dispute outweighs what agrees. Nothing found, or a reason that names nothing checkable, is
+  **unconfirmed**, and never disputed, because the listing is capped and absence of a write is not
+  contradiction (rule 3).
+- The result is stored beside the criteria as `goal_verdict` (`{at, check, why, cites}`), not among them. `at`
+  is the verdict's own time, so a reading that predates a verdict, or carries no test, leaves it unchecked and
+  the card says to analyze again. `check` and `why` are closed tokens; the page owns the sentences, as it does
+  for a criterion's `why`, and a stored value outside the tokens refuses the reading whole.
+- The verdict never lowers a level and never counts as a passing check. The producer builds the criteria
+  without reading it, and the check is not in `Recorded`, so nothing that cites a check can cite it. Where
+  Compass disagrees the card says "Compass disputes it", and "Compass's own reading stands": the level shown is
+  the analysis's and nothing else's.
+- Rejected: a model call to judge the reason. The reason is already a small model's summary, and a second
+  model reading it would add a reading of a reading. Rejected: reading an absent cited fact as a dispute. It
+  would turn a capped listing, or a file that existed before the session, into an accusation. Rejected:
+  letting a disputed verdict raise the level. A level rests on departures the record shows, and a claim the
+  record contradicts is a caution on the claim, as a contradicted agent claim is.
+
+Amended 2026-10-23 (owner feedback, DRC-4948): a file taken away disputes the claim too. A real session
+had the evaluator say met over a file a later turn removed with `rm`, and the card said only that Compass
+could not confirm it, because a deletion was nowhere in the record the test read. The scan of the
+transcript's shell calls now notes each file `rm`, `unlink`, `rmdir` or `mv` took away (a `mv` removes its
+sources, not its destination; globs, unplaceable targets, a `-t` move and `git rm` are not read), skipping
+a call whose own output reports that command failing. The notes are read at the press and go to no model.
+They are not facts: a published fact is a closed kind, and the removal exists only to test this claim.
+Where a file the reason or the goal's condition names, or a folder holding it, was taken away after the
+verdict and not written again after that, the test **disputes** it with `deleted-after` or `moved-after`,
+stored with the one file and the moment (`{at, check, why, cites, path, changed_at}`, the two extra keys
+together and only beside those tokens), so the card can say "Compass disputes it: docs/e2e/notes.md was
+deleted at 22:59, after the verdict." A file written again after its removal stays the `written-after`
+dispute. "Could not confirm it" remains the answer where nothing in the record supports or contradicts the
+claim, and Compass's own level stands either way.
+
+
+### Amended 2026-10-23: a goal that ended is said to have ended
+
+DRC-4956, owner ruling of the same date, built on a measured run recorded in
+`docs/captures/claude/goal-give-up-ends-goal-2.1.309-macos.jsonl`. It amends the paragraph above that says a
+not-met verdict is not published, and the rulings elsewhere that call a `failed: true` verdict "neither a
+verdict nor an end". That was written before the later state was measured. After Claude Code writes the
+failed record the goal is **ended**: a bare `/goal` prints "No goal set" and a clear prints the same, and
+neither writes a goal record.
+
+- A give-up is published as `session_goal_gave_up` (`{at, reason}`), a top-level per-session field of its own
+  and never under `verdict`, because every reader of a met goal keys on that. The goal itself becomes None, so
+  naming, drafting and adoption read as they do for any session with no goal. The reason goes through the same
+  masking as a verdict's: one line, cut at 500 characters. No iterations, tokens or duration are published.
+- A clear is published as `session_goal_cleared` (`{at}`), also top level. The goal is None after it. Where
+  `claude -p` writes two clear signals, the sentinel and then the printed line, the first time wins.
+- A goal that follows another carries `earlier` (`{how, at}`) on `session_goal`: `replaced` only when the
+  earlier goal was still active when the next `/goal` arrived, at that moment; `met` at the verdict's time;
+  `gave-up` at the give-up's time. Never the earlier goal's words. A set with the same words at the same
+  millisecond is a duplicate record, not a replacement, and a later set takes the clear and the give-up away.
+- All of it lives in the same cache entry as the goal, so an incremental read keeps it. A cold read that starts
+  mid-file publishes none of it: absent means unknown, never "did not happen". The two new fields are declared
+  by hand where `AGENTS.md` names, and are in neither `PATCHABLE` nor session history.
+- The Drift card says a give-up as the harness's claim, "Claude Code gave up on this goal at 16:44", with the
+  reason quoted and a line that Compass has not checked it and the level does not change. It is never "met",
+  never "Analyze again to check it", never a level or a check, and never model-judged. Compass's own reading
+  stands, as it does for a met claim.
+- The Intent card says under the Goal field what became of an earlier goal ("Replaced an earlier /goal at
+  14:05", "An earlier /goal was met at 14:05", "Claude Code gave up on an earlier /goal at 14:05") and, where a
+  clear left no goal, "Your /goal was cleared at 14:05". Over a Goal field that still holds a prompt draft, the
+  clear names it ("...; the draft below is your first prompt", "your latest prompt", "a prompt you chose", "a
+  goal found in your prompts"), so the note is not read as a caption for the draft; typed words and an empty
+  box need no name. (Superseded 2026-10-23: the note reads "Your /goal was cleared at 14:05" alone, and the
+  source line directly under it names the draft; the "; the draft below is ..." clause is gone.) Where the session opened with `/goal`, the existing
+  "This session opened with /goal" sentence takes the clear instead, so it is said once. None of these shows
+  while the update offer ("Your /goal changed at") is on screen.
+- Rejected: holding a given-up goal and adding the note. The run showed the goal ended, and a held goal would
+  keep naming the session, being drafted and offering an update for a goal the harness had stopped. Rejected:
+  publishing the earlier goal's words. A replaced goal's text is not the reader's to be shown a second time,
+  and nothing needs it.
 
 ### The starting definitions
 
@@ -5591,6 +5809,67 @@ those two canonical examples, not universal reading budgets or runtime citation 
 valid reading with two or more citations keeps every surviving support and its recorded times,
 even when its explanation needs more words than the one-citation example.
 
+### Amended 2026-10-22: a goal alone is read or refused
+
+Decided by the owner on 2026-10-22. A goal almost always carries its expected outcome, so a reader
+who saves only a Goal and presses Analyze drift gets a drift level. This retires rule L7 for the
+analysis: `levels.analysis_level` no longer returns "Not enough recorded yet" with `no-outcome-line`
+when the intent read holds no outcome line, and item 1's "an analysis needs at least one outcome
+line" no longer holds. The live estimate is unchanged (it never read the lines). The other rules
+stand: a level needs a departure or a failed check ([2026-10-21](#amended-2026-10-21-a-level-needs-a-departure)),
+the evidence floor, and the stored-reading checks.
+
+- **The Goal stands as the one line.** With no outcome line the producer's prompt says so ("No outcome
+  lines are given. Read the goal's own stated end state as the outcome, and answer the goal against
+  it."), and the level rules treat the Goal row as the one line: `None or low` still needs a
+  `consistent` that cites a passing check, so the agent's word alone, or a verdict the model could not
+  settle, leaves "Not enough recorded yet" with `line-not-shown-by-a-check`. A departure reads Medium
+  and a fresh failed check High, as with a line. No analysis is ever Extreme; that was never changed.
+  An outcome line, where one is saved, is read as before and the Goal is not also treated as a line.
+- **The reading says which it read.** The cutoff gains "Read against your goal." when the revision
+  read holds none. Amended 2026-10-23 (owner): it first read "Read against your goal; no expected
+  outcome lines were saved.", and the second half was dropped because noting the absence of an
+  optional field tells a reader nothing. A goal-only reading stored before that change keeps the
+  longer sentence it was stored with. It is keyed on the revision and not on what the
+  press sent, because the unasked lane reads the goal alone while lines are saved, and that is not the
+  same statement.
+- **`no-outcome-line` stays a known token.** A reading's level is recomputed from the stored reading
+  on every collection and never stored, so a level published before this change is recomputed
+  under the new rule. The token stays in `levels.REASONS` and the page keeps its sentence ("No
+  expected outcome line was saved."), so a stored or older payload that carries it still renders its
+  original sentence and not a blank.
+- **A fifth result, `goal_unclear`, on the Goal row alone.** Where the shape contract's rule 1 holds
+  three results per constraint and the claims row adds a fourth, the Goal row may now answer
+  "goal too vague to analyze against" (`reading.RESULT_GOAL_UNCLEAR`, the token `goal_unclear`). It is
+  the model's judgement of the words alone, made before it reads the entries, from the Goal and the
+  outcome lines if there are any: no keyword and no length rule makes it, and the resolver cannot tell
+  a vague goal from a clear one. Like `unsupported` on claims, the token means nothing on an outcome
+  line or the claims row, and the store refuses a reading that carries it elsewhere.
+- **It stands in place of everything else.** The row takes no citation and no prose. Every other row
+  of that reading is published as `not verifiable` with the reason `not-asked`, whatever the reply held,
+  so no departure, level, claim or Steer back is drawn for that run. `levels.analysis_level` returns
+  "Not enough recorded yet" with the reason `goal-unclear` before any tally.
+- **The page says it under the Goal field**, in Compass's voice: "This goal is too vague to analyze
+  against. Rewrite it with what should be true when the work is done, then try again." It is read from
+  the stored reading, so it stays while the saved goal is the one read and clears the moment the goal
+  box is edited or a new revision is saved. A refused run is stored like any reading and counts against
+  the daily cap, because the model call was made and the reader's capacity spent.
+- **What it cost the prompt.** The trusted header gained two instructions, so the worst header
+  measures 9,475 bytes of the share. `INTENT_SHARE_BYTES` rises from 9,216 to 9,728 and the record keeps
+  at least 6,656 bytes where it kept 7,168. The final-scope header digests the suite pins changed
+  with it and were re-pinned.
+- **Not changed.** The abstention study tooling (`mark_abstention.py`, `score_abstention.py`) still
+  freezes cases with no outcome line as having no analysis question: it measures a frozen method, and
+  amending it is a separate decision.
+
+Amended 2026-10-23 (owner, DRC-4950): the evidence floor stays. A goal-only reading that finds nothing
+still draws no level until a passing check shows the goal done, and the card now says so plainly and
+says what would let a level be drawn: "Nothing departs from your goal, but no check shows it done, so no
+level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again."
+The sentence is the verdict line's own for the goal-only blocker; where outcome lines exist the existing
+wording ("Nothing found against what it read, but no level is drawn: a line of your intent is not shown
+by any check.") is unchanged.
+
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
 Decided 2026-10-11 (DRC-4855), on the Actions Front and Center project, in the milestone "Intent
@@ -5616,7 +5895,7 @@ sentence about work the page cannot see stay reachable.
 | 2 | The resume command after the Copy buttons go | It lives on Attention, the waiting panel and the project rail only, not on the session page. | The promise map's P2 "way back" clause and its line beside departures, NUI-5, NUI-8 |
 | 3 | "Analyze again" | One run control per state. A second press appears only when new work was recorded or the intent changed after the result, and it names which. | The 2026-10-01 amendment "the result takes the button's place" (Q3) |
 | 4 | The Direction question | Its summary shrinks to one line with the count. Keep still draws every direction whole before settling, so it keeps its two presses. | Nothing; the 2026-09-28 ruling stands and is part of the click budget |
-| 5 | A typed goal on an ended session | The goal box says before the reader types that words saved now cannot be read against an ended session; intent saved before the end and the goal drafted from their prompt remain eligible. Amended 2026-10-14: a confirmed save repeats the same caveat beside "Saved as a new revision." | The 2026-10-01 note on what a press says beside the button |
+| 5 | A typed goal on an ended session | The goal box says before the reader types that what they save now is kept but Analyze will not check the session against it; intent saved before the end and the goal taken from their prompt remain eligible (reworded 2026-10-23 so a new reader can parse it). Amended 2026-10-14: a confirmed save repeats the same caveat beside "Saved as a new revision." | The 2026-10-01 note on what a press says beside the button |
 | 6a | Use your prompt | Stays visible beside the goal. It is the only way to choose a different goal on an ended session. | Nothing |
 | 6b | Live monitor | Moves into More. It is off by default and needs no model. | DEC-26 item 4 (placement only) |
 | 6c | Discard everything | Moves into More and stays reachable. | Nothing; SECURITY.md still describes it |
@@ -6261,7 +6540,7 @@ parts. It now matches the design's form, and a save no longer shows the draft wh
   chosen prompt. `+ Add a line`, `Save intent` and `Undo changes` sit together on the left and are
   drawn from the first view, the last two inert until there is something to write or undo, and each
   line's `×` is drawn before the reader types.
-- **Status is a word.** `Saved`, `Unsaved changes`, `Draft` over a goal drafted from a prompt, and
+- **Status is a word.** `Saved`, `Unsaved changes`, `Draft` over a goal drafted from a prompt or detected from a `/goal`, and
   the refusals `Not saved` and `Not confirmed`. Which prompt a draft came from is the goal's source
   line, and `How Intent and drift works` is in the menu below.
 - **The goal's hint** no longer carries the prompt-length sentence. "Analyze reads at most the
@@ -6375,3 +6654,36 @@ titled "Correction to copy". The correction joined a line ending in a stop to it
 - **The counter follows the text.** The count belongs to the box it was typed in; a rebuilt correction draws its
   own length rather than the previous box's.
 
+
+### Amended 2026-10-23 (owner): the citations are the source
+
+An owner walk of the Sample session on the draft pull request found the Drift card repeating itself. "What
+the agent claimed" listed "Agent message [43]", "Your message [80]", which told a reader nothing. Its Evidence
+fold then gave each entry's words again with the harness name and an "Evidence recorded at" line, and each
+entry's Source fold repeated the one record-type list ("agent_message · timestamped top-level assistant text
+record · exact"), once per entry. A departure card had the same Evidence fold under a What that already quoted
+the agent. Nothing about the reading changes; this is placement and wording on the card.
+
+- Each cited entry on a departure card, on the claims row and on every quiet goal or outcome row is one line
+  in its own words, then its number, which still opens Full activity at that entry and lights every entry the
+  finding cites, then a muted time of day: `Agent said: “…” [43] 18:47`, `You said: “…” [80]`,
+  `Failed check: <command> [81]`, `File write: <path> [n]`, the wording `citedLine` gives the citation card,
+  clipped the way the card clips it. A departure's titled entry takes the same form, so every line on the card
+  reads alike; What no longer opens with "At 18:43 the agent said". This amends the 2026-10-20 amendment, which
+  kept a quiet row to the entry's kind so that a line read as consistent never stood beside the agent's own
+  "Done": the owner ruled that a cited message is the agent's words, attributed, wherever it is cited, and the
+  check mark is still said as "[check mark]" and never drawn.
+- The Evidence fold and every Source fold are gone from the result: a departure card, the claims row and the
+  quiet rows. What only they held either moved inline or was dropped. Moved: the status qualifier a
+  consistent line carries ("as the tool reported; not inspected", "not a check"), the stored `why`, the detail of
+  a line never reached, the harness's limit and the reason for Can't tell now draw in view under the line
+  (`StatusQualifier`, `Qualifiers`). Dropped: the label repeated as a heading, the "Departs; evidence #n"
+  status (the label and What say it), the harness and worker lines, the long-form time ("Evidence recorded at",
+  "Call recorded at"), a check's "Result recorded at" time and the record-type tags ("agent_message · …"),
+  which were the same for every entry of a kind. A person who needs the raw record opens the entry in Full
+  activity, whose Source toggle is unchanged. The 2026-10-14 ruling that kept the reason for Can't tell inside
+  Evidence was already superseded by the 2026-10-21 amendment; this removes the fold itself.
+- The live level's recorded signals keep their own evidence list, which is not a card or a line of the result.
+- The how-to and `HOW_TO_USE.md` say nothing about these folds and are unchanged. This change updates the
+  sample tour (`frontend/src/sample/tour.ts`), the shipped skill body (`SKILL.md`) and the pointer in
+  [the frontend migration record](design-frontend-migration.md).

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
+import { projectRecordedCommandOpener } from '../../test/recordedCommandOpener';
 import {
   canonical,
   firstDifference,
@@ -44,8 +45,11 @@ describe('nextObserved and observe agree over generated payloads', () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= SEEDS; seed += 1) {
       const payload = genPayload(seed);
-      const old = instructionSourceDeviation(
-        withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
+      const old = projectRecordedCommandOpener(
+        instructionSourceDeviation(
+          withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
+        ),
+        payload,
       );
       const mine = withoutHistory(observe(payload) as unknown as Record<string, unknown>);
       const found = firstDifference(canonical(old), canonical(mine));
@@ -229,7 +233,10 @@ function firstSession(model: Record<string, unknown>): Record<string, unknown> {
 describe('the harness can fail: a perturbed answer is reported at the path that changed', () => {
   const payload = genPayload(richSeed());
   const old = canonical(
-    withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
+    projectRecordedCommandOpener(
+      withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
+      payload,
+    ),
   );
   const mine = () =>
     JSON.parse(

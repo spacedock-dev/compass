@@ -14,6 +14,7 @@ import {
   type SteerOffer,
 } from './correction';
 import { DriftLevelView } from './DriftLevelView';
+import { GoalVerdictNote } from './GoalVerdictNote';
 import type { Board } from './flip';
 import {
   ReadingControl,
@@ -134,6 +135,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     <>
       <DriftVerdict focus={!job && !hasQuestion && !stale} />
       <DriftLevelView />
+      <GoalVerdictNote />
     </>
   );
   /* The answer first, then the level, in every state: a later direction's question once drew above the level,

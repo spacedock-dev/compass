@@ -10,13 +10,24 @@ export const UNVERIFIABLE = 'not verifiable from available evidence';
    on the claims row. */
 export const UNSUPPORTED = 'not shown by the record';
 export const NOT_REACHED = 'not reached at this stop';
+/* `reading.RESULT_GOAL_UNCLEAR`: the model read the goal, and the outcome lines if any, before the session
+   and found no end state to read the work against. The goal row's alone, and it stands in place of a level:
+   `levels.REASON_GOAL_UNCLEAR` is the reason the level carries. */
+export const GOAL_UNCLEAR_RESULT = 'goal too vague to analyze against';
 export const RESULTS: readonly string[] = [
   DEPARTURE,
   CONSISTENT,
   UNVERIFIABLE,
   UNSUPPORTED,
   NOT_REACHED,
+  GOAL_UNCLEAR_RESULT,
 ];
+/* The warning under the Goal field, in Compass's voice (owner, 2026-10-22). Its one home: the level's
+   blocker line below says it too, so the sentence cannot drift between the two. */
+export const GOAL_UNCLEAR =
+  'This goal is too vague to analyze against. Rewrite it with what should be true when the work is done, then try again.';
+/* The Drift card's own answer over a refused goal, where a level would stand. */
+export const GOAL_UNCLEAR_VERDICT = 'No level: the goal is too vague to analyze against.';
 export const CLAIMS = 'claims';
 
 /* The published shape, spelt once on each side: a producer and a renderer disagreeing about a key name
@@ -149,6 +160,48 @@ export const STORED_WHY: Readonly<Record<string, string>> = {
   'claim-uncited': CLAIM_UNCITED,
   'claim-record-unread': CLAIM_RECORD_UNREAD,
   [RECORDED_WRITE]: RECORDED_WRITE_UNHELD,
+};
+
+/* The harness's own "goal met" verdict, and Compass's test of it (`reading.GOAL_VERDICT_*`). The verdict is
+   always the harness's claim and the sentences here are Compass's: the producer's `check` and `why` are
+   closed tokens, and its prose never reaches the page through them. A claim never moves a level and is never
+   a passing check, and the sentences say so where a reader might take it for either
+   ([DEC-26](../../../docs/design-reading-a-session.md#amended-2026-10-22-a-goal-met-verdict-is-a-claim)). */
+export const GOAL_VERDICT_KEYS: readonly string[] = ['at', 'check', 'why', 'cites'];
+/* A dispute that rests on a file taken away names the file and the moment, both or neither. */
+export const GOAL_VERDICT_REMOVAL_KEYS: readonly string[] = ['path', 'changed_at'];
+export const GOAL_VERDICT_REMOVAL_WHYS: readonly string[] = ['deleted-after', 'moved-after'];
+export const GOAL_VERDICT_CHECKS: readonly string[] = ['agrees', 'disputed', 'unconfirmed'];
+export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
+  'written-before': 'the file its reason names is recorded as written before the verdict',
+  'passed-before': 'a check of the kind its reason names is recorded as passing before the verdict',
+  'written-after': 'the file its reason names was written again after the verdict',
+  'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
+  'moved-after': 'a file its reason or the goal names was moved away after the verdict',
+  'check-failed': 'a check of the kind its reason names has a failing latest run',
+  'not-found': 'the record Compass read does not show what its reason names',
+  'nothing-checkable': 'its reason names no file or check Compass can look for',
+};
+/* "docs/e2e/notes.md was deleted at 22:59, after the verdict": the file and the moment the record shows. */
+export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
+  `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;
+export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
+/* Both claims name the product, not the payload's harness label ("Claude"): only Claude Code reports a goal
+   met or ends one this way, and the Intent card's note says "Claude Code" too. */
+export const goalVerdictClaim = (at: string): string =>
+  `Claude Code marked this goal met at ${at}.`;
+export const goalGaveUpClaim = (at: string): string => `Claude Code gave up on this goal at ${at}.`;
+/* A give-up is the harness's say-so about a goal it ended: Compass does not check it and it moves no level. */
+export const GOAL_GAVE_UP_LINE = 'Compass has not checked it, and it does not change the level.';
+export const GOAL_VERDICT_LINES: Readonly<Record<string, (why: string) => string>> = {
+  'claim-only': () =>
+    'Compass has not analyzed this session, so nothing has checked it and no level is implied.',
+  unchecked: () =>
+    'Compass’s reading does not cover this verdict, so nothing has checked it. Analyze again to check it.',
+  agrees: (why) =>
+    `Compass agrees: ${why}. This does not change the level and is not a passing check.`,
+  disputed: (why) => `Compass disputes it: ${why}. Compass’s own reading stands.`,
+  unconfirmed: (why) => `Compass could not confirm it: ${why}. This does not change the level.`,
 };
 
 /* Said once, on the reading that no longer finds a departure the one before it did, with that reading's time:
@@ -338,6 +391,13 @@ export const REASON_LINES: Readonly<Record<string, (n: string) => string>> = {
    one. Every reason has exactly one home, a line, a blocker or this list, and
    `api/vocabulary.test.ts` holds the three to the producer's list. */
 export const SILENT_REASONS: readonly string[] = ['draft-unsaved', 'floor-met', 'no-reading'];
+/* The same blocker for a reading of the goal alone, where no outcome line was saved. */
+export const GOAL_NOT_SHOWN = 'Your goal is not shown by any check.';
+/* The verdict's own sentence over a goal-only reading that found nothing: what the reading did find, why
+   there is no level, and what would let one be drawn (owner decision, 2026-10-23: the evidence floor stands,
+   a level still needs a passing check). */
+export const GOAL_ONLY_NO_LEVEL =
+  'Nothing departs from your goal, but no check shows it done, so no level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again.';
 export const BLOCKER_LINES: Readonly<Record<string, string>> = {
   'no-passing-check': 'No check has passed yet.',
   'check-not-recorded': 'A check ran and its result was not recorded.',
@@ -350,7 +410,10 @@ export const BLOCKER_LINES: Readonly<Record<string, string>> = {
   'scan-incomplete': 'The record was not read in full.',
   'line-not-shown-by-a-check': 'A line of your intent is not shown by any check.',
   'outcome-not-reached': 'Work against your intent was not reached at this stop.',
+  /* Retired as a reason a new reading carries, kept for the payloads a reading stored before it still
+     publishes: they keep the sentence they were stored with. */
   'no-outcome-line': 'No expected outcome line was saved.',
+  'goal-unclear': GOAL_UNCLEAR,
   'reading-malformed': 'Part of the stored analysis could not be read.',
 };
 

@@ -27,6 +27,7 @@ from compass_runtime import (
     departures,
     dismissals,
     entry_numbers,
+    goal_find,
     levels,
     live_estimate,
     notifications,
@@ -53,8 +54,13 @@ from compass_runtime.frontend_dev import DevelopmentFrontend
 
 _WEBSOCKET_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
+# The Find goal presses running now, by state directory and session: one call per session at a
+# time, so a second press while one runs is refused rather than charged again.
+_GOAL_FINDING: set[tuple[str, str, str]] = set()
+_GOAL_FINDING_LOCK = threading.Lock()
+
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from compass_runtime.aggregate import Application
     from compass_runtime.interaction_prototype import InteractionPrototype
@@ -699,6 +705,9 @@ def _facts_of(context: dict[str, Any]) -> list[Any]:
 
 class _RequestHandler(BaseHTTPRequestHandler):
     server: CompassHTTPServer
+    # Set while a Find goal press holds its in-flight mark; a reply clears the mark before it is
+    # written, so a press sent the moment the answer arrives is never refused as in-flight.
+    _release_goal_finding: Callable[[], None] | None = None
 
     # Loopback-origin requests only: the Host check defeats DNS rebinding,
     # the Origin check defeats cross-site fetch()es from web pages (both
@@ -2443,6 +2452,184 @@ class _RequestHandler(BaseHTTPRequestHandler):
             202 if accepted else 409,
         )
 
+    def _goal_find(self) -> None:
+        """Find a goal in the reader's own prompts. One press, one call, nothing stored.
+
+        Guarded as the reading route is, by `_reading_refusal`: a lured navigation, a cross-site
+        fetch and a body without the press are refused before anything is read. Every refusal
+        that can be known without the model comes before the prompts are collected, so a pause,
+        a spent day and a harness with no prompts to read send nothing and charge nothing; the
+        charge is the model seam's (`reading_policy.GuardedModel`), the same one Analyze pays at.
+        An unknown session answers as a session with no prompts does, for `_focus`'s reason.
+        """
+        config = self.server.application.config
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= config.annotation_body_cap_bytes:
+            self._reject(413)
+            return
+        try:
+            payload = json.loads(self._read_body(length) or b"{}")
+        except (ValueError, json.JSONDecodeError, RecursionError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        refusal = self._reading_refusal(payload)
+        harness, sid = payload.get("harness"), payload.get("sid")
+        if refusal is not None or not (
+            isinstance(harness, str) and isinstance(sid, str) and harness and sid
+        ):
+            self._reject(refusal or 400)
+            return
+        if harness not in annotation_store.ADOPTION_HARNESSES:
+            self._goal_found(None, goal_find.WHY_NO_PROMPTS)
+            return
+        route = self._reading_route(harness, payload)
+        permission = self._reading_permission(payload, route) if route is not None else None
+        if route is None or permission is None:
+            return
+        if permission["reason"]:
+            self._reading_permission_reply(permission, route=route)
+            return
+        self._goal_find_marked((os.path.realpath(config.state_dir), harness, sid), route)
+
+    def _goal_find_marked(
+        self, key: tuple[str, str, str], route: runtime_reading_route.Route
+    ) -> None:
+        """Run one press while it holds the session's in-flight mark, or refuse a second."""
+        _state_dir, harness, sid = key
+        with _GOAL_FINDING_LOCK:
+            running = key in _GOAL_FINDING
+            _GOAL_FINDING.add(key)
+        if running:
+            self._send(
+                json.dumps({"ok": False, "produced": False, "reason": "in-flight"}).encode(),
+                "application/json",
+                409,
+            )
+            return
+
+        def release() -> None:
+            with _GOAL_FINDING_LOCK:
+                _GOAL_FINDING.discard(key)
+
+        self._release_goal_finding = release
+        try:
+            self._goal_find_session(harness, sid, route)
+        finally:
+            release()
+            self._release_goal_finding = None
+
+    def _goal_find_session(
+        self, harness: str, sid: str, route: runtime_reading_route.Route
+    ) -> None:
+        application = self.server.application
+        config = application.config
+        row = self._published_row(harness, sid)
+        prompts = self._goal_find_prompts(row, harness, sid) if row is not None else []
+        if not prompts:
+            self._goal_found(None, goal_find.WHY_NO_PROMPTS, route=route)
+            return
+        try:
+            notice = reading_policy.note(
+                config,
+                kind="goal",
+                provider=route["provider"],
+                destination=route["words_destination"],
+                content=reading_policy.WORDS_CONTENT_VERSION,
+                tool_output="",
+                now=application.clock(),
+            )
+        except reading_policy.RefusedError as exc:
+            self._reading_permission_reply(exc.answer, route=route)
+            return
+        model = reading_policy.GuardedModel(
+            config,
+            (
+                runtime_reading.ClaudeReadingModel
+                if route["provider"] == runtime_reading_route.CLAUDE
+                else runtime_reading.CodexReadingModel
+            )(config),
+            application.clock,
+            provider=route["provider"],
+            destination=route["words_destination"],
+            resolve_destination=lambda: runtime_reading_route.destination(route["provider"]),
+            content=reading_policy.WORDS_CONTENT_VERSION,
+        )
+        try:
+            result = goal_find.find(prompts, model, goal_cap=config.annotation_text_cap_chars)
+        except reading_policy.RefusedError as exc:
+            # Another tab filled the day, or the pause landed, after this press was admitted.
+            if notice is not None:
+                reading_policy.retract(config, notice)
+            self._reading_permission_reply(exc.answer, route=route)
+            return
+        # The charge changes what the board publishes, so the memoised board is not served.
+        application.state.snapshot.clear()
+        if not result.called:
+            # Nothing was sent, so the notice is withdrawn and the next press shows it.
+            if notice is not None:
+                reading_policy.retract(config, notice)
+            self._goal_found(None, result.why, route=route, ok=False, status=503)
+            return
+        found = (
+            {**result.found, "found_at": application.clock()} if result.found is not None else None
+        )
+        self._goal_found(
+            found,
+            result.why,
+            route=route,
+            notice=notice,
+            ok=result.why != goal_find.WHY_MODEL_FAILED,
+            status=502 if result.why == goal_find.WHY_MODEL_FAILED else 200,
+        )
+
+    def _goal_find_prompts(
+        self, row: dict[str, Any], harness: str, sid: str
+    ) -> list[goal_find.Prompt]:
+        """The reader's own prompts for one session, numbered as Full activity numbers them."""
+        application = self.server.application
+        facts = _prompt_facts(application, row, self._session_facts(row))
+        path = runtime_observer.resolve_transcript(
+            application.config, application.state, harness, sid
+        )
+        index = (
+            entry_numbers.message_index(application.config, application.state, path, harness, sid)
+            if path
+            else None
+        )
+        return goal_find.prompts_from_facts(
+            facts, ordinal=lambda fact_id: index.ordinal(fact_id) if index else None
+        )
+
+    def _goal_found(
+        self,
+        found: Mapping[str, Any] | None,
+        why: str,
+        *,
+        route: runtime_reading_route.Route | None = None,
+        notice: reading_policy.Notice | None = None,
+        ok: bool = True,
+        status: int = 200,
+    ) -> None:
+        reply: dict[str, Any] = {
+            "ok": ok,
+            "produced": found is not None,
+            "found": dict(found) if found is not None else None,
+            "why": why,
+        }
+        if route is not None:
+            reply["route"] = {
+                key: route[key] for key in ("provider", "label", "vendor", "model", "harness")
+            }
+        if notice is not None:
+            reply["notice"] = notice
+        if self._release_goal_finding is not None:
+            self._release_goal_finding()
+        self._send(json.dumps(reply, separators=(",", ":")).encode(), "application/json", status)
+
     def _reading_permission(
         self, payload: dict[str, Any], route: runtime_reading_route.Route
     ) -> reading_policy.Status:
@@ -3099,6 +3286,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # destination moved shows the changed line over today's `To:`
             # rather than over the one it drew (regressions minor 2, ui5).
             reply["route"] = route
+        if self._release_goal_finding is not None:
+            self._release_goal_finding()
         self._send(self._reading_json(reply), "application/json", code)
 
     def _send_reading(
@@ -3421,7 +3610,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES and not where:
             # Nothing to grant: the reading runs on the reader's words and its
             # cutoff says the checks were not sent and why (owner, Q5).
-            tool_output = runtime_reading.ToolOutput(destination="", label=route["label"])
+            # The shell's removals are read here too: they test the harness's own verdict against
+            # the record and go to no model, so a missing grant does not blind that test.
+            press = runtime_project_context.press_checks(
+                application.config, application.state, harness, sid
+            )
+            tool_output = runtime_reading.ToolOutput(
+                destination="", label=route["label"], removals=press.removals
+            )
         elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
             press = runtime_project_context.press_checks(
                 application.config, application.state, harness, sid
@@ -3433,6 +3629,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 changed_after=press.changed_after,
                 read_incomplete=press.read_incomplete,
                 passes_and_writes=press.passes_and_writes,
+                removals=press.removals,
             )
         return {
             "tool_output": tool_output,
@@ -3778,6 +3975,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/correction/copied": self._correction_copied,
             "/api/reading": self._reading,
             "/api/reading/cancel": self._reading_cancel,
+            "/api/goal/find": self._goal_find,
             "/api/summary": self._summary,
             "/api/summary/cancel": self._summary_cancel,
             "/api/summary/delete": self._summary_delete,

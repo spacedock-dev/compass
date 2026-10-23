@@ -8,6 +8,10 @@ import {
   CLAIMS,
   CONSISTENT,
   DEPARTURE,
+  GOAL_UNCLEAR_RESULT,
+  GOAL_NOT_SHOWN,
+  GOAL_ONLY_NO_LEVEL,
+  GOAL_UNCLEAR_VERDICT,
   NOT_REACHED,
   RESULT_CANT_TELL,
   RESULT_CLAIM_TAIL,
@@ -330,22 +334,27 @@ export type Answer =
   | { readonly kind: 'failed-check'; readonly failed: WorkEntry }
   | { readonly kind: 'not-reached' }
   | { readonly kind: 'cant-tell' }
+  | { readonly kind: 'goal-unclear' }
   | { readonly kind: 'nothing-found' };
 
 /* Item 14's answer reducer, over the rows after every page rule. Any valid departure departs, whatever the
    other lines say; otherwise a failed check in the reading's window; otherwise any line without a valid
-   verdict cannot tell; otherwise nothing was found. A reading with no outcome line cannot tell either: the
-   goal row alone is not an answer against what the work was for. The answer is about the intent alone, so
-   the claims row never counts as departing from it and never holds "Nothing found" back. */
+   verdict cannot tell; otherwise nothing was found. A goal the model refused as too vague answers before all
+   of that, and in place of it: no departure, check or level is read over words with no end state. A reading
+   with no outcome line is answered by its goal row alone (owner, 2026-10-22: the goal's own end state is
+   the outcome). The answer is about the intent alone, so the claims row never counts as departing from it
+   and never holds "Nothing found" back. */
 export function driftAnswer(
   shape: Shape,
   entries: readonly WorkEntry[],
   scan: Row | null | undefined = null,
 ): Answer {
   const intent = shape.criteria.filter((row) => row.key !== CLAIMS);
+  if (intent.some((row) => row.key === 'goal' && row.result === GOAL_UNCLEAR_RESULT)) {
+    return { kind: 'goal-unclear' };
+  }
   const departures = intent.filter((row) => row.result === DEPARTURE);
   if (departures.length) return { kind: 'departs', count: departures.length, departures };
-  if (!intent.some((row) => isOutcomeLine(row.key))) return { kind: 'cant-tell' };
   const failed = failedChecksAfterPerson(entries, scan?.['last_user_at'], shape.windowStart || 0);
   const first = failed[0];
   if (first) {
@@ -362,9 +371,7 @@ export function driftAnswer(
   ) {
     return { kind: 'not-reached' };
   }
-  if (!intent.some((row) => isOutcomeLine(row.key)) || !intent.every(verdict)) {
-    return { kind: 'cant-tell' };
-  }
+  if (!intent.length || !intent.every(verdict)) return { kind: 'cant-tell' };
   return { kind: 'nothing-found' };
 }
 
@@ -584,11 +591,14 @@ export function coverageLimits(shape: Shape): string {
 /* What the analysis did with an adopted prompt. Said under What the analysis read rather than beside the
    answer (usability review, 2026-10-20): it is about the reading's input, and above the departures it stood
    between the reader and the verdict. */
-export function goalSourceLine(shape: Shape): string {
+export function goalSourceLine(shape: Shape, statedGoal = false): string {
   const measured = shape.coverage;
   if (measured && ['excerpt', 'unroomed'].includes(measured.goal_source)) {
     return 'The adopted source could not be read whole; this reading used the saved excerpt. Put the instruction you meant in the goal box, then analyze again.';
   }
+  /* A /goal has no source prompt to have found, so the "found" sentence does not apply to it; one that was
+     cut is still said above, from the producer's coverage. */
+  if (statedGoal) return '';
   if (measured && measured.goal_source === 'whole') {
     return 'The adopted source was found. Analyze reads at most the first 1,000 characters of any prompt.';
   }
@@ -666,7 +676,7 @@ function pathTail(text: string, max: number): string {
    follows where it is given, so one entry cited under two constraints still reads as two cards. Empty where no
    cited entry is held, and the card keeps the constraint's own words then. */
 const TITLE_WORDS = 60;
-function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
+export function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
   return (
     entries.find((entry) => entry.subject === 'write' || entry.subject === 'check') ??
     entries.find(agentMessage) ??
@@ -758,7 +768,9 @@ function entryPhrase(entry: WorkEntry): string {
 /* Whether the verdict sentence says the level word: only over an answer the reading could settle. The level
    view leaves its own word out where the sentence has it, so the card says each verdict once. */
 export function verdictNamesLevel(answer: Answer): boolean {
-  return answer.kind !== 'cant-tell' && answer.kind !== 'not-reached';
+  return (
+    answer.kind !== 'cant-tell' && answer.kind !== 'not-reached' && answer.kind !== 'goal-unclear'
+  );
 }
 
 /* The shape the Drift card's verdict sentence draws from, or null where it is not drawn: not over an unreadable
@@ -797,14 +809,21 @@ export function verdictLine({
   const levelled = (text: string) =>
     level ? `${level}${midFlight ? ' so far' : ''}: ${text}` : said(text);
   if (answer.kind === 'cant-tell') return said("Can't tell from what was read.");
+  if (answer.kind === 'goal-unclear') return GOAL_UNCLEAR_VERDICT;
   if (answer.kind === 'not-reached') return said('Not reached at this stop.');
   if (answer.kind === 'nothing-found') {
     /* A level above None or low stands on a departure, so none is drawn here, and when the level is held
        back the same sentence says why: behind a "Why not None or low" disclosure it read as a missing
        answer. A held-back reason is a sentence of the page's own, lowercased into this one. */
-    const why = heldBack.map((line) =>
-      `${line.charAt(0).toLowerCase()}${line.slice(1)}`.replace(/\.$/, ''),
-    );
+    const goalOnly = heldBack.includes(GOAL_NOT_SHOWN);
+    const why = heldBack
+      .filter((line) => line !== GOAL_NOT_SHOWN)
+      .map((line) => `${line.charAt(0).toLowerCase()}${line.slice(1)}`.replace(/\.$/, ''));
+    if (goalOnly) {
+      return levelled(
+        why.length ? `${GOAL_ONLY_NO_LEVEL} Also: ${why.join('; ')}.` : GOAL_ONLY_NO_LEVEL,
+      );
+    }
     return levelled(
       why.length
         ? `Nothing found against what it read, but no level is drawn: ${why.join('; ')}.`

@@ -7,18 +7,22 @@ import {
   promptCandidate,
   PROMPT_CHOSEN,
   PROMPT_SOURCES,
+  SESSION_GOAL,
+  sessionGoalCandidate,
   type PromptCandidate,
 } from '../sessions/intent';
+import { GOAL_UNCLEAR_RESULT } from '../drift/sentences';
 import type { ContextEntry } from '../store/board';
 import {
   annotateOn,
   annotationDiscarded,
   annotationLines,
+  heldCap,
   storeUnreadable,
   OUTCOME_LINES_MAX,
   type Annotation,
 } from './annotation';
-import type { Held, PromptChoice } from './held';
+import type { FoundGoal, Held, PromptChoice } from './held';
 import {
   ADOPT_CHANGED,
   ADOPT_REFUSED,
@@ -29,6 +33,7 @@ import {
   INTENT_SAVING,
   LINES_FULL,
   directionTooLong,
+  goalCut,
 } from './sentences';
 import { conflictCandidates, type WorkEntry, type WorkSource } from './work';
 
@@ -37,11 +42,14 @@ import { conflictCandidates, type WorkEntry, type WorkSource } from './work';
    that asked for the draft, and a render that writes is a render that cannot be repeated, so the deletion
    is `reconcileChosen`, run once after a render by the panel. */
 
-export { PROMPT_CHOSEN, PROMPT_SOURCES };
+export { PROMPT_CHOSEN, PROMPT_SOURCES, SESSION_GOAL };
 
 export function heldKey(session: Row | null | undefined, kind: string): string {
   return `held:${String(session?.['harness'] || '')}:${String(session?.['sid'] || '')}:${kind}`;
 }
+
+/* Not a goal source the server knows: a found goal is typed words once saved. It names where the box's words began. */
+const FOUND_FROM_PROMPTS = 'found-from-prompts';
 
 export const goalKey = (session: Row): string => heldKey(session, 'goal');
 export const linesKey = (session: Row): string => heldKey(session, 'lines');
@@ -106,6 +114,12 @@ export function chosenCandidate(held: Held, contexts: Contexts, session: Row): D
   if (!['claude', 'codex'].includes(String(session['harness']))) return null;
   const choice = held.chosen.get(goalKey(session));
   if (!choice) return null;
+  if (choice.source === SESSION_GOAL) {
+    /* Only while the row still states the same words at the same time: a /goal that changed or was cleared
+       since is not what the reader chose. */
+    const stated = sessionGoalCandidate(session);
+    return stated && stated.text === choice.text && stated.at === choice.at ? stated : null;
+  }
   const found = choice.direction
     ? choice
     : promptChoices(held, contexts, session).find(
@@ -137,6 +151,44 @@ function savedGoal(input: DraftInput): unknown {
   return input.annotation ? input.annotation['goal'] : input.session['annotation_goal'];
 }
 
+export interface GoalUpdate {
+  readonly text: string;
+  readonly at: number;
+  readonly cut: boolean;
+}
+
+const firstMoment = (...values: unknown[]): number | null => {
+  for (const value of values) {
+    const moment = nextNumber(value);
+    if (moment !== null && moment > 0) return moment;
+  }
+  return null;
+};
+
+/* A /goal the session set after the reader's saved goal, offered as an update and never written over their
+   words. "After" is the moment the saved words stand at, as the later-direction floor reads it
+   (`annotations.direction_floor`): an adopted goal by its source's time, typed words by when they were
+   saved. Nothing is offered over a goal-less or discarded session, where the /goal is the draft itself, over
+   the same words, over one the reader already took, or over one they declined at this time or later. */
+export function goalUpdate(input: DraftInput): GoalUpdate | null {
+  const { held, session, annotation, payload } = input;
+  if (!annotateOn(payload) || storeUnreadable(payload)) return null;
+  const stated = sessionGoalCandidate(session);
+  if (!stated || stated.at === null || annotationDiscarded(annotation)) return null;
+  const stored = String(savedGoal(input) || '').trim();
+  if (!stored || stored === stated.text) return null;
+  const savedAt = firstMoment(
+    annotation?.['goal_source_at'],
+    annotation?.['goal_saved_at'],
+    annotation?.['at'],
+  );
+  if (savedAt === null || stated.at <= savedAt) return null;
+  const key = goalKey(session);
+  if (held.chosen.get(key)?.source === SESSION_GOAL) return null;
+  if ((held.kept.get(key) ?? 0) >= stated.at) return null;
+  return { text: stated.text, at: stated.at, cut: stated.cut };
+}
+
 /* Whether a held choice no longer stands: its words are now the saved goal, or the server stopped offering
    it. The legacy page dropped it from inside the draft read; here the read treats it as absent and the
    panel drops it afterwards. */
@@ -161,7 +213,36 @@ export function chosenIsStale(input: DraftInput): boolean {
   if (!annotateOn(payload) || storeUnreadable(payload)) return false;
   if (!held.chosen.has(goalKey(session))) return false;
   if (chosenStands(input)) return false;
+  // A /goal choice is checked against the row itself, so it needs no settled menu to be known gone.
+  if (held.chosen.get(goalKey(session))?.source === SESSION_GOAL) return true;
   return Boolean(chosenCandidate(held, contexts, session)) || choicesSettled(contexts, session);
+}
+
+/* The goal a "Find goal" press found in the reader's prompts, while it stands. The order the owner ruled is the
+   reader's saved goal, then a /goal, then this, then today's drafts, so it stands only where none of the first
+   two exists. It was written into the box as the reader's pending words, and it stands only while the box still
+   holds exactly those words: an edit replaces it, and the same words typed back are the same words. Derived on
+   every render and never written. */
+export function foundGoal(input: DraftInput): FoundGoal | null {
+  const { held, payload, session } = input;
+  if (!annotateOn(payload) || storeUnreadable(payload)) return null;
+  const found = held.found.get(compatSessKey(session));
+  if (!found) return null;
+  if (String(savedGoal(input) || '').trim()) return null;
+  if (sessionGoalCandidate(session)) return null;
+  return held.goals.get(goalKey(session)) === found.text ? found : null;
+}
+
+/* Whether "Find goal" is offered: while the reader has saved no goal, the session set no /goal, and no found
+   goal is in the box, on a harness whose prompts Compass reads. The press is the reader's own, so this says only
+   whether the control is drawn and whether a press is taken. */
+export function findGoalOffered(input: DraftInput): boolean {
+  const { payload, session } = input;
+  if (!annotateOn(payload) || storeUnreadable(payload)) return false;
+  if (!['claude', 'codex'].includes(String(session['harness']))) return false;
+  if (String(savedGoal(input) || '').trim()) return false;
+  if (sessionGoalCandidate(session)) return false;
+  return foundGoal(input) === null;
 }
 
 /* The goal a goal-less session arrives with: the first prompt as Compass publishes it, or the latest where
@@ -179,6 +260,11 @@ export function intentDraft(input: DraftInput): Draft | null {
      box, because one stray Save intent would restore an intent the reader had just deleted. */
   if (annotationDiscarded(input.annotation)) return null;
   if (String(savedGoal(input) || '').trim()) return null;
+  /* The goal the session set with /goal is the working goal until the reader edits it. It comes first, and
+     ahead of the control check below: a session that opened with `/goal` has no first prompt to draft, and
+     its /goal is the goal it was given. */
+  const stated = sessionGoalCandidate(session);
+  if (stated) return stated;
   /* A session that opened with a harness control has no first prompt to draft, and the latest is a later
      record, which the first-prompt read never drafts from. */
   if (openedWithControl(session)) return null;
@@ -197,11 +283,30 @@ export function goalBaseline(input: DraftInput): string {
   return drafted ? drafted.text : String(input.annotation?.['goal'] || '');
 }
 
+/* Whether the stored reading refused the saved goal as too vague to analyze against. Read from the stored
+   reading itself, not from the level: the level is recomputed per collection and only a loaded context
+   carries it. The refusal is about the words it read, so it holds only while the reading is of the revision
+   saved now; a new save, however small, is a new goal, and the reader editing the box clears it where it is
+   drawn (`GoalField`). */
+export function goalRefused(input: DraftInput): boolean {
+  const annotation = input.annotation;
+  if (!annotation || storeUnreadable(input.payload) || annotation['not_accurate'] === true) {
+    return false;
+  }
+  const raw = annotation['assessment'];
+  if (!isRecord(raw)) return false;
+  const read = nextNumber(raw['revision_read']);
+  if (read === null || read !== nextNumber(annotation['revision'])) return false;
+  const criteria = raw['criteria'];
+  const goal = isRecord(criteria) ? criteria['goal'] : null;
+  return isRecord(goal) && goal['result'] === GOAL_UNCLEAR_RESULT;
+}
+
 export function chosenOverSaved(input: DraftInput): boolean {
-  const draft = intentDraft(input);
+  /* `chosenStands` is what `intentDraft` returns first, so a draft it returns is the reader's pick. */
   return (
-    Boolean(draft) &&
-    draft?.source === PROMPT_CHOSEN &&
+    intentDraft(input) !== null &&
+    chosenStands(input) !== null &&
     Boolean(String(savedGoal(input) || '').trim())
   );
 }
@@ -246,7 +351,9 @@ export function intentUnsaved(input: DraftInput): boolean {
      save as a typed edit does. */
   if (chosenOverSaved(input)) return true;
   const typed = held.goals.get(goalKey(session));
-  if (typed !== undefined) {
+  /* A found goal standing in the box is the working goal, as a /goal is: it is not an edit, so a reading may
+     start on it (the press saves it first, as typed words). */
+  if (typed !== undefined && !foundGoal(input)) {
     const draft = intentDraft(input);
     const stands = draft ? draft.text : String(savedGoal(input) || '');
     if (typed !== stands) return true;
@@ -296,7 +403,8 @@ export function intentChanges(input: DraftInput): Changes {
     pending,
     adoptable,
     any: goal || lines || pending,
-    undoable: typed !== baseline || lines || pending,
+    // A found goal is not the reader's edit, so Undo has nothing to put back.
+    undoable: (typed !== baseline && !foundGoal(input)) || lines || pending,
   };
 }
 
@@ -326,6 +434,42 @@ export function adoption(draft: Draft | null): Record<string, unknown> {
     : {};
 }
 
+/* What a /goal did to the one before it, from the row alone. The earlier goal's words are never published, so
+   none are said; a value this build does not know says nothing. */
+const EARLIER_GOAL: Readonly<Record<string, (clock: string) => string>> = {
+  replaced: (clock) => `Replaced an earlier /goal at ${clock}`,
+  met: (clock) => `An earlier /goal was met at ${clock}`,
+  'gave-up': (clock) => `Claude Code gave up on an earlier /goal at ${clock}`,
+};
+
+function goalClearedAt(session: Row): number | null {
+  if (session['harness'] !== 'claude' || isRecord(session['session_goal'])) return null;
+  const cleared = session['session_goal_cleared'];
+  return isRecord(cleared) ? firstMoment(cleared['at']) : null;
+}
+
+/* The one line above the Goal field about how an earlier /goal ended, or ''. A clear that left no goal reads
+   here unless the session opened with /goal, where the "opened with /goal" sentence already carries it. It
+   does not name the draft: the source line directly under it does. Never beside the update offer, which
+   already says the /goal changed. */
+export function goalEndedNote(input: DraftInput): string {
+  const { session, annotation, payload } = input;
+  if (goalUpdate(input)) return '';
+  const stated = session['session_goal'];
+  if (isRecord(stated)) {
+    const earlier = stated['earlier'];
+    const say = isRecord(earlier) ? EARLIER_GOAL[String(earlier['how'])] : undefined;
+    const at = isRecord(earlier) ? firstMoment(earlier['at']) : null;
+    return say && at !== null ? say(datedClock(at)) : '';
+  }
+  const cleared = goalClearedAt(session);
+  /* The sentence is drawn only over a box with no draft (IntentSection), so a chosen prompt that hides it
+     leaves the clear to this note. */
+  if (cleared === null || (!intentDrafted(input) && noDraftWhy(session, annotation, payload)))
+    return '';
+  return `Your /goal was cleared at ${datedClock(cleared)}`;
+}
+
 /* Why the goal box arrives empty over a session that opened with a harness command: the command's name
    alone, since its arguments are not the reader's goal either. */
 export function noDraftWhy(session: Row, annotation: Annotation | null, payload: Row): string {
@@ -335,9 +479,16 @@ export function noDraftWhy(session: Row, annotation: Annotation | null, payload:
   const command = String(session['first_prompt'] || '')
     .trim()
     .split(/\s+/)[0];
-  return command
-    ? `This session opened with ${command}, so there is no first prompt to draft a goal from.`
-    : '';
+  if (!command) return '';
+  const stated = session['session_goal'];
+  const held = String((isRecord(stated) && stated['text']) || '').trim();
+  const cleared = goalClearedAt(session);
+  const lead = `This session opened with ${command}, so there is no first prompt to draft a goal from.${
+    cleared === null ? '' : ` Your /goal was cleared at ${datedClock(cleared)}.`
+  }`;
+  /* The session's own /goal is not a draft, but a reader told only "no first prompt" would take the
+     session for goal-less. */
+  return held ? `${lead} It holds this /goal: ${held}` : lead;
 }
 
 /* Where a saved line came from, named by when the reader said it: "added from your 14:04 message". An entry
@@ -400,7 +551,7 @@ export function directionWhy(
   /* `add_direction` adopts only the first or latest prompt, so over a chosen one the save would be
      refused; the reader saves the choice first. */
   const draft = input ? intentDraft(input) : null;
-  if (draft && draft.source === PROMPT_CHOSEN) return INTENT_EDITED_ADD;
+  if (draft && input && chosenStands(input) !== null) return INTENT_EDITED_ADD;
   return '';
 }
 
@@ -460,7 +611,8 @@ export function promptMenu(input: DraftInput): PromptMenu {
       );
     });
   });
-  if (!choices.length && !((candidate?.at ?? 0) > 0) && !listed) {
+  const stated = sessionGoalCandidate(session);
+  if (!choices.length && !((candidate?.at ?? 0) > 0) && !listed && !stated) {
     /* A popup the reader already opened outlives the offer that showed its trigger, so what the last read
        said (still loading, or failed) must not be lost with the visibility. */
     const read = held.prompts.get(compatSessKey(session));
@@ -476,7 +628,16 @@ export function promptMenu(input: DraftInput): PromptMenu {
   const key = goalKey(session);
   const chosen = held.chosen.get(key);
   const holds = Boolean(chosen) && (!held.goals.has(key) || held.goals.get(key) === chosen?.text);
-  const options = choices.map((choice) => {
+  const detected = stated
+    ? [
+        {
+          value: SESSION_GOAL,
+          label: `Goal detected · ${clockText(stated.at ?? 0)}${stated.cut ? ' · cut' : ''} — ${promptClip(stated.text, 60)}`,
+          selected: holds && chosen?.source === SESSION_GOAL,
+        },
+      ]
+    : [];
+  const prompts = choices.map((choice) => {
     const name =
       !openedWithControl(session) &&
       firstAt !== null &&
@@ -491,9 +652,10 @@ export function promptMenu(input: DraftInput): PromptMenu {
     return {
       value: choice.factId,
       label: `${name} · ${clockText(choice.at ?? 0)}${choice.cut ? ' · excerpt' : ''} — ${promptClip(choice.text, 60)}`,
-      selected: holds && chosen?.factId === choice.factId,
+      selected: holds && chosen?.source !== SESSION_GOAL && chosen?.factId === choice.factId,
     };
   });
+  const options = [...detected, ...prompts];
   return {
     visible: true,
     pending: held.prompts.get(compatSessKey(session))?.pending === true,
@@ -532,16 +694,24 @@ export function intentStatus(
   if (requestMessage === ADOPT_CHANGED || Object.values(ADOPT_REFUSED).includes(requestMessage)) {
     return 'Not saved';
   }
+  /* A goal found in the prompts is used until edited, as a /goal is, and is the same kind of draft. */
+  if (foundGoal(input)) return DRAFT_UNSAVED;
   const changes = intentChanges(input);
   /* Only what Save intent would write. An undoable-only box (a draft emptied over a goal-less session, or the
      stored goal typed back over a choice) writes nothing, and "Unsaved changes" beside an inert Save misled. */
   if (changes.any || changes.chosen) return 'Unsaved changes';
   /* A goal drafted from the prompt is Compass's suggestion, not an edit: "Unsaved changes" on opening a
      session, before the reader typed anything, read as work of theirs at risk (usability review,
-     2026-10-20). It still says it is not saved, because Save intent is what adopts it. */
+     2026-10-20). A detected /goal is the same: it is used until edited, and "Unsaved changes" beside a
+     disabled Undo changes disagreed about whether the reader had changed anything. It still says it is not
+     saved, because Save intent is what adopts it. */
   if (changes.adoptable) {
     const drafted = intentDraft(input);
-    if (drafted?.source === 'first-prompt' || drafted?.source === 'latest-prompt') {
+    if (
+      drafted?.source === 'first-prompt' ||
+      drafted?.source === 'latest-prompt' ||
+      drafted?.source === SESSION_GOAL
+    ) {
       return DRAFT_UNSAVED;
     }
     return 'Unsaved changes';
@@ -569,7 +739,17 @@ function sharesWords(text: string, origin: string): boolean {
   return typed.filter((word) => from.has(word)).length * 2 >= typed.length;
 }
 
-/* Goal source line under the textarea: one honest state derived from the annotation and held draft. */
+/* How a source line names the prompt a goal began from. The time a prompt was chosen is no longer shown: the
+   line says "the prompt you chose", and the picker beside the box lists the prompts with their times. */
+function promptName(source: string): string {
+  return source === 'first-prompt'
+    ? 'your first prompt'
+    : source === 'latest-prompt'
+      ? 'your latest prompt'
+      : 'the prompt you chose';
+}
+
+/* Goal source line above the textarea, under any ended note: one honest state derived from the annotation and held draft. */
 export function goalSourceLine(input: DraftInput): string {
   if (storeUnreadable(input.payload)) return '';
   const { held, session, annotation } = input;
@@ -580,48 +760,69 @@ export function goalSourceLine(input: DraftInput): string {
   const stored = discarded ? '' : String(annotation?.['goal'] || '');
   const text = held.goals.has(key) ? (held.goals.get(key) ?? baseline) : baseline;
   if (!text.trim()) return '';
+  const cut = goalCut(heldCap(input.payload));
+  const found = foundGoal(input);
+  if (found) return `Found in your prompts at ${clockText(found.foundAt)} · not saved`;
   if (drafted && text === drafted.text) {
     const at = nextNumber(drafted.at);
-    const which =
-      drafted.source === 'first-prompt'
-        ? 'first'
-        : drafted.source === 'latest-prompt'
-          ? 'latest'
-          : at !== null && at > 0
-            ? clockText(at)
-            : 'chosen';
+    if (drafted.source === SESSION_GOAL) {
+      const when = at !== null && at > 0 ? ` at ${clockText(at)}` : '';
+      return `From your /goal${when} · not saved${drafted.cut === true ? cut : ''}`;
+    }
     const clipped = drafted.cut === true || drafted.text.endsWith('…');
     // The prompt-length sentence is under "What is sent", where a reader looks for what Analyze reads.
-    return `From your prompt · ${which} · not saved.${clipped ? ` ${EXCERPT_READ_WHOLE}` : ''}`;
+    return `Drafted from ${promptName(drafted.source)} · not saved${clipped ? EXCERPT_READ_WHOLE : ''}`;
   }
   const savedFromPrompt =
     !discarded && PROMPT_SOURCES.includes(String(annotation?.['goal_source'] || ''));
-  const origin = held.chosen.get(key)?.text ?? drafted?.text ?? (savedFromPrompt ? stored : '');
+  /* A goal found in the prompts that the reader has since edited is still where their words began, ahead of the
+     prompt the box would otherwise draft from. */
+  const foundFrom = held.found.get(compatSessKey(session));
+  const origin =
+    held.chosen.get(key)?.text ??
+    foundFrom?.text ??
+    drafted?.text ??
+    (savedFromPrompt ? stored : '');
+  const chosenFrom = held.chosen.get(key);
+  const originSource = chosenFrom
+    ? (chosenFrom.source ?? PROMPT_CHOSEN)
+    : foundFrom
+      ? FOUND_FROM_PROMPTS
+      : drafted
+        ? drafted.source
+        : savedFromPrompt
+          ? String(annotation?.['goal_source'] || '')
+          : '';
+  const named =
+    originSource === SESSION_GOAL
+      ? 'your /goal'
+      : originSource === FOUND_FROM_PROMPTS
+        ? 'the goal found in your prompts'
+        : promptName(originSource);
   /* By overlap and not by history alone: words typed over a selected-all prompt replace it in one change
      event, never pass through an empty box, and are the reader's own. */
   const startedFromPrompt = !held.cleared.has(key) && sharesWords(text, origin);
   if (held.goals.has(key) && text !== stored) {
-    return startedFromPrompt ? 'From your prompt, edited · not saved' : 'Typed · not saved';
+    return startedFromPrompt ? `Your edit of ${named} · not saved` : 'You typed this · not saved';
   }
   if (stored.trim()) {
     if (savedFromPrompt) {
       const source = annotation?.['goal_source'];
       const at = nextNumber(annotation?.['goal_source_at']);
-      const which =
-        source === 'first-prompt'
-          ? 'first'
-          : source === 'latest-prompt'
-            ? 'latest'
-            : at !== null && at > 0
-              ? clockText(at)
-              : 'chosen';
+      if (source === SESSION_GOAL) {
+        /* The saved words are still the cut excerpt while the row states the same /goal at the same time, and
+           the annotation does not record the cut, so the row is where it is read from. */
+        const stated = sessionGoalCandidate(session);
+        const stillCut = stated?.cut === true && stated.text === stored && stated.at === at;
+        return `From your /goal${at !== null && at > 0 ? ` at ${clockText(at)}` : ''} · saved${stillCut ? cut : ''}`;
+      }
       /* No time: the store publishes `goal_saved_at` only for typed words, and the revision's `at` moves on a
          lines-only save, so it would restamp an adoption that did not change. */
-      const clipped = stored.endsWith('…') ? `. ${EXCERPT_READ_WHOLE}` : '';
-      return `From your prompt · ${which} · saved${clipped}`;
+      const clipped = stored.endsWith('…') ? EXCERPT_READ_WHOLE : '';
+      return `From ${promptName(String(source))} · saved${clipped}`;
     }
     const savedAt = nextNumber(annotation?.['goal_saved_at']) ?? nextNumber(annotation?.['at']);
-    return `Typed · ${savedAt !== null && savedAt > 0 ? `saved ${clockText(savedAt)}` : 'saved'}`;
+    return `You typed this · ${savedAt !== null && savedAt > 0 ? `saved at ${clockText(savedAt)}` : 'saved'}`;
   }
   return '';
 }

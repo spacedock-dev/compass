@@ -3,6 +3,7 @@
   "annotate": true,
   "annotate_cap": 240,
   "annotate_discard": {
+   "already": "Already discarded. What you asked of this session was discarded earlier, so this press deleted nothing and the earlier record stands.",
    "armed": "Press it again to discard. Everything you asked of this session will go, along with any reading of it and this session's summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.",
    "held": "Not discarded. This session's words were saved by a build of Compass that can read more than this one, so nothing was changed. Discard them from that build, or remove this session's entry from compass-annotations.json.",
    "nothing": "Nothing to discard. Nothing was typed against this session, so nothing was deleted and no record of a deletion was made.",
@@ -10,9 +11,20 @@
    "record_standing": "The departure store could not be written when they went, so anything raised against those words goes on quoting them.",
    "refused": "Not discarded. The server refused, so what you asked of this session is still stored and nothing raised against it was withdrawn.",
    "stored": "Discarded. Everything you asked of this session is gone, along with any reading of it and its summary, and nothing raised against those words quotes them any more. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.",
+   "stored_no_summary": "Discarded. Everything you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.",
+   "summary_kept": "Discarded here, but this session's summary could not be deleted, so any summary stored for it is still stored. Delete summary removes it.",
+   "summary_stopped": "Discarded. Everything you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. This session had no stored summary, and the one being written was stopped. The record that a check ran stays, because it is what bounds how often one may run. Opening a finished session again writes a new summary unless summaries are turned off.",
+   "summary_unavailable": "Discarded here. The summary store could not be read, so Compass cannot say whether a summary of this session is stored, and none was deleted.",
+   "summary_unknown": "Discarded here. Everything you asked of this session is gone, along with any reading of it, and nothing raised against those words quotes them any more. Compass could not tell what happened to this session's summary, so any summary stored for it may still be stored.",
    "unreadable": "What you asked of this session was discarded, so there is nothing left to read it against.",
    "untrusted": "Not discarded. Compass could not read compass-annotations.json, so nothing was saved and nothing was overwritten. Move or repair that file to save again.",
    "unwithdrawn": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them.",
+   "unwithdrawn_absent": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. This session had no stored summary.",
+   "unwithdrawn_deleted": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. Its summary was deleted.",
+   "unwithdrawn_kept": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. Its summary could not be deleted, so any summary stored for it is still stored. Delete summary removes it.",
+   "unwithdrawn_stopped": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. This session had no stored summary, and the one being written was stopped.",
+   "unwithdrawn_unavailable": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. The summary store could not be read, so Compass cannot say whether a summary of this session is stored, and none was deleted.",
+   "unwithdrawn_unknown": "Discarded here. Everything you asked of this session is gone, along with any reading of it. The departure store could not be written, so anything raised against those words goes on quoting them. Compass could not tell what happened to its summary, so any summary stored for it may still be stored.",
    "unwritable": "Not discarded. The store could not be written, so the next collection reads what you asked of this session back and nothing raised against it was withdrawn.",
    "why": "Discarding everything deletes all you asked of this session, any reading of it, and this session's summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps your earlier saves."
   },
@@ -21,7 +33,7 @@
   "asks": [],
   "browser_lane": false,
   "browser_lane_at": null,
-  "build": "react-96786f07eb6f0b89",
+  "build": "react-64a04f9eb4c00cd4",
   "cleared": 0,
   "command_reports": [],
   "delivery_counts": {
@@ -134,9 +146,35 @@
     "reports_turn_bounds": true
    }
   ],
-  "history": [],
+  "history": [
+   {
+    "annotation_goal": "",
+    "annotation_goal_source": null,
+    "annotation_goal_source_at": null,
+    "annotation_line_1": "",
+    "annotation_line_1_source": null,
+    "annotation_line_2": "",
+    "annotation_line_2_source": null,
+    "annotation_line_3": "",
+    "annotation_line_3_source": null,
+    "annotation_line_4": "",
+    "annotation_line_4_source": null,
+    "annotation_line_5": "",
+    "annotation_line_5_source": null,
+    "annotation_line_6": "",
+    "annotation_line_6_source": null,
+    "annotation_revision": null,
+    "first_prompt": "Alright - a couple hours ago you helped devise a \"Burn-down plan\" to burndown this milestone. I want you to act as a coordinator and use…",
+    "first_prompt_at": 1778579972.176,
+    "harness": "claude",
+    "last_activity": 1778583743.7987347,
+    "project": "acme/dashboard",
+    "sid": "sample",
+    "state": "idle"
+   }
+  ],
   "in_quiet_hours": false,
-  "intent_revision": "4d7679f2d7e3af202539d1f7410f4fc2",
+  "intent_revision": "096e7a712ba82b05c08edb948c2cd1e8",
   "irreversible_enabled": true,
   "native_notify": "osascript",
   "rate_window_sec": 600,
@@ -203,38 +241,28 @@
       "claims": {
        "cites": [
         "fact:28365942599c3f40",
+        "fact:8d9a97cc2010ab9e",
+        "fact:f68e1f8422d88a04",
         "fact:d5e713ad0690df2d"
        ],
        "clause": "",
-       "detail": "",
-       "result": "not verifiable from available evidence",
-       "why": "claim-uncited"
+       "detail": "The agent said the milestone's build work was done and merged, but it later reported a real blocker, the user confirmed DASH-3801 is not done, and PR #9325 was still behind main.",
+       "result": "departure",
+       "why": ""
       },
       "goal": {
        "cites": [
         "fact:5682713503c5035a",
         "fact:8d9a97cc2010ab9e",
-        "fact:f68e1f8422d88a04",
-        "fact:d5e713ad0690df2d"
-       ],
-       "clause": "Burn down fully the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone",
-       "detail": "The milestone stood at 97.3% with DASH-3801 still open, the agent said the walk found a blocker so it can't close yet, and the session ended with PRs #9325 and #9327 still being merged.",
-       "result": "departure",
-       "why": ""
-      },
-      "line_1": {
-       "cites": [
-        "fact:5682713503c5035a",
-        "fact:8d9a97cc2010ab9e",
         "fact:f68e1f8422d88a04"
        ],
-       "clause": "All the issues in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone are closed",
-       "detail": "Not all milestone issues are closed: the milestone stands at 97.3% and DASH-3801 is not done, as the user confirmed.",
+       "clause": "Every issue in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone is closed",
+       "detail": "The milestone was only 97.3% complete, the walk found a blocker that keeps it from closing, and DASH-3801 is still open with PR #9325 not yet merged at the end of the record.",
        "result": "departure",
        "why": ""
       }
      },
-     "cutoff": "Read all 88 entries after your intent: 6 from you, 75 messages from the agent, 2 checks with no recorded result, 2 file writes, 2 failed checks, 1 passed check. The oldest is from about 1h ago. The agent's newest final reply was too long to read whole.",
+     "cutoff": "Read all 88 entries after your intent: 6 from you, 75 messages from the agent, 2 checks with no recorded result, 2 file writes, 2 failed checks, 1 passed check. The oldest is from about 1h ago. Read against your goal. The agent's newest final reply was too long to read whole.",
      "ended_at_read": 1778585350.403,
      "evidence_through": 1778585345.403,
      "read_at": 1778585390.403,
@@ -249,13 +277,13 @@
     "annotation_binding_why": "Bound by an eight-character identity prefix, which is all this harness publishes as the session id. Another session sharing it would share these words.",
     "annotation_discarded_at": null,
     "annotation_discarded_why": "",
-    "annotation_goal": "Burn down fully the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone",
+    "annotation_goal": "Every issue in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone is closed",
     "annotation_goal_saved_at": 1778583289.707,
     "annotation_goal_source": "typed",
     "annotation_goal_source_at": null,
     "annotation_goal_why": "",
-    "annotation_line_1": "All the issues in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone are closed",
-    "annotation_line_1_source": "typed",
+    "annotation_line_1": "",
+    "annotation_line_1_source": null,
     "annotation_line_1_source_id": "",
     "annotation_line_2": "",
     "annotation_line_2_source": null,
@@ -272,7 +300,7 @@
     "annotation_line_6": "",
     "annotation_line_6_source": null,
     "annotation_line_6_source_id": "",
-    "annotation_lines_why": "",
+    "annotation_lines_why": "No expected outcome typed.",
     "annotation_not_accurate": false,
     "annotation_reading_count": 1,
     "annotation_reading_refused": false,
@@ -338,7 +366,7 @@
      "label": "asked",
      "text": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and get it done"
     },
-    "last_activity": 1778556545.0,
+    "last_activity": 1778583743.7987347,
     "last_output": null,
     "last_prompt": "",
     "loop": null,
@@ -362,6 +390,9 @@
     },
     "resume_id": "sample-f2eb-4148-ac10-abe643ffad7c",
     "session": "sample",
+    "session_goal": null,
+    "session_goal_cleared": null,
+    "session_goal_gave_up": null,
     "session_output_tokens": 471205,
     "sid": "sample",
     "source_gaps": [],
@@ -397,7 +428,8 @@
     "turn_end_at": null,
     "turn_output_tokens": 1148,
     "wait_unconfirmed": false,
-    "work_activity": 1778585345.403
+    "work_activity": 1778585345.403,
+    "worktree": null
    }
   ],
   "show_all": false,
@@ -552,6 +584,7 @@
     "at": 1778584422.604,
     "before_last_change": false,
     "changed_after": true,
+    "check_id": "check:bebbe6dc78d3ade5",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -571,6 +604,7 @@
     "at": 1778584416.367,
     "before_last_change": false,
     "changed_after": true,
+    "check_id": "check:6632d8edefb4d553",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -590,6 +624,7 @@
     "at": 1778584285.857,
     "before_last_change": false,
     "changed_after": true,
+    "check_id": "check:feba22697a1156f3",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -609,6 +644,7 @@
     "at": 1778583745.404,
     "before_last_change": false,
     "changed_after": true,
+    "check_id": "check:fd68cffb3d3e721e",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -618,6 +654,7 @@
     "record_id": "toolu_a1BWjxLnMtaMuMI9C38KmSnw",
     "result": "not-recorded",
     "result_at": 1778583837.908,
+    "result_reason": "piped_beside_other_commands",
     "sid": "sample",
     "source": "Claude Bash call and paired result",
     "subject": "check",
@@ -731,6 +768,7 @@
     "at": 1778580878.484,
     "before_last_change": true,
     "changed_after": true,
+    "check_id": "check:0ceccd7ab17d9c1a",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -1031,6 +1069,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:bebbe6dc78d3ade5",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -1064,6 +1103,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:6632d8edefb4d553",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -1097,6 +1137,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:feba22697a1156f3",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -1130,6 +1171,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:fd68cffb3d3e721e",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -1141,6 +1183,7 @@
      "read_incomplete": false,
      "result": "not-recorded",
      "result_at": 1778583837.908,
+     "result_reason": "piped_beside_other_commands",
      "scope": "session",
      "source_kind": "check_run",
      "source_session": {
@@ -1355,6 +1398,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:0ceccd7ab17d9c1a",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -1387,7 +1431,7 @@
    },
    "projections": {
     "activity": {
-     "current_after": 1778584540.7463772,
+     "current_after": 1778584540.543025,
      "historical_dispatches": 0,
      "historical_unresolved": 0,
      "nodes": [],
@@ -1442,6 +1486,34 @@
     "basis": "grouping",
     "blocks": [
      {
+      "checks": [],
+      "counts": {
+       "agent_messages": 5,
+       "checks": 0,
+       "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
+       "files": 0,
+       "subagent_entries": 0
+      },
+      "failures": [],
+      "folders": [],
+      "opening": true,
+      "partial": true,
+      "prompt": {
+       "at": 1778579972.176,
+       "fact_id": "fact:44ef45f0bbc5e664",
+       "title": "Alright - a couple hours ago you helped devise a \"Burn-down plan\" to burndown this milestone."
+      },
+      "span": {
+       "entries": 6,
+       "first": "fact:44ef45f0bbc5e664",
+       "from_at": 1778579972.176,
+       "last": "fact:542a068abf83a2ec",
+       "to_at": 1778580195.165
+      }
+     },
+     {
       "checks": [
        {
         "fact_id": "fact:13e168cbcb1fa05c",
@@ -1453,11 +1525,15 @@
        "agent_messages": 37,
        "checks": 1,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
       "failures": [],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": null,
       "span": {
        "entries": 43,
@@ -1473,15 +1549,19 @@
        "agent_messages": 0,
        "checks": 0,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
       "failures": [],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778583259.707,
        "fact_id": "fact:da72601f57ebc7d0",
-       "title": "for https://tracker.example.com/example-org/issue/DASH-3589 - walk Intent and Drift on this Session, specificall"
+       "title": "for https://tracker.example.com/example-org/issue/DASH-3589 - walk Intent and Drift on this Session…"
       },
       "span": {
        "entries": 1,
@@ -1503,6 +1583,8 @@
        "agent_messages": 12,
        "checks": 1,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 2,
        "subagent_entries": 0
       },
@@ -1517,6 +1599,8 @@
         "folder": ".claude/worktrees/wt-presscount/frontend/src/drift"
        }
       ],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778583286.822,
        "fact_id": "fact:88fa8eabc2626bfa",
@@ -1552,6 +1636,8 @@
        "agent_messages": 10,
        "checks": 5,
        "checks_failed": 2,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
@@ -1568,6 +1654,8 @@
        }
       ],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778584085.323,
        "fact_id": "fact:eb5647d25e5b49c0",
@@ -1587,11 +1675,15 @@
        "agent_messages": 10,
        "checks": 0,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
       "failures": [],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778584637.681,
        "fact_id": "fact:9b2daa6eeb3b2cfc",
@@ -1611,15 +1703,19 @@
        "agent_messages": 1,
        "checks": 0,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
       "failures": [],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778585332.505,
        "fact_id": "fact:f68e1f8422d88a04",
-       "title": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and "
+       "title": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged…"
       },
       "span": {
        "entries": 2,
@@ -1676,7 +1772,7 @@
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": "The person asked the agent to coordinate Claude Haiku, Codex and AGY on the milestone, in parallel, with 5-minute monitoring and no overload of the computer."
+          "text": "The person asked the agent to coordinate Haiku, Codex and AGY in parallel, with 5-minute monitoring and no machine overload."
          },
          {
           "cites": [
@@ -1684,15 +1780,15 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said it was checking whether codex and agy are installed, how many cores the machine has, and what was left in the milestone."
+          "text": "The agent said it would first check codex and agy installs, core count, and what remained in the milestone."
          },
          {
           "cites": [
            "fact:ca2f0171cb1cbfe1"
           ],
           "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said the guardrails were written and the monitor was started, reporting every 5 minutes and pausing a heavy job when load gets too high."
+          "kind_overridden": true,
+          "text": "The agent started a monitor that reports every 5 minutes and pauses heavy jobs when load gets too high."
          },
          {
           "cites": [
@@ -1701,72 +1797,16 @@
           ],
           "kind": "said",
           "kind_overridden": true,
-          "text": "The agent said AGY exited immediately with no output, then tested it with a trivial prompt in the foreground."
-         }
-        ],
-        "title": "Planning the multi-agent burn-down"
-       },
-       {
-        "bullets": [
-         {
-          "cites": [
-           "fact:31f423677395a90a",
-           "fact:7ab02410d05fa966",
-           "fact:8e5b3515f09f6a9b"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said the first click on Save intent did not register, and said the intent was saved after a second click."
-         },
-         {
-          "cites": [
-           "fact:bfcb58baaef1ee81"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
-         },
-         {
-          "cites": [
-           "fact:1465d6c557438fe0"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said the browser extension disconnected, and that reading 2 could still be read from the sidecar's API."
-         },
-         {
-          "cites": [
-           "fact:13e168cbcb1fa05c"
-          ],
-          "kind": "did",
-          "kind_overridden": false,
-          "text": "The documentation unittest run reported not-recorded, as the tool reported."
-         },
-         {
-          "cites": [
-           "fact:c097f89316cd4a2b",
-           "fact:863f72a5df0411d1"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said PR #9325 was open for the docs change, after it corrected the attribution footer."
+          "text": "The agent found AGY had exited immediately with no output and tested it with a trivial prompt."
          },
          {
           "cites": [
            "fact:613fb5326995b67a"
           ],
           "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said load reached 7.97 with only reviewers running and that it was checking what used the CPU."
-         }
-        ],
-        "title": "Walking a session while workers ran"
-       },
-       {
-        "bullets": [
+          "kind_overridden": true,
+          "text": "The agent noticed load climbing to 7.97 with only reviewers running and checked what used the CPU."
+         },
          {
           "cites": [],
           "kind": "said",
@@ -1775,6 +1815,28 @@
            "reason": "shape_fault",
            "withheld": true
           }
+         }
+        ],
+        "title": "Coordinating agents to burn down the milestone"
+       },
+       {
+        "bullets": [
+         {
+          "cites": [
+           "fact:13e168cbcb1fa05c"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent ran the documentation unittest suite, and the check reported not-recorded, as the tool reported."
+         },
+         {
+          "cites": [
+           "fact:c097f89316cd4a2b",
+           "fact:863f72a5df0411d1"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent opened docs PR #9325 after correcting the attribution footer."
          },
          {
           "cites": [
@@ -1782,7 +1844,7 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said docs PR #9325 was clean, with 4 checks run and 8 skipped."
+          "text": "The agent said the docs PR checks were clean and held its merge as outside the milestone plan."
          },
          {
           "cites": [
@@ -1790,8 +1852,17 @@
            "fact:b11be3a6e202dcba"
           ],
           "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent read the CI workflow files to check the builder's Python 3.11 claim."
+         },
+         {
+          "cites": [
+           "fact:b808925921ba9350",
+           "fact:db06bf80f3cbba16"
+          ],
+          "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said it read the workflow files itself and found both CI jobs install Python 3.11."
+          "text": "The agent opened stories PR #9326 and said it was merged as 21dab6b6."
          },
          {
           "cites": [
@@ -1799,16 +1870,39 @@
            "fact:a6c22bbfdb489016"
           ],
           "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said the monitor reached its 30-minute limit and was re-armed for another 30 minutes."
+          "kind_overridden": true,
+          "text": "The agent re-armed the monitor after its 30-minute limit."
+         }
+        ],
+        "title": "Docs PR and stories PR"
+       },
+       {
+        "bullets": [
+         {
+          "cites": [
+           "fact:86880d81d7eb164c",
+           "fact:5682713503c5035a"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent added receipts to DASH-3622 and DASH-3625 and posted a readback on DASH-3628."
          },
          {
           "cites": [
-           "fact:db06bf80f3cbba16"
+           "fact:5682713503c5035a",
+           "fact:28365942599c3f40"
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said PR #9326 was merged as `21dab6b6`."
+          "text": "The agent said the milestone stood at 97.3% with two issues open."
+         },
+         {
+          "cites": [
+           "fact:e0802dd26765b328"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent shut down the monitor and checked that nothing it started was still running."
          },
          {
           "cites": [
@@ -1816,13 +1910,10 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
+          "text": "The agent said load peaked at 12.3 once, when the safety valve paused a builder's job."
          }
         ],
-        "title": "Stories PR and milestone readback"
+        "title": "Closing receipts and reporting milestone state"
        },
        {
         "bullets": [
@@ -1832,7 +1923,7 @@
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": "The person asked for a walk of Intent and Drift on this session for DASH-3589, with the goal of burning down the milestone."
+          "text": "The person asked for a walk of Intent and Drift on this session for DASH-3589."
          },
          {
           "cites": [
@@ -1840,7 +1931,16 @@
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": "The person asked the agent to start the latest dashboard from main on a new port for the walk."
+          "text": "The person said the agent could start the latest main on a new port for the walk."
+         },
+         {
+          "cites": [
+           "fact:8e8c3a91791d8955",
+           "fact:983eb4c2b518d57a"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent saved the intent on the sidecar at port 4701 while the session was live."
          },
          {
           "cites": [
@@ -1850,7 +1950,7 @@
           ],
           "kind": "did",
           "kind_overridden": false,
-          "text": "The agent wrote a press-count test file, then said a mutation adding a press made the test fail."
+          "text": "The agent wrote CopiedCorrectionPresses.test.tsx and mutated SteerBack.tsx to prove the test fails."
          },
          {
           "cites": [
@@ -1859,24 +1959,17 @@
           ],
           "kind": "did",
           "kind_overridden": false,
-          "text": "The agent wrote an edit to docs/design-frontend-migration.md. The documentation unittest run reported not-recorded, as the tool reported."
+          "text": "The agent edited design-frontend-migration.md and ran the documentation unittest suite, which reported not-recorded, as the tool reported."
          },
          {
           "cites": [
            "fact:5f895ecab5024a67",
-           "fact:a31cedb36cb0cacd"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said PR #9327 was open."
-         },
-         {
-          "cites": [
+           "fact:a31cedb36cb0cacd",
            "fact:5a2f4f74fd025f65"
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said the sidecar ran on port 4701 with the intent saved, and that the reading had to wait for the turn to end."
+          "text": "The agent opened PR #9327 and said the reading must wait for the turn to end."
          }
         ],
         "title": "Walking Intent and Drift on this session"
@@ -1885,7 +1978,7 @@
      },
      {
       "entries": 29,
-      "fingerprint": "a47f82fbfdc1c946fd63cd6f9ddf897f",
+      "fingerprint": "c007e3cc7ba90c1e7026a671321dec0f",
       "first": "fact:eb5647d25e5b49c0",
       "last": "fact:d5e713ad0690df2d",
       "phases": [
@@ -1902,12 +1995,20 @@
          {
           "cites": [
            "fact:ef8fbc775fbbae2c",
-           "fact:b1446798f0c8c1ed",
-           "fact:6b8c6576df5a6eb3"
+           "fact:b1446798f0c8c1ed"
           ],
           "kind": "did",
           "kind_overridden": false,
-          "text": "The agent ran the vitest file CopiedCorrectionPresses.test.tsx inside a pipeline, then as a bare command; the first run reported not-recorded, as the tool reported."
+          "text": "The agent ran a vitest run inside a pipeline, and the tool reported exit 0."
+         },
+         {
+          "cites": [
+           "fact:6b8c6576df5a6eb3",
+           "fact:e906eccc17f734b7"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent reran the vitest command bare. The check reported not-recorded, as the tool reported."
          },
          {
           "cites": [
@@ -1915,7 +2016,7 @@
           ],
           "kind": "failed",
           "kind_overridden": true,
-          "text": "The agent ran the same vitest file again and the run reported failed, as the tool reported."
+          "text": "The agent ran vitest as a lone command. The check reported failed, as the tool reported."
          },
          {
           "cites": [
@@ -1924,18 +2025,26 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said the second reading was High, citing the failing run at #9, and that Steer back was offered."
+          "text": "The agent said the second reading was High, citing the failing run at #9, with Steer back offered."
          },
          {
           "cites": [
            "fact:bb8ca4ef66c81feb",
-           "fact:9873f89e9049ea9c",
-           "fact:787ab4b4e7081132"
+           "fact:9873f89e9049ea9c"
           ],
           "kind": "failed",
           "kind_overridden": true,
-          "text": "The agent ran vitest from the wrong directory, said so, then reran it from the worktree; that run reported passed, as the tool reported."
-         },
+          "text": "The agent said the vitest runs came from the wrong directory and went back to the worktree."
+         }
+        ],
+        "cut": {
+         "bullets": 1,
+         "title": false
+        },
+        "title": "Trying Analyze on session 4701"
+       },
+       {
+        "bullets": [
          {
           "cites": [
            "fact:d24abed9f2384090"
@@ -1946,51 +2055,34 @@
            "reason": "completion_claim",
            "withheld": true
           }
-         }
-        ],
-        "title": "Running Analyze on session 4701"
-       },
-       {
-        "bullets": [
+         },
          {
           "cites": [
            "fact:9b2daa6eeb3b2cfc"
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": "The person pasted the copied correction asking for evidence that all issues in the Intent and drift milestone are closed."
-         },
-         {
-          "cites": [
-           "fact:184ff9466b63660a"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said it would answer the question from the milestone's actual state in Tracker."
+          "text": "The person's next message was the pasted correction asking for evidence that the milestone issues were closed."
          },
          {
           "cites": [
            "fact:8acaf99fb6ae8d23",
-           "fact:195110a5dd861259",
-           "fact:f2f82d6884004230",
-           "fact:b6ddbd263a5ffc0e",
-           "fact:f91229580f4c8163"
+           "fact:195110a5dd861259"
           ],
           "kind": "said",
           "kind_overridden": true,
-          "text": "The agent probed the direction endpoint directly, then captured the page's POST /api/direction request and response body."
+          "text": "The agent probed the direction endpoint directly. The server opened both directions."
          },
          {
           "cites": [
+           "fact:f2f82d6884004230",
+           "fact:f91229580f4c8163",
            "fact:7c7e394a4429130d",
            "fact:3acdf4715fae4514"
           ],
           "kind": "said",
-          "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
+          "kind_overridden": true,
+          "text": "The agent captured the page's own request and replayed it in-page. The page still got a refusal."
          },
          {
           "cites": [
@@ -1998,10 +2090,18 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said the third reading did not run, so the milestone could not close; the person's pasted text had an extra prefix, and Keep was refused five times."
+          "text": "The agent said the third reading did not run and the milestone could not close."
+         },
+         {
+          "cites": [
+           "fact:8d9a97cc2010ab9e"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said the pasted text had the person's own prefix, so Dashboard did not match it as a copy."
          }
         ],
-        "title": "Pasting the correction and probing the refusal"
+        "title": "Pasting the correction and the blocked third reading"
        },
        {
         "bullets": [
@@ -2011,10 +2111,7 @@
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
+          "text": "The person asked the agent to merge PR 9325 and PR 9327 and then dig into DASH-3801."
          },
          {
           "cites": [
@@ -2022,10 +2119,15 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
+          "text": "The agent said #9327 was clean and #9325 was behind main."
+         },
+         {
+          "cites": [
+           "fact:d5e713ad0690df2d"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said it would merge #9327 first, update #9325, and wait for its CI."
          }
         ],
         "title": "Merging PRs 9325 and 9327"
@@ -2050,15 +2152,12 @@
     "lede": {
      "cites": [
       "fact:44ef45f0bbc5e664",
-      "fact:ca2f0171cb1cbfe1",
-      "fact:863f72a5df0411d1",
-      "fact:db06bf80f3cbba16",
-      "fact:5a2f4f74fd025f65",
+      "fact:b808925921ba9350",
+      "fact:a31cedb36cb0cacd",
       "fact:f68e1f8422d88a04",
       "fact:d5e713ad0690df2d"
      ],
-     "cut": true,
-     "text": "The person asked the agent to coordinate Claude Haiku, Codex and AGY in parallel to burn down the Intent and drift milestone, with 5-minute monitoring and without overloading the machine. The agent ran a monitor, opened PRs #9325, #9326 and #9327, and ran the walk on port 4701; the entries end with the agent saying it was merging #9327 after the person asked to merge #9325 and #9327 and dig into …"
+     "text": "The agent coordinated parallel builders on the milestone and opened PRs #9325, #9326 and #9327. The agent said it was merging #9327 first, then updating #9325, after the person asked to merge both and dig into DASH-3801."
     },
     "lede_reason": null,
     "made_at": 1778585375.403,
@@ -2074,11 +2173,11 @@
     "plan": null,
     "reason": null,
     "spend": {
-     "bytes_back": 6151,
-     "bytes_sent": 41131,
+     "bytes_back": 5562,
+     "bytes_sent": 41818,
      "calls": 3,
      "retries": 0,
-     "seconds": 29.431102874979842
+     "seconds": 17.499971749959514
     },
     "starts_at": "fact:44ef45f0bbc5e664",
     "state": "ok"
@@ -2094,12 +2193,13 @@
        "fact:f68e1f8422d88a04",
        "fact:d5e713ad0690df2d"
       ],
-      "computed_at": 1778585440.9254372,
+      "computed_at": 1778585440.731085,
       "harness": "claude",
       "level": "medium",
       "read_at": 1778585390.403,
       "reasons": [
-       "departure"
+       "departure",
+       "claim-contradicted"
       ],
       "revision_read": 1,
       "sid": "sample"
@@ -2114,7 +2214,7 @@
        "fact:bb8ca4ef66c81feb",
        "fact:68596527f1479936"
       ],
-      "computed_at": 1778585440.9255092,
+      "computed_at": 1778585440.731159,
       "harness": "claude",
       "level": "not_enough",
       "reasons": [
@@ -2182,15 +2282,19 @@
  "correction": {
   "ok": true,
   "parts": [
-   "Back to my goal: Burn down fully the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone\nThe session departed from my goal at {{clock:1778584997.941}}",
+   "Back to my goal: Every issue in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone is closed\nThe session departed from my goal at {{clock:1778584997.941}}",
    {
     "entry": "fact:8d9a97cc2010ab9e"
    },
-   ", where you said \"The walk found a real blocker, so the milestone can't close yet\".\n  Why Compass reads this as drift: The milestone stood at 97.3% with DASH-3801 still open, the agent said the walk found a blocker so it can't close yet, and the session ended with PRs #9325 and #9327 still being merged.\nWhere it stands against what I expect:\n- All the issues in the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone are closed: departed at {{clock:1778584997.941}}",
+   ", where you said \"The walk found a real blocker, so the milestone can't close yet\".\n  Why Compass reads this as drift: The milestone was only 97.3% complete, the walk found a blocker that keeps it from closing, and DASH-3801 is still open with PR #9325 not yet merged at the end of the record.\nYou said \"The walk found a real blocker, so the milestone can't close yet\" at {{clock:1778584997.941}}",
    {
     "entry": "fact:8d9a97cc2010ab9e"
    },
-   ", where you said \"The walk found a real blocker, so the milestone can't close yet\"\n  Why Compass reads this as drift: Not all milestone issues are closed: the milestone stands at 97.3% and DASH-3801 is not done, as the user confirmed.\nPlease continue from here."
+   "; the record shows otherwise at {{clock:1778585332.505}}",
+   {
+    "entry": "fact:f68e1f8422d88a04"
+   },
+   ".\n  Why Compass reads this as drift: The agent said the milestone's build work was done and merged, but it later reported a real blocker, the user confirmed DASH-3801 is not done, and PR #9325 was still behind main.\nPlease continue from here."
   ]
  },
  "older": {
@@ -3069,6 +3173,7 @@
     "at": 1778584422.604,
     "before_last_change": false,
     "changed_after": true,
+    "check_id": "check:bebbe6dc78d3ade5",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -3088,6 +3193,7 @@
     "at": 1778584416.367,
     "before_last_change": false,
     "changed_after": true,
+    "check_id": "check:6632d8edefb4d553",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -3107,6 +3213,7 @@
     "at": 1778584285.857,
     "before_last_change": false,
     "changed_after": true,
+    "check_id": "check:feba22697a1156f3",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -3126,6 +3233,7 @@
     "at": 1778583745.404,
     "before_last_change": false,
     "changed_after": true,
+    "check_id": "check:fd68cffb3d3e721e",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -3135,6 +3243,7 @@
     "record_id": "toolu_a1BWjxLnMtaMuMI9C38KmSnw",
     "result": "not-recorded",
     "result_at": 1778583837.908,
+    "result_reason": "piped_beside_other_commands",
     "sid": "sample",
     "source": "Claude Bash call and paired result",
     "subject": "check",
@@ -3248,6 +3357,7 @@
     "at": 1778580878.484,
     "before_last_change": true,
     "changed_after": true,
+    "check_id": "check:0ceccd7ab17d9c1a",
     "earlier_failed": false,
     "harness": "claude",
     "kind": "check_run",
@@ -3286,7 +3396,7 @@
     "at": 1778584637.681,
     "cut": true,
     "fact_id": "fact:9b2daa6eeb3b2cfc",
-    "text": "You Copied from dashboard: <pasted_content id=…REDACTED Back to my goal: Burn down fully the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone A check failed at 11:11 (entry #9 in Dashboard's activity l"
+    "text": "You Copied from dashboard: Back to my goal: Burn down fully the \"Intent and drift: see where a Claude Code session drifted and steer it back\" milestone A check failed at 11:11 (entry #9 in Dashboard's activity list). Where it stands against"
    },
    {
     "at": 1778584085.323,
@@ -3584,6 +3694,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:bebbe6dc78d3ade5",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -3617,6 +3728,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:6632d8edefb4d553",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -3650,6 +3762,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:feba22697a1156f3",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -3683,6 +3796,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:fd68cffb3d3e721e",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -3694,6 +3808,7 @@
      "read_incomplete": false,
      "result": "not-recorded",
      "result_at": 1778583837.908,
+     "result_reason": "piped_beside_other_commands",
      "scope": "session",
      "source_kind": "check_run",
      "source_session": {
@@ -3908,6 +4023,7 @@
       "sid": "sample"
      },
      "changed_after": true,
+     "check_id": "check:0ceccd7ab17d9c1a",
      "earlier_failed": false,
      "evidence": {
       "confidence": "exact",
@@ -3940,7 +4056,7 @@
    },
    "projections": {
     "activity": {
-     "current_after": 1778584541.4981503,
+     "current_after": 1778584541.3402002,
      "historical_dispatches": 0,
      "historical_unresolved": 0,
      "nodes": [],
@@ -3995,6 +4111,34 @@
     "basis": "grouping",
     "blocks": [
      {
+      "checks": [],
+      "counts": {
+       "agent_messages": 5,
+       "checks": 0,
+       "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
+       "files": 0,
+       "subagent_entries": 0
+      },
+      "failures": [],
+      "folders": [],
+      "opening": true,
+      "partial": true,
+      "prompt": {
+       "at": 1778579972.176,
+       "fact_id": "fact:44ef45f0bbc5e664",
+       "title": "Alright - a couple hours ago you helped devise a \"Burn-down plan\" to burndown this milestone."
+      },
+      "span": {
+       "entries": 6,
+       "first": "fact:44ef45f0bbc5e664",
+       "from_at": 1778579972.176,
+       "last": "fact:542a068abf83a2ec",
+       "to_at": 1778580195.165
+      }
+     },
+     {
       "checks": [
        {
         "fact_id": "fact:13e168cbcb1fa05c",
@@ -4006,11 +4150,15 @@
        "agent_messages": 37,
        "checks": 1,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
       "failures": [],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": null,
       "span": {
        "entries": 43,
@@ -4026,15 +4174,19 @@
        "agent_messages": 0,
        "checks": 0,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
       "failures": [],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778583259.707,
        "fact_id": "fact:da72601f57ebc7d0",
-       "title": "for https://tracker.example.com/example-org/issue/DASH-3589 - walk Intent and Drift on this Session, specificall"
+       "title": "for https://tracker.example.com/example-org/issue/DASH-3589 - walk Intent and Drift on this Session…"
       },
       "span": {
        "entries": 1,
@@ -4056,6 +4208,8 @@
        "agent_messages": 12,
        "checks": 1,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 2,
        "subagent_entries": 0
       },
@@ -4070,6 +4224,8 @@
         "folder": ".claude/worktrees/wt-presscount/frontend/src/drift"
        }
       ],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778583286.822,
        "fact_id": "fact:88fa8eabc2626bfa",
@@ -4105,6 +4261,8 @@
        "agent_messages": 10,
        "checks": 5,
        "checks_failed": 2,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
@@ -4121,6 +4279,8 @@
        }
       ],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778584085.323,
        "fact_id": "fact:eb5647d25e5b49c0",
@@ -4140,11 +4300,15 @@
        "agent_messages": 10,
        "checks": 0,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
       "failures": [],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778584637.681,
        "fact_id": "fact:9b2daa6eeb3b2cfc",
@@ -4164,15 +4328,19 @@
        "agent_messages": 1,
        "checks": 0,
        "checks_failed": 0,
+       "checks_fixed": 0,
+       "checks_unknown": 0,
        "files": 0,
        "subagent_entries": 0
       },
       "failures": [],
       "folders": [],
+      "opening": false,
+      "partial": false,
       "prompt": {
        "at": 1778585332.505,
        "fact_id": "fact:f68e1f8422d88a04",
-       "title": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged and "
+       "title": "Merge PR 9325 and PR 9327, DASH-3801 is not done so of course it stay, dig into it after the PRs are merged…"
       },
       "span": {
        "entries": 2,
@@ -4229,7 +4397,7 @@
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": "The person asked the agent to coordinate Claude Haiku, Codex and AGY on the milestone, in parallel, with 5-minute monitoring and no overload of the computer."
+          "text": "The person asked the agent to coordinate Haiku, Codex and AGY in parallel, with 5-minute monitoring and no machine overload."
          },
          {
           "cites": [
@@ -4237,15 +4405,15 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said it was checking whether codex and agy are installed, how many cores the machine has, and what was left in the milestone."
+          "text": "The agent said it would first check codex and agy installs, core count, and what remained in the milestone."
          },
          {
           "cites": [
            "fact:ca2f0171cb1cbfe1"
           ],
           "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said the guardrails were written and the monitor was started, reporting every 5 minutes and pausing a heavy job when load gets too high."
+          "kind_overridden": true,
+          "text": "The agent started a monitor that reports every 5 minutes and pauses heavy jobs when load gets too high."
          },
          {
           "cites": [
@@ -4254,72 +4422,16 @@
           ],
           "kind": "said",
           "kind_overridden": true,
-          "text": "The agent said AGY exited immediately with no output, then tested it with a trivial prompt in the foreground."
-         }
-        ],
-        "title": "Planning the multi-agent burn-down"
-       },
-       {
-        "bullets": [
-         {
-          "cites": [
-           "fact:31f423677395a90a",
-           "fact:7ab02410d05fa966",
-           "fact:8e5b3515f09f6a9b"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said the first click on Save intent did not register, and said the intent was saved after a second click."
-         },
-         {
-          "cites": [
-           "fact:bfcb58baaef1ee81"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
-         },
-         {
-          "cites": [
-           "fact:1465d6c557438fe0"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said the browser extension disconnected, and that reading 2 could still be read from the sidecar's API."
-         },
-         {
-          "cites": [
-           "fact:13e168cbcb1fa05c"
-          ],
-          "kind": "did",
-          "kind_overridden": false,
-          "text": "The documentation unittest run reported not-recorded, as the tool reported."
-         },
-         {
-          "cites": [
-           "fact:c097f89316cd4a2b",
-           "fact:863f72a5df0411d1"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said PR #9325 was open for the docs change, after it corrected the attribution footer."
+          "text": "The agent found AGY had exited immediately with no output and tested it with a trivial prompt."
          },
          {
           "cites": [
            "fact:613fb5326995b67a"
           ],
           "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said load reached 7.97 with only reviewers running and that it was checking what used the CPU."
-         }
-        ],
-        "title": "Walking a session while workers ran"
-       },
-       {
-        "bullets": [
+          "kind_overridden": true,
+          "text": "The agent noticed load climbing to 7.97 with only reviewers running and checked what used the CPU."
+         },
          {
           "cites": [],
           "kind": "said",
@@ -4328,6 +4440,28 @@
            "reason": "shape_fault",
            "withheld": true
           }
+         }
+        ],
+        "title": "Coordinating agents to burn down the milestone"
+       },
+       {
+        "bullets": [
+         {
+          "cites": [
+           "fact:13e168cbcb1fa05c"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent ran the documentation unittest suite, and the check reported not-recorded, as the tool reported."
+         },
+         {
+          "cites": [
+           "fact:c097f89316cd4a2b",
+           "fact:863f72a5df0411d1"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent opened docs PR #9325 after correcting the attribution footer."
          },
          {
           "cites": [
@@ -4335,7 +4469,7 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said docs PR #9325 was clean, with 4 checks run and 8 skipped."
+          "text": "The agent said the docs PR checks were clean and held its merge as outside the milestone plan."
          },
          {
           "cites": [
@@ -4343,8 +4477,17 @@
            "fact:b11be3a6e202dcba"
           ],
           "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent read the CI workflow files to check the builder's Python 3.11 claim."
+         },
+         {
+          "cites": [
+           "fact:b808925921ba9350",
+           "fact:db06bf80f3cbba16"
+          ],
+          "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said it read the workflow files itself and found both CI jobs install Python 3.11."
+          "text": "The agent opened stories PR #9326 and said it was merged as 21dab6b6."
          },
          {
           "cites": [
@@ -4352,16 +4495,39 @@
            "fact:a6c22bbfdb489016"
           ],
           "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said the monitor reached its 30-minute limit and was re-armed for another 30 minutes."
+          "kind_overridden": true,
+          "text": "The agent re-armed the monitor after its 30-minute limit."
+         }
+        ],
+        "title": "Docs PR and stories PR"
+       },
+       {
+        "bullets": [
+         {
+          "cites": [
+           "fact:86880d81d7eb164c",
+           "fact:5682713503c5035a"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent added receipts to DASH-3622 and DASH-3625 and posted a readback on DASH-3628."
          },
          {
           "cites": [
-           "fact:db06bf80f3cbba16"
+           "fact:5682713503c5035a",
+           "fact:28365942599c3f40"
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said PR #9326 was merged as `21dab6b6`."
+          "text": "The agent said the milestone stood at 97.3% with two issues open."
+         },
+         {
+          "cites": [
+           "fact:e0802dd26765b328"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent shut down the monitor and checked that nothing it started was still running."
          },
          {
           "cites": [
@@ -4369,13 +4535,10 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
+          "text": "The agent said load peaked at 12.3 once, when the safety valve paused a builder's job."
          }
         ],
-        "title": "Stories PR and milestone readback"
+        "title": "Closing receipts and reporting milestone state"
        },
        {
         "bullets": [
@@ -4385,7 +4548,7 @@
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": "The person asked for a walk of Intent and Drift on this session for DASH-3589, with the goal of burning down the milestone."
+          "text": "The person asked for a walk of Intent and Drift on this session for DASH-3589."
          },
          {
           "cites": [
@@ -4393,7 +4556,16 @@
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": "The person asked the agent to start the latest dashboard from main on a new port for the walk."
+          "text": "The person said the agent could start the latest main on a new port for the walk."
+         },
+         {
+          "cites": [
+           "fact:8e8c3a91791d8955",
+           "fact:983eb4c2b518d57a"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent saved the intent on the sidecar at port 4701 while the session was live."
          },
          {
           "cites": [
@@ -4403,7 +4575,7 @@
           ],
           "kind": "did",
           "kind_overridden": false,
-          "text": "The agent wrote a press-count test file, then said a mutation adding a press made the test fail."
+          "text": "The agent wrote CopiedCorrectionPresses.test.tsx and mutated SteerBack.tsx to prove the test fails."
          },
          {
           "cites": [
@@ -4412,24 +4584,17 @@
           ],
           "kind": "did",
           "kind_overridden": false,
-          "text": "The agent wrote an edit to docs/design-frontend-migration.md. The documentation unittest run reported not-recorded, as the tool reported."
+          "text": "The agent edited design-frontend-migration.md and ran the documentation unittest suite, which reported not-recorded, as the tool reported."
          },
          {
           "cites": [
            "fact:5f895ecab5024a67",
-           "fact:a31cedb36cb0cacd"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said PR #9327 was open."
-         },
-         {
-          "cites": [
+           "fact:a31cedb36cb0cacd",
            "fact:5a2f4f74fd025f65"
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said the sidecar ran on port 4701 with the intent saved, and that the reading had to wait for the turn to end."
+          "text": "The agent opened PR #9327 and said the reading must wait for the turn to end."
          }
         ],
         "title": "Walking Intent and Drift on this session"
@@ -4438,7 +4603,7 @@
      },
      {
       "entries": 29,
-      "fingerprint": "a47f82fbfdc1c946fd63cd6f9ddf897f",
+      "fingerprint": "c007e3cc7ba90c1e7026a671321dec0f",
       "first": "fact:eb5647d25e5b49c0",
       "last": "fact:d5e713ad0690df2d",
       "phases": [
@@ -4455,12 +4620,20 @@
          {
           "cites": [
            "fact:ef8fbc775fbbae2c",
-           "fact:b1446798f0c8c1ed",
-           "fact:6b8c6576df5a6eb3"
+           "fact:b1446798f0c8c1ed"
           ],
           "kind": "did",
           "kind_overridden": false,
-          "text": "The agent ran the vitest file CopiedCorrectionPresses.test.tsx inside a pipeline, then as a bare command; the first run reported not-recorded, as the tool reported."
+          "text": "The agent ran a vitest run inside a pipeline, and the tool reported exit 0."
+         },
+         {
+          "cites": [
+           "fact:6b8c6576df5a6eb3",
+           "fact:e906eccc17f734b7"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent reran the vitest command bare. The check reported not-recorded, as the tool reported."
          },
          {
           "cites": [
@@ -4468,7 +4641,7 @@
           ],
           "kind": "failed",
           "kind_overridden": true,
-          "text": "The agent ran the same vitest file again and the run reported failed, as the tool reported."
+          "text": "The agent ran vitest as a lone command. The check reported failed, as the tool reported."
          },
          {
           "cites": [
@@ -4477,18 +4650,26 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said the second reading was High, citing the failing run at #9, and that Steer back was offered."
+          "text": "The agent said the second reading was High, citing the failing run at #9, with Steer back offered."
          },
          {
           "cites": [
            "fact:bb8ca4ef66c81feb",
-           "fact:9873f89e9049ea9c",
-           "fact:787ab4b4e7081132"
+           "fact:9873f89e9049ea9c"
           ],
           "kind": "failed",
           "kind_overridden": true,
-          "text": "The agent ran vitest from the wrong directory, said so, then reran it from the worktree; that run reported passed, as the tool reported."
-         },
+          "text": "The agent said the vitest runs came from the wrong directory and went back to the worktree."
+         }
+        ],
+        "cut": {
+         "bullets": 1,
+         "title": false
+        },
+        "title": "Trying Analyze on session 4701"
+       },
+       {
+        "bullets": [
          {
           "cites": [
            "fact:d24abed9f2384090"
@@ -4499,51 +4680,34 @@
            "reason": "completion_claim",
            "withheld": true
           }
-         }
-        ],
-        "title": "Running Analyze on session 4701"
-       },
-       {
-        "bullets": [
+         },
          {
           "cites": [
            "fact:9b2daa6eeb3b2cfc"
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": "The person pasted the copied correction asking for evidence that all issues in the Intent and drift milestone are closed."
-         },
-         {
-          "cites": [
-           "fact:184ff9466b63660a"
-          ],
-          "kind": "said",
-          "kind_overridden": false,
-          "text": "The agent said it would answer the question from the milestone's actual state in Tracker."
+          "text": "The person's next message was the pasted correction asking for evidence that the milestone issues were closed."
          },
          {
           "cites": [
            "fact:8acaf99fb6ae8d23",
-           "fact:195110a5dd861259",
-           "fact:f2f82d6884004230",
-           "fact:b6ddbd263a5ffc0e",
-           "fact:f91229580f4c8163"
+           "fact:195110a5dd861259"
           ],
           "kind": "said",
           "kind_overridden": true,
-          "text": "The agent probed the direction endpoint directly, then captured the page's POST /api/direction request and response body."
+          "text": "The agent probed the direction endpoint directly. The server opened both directions."
          },
          {
           "cites": [
+           "fact:f2f82d6884004230",
+           "fact:f91229580f4c8163",
            "fact:7c7e394a4429130d",
            "fact:3acdf4715fae4514"
           ],
           "kind": "said",
-          "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
+          "kind_overridden": true,
+          "text": "The agent captured the page's own request and replayed it in-page. The page still got a refusal."
          },
          {
           "cites": [
@@ -4551,10 +4715,18 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": "The agent said the third reading did not run, so the milestone could not close; the person's pasted text had an extra prefix, and Keep was refused five times."
+          "text": "The agent said the third reading did not run and the milestone could not close."
+         },
+         {
+          "cites": [
+           "fact:8d9a97cc2010ab9e"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said the pasted text had the person's own prefix, so Dashboard did not match it as a copy."
          }
         ],
-        "title": "Pasting the correction and probing the refusal"
+        "title": "Pasting the correction and the blocked third reading"
        },
        {
         "bullets": [
@@ -4564,10 +4736,7 @@
           ],
           "kind": "asked",
           "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
+          "text": "The person asked the agent to merge PR 9325 and PR 9327 and then dig into DASH-3801."
          },
          {
           "cites": [
@@ -4575,10 +4744,15 @@
           ],
           "kind": "said",
           "kind_overridden": false,
-          "text": {
-           "reason": "completion_claim",
-           "withheld": true
-          }
+          "text": "The agent said #9327 was clean and #9325 was behind main."
+         },
+         {
+          "cites": [
+           "fact:d5e713ad0690df2d"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said it would merge #9327 first, update #9325, and wait for its CI."
          }
         ],
         "title": "Merging PRs 9325 and 9327"
@@ -4603,15 +4777,12 @@
     "lede": {
      "cites": [
       "fact:44ef45f0bbc5e664",
-      "fact:ca2f0171cb1cbfe1",
-      "fact:863f72a5df0411d1",
-      "fact:db06bf80f3cbba16",
-      "fact:5a2f4f74fd025f65",
+      "fact:b808925921ba9350",
+      "fact:a31cedb36cb0cacd",
       "fact:f68e1f8422d88a04",
       "fact:d5e713ad0690df2d"
      ],
-     "cut": true,
-     "text": "The person asked the agent to coordinate Claude Haiku, Codex and AGY in parallel to burn down the Intent and drift milestone, with 5-minute monitoring and without overloading the machine. The agent ran a monitor, opened PRs #9325, #9326 and #9327, and ran the walk on port 4701; the entries end with the agent saying it was merging #9327 after the person asked to merge #9325 and #9327 and dig into …"
+     "text": "The agent coordinated parallel builders on the milestone and opened PRs #9325, #9326 and #9327. The agent said it was merging #9327 first, then updating #9325, after the person asked to merge both and dig into DASH-3801."
     },
     "lede_reason": null,
     "made_at": 1778585375.403,
@@ -4627,11 +4798,11 @@
     "plan": null,
     "reason": null,
     "spend": {
-     "bytes_back": 6151,
-     "bytes_sent": 41131,
+     "bytes_back": 5562,
+     "bytes_sent": 41818,
      "calls": 3,
      "retries": 0,
-     "seconds": 29.431102874979842
+     "seconds": 17.499971749959514
     },
     "starts_at": "fact:44ef45f0bbc5e664",
     "state": "ok"
@@ -4647,12 +4818,13 @@
        "fact:f68e1f8422d88a04",
        "fact:d5e713ad0690df2d"
       ],
-      "computed_at": 1778585441.6352592,
+      "computed_at": 1778585441.4793823,
       "harness": "claude",
       "level": "medium",
       "read_at": 1778585390.403,
       "reasons": [
-       "departure"
+       "departure",
+       "claim-contradicted"
       ],
       "revision_read": 1,
       "sid": "sample"
@@ -4667,7 +4839,7 @@
        "fact:bb8ca4ef66c81feb",
        "fact:68596527f1479936"
       ],
-      "computed_at": 1778585440.9255092,
+      "computed_at": 1778585440.731159,
       "harness": "claude",
       "level": "not_enough",
       "reasons": [

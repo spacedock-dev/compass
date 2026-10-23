@@ -3,8 +3,7 @@
 A new reader opens Compass with nothing on the board, or with sessions that have never drifted. The
 Intent and drift feature is the part of the product that needs the most explaining, and it is hardest
 to explain before there is a session that drifted. The sample session is a finished example they can
-open without running an agent: a real, anonymized Claude Code session, a goal and an expected
-outcome saved against it, a stored summary of what the session did, a stored reading that finds
+open without running an agent: a real, anonymized Claude Code session, a goal saved against it, a stored summary of what the session did, a stored reading that finds
 drift, and the correction Compass composes to steer it back. It is view only, and seven numbered (i)
 marks say what each part of the page is for.
 
@@ -23,10 +22,38 @@ for the summary work ([the README](../sample-session/README.md#why-this-session-
 says more).
 
 On the page the stored summary has seven phases in two parts, three of them marked as holding the
-evidence for a departure; the reading finds two departures, on the goal and on the outcome line, and
-the drift level reads Medium from them. Steer back composes a correction that gives each departure's
+evidence for the departure from the goal; the reading finds one departure, on the goal, and one row
+about what the agent claimed, and the drift level reads Medium from the two. Steer back composes a correction that gives each departure's
 time on the reader's clock, quotes the agent's words at that moment and carries the reading's
 explanation, with no entry numbers.
+
+### The intent is a goal alone (owner, 2026-10-23)
+
+The first capture saved the person's own words from the record: the goal "Burn down fully the
+milestone" and an expected outcome that said the same thing. The Drift card then showed two
+departures resting on the same evidence, three phases carried both pills, and the goal was an
+activity with stray closing quotes where it quoted the milestone's name. A new reader could not tell
+what the second box was for.
+
+The sample now saves one goal written as an end state, "Every issue in the milestone is closed" (with
+the milestone's name as the record spells it), and no expected outcome. The reading was made again
+against it. It found the departure from the goal and a separate row about what the agent claimed,
+which is not a departure from the intent, so the card shows departures from the goal alone. The
+summary was made again in the same run, in the same home, so both come from one transcript. The
+2026-10-20 summary was tried first and dropped: copied into the new home, the server read it as made
+from a replaced record, and the page then told every reader to summarize again.
+
+A goal-only reading used to say in its cutoff that no expected outcome lines were saved. Noting the
+absence of an optional field tells a reader nothing, so the product sentence is now "Read against your
+goal." for every session (owner, 2026-10-23), and the sample shows it as it comes. A reading stored
+before that change keeps the longer sentence. A test fails if the intent carries a line or any sentence
+the sample draws from the reading names an expected outcome. The real Intent card's own optional
+Expected outcome field is the product's and stays.
+
+The banner and the tour say, in order, how a reader reaches the same page with their own session:
+open a session from Sessions, set its goal (type it, use one of their prompts, press Find goal, or let
+Compass pick up a goal set with /goal), press Analyze drift, then read where the session departed and
+press Steer back for a correction to paste. Neither mentions an expected outcome.
 
 ### Rejected: the first sample
 
@@ -88,7 +115,7 @@ Rewrites make the capture a stable sample and not a snapshot of one afternoon:
   is made when the finished session is opened, the reading 45 seconds after it and the settling of
   the later directions 60 seconds after it. The reading and the settle are placed rather than
   shifted, because a reading may be kept from an earlier capture than the summary's.
-- The reading's sentence counting how old its entries are ("The oldest is from about 3846h ago") is
+- The reading's sentence counting how old its entries are ("The oldest is from about 3933h ago") is
   counted from the reading's place on that timeline instead, "about 1h ago".
 - The board's permissions read as a store with no stored off: readings and summaries on, nothing
   refused and no notice records kept, with no notice due because both kinds of call were made, and
@@ -140,7 +167,7 @@ sample was captured:
   sample's 75,130 bytes to the bound is at most about 233 KB of page, which leaves the rest of the
   400 KiB to the code that ships beside it.
 
-This sample's fixture is 132,994 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
+This sample's fixture is 139,650 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
 
@@ -212,11 +239,11 @@ was added.
 - The summary and the reading are snapshots of one model's answers to one prompt each. They do not
   change when either prompt does. Regenerate the fixture (README) when a change to what they say
   should show.
-- Several of the summary's lines are withheld, and say so in their place, because this session is
+- A few of the summary's lines can be withheld, and say so in their place, because this session is
   about merging pull requests and closing issues and the summary may not say that in its own voice.
-  Seven of 35 lines are withheld, including the whole last phase, which holds the steer; the opening
-  summary and every phase title are shown. That is the ruled backstop at work, not a fault in the
-  capture, and the sample shows it as any session would.
+  Two of 37 lines are withheld in this capture; the opening summary and every phase title are shown.
+  That is the ruled backstop at work, not a fault in the capture, and the sample shows it as any
+  session would.
 - The fixture is the shape of the page's payloads on the day it was captured. A payload change the
   page cannot parse fails the sample's tests, and a change it can parse leaves the sample as it was.
 - Times in the session are shifted by one fixed offset, a whole number of days plus a time of day, so

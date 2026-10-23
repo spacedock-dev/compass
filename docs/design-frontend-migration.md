@@ -17,6 +17,17 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-23, a session whose only prompt was a harness command is not said to have an unpublished title: on the
+session page's heading, the browser tab title and the breadcrumb, a session with no title whose first prompt
+was a command (`first_prompt_control`) reads "No name: the session opened with a command" where the
+recording says "Title not published", since the prompt was published and Compass declined to name the session
+by it. `detail.differential.test.tsx` restates that heading on the recorded side
+(`projectRecordedCommandOpener`) so every other word stays held to the recording. A Sessions row, the
+project and activity lists and the waiting panel say the same, because every surface that names a session says
+the same thing for it. The generated differential tests restate the phrase on the recorded side for exactly the
+rows marked `first_prompt_control` (`frontend/test/recordedCommandOpener.ts`), including the one coverage
+caveat that lists each distinct reason a title is missing. Golden files are unchanged.
+
 2026-10-21, departure cards and Steer back read as the redesign draws them
 ([the amendment](design-reading-a-session.md#amended-2026-10-21-departure-cards-and-steer-back-read-as-the-design-does)):
 a departure's headline says what happened and its What is one sentence, so the cards no longer carry the
@@ -108,6 +119,19 @@ ones. Every other field of the analysis and of the live estimate is still held t
 which is untouched. The card also draws no "Not enough recorded yet" bar or "Why not None or low"
 under a reading that stands (the live estimate keeps both), and the header pill says "so far"
 while the session runs; neither is in a recording. Golden files are unchanged.
+
+2026-10-22, a goal alone gets a level or is refused
+([the amendment](design-reading-a-session.md#amended-2026-10-22-a-goal-alone-is-read-or-refused)):
+the retired page's answer reducer read a reading with no outcome line as "Can't tell" whatever its goal
+row said, and `driftAnswer` now answers from the goal row alone, so a goal that departs, a failed check
+or a goal consistent with a check each answer as they do over a line. A goal the model refused as too
+vague (`goal too vague to analyze against`, on the goal row only) answers `goal-unclear` before every
+other rule, draws no quiet row, level or Steer back, and its sentence stands under the Goal field and
+clears when the goal is edited. The how-to's two sentences about an outcome line are rewritten.
+`result.differential.test.ts` and `level.differential.test.ts` pass unchanged over their generated
+readings, which never reach the new result and did not exercise the goal-only answer, so neither
+comparison was edited and the recordings are untouched. The new
+result and reason are held to the producer's by `api/vocabulary.test.ts`. Golden files are unchanged.
 
 2026-10-20, from the usability review: Full activity draws its rows in number order, so a check
 sits under the message whose number it carries even when it last ran later; it says "Last turn"
@@ -358,6 +382,19 @@ excerpt cue. The checklist's label reads "Expected outcome · up to 6 lines" whe
 first three onto the recorded editor; the browser proofs that read the retired badge or the old menu name now
 read the source line and the new name.
 
+The Goal field's layout and copy changed again on 2026-10-23 (owner request), and nothing is re-recorded. The
+Intent heading's lede moved to a hint under the Goal box, beside the count, and reads "Write what should be
+true when this session is done. Compass checks the session's work against it and never writes into the
+session." The source line moved from beside the count to directly above the box, under any ended-goal note,
+and says what the words are rather than where they were found: "Drafted from your first prompt · not saved"
+(latest, or "the prompt you chose"), "Your edit of your first prompt · not saved", "From your /goal at 11:53 ·
+not saved" or "· saved", "Found in your prompts at 23:11 · not saved", "You typed this · not saved" or "· saved
+at 18:54", and "From your first prompt · saved". A cut /goal appends "· Shortened to fit 240 characters; Analyze
+reads this shortened goal" (the box's own cap) and a cut prompt "· Shortened here; Analyze reads the whole
+prompt". The cleared note no longer names the draft ("; the draft below is ..."): the source line directly
+under it does. `intentEditorDeviations` projects the recorded badge onto the new source-line wording, and the cap sentence it
+used to add is gone from that line, so the on-demand proof reads the line as the page draws it.
+
 The Drift card header says "Analysis last run 14:03" where the retired page said "Analysis at 14:03"
 (owner, 2026-10-19), because the old words read as a time inside the session. The analysis level's own line
 no longer carries a time at all (2026-10-21): the header is the card's one read time. The `drift__level`
@@ -366,7 +403,7 @@ before comparing, and every other field of the analysis level stays held to the 
 untouched. The departure cards that replace "Model assessment" in the same change draw from the same
 `result.ts` functions, which the `drift__result` comparison still holds unchanged. The first analysis
 journey proof (`frontend/e2e/journey-budget.mjs`, run on demand) now finds the departure's account in
-its card and its cited entries under What; each entry's recorded time moved behind Evidence.
+its card and its cited entries under What; each entry's recorded time moved behind Evidence. (Amended 2026-10-23: the result has no Evidence fold now; see [the design record](design-reading-a-session.md#amended-2026-10-23-owner-the-citations-are-the-source).)
 
 ## The ownership map
 
@@ -870,6 +907,10 @@ had no such field, so both differentials drop it before a recorded answer's key 
 (`withoutKey` in `legacy.test.helper.ts`). The page still loads no record page by itself
 ([reader state](design-reader-state.md#the-inventory)).
 
+One more departure, 2026-10-22. The shape carries `goalVerdict`, Compass's test of the harness's goal-met verdict
+(`reading.goal_verdict`), which the retired page never had, so `shape.differential.test.ts` and
+`result.differential.test.ts` drop it with `withoutKey` as they drop `unloaded`. No recorded answer changes.
+
 Departures the drift proof restates, 2026-10-21, with the recording unchanged. The retired page printed
 "N of M left today" under each reading; commit 4f6512bb removed that line, and under the cap the page prints no
 budget (`ReadingResult.test.tsx`). `session-deviations.mjs` retracts the sentence from the recorded side of the
@@ -951,7 +992,7 @@ The nondeparture fixture keeps the same three-click ceiling and reads the cited 
 Session activity without another press; a departure is not required to qualify as a result.
 
 Two refusal fixtures also remain on the path: a goal typed on an ended session states before
-typing that words saved now cannot be read against it, then says "saved after this session ended"
+typing that what they save now is kept but will not be checked against, then says "saved after this session ended"
 with no result; idle without a recorded stop keeps Analyze inert and shows its refusal sentence.
 Their attempted paths cost four and two activations respectively, without a model request.
 

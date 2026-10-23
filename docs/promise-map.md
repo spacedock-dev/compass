@@ -25,7 +25,7 @@ Four steps, and only the first two are required.
    service, no repository token. The server binds IPv4 loopback and nothing else.
 3. Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
    goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
-   reading's limits and why an expected outcome line is needed for a drift level.
+   reading's limits and what a goal with no expected outcome line is read against.
 
    Sessions separates active work from recent history and gives each active
    session its goal beside what it is doing now, plus where it is, what it does next, and whether
@@ -73,7 +73,8 @@ where, without steering it for you. Pause model calls stops Analyze drift, goal 
 session summaries until Resume model calls. Turn off summaries stops session summaries only;
 while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
 press Analyze drift. The How Intent and drift works entry in the Intent card's More menu explains the steps and
-the limits; with no expected outcome line: no level, and "Can't tell" unless your goal departs.
+the limits; with no outcome line, Compass reads your goal's end state; a goal too vague to read is
+refused under the Goal field, with no level for that run.
 On Claude Code sessions, you can turn on a live drift estimate in the panel and header after every
 turn, based on recorded checks and file paths rather than the meaning of your intent. An analysis
 shows its level, each outcome line against the recorded work and what the agent said with its

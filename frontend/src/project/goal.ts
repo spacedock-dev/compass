@@ -6,7 +6,7 @@ import {
 } from '../intent/annotation';
 import type { ObservedProject, ObservedSession } from '../observed';
 import { compare, sessionKey, durationSince } from '../observed/values';
-import { PROMPT_SOURCES } from '../sessions/intent';
+import { PROMPT_SOURCES, SESSION_GOAL } from '../sessions/intent';
 
 /* Latest instruction is a list, not a field: zero to n rows, each with its own tag and its own source line. The
    reader's typed words are rows above the harness's, never merged with them, because "what I asked for"
@@ -95,9 +95,12 @@ export function projectGoal(
   const typed: GoalRow[] = [];
   if (annotation?.['goal']) {
     typed.push({
-      tag: PROMPT_SOURCES.includes(annotation['goal_source'] as string)
-        ? 'Your saved words · from your prompt'
-        : 'Your saved words',
+      tag:
+        annotation['goal_source'] === SESSION_GOAL
+          ? 'Your saved words · from /goal'
+          : PROMPT_SOURCES.includes(annotation['goal_source'] as string)
+            ? 'Your saved words · from your prompt'
+            : 'Your saved words',
       text: String(annotation['goal']),
       source: revision,
       known: true,

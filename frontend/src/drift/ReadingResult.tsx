@@ -8,16 +8,14 @@ import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
 import { entryWindow, olderEntriesRemain, type WorkEntry } from '../intent/work';
 import { markNotAccurate } from './actions';
+import { SESSION_GOAL } from '../sessions/intent';
 import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
-import { EvidenceList } from './Evidence';
-import { evidenceRows } from './level';
 import {
   arrivedLine,
   cantTellReason,
-  citedKind,
+  citedLine,
   departureTitle,
-  departureWhat,
   claimHeading,
   claimReason,
   claimsDrawn,
@@ -52,6 +50,7 @@ import {
   READ_NOT_READ,
   READ_SESSION,
   READ_SUMMARY,
+  GOAL_UNCLEAR_VERDICT,
   RESULT_CANT_TELL,
   RESULT_DEPARTS,
   RESULT_MARK_UNSAVED,
@@ -88,21 +87,14 @@ function jumpName(key: string): string {
   return `Expected outcome line ${key === 'output' ? '1' : key.slice(5)}`;
 }
 
-/* The cited entries of one finding, each as its number in the activity list and the kind of entry Compass
-   names, or on a departure card what it says, attributed ('Agent said: "…"'), so the line the departure is
-   about is in view and reads as the agent's words, never as the result's. A number opens
-   Full activity at that entry; an entry the page does not hold yet keeps the press that reads older pages for
-   it. The shape demotes a departure with no held citation, so a departure always reaches at least one
-   number. */
-function CitedEntries({
-  row,
-  quote = false,
-}: {
-  readonly row: Criterion;
-  /** A departure's What: each entry's own words, attributed. Elsewhere the kind alone, so a line read as
-   * consistent never stands beside the agent's "Done". */
-  readonly quote?: boolean;
-}) {
+/* The cited entries of one finding, each one line in its own words, attributed ('Agent said: "…"', 'You said:
+   "…"', 'Failed check: …', 'File write: …'), then its number in the activity list and when it was recorded: the
+   way the citation card says it, the same on a departure card, the claims row and every quiet row (owner,
+   2026-10-23: the citations are the source, so nothing repeats them behind a fold, and an entry reads as the
+   agent's or yours, never as the result's). A number opens Full activity at that entry; an entry the page does
+   not hold yet keeps the press that reads older pages for it. The shape demotes a departure with no held
+   citation, so a departure always reaches at least one number. */
+function CitedEntries({ row }: { readonly row: Criterion }) {
   const { model, chooseFinding, jumpMissing } = useDrift();
   const record = useDisplayed((snapshot) =>
     snapshot.records.get(contextKey(model.projectKey, model.identity)),
@@ -136,29 +128,27 @@ function CitedEntries({
       </CitationLink>
     );
   };
-  /* A departure's What is one sentence about what happened, with each cited entry's number after it. */
+  /* A muted time of day after the number: when the entry was recorded, so a claim and the check that
+     contradicts it read in order. */
+  const at = (entry: WorkEntry) => {
+    const seen = nextNumber(entry.at);
+    return seen !== null && seen > 0 ? (
+      <span className="ml-1.5 text-label text-muted-foreground">{clock(seen)}</span>
+    ) : null;
+  };
   const chips = held.length ? (
-    quote ? (
-      <p
-        className="m-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
-        data-next-cited-entries={row.key}
-      >
-        {departureWhat(held)}
-        {held.map(link)}
-      </p>
-    ) : (
-      <ul className="m-0 flex list-none flex-col gap-2 p-0" data-next-cited-entries={row.key}>
-        {held.map((entry) => (
-          <li
-            key={String(entry.id || '')}
-            className="m-0 min-w-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
-          >
-            {citedKind(entry)}
-            {link(entry)}
-          </li>
-        ))}
-      </ul>
-    )
+    <ul className="m-0 flex list-none flex-col gap-2 p-0" data-next-cited-entries={row.key}>
+      {held.map((entry) => (
+        <li
+          key={String(entry.id || '')}
+          className="m-0 min-w-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
+        >
+          {citedLine(entry)}
+          {link(entry)}
+          {at(entry)}
+        </li>
+      ))}
+    </ul>
   ) : null;
   /* Kept while its "could not be loaded" sentence stands, so the way back from that sentence has a place to
      land. */
@@ -191,48 +181,17 @@ function CitedEntries({
   );
 }
 
-/* The shape labels a line in capitals ("GOAL FROM YOUR PROMPT"); Evidence heads with it in a sentence's case. */
-function sentenceCase(label: string): string {
-  const lower = label.toLowerCase();
-  return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
-}
-
-/* The line's label, its full status, its why, the limit and each cited entry's own record, one click away
-   under "Evidence", as before the cards: moved, never dropped. The record-type tag ("agent_message ·
-   timestamped …") is the source's, so it sits under Source rather than beside the heading it ran into
-   (usability review, 2026-10-20). The why stays here because the reason for Can't tell stays inside Evidence
-   (owner, 2026-10-14). */
-function EvidenceMore({
+/* What a line says beyond its status, in view under it: its why, the detail of a line never reached and the
+   harness's limit. */
+function Qualifiers({
   row,
-  status,
-  rows,
-  quoted = false,
   reasoned = false,
 }: {
   readonly row: Criterion;
-  readonly status: string;
-  readonly rows: boolean;
-  /** What already quotes each cited entry's words, so its record here leaves them out. */
-  readonly quoted?: boolean;
-  /** The row's own reason is drawn above, so neither it nor the generic status is said again here. */
   readonly reasoned?: boolean;
 }) {
-  const { model } = useDrift();
-  const full = reasoned ? status : resultStatus(row, model.numbers, model.byId);
-  const listed = rows ? evidenceRows(row.citedIds, model.numbers, model.byId) : [];
   return (
-    <Why name={`result-evidence:${row.key}`} summary="Evidence">
-      <p
-        className="m-0 text-body font-semibold leading-[1.45] text-foreground"
-        data-next-evidence-head
-      >
-        {sentenceCase(row.label)}
-      </p>
-      {full === status ? null : (
-        <span className="next-cockpit-reading-evidence">
-          <CitedText text={full} />
-        </span>
-      )}
+    <>
       {row.why && !reasoned ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
       {row.result === NOT_REACHED && row.detail ? (
         <p className="next-cockpit-reading-detail">{row.detail}</p>
@@ -240,23 +199,21 @@ function EvidenceMore({
       {row.limit && !(reasoned && !row.why) ? (
         <span className="next-cockpit-reading-limit">{`limit · ${row.limit}`}</span>
       ) : null}
-      {listed.length ? (
-        <EvidenceList
-          rows={listed}
-          scope={row.key}
-          sources={row.limit ? [] : row.evidence}
-          quoted={quoted}
-        />
-      ) : !row.limit && row.evidence.length ? (
-        <Why name={`result-source:${row.key}`} summary="Source">
-          {row.evidence.map((line, index) => (
-            <p key={index} className="next-cockpit-reading-evidence">
-              {line}
-            </p>
-          ))}
-        </Why>
-      ) : null}
-    </Why>
+    </>
+  );
+}
+
+/* What the full status adds to the short one the row's heading carries: "as the tool reported; not inspected"
+   or "not a check", which the fold used to hold and a consistent line must not lose. */
+function StatusQualifier({ row, status }: { readonly row: Criterion; readonly status: string }) {
+  const { model } = useDrift();
+  const full = resultStatus(row, model.numbers, model.byId);
+  if (full === status) return null;
+  const extra = full.startsWith(status) ? full.slice(status.length).replace(/^[,;]\s*/, '') : full;
+  return (
+    <span className="next-cockpit-reading-evidence">
+      <CitedText text={extra} />
+    </span>
   );
 }
 
@@ -297,7 +254,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
         </div>
         <div className="flex max-w-[45rem] flex-col gap-1" data-next-departure-what>
           <p className={LABEL}>What</p>
-          <CitedEntries row={row} quote />
+          <CitedEntries row={row} />
         </div>
         <div className="flex max-w-[45rem] flex-col gap-0.5" data-next-departure-why>
           <p className={LABEL}>Why Compass reads this as drift</p>
@@ -311,8 +268,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
           </p>
         ) : null}
         <DepartureSummaryLine row={row.key} />
-        {/* "Departs; evidence #5" says again what the label and What say, so it is said once, in Evidence. */}
-        <EvidenceMore row={row} status="" rows quoted />
+        <Qualifiers row={row} />
       </div>
     </article>
   );
@@ -403,12 +359,8 @@ function QuietRow({
           </span>
         ) : null}
         <CitedEntries row={row} />
-        <EvidenceMore
-          row={row}
-          status={status}
-          rows={claimDeparts}
-          reasoned={cantTell || Boolean(claim)}
-        />
+        {claims || cantTell ? null : <StatusQualifier row={row} status={status} />}
+        <Qualifiers row={row} reasoned={cantTell || Boolean(claim)} />
       </span>
     </Tag>
   );
@@ -467,6 +419,12 @@ function ResultAnswer({
       <h3 {...headingProps} className={`next-cockpit-result-line ${ring}`}>
         {lead}
         Not reached at this stop.
+      </h3>
+    );
+  } else if (answer.kind === 'goal-unclear') {
+    body = (
+      <h3 {...headingProps} className={`next-cockpit-result-line ${ring}`}>
+        {GOAL_UNCLEAR_VERDICT}
       </h3>
     );
   } else {
@@ -541,7 +499,12 @@ function ResultFoot() {
     const moved = node.getBoundingClientRect().top - hold.top;
     if (moved) window.scrollBy(0, moved);
   }, [marked]);
-  if (readAt === null || !model.annotate) return null;
+  /* A refusal sets no level and offers no Steer back, so there is nothing for the mark to stop; the Undo of
+     one already made stays. */
+  const refused =
+    model.shape !== null &&
+    driftAnswer(model.shape, model.entries, model.source.scan).kind === 'goal-unclear';
+  if (readAt === null || !model.annotate || (refused && !marked)) return null;
   const unsaved = ctx.drift.notAccurate.has(model.key);
   const hintId = `not-accurate-why:${model.key}`;
   const control = (
@@ -660,7 +623,11 @@ function Baseline({
           shape.revisionReadAt !== null
             ? `${shape.promptSource ? 'saved' : 'typed'} ${fmtDur(Math.max(0, model.generated - shape.revisionReadAt))} ago`
             : `${shape.promptSource ? 'save time' : 'time'} not recorded`,
-          shape.promptSource ? 'drafted from your prompt' : '',
+          raw['goal_source'] === SESSION_GOAL
+            ? 'from /goal'
+            : shape.promptSource
+              ? 'drafted from your prompt'
+              : '',
           /* Both times where they differ: typed words read work from the reader's latest message before the
              save. Adopted words already name their prompt. */
           !shape.promptSource &&
@@ -682,7 +649,7 @@ function Baseline({
     ...readSentences(shape.cutoff),
     level?.range ? `Entries read: ${level.range}.` : '',
     level?.reasons?.first ?? '',
-    goalSourceLine(shape),
+    goalSourceLine(shape, raw['goal_source'] === SESSION_GOAL),
     arrived,
   ].filter(Boolean);
   return (
@@ -775,10 +742,15 @@ export function ReadingResult({
   /* The answer's own departures, in the reading's order: the goal, then each outcome line. */
   const departures = answer?.kind === 'departs' ? answer.departures : [];
   const departed = new Set(departures.map((row) => row.key));
-  const goal = intent.filter((row) => row.key === 'goal' && !departed.has(row.key));
-  const lines = intent.filter((row) => isOutcomeLine(row.key) && !departed.has(row.key));
+  /* A refused goal is said under the Goal field and in the verdict; no row repeats it, and no line or claim
+     of that run is drawn, because the reading found nothing to read them against. */
+  const refused = answer?.kind === 'goal-unclear';
+  const goal = refused ? [] : intent.filter((row) => row.key === 'goal' && !departed.has(row.key));
+  const lines = refused
+    ? []
+    : intent.filter((row) => isOutcomeLine(row.key) && !departed.has(row.key));
   /* What the agent claimed, after the intent it is independent of. */
-  const claimed = claimsDrawn(shape);
+  const claimed = refused ? [] : claimsDrawn(shape);
   const quiet = goal.length + lines.length + claimed.length > 0;
   /* A current result keeps the disclosure and accounting without a second run control: the card header holds
      the one, in every state. A direction question owns the run path while it stands.

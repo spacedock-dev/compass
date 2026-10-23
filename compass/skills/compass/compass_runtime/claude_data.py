@@ -175,7 +175,7 @@ def model_reported(value: Any) -> str | None:
 
 
 def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str | None:
-    """Newest generated Claude title, falling back to the first user prompt.
+    """Newest generated Claude title, then the held `/goal`, then the first non-`/goal` prompt.
 
     ``ai-title`` records can be older than the bounded activity tail, so walk
     the file backward to find the newest one. The cache is invalidated whenever
@@ -217,6 +217,13 @@ def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str 
                 break
 
     if title is None:
+        # A held `/goal` names the session, so the page never shows the condition of a goal that
+        # was replaced or cleared (the opener is the first condition, and nothing else says so).
+        # Behind the `ai-title` check: a generated name is the session's identity and stays.
+        goal = session_goal(config, state, path)
+        if goal is not None:
+            title = transcripts.prompt_title(config, goal["text"])
+    if title is None:
         try:
             with open(path, encoding="utf-8", errors="replace") as source:
                 for line in source:
@@ -234,7 +241,17 @@ def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str 
                     prompt = records.extract_text(
                         records.message_dict(record).get("content")
                     ).strip()
-                    title = transcripts.prompt_title(config, prompt)
+                    candidate = transcripts.prompt_title(config, prompt)
+                    # The opener of a goal no longer held names nothing; the next prompt does.
+                    # Only when no held goal is authoritative: a read that started mid-file and saw
+                    # no goal event may have missed a set, so the opener stays as the last resort.
+                    if (
+                        candidate
+                        and candidate.split()[0] == "/goal"
+                        and goal_history_known(state, path)
+                    ):
+                        continue
+                    title = candidate
                     break
         except OSError:
             pass
@@ -320,6 +337,313 @@ def session_instruction(
             state.claude_instruction_cache, path, (*cache_key, line), limit=config.max_cache_entries
         )
     return line
+
+
+# The longest `/goal` condition published whole: the 4,000 characters Claude Code documents. The
+# record reader's 2,000-character message cap was the first choice and was an interpretation, not a
+# limit of the command: a condition between 2,000 and 4,000 was a real goal that published nothing.
+# The Goal field holds 240 and `_with_excerpt` already offers a longer one cut and marked, so the
+# whole words travel and nothing is clipped silently. Over the limit the record is not a goal
+# Claude Code could have accepted, and publishes nothing.
+GOAL_CAP_CHARS = 4000
+
+
+# The longest evaluator reason published. The reason is the small fast model's own sentence or two,
+# shown quoted on the card and read for the paths and checks it names; a cut one ends in an ellipsis
+# and the page reads it as cut (DRC-4948).
+VERDICT_REASON_CAP_CHARS = 500
+
+GoalEvent = tuple[str, str, float | None, str]
+
+
+def _goal_attachment_event(attachment: Any, at: float | None) -> GoalEvent | None:
+    if not isinstance(attachment, dict) or attachment.get("type") != "goal_status":
+        return None
+    condition = attachment.get("condition")
+    text = condition if isinstance(condition, str) else ""
+    if attachment.get("sentinel") is True:
+        # Measured on 2.1.309: the same sentinel carries `met: false` for a set and `met: true`
+        # for a clear of an active goal, with no reason, just before `Goal cleared:` prints.
+        # Only those two values are read; a missing or non-bool `met` is ignored, never a clear.
+        met = attachment.get("met")
+        if met is False:
+            return ("set", text, at, "")
+        return ("cleared", "", at, "") if met is True else None
+    reason = attachment.get("reason")
+    if attachment.get("met") is True:
+        return ("verdict", text, at, reason if isinstance(reason, str) else "")
+    if attachment.get("met") is False and attachment.get("failed") is True:
+        # Measured (2.1.309): the evaluator giving up. Its own record carries the reason, and the
+        # goal is ended afterwards, so this is neither a verdict nor a held goal.
+        return ("gave_up", text, at, reason if isinstance(reason, str) else "")
+    return None
+
+
+def _goal_event(record: Any) -> GoalEvent | None:
+    """One goal-relevant record as `(kind, condition, at, reason)`, or None.
+
+    Kinds: `set` (the sentinel `goal_status` attachment that carries the condition and is
+    stamped the moment the command ran), `verdict` (the evaluator's `met: true`, with its
+    reason), `cleared` (the sentinel carrying `met: true`, or the command's own printed answer).
+    `met: false` with `failed: true` is `gave_up`, the evaluator giving up: not a verdict, and
+    the goal is ended afterwards. A subagent's record is never the session's. Shapes:
+    docs/captures/claude/goal-2.1.308-macos.jsonl, goal-clear-replace-verdicts-2.1.309-macos.jsonl
+    and goal-give-up-ends-goal-2.1.309-macos.jsonl.
+    """
+    if not isinstance(record, dict) or record.get("isSidechain") is True:
+        return None
+    at = records.parse_ts(record.get("timestamp") or "")
+    if record.get("type") == "attachment":
+        return _goal_attachment_event(record.get("attachment"), at)
+    run = record.get("commandRun")
+    content = record.get("content")
+    if (
+        record.get("type") != "system"
+        or record.get("subtype") != "local_command"
+        or not isinstance(run, dict)
+        or run.get("command") != "goal"
+        or not isinstance(content, str)
+    ):
+        return None
+    printed = content.replace("<local-command-stdout>", "").strip()
+    # `Goal cleared:` is measured for an active goal (2.1.309); a met goal had already cleared
+    # itself and printed `No goal set`, which is not a clear.
+    return ("cleared", "", at, "") if printed.startswith("Goal cleared") else None
+
+
+def _goal_words(condition: str) -> str:
+    """The condition as the one masked line a row publishes, or "" if it cannot be held whole."""
+    if not condition.strip() or len(condition) > GOAL_CAP_CHARS:
+        return ""
+    masked = records.safe_text(records.mask_prose(condition), 2 * len(condition) + 64)
+    return " ".join(masked.split())
+
+
+def _verdict_reason(reason: str) -> str:
+    """The evaluator's reason as one masked line within its bound, ending in an ellipsis if cut."""
+    masked = " ".join(records.safe_text(records.mask_prose(reason), 2 * len(reason) + 64).split())
+    if len(masked) <= VERDICT_REASON_CAP_CHARS:
+        return masked
+    return masked[:VERDICT_REASON_CAP_CHARS].rstrip() + "…"
+
+
+GoalState = dict[str, Any]
+
+
+def _empty_goal_state() -> GoalState:
+    return {"goal": None, "gave_up": None, "cleared": None}
+
+
+def _earlier_goal(state: GoalState, at: float) -> dict[str, Any] | None:
+    """What became of the goal a new `/goal` finds in the state, as `{"how", "at"}`, or None.
+
+    `replaced` only when the earlier goal was still active, at the moment the next one arrived;
+    a met or given-up goal is said to be that, at its own time. Never the earlier goal's words.
+    """
+    held, gave_up = state["goal"], state["gave_up"]
+    if held is not None:
+        verdict = held.get("verdict")
+        if verdict is not None:
+            return {"how": "met", "at": verdict["at"]}
+        return {"how": "replaced", "at": at}
+    if gave_up is not None:
+        return {"how": "gave-up", "at": gave_up["at"]}
+    return None
+
+
+def _advance_goal(state: GoalState, event: GoalEvent) -> GoalState:
+    """The session's goal state after one more event: the latest set wins, a met one is kept.
+
+    A verdict only confirms a goal already held, by its words, and is kept on it as the
+    harness's claim; a later set or clear takes it away with the goal it was about. One for
+    words not held, or with no set record behind it in the bytes read, has no known set
+    time, and a time is never taken from the verdict instead.
+
+    A give-up and a clear end the goal and are kept beside it, each under its own key and never
+    as a verdict: `session_goal` stays None, so naming, drafting and adoption read as before. A
+    second clear signal for the same clear (the sentinel, then the printed line in `claude -p`)
+    changes nothing, so the first time wins. A new set takes both away and records, on the goal
+    it holds, how the earlier one ended.
+    """
+    kind, condition, at, reason = event
+    if kind == "cleared":
+        return _after_clear(state, at)
+    words = _goal_words(condition)
+    if kind == "set":
+        return _after_set(state, words, at)
+    if kind == "gave_up":
+        return _after_give_up(state, words, at, reason)
+    if kind == "verdict":
+        return _after_verdict(state, words, at, reason)
+    return state
+
+
+def _after_clear(state: GoalState, at: float | None) -> GoalState:
+    if state["goal"] is None and (state["cleared"] is not None or state["gave_up"] is not None):
+        return state
+    return {"goal": None, "gave_up": None, "cleared": {"at": at} if at is not None else None}
+
+
+def _after_set(state: GoalState, words: str, at: float | None) -> GoalState:
+    goal = state["goal"]
+    if not words or at is None:
+        return _empty_goal_state()
+    if goal is not None and goal["text"] == words and goal["at"] == at:
+        return state
+    held: dict[str, Any] = {"text": words, "at": at}
+    earlier = _earlier_goal(state, at)
+    if earlier is not None:
+        held["earlier"] = earlier
+    return {"goal": held, "gave_up": None, "cleared": None}
+
+
+def _after_give_up(state: GoalState, words: str, at: float | None, reason: str) -> GoalState:
+    goal = state["goal"]
+    if goal is None:
+        return state
+    if goal["text"] != words or at is None:
+        return {**state, "goal": None}
+    return {"goal": None, "gave_up": {"at": at, "reason": _verdict_reason(reason)}, "cleared": None}
+
+
+def _after_verdict(state: GoalState, words: str, at: float | None, reason: str) -> GoalState:
+    goal = state["goal"]
+    if goal is None or goal["text"] != words:
+        return {**state, "goal": None}
+    if at is None:
+        return state
+    verdict = {"met": True, "at": at, "reason": _verdict_reason(reason)}
+    return {**state, "goal": {**goal, "verdict": verdict}}
+
+
+def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any] | None:
+    """The `/goal` this Claude session holds, `{"text", "at"}`, or None.
+
+    Read forward and incrementally, as `turns.scan_turns` is: each call parses only the bytes
+    appended since the last, because the newest goal can sit anywhere in a long file and a
+    session with none would otherwise be reread end to end on every collection. A cold read
+    starts at most `config.turn_scan_max_bytes` from the end; a goal set before that and not
+    touched since is not seen, and publishes nothing rather than a guess. Only complete lines
+    count, so a half-written record is read once it finishes.
+
+    The published mapping is `{"text", "at"}`, with `offered` and `cut` added when the condition
+    is longer than the Goal field holds (`_with_excerpt`), and `verdict` (`{met, at, reason}`, the
+    harness's claim that the goal is met) once the evaluator has decided. The key is absent, not
+    empty, before then. `earlier` (`{how, at}`, how being "replaced", "met" or "gave-up") is added
+    when this goal followed one the read saw end, and carries never the earlier goal's words.
+    """
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    key = f"session-goal:{path}"
+    with state.cache_lock:
+        cached = state.metadata_cache.get(key)
+    if (
+        cached is not None
+        and cached.get("ino") == stat.st_ino
+        and cached["pos"] <= stat.st_size
+        and stat.st_size - cached["pos"] <= config.turn_scan_max_bytes
+    ):
+        pos, goal_state, cold = cached["pos"], _cached_goal_state(cached), False
+        seen = cached.get("seen", False)
+    else:
+        pos, goal_state, cold = (
+            max(0, stat.st_size - config.turn_scan_max_bytes),
+            _empty_goal_state(),
+            True,
+        )
+        # A read from byte 0 has seen everything, so no goal event means none was ever recorded.
+        seen = pos == 0
+    if pos < stat.st_size:
+        try:
+            with open(path, "rb") as source:
+                source.seek(pos)
+                data = source.read(stat.st_size - pos)
+        except OSError:
+            return None
+        if cold and pos > 0:
+            # A cold read that starts mid-file starts mid-line.
+            skip = data.find(b"\n")
+            data, pos = (b"", pos) if skip < 0 else (data[skip + 1 :], pos + skip + 1)
+        end = data.rfind(b"\n")
+        if end >= 0:
+            for raw in data[:end].split(b"\n"):
+                if b"goal" not in raw or not raw.startswith(b"{"):
+                    continue
+                try:
+                    event = _goal_event(json.loads(raw))
+                except (ValueError, RecursionError):
+                    continue
+                if event is not None:
+                    seen = True
+                    goal_state = _advance_goal(goal_state, event)
+            pos += end + 1
+    with state.cache_lock:
+        runtime_state.bounded_put(
+            state.metadata_cache,
+            key,
+            {"ino": stat.st_ino, "pos": pos, **goal_state, "seen": seen},
+            limit=config.max_cache_entries,
+        )
+    goal = goal_state["goal"]
+    return _with_excerpt(goal, config.annotation_text_cap_chars) if goal is not None else None
+
+
+def _cached_goal_state(cached: dict[str, Any]) -> GoalState:
+    return {key: cached.get(key) for key in ("goal", "gave_up", "cleared")}
+
+
+def _goal_ending(state: RuntimeState, path: str, key: str) -> dict[str, Any] | None:
+    with state.cache_lock:
+        cached = state.metadata_cache.get(f"session-goal:{path}")
+    value = cached.get(key) if cached else None
+    return dict(value) if value is not None else None
+
+
+def session_goal_cleared(state: RuntimeState, path: str) -> dict[str, Any] | None:
+    """`{"at"}` when the last `session_goal` read saw this session clear its goal and none since.
+
+    Read from the same cache entry, so call it after `session_goal`. None means no clear was seen
+    in the bytes read, which is unknown and not "was not cleared": a cold read that starts
+    mid-file publishes only what it saw.
+    """
+    return _goal_ending(state, path, "cleared")
+
+
+def session_goal_gave_up(state: RuntimeState, path: str) -> dict[str, Any] | None:
+    """`{"at", "reason"}` when the harness gave up on the goal and no goal has been set since.
+
+    The harness's claim, in a key of its own and never under `verdict`: every reader of a met
+    goal keys on that. The reason is masked, one line, bounded. No iterations, tokens or
+    duration are published. None is unknown, as for `session_goal_cleared`.
+    """
+    return _goal_ending(state, path, "gave_up")
+
+
+def goal_history_known(state: RuntimeState, path: str) -> bool:
+    """Whether the last `session_goal` read saw the whole file or at least one goal event.
+
+    A cold read that starts mid-file returns None both when no goal event was seen and when one
+    cleared the goal inside the window; only the second proves the goal is not held.
+    """
+    with state.cache_lock:
+        cached = state.metadata_cache.get(f"session-goal:{path}")
+    return bool(cached and cached.get("seen"))
+
+
+def _with_excerpt(goal: dict[str, Any], cap: int) -> dict[str, Any]:
+    """The goal as published, plus the excerpt the Goal field can hold when it cannot hold it whole.
+
+    `offered` is what an adoption stores (`records.safe_text` at the store's own bound), so the page
+    and the server agree on the words without either clipping on its own. It and `cut` exist only
+    for a goal over the bound: a key every row carried would say nothing about this goal.
+    """
+    words = goal["text"]
+    offered = records.safe_text(words, cap).strip()
+    if offered == words:
+        return dict(goal)
+    return {**goal, "offered": offered, "cut": True}
 
 
 def last_user_event(config: RuntimeConfig, state: RuntimeState, path: str) -> str | None:

@@ -867,6 +867,61 @@ def _criterion(value: Any, cap: int) -> reading.Criterion | None:
     return criterion
 
 
+class _VerdictKey(TypedDict, total=False):
+    """The one optional key of a stored reading that `_provenance` does not carry."""
+
+    goal_verdict: reading.GoalVerdictCheck
+
+
+def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
+    """One stored test of the harness's goal verdict, or nothing.
+
+    Closed tokens only, as a criterion's `why` is: the page maps a token to its own sentence, so a
+    sidecar rewritten to say something else refuses the reading whole rather than speaking for
+    Compass.
+    """
+    if not isinstance(value, dict):
+        return None
+    removal = set(value) - set(reading.GOAL_VERDICT_KEYS)
+    # The file and the moment a removal dispute names come together, and only with a removal token.
+    if set(value) - set(reading.GOAL_VERDICT_KEYS) - set(reading.GOAL_VERDICT_REMOVAL_KEYS) or (
+        set(reading.GOAL_VERDICT_KEYS) - set(value)
+    ):
+        return None
+    if removal and (
+        removal != set(reading.GOAL_VERDICT_REMOVAL_KEYS)
+        or value["why"] not in reading.GOAL_VERDICT_REMOVAL_WHYS
+        or not isinstance(value["path"], str)
+        or not value["path"].strip()
+        or isinstance(value["changed_at"], bool)
+        or not isinstance(value["changed_at"], (int, float))
+        or value["changed_at"] <= 0
+    ):
+        return None
+    at, cites = value["at"], value["cites"]
+    if (
+        isinstance(at, bool)
+        or not isinstance(at, (int, float))
+        or at <= 0
+        or value["check"] not in reading.GOAL_VERDICT_CHECKS
+        or value["why"] not in reading.GOAL_VERDICT_WHYS
+        or not isinstance(cites, (list, tuple))
+        or len(cites) > reading.MAX_RECORDED_CITES
+        or not all(isinstance(cite, str) for cite in cites)
+    ):
+        return None
+    checked: reading.GoalVerdictCheck = {
+        "at": float(at),
+        "check": value["check"],
+        "why": value["why"],
+        "cites": tuple(records.safe_text(cite, KEY_CAP_CHARS) for cite in cites),
+    }
+    if removal:
+        checked["path"] = records.safe_text(value["path"], reading.VERDICT_PATH_CAP_CHARS)
+        checked["changed_at"] = float(value["changed_at"])
+    return checked
+
+
 def _assessment(value: Any, cap: int) -> reading.Assessment | None:
     """One untrusted reading, or nothing at all.
 
@@ -892,8 +947,10 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         return None
     criteria = _criteria(value.get("criteria"), cap)
     coverage = reading.validate_coverage(value["coverage"]) if "coverage" in value else None
+    verdict = _goal_verdict(value["goal_verdict"]) if "goal_verdict" in value else None
     if (
         criteria is None
+        or ("goal_verdict" in value and verdict is None)
         or (value.get("coverage") is not None and coverage is None)
         or any(not reading.result_in_scope(row.get("result"), scope) for row in criteria.values())
     ):
@@ -914,6 +971,7 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         if not window_fields:
             return None
         window = window_fields["window_start"]
+    extra = _VerdictKey(goal_verdict=verdict) if verdict is not None else _VerdictKey()
     assessment: reading.Assessment = {
         **provenance,
         "revision_read": revision,
@@ -939,8 +997,19 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         "evidence_through": records.norm_epoch(value.get("evidence_through")) or None,
         "coverage": coverage,
         "criteria": criteria,
+        **extra,
     }
     return assessment
+
+
+def _goal_unclear_elsewhere(
+    parsed: Mapping[str, reading.Criterion], claims: reading.Criterion | None
+) -> bool:
+    """Whether `goal_unclear` sits anywhere but the Goal, as `unsupported` sits only on claims."""
+    rows = [row for name, row in parsed.items() if name != reading.CONSTRAINT_GOAL]
+    if claims is not None:
+        rows.append(claims)
+    return any(row.get("result") == reading.RESULT_GOAL_UNCLEAR for row in rows)
 
 
 def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
@@ -968,7 +1037,9 @@ def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
     claims = parsed.pop(reading.CONSTRAINT_CLAIMS, None)
     if claims is not None and claims.get("result") == reading.RESULT_NOT_REACHED:
         return None
-    if any(row.get("result") == reading.RESULT_UNSUPPORTED for row in parsed.values()):
+    if any(
+        row.get("result") == reading.RESULT_UNSUPPORTED for row in parsed.values()
+    ) or _goal_unclear_elsewhere(parsed, claims):
         return None
     if set(parsed) == {reading.CONSTRAINT_GOAL, reading.CONSTRAINT_OUTPUT}:
         output = parsed.pop(reading.CONSTRAINT_OUTPUT)
@@ -2220,6 +2291,11 @@ def direction_floor(
     latest = entry["revisions"][-1] if entry and entry["revisions"] else None
     if latest and str(latest.get("goal") or "").strip():
         return float(latest.get("goal_source_at") or latest.get("goal_saved_at") or latest["at"])
+    # The session's own /goal is the draft ahead of the prompts, and ahead of the control check:
+    # a session that opened with `/goal` has no first prompt, and still has this goal.
+    text, at = prompt_candidate(dict(row), reading.SESSION_GOAL)
+    if text and at is not None:
+        return at
     # A control-first session drafts nothing, so it has no draft time either (DRC-4766).
     if row.get("first_prompt_control") is True:
         return None
@@ -2839,6 +2915,11 @@ def prompt_candidate(row: dict[str, Any], source: str) -> tuple[str, float | Non
         text, at = instruction.get("text"), instruction.get("at")
     elif source == "latest-prompt" and row.get("prompt_states_work") is True:
         text, at = row.get("title"), row.get("prompt_at")
+    elif source == reading.SESSION_GOAL and harness == "claude":
+        goal = records.as_dict(row.get("session_goal"))
+        # The excerpt where the goal is longer than the Goal field holds, so the words the page
+        # offers, the words an adoption names and the words the store keeps are one string.
+        text, at = goal.get("offered") or goal.get("text"), goal.get("at")
     else:
         return "", None
     return (text if isinstance(text, str) else "", reading.valid_prompt_time(at))

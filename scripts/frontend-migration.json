@@ -774,6 +774,17 @@
       "disposition": "stable-identity"
     },
     {
+      "name": "The Expected outcome accordion in the Intent card",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/intent/FirstView.test.tsx",
+        "frontend/src/controls/Disclosure.test.tsx",
+        "frontend/stories/IntentCard.stories.tsx"
+      ],
+      "contract": "The accordion's open flag is the shared disclosure store's, keyed by project and exact session. It is closed until a saved or drafted line, a pending later direction or a departure citing an outcome line is held, then opens on each rise of that condition; a reader's close holds while it stays true and a key the reader has written is not reopened on a first draw.",
+      "disposition": "store-held"
+    },
+    {
       "name": "An open run of checks",
       "owner": "DRC-4825",
       "oracles": [
@@ -996,7 +1007,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "A prompt chosen from \"Use your prompt\" or an explicit later direction, not yet saved",
+      "name": "A prompt chosen from \"Use your prompt\", the session's /goal taken from the list or from its update offer, or an explicit later direction, not yet saved",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/intent/IntentAdoption.test.tsx",
@@ -1004,6 +1015,27 @@
         "frontend/e2e/intent-parity.mjs"
       ],
       "contract": "Chosen adoption is fact id+words+source time, not typed draft; drop only matching adopted choice, never a newer in-flight choice.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "The /goal the reader declined to take as an update",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/DetectedGoal.test.tsx",
+        "frontend/stories/IntentCard.stories.tsx"
+      ],
+      "contract": "Keep the time of the declined /goal per session in memory; a /goal set later is offered again, and nothing is offered over a goal-less or discarded session.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "A goal found in the reader's prompts, and what the press that found it said",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/FindGoal.test.tsx",
+        "frontend/src/intent/foundGoal.test.ts",
+        "frontend/stories/FindGoal.stories.tsx"
+      ],
+      "contract": "Keep the found goal and the press's last sentence per session in memory. The goal stands only while the box holds its words, a saved goal or a /goal outranks it, and nothing is stored.",
       "disposition": "store-held"
     },
     {

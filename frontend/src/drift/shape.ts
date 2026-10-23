@@ -2,7 +2,7 @@ import { nextNumber } from '../api/bootstrap';
 import { annotationLines, OUTCOME_LINES_MAX, type Annotation } from '../intent/annotation';
 import { conflictCandidates, type WorkEntry } from '../intent/work';
 import { isRecord, type Row } from '../observed';
-import { PROMPT_SOURCES } from '../sessions/intent';
+import { PROMPT_SOURCES, SESSION_GOAL } from '../sessions/intent';
 import {
   ASSISTANT_ONLY,
   BASELINE_OPEN,
@@ -17,6 +17,12 @@ import {
   DERIVED_ONLY,
   FAILED_CHECK_ON_RECORD,
   FAILED_CHECK_UNREAD,
+  GOAL_UNCLEAR_RESULT,
+  GOAL_VERDICT_CHECKS,
+  GOAL_VERDICT_KEYS,
+  GOAL_VERDICT_REMOVAL_KEYS,
+  GOAL_VERDICT_REMOVAL_WHYS,
+  GOAL_VERDICT_WHY,
   MALFORMED,
   NOT_REACHED,
   OWN_WORDS_ONLY,
@@ -300,9 +306,11 @@ export function criterion(
   let limitText = limit || '';
   const claims = key === CLAIMS;
   /* `unsupported` is the claims row's alone; anywhere else it is a result outside the row's set. */
-  const known = claims
-    ? RESULTS.filter((name) => name !== NOT_REACHED)
-    : RESULTS.filter((name) => name !== UNSUPPORTED);
+  const known = (
+    claims
+      ? RESULTS.filter((name) => name !== NOT_REACHED)
+      : RESULTS.filter((name) => name !== UNSUPPORTED)
+  ).filter((name) => name !== GOAL_UNCLEAR_RESULT || key === 'goal');
   let result = known.includes(declared) ? declared : UNVERIFIABLE;
   /* Rule 2, and the reason the default above is not `consistent`: silence is not a pass. */
   let why = result === declared ? '' : MALFORMED;
@@ -310,11 +318,14 @@ export function criterion(
     result = UNVERIFIABLE;
     why = MALFORMED;
   }
-  if (result !== UNVERIFIABLE && !cited.length) {
+  /* The refusal takes no citation and no limit, and a later direction does not unsettle it: it is about the
+     words alone, which the producer judged before it read the record. */
+  const refused = result === GOAL_UNCLEAR_RESULT;
+  if (result !== UNVERIFIABLE && !refused && !cited.length) {
     result = UNVERIFIABLE;
     why = UNCITED;
   }
-  if (result !== UNVERIFIABLE && limit) {
+  if (result !== UNVERIFIABLE && !refused && limit) {
     /* Rule 5. A departure is demoted too, which is stricter than the letter and the direction the ruling
        calls safe. `why` stays empty: the limit has its own row, and setting both printed the same sentence
        twice. */
@@ -322,7 +333,7 @@ export function criterion(
     why = '';
   }
   /* The claims row is independent of the intent, so an unsettled later direction never demotes it. */
-  if (result !== UNVERIFIABLE && unsettled && !claims) {
+  if (result !== UNVERIFIABLE && !refused && unsettled && !claims) {
     result = UNVERIFIABLE;
     why = BASELINE_OPEN;
   }
@@ -333,6 +344,26 @@ export function criterion(
   if (stored && !hasOwn(STORED_WHY, stored)) {
     result = UNVERIFIABLE;
     why = MALFORMED;
+  }
+  if (result === GOAL_UNCLEAR_RESULT) {
+    return {
+      key,
+      label,
+      clause: clause || CLAUSE_UNRETAINED,
+      clauseKnown: Boolean(clause),
+      claimEntry: null,
+      recordEntry: null,
+      result,
+      declared: true,
+      detail: '',
+      why: '',
+      restsOn: '',
+      restsOnEntry: null,
+      limit: '',
+      evidence: [],
+      citedIds: [],
+      unloaded: 0,
+    };
   }
   let droppedCheck = false;
   let failedCited = false;
@@ -535,6 +566,52 @@ export function readingCoverage(raw: unknown): Coverage | null {
     : null;
 }
 
+/* Compass's test of the harness's goal verdict, as a reading stored it: the verdict's own time and two closed
+   tokens. Anything else is a reading this build cannot read, not one with a check missing. */
+export interface GoalVerdictCheck {
+  readonly at: number;
+  readonly check: string;
+  readonly why: string;
+  readonly cites: readonly string[];
+  /** The file a removal dispute rests on and when the record shows it taken away. */
+  readonly path?: string;
+  readonly changed_at?: number;
+}
+
+export function readingGoalVerdict(raw: unknown): GoalVerdictCheck | null {
+  if (!isRecord(raw) || GOAL_VERDICT_KEYS.some((key) => !Object.hasOwn(raw, key))) return null;
+  const extra = Object.keys(raw).filter((key) => !GOAL_VERDICT_KEYS.includes(key));
+  /* The file and the moment come together and only with a removal token; anything else is a reading this
+     build cannot read. */
+  if (
+    extra.length &&
+    (extra.length !== GOAL_VERDICT_REMOVAL_KEYS.length ||
+      extra.some((key) => !GOAL_VERDICT_REMOVAL_KEYS.includes(key)) ||
+      !GOAL_VERDICT_REMOVAL_WHYS.includes(raw['why'] as string) ||
+      typeof raw['path'] !== 'string' ||
+      !raw['path'] ||
+      typeof raw['changed_at'] !== 'number' ||
+      !Number.isFinite(raw['changed_at']) ||
+      raw['changed_at'] <= 0)
+  ) {
+    return null;
+  }
+  const at = raw['at'];
+  const cites = raw['cites'];
+  if (
+    typeof at !== 'number' ||
+    !Number.isFinite(at) ||
+    at <= 0 ||
+    !GOAL_VERDICT_CHECKS.includes(raw['check'] as string) ||
+    !Object.hasOwn(GOAL_VERDICT_WHY, raw['why'] as string) ||
+    !Array.isArray(cites) ||
+    cites.some((cite) => typeof cite !== 'string')
+  ) {
+    return null;
+  }
+  return raw as unknown as GoalVerdictCheck;
+}
+
 export function windowPartial(shape: {
   readonly coverage: Coverage | null;
   readonly windowStart: number | null;
@@ -552,6 +629,12 @@ export function windowPartial(shape: {
 
 /* A line's row names where the line came from, but only while the reading read the words shown now: under a
    reading of an older revision today's source would be a claim about words it never read. */
+/* The goal line's heading by where the adopted words came from: a /goal the session set is named for it,
+   not for the reader's prompt. */
+function promptGoalLabel(source: Row): string {
+  return source['goal_source'] === SESSION_GOAL ? 'GOAL FROM /GOAL' : 'GOAL FROM YOUR PROMPT';
+}
+
 function lineLabel(
   key: string,
   label: string,
@@ -591,6 +674,8 @@ export interface Shape {
   readonly windowStart: number | null;
   readonly coverage: Coverage | null;
   readonly promptSource: boolean;
+  /** Compass's test of the harness's goal verdict, where the reading made one. */
+  readonly goalVerdict: GoalVerdictCheck | null;
   readonly readClauses: readonly (readonly [string, string])[];
   readonly stamp: string;
   readonly cutoff: string;
@@ -613,6 +698,7 @@ export const ASSESSMENT_KEYS = [
   'ended_at_read',
   'evidence_through',
   'coverage',
+  'goal_verdict',
   'criteria',
 ];
 
@@ -634,8 +720,11 @@ export function readingShape(
   if (source['coverage'] !== null && source['coverage'] !== undefined && !coverage) {
     unknown.push('coverage');
   }
+  const goalVerdict = readingGoalVerdict(source['goal_verdict']);
+  if (source['goal_verdict'] !== undefined && !goalVerdict) unknown.push('goal_verdict');
   if (unknown.length) {
     return {
+      goalVerdict: null,
       criteria: [],
       departures: [],
       malformed: unknown.slice(0, 4).join(', '),
@@ -687,7 +776,7 @@ export function readingShape(
       return criterion(
         key,
         key === 'goal' && promptSource
-          ? 'GOAL FROM YOUR PROMPT'
+          ? promptGoalLabel(source)
           : lineLabel(key, label, row, annotation, historical, lineSource),
         readingClause(key, row, annotation, historical),
         row,
@@ -723,11 +812,12 @@ export function readingShape(
     windowStart,
     coverage,
     promptSource,
+    goalVerdict,
     /* The reader's words only: the claims question has none to show. */
     readClauses: constraints
       .filter(([key]) => key !== CLAIMS)
       .map(([key, label]): readonly [string, string] => [
-        key === 'goal' && promptSource ? 'GOAL FROM YOUR PROMPT' : label,
+        key === 'goal' && promptSource ? promptGoalLabel(source) : label,
         readingClause(key, rows[key] as Row | undefined, annotation, historical),
       ]),
     stamp: String(source['stamp'] || ''),
