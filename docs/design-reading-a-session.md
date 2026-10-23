@@ -5996,7 +5996,10 @@ adds routes. An "on" is not remembered across reloads, so a reload shows the swi
 Item 5's "calls no model" is superseded and its "raises nothing" holds. The source line for the level reads
 "Live monitor · Haiku", and says it read the latest turns of the transcript, not that it judged the goal met.
 
-**The remaining decisions, each as recommended.**
+**The remaining decisions.** The lane, cap, TTL, stops, `ended_at` and reload decisions are the
+recommendations, taken as given. The ruling on Analyze against a tick is the owner's own, and the
+level's floor is ruled in [its own amendment](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor)
+below, which supersedes the floor bullet here.
 
 - **Lane.** A call the reader starts, under [DEC-28's widening](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
   with its own notice kind `monitor` and a one-press off beside it. It is kept out of the unasked lane,
@@ -6012,14 +6015,37 @@ Item 5's "calls no model" is superseded and its "raises nothing" holds. The sour
 - **TTL.** The clock is held on the server. The banner is due 20 minutes after the start or after the last
   Yes, and the deadline is 10 minutes after that. No answer by the deadline turns the monitor off with a
   note saying why, Yes resets the clock and No turns it off.
-- **Stops.** Pause model calls and `--no-observer-model` both stop the monitor and refuse to start it, and
-  consent is required before the first call. Pause cancels a tick in flight.
+- **Stops.** Pause model calls and `--no-observer-model` both stop the monitor and refuse to start it.
+  Pause cancels a tick in flight. Under DEC-28's opt-out, consent means "not paused": the monitor has
+  no grant of its own for a reader to give, the `monitor` notice is recorded with the first charged
+  call, and a store that cannot say whether the reader paused refuses the call.
 - **Sessions with no `ended_at` stamp.** The TTL banner is what stops the monitor. Idleness is not read as
   an end. A session that has an end turns the monitor off and disables the switch.
-- **The level's floor.** The Haiku level is held to item 1's evidence floor and to
-  [DEC-17's shape contract](#dec-17-the-shape-contract): with too little read it says "Not enough recorded
-  yet", never "None or low", and it carries no verdict. The model level is absent, not low, until a tick
-  completes.
+- **The level's floor.** Superseded by [the owner's floor amendment](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor).
+  The level is held to [DEC-17's shape contract](#dec-17-the-shape-contract) and carries no verdict.
+  The model level is absent, not low, until a tick completes.
+
+### Amended 2026-10-23 (owner): the Haiku level's own None or low floor
+
+The owner ruled on 2026-10-23 that the Haiku level has a floor of its own for "None or low", apart from
+item 1's floor for the model-free estimate, which asks for a passing check. A model "None or low" stands
+when Haiku cites at least one turn it was sent and the estimate shows neither of the blockers item 1
+shares across both sources: **no failed check, and no unsettled later direction**. "Too little recorded",
+including no passing check, does not block it, so a pull request created with no check run, read by Haiku
+as None or low, is published as None or low.
+
+- **The live-only shell blocker is not included.** Item 1 names a shell command that is neither a check
+  nor read-only, run after a check's latest pass, as a blocker "for the live estimate" and not for both
+  sources, so it binds the estimate alone. The estimate's other blockers (a check not recorded, a
+  background run, an incomplete scan, entries not listed) are not item 1's shared two and do not block it
+  either.
+- **Where a blocker holds**, the estimate's own answer stands in place of the model's None or low: its
+  raised level, or "Not enough recorded yet", never None or low.
+- **The floor works both ways.** A raised estimate (Medium, High or Extreme) above what the model said is
+  published over it, because a model reading a window of turns cannot clear a failed check it was never
+  shown. A model that says Not enough over an estimate of None or low keeps its abstention.
+- **The model level is published beside the estimate** as the fallback it replaces, with the estimate's
+  reasons, so a page can say which one decided.
 
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
