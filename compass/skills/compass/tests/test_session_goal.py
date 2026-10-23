@@ -6,8 +6,9 @@ measured there and rest on this module: the set record is a `goal_status` attach
 `sentinel: true` that carries the condition, the evaluator's verdict is a second `goal_status`
 with `met: true` and no sentinel, the `system` `local_command` record names the command and its
 printed answer, and a goal the evaluator met has already cleared itself, so a later `/goal clear`
-prints `No goal set`. What `Goal cleared:` and the not-met verdicts look like was not captured, so
-those rows rest on the documented wording and say so.
+prints `No goal set`. `goal-clear-replace-verdicts-2.1.309-macos.jsonl` adds a clear of an active
+goal (the sentinel with `met: true`, then `Goal cleared:`), a replacement, the not-met verdict
+and the impossible one (`failed: true`), and a resume of an active goal that writes nothing.
 """
 
 from __future__ import annotations
@@ -77,6 +78,27 @@ def verdict(
     }
 
 
+def clear_sentinel(when: float, condition: str = CONDITION) -> dict[str, Any]:
+    """Measured (2.1.309): clearing an active goal writes this before `Goal cleared:` prints."""
+    return {
+        "type": "attachment",
+        "timestamp": _iso(when),
+        "attachment": {
+            "type": "goal_status",
+            "met": True,
+            "sentinel": True,
+            "condition": condition,
+        },
+    }
+
+
+def impossible(when: float, condition: str = CONDITION) -> dict[str, Any]:
+    """Measured (2.1.309): a goal the evaluator gave up on is `met: false` with `failed: true`."""
+    record = verdict(when, condition, met=False)
+    record["attachment"]["failed"] = True
+    return record
+
+
 def command_answer(when: float, args: str, printed: str) -> dict[str, Any]:
     return {
         "type": "system",
@@ -119,6 +141,51 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
         # The wording is the documented one; the uncaptured shape is on the capture's list.
         cleared = command_answer(T0 + 20, "clear", f"Goal cleared: {CONDITION}")
         self.assertIsNone(read_goal([*set_goal(T0 + 5), cleared]))
+
+    def test_the_clear_marker_alone_clears_without_reading_as_a_met_goal(self) -> None:
+        # Measured: the sentinel with `met: true` is the clear, not the evaluator's verdict.
+        self.assertIsNone(read_goal([*set_goal(T0 + 5), clear_sentinel(T0 + 20)]))
+
+    def test_a_goal_cleared_in_the_measured_order_publishes_none(self) -> None:
+        cleared = command_answer(T0 + 20, "clear", f"Goal cleared: {CONDITION}")
+        self.assertIsNone(read_goal([*set_goal(T0 + 5), clear_sentinel(T0 + 20), cleared]))
+
+    def test_an_interactive_session_writes_only_the_sentinels_and_is_still_read(self) -> None:
+        # Measured (2.1.309, tmux): no `local_command` record for the set or the clear.
+        interactive_set = set_goal(T0 + 5)[:1]
+        self.assertEqual({"text": CONDITION, "at": T0 + 5}, read_goal(interactive_set))
+        self.assertIsNone(read_goal([*interactive_set, clear_sentinel(T0 + 20)]))
+
+    def test_a_refused_over_limit_command_leaves_the_goal_as_it_was(self) -> None:
+        # Measured: 4001 characters print the limit and write no sentinel.
+        refused = command_answer(
+            T0 + 20, "x" * 4001, "Goal condition is limited to 4000 characters (got 4001)"
+        )
+        goal = read_goal([*set_goal(T0 + 5), refused])
+        self.assertEqual({"text": CONDITION, "at": T0 + 5}, goal)
+
+    def test_a_goal_set_after_the_measured_clear_is_published(self) -> None:
+        goal = read_goal(
+            [*set_goal(T0 + 5), clear_sentinel(T0 + 20), *set_goal(T0 + 40, LATER_CONDITION)]
+        )
+        self.assertEqual({"text": LATER_CONDITION, "at": T0 + 40}, goal)
+
+    def test_an_impossible_verdict_is_not_a_met_one_and_the_goal_stays(self) -> None:
+        goal = read_goal([*set_goal(T0 + 5), impossible(T0 + 30)])
+        self.assertEqual({"text": CONDITION, "at": T0 + 5}, goal)
+
+    def test_a_replaced_goal_met_later_carries_the_verdict_for_the_second_only(self) -> None:
+        goal = read_goal(
+            [
+                *set_goal(T0 + 5),
+                verdict(T0 + 10, met=False),
+                *set_goal(T0 + 50, LATER_CONDITION),
+                verdict(T0 + 90, LATER_CONDITION),
+            ]
+        )
+        assert goal is not None
+        self.assertEqual(LATER_CONDITION, goal["text"])
+        self.assertEqual(T0 + 90, goal["verdict"]["at"])
 
     def test_every_documented_alias_of_clear_clears(self) -> None:
         for alias in ("stop", "off", "reset", "none", "cancel"):
@@ -192,8 +259,15 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
         assert goal is not None
         self.assertEqual({"met": True, "at": T0 + 40, "reason": "again"}, goal["verdict"])
 
-    def test_a_condition_too_long_to_hold_whole_publishes_none(self) -> None:
-        self.assertIsNone(read_goal(set_goal(T0 + 5, "x" * 2001)))
+    def test_a_condition_at_the_documented_limit_is_published_whole(self) -> None:
+        goal = read_goal(set_goal(T0 + 5, "x" * 4000))
+        assert goal is not None
+        self.assertEqual("x" * 4000, goal["text"])
+        self.assertTrue(goal["cut"])
+        self.assertLessEqual(len(goal["offered"]), 240)
+
+    def test_a_condition_over_the_documented_limit_publishes_none(self) -> None:
+        self.assertIsNone(read_goal(set_goal(T0 + 5, "x" * 4001)))
 
     def test_a_condition_that_is_not_text_publishes_none(self) -> None:
         records = set_goal(T0 + 5)

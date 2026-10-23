@@ -322,10 +322,13 @@ def session_instruction(
     return line
 
 
-# The longest `/goal` condition published whole. Claude Code accepts 4,000 characters; the record
-# reader's own message cap is 2,000, so a longer one could only be offered as an excerpt, and a
-# partial goal is worse than none (DRC-4946). A goal this long publishes nothing.
-GOAL_CAP_CHARS = records.EXTRACT_TEXT_CAP_CHARS
+# The longest `/goal` condition published whole: the 4,000 characters Claude Code documents. The
+# record reader's 2,000-character message cap was the first choice and was an interpretation, not a
+# limit of the command: a condition between 2,000 and 4,000 was a real goal that published nothing.
+# The Goal field holds 240 and `_with_excerpt` already offers a longer one cut and marked, so the
+# whole words travel and nothing is clipped silently. Over the limit the record is not a goal
+# Claude Code could have accepted, and publishes nothing.
+GOAL_CAP_CHARS = 4000
 
 
 # The longest evaluator reason published. The reason is the small fast model's own sentence or two,
@@ -341,8 +344,10 @@ def _goal_attachment_event(attachment: Any, at: float | None) -> GoalEvent | Non
         return None
     condition = attachment.get("condition")
     text = condition if isinstance(condition, str) else ""
-    if attachment.get("sentinel") is True and attachment.get("met") is False:
-        return ("set", text, at, "")
+    if attachment.get("sentinel") is True:
+        # Measured on 2.1.309: the same sentinel carries `met: false` for a set and `met: true`
+        # for a clear of an active goal, with no reason, just before `Goal cleared:` prints.
+        return ("set", text, at, "") if attachment.get("met") is False else ("cleared", "", at, "")
     if attachment.get("met") is True:
         reason = attachment.get("reason")
         return ("verdict", text, at, reason if isinstance(reason, str) else "")
@@ -354,8 +359,10 @@ def _goal_event(record: Any) -> GoalEvent | None:
 
     Kinds: `set` (the sentinel `goal_status` attachment that carries the condition and is
     stamped the moment the command ran), `verdict` (the evaluator's `met: true`, with its
-    reason), `cleared` (the command's own printed answer). A subagent's record is never the
-    session's. Shapes: docs/captures/claude/goal-2.1.308-macos.jsonl.
+    reason), `cleared` (the sentinel carrying `met: true`, or the command's own printed answer).
+    `met: false` with `failed: true` is the evaluator giving up: no verdict and no end. A
+    subagent's record is never the session's. Shapes: docs/captures/claude/goal-2.1.308-macos.jsonl
+    and goal-clear-replace-verdicts-2.1.309-macos.jsonl.
     """
     if not isinstance(record, dict) or record.get("isSidechain") is True:
         return None
@@ -373,8 +380,8 @@ def _goal_event(record: Any) -> GoalEvent | None:
     ):
         return None
     printed = content.replace("<local-command-stdout>", "").strip()
-    # `Goal cleared:` is the documented wording for an active goal and was not captured;
-    # a met goal had already cleared itself and printed `No goal set`, which is not a clear.
+    # `Goal cleared:` is measured for an active goal (2.1.309); a met goal had already cleared
+    # itself and printed `No goal set`, which is not a clear.
     return ("cleared", "", at, "") if printed.startswith("Goal cleared") else None
 
 
