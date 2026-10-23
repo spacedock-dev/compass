@@ -188,8 +188,9 @@ export const goalVerdictRemoval = (why: string, path: string, at: string): strin
 export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
 export const goalVerdictClaim = (harness: string, at: string): string =>
   `${harness} marked this goal met at ${at}.`;
-export const goalGaveUpClaim = (harness: string, at: string): string =>
-  `${harness} gave up on this goal at ${at}.`;
+/* Names the product, not the payload's harness label ("Claude"): only Claude Code ends a goal this way, and the
+   Intent card's note says "Claude Code" too. */
+export const goalGaveUpClaim = (at: string): string => `Claude Code gave up on this goal at ${at}.`;
 /* A give-up is the harness's say-so about a goal it ended: Compass does not check it and it moves no level. */
 export const GOAL_GAVE_UP_LINE = 'Compass has not checked it, and it does not change the level.';
 export const GOAL_VERDICT_LINES: Readonly<Record<string, (why: string) => string>> = {

@@ -459,14 +459,14 @@ export function goalEndedNote(input: DraftInput): string {
     const earlier = stated['earlier'];
     const say = isRecord(earlier) ? EARLIER_GOAL[String(earlier['how'])] : undefined;
     const at = isRecord(earlier) ? firstMoment(earlier['at']) : null;
-    return say && at !== null ? say(clockText(at)) : '';
+    return say && at !== null ? say(datedClock(at)) : '';
   }
   const cleared = goalClearedAt(session);
   /* The sentence is drawn only over a box with no draft (IntentSection), so a chosen prompt that hides it
      leaves the clear to this note. */
   if (cleared === null || (!intentDrafted(input) && noDraftWhy(session, annotation, payload)))
     return '';
-  return `Your /goal was cleared at ${clockText(cleared)}`;
+  return `Your /goal was cleared at ${datedClock(cleared)}`;
 }
 
 /* Why the goal box arrives empty over a session that opened with a harness command: the command's name
@@ -483,7 +483,7 @@ export function noDraftWhy(session: Row, annotation: Annotation | null, payload:
   const held = String((isRecord(stated) && stated['text']) || '').trim();
   const cleared = goalClearedAt(session);
   const lead = `This session opened with ${command}, so there is no first prompt to draft a goal from.${
-    cleared === null ? '' : ` Your /goal was cleared at ${clockText(cleared)}.`
+    cleared === null ? '' : ` Your /goal was cleared at ${datedClock(cleared)}.`
   }`;
   /* The session's own /goal is not a draft, but a reader told only "no first prompt" would take the
      session for goal-less. */

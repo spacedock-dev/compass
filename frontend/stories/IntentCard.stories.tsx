@@ -4,6 +4,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { App } from '../src/App';
 import { ENDED_CAVEAT, INTENT_LEDE, INTENT_MEASURED } from '../src/intent/sentences';
 import { clock } from '../src/observed';
+import { datedClock } from '../src/observed/values';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
@@ -1191,7 +1192,7 @@ export const StateEarlierGoalReplaced: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
     await expect(endedNote(card)).toHaveTextContent(
-      `Replaced an earlier /goal at ${clock(1_760_000_450)}`,
+      `Replaced an earlier /goal at ${datedClock(1_760_000_450)}`,
     );
     await expect(endedNote(card)?.textContent).not.toContain('Keep the parser');
   },
@@ -1202,7 +1203,7 @@ export const StateEarlierGoalMet: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
     await expect(endedNote(card)).toHaveTextContent(
-      `An earlier /goal was met at ${clock(1_760_000_450)}`,
+      `An earlier /goal was met at ${datedClock(1_760_000_450)}`,
     );
   },
 };
@@ -1212,7 +1213,7 @@ export const StateEarlierGoalGivenUp: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
     await expect(endedNote(card)).toHaveTextContent(
-      `Claude Code gave up on an earlier /goal at ${clock(1_760_000_450)}`,
+      `Claude Code gave up on an earlier /goal at ${datedClock(1_760_000_450)}`,
     );
   },
 };
@@ -1224,7 +1225,7 @@ export const StateGoalCleared: Story = {
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
     await expect(endedNote(card)).toHaveTextContent(
-      `Your /goal was cleared at ${clock(1_760_000_450)}`,
+      `Your /goal was cleared at ${datedClock(1_760_000_450)}`,
     );
     // The cleared goal is never drafted: no "Goal detected" mark, and the source line is not a /goal's.
     await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
@@ -1247,7 +1248,7 @@ export const StateGoalClearedWhereTheSessionOpenedWithGoal: Story = {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
     // The existing sentence takes the clause, so it is said once and the separate line is absent.
     await expect(card).toHaveTextContent(
-      `This session opened with /goal, so there is no first prompt to draft a goal from. Your /goal was cleared at ${clock(1_760_000_450)}.`,
+      `This session opened with /goal, so there is no first prompt to draft a goal from. Your /goal was cleared at ${datedClock(1_760_000_450)}.`,
     );
     await expect(endedNote(card)).toBeNull();
     await expect(card.textContent?.match(/was cleared at/g)).toHaveLength(1);

@@ -16,9 +16,9 @@ const held = (earlier: unknown) => ({ session_goal: { text: GOAL, at: 500, earli
 
 describe('what became of an earlier /goal', () => {
   it.each([
-    ['replaced', /^Replaced an earlier \/goal at \d\d:\d\d$/],
-    ['met', /^An earlier \/goal was met at \d\d:\d\d$/],
-    ['gave-up', /^Claude Code gave up on an earlier \/goal at \d\d:\d\d$/],
+    ['replaced', /^Replaced an earlier \/goal at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/],
+    ['met', /^An earlier \/goal was met at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/],
+    ['gave-up', /^Claude Code gave up on an earlier \/goal at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/],
   ])('says %s under the Goal field, with its time', async (how, wording) => {
     const page = mountSession({ session: held({ how, at: 450 }) });
     await settle(page);
@@ -50,7 +50,9 @@ describe('what became of an earlier /goal', () => {
       session: { session_goal: null, session_goal_cleared: { at: 450 } },
     });
     await settle(page);
-    expect(text('[data-next-goal-ended]')).toMatch(/^Your \/goal was cleared at \d\d:\d\d$/);
+    expect(text('[data-next-goal-ended]')).toMatch(
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
+    );
   });
 
   it('says the clear once where the session opened with /goal, in the sentence that already exists', async () => {

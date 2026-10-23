@@ -35,6 +35,18 @@ function cleared(chosen: boolean): DraftInput {
   };
 }
 
+describe('an event on an earlier day', () => {
+  it('names the day, as the Drift notes do, so it never reads as today', () => {
+    const input = cleared(true);
+    expect(goalEndedNote(input)).toMatch(
+      /^Your \/goal was cleared at \d{4}-\d{2}-\d{2} \d\d:\d\d$/,
+    );
+    expect(noDraftWhy(cleared(false).session, null, input.payload)).toMatch(
+      /cleared at \d{4}-\d{2}-\d{2} \d\d:\d\d\./,
+    );
+  });
+});
+
 describe('goalEndedNote over a cleared, control-opened session', () => {
   it('leaves the clear to the opened-with sentence while no draft hides it', () => {
     const input = cleared(false);
@@ -46,6 +58,8 @@ describe('goalEndedNote over a cleared, control-opened session', () => {
   it('says the clear beside the Goal field when a chosen prompt hides that sentence', () => {
     const input = cleared(true);
     expect(intentDrafted(input)).toBe(true);
-    expect(goalEndedNote(input)).toMatch(/^Your \/goal was cleared at \d\d:\d\d$/);
+    expect(goalEndedNote(input)).toMatch(
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
+    );
   });
 });

@@ -20,8 +20,7 @@ export function GoalVerdictNote() {
       <div className="next-session-drift-limit" data-next-goal-gave-up>
         <p>
           <strong>{GOAL_VERDICT_LABEL}</strong>{' '}
-          {goalGaveUpClaim(harness, datedClock(gaveUp.at, ctx.shell.clock.now() / 1000))}{' '}
-          {GOAL_GAVE_UP_LINE}
+          {goalGaveUpClaim(datedClock(gaveUp.at, ctx.shell.clock.now() / 1000))} {GOAL_GAVE_UP_LINE}
         </p>
         {gaveUp.reason ? <p>{`Its reason: “${gaveUp.reason}”`}</p> : null}
       </div>

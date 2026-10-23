@@ -242,6 +242,18 @@ describe('the harness giving up on the goal, on the Drift card', () => {
     expect(note()).toBeNull();
   });
 
+  it('names Claude Code even where the payload labels the harness just Claude', async () => {
+    const page = mountDrift({
+      payload: { harnesses: [{ key: 'claude', label: 'Claude' }] },
+      session: gaveUp(),
+    });
+    await page.settle();
+    await page.settle();
+    const text = textOf('[data-next-goal-gave-up]');
+    expect(text).toContain('Claude Code gave up on this goal');
+    expect(text).not.toMatch(/Claude gave up/);
+  });
+
   it('reads the same beside an analysis and says Compass has not checked it', async () => {
     const page = mountDrift({
       session: { ...gaveUp(), ...checked('agrees', 'written-before') },
