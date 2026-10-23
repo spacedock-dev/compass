@@ -539,7 +539,8 @@ when it cannot. An idle Claude Code session whose last turn has no recorded fini
 its last recorded entry, and the result says so with that entry's time, never as a final verdict. General scope and the
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state
-tokens and changes no verdict. Each line reads "Departs; evidence #n", "Consistent with
+tokens and changes no verdict. A departure is a card whose What gives each cited entry as one line in its own words with its number (the
+agent said, you said, a failed check, a file write), with no Evidence or Source fold; the claims row does the same, and a number opens Full activity on that entry. Each other line reads "Consistent with
 #n, as the tool reported; not inspected", "Consistent with what the agent said at #n; not a
 check" where it rests on the agent's messages alone, "Consistent with what the session said at #n;
 not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it, never

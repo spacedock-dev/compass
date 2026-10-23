@@ -6654,3 +6654,36 @@ titled "Correction to copy". The correction joined a line ending in a stop to it
 - **The counter follows the text.** The count belongs to the box it was typed in; a rebuilt correction draws its
   own length rather than the previous box's.
 
+
+### Amended 2026-10-23 (owner): the citations are the source
+
+An owner walk of the Sample session on the draft pull request found the Drift card repeating itself. "What
+the agent claimed" listed "Agent message [43]", "Your message [80]", which told a reader nothing. Its Evidence
+fold then gave each entry's words again with the harness name and an "Evidence recorded at" line, and each
+entry's Source fold repeated the one record-type list ("agent_message · timestamped top-level assistant text
+record · exact"), once per entry. A departure card had the same Evidence fold under a What that already quoted
+the agent. Nothing about the reading changes; this is placement and wording on the card.
+
+- Each cited entry on a departure card and on the claims row is one line in its own words, then its number,
+  which still opens Full activity at that entry and lights every entry the finding cites: `Agent said: “…”`,
+  `You said: “…”`, `Failed check: <command>`, `File write: <path>`, the wording `citedLine` gives the citation
+  card, clipped the way the card clips it. On a departure the entry the title names keeps What's sentence ("At
+  18:43 the agent said “…”."); the others take the plain form. On the claims row a muted time of day follows the
+  number, so a claim and the check that contradicts it read in order; the titled sentence already says its
+  time. This amends the 2026-10-20 amendment for the claims row, which kept the entry's kind: the row's
+  heading already quotes the claim, so its own words stand beside it, and a quiet row that rests on the agent's
+  message ("Consistent with what the agent said at [n]") still names the kind alone.
+- The Evidence fold and every Source fold are gone from a departure card and the claims row. What only they
+  held either moved inline or was dropped. Moved: the stored `why`, the detail of a line never reached and the
+  harness's limit now draw in view under the card or row (`Qualifiers`), where a reader needed them to judge
+  the finding. Dropped: the label repeated as a heading, the "Departs; evidence #n" status (the label and What
+  say it), the harness and worker lines, the long-form time ("Evidence recorded at", "Call recorded at"), a
+  check's "Result recorded at" time and the record-type tags ("agent_message · …"), which were the same for
+  every entry of a kind. The type of a record is what the line's own wording already says, and a person who
+  needs the raw record opens the entry in Full activity, whose Source toggle is unchanged.
+- Quiet rows for the goal and expected outcomes keep their Evidence fold, which still holds the qualifier a
+  consistent line carries ("as the tool reported; not inspected") and the reason the page withholds a
+  verdict, but without a Source fold. The live level's recorded signals keep their own evidence list, which is
+  not a card.
+- The how-to, the sample tour, `HOW_TO_USE.md` and `SKILL.md` say the same: What, and the claims, name each
+  cited entry in its own words by number.
