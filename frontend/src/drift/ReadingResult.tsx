@@ -14,10 +14,8 @@ import { useDrift } from './context';
 import {
   arrivedLine,
   cantTellReason,
-  citedKind,
   citedLine,
   departureTitle,
-  departureWhat,
   claimHeading,
   claimReason,
   claimsDrawn,
@@ -32,7 +30,6 @@ import {
   resultWhere,
   resultWork,
   stampModel,
-  titledEntry,
   verdictLine,
   verdictShape,
   type Answer,
@@ -90,25 +87,14 @@ function jumpName(key: string): string {
   return `Expected outcome line ${key === 'output' ? '1' : key.slice(5)}`;
 }
 
-/* The cited entries of one finding, each as its number in the activity list and the kind of entry Compass
-   names. On a departure card and the claims row each is one line in its own words, attributed ('Agent said:
-   "…"', 'Failed check: …', 'File write: …'), the way the citation card says it, so the entry is in view and
-   reads as the agent's or yours, never as the result's (owner, 2026-10-23: the citations are the source, so no
-   Evidence or Source fold repeats them). A number opens
-   Full activity at that entry; an entry the page does not hold yet keeps the press that reads older pages for
-   it. The shape demotes a departure with no held citation, so a departure always reaches at least one
-   number. */
-function CitedEntries({
-  row,
-  quote = false,
-}: {
-  readonly row: Criterion;
-  /** A departure's What: each entry's own words, attributed. Elsewhere the kind alone, so a line read as
-   * consistent never stands beside the agent's "Done". */
-  readonly quote?: boolean;
-}) {
-  /* The claims row says each entry in its own words too, and its heading already quotes the claim. */
-  const lined = quote || row.key === CLAIMS;
+/* The cited entries of one finding, each one line in its own words, attributed ('Agent said: "…"', 'You said:
+   "…"', 'Failed check: …', 'File write: …'), then its number in the activity list and when it was recorded: the
+   way the citation card says it, the same on a departure card, the claims row and every quiet row (owner,
+   2026-10-23: the citations are the source, so nothing repeats them behind a fold, and an entry reads as the
+   agent's or yours, never as the result's). A number opens Full activity at that entry; an entry the page does
+   not hold yet keeps the press that reads older pages for it. The shape demotes a departure with no held
+   citation, so a departure always reaches at least one number. */
+function CitedEntries({ row }: { readonly row: Criterion }) {
   const { model, chooseFinding, jumpMissing } = useDrift();
   const record = useDisplayed((snapshot) =>
     snapshot.records.get(contextKey(model.projectKey, model.identity)),
@@ -143,29 +129,25 @@ function CitedEntries({
     );
   };
   /* A muted time of day after the number: when the entry was recorded, so a claim and the check that
-     contradicts it read in order. The titled entry's sentence on a departure already says its time. */
+     contradicts it read in order. */
   const at = (entry: WorkEntry) => {
     const seen = nextNumber(entry.at);
     return seen !== null && seen > 0 ? (
       <span className="ml-1.5 text-label text-muted-foreground">{clock(seen)}</span>
     ) : null;
   };
-  const titled = quote ? titledEntry(held) : null;
   const chips = held.length ? (
     <ul className="m-0 flex list-none flex-col gap-2 p-0" data-next-cited-entries={row.key}>
-      {held.map((entry) => {
-        const sentence = entry === titled;
-        return (
-          <li
-            key={String(entry.id || '')}
-            className="m-0 min-w-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
-          >
-            {sentence ? departureWhat([entry]) : lined ? citedLine(entry) : citedKind(entry)}
-            {link(entry)}
-            {lined && !sentence ? at(entry) : null}
-          </li>
-        );
-      })}
+      {held.map((entry) => (
+        <li
+          key={String(entry.id || '')}
+          className="m-0 min-w-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
+        >
+          {citedLine(entry)}
+          {link(entry)}
+          {at(entry)}
+        </li>
+      ))}
     </ul>
   ) : null;
   /* Kept while its "could not be loaded" sentence stands, so the way back from that sentence has a place to
@@ -199,15 +181,8 @@ function CitedEntries({
   );
 }
 
-/* The shape labels a line in capitals ("GOAL FROM YOUR PROMPT"); Evidence heads with it in a sentence's case. */
-function sentenceCase(label: string): string {
-  const lower = label.toLowerCase();
-  return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
-}
-
-/* What a line says beyond its status: its why, the detail of a line never reached and the harness's limit. Said
-   in view on a departure card and the claims row, whose cited entries are their own source; behind Evidence on
-   the other rows. */
+/* What a line says beyond its status, in view under it: its why, the detail of a line never reached and the
+   harness's limit. */
 function Qualifiers({
   row,
   reasoned = false,
@@ -228,29 +203,17 @@ function Qualifiers({
   );
 }
 
-/* The line's label, its full status, its why and the limit, one click away under "Evidence", as before the
-   cards: moved, never dropped. A departure card and the claims row have no such fold: each cited entry is a
-   line of its own words with its number, and that is the source (owner, 2026-10-23). The why stays here because
-   the reason for Can't tell stays inside Evidence (owner, 2026-10-14). */
-function EvidenceMore({ row, status }: { readonly row: Criterion; readonly status: string }) {
+/* What the full status adds to the short one the row's heading carries: "as the tool reported; not inspected"
+   or "not a check", which the fold used to hold and a consistent line must not lose. */
+function StatusQualifier({ row, status }: { readonly row: Criterion; readonly status: string }) {
   const { model } = useDrift();
-  const reasoned = Boolean(claimHeading(row, model.numbers)) || resultState(row) === 'cant-tell';
-  const full = reasoned ? status : resultStatus(row, model.numbers, model.byId);
+  const full = resultStatus(row, model.numbers, model.byId);
+  if (full === status) return null;
+  const extra = full.startsWith(status) ? full.slice(status.length).replace(/^[,;]\s*/, '') : full;
   return (
-    <Why name={`result-evidence:${row.key}`} summary="Evidence">
-      <p
-        className="m-0 text-body font-semibold leading-[1.45] text-foreground"
-        data-next-evidence-head
-      >
-        {sentenceCase(row.label)}
-      </p>
-      {full === status ? null : (
-        <span className="next-cockpit-reading-evidence">
-          <CitedText text={full} />
-        </span>
-      )}
-      <Qualifiers row={row} reasoned={reasoned} />
-    </Why>
+    <span className="next-cockpit-reading-evidence">
+      <CitedText text={extra} />
+    </span>
   );
 }
 
@@ -291,7 +254,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
         </div>
         <div className="flex max-w-[45rem] flex-col gap-1" data-next-departure-what>
           <p className={LABEL}>What</p>
-          <CitedEntries row={row} quote />
+          <CitedEntries row={row} />
         </div>
         <div className="flex max-w-[45rem] flex-col gap-0.5" data-next-departure-why>
           <p className={LABEL}>Why Compass reads this as drift</p>
@@ -396,11 +359,8 @@ function QuietRow({
           </span>
         ) : null}
         <CitedEntries row={row} />
-        {claims ? (
-          <Qualifiers row={row} reasoned={cantTell || Boolean(claim)} />
-        ) : (
-          <EvidenceMore row={row} status={status} />
-        )}
+        {claims || cantTell ? null : <StatusQualifier row={row} status={status} />}
+        <Qualifiers row={row} reasoned={cantTell || Boolean(claim)} />
       </span>
     </Tag>
   );

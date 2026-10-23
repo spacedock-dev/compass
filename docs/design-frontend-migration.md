@@ -403,7 +403,7 @@ before comparing, and every other field of the analysis level stays held to the 
 untouched. The departure cards that replace "Model assessment" in the same change draw from the same
 `result.ts` functions, which the `drift__result` comparison still holds unchanged. The first analysis
 journey proof (`frontend/e2e/journey-budget.mjs`, run on demand) now finds the departure's account in
-its card and its cited entries under What; each entry's recorded time moved behind Evidence. (Amended 2026-10-23: a departure card and the claims row have no Evidence fold now; see [the design record](design-reading-a-session.md#amended-2026-10-23-owner-the-citations-are-the-source).)
+its card and its cited entries under What; each entry's recorded time moved behind Evidence. (Amended 2026-10-23: the result has no Evidence fold now; see [the design record](design-reading-a-session.md#amended-2026-10-23-owner-the-citations-are-the-source).)
 
 ## The ownership map
 

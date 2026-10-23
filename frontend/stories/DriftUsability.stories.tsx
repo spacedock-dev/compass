@@ -93,9 +93,8 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
     await expect(whats).toHaveLength(2);
     for (const what of whats) {
       await expect(what).toHaveTextContent(/\[\d+\]/);
-      await expect(what).toHaveTextContent(
-        `At ${clock(650)} the agent said “${SAID.replace(/\.$/, '')}”.`,
-      );
+      await expect(what).toHaveTextContent(`Agent said: “${SAID}”`);
+      await expect(what).toHaveTextContent(clock(650));
       await expect(
         within(what).getByRole('link', { name: /Show .* in Full activity/ }),
       ).toBeVisible();
@@ -131,9 +130,7 @@ export const ADepartureCardHasNoEvidenceOrSourceFold: Story = {
     const goal = drift.querySelector('[data-next-departure="goal"]') as HTMLElement;
     await expect(within(goal).queryByRole('button', { name: /^(Evidence|Source)/ })).toBeNull();
     const line = goal.querySelector('[data-next-cited-entries] > li') as HTMLElement;
-    await expect(line).toHaveTextContent(
-      new RegExp(`^At ${clock(650)} the agent said “.+”\\.\\[\\d+\\]$`),
-    );
+    await expect(line).toHaveTextContent(new RegExp(`^Agent said: “.+”\\[\\d+\\]${clock(650)}$`));
     await expect(goal.textContent).not.toContain('UTC');
     await expect(goal.textContent).not.toContain('Evidence recorded at');
     await expect(goal.textContent).not.toContain('Departs; evidence');

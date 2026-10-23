@@ -540,14 +540,13 @@ its last recorded entry, and the result says so with that entry's time, never as
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state
 tokens and changes no verdict. A departure is a card whose What gives each cited entry as one line in its own words with its number (the
-agent said, you said, a failed check, a file write), with no Evidence or Source fold; the claims row does the same, and a number opens Full activity on that entry. Each other line reads "Consistent with
+agent said, you said, a failed check, a file write), with no Evidence or Source fold; the claims row and every quiet row do the same, and a number opens Full activity on that entry. Each other line reads "Consistent with
 #n, as the tool reported; not inspected", "Consistent with what the agent said at #n; not a
 check" where it rests on the agent's messages alone, "Consistent with what the session said at #n;
-not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it, never
-"Done". A line that rules out a folder, or limits the work to one, departs on a file write the record holds
+not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it; the result's own words never say "Done" (an agent message it cites is quoted and attributed to the agent). A line that rules out a folder, or limits the work to one, departs on a file write the record holds
 there, whatever the reading said; a recorded passing check that covers a line is cited ahead of the agent's
 message on it, which it does only where the line claims that kind of check's result ("the tests pass"), never for a line that merely names the subject ("the lint config is left alone"). Unfinished work in flight
-at a non-final stop has its own result and cited explanation under Evidence. It raises no
+at a non-final stop has its own result and cited explanation in view. It raises no
 departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
 counts as departure. While a turn is open, a departure that rests on messages alone is stored as not

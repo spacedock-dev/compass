@@ -6664,26 +6664,26 @@ entry's Source fold repeated the one record-type list ("agent_message · timesta
 record · exact"), once per entry. A departure card had the same Evidence fold under a What that already quoted
 the agent. Nothing about the reading changes; this is placement and wording on the card.
 
-- Each cited entry on a departure card and on the claims row is one line in its own words, then its number,
-  which still opens Full activity at that entry and lights every entry the finding cites: `Agent said: “…”`,
-  `You said: “…”`, `Failed check: <command>`, `File write: <path>`, the wording `citedLine` gives the citation
-  card, clipped the way the card clips it. On a departure the entry the title names keeps What's sentence ("At
-  18:43 the agent said “…”."); the others take the plain form. On the claims row a muted time of day follows the
-  number, so a claim and the check that contradicts it read in order; the titled sentence already says its
-  time. This amends the 2026-10-20 amendment for the claims row, which kept the entry's kind: the row's
-  heading already quotes the claim, so its own words stand beside it, and a quiet row that rests on the agent's
-  message ("Consistent with what the agent said at [n]") still names the kind alone.
-- The Evidence fold and every Source fold are gone from a departure card and the claims row. What only they
-  held either moved inline or was dropped. Moved: the stored `why`, the detail of a line never reached and the
-  harness's limit now draw in view under the card or row (`Qualifiers`), where a reader needed them to judge
-  the finding. Dropped: the label repeated as a heading, the "Departs; evidence #n" status (the label and What
-  say it), the harness and worker lines, the long-form time ("Evidence recorded at", "Call recorded at"), a
-  check's "Result recorded at" time and the record-type tags ("agent_message · …"), which were the same for
-  every entry of a kind. The type of a record is what the line's own wording already says, and a person who
-  needs the raw record opens the entry in Full activity, whose Source toggle is unchanged.
-- Quiet rows for the goal and expected outcomes keep their Evidence fold, which still holds the qualifier a
-  consistent line carries ("as the tool reported; not inspected") and the reason the page withholds a
-  verdict, but without a Source fold. The live level's recorded signals keep their own evidence list, which is
-  not a card.
-- The how-to, the sample tour, `HOW_TO_USE.md` and `SKILL.md` say the same: What, and the claims, name each
-  cited entry in its own words by number.
+- Each cited entry on a departure card, on the claims row and on every quiet goal or outcome row is one line
+  in its own words, then its number, which still opens Full activity at that entry and lights every entry the
+  finding cites, then a muted time of day: `Agent said: “…” [43] 18:47`, `You said: “…” [80]`,
+  `Failed check: <command> [81]`, `File write: <path> [n]`, the wording `citedLine` gives the citation card,
+  clipped the way the card clips it. A departure's titled entry takes the same form, so every line on the card
+  reads alike; What no longer opens with "At 18:43 the agent said". This amends the 2026-10-20 amendment, which
+  kept a quiet row to the entry's kind so that a line read as consistent never stood beside the agent's own
+  "Done": the owner ruled that a cited message is the agent's words, attributed, wherever it is cited, and the
+  check mark is still said as "[check mark]" and never drawn.
+- The Evidence fold and every Source fold are gone from the result: a departure card, the claims row and the
+  quiet rows. What only they held either moved inline or was dropped. Moved: the status qualifier a
+  consistent line carries ("as the tool reported; not inspected", "not a check"), the stored `why`, the detail of
+  a line never reached, the harness's limit and the reason for Can't tell now draw in view under the line
+  (`StatusQualifier`, `Qualifiers`). Dropped: the label repeated as a heading, the "Departs; evidence #n"
+  status (the label and What say it), the harness and worker lines, the long-form time ("Evidence recorded at",
+  "Call recorded at"), a check's "Result recorded at" time and the record-type tags ("agent_message · …"),
+  which were the same for every entry of a kind. A person who needs the raw record opens the entry in Full
+  activity, whose Source toggle is unchanged. The 2026-10-14 ruling that kept the reason for Can't tell inside
+  Evidence was already superseded by the 2026-10-21 amendment; this removes the fold itself.
+- The live level's recorded signals keep their own evidence list, which is not a card or a line of the result.
+- The how-to and `HOW_TO_USE.md` say nothing about these folds and are unchanged. This change updates the
+  sample tour (`frontend/src/sample/tour.ts`), the shipped skill body (`SKILL.md`) and the pointer in
+  [the frontend migration record](design-frontend-migration.md).

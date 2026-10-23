@@ -83,20 +83,32 @@ describe('the cited entries on a claim row and a departure card', () => {
     expect(found[1]).toMatch(/^Failed check: pytest -q ?\[\d+\]/);
   });
 
-  it('draws one line per cited entry on a departure card, the titled one as its What sentence', async () => {
+  it('draws one line per cited entry on a departure card, in the same form as the claims row', async () => {
     await mount();
     const card = document.querySelector('[data-next-departure="line_1"]') as HTMLElement;
     const found = lines(card);
     expect(found).toHaveLength(2);
     expect(found.join(' ')).toContain('pytest -q');
     expect(found.join(' ')).toContain('Agent said: “The queue is done and the tests pass.”');
+    expect(found.join(' ')).not.toContain('At ');
   });
 
-  it('has no Evidence or Source fold on either', async () => {
+  it('draws a quiet goal row the same way, with no kind-only label', async () => {
+    await mount();
+    const goal = document.querySelector('[data-next-result-goal]') as HTMLElement;
+    const found = lines(goal);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatch(/^Agent said: “The queue is done and the tests pass\.” ?\[\d+\]/);
+    expect(goal.textContent).not.toContain('Agent message');
+  });
+
+  it('has no Evidence or Source fold anywhere on the result', async () => {
     await mount();
     for (const node of [
       document.querySelector('[data-next-result-claims]'),
+      document.querySelector('[data-next-result-goal]'),
       ...document.querySelectorAll('[data-next-departure]'),
+      document.querySelector('[data-next-result]'),
     ]) {
       const names = [...(node as HTMLElement).querySelectorAll('button')].map(
         (button) => button.textContent ?? '',

@@ -15,7 +15,7 @@ import {
   TELLS_THE_PERSON,
   UNKNOWN_KEY,
 } from '../src/drift/sentences';
-import { neverDone } from './drift.checks';
+import { neverDone, noCheckMark } from './drift.checks';
 import { routeFor } from './drift.reasons';
 import {
   DEPARTURE_READING,
@@ -270,6 +270,8 @@ export const TwoDeparturesACantTellAndAClaim: Story = {
     const drift = await card(canvasElement);
     const shown = await result(drift);
     await stamp(drift);
+    // No Evidence or Source button anywhere in the result: cards, claim row and quiet rows alike.
+    await noFolds(shown);
     // The answer is the verdict sentence under the card's heading, said once.
     await expect(await verdictOf(drift)).toHaveTextContent('2 departures');
     await expect(drift.querySelector('[data-next-result-heading]')).toBeNull();
@@ -420,9 +422,10 @@ export const NotReachedAndConsistentWithACheck: Story = {
     const line = quietRow(quiet, 'line_1');
     await expect(line).toHaveAttribute('data-next-result-state', 'not-reached');
     await expect(line).toHaveTextContent('Not reached at this stop · “Tests pass”');
-    // The tool's report is named as the tool's, in full, behind Evidence.
-    await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
-    await waitFor(() => expect(goal).toHaveTextContent('as the tool reported; not inspected'));
+    // The tool's report is named as the tool's, in full, in view: no Evidence fold holds it.
+    await noFolds(goal);
+    await noFolds(line);
+    await expect(goal).toHaveTextContent('as the tool reported; not inspected');
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await neverDone(shown);
   },
@@ -500,9 +503,12 @@ export const ConsistentWithTheAgent: Story = {
     });
     await expect(goal).toHaveTextContent(/^Consistent with what the agent said at \[\d+\]/);
     await citesResolvably(goal, 'Goal', 'Ship the queue');
-    await expect(goal.textContent).not.toContain('All green locally');
-    await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
-    await waitFor(() => expect(goal).toHaveTextContent('; not a check'));
+    // The cited entry is one line in its own words, like every other line on the card; nothing is folded.
+    await expect(citedLines(goal)[0]).toHaveTextContent(
+      /^Agent said: “All green locally: the tests pass\.”\[\d+(\.\d+)?\]/,
+    );
+    await noFolds(goal);
+    await expect(goal).toHaveTextContent('not a check');
     await neverDone(shown);
   },
 };
@@ -617,10 +623,10 @@ export const ARecordedWriteSettlesALineThatRulesOutItsFolder: Story = {
       'Expected outcome line 1',
     );
     await expect(chips(cards[0] as HTMLElement)).toHaveLength(2);
-    // Each written file is one line with its number: the first as the What sentence, the other in the plain form.
+    // Each written file is one line in the same plain form, with its number and when.
     const written = citedLines(cards[0] as HTMLElement);
     await expect(written[0]).toHaveTextContent(
-      /^At \d\d:\d\d the agent changed frontend\/e2e\/support\/state\.ts\.\[\d+(\.\d+)?\]$/,
+      /^File write: frontend\/e2e\/support\/state\.ts\[\d+(\.\d+)?\]\d\d:\d\d$/,
     );
     await expect(written[1]).toHaveTextContent(
       /^File write: frontend\/e2e\/a\.spec\.ts\[\d+(\.\d+)?\]\d\d:\d\d$/,
@@ -882,12 +888,17 @@ export const AgentDoneIsNeverDrawnInTheResult: Story = {
     });
     await citesResolvably(goal, 'Goal', 'Ship the queue');
     await expect(chips(goal)).toHaveLength(1);
-    await expect(chips(goal)[0]?.previousSibling?.textContent).toBe('Agent message');
+    // Owner, 2026-10-23: a cited message is the agent's own words, attributed, on every row. The check mark is
+    // still said in words, never drawn.
+    await expect(chips(goal)[0]?.previousSibling?.textContent).toBe(
+      'Agent said: “Done [check mark] the queue ships.”',
+    );
+    await noFolds(goal);
     // The entry is in the record: Full activity, outside the result, still carries the agent's words.
     await expect(document.querySelector('[data-next-entry-id="m2"]')?.textContent ?? '').toContain(
       'the queue ships',
     );
-    await neverDone(shown);
+    await noCheckMark(shown);
   },
 };
 

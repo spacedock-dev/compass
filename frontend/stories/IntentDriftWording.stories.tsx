@@ -194,7 +194,8 @@ async function evidenceOf(canvasElement: HTMLElement) {
     ),
   );
   const goal = canvasElement.querySelector('[data-next-result-goal]') as HTMLElement;
-  await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
+  // The reason is in view under the line; no Evidence fold holds it (owner, 2026-10-23).
+  await expect(within(goal).queryByRole('button', { name: /^(Evidence|Source)/ })).toBeNull();
   return goal;
 }
 
