@@ -432,6 +432,44 @@ class TheCollectorPublishesTheGoalTest(HarnessContractTestCase):
         self.assertIsNone(runtime_sessions.base_session("claude", "s", "p")["session_goal"])
 
 
+class AGoalSessionIsNamedByTheGoalItHoldsTest(HarnessContractTestCase):
+    """The name every surface shows is `title`; a `/goal` opener must not name a goal no longer held."""
+
+    def title(self, records: list[dict[str, Any]]) -> str | None:
+        (row,) = self.sessions_for(self.collect(_store(records), when=self.NOW), "claude")
+        title: str | None = row["title"]
+        return title
+
+    def test_a_replaced_goal_names_the_session_by_the_goal_held_now(self) -> None:
+        when = self.NOW - 100
+        opener = prompt(when, f"/goal {CONDITION}")
+        title = self.title([opener, *set_goal(when + 1), *set_goal(when + 50, LATER_CONDITION)])
+        self.assertEqual(LATER_CONDITION, title)
+
+    def test_a_cleared_goal_does_not_name_the_session(self) -> None:
+        when = self.NOW - 100
+        opener = prompt(when, f"/goal {CONDITION}")
+        title = self.title([opener, *set_goal(when + 1), clear_sentinel(when + 20)])
+        self.assertFalse((title or "").startswith("/goal"))
+        self.assertNotIn(CONDITION[:20], title or "")
+
+    def test_a_cleared_goal_session_is_named_by_its_next_real_prompt(self) -> None:
+        when = self.NOW - 100
+        records = [
+            prompt(when, f"/goal {CONDITION}"),
+            *set_goal(when + 1),
+            clear_sentinel(when + 20),
+            prompt(when + 30, "Tidy the placeholder module"),
+        ]
+        self.assertEqual("Tidy the placeholder module", self.title(records))
+
+    def test_a_generated_title_keeps_the_session_name(self) -> None:
+        when = self.NOW - 100
+        ai = {"type": "ai-title", "aiTitle": "Generated name", "timestamp": _iso(when + 2)}
+        records = [prompt(when, f"/goal {CONDITION}"), *set_goal(when + 1), ai]
+        self.assertEqual("Generated name", self.title(records))
+
+
 class TheSourceIsInTheClosedVocabularyTest(unittest.TestCase):
     def test_the_producer_names_it_among_the_prompt_sources(self) -> None:
         self.assertEqual("session-goal", reading.SESSION_GOAL)

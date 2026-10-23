@@ -217,6 +217,13 @@ def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str 
                 break
 
     if title is None:
+        # A held `/goal` names the session, so the page never shows the condition of a goal that
+        # was replaced or cleared (the opener is the first condition, and nothing else says so).
+        # Behind the `ai-title` check: a generated name is the session's identity and stays.
+        goal = session_goal(config, state, path)
+        if goal is not None:
+            title = transcripts.prompt_title(config, goal["text"])
+    if title is None:
         try:
             with open(path, encoding="utf-8", errors="replace") as source:
                 for line in source:
@@ -234,7 +241,11 @@ def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str 
                     prompt = records.extract_text(
                         records.message_dict(record).get("content")
                     ).strip()
-                    title = transcripts.prompt_title(config, prompt)
+                    candidate = transcripts.prompt_title(config, prompt)
+                    # The opener of a goal no longer held names nothing; the next prompt does.
+                    if candidate and candidate.split()[0] == "/goal":
+                        continue
+                    title = candidate
                     break
         except OSError:
             pass
