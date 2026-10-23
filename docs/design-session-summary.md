@@ -196,8 +196,8 @@ an honest limit moves and is never deleted still holds.
 
 The owner and design lead settled on 2026-10-20 that What the session has done is the high-level
 play-by-play, and the page order puts it after the Drift card. The lede stays open. Each phase is an
-accordion, which [the 2026-10-21 amendment](#amended-2026-10-21-the-card-reads-like-the-design) opens
-by default. What a reader should know about a phase sits on its heading, outside
+accordion that arrives closed, by [the 2026-10-23 amendment](#amended-2026-10-23-owner-phases-arrive-closed),
+which reversed the 2026-10-21 choice to open them. What a reader should know about a phase sits on its heading, outside
 the fold and right-aligned as pills: one for each departure the phase holds evidence for, which goes to
 that card, and a red count of its failed test runs. A phase with nothing to say has no pill. The open
 state is the reader's own, kept in the disclosure store under the session and the phase's place.
@@ -637,7 +637,7 @@ ceilings and every earlier ruling are unchanged.
   Full activity, so no chip can open it. The page counted these after the opening and most bullets.
   It now counts the distinct ids across the whole summary and says it in one line at the foot of
   the card, before the relevance sentence. A chip still draws wherever the page can open one.
-- **Phases arrive open.** Each phase opens the first time its key is drawn, so a reader sees the
+- **Phases arrive open.** (Reversed on 2026-10-23: [phases arrive closed](#amended-2026-10-23-owner-phases-arrive-closed).) Each phase opens the first time its key is drawn, so a reader sees the
   opening and its bullets with no press, and each phase appears open as a part lands. A phase the
   reader closes stays closed through every later board, because the write that opens it is the
   disclosure store's own and the reader's close is the next one. [The reader-state row](design-reader-state.md#the-inventory)
@@ -686,6 +686,24 @@ of 51 and 2 of 47, 3 of 98 (3.1%). The current prompts withheld nothing for a sh
 nothing from a title, and the mean bullet fell from 20.7 words to 13.9. A first pair of runs
 miscounted the lede and is not used. Each arm is two runs of one session, so this shows that the
 rate is no worse than the 13.3% the earlier prompts reached, not by how much it improved.
+
+### Amended 2026-10-23 (owner): phases arrive closed
+
+The owner reversed "Phases arrive open" from the 2026-10-21 amendment. That choice came from a walk
+that found a closed summary easy to miss, and it left a reader with a page-long wall of bullets. Every
+phase of What the session has done now starts closed, including one that holds a departure. The
+opening paragraph stays open. What a reader needs from a closed phase stays on its heading: the
+departure pills and the failed-run count are drawn outside the fold, so nothing a phase holds depends on
+opening it.
+
+A phase the reader opens stays open through later boards, under the same disclosure-store rule as before
+([the reader-state row](design-reader-state.md#the-inventory)): the page writes nothing on first draw, so
+the first write under a phase's key is the reader's. The only other writer is the line on a departure card
+that names the phase holding its evidence: that press opens the phase it goes to, so the evidence it points at
+is in view. A pill on a phase heading goes to the departure card, which is outside every phase, so it needs no
+such write. A citation chip inside a phase lands in Full activity, which the chip's own press opens, so no
+chip relies on its phase being open. The sample session's tour mark sits on a heading's pills and is
+unaffected. No other ruling in this record changes.
 
 ### No completion words
 

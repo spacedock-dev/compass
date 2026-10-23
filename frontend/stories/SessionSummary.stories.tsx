@@ -1028,6 +1028,9 @@ export const DepartureMarked: Story = {
     });
     await expect(marked.dataset['nextSummaryPhase']).toBe('1:0');
     await expect(summary.querySelectorAll('[data-next-summary-marked]')).toHaveLength(1);
+    // A phase that holds a departure starts closed like the rest, its pill still on the heading.
+    const phaseTrigger = marked.querySelector('[data-slot="accordion-trigger"]');
+    await expect(phaseTrigger).toHaveAttribute('aria-expanded', 'false');
     await expect(marked.querySelector('[data-next-summary-holds]')).toHaveTextContent(
       `${SUMMARY_HOLDS}Departure · Goal`,
     );
@@ -1044,6 +1047,8 @@ export const DepartureMarked: Story = {
       }),
     );
     await waitFor(() => expect(document.activeElement).toBe(within(marked).getByRole('heading')));
+    // The jump names the phase that holds the evidence, so it opens that phase.
+    await expect(phaseTrigger).toHaveAttribute('aria-expanded', 'true');
   },
 };
 
@@ -2072,33 +2077,32 @@ export const MissingLineStaysInTheOutline: Story = {
   },
 };
 
-/* The phases arrive open, so the opening and its bullets are in view with no press: the design shows the story, not
-   a column of closed headings. A reader who closes one keeps it closed through the next board. */
-export const BulletsInViewOnFirstRender: Story = {
+/* The phases arrive closed, so the opening and a short list of headings are what a reader sees first, and the
+   reader opens only the phases they want. A phase the reader opens stays open through the next board. */
+export const PhasesStartClosedAndStayOpenOnceOpened: Story = {
   render: () => <SummaryPage summary={storedSummary()} />,
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     const phases = [...summary.querySelectorAll<HTMLElement>('[data-next-summary-phase]')];
     await expect(phases).toHaveLength(2);
+    await expect(summary.querySelector('[data-next-summary-lede]')).toBeVisible();
+    const trigger = (n: number) =>
+      phases[n]?.querySelector('[data-slot="accordion-trigger"]') as HTMLElement;
     for (const phase of phases) {
       await expect(phase.querySelector('[data-slot="accordion-trigger"]')).toHaveAttribute(
         'aria-expanded',
-        'true',
+        'false',
       );
-      const bullets = [...phase.querySelectorAll<HTMLElement>('[data-next-summary-bullet]')];
-      await expect(bullets.length).toBeGreaterThan(0);
-      for (const bullet of bullets) await waitFor(() => expect(bullet).toBeVisible());
+      await expect(phase.querySelector('h3')).toBeVisible();
+      for (const bullet of phase.querySelectorAll<HTMLElement>('[data-next-summary-bullet]'))
+        await expect(bullet).not.toBeVisible();
     }
-    const trigger = phases[0]?.querySelector('[data-slot="accordion-trigger"]') as HTMLElement;
-    await userEvent.click(trigger);
-    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(trigger(0));
+    await expect(trigger(0)).toHaveAttribute('aria-expanded', 'true');
     await poll();
-    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    await expect(phases[1]?.querySelector('[data-slot="accordion-trigger"]')).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    await expect(trigger(0)).toHaveAttribute('aria-expanded', 'true');
+    await expect(trigger(1)).toHaveAttribute('aria-expanded', 'false');
   },
 };
 

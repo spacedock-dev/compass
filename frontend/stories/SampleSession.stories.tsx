@@ -466,10 +466,10 @@ export const FindingCitingTheOlderPageTintsIt: Story = {
   },
 };
 
-/* Each phase of the summary arrives open, with its lines in view; what it holds a reader should know about sits
-   on its head, outside the fold: the departures its entries are evidence for, and a count of its failed test
-   runs. A reader can still fold one. */
-export const PhasesOpenAndMarkTheirHeads: Story = {
+/* Each phase of the summary arrives closed; what it holds a reader should know about sits on its head, outside
+   the fold: the departures its entries are evidence for, and a count of its failed test runs. A reader opens
+   one to read its lines. */
+export const PhasesStartClosedAndMarkTheirHeads: Story = {
   render: () => <SampleExample fragment={SAMPLE_FRAGMENT} />,
   play: async ({ canvasElement }) => {
     await loaded(canvasElement);
@@ -477,9 +477,9 @@ export const PhasesOpenAndMarkTheirHeads: Story = {
     await expect(phases.length).toBeGreaterThan(3);
     for (const phase of phases) {
       const trigger = phase.querySelector('[data-slot="accordion-trigger"]');
-      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       const line = phase.querySelector('[data-next-summary-bullet]');
-      if (line) await waitFor(() => expect(line).toBeVisible());
+      if (line) await expect(line).not.toBeVisible();
     }
     const held = phases.find((phase) => phase.querySelector('[data-next-summary-holds]'));
     await expect(held).toBeDefined();
@@ -492,12 +492,10 @@ export const PhasesOpenAndMarkTheirHeads: Story = {
       /^\d+ test failures?$/,
     );
     await expect(failing?.querySelector('[data-next-summary-failures]')).toBeVisible();
-    // Folding a phase hides its lines.
+    // Opening a phase shows its lines.
     const trigger = failing?.querySelector('[data-slot="accordion-trigger"]') as HTMLElement;
     await userEvent.click(trigger);
-    await waitFor(() =>
-      expect(failing?.querySelector('[data-next-summary-bullet]')).not.toBeVisible(),
-    );
+    await waitFor(() => expect(failing?.querySelector('[data-next-summary-bullet]')).toBeVisible());
   },
 };
 

@@ -7,7 +7,7 @@ import {
   type SummaryGrant,
   type SummaryJob,
 } from '../api/summary';
-import { Disclosure, disclosureKey } from '../controls';
+import { Disclosure, disclosureKey, useControls } from '../controls';
 import { useDrift } from '../drift/context';
 import { ModelNotice, NoticeBody } from '../drift/ModelNotice';
 import { Why } from '../drift/Why';
@@ -612,6 +612,11 @@ function Mark({
   );
 }
 
+/* A phase is a disclosure that arrives closed (owner, 2026-10-23); this is its reader-state key, shared with the
+   jump that opens it. */
+const phaseDisclosureKey = (project: string, scope: string, place: string) =>
+  disclosureKey({ project, scope, name: `summary-phase:${place}` });
+
 /* A press that moves focus to another card on this page. It reads, so the sample keeps it live, as it keeps the
    jump from a cited entry back to its finding. */
 export function JumpButton({
@@ -619,11 +624,14 @@ export function JumpButton({
   label,
   name,
   className = 'cursor-pointer border-0 bg-transparent p-0 text-label text-[var(--clay)] underline',
+  onJump,
 }: {
   readonly target: string;
   readonly label: string;
   readonly name: string;
   readonly className?: string;
+  /** Runs before the focus moves, for a target that sits inside a closed disclosure. */
+  readonly onJump?: () => void;
 }) {
   return (
     <button
@@ -633,6 +641,7 @@ export function JumpButton({
       data-next-cockpit-action="finding-jump"
       data-next-summary-jump={target}
       onClick={() => {
+        onJump?.();
         const node = document.getElementById(target);
         if (!node) return;
         node.focus({ preventScroll: true });
@@ -813,12 +822,7 @@ export function SummaryView({
                   aria-labelledby={phaseId(state.key, place)}
                 >
                   <Disclosure
-                    disclosureKey={disclosureKey({
-                      project: model.project,
-                      scope: model.key,
-                      name: `summary-phase:${place}`,
-                    })}
-                    openByDefault
+                    disclosureKey={phaseDisclosureKey(model.project, model.key, place)}
                     className="next-summary-phase [&_[data-slot=accordion-trigger]]:min-h-[34px] [&_[data-slot=accordion-trigger]]:font-semibold [&_[data-slot=accordion-trigger]]:text-foreground"
                     headerProps={{
                       render: <h3 className="m-0 text-body font-semibold text-foreground" />,
@@ -908,6 +912,7 @@ export function SummaryView({
    is not the current account. */
 export function DepartureSummaryLine({ row }: { readonly row: string }) {
   const { model } = useDrift();
+  const { disclosures } = useControls();
   const marks = useSummaryMarks();
   const mark = marks.departures.get(row);
   if (!mark || !marks.summary) return null;
@@ -933,6 +938,9 @@ export function DepartureSummaryLine({ row }: { readonly row: string }) {
             target={phaseId(key, place)}
             label={title}
             name={`Go to the summary phase that holds this evidence: ${title}`}
+            onJump={() => {
+              disclosures.set(phaseDisclosureKey(model.project, key, place), true);
+            }}
           />
         ))
       ) : (
