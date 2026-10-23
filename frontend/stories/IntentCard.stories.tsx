@@ -700,6 +700,37 @@ export const PromptMenuPick: Story = {
   },
 };
 
+/* At phone width the Find goal and Use your prompt buttons must wrap below the "Goal" label, never squeeze it
+   until the word breaks mid-way. */
+export const GoalLabelStaysOneWordAtPhoneWidth: Story = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const browserPage =
+      '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
+    const before = { width: window.innerWidth, height: window.innerHeight };
+    if (browserPage) await browserPage.viewport(400, 667);
+    try {
+      const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+      const label = card.querySelector('label[for]') as HTMLElement;
+      await expect(label.textContent).toBe('Goal');
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      // One line box for the word: it did not break, and nothing squeezed it narrower than its text.
+      await expect(range.getClientRects()).toHaveLength(1);
+      await expect(label.scrollWidth).toBeLessThanOrEqual(
+        Math.ceil(label.getBoundingClientRect().width),
+      );
+      const buttons = card.querySelector(
+        '[data-next-cockpit-held-field="goal"] .next-cockpit-held-heading',
+      );
+      await expect(buttons?.scrollWidth).toBeLessThanOrEqual((buttons?.clientWidth ?? 0) + 1);
+    } finally {
+      if (browserPage) await browserPage.viewport(before.width, before.height);
+    }
+  },
+};
+
 export const MovedControlsInQuietRow: Story = {
   args: {
     setup: {

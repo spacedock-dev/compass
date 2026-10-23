@@ -392,8 +392,8 @@ not saved" or "· saved", "Found in your prompts at 23:11 · not saved", "You ty
 at 18:54", and "From your first prompt · saved". A cut /goal appends "· Shortened to fit 240 characters; Analyze
 reads this shortened goal" (the box's own cap) and a cut prompt "· Shortened here; Analyze reads the whole
 prompt". The cleared note no longer names the draft ("; the draft below is ..."): the source line directly
-under it does. `intentEditorDeviations` still describes the 2026-10-19 wording and is on-demand only; it was
-not rewritten.
+under it does. `intentEditorDeviations` projects the recorded badge onto the new source-line wording, and the cap sentence it
+used to add is gone from that line, so the on-demand proof reads the line as the page draws it.
 
 The Drift card header says "Analysis last run 14:03" where the retired page said "Analysis at 14:03"
 (owner, 2026-10-19), because the old words read as a time inside the session. The analysis level's own line

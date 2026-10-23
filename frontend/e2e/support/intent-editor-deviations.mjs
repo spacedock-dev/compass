@@ -1,13 +1,21 @@
 /* The draft marks' badge became the goal's source line (docs/design-frontend-migration.md, Held to recorded
-   answers, 2026-10-19): "from your prompt[ · latest| · HH:MM]" and the excerpt cue now read
-   "From your prompt · first|latest|HH:MM · not saved." with the cap sentence and, for an excerpt, the cue. */
-const ANALYZE_READS = 'Analyze reads at most the first 1,000 characters of any prompt.';
+   answers, 2026-10-19), and the line's words changed on 2026-10-23: the recorded "from your prompt[ · latest|
+   · HH:MM]" now reads "Drafted from your first|latest prompt · not saved" or "Drafted from the prompt you
+   chose · not saved", and the recorded excerpt cue is the suffix " · Shortened here; Analyze reads the whole
+   prompt". The cap sentence is under "What is sent", not on this line. */
 const EXCERPT = 'Excerpt. Analyze looks up the source when pressed.';
+const SHORTENED = ' · Shortened here; Analyze reads the whole prompt';
 function sourceLine(marks) {
   const badge = marks.replace(EXCERPT, '').trim();
   const which = badge.match(/^from your prompt · (.+)$/)?.[1] ?? 'first';
-  const clipped = marks.includes(EXCERPT) ? ` ${EXCERPT}` : '';
-  return `From your prompt · ${which} · not saved. ${ANALYZE_READS}${clipped}`;
+  const name =
+    which === 'first'
+      ? 'your first prompt'
+      : which === 'latest'
+        ? 'your latest prompt'
+        : 'the prompt you chose';
+  const clipped = marks.includes(EXCERPT) ? SHORTENED : '';
+  return `Drafted from ${name} · not saved${clipped}`;
 }
 
 export function intentEditorDeviations(recorded) {
