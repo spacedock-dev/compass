@@ -46,6 +46,35 @@ off hides the level and the pill; it does not stop the server computing the leve
 reaches a row, a total, a notification or the unasked lane. The overlay is still a reading the
 reader asks for, and a verdict on whether the work met the request is still refused.
 
+### Amended 2026-10-23 (owner): the Live monitor may evaluate on a cadence while the session is viewed
+
+The owner ruled on 2026-10-23, in these words:
+
+> I actually disagree and believe tha the Live monitor should use model calls. Specifically (lets focus
+> on Claude for the moment), when the Live Monitor is on and a user is viewing the session, a sidecar
+> with the latest Haiku model should check and keep an eye on the session. The estimate should only run
+> once per minute, and if the session has ended, the "Live monitor" should turn off (if it is on) and
+> the toggle should be disabled (because there is nothing "live" to monitor). Also, if a user navigates
+> away from the session, the Live monitor should not continue to run. We can also add a, "Do you still
+> want to monitor this session?" banner that shows up after 20 minutes that will stay active in the UI
+> for 10 minutes. If the user does not respond to the banner, the Live monitor will turn off with a note
+> (so as to not drain a users tokens accidentally). If they do respond to the banner, if they
+> responded, "yes", the TTL will reset and the live monitor will continue. If they respond "no", the
+> live monitor will turn off.
+
+This section's refusal of "evaluation on a cadence" and the 2026-09-24 amendment's "it uses no model"
+are amended for one case and no other: the Live monitor, for Claude Code sessions, while the reader
+is viewing the session. Everything else on a cadence stays refused. There is still no always-on drift
+indicator and nothing evaluates in the background: a session nobody is viewing is never checked, and a
+check never runs for a session the reader has navigated away from. Other harnesses are unchanged for now.
+[The DEC-26 amendment of the same date](#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)
+holds the rulings and the remaining decisions.
+
+[DEC-16](#dec-16-compass-does-not-write-into-a-session) still applies, unamended: the check runs as a
+supervised child, is never resumed into the watched session and is never injected into it. The overlay
+the reader asks for, and the refusal of a verdict on whether the work met the request, are also
+unchanged.
+
 ## DEC-15b: an assessment may be stored
 
 An outcome assessment and the annotation revision it read persist in session history, so both
@@ -5870,6 +5899,61 @@ The sentence is the verdict line's own for the goal-only blocker; where outcome 
 wording ("Nothing found against what it read, but no level is drawn: a line of your intent is not shown
 by any check.") is unchanged.
 
+### Amended 2026-10-23 (owner): the live level comes from a Haiku check
+
+Amends items 2, 4 and 5 for Claude Code, and [DEC-15's amendment of the same date](#amended-2026-10-23-owner-the-live-monitor-may-evaluate-on-a-cadence-while-the-session-is-viewed)
+carries the owner's words. Items 1, 3 and 6 stand, and so does item 5's other half: the monitor never
+makes a session eligible for the unasked lane, never feeds, triggers, orders or gates it, and raises no
+notification, desktop or page.
+
+**The owner's four follow-up rulings, the same day.**
+
+1. The Haiku check produces the live drift level. It replaces the checks-and-paths estimate as the level
+   on the Drift card and in the header pill, in this decision's four levels. An Analyze reading outranks
+   it. It never makes a verdict on whether the work met the goal. The model-free estimate stays as the
+   fallback when the check is paused, capped, failed or has not run.
+2. It ships labelled "Live monitor · Haiku" and is qualified later. The qualification run (an abstention
+   check bound to the explicit Haiku id, with an AGY reviewer at `gemini-3.8-flash-medium` or
+   `gemini-3.8-flash-high`) is its own piece of work. It blocks nothing, and the Verification issue does
+   not wait on it. [DEC-21's 2026-09-23 amendment](#amended-2026-09-23-claude-code-is-built-and-gated)
+   is the rule a new producer falls under; this ruling ships ahead of it, on the owner's word.
+3. An exact Haiku id is pinned in a separate monitor model setting, defaulting to the newest released
+   Haiku id at merge, and a release checklist item names the bump. Floating aliases stay refused, and the
+   Sonnet floor for readings is unchanged: the reading validator still refuses Haiku.
+4. "Viewing" means the session route is mounted and the tab is visible. A hidden tab pauses ticks, and they
+   resume when the tab is visible again within the TTL.
+
+**What changes in the items.** Item 2's "computed without a model" now describes the fallback only. Item 4's
+"browser-only, never sent to the server, no new route" is superseded: the switch drives a server lease and
+adds routes. An "on" is not remembered across reloads, so a reload shows the switch off until it is pressed.
+Item 5's "calls no model" is superseded and its "raises nothing" holds. The source line for the level reads
+"Live monitor · Haiku", and says it read the latest turns of the transcript, not that it judged the goal met.
+
+**The remaining decisions, each as recommended.**
+
+- **Lane.** A call the reader starts, under [DEC-28's widening](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
+  with its own notice kind `monitor` and a one-press off beside it. It is kept out of the unasked lane,
+  which is off by default and whose 900 s per-session floor cannot meet a once-a-minute cadence. The
+  20-minute banner is the re-consent.
+- **Cap.** The monitor's own caps, apart from Analyze's `DAILY_CAP`: at most 30 ticks per session per TTL
+  window, and a rolling 24 h cap across the board. Spending either leaves the other untouched. A tick
+  skipped because the transcript did not change makes no call and costs nothing. Reservation follows
+  `reading_policy`: charge before launch, never refund uncertain spend.
+- **Analyze against a tick.** A press of Analyze while a tick holds the `reading.claim` slot cancels the
+  tick, and the press then takes the slot. The tick's reserved spend is not refunded, because it is
+  uncertain. The owner decided this on 2026-10-23; it is no longer a recommendation.
+- **TTL.** The clock is held on the server. The banner is due 20 minutes after the start or after the last
+  Yes, and the deadline is 10 minutes after that. No answer by the deadline turns the monitor off with a
+  note saying why, Yes resets the clock and No turns it off.
+- **Stops.** Pause model calls and `--no-observer-model` both stop the monitor and refuse to start it, and
+  consent is required before the first call. Pause cancels a tick in flight.
+- **Sessions with no `ended_at` stamp.** The TTL banner is what stops the monitor. Idleness is not read as
+  an end. A session that has an end turns the monitor off and disables the switch.
+- **The level's floor.** The Haiku level is held to item 1's evidence floor and to
+  [DEC-17's shape contract](#dec-17-the-shape-contract): with too little read it says "Not enough recorded
+  yet", never "None or low", and it carries no verdict. The model level is absent, not low, until a tick
+  completes.
+
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
 Decided 2026-10-11 (DRC-4855), on the Actions Front and Center project, in the milestone "Intent
@@ -6493,6 +6577,22 @@ work, which left a reader with an unchanged finished session no way to read agai
 notice by a stored "seen" flag, a new published field declared in five places for a fact the job's
 ending already states; and removing `steerOffer`'s claim and failed-check offers, which the server and
 the legacy oracle still hold.
+
+### Amended 2026-10-23 (owner): the Live monitor row and its switch describe a Haiku check
+
+Row 6b's "off by default and needs no model" no longer holds for Claude Code: with the switch on, a Haiku
+check of the latest turns runs about once a minute while the session is viewed, under
+[the DEC-26 amendment of this date](#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check). The
+switch is still off by default and its placement in row 6b, in Drift settings, is unchanged. Its state is
+the server's lease, so a reload shows it off, and it is disabled with a reason once the session has ended.
+
+The copy table's switch description, "Shows a level after every turn, from checks and file paths, with no
+model call. The level shows here and in the header.", now reads, for Claude Code with annotations on: "Shows
+a level from a Haiku check of the latest turns, about once a minute while you watch this session. It sends
+your session text to Claude Code. Until a check has run it shows the level from checks and file paths. The
+level shows here and in the header." Other harnesses keep the earlier sentence. A banner after 20 minutes
+asks "Do you still want to monitor this session?" and stays for 10 minutes; its answers, and the note left
+when it goes unanswered, are in the DEC-26 amendment.
 
 ## DEC-28: a model may summarize a session, and the summary is kept
 
