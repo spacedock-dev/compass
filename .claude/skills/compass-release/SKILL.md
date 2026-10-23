@@ -74,6 +74,14 @@ accepts, so a stray tag cannot become the baseline either.
   release is half finished. Find out why before adding a second one on top. The workflow is
   idempotent and resumable, so the fix is usually to use Re-run all jobs on the existing tag's
   run (see step 6), not to cut a new number. Pushing a tag that already exists does nothing.
+- **The Live monitor's Haiku is still the newest released one.** The monitor pins an explicit
+  Haiku id (`CLAUDE_MONITOR_DEFAULT_MODEL` in `compass_runtime/config.py`), and a floating alias is
+  refused, so a newer Haiku reaches readers only when someone moves the default. Ask whether
+  Anthropic has released a newer Haiku since the last tag (the models overview in the Claude
+  documentation lists the current IDs). If so, name the bump in the release notes and make it in
+  its own commit before the tag: change the default, its `--claude-monitor-model` help and the
+  `MANUAL.md` row, and run `compass/skills/compass/tests/test_live_monitor_model.py`, whose
+  default-id test names the id. A "no" here does not stop the run; an unanswered question does.
 - **`main`'s head is green.** The Release workflow runs the contract validator, its own tests, the
   bump-version tests and the whole dashboard suite, and rebuilds and tests the frontend, all on the
   exact commit it resolved, but not the quality gate — no ruff, no mypy, no coverage threshold, no

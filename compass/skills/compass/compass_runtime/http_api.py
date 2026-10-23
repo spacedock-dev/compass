@@ -30,6 +30,7 @@ from compass_runtime import (
     goal_find,
     levels,
     live_estimate,
+    live_monitor,
     notifications,
     quota,
     reading_policy,
@@ -2231,6 +2232,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # And an unasked check already running (owner, 2026-10-20).
         if application.unasked_lane is not None:
             application.unasked_lane.stop()
+        # And a Live monitor check in flight; its reply cannot publish.
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+        live_monitor.cancel_all(application.config, "model-calls-paused")
         # Pause model calls also stops session summaries, including a call already running
         # (docs/design-session-summary.md#job-and-grant-contract); a lock failure leaves
         # the next part's recheck to refuse.
@@ -3335,6 +3339,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if self._press_withheld(rows[0], entry):
             return
         key = f"{harness}:{sid}"
+        # A press outranks a Live monitor tick holding this session's slot: the tick is
+        # cancelled and its spend is not refunded, then the press takes the slot.
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+        live_monitor.preempt(config, key)
         job = runtime_reading.start_job(
             config, key, provider=route["provider"], label=route["label"], now=application.clock()
         )

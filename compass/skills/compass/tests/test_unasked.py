@@ -1514,6 +1514,9 @@ class TheGuardedReadingCallersKnowTheClaudeCodeProducerTest(unittest.TestCase):
                 # A reader-requested session summary job runs its own multi-part
                 # calls through the same exec under its own grant and ledger.
                 "compass/skills/compass/compass_runtime/summary_jobs.py",
+                # The Live monitor's once-a-minute Haiku check enters `prepare_claude_exec` on its
+                # own pinned model, under its own ledger; it builds no Claude reading model.
+                "compass/skills/compass/compass_runtime/live_monitor.py",
                 # `argv_digest` only: it hands the exec a runner that raises
                 # before any process starts.
                 self.SCORER,
