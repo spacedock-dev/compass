@@ -13,6 +13,7 @@ import {
   steerWithheld,
   type SteerOffer,
 } from './correction';
+import { LiveMonitorNote } from './LiveMonitorNote';
 import { DriftLevelView } from './DriftLevelView';
 import { GoalVerdictNote } from './GoalVerdictNote';
 import type { Board } from './flip';
@@ -134,6 +135,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
   const answer = (
     <>
       <DriftVerdict focus={!job && !hasQuestion && !stale} />
+      <LiveMonitorNote />
       <DriftLevelView />
       <GoalVerdictNote />
     </>

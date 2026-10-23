@@ -101,6 +101,39 @@ describe('browser environment', () => {
     expect(t.count(t.documentListeners, 'visibilitychange')).toBe(0);
   });
 
+  it('reports a visibility change only when the page has become hidden', () => {
+    const t = globals({ hidden: false });
+    const env = createBrowserEnvironment(t.g);
+    const seen = vi.fn();
+    const off = env.onBecameHidden(seen);
+    t.fire(t.documentListeners, 'visibilitychange');
+    expect(seen).not.toHaveBeenCalled();
+    t.state.hidden = true;
+    t.fire(t.documentListeners, 'visibilitychange');
+    expect(seen).toHaveBeenCalledOnce();
+    off();
+    expect(t.count(t.documentListeners, 'visibilitychange')).toBe(0);
+  });
+
+  it('sends a beacon of JSON where the browser has one, and says so where it has none', () => {
+    const sent: { url: string; body: unknown }[] = [];
+    const t = globals();
+    const withBeacon = createBrowserEnvironment({
+      ...t.g,
+      sendBeacon: (url, body) => {
+        sent.push({ url, body });
+        return true;
+      },
+    });
+    expect(withBeacon.sendBeacon('/api/live-monitor', '{"a":1}')).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.url).toBe('/api/live-monitor');
+    expect((sent[0]?.body as Blob).type).toBe('application/json');
+    expect(createBrowserEnvironment(t.g).sendBeacon('/api/live-monitor', '{}')).toBe(false);
+    const refusing = createBrowserEnvironment({ ...t.g, sendBeacon: () => false });
+    expect(refusing.sendBeacon('/api/live-monitor', '{}')).toBe(false);
+  });
+
   it('delegates timers to the window and time to the supplied clock', () => {
     const t = globals();
     const env = createBrowserEnvironment(t.g);

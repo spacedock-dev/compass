@@ -177,6 +177,7 @@ describe('POST adapters', () => {
     await client.postSummary({ consent: 'off' });
     await client.postSummaryCancel(identity);
     await client.postSummaryDelete(identity);
+    await client.postLiveMonitor({ ...identity, action: 'start', tab_id: 't', observer_model: 1 });
     expect(calls.map((call) => call.url)).toEqual([
       '/api/direction',
       '/api/reading',
@@ -190,6 +191,7 @@ describe('POST adapters', () => {
       '/api/summary',
       '/api/summary/cancel',
       '/api/summary/delete',
+      '/api/live-monitor',
     ]);
     expect(calls.every((call) => call.init?.method === 'POST')).toBe(true);
   });
@@ -319,6 +321,8 @@ describe('no adapter ever retries an action', () => {
       postSummary: (c) => c.postSummary({ ...identity, action: 'start', origin: 'open' }),
       postSummaryCancel: (c) => c.postSummaryCancel(identity),
       postSummaryDelete: (c) => c.postSummaryDelete(identity),
+      postLiveMonitor: (c) =>
+        c.postLiveMonitor({ ...identity, action: 'beat', tab_id: 't', visible: true }),
       focus: (c) => c.focus({ identity, capability: 'cap' }),
     };
 

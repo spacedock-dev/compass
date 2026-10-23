@@ -89,8 +89,48 @@ export const readingScenario = (
   replies: readonly (Record<string, unknown> | null)[],
 ): ReadingScenario => ({ replies, posts: [], finish: null });
 
+/* The Live monitor's lease as a server holds it: what `POST /api/live-monitor` answers with and the focused
+   context publishes. A story changes `state` to be the server that ended it, and reads `posts` for what the page
+   sent. */
+export interface LeaseScenario {
+  state: Record<string, unknown>;
+  readonly posts: Record<string, unknown>[];
+  /** Answer a start with this refusal instead of a lease. */
+  refuse?: string;
+  /** What a beat finds: the lease still held, or gone, as `state` then says. */
+  beat?: 'held' | 'gone';
+}
+
+export const leaseState = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  on: true,
+  started_at: 1000,
+  banner_due_at: 2200,
+  deadline: 2800,
+  confirm_by: null,
+  visible: true,
+  last_end: null,
+  level: null,
+  label: 'Live monitor · Haiku',
+  model: 'claude-haiku-5-5',
+  destination: 'api.anthropic.com',
+  disclosure:
+    'Sends to api.anthropic.com through your Claude Code, to Haiku, about once a minute while Live monitor is on.',
+  interval_sec: 60,
+  now: 1100,
+  ...over,
+});
+
+export const leaseScenario = (state: Record<string, unknown> = leaseState()): LeaseScenario => ({
+  state,
+  posts: [],
+});
+
 export interface Scenario {
   readonly reading?: ReadingScenario;
+  /** The Live monitor's lease, for a story about the switch, its level, its notes or its question. */
+  readonly lease?: LeaseScenario;
+  /** Filled in on mount: the fake clock, which a story moves to beat the lease or run out its question. */
+  readonly clock?: { advance?: (ms: number) => void };
 
   readonly harness?: Harness;
   /** What the board publishes for this session, over the saved intent below. */
@@ -228,6 +268,20 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
             status: 202,
           });
         }
+        /* A story that is not about the lease still turns the switch on, so the server it talks to holds the
+           lease it is asked for. */
+        if (!scenario.lease && url.startsWith('/api/live-monitor'))
+          return json({ ok: true, reason: '', state: leaseState() });
+        if (scenario.lease && url.startsWith('/api/live-monitor')) {
+          const lease = scenario.lease;
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          lease.posts.push(body);
+          if (body['action'] === 'start' && lease.refuse)
+            return json({ ok: false, reason: lease.refuse, state: { ...lease.state, on: false } });
+          if (body['action'] === 'beat' && lease.beat === 'gone')
+            return json({ ok: false, reason: 'not-monitoring', state: lease.state });
+          return json({ ok: true, reason: '', state: lease.state });
+        }
         if (scenario.keepsMarks && url.startsWith('/api/annotate')) {
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
           if (typeof body['not_accurate'] === 'boolean') {
@@ -282,7 +336,13 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
         if (url.startsWith('/api/project-context'))
           return json({
             semantic: { facts: scenario.facts ?? [] },
-            sources: { work: { tool_reports: [], ...(scenario.work ?? {}) } },
+            sources: {
+              work: {
+                tool_reports: [],
+                ...(scenario.lease ? { live_monitor: scenario.lease.state } : {}),
+                ...(scenario.work ?? {}),
+              },
+            },
           });
         if (url.startsWith('/api/session-record'))
           return json({ state: 'ok', entries: [], next: null, reached_start: true });
@@ -291,6 +351,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
         return json({});
       },
     });
+    if (scenario.clock) scenario.clock.advance = (ms) => clock.advance(ms);
     if (scenario.nav)
       scenario.nav.back = () => {
         history.back();

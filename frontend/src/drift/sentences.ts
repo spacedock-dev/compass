@@ -369,8 +369,15 @@ export const LIVE_LEVEL_NAMES: Readonly<Record<string, string>> = {
 export const LEVEL_SCALE: readonly string[] = ['none_or_low', 'medium', 'high', 'extreme'];
 export const LIVE_LINE =
   'Reads checks and file paths, not what your intent says. Files written by shell commands, such as a build, are not seen.';
+/* What the switch does, in the monitor notice's words: a model call, how often, to whom, and what it falls back
+   to. The server's own "What is sent" sentence, naming the destination, stands beside it while the monitor
+   is on. */
 export const LIVE_HINT =
-  'Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header.';
+  'Shows a level from a Haiku check of the latest turns, about once a minute while you watch this session. It sends your session text to Claude Code. Until a check has run it shows the level from checks and file paths. The level shows here and in the header.';
+/* The monitor level's source line: what a Haiku check read, and what it does not say. The estimate's own line
+   above stays the line for the level computed from checks and paths. */
+export const LIVE_MONITOR_LINE =
+  'A Haiku check of the latest turns, about once a minute while you watch. It reads the turns it was sent, not your whole intent, and says where they are heading, not whether the work met it.';
 export const LIVE_SAVE = 'Save your intent to see a live estimate.';
 export const UNCHECKED = 'Not checked yet';
 export const NUDGE = 'This is a quick estimate. Analyze to see what drifted and how to steer back.';

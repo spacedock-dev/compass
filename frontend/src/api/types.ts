@@ -295,3 +295,26 @@ export type SummaryRequest =
 /* Every summary route answers a JSON object: `{ok, job, notice?}`, `{ok, summaries}`, `{ok: false, reason, ...}`,
    `{ok, cancelling}` or `{outcome}`. Read through `api/summary.ts`, never cast further. */
 export type SummaryReceipt = Readonly<Record<string, unknown>>;
+
+/* `POST /api/live-monitor`: the Live monitor's lease for one Claude Code session
+   (docs/design-reading-a-session.md, the 2026-10-23 amendments). `observer_model` is asserted on `start`
+   alone, the one action that begins to spend. */
+export type LiveMonitorAction = 'start' | 'beat' | 'confirm' | 'stop';
+
+export interface LiveMonitorRequest extends SessionIdentity {
+  readonly action: LiveMonitorAction;
+  readonly tab_id: string;
+  readonly observer_model?: 1;
+  /** A beat: whether the tab is showing the session. A hidden tab keeps the lease and pauses the checks. */
+  readonly visible?: boolean;
+  readonly answer?: 'yes' | 'no';
+}
+
+export interface LiveMonitorReceipt {
+  readonly ok: boolean;
+  /** Why the lease refused: `ended`, `paused`, `unsupported-harness`, `sample`, `unknown-session`,
+      `no-observer-model` or `not-monitoring`. */
+  readonly reason: string;
+  /** The lease as the server holds it, the same shape the focused context publishes. */
+  readonly state: Readonly<Record<string, unknown>>;
+}

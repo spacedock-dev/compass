@@ -121,6 +121,8 @@ export interface ModelInput {
   readonly held: Held;
   /** The live monitor switch is on for this session. */
   readonly liveOn: boolean;
+  /** The level the Live monitor's last Haiku check earned, which replaces the estimate while it stands. */
+  readonly monitor?: DriftLevel | null;
 }
 
 /* What the stored reading stands on, read once for the session page and for the Sessions row's chip, so the
@@ -255,6 +257,7 @@ export function buildModel(input: ModelInput): DriftModel {
   } = readingParts(input);
   const estimate = liveEstimate({
     on: input.liveOn,
+    monitor: input.monitor ?? null,
     harness,
     contexts,
     projectKey: input.projectKey,

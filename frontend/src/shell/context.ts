@@ -6,7 +6,7 @@ import type { RouteInput, Route } from '../router/grammar';
 import type { Router } from '../router/router';
 import type { BoardSnapshot } from '../store/board';
 import type { BrowserRuntime } from '../transport/browser';
-import type { Clock } from '../transport/ports';
+import type { Clock, Environment } from '../transport/ports';
 import type { Announcer } from './announcer';
 
 /* What the page needs from the browser beyond the runtime, so a test can stand in for it. */
@@ -29,6 +29,9 @@ export interface Shell {
   readonly display: DisplayGate;
   readonly controls: Controls;
   readonly clock: Clock;
+  /** The browser surface the transport reads, which the Live monitor's lease also uses for this tab's id,
+      its visibility and its stop beacon. */
+  readonly env: Environment;
   readonly host: ShellHost;
 }
 

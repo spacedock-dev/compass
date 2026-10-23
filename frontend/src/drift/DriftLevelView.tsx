@@ -13,6 +13,7 @@ import {
   LEVEL_SCALE,
   LIVE_LEVEL_NAMES,
   LIVE_LINE,
+  LIVE_MONITOR_LINE,
   LIVE_SAVE,
   NUDGE,
 } from './sentences';
@@ -163,7 +164,9 @@ export function DriftLevelView() {
      words. */
   const detail =
     level.level && !running
-      ? [level.analysis ? level.line : LIVE_LINE, level.rose].filter(Boolean).join(' ')
+      ? [level.analysis ? level.line : level.monitor ? LIVE_MONITOR_LINE : LIVE_LINE, level.rose]
+          .filter(Boolean)
+          .join(' ')
       : '';
   const reasons = !running && level.reasons ? level.reasons : { first: '', blockers: [] };
   const signals: Signals | null = level.signals;
@@ -194,6 +197,11 @@ export function DriftLevelView() {
         {detail ? (
           <p className="next-session-drift-detail">
             <CitedText text={detail} />
+          </p>
+        ) : null}
+        {level.monitor && level.note && !running ? (
+          <p className="next-session-drift-reason" data-next-live-reason-line>
+            {level.note}
           </p>
         ) : null}
         {!running && !level.analysis && !readingStored(annotation) ? (

@@ -17,6 +17,23 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-23, the Live monitor switch drives a lease the server holds and is not remembered
+([the amendment](design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)).
+Two recorded answers depart, and neither golden file is changed. First, the switch's hint: the recording says
+"Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in
+the header." (`frontend/test/golden/e2e/drift-parity.json`), and the page now says a Haiku check of the latest
+turns runs about once a minute while the session is viewed, that it sends the session text to Claude Code, and
+that the estimate shows until a check has run. The estimate's own source line keeps its recorded words; the
+monitor's level has a line of its own. Second, the storage key: `compass.next.live-estimate:` is dropped, so
+the switch is off after a reload until it is pressed, and the codec owns eleven families where the recording
+(`frontend/test/golden/e2e/storage-conformance.json`, the `live-estimate` entries) holds twelve. The on-demand
+browser proofs that read those recordings or name the key (`frontend/e2e/storage-conformance.mjs`,
+`intent-parity.mjs`, `drift-parity.mjs` and `support/intent-worlds.mjs`) were not edited and were not run for
+this change; they will report those rows until they are restated on the recorded side, and nothing in the gate
+reads them. The unit proofs that held the old behaviour (`flags.test.ts`, `reads.test.ts` and
+`LiveMonitor.test.tsx`) now hold the new one, and `frontend_inventory.py` checks the reader-state row against
+the code that exists.
+
 2026-10-23, a session whose only prompt was a harness command is not said to have an unpublished title: on the
 session page's heading, the browser tab title and the breadcrumb, a session with no title whose first prompt
 was a command (`first_prompt_control`) reads "No name: the session opened with a command" where the
@@ -628,7 +645,8 @@ native action or a per-run value are listed with their reason in the index inste
 written by hand.
 
 Storage conformance holds the codec to what the legacy page did with its storage, in both directions for
-all twelve families. The legacy page ran in Chromium against the real backend when the answers were
+all twelve recorded families (the codec owns eleven since 2026-10-23: the live monitor's key is retired, and
+[held to recorded answers](#held-to-recorded-answers) says so). The legacy page ran in Chromium against the real backend when the answers were
 recorded, and the proof now hands the real codec a blank same-origin page and applies each recorded
 change to it, so the codec reads exactly what that page wrote and every codec write is checked against
 what the legacy page did with it. A direction is labelled by what exercised it: the page's own UI,

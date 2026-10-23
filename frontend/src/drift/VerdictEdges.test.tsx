@@ -1,7 +1,7 @@
 import { act } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { liveMonitorFor } from '../intent/liveMonitor';
-import { check, contextRoute, fact, mountDrift, textOf } from './testing';
+import { check, contextRoute, fact, LEASE_ROUTE, mountDrift, textOf } from './testing';
 
 /* Two things the verdict sentence says beyond its answer, each only where it is true of what the page holds.
    A reading that stands with no level owns the level slot, so a live estimate the reader switched on is hidden
@@ -82,12 +82,12 @@ async function open(
   const page = mountDrift({
     session: session(assessment),
     facts,
-    routes: { '/api/project-context': contextRoute(facts, work) },
+    routes: { '/api/project-context': contextRoute(facts, work), '/api/live-monitor': LEASE_ROUTE },
   });
   await page.settle();
   if (live) {
     await act(async () => {
-      liveMonitorFor(page.shell).set({ harness: 'claude', sid: 's1' }, true);
+      liveMonitorFor(page.shell).update('claude:s1', { wanted: true });
     });
   }
   await page.settle();

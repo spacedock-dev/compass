@@ -2,7 +2,14 @@ import './drift.css';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { payloadSessions } from '../api/bootstrap';
 import { compatSessKey, contextKey, stableProjectKey } from '../api/identity';
-import { useLiveEstimateOn } from '../intent/liveMonitor';
+import {
+  liveMonitorFor,
+  monitorKey,
+  useLiveMonitorOn,
+  useMonitorEntry,
+} from '../intent/liveMonitor';
+import { workObject } from './level';
+import { monitorLevel, parseLease } from './monitor';
 import { useHeldVersion } from '../intent/useIntent';
 import type { Row } from '../observed';
 import { useDisplayed, useShell } from '../shell/context';
@@ -78,10 +85,21 @@ export function DriftProvider({
       }),
     [view.payload, project],
   );
-  const liveOn = useLiveEstimateOn(session);
+  const liveOn = useLiveMonitorOn(session);
+  /* The lease the server publishes on the focused context is fed to the one place the page keeps it, so the
+     switch, the card and the question read one state; an older state never replaces a newer one. */
+  const monitors = liveMonitorFor(shell);
+  const leaseRow = workObject(view.contexts, projectKey, session, 'live_monitor');
+  useEffect(() => {
+    const lease = parseLease(leaseRow);
+    if (lease) monitors.observe(monitorKey(session), lease);
+  }, [monitors, leaseRow, session]);
+  const held = useMonitorEntry(session);
+  const monitor = liveOn && held.lease ? monitorLevel(held.lease) : null;
   const record = records.get(contextKey(projectKey, session as never));
   const model: DriftModel = buildModel({
     liveOn,
+    monitor,
     session: view.session,
     payload: view.payload,
     base: view.base,
