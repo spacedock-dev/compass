@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2115823,
+    "bytes": 2115739,
     "file": "react.html",
-    "sha256": "c73f31096c252db3d215518c2aabffbf45ea7f3a4707e883c765596a729bb72e"
+    "sha256": "f478a62cac9a8d8ff3bdfce0c656e9d36d30fdadef30be4fe454543d7a5b54d4"
   },
   "format": 1,
   "frontend": "react",
@@ -587,7 +587,7 @@
       },
       {
         "file": "frontend/src/drift/GoalVerdictNote.tsx",
-        "sha256": "a1da7765d0950512867a7488a9dd299e6198584a62563ca92b152bcc93b5c5d8"
+        "sha256": "d914b1a1dea47c21d1cc99c328b466f7d66fb060c6ce5c59cfef46ff06740056"
       },
       {
         "file": "frontend/src/drift/MarkedNotice.tsx",
@@ -663,7 +663,7 @@
       },
       {
         "file": "frontend/src/drift/goalVerdict.ts",
-        "sha256": "73471fa4ce42adfc84a6d2932d1d23fcc200039d75b9a0bb41d2901984e43427"
+        "sha256": "59e4987de2c3f93a85628a934dc692317c5aa9d5a85a3370c096998001d70b04"
       },
       {
         "file": "frontend/src/drift/index.ts",
@@ -707,7 +707,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "ac6757d6c6a35e111096b57166804aaaf72ba8d405fa855aeb1aa9ad1c7496f7"
+        "sha256": "9b9eb8ab788b7bf20769aff68d6c7c6608255e7a7f9c13c43face5fe4d27ea97"
       },
       {
         "file": "frontend/src/drift/shape.ts",
