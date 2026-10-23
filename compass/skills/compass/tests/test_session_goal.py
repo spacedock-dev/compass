@@ -463,6 +463,27 @@ class AGoalSessionIsNamedByTheGoalItHoldsTest(HarnessContractTestCase):
         ]
         self.assertEqual("Tidy the placeholder module", self.title(records))
 
+    def test_a_goal_cleared_inside_a_window_shorter_than_the_file_does_not_name_the_session(
+        self,
+    ) -> None:
+        # The set sits before the window and the clear inside it: a clear seen is evidence the
+        # goal is not held, which an empty read of the window is not.
+        when = T0
+        records = [prompt(when, f"/goal {CONDITION}"), *set_goal(when + 1)]
+        records += [prompt(when + 2 + n, "x" * 400) for n in range(40)]
+        records += [
+            clear_sentinel(when + 100),
+            command_answer(when + 101, "clear", "Goal cleared: x"),
+        ]
+        with tempfile.TemporaryDirectory() as home:
+            config, state = make_runtime(turn_scan_max_bytes=4096)
+            path = Path(home, "claude.jsonl")
+            _jsonl(path, records, T0)
+            self.assertGreater(path.stat().st_size, config.turn_scan_max_bytes)
+            self.assertIsNone(claude_data.session_goal(config, state, str(path)))
+            title = claude_data.session_title(config, state, str(path))
+        self.assertFalse((title or "").startswith("/goal"))
+
     def test_a_goal_set_outside_the_cold_read_window_still_names_the_session(self) -> None:
         # The read starts at most `turn_scan_max_bytes` from the end, so a goal set before that
         # is not seen and its absence proves nothing: the opener stays as the last-resort name.

@@ -243,12 +243,12 @@ def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str 
                     ).strip()
                     candidate = transcripts.prompt_title(config, prompt)
                     # The opener of a goal no longer held names nothing; the next prompt does.
-                    # Only when no held goal is authoritative: a file longer than the goal read's
-                    # window may hold one set before it, so the opener stays as the last resort.
+                    # Only when no held goal is authoritative: a read that started mid-file and saw
+                    # no goal event may have missed a set, so the opener stays as the last resort.
                     if (
                         candidate
                         and candidate.split()[0] == "/goal"
-                        and stat.st_size <= config.turn_scan_max_bytes
+                        and goal_history_known(state, path)
                     ):
                         continue
                     title = candidate
@@ -474,8 +474,11 @@ def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[
         and stat.st_size - cached["pos"] <= config.turn_scan_max_bytes
     ):
         pos, goal, cold = cached["pos"], cached["goal"], False
+        seen = cached.get("seen", False)
     else:
         pos, goal, cold = max(0, stat.st_size - config.turn_scan_max_bytes), None, True
+        # A read from byte 0 has seen everything, so no goal event means none was ever recorded.
+        seen = pos == 0
     if pos < stat.st_size:
         try:
             with open(path, "rb") as source:
@@ -497,16 +500,28 @@ def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[
                 except (ValueError, RecursionError):
                     continue
                 if event is not None:
+                    seen = True
                     goal = _advance_goal(goal, event)
             pos += end + 1
     with state.cache_lock:
         runtime_state.bounded_put(
             state.metadata_cache,
             key,
-            {"ino": stat.st_ino, "pos": pos, "goal": goal},
+            {"ino": stat.st_ino, "pos": pos, "goal": goal, "seen": seen},
             limit=config.max_cache_entries,
         )
     return _with_excerpt(goal, config.annotation_text_cap_chars) if goal is not None else None
+
+
+def goal_history_known(state: RuntimeState, path: str) -> bool:
+    """Whether the last `session_goal` read saw the whole file or at least one goal event.
+
+    A cold read that starts mid-file returns None both when no goal event was seen and when one
+    cleared the goal inside the window; only the second proves the goal is not held.
+    """
+    with state.cache_lock:
+        cached = state.metadata_cache.get(f"session-goal:{path}")
+    return bool(cached and cached.get("seen"))
 
 
 def _with_excerpt(goal: dict[str, Any], cap: int) -> dict[str, Any]:
