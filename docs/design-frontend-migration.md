@@ -21,9 +21,9 @@ study first. The recorded answers the React page is held to are described in the
 ([the amendment](design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)).
 Two recorded answers depart, and neither golden file is changed. First, the switch's hint: the recording says
 "Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in
-the header." (`frontend/test/golden/e2e/drift-parity.json`), and the page now says a Haiku check of the latest
-turns runs about once a minute while the session is viewed, that it sends the session text to Claude Code, and
-that the estimate shows until a check has run. The estimate's own source line keeps its recorded words; the
+the header." (`frontend/test/golden/e2e/drift-parity.json`), and the page now says it asks Haiku, through the
+reader's Claude Code, where the latest turns are heading, about once a minute while the session is on screen, and
+that the level comes from checks and file paths until a check returns. The estimate's own source line keeps its recorded words; the
 monitor's level has a line of its own. Second, the storage key: `compass.next.live-estimate:` is dropped, so
 the switch is off after a reload until it is pressed, and the codec owns eleven families where the recording
 (`frontend/test/golden/e2e/storage-conformance.json`, the `live-estimate` entries) holds twelve. The on-demand

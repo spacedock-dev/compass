@@ -84,6 +84,11 @@ export function DriftPill() {
         Drift: <strong>{level.label}</strong>
         {model.pillSoFar ? ' so far' : ''}
       </span>
+      {level.monitor ? (
+        <span className="ml-1 text-muted-foreground" data-next-drift-pill-source>
+          Live monitor · Haiku
+        </span>
+      ) : null}
     </Badge>
   );
 }

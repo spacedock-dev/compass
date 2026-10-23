@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { compatSessKey } from '../api/identity';
+import { identityOf } from '../intent/context';
 import { liveMonitorFor, monitorKey, useLiveMonitor, useMonitorEntry } from '../intent/liveMonitor';
 import type { Row } from '../observed';
 import { useShell } from '../shell/context';
@@ -36,6 +37,7 @@ export function MonitorQuestion({
   const [answering, setAnswering] = useState(false);
   const yes = useFocusKey<HTMLButtonElement>(shell.controls.focusLane, `live-monitor-yes:${key}`);
   const no = useFocusKey<HTMLButtonElement>(shell.controls.focusLane, `live-monitor-no:${key}`);
+  const answered = useRef(false);
 
   // The countdown moves each second while the question stands, on the page's own clock, which render reads.
   useEffect(() => {
@@ -50,10 +52,35 @@ export function MonitorQuestion({
       : null;
   const deadline = left !== null && left <= 0;
 
-  // The deadline passed with no answer: off, with the note. The server ends it at the same moment.
+  /* The deadline passed with no answer. This tab does not end the monitor itself: it beats once and acts on
+     what the server says, so another tab's Yes, which the server holds, is not undone here. The server ends it
+     at the same moment, so the answer is normally that it has. A tab that cannot reach the server ends it
+     locally, because a monitor nobody can confirm should not go on spending. */
+  const beatFor = useRef<number | null>(null);
+  const deadlineOf = lease?.confirmBy ?? null;
   useEffect(() => {
-    if (deadline) store.end(key, 'unanswered', { answerMinutes: answerMinutes(lease) });
-  }, [deadline, store, key, lease]);
+    if (!deadline || deadlineOf === null || beatFor.current === deadlineOf) return;
+    beatFor.current = deadlineOf;
+    const identity = identityOf(session);
+    if (!identity) return;
+    void shell.runtime.client
+      .postLiveMonitor({
+        harness: identity.harness,
+        sid: identity.sid,
+        action: 'beat',
+        tab_id: shell.env.tabId,
+        visible: !shell.env.isHidden(),
+      })
+      .then((result) => {
+        const next = result.kind === 'ok' ? parseLease(result.body.state) : null;
+        if (next) store.observe(key, next);
+        if (result.kind !== 'ok' || !result.body.ok) {
+          store.end(key, next?.lastEnd?.reason ?? 'unanswered', {
+            answerMinutes: answerMinutes(next ?? lease),
+          });
+        }
+      });
+  }, [deadline, deadlineOf, shell, session, store, key, lease]);
 
   // Said once for each question the server opens, which its `confirm_by` names; a refreshed state does not say it again.
   const asked = open && left !== null && left > 0 ? (lease?.confirmBy ?? null) : null;
@@ -72,10 +99,23 @@ export function MonitorQuestion({
     );
   }, [shell, session, asked, lease, entry.observedAt]);
 
+  /* After an answer the question closes under the button that had focus, and focus goes to the switch it is
+     about; where the settings holding the switch are closed, to the control that opens them. */
+  const shown = left !== null && left > 0;
+  useEffect(() => {
+    if (shown || !answered.current) return;
+    answered.current = false;
+    const lane = shell.controls.focusLane;
+    lane.focus(`live-monitor:${compatSessKey(session)}`);
+    if (!document.activeElement || document.activeElement === document.body)
+      lane.focus(`drift-settings:${compatSessKey(session)}`);
+  }, [shown, shell, session]);
+
   if (left === null || left <= 0) return null;
   const answer = async (yesNo: 'yes' | 'no') => {
     if (answering) return;
     setAnswering(true);
+    answered.current = true;
     const identity = {
       harness: String(session['harness'] ?? ''),
       sid: String(session['sid'] ?? ''),
@@ -99,7 +139,8 @@ export function MonitorQuestion({
   return (
     <Alert
       variant="shell-notice"
-      announce={false}
+      role="region"
+      aria-label="Live monitor question"
       className="sticky top-0 z-20 mx-4 my-2"
       data-next-live-question
     >

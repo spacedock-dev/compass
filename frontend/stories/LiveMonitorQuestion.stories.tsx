@@ -127,7 +127,9 @@ export const NoTurnsItOff: Story = {
     await userEvent.click(within(banner() as HTMLElement).getByRole('button', { name: 'No' }));
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
     await expect(banner()).toBeNull();
-    await waitFor(() => expect(note()).toHaveTextContent(/turned off at your answer/));
+    await waitFor(() => expect(note()).toHaveTextContent(/turned off, as you asked/));
+    // An off the reader asked for shows nothing live, as an off switch always did.
+    await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).toBeNull();
   },
 };
 
@@ -136,7 +138,18 @@ export const NoAnswerTurnsItOffWithANote: Story = {
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
     const toggle = await opens(args, card);
-    args.scenario.clock?.advance?.(590_000);
+    // The question runs down on the page's clock; the server, which holds the deadline, ends the monitor
+    // at the same moment, and the page asks it once at that moment and takes its answer.
+    args.scenario.clock?.advance?.(560_000);
+    const lease = args.scenario.lease as LeaseScenario;
+    lease.state = leaseState({
+      on: false,
+      confirm_by: null,
+      last_end: { reason: 'unanswered', at: 1700 },
+      now: 1700,
+    });
+    lease.beat = 'gone';
+    args.scenario.clock?.advance?.(30_000);
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
     await expect(banner()).toBeNull();
     await waitFor(() =>
@@ -172,7 +185,7 @@ async function clearedBy(
 export const ClearedWhenTheReaderLeft: Story = {
   ...readyScenario(),
   play: async ({ canvasElement, args }) => {
-    await clearedBy('left', /left the session/, args, await drawn(canvasElement));
+    await clearedBy('left', /stopped checking in/, args, await drawn(canvasElement));
   },
 };
 export const ClearedWhenTheSessionEnded: Story = {
@@ -189,7 +202,10 @@ export const ClearedWhenModelCallsWerePaused: Story = {
 };
 
 export const AnnouncedAndReachableByKeyboard: Story = {
-  ...readyScenario(),
+  ...readyScenario({
+    onConfirm: () =>
+      leaseState({ confirm_by: null, banner_due_at: 2330, deadline: 2930, now: 1130 }),
+  }),
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
     await opens(args, card);
@@ -207,6 +223,14 @@ export const AnnouncedAndReachableByKeyboard: Story = {
     }
     await expect(yes).toHaveFocus();
     await userEvent.tab();
-    await expect(within(banner() as HTMLElement).getByRole('button', { name: 'No' })).toHaveFocus();
+    const no = within(banner() as HTMLElement).getByRole('button', { name: 'No' });
+    await expect(no).toHaveFocus();
+    // Enter on Yes answers it, and focus lands on the switch the question was about.
+    yes.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(banner()).toBeNull());
+    const toggle = within(document.body).getByRole('switch', { name: 'Live monitor' });
+    await waitFor(() => expect(toggle).toHaveFocus());
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
   },
 };

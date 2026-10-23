@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { json, mountIntent, type RecordedRequest } from '../intent/testing';
 import { board, mountSession, monitorLease, SESSION_HASH, text } from '../intent/panel.testing';
@@ -172,16 +172,34 @@ describe('the question', () => {
     expect(server.calls.at(-1)).toMatchObject({ action: 'confirm', answer: 'no' });
     expect(banner()).toBeNull();
     expect(switchButton().getAttribute('aria-checked')).toBe('false');
-    expect(note()).toMatch(/turned off at your answer/);
+    expect(note()).toMatch(/turned off, as you asked/);
     await page.advance(60_000);
     expect(actions(server).filter((a) => a.startsWith('beat'))).toHaveLength(1);
   });
 
-  it('turns the monitor off with the unanswered note when the deadline passes with no answer, and beats no more', async () => {
+  /* The deadline, on the page's clock: the question opened at 1,020,000 ms with 580 seconds to run. */
+  const DEADLINE_MS = 1_600_000;
+
+  it('beats once at the deadline and turns the monitor off with the unanswered note when the server says so', async () => {
     const { page, server } = await monitoring();
-    server.next = () => receipt(true, asking());
+    server.next = (request) => {
+      void request;
+      return page.clock.now() >= DEADLINE_MS
+        ? receipt(
+            false,
+            monitorLease({
+              on: false,
+              confirm_by: null,
+              last_end: { reason: 'unanswered', at: 1700 },
+              now: 1700,
+            }),
+            'not-monitoring',
+          )
+        : receipt(true, asking());
+    };
     await page.advance(20_000);
     await page.advance(590_000);
+    expect(server.calls.at(-1)).toMatchObject({ action: 'beat', visible: true });
     expect(switchButton().getAttribute('aria-checked')).toBe('false');
     expect(banner()).toBeNull();
     expect(note()).toBe(
@@ -192,9 +210,48 @@ describe('the question', () => {
     expect(actions(server).filter((a) => a.startsWith('beat'))).toHaveLength(beats);
   });
 
+  it('leaves the monitor on when another tab answered Yes before this tab’s deadline', async () => {
+    const { page, server } = await monitoring();
+    server.next = () =>
+      page.clock.now() >= DEADLINE_MS - 10_000
+        ? receipt(
+            true,
+            monitorLease({ confirm_by: null, banner_due_at: 2900, deadline: 3500, now: 1700 }),
+          )
+        : receipt(true, asking());
+    await page.advance(20_000);
+    await page.advance(590_000);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+    expect(banner()).toBeNull();
+    expect(note()).toBe('');
+  });
+
+  it('is a labelled region', async () => {
+    const { page, server } = await monitoring();
+    server.next = () => receipt(true, asking());
+    await page.advance(20_000);
+    expect(banner()?.getAttribute('role')).toBe('region');
+    expect(banner()?.getAttribute('aria-label')).toBe('Live monitor question');
+  });
+
+  it('returns focus to the control that opens the settings when the switch is not reachable, and to the switch when it is', async () => {
+    const { page, server } = await monitoring();
+    server.next = () => receipt(true, asking());
+    await page.advance(20_000);
+    server.next = () => receipt(true, monitorLease({ confirm_by: null, now: 1130 }));
+    button('Yes').focus();
+    await act(async () => {
+      fireEvent.click(button('Yes'));
+    });
+    await page.settle();
+    expect(banner()).toBeNull();
+    // Its settings are closed here, so the switch cannot take focus: the control that opens them does.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Drift settings' }));
+  });
+
   it('clears and shows the reason’s note, not the unanswered one, when the lease ends another way while it is up', async () => {
     for (const [reason, pattern] of [
-      ['left', /left the session/],
+      ['left', /stopped checking in/],
       ['ended', /session ended/],
       ['paused', /model calls are paused/],
     ] as const) {

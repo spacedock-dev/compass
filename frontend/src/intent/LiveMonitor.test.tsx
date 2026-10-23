@@ -89,6 +89,7 @@ describe('the live monitor switch', () => {
       action: 'start',
       tab_id: 'tab-a',
       observer_model: 1,
+      visible: true,
     });
     await page.advance(20_000);
     await page.advance(20_000);
@@ -217,7 +218,7 @@ describe('the live monitor switch', () => {
       );
     await page.advance(20_000);
     expect(switchButton().getAttribute('aria-checked')).toBe('false');
-    expect(note()).toMatch(/left the session/);
+    expect(note()).toMatch(/stopped checking in/);
     await page.advance(60_000);
     expect(actions(server)).toEqual(['start', 'beat:true']);
   });
@@ -294,5 +295,107 @@ describe('the switch when there is nothing live to monitor', () => {
     await off.settle();
     expect(switchButton().getAttribute('aria-disabled')).toBe('true');
     expect(reason()).toBe('Model calls are off for this run');
+  });
+});
+
+describe('a tab that is hidden is never ticked for', () => {
+  it('starts as hidden when the tab is hidden before it is pressed, and beats no visible cadence', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    page.env.hidden = true;
+    await press(page);
+    expect(server.calls[0]).toMatchObject({ action: 'start', visible: false });
+    await page.advance(120_000);
+    // Told once that the tab is hidden, and no beat that says it is visible.
+    expect(actions(server)).toEqual(['start', 'beat:false']);
+    await act(async () => {
+      page.env.fireVisible();
+    });
+    await page.settle();
+    await page.advance(20_000);
+    expect(actions(server)).toEqual(['start', 'beat:false', 'beat:true', 'beat:true']);
+  });
+
+  it('says it is hidden when the tab hides while its start is in flight', async () => {
+    const server = leaseServer();
+    const page = mountSession({
+      routes: {
+        '/api/live-monitor': (request) => {
+          if (request.body?.['action'] === 'start') {
+            server.calls.push(request.body);
+            return 'hold';
+          }
+          return server.handler(request);
+        },
+      },
+    });
+    await page.settle();
+    await act(async () => {
+      fireEvent.click(switchButton());
+    });
+    await act(async () => {
+      page.env.fireHidden();
+    });
+    await page.release('/api/live-monitor', receipt(true, lease()));
+    await page.settle();
+    await page.advance(120_000);
+    expect(actions(server)).toEqual(['start', 'beat:false']);
+  });
+
+  it('reads the tab’s state at each beat, not the state it began in', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    // The tab went hidden without the page being told: the beat still says what is so.
+    page.env.hidden = true;
+    await page.advance(20_000);
+    expect(actions(server)).toEqual(['start', 'beat:false']);
+  });
+});
+
+describe('leaving while the start is in flight', () => {
+  it('posts stop for a lease the server made after the reader had gone', async () => {
+    const server = leaseServer();
+    const page = mountSession({
+      routes: {
+        '/api/live-monitor': (request) => {
+          server.calls.push(request.body ?? {});
+          return request.body?.['action'] === 'start' ? 'hold' : receipt(true, lease());
+        },
+      },
+    });
+    await page.settle();
+    await act(async () => {
+      fireEvent.click(switchButton());
+    });
+    await page.go('#n=intent');
+    await page.release('/api/live-monitor', receipt(true, lease()));
+    await page.settle();
+    expect(actions(server)).toEqual(['start', 'stop']);
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start', 'stop']);
+  });
+});
+
+describe('an old lease does not carry into a new one', () => {
+  it('forgets the old question and level on leaving and on pressing again', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    server.next = () =>
+      receipt(true, lease({ banner_due_at: 1100, deadline: 1700, confirm_by: 1700, now: 1120 }));
+    await page.advance(20_000);
+    expect(document.querySelector('[data-next-live-question]')).not.toBeNull();
+    await page.go('#n=intent');
+    await page.go(SESSION_HASH);
+    // The server has a new lease with no question; the old one's deadline must not end it.
+    server.next = () => receipt(true, lease({ now: 1000, confirm_by: null }));
+    await press(page);
+    await page.advance(800_000);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+    expect(note()).toBe('');
   });
 });

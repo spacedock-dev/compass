@@ -35,6 +35,9 @@ export interface MonitorEntry {
   readonly lease: LeaseState | null;
   /** The page clock, in milliseconds, when `lease` was learned: the countdown runs from it. */
   readonly observedAt: number;
+  /** The monitor ended for a reason that leaves the model-free estimate as the level (its limit, or a
+      pause), so the estimate stays until the reader leaves or turns it on again. */
+  readonly fallback: boolean;
   /** Why the monitor is off, in a sentence the Drift card shows; '' for none. */
   readonly note: string;
   /** The reason behind the note, so the question's banner can tell an end it caused from another. */
@@ -46,12 +49,31 @@ const NONE: MonitorEntry = {
   started: false,
   lease: null,
   observedAt: 0,
+  fallback: false,
   note: '',
   noteReason: null,
 };
 /* The sample starts with the level drawn, as it would after a reader turned the switch on, and the switch still
    shows and hides it. There is no lease behind it: nothing here is ever sent. */
 const SAMPLE_ENTRY: MonitorEntry = { ...NONE, wanted: true };
+/* Turning it on begins a new monitor: nothing of an earlier lease, its level, its question or its note carries in. */
+const FRESH_START: Partial<MonitorEntry> = {
+  wanted: true,
+  started: false,
+  lease: null,
+  observedAt: 0,
+  fallback: false,
+  note: '',
+  noteReason: null,
+};
+/* Leaving a session ends the wish and forgets the lease with it. */
+const LEFT: Partial<MonitorEntry> = {
+  wanted: false,
+  started: false,
+  lease: null,
+  observedAt: 0,
+  fallback: false,
+};
 const SAMPLE_KEY = `${SAMPLE.harness}:${SAMPLE.sid}`;
 
 export interface MonitorStore {
@@ -111,6 +133,8 @@ export function liveMonitorFor(shell: Shell): MonitorStore {
         ...now,
         wanted: false,
         started: false,
+        // A check that is paused or capped leaves the estimate as the level; every other end is an off.
+        fallback: reason === 'cap' || reason === 'paused',
         note: endNote(reason, options),
         noteReason: reason,
       });
@@ -199,10 +223,7 @@ export function useLiveMonitor(session: Row, payload: Row): MonitorView {
     sample,
     press: (on) => {
       if (blocked !== null) return;
-      store.update(
-        key,
-        on ? { wanted: true, started: false, note: '', noteReason: null } : { wanted: false },
-      );
+      store.update(key, on ? FRESH_START : { wanted: false });
     },
   };
 }
@@ -210,7 +231,7 @@ export function useLiveMonitor(session: Row, payload: Row): MonitorView {
 /* Whether the live level is wanted for this session, for the Drift step that draws it. */
 export function useLiveMonitorOn(session: Row): boolean {
   const entry = useMonitorEntry(session);
-  return LIVE_HARNESSES.has(String(session['harness'] || '')) && entry.wanted;
+  return LIVE_HARNESSES.has(String(session['harness'] || '')) && (entry.wanted || entry.fallback);
 }
 
 /* The lease for a session the page is showing: start it when the reader turns the switch on, beat it while
@@ -233,7 +254,7 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
   // Leaving this session, by unmount or by moving to another, ends the wish: a return finds it off.
   useEffect(() => {
     if (!supported) return undefined;
-    return () => store.update(key, { wanted: false, started: false });
+    return () => store.update(key, LEFT);
   }, [supported, store, key]);
 
   useEffect(() => {
@@ -245,6 +266,8 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
     // The server said the lease is gone, so there is nothing left to stop.
     let gone = false;
     let timer: unknown = null;
+    // Aborts the beats only. The start is never aborted: a lease the server made after the reader had
+    // gone has to be answered, and stopped.
     const abort = new AbortController();
     const body = (action: string, extra: Record<string, unknown> = {}) =>
       ({ harness, sid, tab_id: env.tabId, action, ...extra }) as never;
@@ -266,14 +289,15 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
       });
     };
     const startBeats = () => {
-      if (timer === null) timer = env.clock.setInterval(() => beat(true), BEAT_MS);
+      // What is so now, at each beat: a tab can be hidden without the page having been told.
+      if (timer === null) timer = env.clock.setInterval(() => beat(!env.isHidden()), BEAT_MS);
     };
     const stopBeats = () => {
       if (timer !== null) env.clock.clearInterval(timer);
       timer = null;
     };
     void client
-      .postLiveMonitor(body('start', { observer_model: 1 }), abort.signal)
+      .postLiveMonitor(body('start', { observer_model: 1, visible: !env.isHidden() }))
       .then((result) => {
         if (result.kind === 'aborted') return;
         if (result.kind !== 'ok') {
@@ -292,7 +316,9 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
         }
         started = true;
         store.update(key, { started: true });
-        startBeats();
+        // A tab hidden by now holds the lease without a visible cadence, and says so.
+        if (env.isHidden()) beat(false);
+        else startBeats();
       });
     const offHidden = env.onBecameHidden(() => {
       if (!started) return;

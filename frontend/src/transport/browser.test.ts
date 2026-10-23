@@ -115,6 +115,14 @@ describe('browser environment', () => {
     expect(t.count(t.documentListeners, 'visibilitychange')).toBe(0);
   });
 
+  it('says whether the tab is hidden now', () => {
+    const t = globals({ hidden: true });
+    const env = createBrowserEnvironment(t.g);
+    expect(env.isHidden()).toBe(true);
+    t.state.hidden = false;
+    expect(env.isHidden()).toBe(false);
+  });
+
   it('sends a beacon of JSON where the browser has one, and says so where it has none', () => {
     const sent: { url: string; body: unknown }[] = [];
     const t = globals();

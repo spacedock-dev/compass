@@ -119,13 +119,13 @@ export function monitorLevel(lease: LeaseState): DriftLevel | null {
    banner's, because the two budgets are kept apart. */
 export const END_NOTES: Readonly<Record<Exclude<EndReason, 'stopped'>, string>> = {
   ended: 'Live monitor turned off: the session ended, so there is nothing live to monitor.',
-  left: 'Live monitor turned off: you left the session or this tab stopped answering, so no more model calls were made.',
+  left: 'Live monitor turned off: this page stopped checking in (for example, the computer slept), so no more model calls were made.',
   paused:
     'Live monitor turned off: model calls are paused. Resume model calls, then turn it on again.',
   unanswered:
     'Live monitor turned off: no answer after {minutes}, so no more model calls were made.',
-  declined: 'Live monitor turned off at your answer, so no more model calls will be made.',
-  cap: 'Live monitor turned off: it reached its own limit of checks. That limit is not your Analyze budget, which it never spends. Turn it on again when the limit clears.',
+  declined: 'Live monitor turned off, as you asked.',
+  cap: 'Live monitor turned off: it reached its own limit of checks, which is not your Analyze budget. Analyze is unaffected, and the level comes from checks and file paths.',
 };
 
 export function endNote(reason: EndReason, options: { readonly answerMinutes?: number }): string {
@@ -138,6 +138,8 @@ export function endNote(reason: EndReason, options: { readonly answerMinutes?: n
 }
 
 const REFUSALS: Readonly<Record<string, string>> = {
+  unreachable: 'Live monitor did not start. Compass could not be reached.',
+  unavailable: 'Live monitor did not start: this session is not available to monitor.',
   ended: 'Live monitor did not start: the session has ended, so there is nothing live to monitor.',
   paused: 'Live monitor did not start: model calls are paused.',
   'no-observer-model': 'Live monitor did not start: model calls are off for this run.',

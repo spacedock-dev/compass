@@ -7,6 +7,9 @@ import {
   leaseScenario,
   leaseState,
   passedCheck,
+  readingScenario,
+  STORED_READING,
+  analysisRow,
   type LeaseScenario,
   type Scenario,
 } from './drift.scenario';
@@ -100,6 +103,10 @@ export const OnWithTheHaikuLevel: Story = {
     const card = await drawn(canvasElement);
     await turnOn(card);
     await waitFor(() => expect(pill(card)).toBe('High'));
+    // The header pill is labelled the monitor's, as the card is.
+    await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).toHaveTextContent(
+      'Live monitor · Haiku',
+    );
     const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
     await expect(level).toHaveTextContent('Live monitor · Haiku');
     await expect(level).toHaveTextContent('The latest turns wrote outside the saved folders.');
@@ -142,6 +149,9 @@ export const EndedAndDisabled: Story = {
     await expect(document.querySelector('[data-next-live-reason]')).toHaveTextContent(
       'The session has ended',
     );
+    // The reason is the switch's own description, so a screen reader reads it with the switch.
+    const reason = document.querySelector('[data-next-live-reason]') as HTMLElement;
+    await expect(toggle.getAttribute('aria-describedby')).toContain(reason.id);
     await userEvent.click(toggle);
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(actions(args.scenario.lease as LeaseScenario)).toEqual([]);
@@ -190,22 +200,46 @@ export const TurnedOffBecauseTheReaderLeft: Story = {
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
     await endsBy('left', args, card);
-    await waitFor(() => expect(note()).toHaveTextContent(/left the session or this tab stopped/));
+    await waitFor(() => expect(note()).toHaveTextContent(/stopped checking in/));
     await expect(await monitorSwitch(card)).toHaveAttribute('aria-checked', 'false');
   },
 };
 
 export const TurnedOffBecauseModelCallsWerePaused: Story = {
-  ...scenario({ facts: FACTS, clock: {}, lease: leaseScenario(leaseState({ now: 5000 })) }),
+  ...scenario({
+    facts: FACTS,
+    clock: {},
+    work: { live_levels: [ESTIMATE('medium')] },
+    reading: readingScenario([]),
+    lease: leaseScenario(leaseState({ now: 5000 })),
+  }),
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
-    await endsBy('paused', args, card);
+    const toggle = await turnOn(card);
+    // The reader pauses model calls: the page's board says so, and the server ends the lease.
+    await userEvent.click(within(document.body).getByRole('button', { name: 'Pause model calls' }));
+    const lease = args.scenario.lease as LeaseScenario;
+    lease.state = leaseState({ on: false, last_end: { reason: 'paused', at: 1200 }, now: 9000 });
+    lease.beat = 'gone';
+    args.scenario.clock?.advance?.(20_000);
     await waitFor(() => expect(note()).toHaveTextContent(/model calls are paused/));
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-disabled', 'true'));
+    await expect(document.querySelector('[data-next-live-reason]')).toHaveTextContent(
+      'Model calls are paused',
+    );
+    // Paused is not off for the level: the estimate stays as the fallback.
+    await waitFor(() => expect(pill(card)).toBe('Medium'));
   },
 };
 
 export const TurnedOffByItsOwnLimit: Story = {
-  ...scenario({ facts: FACTS, clock: {}, lease: leaseScenario(leaseState({ now: 5000 })) }),
+  ...scenario({
+    facts: FACTS,
+    clock: {},
+    work: { live_levels: [ESTIMATE('medium')] },
+    lease: leaseScenario(leaseState({ now: 5000 })),
+  }),
   play: async ({ canvasElement, args }) => {
     const card = await drawn(canvasElement);
     await endsBy('cap', args, card);
@@ -213,6 +247,9 @@ export const TurnedOffByItsOwnLimit: Story = {
     // Its words are the monitor's, never Analyze's cap banner.
     await expect(note()).not.toHaveTextContent(/drift analyses/);
     await expect(note()).toHaveTextContent(/not your Analyze budget/);
+    // Its limit is spent, so the level is the estimate's, as before the monitor was on.
+    await waitFor(() => expect(pill(card)).toBe('Medium'));
+    await expect(card.querySelector('[data-next-drift-level]')).toHaveTextContent('Live estimate');
   },
 };
 
@@ -228,5 +265,95 @@ export const RefusedToStart: Story = {
     await waitFor(() => expect(note()).toHaveTextContent(/did not start.*paused/));
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(actions(args.scenario.lease as LeaseScenario)).toEqual(['start']);
+  },
+};
+
+export const AnalyzeOutranksTheMonitor: Story = {
+  ...scenario({
+    facts: FACTS,
+    session: STORED_READING,
+    work: {
+      live_levels: [ESTIMATE('none_or_low')],
+      analysis_levels: [analysisRow('claude', 'medium')],
+    },
+    lease: leaseScenario(leaseState({ level: HAIKU('extreme'), now: 5000 })),
+  }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    await turnOn(card);
+    await waitFor(() => expect(pill(card)).toBe('Medium'));
+    await expect(card.ownerDocument.querySelector('[data-next-drift-pill]')).not.toHaveTextContent(
+      'Live monitor',
+    );
+    await expect(card).not.toHaveTextContent('Live monitor · Haiku');
+  },
+};
+
+export const HiddenTabHoldsTheLeaseAndResumes: Story = {
+  ...scenario({
+    facts: FACTS,
+    clock: {},
+    tab: {},
+    lease: leaseScenario(leaseState({ now: 5000 })),
+  }),
+  play: async ({ canvasElement, args }) => {
+    const card = await drawn(canvasElement);
+    await turnOn(card);
+    const lease = args.scenario.lease as LeaseScenario;
+    const beats = () =>
+      lease.posts.filter((post) => post['action'] === 'beat').map((post) => post['visible']);
+    args.scenario.tab?.hide?.();
+    await waitFor(() => expect(beats()).toEqual([false]));
+    args.scenario.clock?.advance?.(120_000);
+    await expect(beats()).toEqual([false]);
+    args.scenario.tab?.show?.();
+    await waitFor(() => expect(beats()).toEqual([false, true]));
+    args.scenario.clock?.advance?.(20_000);
+    await waitFor(() => expect(beats()).toEqual([false, true, true]));
+  },
+};
+
+export const StartedFromAHiddenTab: Story = {
+  ...scenario({
+    facts: FACTS,
+    clock: {},
+    tab: {},
+    lease: leaseScenario(leaseState({ now: 5000 })),
+  }),
+  play: async ({ canvasElement, args }) => {
+    const card = await drawn(canvasElement);
+    const toggle = await monitorSwitch(card);
+    args.scenario.tab?.hide?.();
+    await userEvent.click(toggle);
+    const lease = args.scenario.lease as LeaseScenario;
+    await waitFor(() => expect(lease.posts[0]).toMatchObject({ action: 'start', visible: false }));
+    args.scenario.clock?.advance?.(120_000);
+    // Told once that the tab is hidden, and never a beat that says it is visible.
+    await waitFor(() => expect(actions(lease)).toEqual(['start', 'beat']));
+    await expect(lease.posts[1]).toMatchObject({ visible: false });
+  },
+};
+
+export const LeftWhileTheStartWasInFlight: Story = {
+  ...scenario({
+    facts: FACTS,
+    clock: {},
+    nav: {},
+    lease: { ...leaseScenario(leaseState({ now: 5000 })), hold: true },
+  }),
+  play: async ({ canvasElement, args }) => {
+    const card = await drawn(canvasElement);
+    const toggle = await monitorSwitch(card);
+    await userEvent.click(toggle);
+    const lease = args.scenario.lease as LeaseScenario;
+    await waitFor(() => expect(actions(lease)).toEqual(['start']));
+    // The reader leaves for another page before the server has answered.
+    args.scenario.nav?.go?.('#n=intent');
+    await waitFor(() =>
+      expect(document.querySelector('[data-next-cockpit-action="live-monitor"]')).toBeNull(),
+    );
+    lease.release?.();
+    // The lease the server made after they had gone is stopped, so no check is made for it.
+    await waitFor(() => expect(actions(lease)).toEqual(['start', 'stop']));
   },
 };

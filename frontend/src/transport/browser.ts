@@ -60,6 +60,7 @@ export function createBrowserEnvironment(g: BrowserGlobals): Environment {
       listen(g.document, 'visibilitychange', () => {
         if (!g.document.hidden) listener();
       }),
+    isHidden: () => g.document.hidden,
     onBecameHidden: (listener) =>
       listen(g.document, 'visibilitychange', () => {
         if (g.document.hidden) listener();

@@ -373,11 +373,11 @@ export const LIVE_LINE =
    to. The server's own "What is sent" sentence, naming the destination, stands beside it while the monitor
    is on. */
 export const LIVE_HINT =
-  'Shows a level from a Haiku check of the latest turns, about once a minute while you watch this session. It sends your session text to Claude Code. Until a check has run it shows the level from checks and file paths. The level shows here and in the header.';
+  'Asks Haiku, through your Claude Code, where the latest turns are heading, about once a minute while this session is on screen. Until a check returns, the level comes from checks and file paths. The level shows here and in the header.';
 /* The monitor level's source line: what a Haiku check read, and what it does not say. The estimate's own line
    above stays the line for the level computed from checks and paths. */
 export const LIVE_MONITOR_LINE =
-  'A Haiku check of the latest turns, about once a minute while you watch. It reads the turns it was sent, not your whole intent, and says where they are heading, not whether the work met it.';
+  'A Haiku check of the latest turns, about once a minute while you view the session. It reads your goal and the turns it was sent, and says where they are heading, not whether the work met the goal.';
 export const LIVE_SAVE = 'Save your intent to see a live estimate.';
 export const UNCHECKED = 'Not checked yet';
 export const NUDGE = 'This is a quick estimate. Analyze to see what drifted and how to steer back.';

@@ -2,7 +2,7 @@ import { act } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { liveMonitorFor } from '../intent/liveMonitor';
 import { monitorLease } from '../intent/panel.testing';
-import { check, contextRoute, fact, LEASE_ROUTE, mountDrift } from './testing';
+import { check, contextRoute, fact, json, LEASE_ROUTE, mountDrift, SESSION_HASH } from './testing';
 
 /* The level a Haiku check earned replaces the checks-and-paths estimate in the card and the header pill,
    labelled as the monitor's; an Analyze reading outranks it; and the estimate shows whenever the monitor
@@ -113,6 +113,28 @@ const detail = () =>
   document.querySelector('[data-next-drift-level] .next-session-drift-detail')?.textContent ?? '';
 
 describe('the level the monitor draws', () => {
+  it('labels the pill with the monitor, and not the estimate or an analysis', async () => {
+    const first = await open({
+      work: {
+        live_levels: [ESTIMATE('none_or_low')],
+        live_monitor: monitorLease({ level: MONITOR('high'), now: LATER }),
+      },
+    });
+    expect(document.querySelector('[data-next-drift-pill]')?.textContent).toContain(
+      'Live monitor · Haiku',
+    );
+    first.unmount();
+    await open({
+      work: {
+        live_levels: [ESTIMATE('medium')],
+        live_monitor: monitorLease({ level: null, now: LATER }),
+      },
+    });
+    expect(document.querySelector('[data-next-drift-pill]')?.textContent).not.toContain(
+      'Live monitor',
+    );
+  });
+
   it('shows the monitor’s level in the pill and the card, labelled Live monitor · Haiku', async () => {
     await open({
       work: {
@@ -186,6 +208,67 @@ describe('the level the monitor draws', () => {
         live_monitor: monitorLease({ level: MONITOR('not_enough'), now: LATER }),
       },
     });
+    expect(pill()).toBeNull();
+  });
+});
+
+describe('the estimate after the monitor ends', () => {
+  /* Owner ruling: the model-free estimate stays as the fallback when the check is paused or capped. An end the
+     reader asked for, or that follows the session or the reader going away, shows nothing live, as an off
+     switch always did. */
+  async function endedBy(reason: string) {
+    let gone = false;
+    const page = mountDrift({
+      facts: FACTS,
+      routes: {
+        '/api/project-context': contextRoute(FACTS, { live_levels: [ESTIMATE('medium')] }),
+        '/api/live-monitor': () =>
+          gone
+            ? json(
+                {
+                  ok: false,
+                  reason: 'not-monitoring',
+                  state: monitorLease({ on: false, last_end: { reason, at: 1300 }, now: 9000 }),
+                },
+                200,
+              )
+            : json({ ok: true, reason: '', state: monitorLease() }),
+      },
+    });
+    await page.settle();
+    await act(async () => {
+      liveMonitorFor(page.shell).update('claude:s1', { wanted: true });
+    });
+    await page.settle();
+    expect(pill()).toBe('Medium');
+    gone = true;
+    await page.advance(20_000);
+    expect(
+      document
+        .querySelector('[data-next-cockpit-action="live-monitor"]')
+        ?.getAttribute('aria-checked'),
+    ).toBe('false');
+    return page;
+  }
+
+  it.each(['cap', 'paused'])('keeps the estimate after %s', async (reason) => {
+    await endedBy(reason);
+    expect(pill()).toBe('Medium');
+    expect(source()).toMatch(/^Live estimate/);
+  });
+
+  it.each(['declined', 'unanswered', 'left', 'ended'])(
+    'shows nothing live after %s',
+    async (reason) => {
+      await endedBy(reason);
+      expect(pill()).toBeNull();
+    },
+  );
+
+  it('stops showing it when the reader leaves, and when they press the switch on again it is theirs to turn off', async () => {
+    const page = await endedBy('cap');
+    await page.go('#n=intent');
+    await page.go(SESSION_HASH);
     expect(pill()).toBeNull();
   });
 });

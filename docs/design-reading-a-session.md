@@ -6680,10 +6680,7 @@ switch is still off by default and its placement in row 6b, in Drift settings, i
 the server's lease, so a reload shows it off, and it is disabled with a reason once the session has ended.
 
 The copy table's switch description, "Shows a level after every turn, from checks and file paths, with no
-model call. The level shows here and in the header.", now reads, for Claude Code with annotations on: "Shows
-a level from a Haiku check of the latest turns, about once a minute while you watch this session. It sends
-your session text to Claude Code. Until a check has run it shows the level from checks and file paths. The
-level shows here and in the header." Other harnesses keep the earlier sentence. A banner after 20 minutes
+model call. The level shows here and in the header.", now reads, for Claude Code with annotations on: "Asks Haiku, through your Claude Code, where the latest turns are heading, about once a minute while this session is on screen. Until a check returns, the level comes from checks and file paths. The level shows here and in the header." Other harnesses keep the earlier sentence. A banner after 20 minutes
 asks "Do you still want to monitor this session?" and stays for 10 minutes; its answers, and the note left
 when it goes unanswered, are in the DEC-26 amendment.
 

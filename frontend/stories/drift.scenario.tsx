@@ -101,6 +101,9 @@ export interface LeaseScenario {
   beat?: 'held' | 'gone';
   /** The state the server holds after the reader answers its question. */
   onConfirm?: (answer: string) => Record<string, unknown>;
+  /** Leave a start unanswered until `release` is called, as a slow server leaves it. */
+  hold?: boolean;
+  release?: () => void;
 }
 
 export const leaseState = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -131,6 +134,8 @@ export interface Scenario {
   readonly reading?: ReadingScenario;
   /** The Live monitor's lease, for a story about the switch, its level, its notes or its question. */
   readonly lease?: LeaseScenario;
+  /** Filled in on mount: the tab, which a story hides and shows as a reader's browser does. */
+  readonly tab?: { hide?: () => void; show?: () => void };
   /** Filled in on mount: the fake clock, which a story moves to beat the lease or run out its question. */
   readonly clock?: { advance?: (ms: number) => void };
 
@@ -156,7 +161,7 @@ export interface Scenario {
   /** Every `POST /api/correction` body the page sent, for a story about what the request carries. */
   readonly correctionPosts?: Record<string, unknown>[];
   /** Filled in on mount: the browser's Back, which a story cannot press through the page's own links. */
-  readonly nav?: { back?: () => void };
+  readonly nav?: { back?: () => void; go?: (fragment: string) => void };
   /** Filled in on mount: one more board read, over the scenario as the story has since changed it. */
   readonly board?: { refresh?: () => Promise<void> };
 }
@@ -234,6 +239,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           ? '#n=sessions'
           : `#n=session:demo:${harness}:s1`,
     );
+    const env = createFakeEnvironment({ clock });
     let generation = 1000;
     let marked: boolean | null = null;
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -241,7 +247,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
     let reading = scenario.payload?.['reading'] ?? POLICY;
     if (scenario.reading) scenario.reading.posts.length = 0;
     const shell = createShell({
-      env: createFakeEnvironment({ clock }),
+      env,
       router: createRouter(history.env),
       provider: () => fakeBackend(),
       events: { addEventListener: () => undefined, removeEventListener: () => undefined },
@@ -278,6 +284,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           const lease = scenario.lease;
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
           lease.posts.push(body);
+          if (body['action'] === 'start' && lease.hold)
+            return new Promise<Response>((resolve) => {
+              lease.release = () => resolve(json({ ok: true, reason: '', state: lease.state }));
+            });
           if (body['action'] === 'start' && lease.refuse)
             return json({ ok: false, reason: lease.refuse, state: { ...lease.state, on: false } });
           if (body['action'] === 'confirm' && lease.onConfirm)
@@ -356,11 +366,20 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
       },
     });
     if (scenario.clock) scenario.clock.advance = (ms) => clock.advance(ms);
-    if (scenario.nav)
+    if (scenario.tab) {
+      scenario.tab.hide = () => env.fireHidden();
+      scenario.tab.show = () => env.fireVisible();
+    }
+    if (scenario.nav) {
       scenario.nav.back = () => {
         history.back();
         history.flush();
       };
+      scenario.nav.go = (fragment) => {
+        history.type(fragment);
+        history.flush();
+      };
+    }
     if (scenario.board)
       scenario.board.refresh = async () => {
         await shell.runtime.refresh({ manual: true });
