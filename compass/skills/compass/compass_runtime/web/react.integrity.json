@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2125731,
+    "bytes": 2125431,
     "file": "react.html",
-    "sha256": "5ecedbec035a46f52b595502944abb23d38fc616e117c28e5522818dc3b70dc0"
+    "sha256": "f9cf4cc03652c24356ef762ecee34c83c833c4c8b60aafe3901889c6c9b82c81"
   },
   "format": 1,
   "frontend": "react",
@@ -583,7 +583,7 @@
       },
       {
         "file": "frontend/src/drift/Evidence.tsx",
-        "sha256": "dbc7098697d79f59fadda7a1bd3bc213f4a631f387cd2f9c604a04d11f29b061"
+        "sha256": "e69bb340afb7bba0ad05cdfd4b4f86fa6742bf63560d61acdaf7332030437847"
       },
       {
         "file": "frontend/src/drift/GoalVerdictNote.tsx",
@@ -607,7 +607,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "845789e60ff926b6422c175eb1e4e87a4bd11e6b801004e6409ca276575cf1be"
+        "sha256": "25a943ba76b1c6a5e584034afa666e9ddb91e567416d8cb18081c2cddff56c5d"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -699,7 +699,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "b5f6a028b3988f124f14ebb45914859f8186f7da9296cd5b350e33425ccb864a"
+        "sha256": "e0783a0d48416c4c22c85ef45fe928c8b33fa8eee4abeafca5ff9e8acd0b1dd9"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -1115,7 +1115,7 @@
       },
       {
         "file": "frontend/src/sample/tour.ts",
-        "sha256": "49105a905e249858b607f9d15ee1566367a557695092d61498a1995c0632f313"
+        "sha256": "5983127977045b67a634d87f8985ce16204702f6eca543a1349de6143b94e824"
       },
       {
         "file": "frontend/src/sample/tourContext.ts",
