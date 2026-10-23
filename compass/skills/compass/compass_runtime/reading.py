@@ -4274,7 +4274,15 @@ def _removed_after(
             for write in recorded.writes
         )
     ]
-    return max(hits, key=lambda removal: removal.at) if hits else None
+    # `rm file && rmdir folder` records both at one time; name the file the verdict relied on.
+    return (
+        max(
+            hits,
+            key=lambda removal: (removal.at, any(_same_path(removal.path, p) for p in named)),
+        )
+        if hits
+        else None
+    )
 
 
 def _removal_covers(removed: str, path: str) -> bool:

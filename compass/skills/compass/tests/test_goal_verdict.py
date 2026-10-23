@@ -98,6 +98,21 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
             checked,
         )
 
+    def test_a_file_and_its_folder_removed_in_one_call_name_the_file(self) -> None:
+        # Measured on met-undone2: `rm docs/e2e/notes.md && rmdir docs/e2e` gives both the same time,
+        # and the card named the folder, not the file the verdict relied on.
+        for removals in (
+            (("docs/e2e", 170.0, "deleted"), ("docs/e2e/notes.md", 170.0, "deleted")),
+            (("docs/e2e/notes.md", 170.0, "deleted"), ("docs/e2e", 170.0, "deleted")),
+        ):
+            with self.subTest(order=[path for path, _at, _kind in removals]):
+                checked = self._checked(
+                    [write_fact("docs/e2e/notes.md", at=120.0)],
+                    "the file docs/e2e/notes.md was created and read back",
+                    removals=removals,
+                )
+                self.assertEqual("docs/e2e/notes.md", checked["path"])
+
     def test_a_move_away_after_the_verdict_disputes_it_as_moved(self) -> None:
         checked = self._checked(
             [write_fact("findings.md", at=120.0)],
