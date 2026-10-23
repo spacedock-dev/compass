@@ -463,6 +463,21 @@ class AGoalSessionIsNamedByTheGoalItHoldsTest(HarnessContractTestCase):
         ]
         self.assertEqual("Tidy the placeholder module", self.title(records))
 
+    def test_a_goal_set_outside_the_cold_read_window_still_names_the_session(self) -> None:
+        # The read starts at most `turn_scan_max_bytes` from the end, so a goal set before that
+        # is not seen and its absence proves nothing: the opener stays as the last-resort name.
+        when = T0
+        records = [prompt(when, f"/goal {CONDITION}"), *set_goal(when + 1)]
+        records += [prompt(when + 2 + n, "x" * 400) for n in range(40)]
+        with tempfile.TemporaryDirectory() as home:
+            config, state = make_runtime(turn_scan_max_bytes=4096)
+            path = Path(home, "claude.jsonl")
+            _jsonl(path, records, T0)
+            self.assertGreater(path.stat().st_size, config.turn_scan_max_bytes)
+            self.assertIsNone(claude_data.session_goal(config, state, str(path)))
+            title = claude_data.session_title(config, state, str(path))
+        self.assertTrue((title or "").startswith("/goal"))
+
     def test_a_generated_title_keeps_the_session_name(self) -> None:
         when = self.NOW - 100
         ai = {"type": "ai-title", "aiTitle": "Generated name", "timestamp": _iso(when + 2)}

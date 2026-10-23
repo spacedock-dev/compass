@@ -175,7 +175,7 @@ def model_reported(value: Any) -> str | None:
 
 
 def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str | None:
-    """Newest generated Claude title, falling back to the first user prompt.
+    """Newest generated Claude title, then the held `/goal`, then the first non-`/goal` prompt.
 
     ``ai-title`` records can be older than the bounded activity tail, so walk
     the file backward to find the newest one. The cache is invalidated whenever
@@ -243,7 +243,13 @@ def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str 
                     ).strip()
                     candidate = transcripts.prompt_title(config, prompt)
                     # The opener of a goal no longer held names nothing; the next prompt does.
-                    if candidate and candidate.split()[0] == "/goal":
+                    # Only when no held goal is authoritative: a file longer than the goal read's
+                    # window may hold one set before it, so the opener stays as the last resort.
+                    if (
+                        candidate
+                        and candidate.split()[0] == "/goal"
+                        and stat.st_size <= config.turn_scan_max_bytes
+                    ):
                         continue
                     title = candidate
                     break
