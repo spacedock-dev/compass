@@ -5826,8 +5826,11 @@ the evidence floor, and the stored-reading checks.
   settle, leaves "Not enough recorded yet" with `line-not-shown-by-a-check`. A departure reads Medium
   and a fresh failed check High, as with a line. No analysis is ever Extreme; that was never changed.
   An outcome line, where one is saved, is read as before and the Goal is not also treated as a line.
-- **The reading says which it read.** The cutoff gains "Read against your goal; no expected outcome
-  lines were saved." when the revision read holds none. It is keyed on the revision and not on what the
+- **The reading says which it read.** The cutoff gains "Read against your goal." when the revision
+  read holds none. Amended 2026-10-23 (owner): it first read "Read against your goal; no expected
+  outcome lines were saved.", and the second half was dropped because noting the absence of an
+  optional field tells a reader nothing. A goal-only reading stored before that change keeps the
+  longer sentence it was stored with. It is keyed on the revision and not on what the
   press sent, because the unasked lane reads the goal alone while lines are saved, and that is not the
   same statement.
 - **`no-outcome-line` stays a known token.** A reading's level is recomputed from the stored reading

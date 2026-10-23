@@ -5347,8 +5347,9 @@ GOAL_SOURCE_UNROOMED = (
 # Said in the cutoff when the revision read holds no outcome line, so a reader can tell a level
 # resting on the goal's own end state from one resting on lines (owner, 2026-10-22). Keyed on the
 # revision, not on what the press sent: a press that read the goal alone while lines were saved
-# did not read "no lines".
-NO_OUTCOME_LINES_NOTE = " Read against your goal; no expected outcome lines were saved."
+# did not read "no lines". It names the goal and not the absent line, since noting an optional
+# field that was not filled in tells a reader nothing (owner, 2026-10-23).
+NO_OUTCOME_LINES_NOTE = " Read against your goal."
 # Said in the cutoff when the newest final reply was not read whole (owner, 2026-10-05):
 # the agent's newest message that the transcript records as ending its turn goes whole where
 # its row fits, and otherwise its excerpt stands. Keyed by `Selection.newest_final`, and

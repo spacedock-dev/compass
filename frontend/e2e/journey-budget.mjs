@@ -268,7 +268,7 @@ try {
         if (fixture.state === 'ended') {
           assert.match(
             await page.locator('[data-next-ended-goal]').innerText(),
-            /Words you save now cannot be read against it/,
+            /What you save now is kept, but Analyze will not check the session against it/,
           );
           assert.notEqual(await goal.inputValue(), 'Ship the typed queue worker');
         }

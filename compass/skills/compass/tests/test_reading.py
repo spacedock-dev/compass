@@ -3942,7 +3942,7 @@ class TheResolverTakesTheQuestionFromThePrompt(unittest.TestCase):
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
 
 
-NO_LINES_NOTE = "Read against your goal; no expected outcome lines were saved."
+NO_LINES_NOTE = "Read against your goal."
 
 
 class AGoalAloneIsReadAgainstItsOwnEndState(AClaudeCodeReadingProducer):

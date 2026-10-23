@@ -325,7 +325,7 @@ const REFUSED_READING = {
   scope: 'last-turn',
   scope_text: 'Read up to its last turn.',
   stamp: 'model · m',
-  cutoff: 'Evidence read to its end. Read against your goal; no expected outcome lines were saved.',
+  cutoff: 'Evidence read to its end. Read against your goal.',
   coverage: {
     tail_truncated: false,
     tail_start: null,
