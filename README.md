@@ -181,8 +181,8 @@ and Now, Course, Decisions and Console tabs. Each session's own page is one colu
 type the goal you are holding that session to and optionally an expected outcome, a What the session has
 done card, and a Drift card. What the session has done shows
 Compass's own outline of a Claude Code or Codex record, made with no model call, and on Claude Code a
-model-written summary: an opening paragraph on what the agent did, then phases open with their lines and
-the entries they cite, which you can fold. A phase that holds evidence for a departure, or has failed
+model-written summary: an opening paragraph on what the agent did, then phases that start closed, each
+opening on its lines and the entries they cite when you press it. A phase that holds evidence for a departure, or has failed
 test runs, says so on its heading. The Drift card is where
 you check the session for drift with one press and read back what has been raised about it and what
 became of the raise.
