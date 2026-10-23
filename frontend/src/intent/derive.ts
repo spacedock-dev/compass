@@ -434,8 +434,6 @@ export function adoption(draft: Draft | null): Record<string, unknown> {
     : {};
 }
 
-/* Why the goal box arrives empty over a session that opened with a harness command: the command's name
-   alone, since its arguments are not the reader's goal either. */
 /* What a /goal did to the one before it, from the row alone. The earlier goal's words are never published, so
    none are said; a value this build does not know says nothing. */
 const EARLIER_GOAL: Readonly<Record<string, (clock: string) => string>> = {
@@ -464,10 +462,15 @@ export function goalEndedNote(input: DraftInput): string {
     return say && at !== null ? say(clockText(at)) : '';
   }
   const cleared = goalClearedAt(session);
-  if (cleared === null || noDraftWhy(session, annotation, payload)) return '';
+  /* The sentence is drawn only over a box with no draft (IntentSection), so a chosen prompt that hides it
+     leaves the clear to this note. */
+  if (cleared === null || (!intentDrafted(input) && noDraftWhy(session, annotation, payload)))
+    return '';
   return `Your /goal was cleared at ${clockText(cleared)}`;
 }
 
+/* Why the goal box arrives empty over a session that opened with a harness command: the command's name
+   alone, since its arguments are not the reader's goal either. */
 export function noDraftWhy(session: Row, annotation: Annotation | null, payload: Row): string {
   if (!annotateOn(payload) || storeUnreadable(payload)) return '';
   const goal = annotation ? annotation['goal'] : session['annotation_goal'];
