@@ -2196,6 +2196,12 @@ _CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
 _WRITE_OPERATORS = frozenset({"&>>", "&>", ">>", ">&", ">|", "<>", ">"})
 
 
+def _is_pnpm_shorthand(words: list[str]) -> bool:
+    """`pnpm vitest` is `pnpm exec vitest` for a closed runner (owner, 2026-10-23;
+    [DEC-23](docs/design-reading-a-session.md#amended-2026-10-23-owner-pnpm-shorthand-for-a-closed-runner-is-a-check))."""
+    return words[:1] == ["pnpm"] and words[1:2] != [] and words[1] in _CHECK_WORDS
+
+
 def _skip_options(words: list[str], takes_value: frozenset[str]) -> list[str]:
     while words and words[0].startswith("-"):
         words = words[2:] if words[0] in takes_value else words[1:]
@@ -2214,7 +2220,7 @@ def _stripped(words: list[str]) -> tuple[list[str], bool]:
             words = _skip_options(words[2:], _UV_VALUE_OPTIONS)
         elif words[:2] in _WRAPPER_PAIRS:
             words = words[2:]
-        elif words[0] in ("npx", "bunx", "time"):
+        elif words[0] in ("npx", "bunx", "time") or _is_pnpm_shorthand(words):
             words = words[1:]
         elif os.path.basename(words[0]) == "env":
             command = _env_command(words[1:])
@@ -3044,6 +3050,8 @@ def _names_a_test_file(word: str) -> bool:
 
 def _runner_words(words: list[str]) -> list[str]:
     """The words with an interpreter or runner path shed to its name."""
+    if _is_pnpm_shorthand(words):
+        words = words[1:]
     name = os.path.basename(words[0])
     if "/" in words[0] and (
         _PYTHON_RE.match(name) or name in _INTERPRETERS or name in _CHECK_WORDS

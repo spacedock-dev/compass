@@ -337,6 +337,31 @@ class WhatAReaderSeesOfTheChecksASessionRan(ClaudeChecksTestCase):
                 self.session.bash(command, "", is_error=False)
                 self.assertEqual(title, self.only_check()["title"])
 
+    def test_pnpm_shorthand_for_a_closed_runner_is_a_check_and_other_words_are_not(self) -> None:
+        for words, is_check in (
+            (["pnpm", "vitest", "run", "x.test.tsx"], True),
+            (["pnpm", "tsc", "--noEmit"], True),
+            (["pnpm", "eslint", "."], True),
+            (["pnpm", "playwright", "install"], False),
+            (["pnpm", "install"], False),
+            (["pnpm", "dev"], False),
+        ):
+            with self.subTest(words=words):
+                self.assertIs(is_check, project_context._is_check(words))
+
+    def test_a_lone_pnpm_shorthand_call_reads_its_summary_like_the_exec_form(self) -> None:
+        output = "Test Files  1 failed (1)\n     Tests  2 failed | 5 passed (7)"
+        for command in (
+            "pnpm vitest run x.test.tsx 2>&1 | tail -40",
+            "pnpm exec vitest run x.test.tsx 2>&1 | tail -40",
+        ):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, output, is_error=False)
+                check = self.only_check()
+                self.assertEqual("failed", check["result"])
+                self.assertEqual("summary", check["result_source"])
+
     def test_a_check_line_is_its_own_segment_and_never_the_rest_of_the_shell_line(self) -> None:
         self.session.bash("cd api && pytest -q 2>&1 | tail -3 ; echo done", "3 passed")
         title = self.only_check()["title"]

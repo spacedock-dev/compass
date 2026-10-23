@@ -3068,6 +3068,20 @@ back into a session. And the Claude reader's accuracy check has not passed
 so Compass does not add a second, weaker route to a correction. DEC-24 item 7's list of triggers
 stays as it is: a surviving model departure, a contradicted or unshown claim, a failed check.
 
+### Amended 2026-10-23 (owner): pnpm shorthand for a closed runner is a check
+
+[The closed lists](#the-closed-lists) name `pnpm exec` as a wrapper and no other pnpm form. The owner
+ruled on 2026-10-23 that `pnpm <runner>` counts as a check whenever `<runner>` is on the closed list,
+the same as `pnpm exec <runner>`: `pnpm vitest run X`, `pnpm tsc --noEmit`, `pnpm eslint .`. A pnpm
+word that is not a closed runner (`pnpm install`, `pnpm dev`, `pnpm playwright`) stays unread, and
+`pnpm test` and `pnpm build` keep the pairs they already had. `poetry run` and `pipenv run` already
+are the shorthand of their package managers, so no other manager gains a form.
+
+Found on a real session whose agent proved a fix with `pnpm vitest run` on a regression test that
+went red and then green; neither run was counted. The attribution rule is unchanged: a shorthand
+call piped beside other `&&` segments still reads `piped_beside_other_commands`, and a lone one
+piped only to an output filter reads its summary line as the `exec` form does.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
