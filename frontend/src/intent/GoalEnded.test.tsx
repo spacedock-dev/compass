@@ -61,14 +61,21 @@ describe('what became of an earlier /goal', () => {
     expect(goalBox().value).toBe('');
   });
 
-  it('names the draft the Goal field holds, so the note is not read as its caption', async () => {
+  it('sits above the source line that names the draft, and that above the box', async () => {
     const page = mountSession({
       session: { session_goal: null, session_goal_cleared: { at: 450 } },
     });
     await settle(page);
+    const note = document.querySelector('[data-next-goal-ended]');
+    const source = document.querySelector('[data-next-cockpit-goal-source]');
     expect(text('[data-next-goal-ended]')).toMatch(
-      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d; the draft below is your first prompt$/,
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
     );
+    expect(text('[data-next-cockpit-goal-source]')).toBe(
+      'Drafted from your first prompt · not saved',
+    );
+    expect(note?.compareDocumentPosition(source as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(source?.compareDocumentPosition(goalBox())).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(goalBox().value).toBe('Ship the queue worker');
   });
 

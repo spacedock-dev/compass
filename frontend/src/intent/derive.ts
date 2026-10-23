@@ -17,6 +17,7 @@ import {
   annotateOn,
   annotationDiscarded,
   annotationLines,
+  heldCap,
   storeUnreadable,
   OUTCOME_LINES_MAX,
   type Annotation,
@@ -25,15 +26,14 @@ import type { FoundGoal, Held, PromptChoice } from './held';
 import {
   ADOPT_CHANGED,
   ADOPT_REFUSED,
-  DETECTED_FROM_PROMPTS,
   DIRECTION_CLIPPED,
   EXCERPT_READ_WHOLE,
-  GOAL_CUT,
   INTENT_EDITED,
   INTENT_EDITED_ADD,
   INTENT_SAVING,
   LINES_FULL,
   directionTooLong,
+  goalCut,
 } from './sentences';
 import { conflictCandidates, type WorkEntry, type WorkSource } from './work';
 
@@ -448,26 +448,10 @@ function goalClearedAt(session: Row): number | null {
   return isRecord(cleared) ? firstMoment(cleared['at']) : null;
 }
 
-/* What the Goal field's words are, said for the cleared note: the note sits above the field, so unnamed it reads
-   as a caption for the draft under it. Only words the box still holds untouched from a prompt are named; typed
-   text and an empty box are the reader's own and need no name. */
-function draftName(input: DraftInput): string {
-  const { held, session } = input;
-  if (foundGoal(input)) return 'a goal found in your prompts';
-  const drafted = intentDraft(input);
-  if (!drafted || drafted.source === SESSION_GOAL) return '';
-  const baseline = goalBaseline(input);
-  const key = goalKey(session);
-  if ((held.goals.has(key) ? held.goals.get(key) : baseline) !== drafted.text) return '';
-  if (drafted.source === 'first-prompt') return 'your first prompt';
-  if (drafted.source === 'latest-prompt') return 'your latest prompt';
-  return 'a prompt you chose';
-}
-
-/* The one line under the Goal field about how an earlier /goal ended, or ''. A clear that left no goal reads
-   here unless the session opened with /goal, where the "opened with /goal" sentence already carries it, and
-   names the draft below it when there is one. Never beside the update offer, which already says the /goal
-   changed. */
+/* The one line above the Goal field about how an earlier /goal ended, or ''. A clear that left no goal reads
+   here unless the session opened with /goal, where the "opened with /goal" sentence already carries it. It
+   does not name the draft: the source line directly under it does. Never beside the update offer, which
+   already says the /goal changed. */
 export function goalEndedNote(input: DraftInput): string {
   const { session, annotation, payload } = input;
   if (goalUpdate(input)) return '';
@@ -483,8 +467,7 @@ export function goalEndedNote(input: DraftInput): string {
      leaves the clear to this note. */
   if (cleared === null || (!intentDrafted(input) && noDraftWhy(session, annotation, payload)))
     return '';
-  const draft = draftName(input);
-  return `Your /goal was cleared at ${datedClock(cleared)}${draft ? `; the draft below is ${draft}` : ''}`;
+  return `Your /goal was cleared at ${datedClock(cleared)}`;
 }
 
 /* Why the goal box arrives empty over a session that opened with a harness command: the command's name
@@ -756,7 +739,17 @@ function sharesWords(text: string, origin: string): boolean {
   return typed.filter((word) => from.has(word)).length * 2 >= typed.length;
 }
 
-/* Goal source line under the textarea: one honest state derived from the annotation and held draft. */
+/* How a source line names the prompt a goal began from. The time a prompt was chosen is no longer shown: the
+   line says "the prompt you chose", and the picker beside the box lists the prompts with their times. */
+function promptName(source: string): string {
+  return source === 'first-prompt'
+    ? 'your first prompt'
+    : source === 'latest-prompt'
+      ? 'your latest prompt'
+      : 'the prompt you chose';
+}
+
+/* Goal source line above the textarea, under any ended note: one honest state derived from the annotation and held draft. */
 export function goalSourceLine(input: DraftInput): string {
   if (storeUnreadable(input.payload)) return '';
   const { held, session, annotation } = input;
@@ -767,25 +760,18 @@ export function goalSourceLine(input: DraftInput): string {
   const stored = discarded ? '' : String(annotation?.['goal'] || '');
   const text = held.goals.has(key) ? (held.goals.get(key) ?? baseline) : baseline;
   if (!text.trim()) return '';
+  const cut = goalCut(heldCap(input.payload));
   const found = foundGoal(input);
-  if (found) return `${DETECTED_FROM_PROMPTS} · ${clockText(found.foundAt)} · not saved`;
+  if (found) return `Found in your prompts at ${clockText(found.foundAt)} · not saved`;
   if (drafted && text === drafted.text) {
     const at = nextNumber(drafted.at);
     if (drafted.source === SESSION_GOAL) {
-      const when = at !== null && at > 0 ? ` · ${clockText(at)}` : '';
-      return `From /goal${when} · not saved${drafted.cut === true ? `. ${GOAL_CUT}` : ''}`;
+      const when = at !== null && at > 0 ? ` at ${clockText(at)}` : '';
+      return `From your /goal${when} · not saved${drafted.cut === true ? cut : ''}`;
     }
-    const which =
-      drafted.source === 'first-prompt'
-        ? 'first'
-        : drafted.source === 'latest-prompt'
-          ? 'latest'
-          : at !== null && at > 0
-            ? clockText(at)
-            : 'chosen';
     const clipped = drafted.cut === true || drafted.text.endsWith('…');
     // The prompt-length sentence is under "What is sent", where a reader looks for what Analyze reads.
-    return `From your prompt · ${which} · not saved.${clipped ? ` ${EXCERPT_READ_WHOLE}` : ''}`;
+    return `Drafted from ${promptName(drafted.source)} · not saved${clipped ? EXCERPT_READ_WHOLE : ''}`;
   }
   const savedFromPrompt =
     !discarded && PROMPT_SOURCES.includes(String(annotation?.['goal_source'] || ''));
@@ -809,15 +795,15 @@ export function goalSourceLine(input: DraftInput): string {
           : '';
   const named =
     originSource === SESSION_GOAL
-      ? 'From /goal'
+      ? 'your /goal'
       : originSource === FOUND_FROM_PROMPTS
-        ? DETECTED_FROM_PROMPTS
-        : 'From your prompt';
+        ? 'the goal found in your prompts'
+        : promptName(originSource);
   /* By overlap and not by history alone: words typed over a selected-all prompt replace it in one change
      event, never pass through an empty box, and are the reader's own. */
   const startedFromPrompt = !held.cleared.has(key) && sharesWords(text, origin);
   if (held.goals.has(key) && text !== stored) {
-    return startedFromPrompt ? `${named}, edited · not saved` : 'Typed · not saved';
+    return startedFromPrompt ? `Your edit of ${named} · not saved` : 'You typed this · not saved';
   }
   if (stored.trim()) {
     if (savedFromPrompt) {
@@ -828,23 +814,15 @@ export function goalSourceLine(input: DraftInput): string {
            the annotation does not record the cut, so the row is where it is read from. */
         const stated = sessionGoalCandidate(session);
         const stillCut = stated?.cut === true && stated.text === stored && stated.at === at;
-        return `From /goal${at !== null && at > 0 ? ` · ${clockText(at)}` : ''} · saved${stillCut ? `. ${GOAL_CUT}` : ''}`;
+        return `From your /goal${at !== null && at > 0 ? ` at ${clockText(at)}` : ''} · saved${stillCut ? cut : ''}`;
       }
-      const which =
-        source === 'first-prompt'
-          ? 'first'
-          : source === 'latest-prompt'
-            ? 'latest'
-            : at !== null && at > 0
-              ? clockText(at)
-              : 'chosen';
       /* No time: the store publishes `goal_saved_at` only for typed words, and the revision's `at` moves on a
          lines-only save, so it would restamp an adoption that did not change. */
-      const clipped = stored.endsWith('…') ? `. ${EXCERPT_READ_WHOLE}` : '';
-      return `From your prompt · ${which} · saved${clipped}`;
+      const clipped = stored.endsWith('…') ? EXCERPT_READ_WHOLE : '';
+      return `From ${promptName(String(source))} · saved${clipped}`;
     }
     const savedAt = nextNumber(annotation?.['goal_saved_at']) ?? nextNumber(annotation?.['at']);
-    return `Typed · ${savedAt !== null && savedAt > 0 ? `saved ${clockText(savedAt)}` : 'saved'}`;
+    return `You typed this · ${savedAt !== null && savedAt > 0 ? `saved at ${clockText(savedAt)}` : 'saved'}`;
   }
   return '';
 }

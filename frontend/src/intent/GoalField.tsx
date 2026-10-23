@@ -23,7 +23,7 @@ import { answerLines } from './directions';
 import { HeldTextarea } from './HeldTextarea';
 import { FindGoal, FindGoalNote, FoundCites } from './FindGoal';
 import { PromptSelect } from './PromptSelect';
-import { ENDED_CAVEAT, RULE_HINT } from './sentences';
+import { ENDED_CAVEAT, GOAL_HINT, RULE_HINT } from './sentences';
 import { usePanel } from './useIntent';
 
 /* "Keep your standing outcome lines with this goal?": asked once when a direction became the goal, and Save
@@ -139,6 +139,15 @@ export function GoalField() {
           {ENDED_CAVEAT}
         </p>
       ) : null}
+      {sourceLine ? (
+        <small
+          className="next-cockpit-held-source col-span-full"
+          data-next-cockpit-goal-source
+          {...((untouched && drafted) || found ? { 'data-next-cockpit-draft-marks': '' } : {})}
+        >
+          {sourceLine}
+        </small>
+      ) : null}
       <HeldTextarea
         id={boxId}
         rows={3}
@@ -168,17 +177,11 @@ export function GoalField() {
         </p>
       ) : null}
       <div className="next-cockpit-held-under min-h-0 flex-wrap justify-between">
-        {/* The source stays beside the count: in the label row it moved the box 25px down and back up on
-            the first keystroke. */}
-        {sourceLine ? (
-          <small
-            className="next-cockpit-held-source"
-            data-next-cockpit-goal-source
-            {...((untouched && drafted) || found ? { 'data-next-cockpit-draft-marks': '' } : {})}
-          >
-            {sourceLine}
-          </small>
-        ) : null}
+        {/* The hint takes the left of the count's row and wraps inside its own width on a narrow card. The
+            source line is above the box, where a change in its length cannot move the row under it. */}
+        <p className="next-cockpit-held-hint" data-next-goal-hint>
+          {GOAL_HINT}
+        </p>
         <FoundCites />
         <span className="next-cockpit-held-count ms-auto" data-next-cockpit-held-count="goal">
           {`${String(text.length)} / ${String(cap)}`}

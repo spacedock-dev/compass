@@ -420,8 +420,8 @@ you once what is sent and where. With no saved goal, the check adopts the goal d
 permitted Claude Code or Codex prompt, or from your latest prompt where no first prompt with a time
 is published. **Use your prompt** beside the goal lists up to five of your own prompts from the
 session; choosing one fills the goal box without saving it, and **Save intent** saves it. You
-can also type your own goal. Adopted words say "from your prompt", and editing them makes a typed
-goal. **Find goal**, beside it, shows while no goal is saved and the session set no `/goal`. On your
+can also type your own goal. A line above the box says where the words came from ("Drafted from your first prompt", then "Your edit of your first prompt" once you change them),
+and words you type over them say "You typed this". **Find goal**, beside it, shows while no goal is saved and the session set no `/goal`. On your
 press it sends the prompts you typed in that session to the same reader Analyze would use, counts
 against the same daily limit, and does nothing while model calls are paused. If your own words
 state a clear end state it fills the box, marked **Goal detected**, with the prompts it quotes
@@ -431,7 +431,7 @@ across tabs and restarts and shown again if the destination or content tier chan
 cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
 destinations cannot be detected.
 When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, the Drift card says so as the harness's claim, with the time and the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. A file the claim names that a later command deleted or moved away is a dispute, and the card names the file and the time. The claim never changes the drift level and never counts as a passing check.
-When Claude Code gives up on a `/goal` it judged unreachable, the goal is over, and the Drift card says so as the harness's claim with the time and the reason it gave. Compass has not checked that claim, and it changes no level. Under the Goal field, the Intent card says what became of an earlier `/goal` (replaced, met or given up, with the time) and, when you cleared it, "Your /goal was cleared" with the time. It never repeats the earlier goal's words, and it stays quiet while Compass is offering your newer `/goal`.
+When Claude Code gives up on a `/goal` it judged unreachable, the goal is over, and the Drift card says so as the harness's claim with the time and the reason it gave. Compass has not checked that claim, and it changes no level. Above the Goal field, the Intent card says what became of an earlier `/goal` (replaced, met or given up, with the time) and, when you cleared it, "Your /goal was cleared" with the time. It never repeats the earlier goal's words, and it stays quiet while Compass is offering your newer `/goal`.
 
 Use **Pause model calls** on a session page, under **Drift settings** at the top of the Drift card (it is also in the **What is sent** popover), to pause every model call. While paused, **Resume model calls** stands beside Drift settings. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is

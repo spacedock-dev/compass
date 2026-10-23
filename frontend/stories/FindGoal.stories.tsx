@@ -298,7 +298,7 @@ export const AFoundGoalWithItsCitations: Story = {
     );
     await expect(
       (card.querySelector('[data-next-cockpit-goal-source]')?.textContent ?? '').trim(),
-    ).toMatch(/^Detected from your prompts · \d\d:\d\d · not saved$/);
+    ).toMatch(/^Found in your prompts at \d\d:\d\d · not saved$/);
     const cites = [
       ...card.querySelectorAll<HTMLElement>('[data-next-found-cites] [data-next-cite]'),
     ];
@@ -388,13 +388,14 @@ export const EditingAFoundGoalReplacesIt: Story = {
     await expect(card.querySelector('[data-next-found-cites]')).toBeNull();
     await expect(
       (card.querySelector('[data-next-cockpit-goal-source]')?.textContent ?? '').trim(),
-    ).toBe('Detected from your prompts, edited · not saved');
+    ).toBe('Your edit of the goal found in your prompts · not saved');
     await expect(await view.findByRole('button', { name: 'Find goal' })).toBeVisible();
   },
 };
 
-/* Over a cleared /goal the note names what the box holds, and editing the found words drops that name. */
-export const AClearedGoalNoteNamesAFoundGoalUntilItIsEdited: Story = {
+/* Over a cleared /goal the note stays plain, and the source line under it names what the box holds: the found
+   goal, then the reader's edit of it. */
+export const AClearedGoalNoteSitsAboveTheSourceLineNamingAFoundGoal: Story = {
   args: {
     setup: { session: { session_goal: null, session_goal_cleared: { at: 1_760_000_450 } } },
   },
@@ -402,16 +403,26 @@ export const AClearedGoalNoteNamesAFoundGoalUntilItIsEdited: Story = {
     const card = await intentCard(canvasElement);
     const view = within(card);
     const ended = () => card.querySelector('[data-next-goal-ended]')?.textContent ?? '';
-    await expect(ended()).toMatch(/was cleared at .*; the draft below is your first prompt$/);
+    const sourceLine = () =>
+      card.querySelector('[data-next-cockpit-goal-source]')?.textContent ?? '';
+    await expect(ended()).toMatch(/was cleared at [^;]*$/);
+    await expect(sourceLine()).toBe('Drafted from your first prompt · not saved');
     await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
     await waitFor(() => expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(GOAL));
     await waitFor(() =>
-      expect(ended()).toMatch(
-        /was cleared at .*; the draft below is a goal found in your prompts$/,
-      ),
+      expect(sourceLine()).toMatch(/^Found in your prompts at \d\d:\d\d · not saved$/),
     );
+    await expect(ended()).toMatch(/was cleared at [^;]*$/);
+    await expect(
+      card
+        .querySelector('[data-next-goal-ended]')
+        ?.compareDocumentPosition(card.querySelector('[data-next-cockpit-goal-source]') as Node),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ' It is logged.');
-    await waitFor(() => expect(ended()).toMatch(/was cleared at [^;]*$/));
+    await waitFor(() =>
+      expect(sourceLine()).toBe('Your edit of the goal found in your prompts · not saved'),
+    );
+    await expect(ended()).toMatch(/was cleared at [^;]*$/);
   },
 };
 

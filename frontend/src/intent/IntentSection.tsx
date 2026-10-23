@@ -35,7 +35,6 @@ import { saveIntentAndLine } from './directions';
 import {
   ENDED_CAVEAT,
   INTENT_EDITED_ADD,
-  INTENT_LEDE,
   INTENT_MEASURED,
   READ_FROM_NOW_WHY,
   isReadsFrom,
@@ -255,9 +254,6 @@ export function IntentSection() {
           ) : null}
         </span>
       </header>
-      <p className="next-cockpit-held-lede text-muted-foreground" data-next-intent-lede>
-        {INTENT_LEDE}
-      </p>
       {/* Under the heading rather than in its header, so the revision line keeps the sentence tier. */}
       {why ? (
         <p className="next-cockpit-held-lede" data-next-intent-no-draft>

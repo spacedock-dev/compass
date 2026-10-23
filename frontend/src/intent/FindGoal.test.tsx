@@ -147,7 +147,7 @@ describe('a press', () => {
     await settle(page);
     expect(goalBox().value).toBe(GOAL);
     expect(mark()?.textContent).toBe('Goal detected');
-    expect(source()).toMatch(/^Detected from your prompts · \d\d:\d\d · not saved$/);
+    expect(source()).toMatch(/^Found in your prompts at \d\d:\d\d · not saved$/);
     expect(text('[data-next-intent-status]')).toBe('Draft');
     expect(find()).toBeNull();
   });
@@ -208,10 +208,10 @@ describe('a press', () => {
     type(goalBox(), `${GOAL}, and the report is linked`);
     expect(mark()).toBeNull();
     expect(cites()).toEqual([]);
-    expect(source()).toBe('Detected from your prompts, edited · not saved');
+    expect(source()).toBe('Your edit of the goal found in your prompts · not saved');
     expect(find()).not.toBeNull();
     type(goalBox(), 'Something else entirely');
-    expect(source()).toBe('Typed · not saved');
+    expect(source()).toBe('You typed this · not saved');
   });
 
   it('is saved as the words in the box and nothing more, by Save intent', async () => {
@@ -321,7 +321,7 @@ describe('what a found goal does not outrank', () => {
     await settle(page);
     expect(goalBox().value).toBe('The findings file exists');
     expect(text('[data-next-goal-detected]')).toBe('Goal detected');
-    expect(source()).toMatch(/^From \/goal/);
+    expect(source()).toMatch(/^From your \/goal/);
     expect(cites()).toEqual([]);
   });
 

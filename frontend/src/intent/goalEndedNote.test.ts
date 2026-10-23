@@ -47,7 +47,7 @@ describe('an event on an earlier day', () => {
   it('names the day, as the Drift notes do, so it never reads as today', () => {
     const input = cleared(true);
     expect(goalEndedNote(input)).toMatch(
-      /^Your \/goal was cleared at \d{4}-\d{2}-\d{2} \d\d:\d\d; the draft below is a prompt you chose$/,
+      /^Your \/goal was cleared at \d{4}-\d{2}-\d{2} \d\d:\d\d$/,
     );
     expect(noDraftWhy(cleared(false).session, null, input.payload)).toMatch(
       /cleared at \d{4}-\d{2}-\d{2} \d\d:\d\d\./,
@@ -67,13 +67,13 @@ describe('goalEndedNote over a cleared, control-opened session', () => {
     const input = cleared(true);
     expect(intentDrafted(input)).toBe(true);
     expect(goalEndedNote(input)).toMatch(
-      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d; the draft below is a prompt you chose$/,
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
     );
   });
 });
 
-/* The note is about the session's /goal. Over a Goal field that holds a draft, it names the draft, so the two
-   are never read as one goal. */
+/* The note is about the session's /goal. Over a Goal field that holds a draft it says only that, because the
+   source line between the note and the box names the draft. */
 function plain(prompt: Record<string, unknown>): DraftInput {
   const held = createHeld({ clock: createFakeClock(), announcer: createAnnouncer() });
   return {
@@ -94,10 +94,10 @@ function plain(prompt: Record<string, unknown>): DraftInput {
 }
 
 describe('goalEndedNote over a cleared /goal and a prompt draft', () => {
-  it('says the draft below is the first prompt', () => {
+  it('leaves naming the draft to the source line under it', () => {
     const input = plain({});
     expect(goalEndedNote(input)).toMatch(
-      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d; the draft below is your first prompt$/,
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
     );
   });
 
@@ -131,7 +131,7 @@ describe('goalEndedNote over a cleared /goal and a prompt draft', () => {
     expect(goalEndedNote(settled)).toMatch(/^Replaced an earlier \/goal at /);
   });
 
-  it('names a goal found in the prompts while the box holds it, and drops it once edited', () => {
+  it('says the same plain note over a goal found in the prompts, edited or not', () => {
     const input = plain({});
     const key = goalKey(input.session);
     input.held.found.set(compatSessKey(input.session), {
@@ -142,7 +142,7 @@ describe('goalEndedNote over a cleared /goal and a prompt draft', () => {
     });
     input.held.goals.set(key, 'Add a retry to the upload client');
     expect(goalEndedNote(input)).toMatch(
-      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d; the draft below is a goal found in your prompts$/,
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
     );
     input.held.goals.set(key, 'Add a retry to the upload client, logged');
     expect(goalEndedNote(input)).toMatch(

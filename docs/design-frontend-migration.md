@@ -382,6 +382,19 @@ excerpt cue. The checklist's label reads "Expected outcome · up to 6 lines" whe
 first three onto the recorded editor; the browser proofs that read the retired badge or the old menu name now
 read the source line and the new name.
 
+The Goal field's layout and copy changed again on 2026-10-23 (owner request), and nothing is re-recorded. The
+Intent heading's lede moved to a hint under the Goal box, beside the count, and reads "Write what should be
+true when this session is done. Compass checks the session's work against it and never writes into the
+session." The source line moved from beside the count to directly above the box, under any ended-goal note,
+and says what the words are rather than where they were found: "Drafted from your first prompt · not saved"
+(latest, or "the prompt you chose"), "Your edit of your first prompt · not saved", "From your /goal at 11:53 ·
+not saved" or "· saved", "Found in your prompts at 23:11 · not saved", "You typed this · not saved" or "· saved
+at 18:54", and "From your first prompt · saved". A cut /goal appends "· Shortened to fit 240 characters; Analyze
+reads this shortened goal" (the box's own cap) and a cut prompt "· Shortened here; Analyze reads the whole
+prompt". The cleared note no longer names the draft ("; the draft below is ..."): the source line directly
+under it does. `intentEditorDeviations` still describes the 2026-10-19 wording and is on-demand only; it was
+not rewritten.
+
 The Drift card header says "Analysis last run 14:03" where the retired page said "Analysis at 14:03"
 (owner, 2026-10-19), because the old words read as a time inside the session. The analysis level's own line
 no longer carries a time at all (2026-10-21): the header is the card's one read time. The `drift__level`

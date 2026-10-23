@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { App } from '../src/App';
-import { ENDED_CAVEAT, INTENT_LEDE, INTENT_MEASURED } from '../src/intent/sentences';
+import { ENDED_CAVEAT, GOAL_HINT, INTENT_MEASURED } from '../src/intent/sentences';
 import { clock } from '../src/observed';
 import { datedClock } from '../src/observed/values';
 import { createRouter } from '../src/router/router';
@@ -245,7 +245,7 @@ export const TypedSourceAndSavedStatus: Story = {
     const page = within(canvasElement);
     const card = await page.findByRole('region', { name: 'Intent' });
     const view = within(card);
-    await expect(view.getByText(INTENT_LEDE)).toBeVisible();
+    await expect(view.getByText(GOAL_HINT)).toBeVisible();
     await expect(outcomesTrigger(view)).toHaveTextContent(
       'Expected outcome (optional) · up to 6 lines',
     );
@@ -253,7 +253,7 @@ export const TypedSourceAndSavedStatus: Story = {
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await expect(goal).toHaveAttribute('placeholder', 'What should this session achieve?');
     await userEvent.type(goal, 'Keep the parser small and pure');
-    await expect(view.getByText('Typed · not saved')).toBeVisible();
+    await expect(view.getByText('You typed this · not saved')).toBeVisible();
     await expect(view.getByText('30 / 240')).toBeVisible();
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
       'Unsaved changes',
@@ -262,7 +262,7 @@ export const TypedSourceAndSavedStatus: Story = {
     await waitFor(async () => {
       await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
     });
-    await expect(view.getByText(/^Typed · saved \d\d:\d\d$/)).toBeVisible();
+    await expect(view.getByText(/^You typed this · saved at \d\d:\d\d$/)).toBeVisible();
   },
 };
 
@@ -273,7 +273,7 @@ export const FromPromptSource: Story = {
     const view = within(card);
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await expect(goal).toHaveValue('Keep the parser small and pure');
-    await expect(view.getByText('From your prompt · first · not saved.')).toBeVisible();
+    await expect(view.getByText('Drafted from your first prompt · not saved')).toBeVisible();
     /* A goal drafted from the prompt is Compass's suggestion, not the reader's edit: muted, and saying what
        it is (usability review, 2026-10-20). */
     const status = card.querySelector('[data-next-intent-status]') as HTMLElement;
@@ -303,10 +303,10 @@ export const AdoptedThenEditedSource: Story = {
     const card = await page.findByRole('region', { name: 'Intent' });
     const view = within(card);
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent('Saved');
-    await expect(view.getByText('From your prompt · first · saved')).toBeVisible();
+    await expect(view.getByText('From your first prompt · saved')).toBeVisible();
     const goal = view.getByRole('textbox', { name: 'Goal' });
     await userEvent.type(goal, ', and fast');
-    await expect(view.getByText('From your prompt, edited · not saved')).toBeVisible();
+    await expect(view.getByText('Your edit of your first prompt · not saved')).toBeVisible();
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
       'Unsaved changes',
     );
@@ -692,7 +692,11 @@ export const PromptMenuPick: Story = {
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
       'Unsaved changes',
     );
-    await expect(view.getByText(/^From your prompt · \d\d:\d\d · not saved\./)).toBeVisible();
+    await expect(
+      view.getByText(
+        'Drafted from the prompt you chose · not saved · Shortened here; Analyze reads the whole prompt',
+      ),
+    ).toBeVisible();
   },
 };
 
@@ -1086,11 +1090,11 @@ export const StateGoalDetected: Story = {
     await expect(card.querySelector('[data-next-goal-detected]')).toHaveTextContent(
       'Goal detected',
     );
-    await expect(goalSource(card)).toBe(`From /goal · ${clock(1_760_000_300)} · not saved`);
+    await expect(goalSource(card)).toBe(`From your /goal at ${clock(1_760_000_300)} · not saved`);
     // Typing clears the mark and the line says the words are now the reader's.
     await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ', and the report is linked');
     await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
-    await expect(goalSource(card)).toBe('From /goal, edited · not saved');
+    await expect(goalSource(card)).toBe('Your edit of your /goal · not saved');
   },
 };
 
@@ -1111,7 +1115,9 @@ export const StateGoalDetectedCut: Story = {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
     // The excerpt is what the box holds, and the line says it was cut rather than passing it off as whole.
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
-    await expect(goalSource(card)).toMatch(/Cut to fit the goal limit/);
+    await expect(goalSource(card)).toMatch(
+      / · Shortened to fit 240 characters; Analyze reads this shortened goal$/,
+    );
   },
 };
 
@@ -1165,7 +1171,7 @@ export const StateGoalUpdateTaken: Story = {
     await expect(card.querySelector('[data-next-goal-detected]')).toHaveTextContent(
       'Goal detected',
     );
-    await expect(goalSource(card)).toBe(`From /goal · ${clock(1_760_000_600)} · not saved`);
+    await expect(goalSource(card)).toBe(`From your /goal at ${clock(1_760_000_600)} · not saved`);
   },
 };
 
@@ -1218,20 +1224,27 @@ export const StateEarlierGoalGivenUp: Story = {
   },
 };
 
-export const StateGoalClearedNamesThePromptDraftBelowIt: Story = {
+export const StateGoalClearedNoteSitsAboveTheSourceLineNamingTheDraft: Story = {
   args: {
     setup: { session: { session_goal: null, session_goal_cleared: { at: 1_760_000_450 } } },
   },
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
-    // The note says what it is about, so it cannot be read as the caption of the draft under it.
+    // The note is the session's /goal; the source line between it and the box names the draft, so the two are
+    // never read as one goal.
     await expect(endedNote(card)).toHaveTextContent(
-      `Your /goal was cleared at ${datedClock(1_760_000_450)}; the draft below is your first prompt`,
+      new RegExp(`^Your /goal was cleared at ${datedClock(1_760_000_450)}$`),
     );
+    const box = within(card).getByRole('textbox', { name: 'Goal' });
+    const sourceLine = card.querySelector('[data-next-cockpit-goal-source]') as HTMLElement;
+    await expect(endedNote(card)?.compareDocumentPosition(sourceLine)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    await expect(sourceLine.compareDocumentPosition(box)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(
       'Keep the parser small and pure',
     );
-    await expect(goalSource(card)).toMatch(/^From your prompt · first · not saved/);
+    await expect(goalSource(card)).toBe('Drafted from your first prompt · not saved');
   },
 };
 
@@ -1254,7 +1267,7 @@ export const StateGoalCleared: Story = {
     );
     // The cleared goal is never drafted: no "Goal detected" mark, and the source line is not a /goal's.
     await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
-    await expect(goalSource(card)).not.toMatch(/^From \/goal/);
+    await expect(goalSource(card)).not.toMatch(/^From your \/goal/);
   },
 };
 
@@ -1308,10 +1321,13 @@ export const StateGoalClearedStaysSaidAfterAPromptIsChosen: Story = {
       'Add streaming tokenizer benchmarks before touching the AST',
     );
     await waitFor(async () => {
-      await expect(endedNote(card)).toHaveTextContent(
-        `Your /goal was cleared at ${datedClock(1_760_000_450)}; the draft below is a prompt you chose`,
+      await expect(goalSource(card)).toBe(
+        'Drafted from the prompt you chose · not saved · Shortened here; Analyze reads the whole prompt',
       );
     });
+    await expect(endedNote(card)).toHaveTextContent(
+      new RegExp(`^Your /goal was cleared at ${datedClock(1_760_000_450)}$`),
+    );
     await expect(card.textContent?.match(/was cleared at/g)).toHaveLength(1);
   },
 };

@@ -1916,7 +1916,7 @@ join on newlines where the typed fields are one line each.
    silently, and adopting on an ended session would have withheld the reading with a false reason.
    Codex now publishes the timestamp paired with its latest and first prompts. A missing or
    invalid source time still refuses adoption with a sentence saying why.
-4. The mark, "from your prompt", shows in the goal's source line, in the reading's evidence line and
+4. The mark, "from your prompt" (since 2026-10-23 the source line reads "Drafted from your first prompt"), shows in the goal's source line, in the reading's evidence line and
    in one sentence of the board-wide disclosure. Editing adopted words makes an ordinary typed
    revision, because the reader has then typed them.
 5. Adopted words do not make a session eligible for the unasked lane, so one press on many rows
@@ -2090,7 +2090,8 @@ in one session cut off the instruction that mattered and in another kept only pl
   box is now "Excerpt. Analyze reads up to 1,000 characters.", in the draft's marks and in the saved
   goal's source line alike, true past 1,000 characters and on the fallback alike. Short, because
   that row holds one control's height; the 375px layout was not re-measured in a browser for this
-  change. "Use your prompt" still names an excerpt "· excerpt" in its option.
+  change. "Use your prompt" still names an excerpt "· excerpt" in its option. (Since 2026-10-23 the cue
+  reads "Shortened here; Analyze reads the whole prompt" and sits on the source line above the box.)
 
 What is sent does not change in kind: the reader's own messages already go whole up to 1,000
 characters ([the 2026-10-01 amendment](#amended-2026-10-01-a-reading-sees-the-readers-whole-message)),
@@ -5420,7 +5421,9 @@ DRC-4947, owner rulings of the same date. The page uses a detected goal and does
   (`annotations.direction_floor`), so the page and the store agree on which directions are later.
 - The page marks it "Goal detected" and the line under the box reads "From /goal", with the time. Typing
   replaces it and the line says "From /goal, edited" or "Typed"; choosing a prompt replaces it and the line
-  names the prompt. The prompt list leads with it.
+  names the prompt. The prompt list leads with it. (Wording since 2026-10-23, and the line sits above the box:
+  "From your /goal at 11:53 · not saved", "Your edit of your /goal · not saved", "You typed this · not saved",
+  "Drafted from the prompt you chose · not saved".)
 - A `/goal` that appears after the reader saved a goal never replaces their words. The page offers it
   beside the field, naming the condition and its time, with Use this goal and Keep my goal. "After" is the
   moment the saved words stand at, as `direction_floor` reads it: an adopted goal by its source's time, typed
@@ -5459,7 +5462,7 @@ and offers the goal when it can tie it to the reader's own words.
   limit is accepted and written in SECURITY.md: a finder more lenient than a later analysis can show a goal
   that analysis would call unclear, and the quotes are what the reader checks it against.
 - The found goal cites the prompts it quotes by the entry numbers Full activity shows (`entry_numbers`), drawn
-  as the Drift card draws a cited entry, beside "Detected from your prompts" and the time it was found. Pressing
+  as the Drift card draws a cited entry, beside the source line, which since 2026-10-23 reads "Found in your prompts at" the time it was found. Pressing
   one opens Full activity at that entry and reads older pages for it when the page does not hold it.
   The checked quotes sit under that line, each led by its entry number, because the hover shows the entry as
   the activity list abbreviates it and the quote is what ties the goal's wording to the prompt.
@@ -5558,7 +5561,8 @@ neither writes a goal record.
   clear left no goal, "Your /goal was cleared at 14:05". Over a Goal field that still holds a prompt draft, the
   clear names it ("...; the draft below is your first prompt", "your latest prompt", "a prompt you chose", "a
   goal found in your prompts"), so the note is not read as a caption for the draft; typed words and an empty
-  box need no name. Where the session opened with `/goal`, the existing
+  box need no name. (Superseded 2026-10-23: the note reads "Your /goal was cleared at 14:05" alone, and the
+  source line directly under it names the draft; the "; the draft below is ..." clause is gone.) Where the session opened with `/goal`, the existing
   "This session opened with /goal" sentence takes the clear instead, so it is said once. None of these shows
   while the update offer ("Your /goal changed at") is on screen.
 - Rejected: holding a given-up goal and adding the note. The run showed the goal ended, and a held goal would

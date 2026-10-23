@@ -37,7 +37,7 @@ describe('a /goal over a session with no saved goal', () => {
     await settle(page);
     expect(goalBox().value).toBe(GOAL);
     expect(mark()?.textContent).toBe('Goal detected');
-    expect(source()).toMatch(/^From \/goal · \d\d:\d\d · not saved$/);
+    expect(source()).toMatch(/^From your \/goal at \d\d:\d\d · not saved$/);
     expect(page.posts()).toBe(0);
   });
 
@@ -63,9 +63,9 @@ describe('a /goal over a session with no saved goal', () => {
     await settle(page);
     type(goalBox(), `${GOAL}, and the report is linked`);
     expect(mark()).toBeNull();
-    expect(source()).toBe('From /goal, edited · not saved');
+    expect(source()).toBe('Your edit of your /goal · not saved');
     type(goalBox(), 'Something else entirely');
-    expect(source()).toBe('Typed · not saved');
+    expect(source()).toBe('You typed this · not saved');
   });
 
   it('is replaced by a prompt the reader chooses, and the line says so', async () => {
@@ -83,7 +83,7 @@ describe('a /goal over a session with no saved goal', () => {
     await page.settle();
     expect(goalBox().value).toBe('Fix the login redirect');
     expect(mark()).toBeNull();
-    expect(source()).toMatch(/^From your prompt · \d\d:\d\d · not saved/);
+    expect(source()).toMatch(/^Drafted from the prompt you chose · not saved/);
   });
 
   it('lists the detected goal first in the prompt list, ahead of the session’s prompts', async () => {
@@ -128,7 +128,9 @@ describe('a /goal over a session with no saved goal', () => {
     });
     await settle(page);
     expect(goalBox().value).toBe(excerpt);
-    expect(source()).toMatch(/Cut to fit the goal limit/);
+    expect(source()).toMatch(
+      / · Shortened to fit 240 characters; Analyze reads this shortened goal$/,
+    );
   });
 
   it('keeps the cut note once the cut goal is saved, while the session still states that /goal', async () => {
@@ -139,7 +141,9 @@ describe('a /goal over a session with no saved goal', () => {
       session: { session_goal: cutGoal },
     });
     await settle(page);
-    expect(source()).toMatch(/· saved\. Cut to fit the goal limit/);
+    expect(source()).toMatch(
+      / · saved · Shortened to fit 240 characters; Analyze reads this shortened goal$/,
+    );
   });
 
   it('says nothing of a cut once the saved words are not the session’s cut goal', async () => {
