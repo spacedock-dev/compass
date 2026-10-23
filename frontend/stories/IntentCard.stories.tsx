@@ -1164,6 +1164,113 @@ export const StateGoalUpdateTaken: Story = {
   },
 };
 
+/* What became of an earlier /goal is said once, under the Goal field, from the row alone: only the kind of end
+   and its time, never the earlier goal's words, and never while the update offer ("Your /goal changed at") is
+   on screen. */
+const endedNote = (card: HTMLElement) => card.querySelector<HTMLElement>('[data-next-goal-ended]');
+const earlierGoal = (how: string) => ({
+  args: {
+    setup: {
+      session: {
+        session_goal: {
+          text: DETECTED_GOAL,
+          at: 1_760_000_600,
+          earlier: { how, at: 1_760_000_450 },
+        },
+      },
+    },
+  },
+});
+
+export const StateEarlierGoalReplaced: Story = {
+  ...earlierGoal('replaced'),
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    await expect(endedNote(card)).toHaveTextContent(
+      `Replaced an earlier /goal at ${clock(1_760_000_450)}`,
+    );
+    await expect(endedNote(card)?.textContent).not.toContain('Keep the parser');
+  },
+};
+
+export const StateEarlierGoalMet: Story = {
+  ...earlierGoal('met'),
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    await expect(endedNote(card)).toHaveTextContent(
+      `An earlier /goal was met at ${clock(1_760_000_450)}`,
+    );
+  },
+};
+
+export const StateEarlierGoalGivenUp: Story = {
+  ...earlierGoal('gave-up'),
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    await expect(endedNote(card)).toHaveTextContent(
+      `Claude Code gave up on an earlier /goal at ${clock(1_760_000_450)}`,
+    );
+  },
+};
+
+export const StateGoalCleared: Story = {
+  args: {
+    setup: { session: { session_goal: null, session_goal_cleared: { at: 1_760_000_450 } } },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    await expect(endedNote(card)).toHaveTextContent(
+      `Your /goal was cleared at ${clock(1_760_000_450)}`,
+    );
+    // The cleared goal is never drafted: no "Goal detected" mark, and the source line is not a /goal's.
+    await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
+    await expect(goalSource(card)).not.toMatch(/^From \/goal/);
+  },
+};
+
+export const StateGoalClearedWhereTheSessionOpenedWithGoal: Story = {
+  args: {
+    setup: {
+      session: {
+        session_goal: null,
+        session_goal_cleared: { at: 1_760_000_450 },
+        first_prompt: '/goal a file exists',
+        first_prompt_control: true,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    // The existing sentence takes the clause, so it is said once and the separate line is absent.
+    await expect(card).toHaveTextContent(
+      `This session opened with /goal, so there is no first prompt to draft a goal from. Your /goal was cleared at ${clock(1_760_000_450)}.`,
+    );
+    await expect(endedNote(card)).toBeNull();
+    await expect(card.textContent?.match(/was cleared at/g)).toHaveLength(1);
+  },
+};
+
+export const StateEarlierGoalNoteWaitsForTheUpdateOffer: Story = {
+  args: {
+    setup: {
+      session: {
+        ...(StateGoalUpdateOffered.args?.setup as CardSetup).session,
+        session_goal: {
+          text: LATER_GOAL,
+          at: 1_760_000_600,
+          earlier: { how: 'replaced', at: 1_760_000_600 },
+        },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    await expect(card.querySelector('[data-next-goal-update]')).not.toBeNull();
+    await expect(endedNote(card)).toBeNull();
+    await expect(card.textContent).not.toContain('Replaced an earlier /goal');
+  },
+};
+
 /* Discard everything says what it removes and what it keeps before the second press, and once, after it. The form
    is left empty, not refilled from the session's first prompt, which stays one press away under Use your prompt. */
 export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {

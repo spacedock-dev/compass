@@ -179,3 +179,51 @@ export const NoNoteWithoutAMetVerdict: Story = {
     await expect(canvasElement.querySelector('[data-next-goal-verdict]')).toBeNull();
   },
 };
+
+/* The harness giving up on the goal is its own claim, published outside the goal because the goal is ended:
+   worded as the harness's say-so, never as met, and it moves no level and counts as no check. */
+const GAVE_UP_AT = 1_000;
+const GAVE_UP_REASON = 'the path named in the goal does not exist';
+const gaveUp = {
+  session_goal: null,
+  session_goal_gave_up: { at: GAVE_UP_AT, reason: GAVE_UP_REASON },
+};
+
+export const HarnessGaveUpOnTheGoal: Story = {
+  ...scenario({ session: gaveUp }),
+  play: async ({ canvasElement }) => {
+    const node = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-goal-gave-up]');
+      if (!found) throw new Error('no give-up note');
+      return found;
+    });
+    await expect(node).toHaveTextContent(
+      /The harness’s claim: Claude Code gave up on this goal at (\d{4}-\d{2}-\d{2} )?\d{1,2}:\d{2}\./,
+    );
+    await expect(node).toHaveTextContent(`Its reason: “${GAVE_UP_REASON}”`);
+    // Not a verdict: never "met", never an invitation to analyze again, no level, no check.
+    await expect(node.textContent).not.toMatch(/\bmet\b/);
+    await expect(node.textContent).not.toContain('Analyze again');
+    await expect(node.textContent).not.toMatch(/\b(Low|Medium|High)\b/);
+    await expect(canvasElement.querySelector('[data-next-goal-verdict]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-drift-pill]')).toBeNull();
+  },
+};
+
+export const HarnessGaveUpBesideAnAnalysisChangesNoLevel: Story = {
+  ...scenario({
+    session: { ...gaveUp, ...checked('agrees', 'written-before') },
+    facts: FACTS,
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const node = await waitFor(() => {
+      const found = canvasElement.querySelector<HTMLElement>('[data-next-goal-gave-up]');
+      if (!found) throw new Error('no give-up note');
+      return found;
+    });
+    await expect(node).toHaveTextContent('Compass has not checked it');
+    await expect(node.textContent).not.toContain('Compass agrees');
+    await expect(canvasElement.querySelector('[data-next-goal-verdict]')).toBeNull();
+  },
+};

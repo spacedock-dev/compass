@@ -22,4 +22,16 @@ describe('why the goal box arrives empty over a /goal session', () => {
       'This session opened with /goal, so there is no first prompt to draft a goal from.',
     );
   });
+
+  it('takes the clear into the same sentence, so it is said once', () => {
+    const session = { ...OPENED, session_goal: null, session_goal_cleared: { at: 1_700_000_300 } };
+    expect(noDraftWhy(session, null, PAYLOAD)).toMatch(
+      /^This session opened with \/goal, so there is no first prompt to draft a goal from\. Your \/goal was cleared at \d\d:\d\d\.$/,
+    );
+  });
+
+  it('ignores a clear with no moment', () => {
+    const session = { ...OPENED, session_goal_cleared: { at: 'x' } };
+    expect(noDraftWhy(session, null, PAYLOAD)).not.toContain('cleared');
+  });
 });

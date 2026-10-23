@@ -31,6 +31,23 @@ export function harnessVerdict(session: Row | null | undefined): HarnessVerdict 
   return { at, reason };
 }
 
+export interface HarnessGaveUp {
+  readonly at: number;
+  readonly reason: string;
+}
+
+/* The harness giving up on the goal, as the row publishes it under `session_goal_gave_up`, outside the goal
+   because the harness ended it. Never a verdict: nothing that reads `met` reads this. A give-up with no moment
+   is not shown, as a verdict with none is not. */
+export function harnessGaveUp(session: Row | null | undefined): HarnessGaveUp | null {
+  const gave = session?.['session_goal_gave_up'];
+  if (!isRecord(gave)) return null;
+  const at = nextNumber(gave['at']);
+  if (at === null || at <= 0) return null;
+  const reason = typeof gave['reason'] === 'string' ? gave['reason'].trim() : '';
+  return { at, reason };
+}
+
 export type VerdictState = 'claim-only' | 'unchecked' | 'agrees' | 'disputed' | 'unconfirmed';
 
 export interface VerdictNote {

@@ -12,6 +12,7 @@ import {
   goalBaseline,
   goalKey,
   goalRefused,
+  goalEndedNote,
   goalSourceLine,
   goalUpdate,
   intentDraft,
@@ -99,6 +100,7 @@ export function GoalField() {
   /* A goal found in the prompts is marked as a /goal is, for as long as the box holds its words. */
   const found = foundGoal(input);
   const sourceLine = goalSourceLine(input);
+  const endedGoal = goalEndedNote(input);
   const why = storeUnreadable(input.payload) ? '' : String(input.annotation?.['goal_why'] || '');
   const cue = heldSentence(held.kind(key), null);
   /* The refusal says it for the words that were read, so it goes the moment the box differs from them. */
@@ -127,6 +129,11 @@ export function GoalField() {
         </span>
       </div>
       <FindGoalNote />
+      {endedGoal ? (
+        <p className="next-cockpit-held-absent" data-next-goal-ended>
+          {endedGoal}
+        </p>
+      ) : null}
       {endedAt(session) !== null ? (
         <p className="next-cockpit-held-absent" data-next-ended-goal>
           {ENDED_CAVEAT}

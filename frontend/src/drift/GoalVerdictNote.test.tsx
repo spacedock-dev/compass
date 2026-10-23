@@ -215,3 +215,92 @@ describe('the harness verdict on the Drift card', () => {
     expect(textOf('[data-next-goal-verdict]')).not.toContain('Compass agrees');
   });
 });
+
+/* The harness giving up on the goal (`met: false`, `failed: true`) is a claim of its own, published outside the
+   goal because the goal is ended: never met, never a level, never a check. */
+const GAVE_UP_AT = 1_700_000_300;
+const gaveUp = (extra: Record<string, unknown> = {}) => ({
+  session_goal: null,
+  session_goal_gave_up: { at: GAVE_UP_AT, reason: 'the path does not exist', ...extra },
+});
+const gaveUpNote = () => document.querySelector('[data-next-goal-gave-up]');
+
+describe('the harness giving up on the goal, on the Drift card', () => {
+  it('is the harness claim with its time and reason, never met, and implies no level', async () => {
+    const page = mountDrift({ session: gaveUp() });
+    await page.settle();
+    await page.settle();
+    const text = textOf('[data-next-goal-gave-up]');
+    expect(text).toMatch(
+      /^The harness’s claim: Claude Code gave up on this goal at (\d{4}-\d{2}-\d{2} )?\d{1,2}:\d{2}\./,
+    );
+    expect(text).toContain('Its reason: “the path does not exist”');
+    expect(text).not.toMatch(/\bmet\b/);
+    expect(text).not.toContain('Analyze again');
+    expect(text).not.toMatch(/\b(Low|Medium|High)\b/);
+    expect(document.querySelector('[data-next-drift-pill]')).toBeNull();
+    expect(note()).toBeNull();
+  });
+
+  it('reads the same beside an analysis and says Compass has not checked it', async () => {
+    const page = mountDrift({
+      session: { ...gaveUp(), ...checked('agrees', 'written-before') },
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    const text = textOf('[data-next-goal-gave-up]');
+    expect(text).toContain('Claude Code gave up on this goal');
+    expect(text).toContain('Compass has not checked it');
+    expect(text).not.toContain('Compass agrees');
+    expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
+  });
+
+  it('shares the card inset the met note uses', async () => {
+    const page = mountDrift({ session: gaveUp() });
+    await page.settle();
+    await page.settle();
+    expect(gaveUpNote()?.classList.contains('next-session-drift-limit')).toBe(true);
+  });
+
+  it('quotes the reason as text, never as markup, and omits an empty one', async () => {
+    const page = mountDrift({ session: gaveUp({ reason: '<b>no</b>' }) });
+    await page.settle();
+    await page.settle();
+    expect(textOf('[data-next-goal-gave-up]')).toContain('“<b>no</b>”');
+    expect(gaveUpNote()?.querySelector('b')).toBeNull();
+    page.unmount();
+    const bare = mountDrift({ session: gaveUp({ reason: '' }) });
+    await bare.settle();
+    await bare.settle();
+    expect(textOf('[data-next-goal-gave-up]')).not.toContain('Its reason');
+  });
+
+  it.each([
+    ['no give-up', undefined],
+    ['one with no time', { reason: 'x' }],
+    ['one that is not a mapping', 'gave up'],
+  ])('draws nothing for %s', async (_name, value) => {
+    const page = mountDrift({
+      session: {
+        session_goal: null,
+        ...(value === undefined ? {} : { session_goal_gave_up: value }),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    expect(gaveUpNote()).toBeNull();
+  });
+
+  it('is not drawn once a later goal is held, which carries the earlier give-up itself', async () => {
+    const page = mountDrift({
+      session: {
+        session_goal: { ...GOAL, earlier: { how: 'gave-up', at: GAVE_UP_AT } },
+        session_goal_gave_up: null,
+      },
+    });
+    await page.settle();
+    await page.settle();
+    expect(gaveUpNote()).toBeNull();
+  });
+});

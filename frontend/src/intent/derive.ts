@@ -436,6 +436,38 @@ export function adoption(draft: Draft | null): Record<string, unknown> {
 
 /* Why the goal box arrives empty over a session that opened with a harness command: the command's name
    alone, since its arguments are not the reader's goal either. */
+/* What a /goal did to the one before it, from the row alone. The earlier goal's words are never published, so
+   none are said; a value this build does not know says nothing. */
+const EARLIER_GOAL: Readonly<Record<string, (clock: string) => string>> = {
+  replaced: (clock) => `Replaced an earlier /goal at ${clock}`,
+  met: (clock) => `An earlier /goal was met at ${clock}`,
+  'gave-up': (clock) => `Claude Code gave up on an earlier /goal at ${clock}`,
+};
+
+function goalClearedAt(session: Row): number | null {
+  if (session['harness'] !== 'claude' || isRecord(session['session_goal'])) return null;
+  const cleared = session['session_goal_cleared'];
+  return isRecord(cleared) ? firstMoment(cleared['at']) : null;
+}
+
+/* The one line under the Goal field about how an earlier /goal ended, or ''. A clear that left no goal reads
+   here unless the session opened with /goal, where the "opened with /goal" sentence already carries it. Never
+   beside the update offer, which already says the /goal changed. */
+export function goalEndedNote(input: DraftInput): string {
+  const { session, annotation, payload } = input;
+  if (goalUpdate(input)) return '';
+  const stated = session['session_goal'];
+  if (isRecord(stated)) {
+    const earlier = stated['earlier'];
+    const say = isRecord(earlier) ? EARLIER_GOAL[String(earlier['how'])] : undefined;
+    const at = isRecord(earlier) ? firstMoment(earlier['at']) : null;
+    return say && at !== null ? say(clockText(at)) : '';
+  }
+  const cleared = goalClearedAt(session);
+  if (cleared === null || noDraftWhy(session, annotation, payload)) return '';
+  return `Your /goal was cleared at ${clockText(cleared)}`;
+}
+
 export function noDraftWhy(session: Row, annotation: Annotation | null, payload: Row): string {
   if (!annotateOn(payload) || storeUnreadable(payload)) return '';
   const goal = annotation ? annotation['goal'] : session['annotation_goal'];
@@ -446,7 +478,10 @@ export function noDraftWhy(session: Row, annotation: Annotation | null, payload:
   if (!command) return '';
   const stated = session['session_goal'];
   const held = String((isRecord(stated) && stated['text']) || '').trim();
-  const lead = `This session opened with ${command}, so there is no first prompt to draft a goal from.`;
+  const cleared = goalClearedAt(session);
+  const lead = `This session opened with ${command}, so there is no first prompt to draft a goal from.${
+    cleared === null ? '' : ` Your /goal was cleared at ${clockText(cleared)}.`
+  }`;
   /* The session's own /goal is not a draft, but a reader told only "no first prompt" would take the
      session for goal-less. */
   return held ? `${lead} It holds this /goal: ${held}` : lead;

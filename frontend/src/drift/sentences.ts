@@ -188,6 +188,10 @@ export const goalVerdictRemoval = (why: string, path: string, at: string): strin
 export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
 export const goalVerdictClaim = (harness: string, at: string): string =>
   `${harness} marked this goal met at ${at}.`;
+export const goalGaveUpClaim = (harness: string, at: string): string =>
+  `${harness} gave up on this goal at ${at}.`;
+/* A give-up is the harness's say-so about a goal it ended: Compass does not check it and it moves no level. */
+export const GOAL_GAVE_UP_LINE = 'Compass has not checked it, and it does not change the level.';
 export const GOAL_VERDICT_LINES: Readonly<Record<string, (why: string) => string>> = {
   'claim-only': () =>
     'Compass has not analyzed this session, so nothing has checked it and no level is implied.',
