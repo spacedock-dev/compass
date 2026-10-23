@@ -60,7 +60,7 @@ _GOAL_FINDING: set[tuple[str, str, str]] = set()
 _GOAL_FINDING_LOCK = threading.Lock()
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from compass_runtime.aggregate import Application
     from compass_runtime.interaction_prototype import InteractionPrototype
@@ -705,6 +705,9 @@ def _facts_of(context: dict[str, Any]) -> list[Any]:
 
 class _RequestHandler(BaseHTTPRequestHandler):
     server: CompassHTTPServer
+    # Set while a Find goal press holds its in-flight mark; a reply clears the mark before it is
+    # written, so a press sent the moment the answer arrives is never refused as in-flight.
+    _release_goal_finding: Callable[[], None] | None = None
 
     # Loopback-origin requests only: the Host check defeats DNS rebinding,
     # the Origin check defeats cross-site fetch()es from web pages (both
@@ -2490,7 +2493,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if permission["reason"]:
             self._reading_permission_reply(permission, route=route)
             return
-        key = (os.path.realpath(config.state_dir), harness, sid)
+        self._goal_find_marked((os.path.realpath(config.state_dir), harness, sid), route)
+
+    def _goal_find_marked(
+        self, key: tuple[str, str, str], route: runtime_reading_route.Route
+    ) -> None:
+        """Run one press while it holds the session's in-flight mark, or refuse a second."""
+        _state_dir, harness, sid = key
         with _GOAL_FINDING_LOCK:
             running = key in _GOAL_FINDING
             _GOAL_FINDING.add(key)
@@ -2501,11 +2510,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 409,
             )
             return
+
+        def release() -> None:
+            with _GOAL_FINDING_LOCK:
+                _GOAL_FINDING.discard(key)
+
+        self._release_goal_finding = release
         try:
             self._goal_find_session(harness, sid, route)
         finally:
-            with _GOAL_FINDING_LOCK:
-                _GOAL_FINDING.discard(key)
+            release()
+            self._release_goal_finding = None
 
     def _goal_find_session(
         self, harness: str, sid: str, route: runtime_reading_route.Route
@@ -2611,6 +2626,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             }
         if notice is not None:
             reply["notice"] = notice
+        if self._release_goal_finding is not None:
+            self._release_goal_finding()
         self._send(json.dumps(reply, separators=(",", ":")).encode(), "application/json", status)
 
     def _reading_permission(
@@ -3269,6 +3286,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # destination moved shows the changed line over today's `To:`
             # rather than over the one it drew (regressions minor 2, ui5).
             reply["route"] = route
+        if self._release_goal_finding is not None:
+            self._release_goal_finding()
         self._send(self._reading_json(reply), "application/json", code)
 
     def _send_reading(

@@ -446,6 +446,30 @@ class FindGoalRouteTest(unittest.TestCase):
         self.assertEqual("daily-cap", body["reading"]["reason"])
         self.assertEqual(reading_policy.DAILY_CAP, len(calls))
 
+    def test_a_reply_goes_out_after_the_press_is_no_longer_marked_running(self) -> None:
+        # Measured in CI 2026-10-23: the mark was cleared after the reply, so a press sent as soon
+        # as the last answer arrived could be refused "in-flight" (the spent-day test above, 409).
+        held_at_send: list[int] = []
+        send = http_api._RequestHandler._send
+
+        def spy(handler: Any, *args: Any, **kwargs: Any) -> None:
+            with http_api._GOAL_FINDING_LOCK:
+                held_at_send.append(len(http_api._GOAL_FINDING))
+            send(handler, *args, **kwargs)
+
+        config, state = self._runtime()
+        with (
+            self._model(),
+            mock.patch.object(http_api._RequestHandler, "_send", spy),
+            self._serving(self._app(config, state)) as port,
+        ):
+            status, _ = self._post(port, self._press())
+            self.assertEqual(200, status)
+            with mock.patch.object(reading_policy, "DAILY_CAP", 1):
+                status, _ = self._post(port, self._press())
+            self.assertEqual(429, status)
+        self.assertEqual([0, 0], held_at_send)
+
     def test_a_paraphrase_is_charged_because_the_call_ran_but_shows_no_goal(self) -> None:
         config, state = self._runtime()
         paraphrased = {**CLEAR, "quotes": [{"prompt": 1, "text": "add retries to the uploader"}]}
