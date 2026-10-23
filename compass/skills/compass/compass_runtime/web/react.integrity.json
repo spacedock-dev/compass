@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2112039,
+    "bytes": 2113871,
     "file": "react.html",
-    "sha256": "a0850837d4b8874eddbaef390804455b22df09a06132e776b81f9dadf952bc9c"
+    "sha256": "a754633e94e365a57a0162a63e4a4c61c90541a5754112cf1f0f568b17cd31ef"
   },
   "format": 1,
   "frontend": "react",
@@ -587,7 +587,7 @@
       },
       {
         "file": "frontend/src/drift/GoalVerdictNote.tsx",
-        "sha256": "62052b13788bd221c4ebae224e178e4b6d5f3f9563425bb78759869e808bbd04"
+        "sha256": "6f984e122072bb9291a2c80c54c92462f92aa9ef0ce25f0033f8da32c0bd4092"
       },
       {
         "file": "frontend/src/drift/MarkedNotice.tsx",
@@ -607,7 +607,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "eb0ca91c4bed01f4e46463ec138895022066d62cff61aa705a885b8f8cbfc975"
+        "sha256": "845789e60ff926b6422c175eb1e4e87a4bd11e6b801004e6409ca276575cf1be"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -663,7 +663,7 @@
       },
       {
         "file": "frontend/src/drift/goalVerdict.ts",
-        "sha256": "843d20e1e0a0cfa537bf4e584e390b845fc910808a37671fb178fb43d23a6fb3"
+        "sha256": "e4da2780eccdca01eda1fdadbee5bf9ca930ce4d008abb45ebd3911a5e298470"
       },
       {
         "file": "frontend/src/drift/index.ts",
@@ -699,7 +699,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "3ce3f20ee878b37530ee83fbd93d40b9b86fff4adddcbb38c4f3d6089d146330"
+        "sha256": "b5f6a028b3988f124f14ebb45914859f8186f7da9296cd5b350e33425ccb864a"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -707,11 +707,11 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "3a015820d7c616171a7483a7226c42b702821f0e5eade17a7fc3b70b1943abb0"
+        "sha256": "89ea5f0dfbcf8cea62c999120b10031475518b1b3014050105dd4560e468de3f"
       },
       {
         "file": "frontend/src/drift/shape.ts",
-        "sha256": "626ca40d64f6b3978c49ac123c87a86dfa622303e99990106a08e2562e68a3bf"
+        "sha256": "4143ebc84fb8ecab8caf023dd0e6b6fb422901750cfbfb45dd1a539774093b67"
       },
       {
         "file": "frontend/src/drift/state.ts",
@@ -759,7 +759,7 @@
       },
       {
         "file": "frontend/src/intent/FindGoal.tsx",
-        "sha256": "400f0fbbf718da2cb6a501815b4d99ff698aaeb8d7baeb3434a57098cba81988"
+        "sha256": "3367740e1c92aa36100fc42425e3ebbf4440d7397ea24a5f3c7412707cefa5d0"
       },
       {
         "file": "frontend/src/intent/GoalField.tsx",
@@ -827,7 +827,7 @@
       },
       {
         "file": "frontend/src/intent/find.ts",
-        "sha256": "a46743d46da0d133f95df0db8a519d0989a5e6fb869c8702cd6e5cc4e5794734"
+        "sha256": "b6594b22db0c2af9da09f7ad9a7cac11cce479c9d8ad59823070f84656ce58eb"
       },
       {
         "file": "frontend/src/intent/held.ts",
@@ -851,7 +851,7 @@
       },
       {
         "file": "frontend/src/intent/logModel.ts",
-        "sha256": "e96127166add074bb282372abc03a986b0bb81f6675b7cedab33778c19cb3a99"
+        "sha256": "3c5f908639329656e4c05c2afddde79026475094adf90af912a86470d28c49e1"
       },
       {
         "file": "frontend/src/intent/logStore.ts",
@@ -995,7 +995,7 @@
       },
       {
         "file": "frontend/src/project/goal.ts",
-        "sha256": "d9bef98bac400ddb0d67f6c5f0b81cededc772caefb00ee9a99323218caad03f"
+        "sha256": "4056ed80fe52c1412b68faca340bb7552ee62974c8d98138a3fc79a704f02b90"
       },
       {
         "file": "frontend/src/project/group.ts",
@@ -1191,7 +1191,7 @@
       },
       {
         "file": "frontend/src/sessions/rows.ts",
-        "sha256": "ade65dd244af9753a92fb99471f947070da880a2e57e056610147bfec83ce964"
+        "sha256": "315ba1c4b430c723f81a47c6d0800969b33e73a9dfb4048cd1fac832f5e51284"
       },
       {
         "file": "frontend/src/sessions/sessions.css",
