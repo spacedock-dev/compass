@@ -3320,10 +3320,13 @@ excerpt rather than silently adopting a longer prompt. Missing source times prev
 A Claude Code session that states a goal with `/goal` has it read from the transcript's own
 records, not from the prompt: the `goal_status` attachment that carries the condition, and the
 `local_command` record that prints the command's answer. The read is forward and incremental over at
-most the last 8 MiB, so a goal set before that and untouched since publishes nothing. The condition
+most the last 8 MiB, so a goal set before that and untouched since publishes nothing: a reader who opens
+such a session cold sees no detected goal and can type or adopt one as usual. A clear is the same
+sentinel with `met: true`, which is the only trace of one in an interactive session. A `failed: true`
+verdict, which Claude Code writes for a goal it gave up on, is neither a verdict nor an end: the goal
+stays and the page never calls it met. The condition
 is published as `session_goal`, `{text, at}`, masked by the same prose masking a later direction
-gets and folded to one line, and a condition over 2,000 characters publishes nothing rather than an
-excerpt. A condition longer than the Goal field holds (240 characters) also carries `offered`, the
+gets and folded to one line, and a condition over 4,000 characters, the limit Claude Code itself enforces, publishes nothing. A condition longer than the Goal field holds (240 characters) also carries `offered`, the
 bounded excerpt an adoption stores, and `cut: true`, so the page marks it cut and an adoption names
 exactly the words the store keeps; a shorter one carries neither key. A subagent's record is never the session's goal. Once the evaluator has decided, the latest `met: true`
 verdict joins the goal as `verdict`, `{met, at, reason}`. The reason is the evaluator model's own

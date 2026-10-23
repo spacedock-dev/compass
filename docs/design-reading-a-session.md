@@ -5385,6 +5385,28 @@ local one, so the first-prompt read classes it as a control and drafts nothing f
   message at 2,000 characters and drops the closing tag, and the attachment is not cut.
 - Not decided here: how the page offers the goal, which the next section records.
 
+### What the measured `/goal` shapes changed, 2026-10-23
+
+Amends the section above, built against `docs/captures/claude/goal-clear-replace-verdicts-2.1.309-macos.jsonl`.
+
+- A clear is the set sentinel with `met: true` and no reason. The section above read every `met: true`
+  attachment as the evaluator's verdict, so an interactive clear, which writes nothing else, showed the
+  cleared goal as marked met. The `Goal cleared:` answer is kept as a second signal; `claude -p` writes both.
+- The length limit is 4,000 characters, from the harness: 4,001 is refused with a printed sentence and
+  no record. The 2,000 above was the record reader's own cap and had no basis in the command, so a
+  3,000-character goal, accepted by Claude Code, published nothing. The cap is now 4,000, and the Goal
+  field's own excerpt (`offered`, `cut`) carries the words it cannot hold. The reader-side message cap is
+  unchanged, which is why the condition is still never read from `<command-args>`.
+- An impossible verdict is `met: false` with `failed: true`. It joins no verdict, as a not-met one does,
+  so the card never says the harness marked it met. Whether the goal still stands afterwards was not
+  measured; it stays published.
+- Left as they were, now measured: a replacement is a second set, the latest wins; a resume writes no
+  goal record, so an active goal survives it; an untimed set publishes nothing, because every captured
+  record carries a time and one without cannot be given a guessed one.
+- A goal set before the 8 MiB the cold read covers publishes nothing, so the Goal field offers no
+  detected goal and the reader types or adopts one. Reading the head of the file instead was rejected:
+  it would make every collection of a large transcript read it end to end.
+
 ### What offering a `/goal` decided, 2026-10-22
 
 DRC-4947, owner rulings of the same date. The page uses a detected goal and does not hold it back for a save.
