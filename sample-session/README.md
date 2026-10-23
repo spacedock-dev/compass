@@ -29,7 +29,8 @@ holds the story from start to end:
   brings the milestone to two open issues. Its context is compacted partway, so the record carries the
   summary Claude Code wrote at that point.
 - **The goal, restated.** The person asks the agent to walk Intent and drift on this very session, and
-  states the goal and the expected outcome.
+  states the goal and the outcome it expects. The sample's saved intent does not carry
+  that outcome (below).
 - **A correction.** The person pastes a Steer back correction Compass composed for the session.
 - **The departure and the steer.** The agent files one new defect outside the milestone and suggests
   moving another out of it, and the person steers it back. The stretch ends on the agent's first step
@@ -76,12 +77,14 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   sentences the agent wrote in its own messages and later reused, reworded, in a pull request's
   description are close enough to search for; the replacements above make that a search rather than a
   lookup.
-- **The intent is the person's own words**, from the record, where they state it at 10:54 UTC in the
-  record: the goal "Burn down fully the "Intent and drift: see where a Claude Code session
-  drifted and steer it back" milestone", and the expected outcome "All the issues in the "Intent and
-  drift: see where a Claude Code session drifted and steer it back" milestone are closed". It is saved
-  thirty seconds after that message, as the person saved it in the session itself, with its window
-  opening at the person's first message, and the later directions (the requests after the save, the
+- **The intent is a goal alone, written as an end state** (owner, 2026-10-23): "Every issue in the
+  "Intent and drift: see where a Claude Code session drifted and steer it back" milestone is closed".
+  The person's own words in the record, at 10:54 UTC, were an activity ("Burn down fully the
+  milestone") and an expected outcome that said the same thing as the goal, so the Drift card showed
+  two departures with one piece of evidence. The sample saves the end state alone and no expected
+  outcome. The goal's wording is the one thing in the intent that the person did not type. It is saved
+  thirty seconds after the person's message at 10:54 UTC, as the person saved their intent in the
+  session itself, with its window opening at the person's first message, and the later directions (the requests after the save, the
   pasted correction and the steer) are settled through the last record, as Keep would settle them.
   The save writes the store directly, because a save over HTTP opens its window at the latest message
   before it.
@@ -102,24 +105,32 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
     line citing only text relayed in a person turn. The page shows each run of withheld lines as one
     muted line in its place. The session's last phase, the steer and the agent's reply to it, is
     withheld whole; its entries still carry the departure, and the opening summary ends on them.
-  - The reading is the one made on 2026-10-19: one Analyze through the same kind of server,
-    `claude-sonnet-5-5`, with tool output included as the default allows. It found a departure on the
-    goal and on the outcome line, and each carries its one-sentence explanation, which the correction
-    now quotes. It was kept rather than made again. Its citations were moved once: it was read before
-    the pull-request numbers below were moved again, and a message's id covers its text, so the eight
-    messages that quote those numbers carry new ids for the same records. Each old id was matched to
-    the new one by the record it names (its record id, or for the person's messages its time, kind and
-    position), and the four citations that named one of them now name the same message by its new id.
-    Nothing else in the reading changed.
-  - Model calls: seven on 2026-10-19 (six for two summaries, one for the reading) and six on
-    2026-10-20 (two summaries of three calls each). The board counts the kept summary's three and the
-    one reading.
+  - The reading was made on 2026-10-23 against the goal alone: one Analyze through the same kind of
+    server, `claude-sonnet-5-5`, with tool output included as the default allows. It was the first
+    model reading made, and it is kept. It found a departure on the goal, with its one-sentence
+    explanation, and a second row about what the agent claimed: the agent said the milestone's build
+    work was done and merged, and the record shows the walk found a blocker. That row is not a
+    departure from the goal, so the Drift card shows departures from the goal alone, and the drift
+    level reads Medium from the two rows together. Two presses before it made no reading: the
+    isolated server's wrapper had not passed the account name the signed-in Claude Code needs, so the
+    program answered "not logged in" before any model call. The correction quotes the goal's
+    explanation and the claim's.
+  - The summary is the one made on 2026-10-20, kept rather than made again: the transcript is
+    byte for byte the same, and a summary does not read the intent, so the new intent needed no new
+    one. It was copied in as the home's stored summary file (`compass-summaries.json`), which the
+    server read as an intact stored summary of this record. Three of the seven phases are marked as
+    holding evidence for the departure, each from the reading's citations.
+  - Model calls: seven on 2026-10-19 (six for two summaries, one for the reading), six on
+    2026-10-20 (two summaries of three calls each) and one on 2026-10-23 (the reading). The board
+    counts the kept summary's three and the one reading.
 - **The timeline rewrites.** `scripts/build_sample_fixture.py` puts the stored summary 30 seconds
   after the session's last record, the reading 45 seconds after it and the settling of the later
-  directions 60 seconds after it, moves the reading's age sentence ("The oldest is from about 3846h
-  ago") to the reading's place on that timeline ("about 1h ago"), and cuts the board's intent digest
-  and the summary's prompt digest in its model stamp to 32 characters. The reading and the settle
-  were kept from the earlier capture, so their moments are placed rather than shifted. The board's
+  directions 60 seconds after it, moves the reading's age sentence ("The oldest is from about 3932h
+  ago") to the reading's place on that timeline ("about 1h ago"), drops the sentence a goal-only
+  reading adds to its cutoff about the outcome lines it did not read (the sample names no expected
+  outcome on any surface), and cuts the board's intent digest and the summary's prompt digest in its
+  model stamp to 32 characters. The summary was kept from an earlier capture than the reading, so
+  their moments are placed rather than shifted. The board's
   permissions are shown as a store with no stored off reads them: readings and summaries on, nothing
   refused and no notice records kept, with no notice due because both kinds of call were made, and
   with one reading and the stored summary's three calls counted. The capture was taken from a server
@@ -198,13 +209,14 @@ refuses a mapping file kept in this directory.
   machine temp paths, and checks against this repository that no quoted hash names a commit, no branch
   name is one of its refs, and the project key is the hash of the sample's own path. It also checks
   that the fixture carries the stored summary with at least four phases, a departure whose evidence
-  sits in one of them, and every record page to the start.
+  sits in one of them, and every record page to the start, that the intent is a goal alone with no
+  expected outcome line, and that no sentence the sample draws from the reading names one.
 
 ## How big it may be
 
 The fixture ships inside the built page, so both are bounded before anything is built;
 [the design record](../docs/design-sample-session.md#how-big-it-may-be) owns the bounds and why. This
-session's record is 81 entries in two pages, and the fixture with its summary and reading is 132,994
+session's record is 81 entries in two pages, and the fixture with its summary and reading is 140,642
 bytes of compact JSON.
 
 ## Regenerating it
@@ -232,12 +244,15 @@ names a commit there is regenerated, and `--verify` fails if any token in the ou
    /api/annotate` `{"settle_through": ...}`, and check that `POST /api/correction` composes. To keep
    an earlier reading instead, copy that home's `compass-annotations.json` and `compass-ends.json` in
    before the server starts, and check that every citation names an entry the transcript still has.
+   To keep the stored summary (the transcript unchanged, and a summary does not read the intent),
+   copy that home's `compass-summaries.json` in the same way, and check that the context's
+   `sources.summary` reads `state: "ok"` with its opening text.
    Restart the server before the capture, so the summary carries no job metadata.
 5. `python3 scripts/build_sample_fixture.py --base-url <that server> --project acme/dashboard --sid
    <the first eight characters of the session id> --out frontend/src/sample/session.fixture.json`,
    then `pnpm build`. The capture reads every record page back to the start and stores the older ones
    under `older`. `pnpm test` fails if the page or the fixture is over its bound.
 
-The drift level reads Medium, from the two departures the reading found. The live estimate, from
+The drift level reads Medium, from the goal departure and the contradicted claim the reading found. The live estimate, from
 checks and file paths alone, has too little recorded after the person's last message to read a level
 of its own.
