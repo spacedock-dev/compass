@@ -448,9 +448,26 @@ function goalClearedAt(session: Row): number | null {
   return isRecord(cleared) ? firstMoment(cleared['at']) : null;
 }
 
+/* What the Goal field's words are, said for the cleared note: the note sits above the field, so unnamed it reads
+   as a caption for the draft under it. Only words the box still holds untouched from a prompt are named; typed
+   text and an empty box are the reader's own and need no name. */
+function draftName(input: DraftInput): string {
+  const { held, session } = input;
+  if (foundGoal(input)) return 'a goal found in your prompts';
+  const drafted = intentDraft(input);
+  if (!drafted || drafted.source === SESSION_GOAL) return '';
+  const baseline = goalBaseline(input);
+  const key = goalKey(session);
+  if ((held.goals.has(key) ? held.goals.get(key) : baseline) !== drafted.text) return '';
+  if (drafted.source === 'first-prompt') return 'your first prompt';
+  if (drafted.source === 'latest-prompt') return 'your latest prompt';
+  return 'a prompt you chose';
+}
+
 /* The one line under the Goal field about how an earlier /goal ended, or ''. A clear that left no goal reads
-   here unless the session opened with /goal, where the "opened with /goal" sentence already carries it. Never
-   beside the update offer, which already says the /goal changed. */
+   here unless the session opened with /goal, where the "opened with /goal" sentence already carries it, and
+   names the draft below it when there is one. Never beside the update offer, which already says the /goal
+   changed. */
 export function goalEndedNote(input: DraftInput): string {
   const { session, annotation, payload } = input;
   if (goalUpdate(input)) return '';
@@ -466,7 +483,8 @@ export function goalEndedNote(input: DraftInput): string {
      leaves the clear to this note. */
   if (cleared === null || (!intentDrafted(input) && noDraftWhy(session, annotation, payload)))
     return '';
-  return `Your /goal was cleared at ${datedClock(cleared)}`;
+  const draft = draftName(input);
+  return `Your /goal was cleared at ${datedClock(cleared)}${draft ? `; the draft below is ${draft}` : ''}`;
 }
 
 /* Why the goal box arrives empty over a session that opened with a harness command: the command's name

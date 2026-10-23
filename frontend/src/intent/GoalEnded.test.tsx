@@ -45,14 +45,31 @@ describe('what became of an earlier /goal', () => {
     }
   });
 
-  it('says a clear that left no goal, beside the Goal field', async () => {
+  it('says a clear that left no goal and no draft, beside the Goal field', async () => {
     const page = mountSession({
-      session: { session_goal: null, session_goal_cleared: { at: 450 } },
+      session: {
+        session_goal: null,
+        session_goal_cleared: { at: 450 },
+        first_prompt: '',
+        first_prompt_at: null,
+      },
     });
     await settle(page);
     expect(text('[data-next-goal-ended]')).toMatch(
       /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
     );
+    expect(goalBox().value).toBe('');
+  });
+
+  it('names the draft the Goal field holds, so the note is not read as its caption', async () => {
+    const page = mountSession({
+      session: { session_goal: null, session_goal_cleared: { at: 450 } },
+    });
+    await settle(page);
+    expect(text('[data-next-goal-ended]')).toMatch(
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d; the draft below is your first prompt$/,
+    );
+    expect(goalBox().value).toBe('Ship the queue worker');
   });
 
   it('says the clear once where the session opened with /goal, in the sentence that already exists', async () => {

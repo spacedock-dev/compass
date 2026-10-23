@@ -1218,13 +1218,38 @@ export const StateEarlierGoalGivenUp: Story = {
   },
 };
 
-export const StateGoalCleared: Story = {
+export const StateGoalClearedNamesThePromptDraftBelowIt: Story = {
   args: {
     setup: { session: { session_goal: null, session_goal_cleared: { at: 1_760_000_450 } } },
   },
   play: async ({ canvasElement }) => {
     const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    // The note says what it is about, so it cannot be read as the caption of the draft under it.
     await expect(endedNote(card)).toHaveTextContent(
+      `Your /goal was cleared at ${datedClock(1_760_000_450)}; the draft below is your first prompt`,
+    );
+    await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(
+      'Keep the parser small and pure',
+    );
+    await expect(goalSource(card)).toMatch(/^From your prompt · first · not saved/);
+  },
+};
+
+export const StateGoalCleared: Story = {
+  args: {
+    setup: {
+      session: {
+        session_goal: null,
+        session_goal_cleared: { at: 1_760_000_450 },
+        first_prompt: '',
+        first_prompt_at: null,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    // No draft below it, so the plain sentence stands.
+    await expect(endedNote(card)?.textContent).toBe(
       `Your /goal was cleared at ${datedClock(1_760_000_450)}`,
     );
     // The cleared goal is never drafted: no "Goal detected" mark, and the source line is not a /goal's.
@@ -1284,7 +1309,7 @@ export const StateGoalClearedStaysSaidAfterAPromptIsChosen: Story = {
     );
     await waitFor(async () => {
       await expect(endedNote(card)).toHaveTextContent(
-        `Your /goal was cleared at ${datedClock(1_760_000_450)}`,
+        `Your /goal was cleared at ${datedClock(1_760_000_450)}; the draft below is a prompt you chose`,
       );
     });
     await expect(card.textContent?.match(/was cleared at/g)).toHaveLength(1);

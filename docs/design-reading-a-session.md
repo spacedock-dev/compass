@@ -5555,7 +5555,10 @@ neither writes a goal record.
   stands, as it does for a met claim.
 - The Intent card says under the Goal field what became of an earlier goal ("Replaced an earlier /goal at
   14:05", "An earlier /goal was met at 14:05", "Claude Code gave up on an earlier /goal at 14:05") and, where a
-  clear left no goal, "Your /goal was cleared at 14:05". Where the session opened with `/goal`, the existing
+  clear left no goal, "Your /goal was cleared at 14:05". Over a Goal field that still holds a prompt draft, the
+  clear names it ("...; the draft below is your first prompt", "your latest prompt", "a prompt you chose", "a
+  goal found in your prompts"), so the note is not read as a caption for the draft; typed words and an empty
+  box need no name. Where the session opened with `/goal`, the existing
   "This session opened with /goal" sentence takes the clear instead, so it is said once. None of these shows
   while the update offer ("Your /goal changed at") is on screen.
 - Rejected: holding a given-up goal and adding the note. The run showed the goal ended, and a held goal would
