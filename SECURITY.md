@@ -3323,8 +3323,9 @@ records, not from the prompt: the `goal_status` attachment that carries the cond
 most the last 8 MiB, so a goal set before that and untouched since publishes nothing: a reader who opens
 such a session cold sees no detected goal and can type or adopt one as usual. A clear is the same
 sentinel with `met: true`, which is the only trace of one in an interactive session. A `failed: true`
-verdict, which Claude Code writes for a goal it gave up on, is neither a verdict nor an end: the goal
-stays and the page never calls it met. The condition
+verdict, which Claude Code writes for a goal it gave up on, is not a verdict, and a measured run
+showed it ends the goal: Compass stops holding the goal, publishes the give-up as its own claim
+(`session_goal_gave_up`, `{at, reason}`) and never calls it met. The condition
 is published as `session_goal`, `{text, at}`, masked by the same prose masking a later direction
 gets and folded to one line, and a condition over 4,000 characters, the limit Claude Code itself enforces, publishes nothing. A condition longer than the Goal field holds (240 characters) also carries `offered`, the
 bounded excerpt an adoption stores, and `cut: true`, so the page marks it cut and an adoption names
@@ -3335,6 +3336,13 @@ ellipsis. The page draws it quoted, as text, under the label "The harness's clai
 own words. A not-met verdict is not read: the evaluator repeats it on every iteration while the goal is open, so it
 is progress rather than an end state, and the card reports only the end state. Like a first prompt the goal is not in session history, and it is
 stored only if the reader adopts it as their goal under the source token `session-goal`.
+
+A clear and a give-up are published beside the goal and never as it: `session_goal_cleared` (`{at}`) and
+`session_goal_gave_up` (`{at, reason}`), and a goal that followed another carries `earlier`
+(`{how, at}`, with how one of replaced, met or gave-up). None of them holds the earlier goal's words. The
+give-up reason is the evaluator model's own sentence and takes the same masking, one line and 500-character
+bound as a verdict's reason; its iterations, tokens and duration are not published. Like the goal, none of it
+is in session history, and a read that starts mid-file publishes none of it, since a missing value means unknown.
 
 The verdict is a claim and Compass tests it. The test is code over the writes and checks the record already
 holds, with no model call and nothing new sent anywhere. It is stored beside a reading's criteria as

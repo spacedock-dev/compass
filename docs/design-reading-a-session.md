@@ -5399,7 +5399,8 @@ Amends the section above, built against `docs/captures/claude/goal-clear-replace
   unchanged, which is why the condition is still never read from `<command-args>`.
 - An impossible verdict is `met: false` with `failed: true`. It joins no verdict, as a not-met one does,
   so the card never says the harness marked it met. Whether the goal still stands afterwards was not
-  measured; it stays published.
+  measured; it stays published. Superseded by the amendment of
+  2026-10-23 below: it was measured, the goal is ended, and the give-up is published as its own claim.
 - Left as they were, now measured: a replacement is a second set, the latest wins; a resume writes no
   goal record, so an active goal survives it; an untimed set publishes nothing, because every captured
   record carries a time and one without cannot be given a guessed one.
@@ -5482,7 +5483,7 @@ DRC-4948, owner ruling of the same date. When a Claude Code session ran with `/g
   (`{met, at, reason}`). The key is absent before the evaluator decides, so no goal carries an empty one, and a
   later `/goal` or a clear takes it away with the goal it was about. The reason is the evaluator model's own
   sentence, masked, folded to one line and cut at 500 characters with an ellipsis. A not-met verdict is not
-  published: the evaluator repeats it on every iteration while the goal is open (a real session holds
+  published (a give-up is, as its own claim: see the amendment of 2026-10-23 below): the evaluator repeats it on every iteration while the goal is open (a real session holds
   more than twenty), so it is progress rather than an end state, and the card reports only the end state.
 - The card says it as the harness's claim, in the reader's words: "Claude Code marked this goal met at 16:44",
   under the label "The harness's claim", with the reason quoted. It is drawn from the row alone, so a verdict
@@ -5524,6 +5525,43 @@ together and only beside those tokens), so the card can say "Compass disputes it
 deleted at 22:59, after the verdict." A file written again after its removal stays the `written-after`
 dispute. "Could not confirm it" remains the answer where nothing in the record supports or contradicts the
 claim, and Compass's own level stands either way.
+
+
+### Amended 2026-10-23: a goal that ended is said to have ended
+
+DRC-4956, owner ruling of the same date, built on a measured run recorded in
+`docs/captures/claude/goal-give-up-ends-goal-2.1.309-macos.jsonl`. It amends the paragraph above that says a
+not-met verdict is not published, and the rulings elsewhere that call a `failed: true` verdict "neither a
+verdict nor an end". That was written before the later state was measured. After Claude Code writes the
+failed record the goal is **ended**: a bare `/goal` prints "No goal set" and a clear prints the same, and
+neither writes a goal record.
+
+- A give-up is published as `session_goal_gave_up` (`{at, reason}`), a top-level per-session field of its own
+  and never under `verdict`, because every reader of a met goal keys on that. The goal itself becomes None, so
+  naming, drafting and adoption read as they do for any session with no goal. The reason goes through the same
+  masking as a verdict's: one line, cut at 500 characters. No iterations, tokens or duration are published.
+- A clear is published as `session_goal_cleared` (`{at}`), also top level. The goal is None after it. Where
+  `claude -p` writes two clear signals, the sentinel and then the printed line, the first time wins.
+- A goal that follows another carries `earlier` (`{how, at}`) on `session_goal`: `replaced` only when the
+  earlier goal was still active when the next `/goal` arrived, at that moment; `met` at the verdict's time;
+  `gave-up` at the give-up's time. Never the earlier goal's words. A set with the same words at the same
+  millisecond is a duplicate record, not a replacement, and a later set takes the clear and the give-up away.
+- All of it lives in the same cache entry as the goal, so an incremental read keeps it. A cold read that starts
+  mid-file publishes none of it: absent means unknown, never "did not happen". The two new fields are declared
+  by hand where `AGENTS.md` names, and are in neither `PATCHABLE` nor session history.
+- The Drift card says a give-up as the harness's claim, "Claude Code gave up on this goal at 16:44", with the
+  reason quoted and a line that Compass has not checked it and the level does not change. It is never "met",
+  never "Analyze again to check it", never a level or a check, and never model-judged. Compass's own reading
+  stands, as it does for a met claim.
+- The Intent card says under the Goal field what became of an earlier goal ("Replaced an earlier /goal at
+  14:05", "An earlier /goal was met at 14:05", "Claude Code gave up on an earlier /goal at 14:05") and, where a
+  clear left no goal, "Your /goal was cleared at 14:05". Where the session opened with `/goal`, the existing
+  "This session opened with /goal" sentence takes the clear instead, so it is said once. None of these shows
+  while the update offer ("Your /goal changed at") is on screen.
+- Rejected: holding a given-up goal and adding the note. The run showed the goal ended, and a held goal would
+  keep naming the session, being drafted and offering an update for a goal the harness had stopped. Rejected:
+  publishing the earlier goal's words. A replaced goal's text is not the reader's to be shown a second time,
+  and nothing needs it.
 
 ### The starting definitions
 
