@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2115743,
+    "bytes": 2115919,
     "file": "react.html",
-    "sha256": "065c7634aabbdb25401ca7cb8bf8a9e359e1623241f5036c73079642773ec1b9"
+    "sha256": "7fe79663cff810664eca8abb6a5266524c54d2a5939224fea9fac9fd053826e3"
   },
   "format": 1,
   "frontend": "react",
@@ -763,7 +763,7 @@
       },
       {
         "file": "frontend/src/intent/GoalField.tsx",
-        "sha256": "8afae6abec07bef9c601002b03158282ce48e3b9dccaedc19bc89f193b323d6c"
+        "sha256": "749e96fabb1ac987c2d0bf685b1eaac803a50b520766603d6ac1380204e57a9d"
       },
       {
         "file": "frontend/src/intent/HeldTextarea.tsx",
