@@ -26,7 +26,7 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'departure',
     title: 'A departure, and its evidence',
-    body: 'Analyze drift compares your goal with the record. Each departure names what it rests on under What, by entry number, and says why in one sentence. Press a number and Full activity opens on that entry, with every cited entry lit up. It is an account of the evidence, never a verification that the work was done.',
+    body: 'Analyze drift compares your goal with the record. Each departure shows what it rests on under What, every cited entry in its own words with its entry number, and says why in one sentence. Press a number and Full activity opens on that entry, with every cited entry lit up. It is an account of the evidence, never a verification that the work was done.',
   },
   {
     id: 'steer',

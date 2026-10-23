@@ -171,15 +171,14 @@ async function departureCard(
   const what = node.querySelector('[data-next-departure-what]') as HTMLElement;
   await expect(what.firstElementChild).toHaveTextContent('What');
   await citesResolvably(what, constraint, clause);
-  /* Said once, in Evidence: "Departs; evidence #n" beside the label and What said it a third time. */
+  /* No "Departs; evidence #n" status and no Evidence or Source fold: What's cited entries are the source (owner,
+     2026-10-23). */
   await expect(node.querySelector('[data-next-departure-status]')).toBeNull();
   await expect(
     node.querySelector('[data-next-departure-what] [data-next-cite]')?.previousSibling
       ?.textContent ?? '',
   ).not.toMatch(/^Departs/);
-  await expect(
-    [...node.querySelectorAll('.ctl-disclosure')].map((part) => part.textContent).join(' '),
-  ).toMatch(/Departs; evidence \[\d+\]/);
+  await noFolds(node);
 }
 
 async function stamp(root: HTMLElement) {
@@ -189,6 +188,24 @@ async function stamp(root: HTMLElement) {
     ),
   );
 }
+
+/* A departure card or the claims row has no Evidence or Source fold, and none of the lines only they held. */
+async function noFolds(node: HTMLElement) {
+  await expect(
+    [...node.querySelectorAll('button')].filter((button) =>
+      /^(Evidence|Source)/.test((button.textContent ?? '').trim()),
+    ),
+  ).toHaveLength(0);
+  await expect(node.textContent).not.toContain('Evidence recorded at');
+  await expect(node.textContent).not.toContain('Departs; evidence');
+  await expect(node.textContent).not.toContain('timestamped');
+}
+
+/* The cited entries of a card or row, one line each: its own words, then its number (a press on which opens
+   Full activity), then when. */
+const citedLines = (node: HTMLElement) => [
+  ...node.querySelectorAll<HTMLElement>('[data-next-cited-entries] > li'),
+];
 
 /* The reason for Can't tell is in view under the line, in the design's form `Can't tell · <line>` then why (the
    redesign walk, 2026-10-21, which replaces the 2026-10-14 ruling that kept it inside Evidence). It is said once:
@@ -200,7 +217,9 @@ async function reasonInView(row: HTMLElement, sentence: string | RegExp) {
   if (typeof sentence === 'string') await expect(reason.textContent).toBe(sentence);
   else await expect(reason.textContent).toMatch(sentence);
   await expect(reason.textContent).not.toContain('what was read does not settle this');
-  await userEvent.click(within(row).getByRole('button', { name: 'Evidence' }));
+  /* The claims row has no fold; a goal or outcome row's Evidence must not say the reason a second time. */
+  const fold = within(row).queryByRole('button', { name: 'Evidence' });
+  if (fold) await userEvent.click(fold);
   await expect(
     [...row.querySelectorAll('.next-cockpit-reading-why')].filter(
       (node) => node.textContent === reason.textContent,
@@ -598,6 +617,14 @@ export const ARecordedWriteSettlesALineThatRulesOutItsFolder: Story = {
       'Expected outcome line 1',
     );
     await expect(chips(cards[0] as HTMLElement)).toHaveLength(2);
+    // Each written file is one line with its number: the first as the What sentence, the other in the plain form.
+    const written = citedLines(cards[0] as HTMLElement);
+    await expect(written[0]).toHaveTextContent(
+      /^At \d\d:\d\d the agent changed frontend\/e2e\/support\/state\.ts\.\[\d+(\.\d+)?\]$/,
+    );
+    await expect(written[1]).toHaveTextContent(
+      /^File write: frontend\/e2e\/a\.spec\.ts\[\d+(\.\d+)?\]\d\d:\d\d$/,
+    );
     await neverDone(shown);
   },
 };
@@ -725,7 +752,7 @@ export const ClaimContradicted: Story = {
 };
 
 /* A contradicted claim whose stored detail is empty or only whitespace still says no explanation was retained,
-   and still lists each cited entry's own record under Evidence, as the account did before the cards. */
+   and still lists each cited entry as one line of its own words with its number, with no Evidence fold. */
 const unexplained = (detail: string): Pick<Story, 'args' | 'play'> => ({
   ...scenario({
     session: stored(
@@ -748,21 +775,86 @@ const unexplained = (detail: string): Pick<Story, 'args' | 'play'> => ({
     await expect(claim.querySelector('.next-cockpit-reading-detail')).toHaveTextContent(
       /^No explanation was retained for this assessment\.$/,
     );
-    await userEvent.click(within(claim).getByRole('button', { name: 'Evidence' }));
-    const entries = await waitFor(() => {
-      const found = [...claim.querySelectorAll<HTMLElement>('.next-cockpit-assessment-entry')];
-      expect(found).toHaveLength(2);
-      return found;
-    });
-    for (const entry of entries) {
-      await waitFor(() => expect(entry).toBeVisible());
-      await expect(entry).toHaveTextContent(/^\[\d+(\.\d+)?\] · /);
-    }
+    await noFolds(claim);
+    const entries = citedLines(claim);
+    await expect(entries).toHaveLength(2);
+    await expect(entries[0]).toHaveTextContent(
+      /^Agent said: “All green locally: the tests pass.”\[\d+(\.\d+)?\]/,
+    );
+    await expect(entries[1]).toHaveTextContent(/^Failed check: pytest -q\[\d+(\.\d+)?\]/);
     await neverDone(shown);
   },
 });
 export const ClaimContradictedWithNoDetail: Story = unexplained('');
 export const ClaimContradictedWithBlankDetail: Story = unexplained('   ');
+
+/* A cited check reads in the same plain form as a message: the kind with its result, then what it ran, then its
+   number and when. A cited file reads the same way, held below by the folder story. */
+export const ACitedCheckReadsPlainlyWithItsNumber: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: LINE_CONSISTENT,
+        claims: {
+          result: 'departure',
+          cites: ['m1', 'c1'],
+          detail: 'pytest failed after the agent said the tests pass.',
+          clause: '',
+        },
+      }),
+    ),
+    facts: [PERSON, PASSED, CLAIM, failedCheck('c1', 700)],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const claim = await waitFor(() => {
+      const node = quietRow(shown, 'claims');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await noFolds(claim);
+    const entries = citedLines(claim);
+    await expect(entries).toHaveLength(2);
+    await expect(entries[0]).toHaveTextContent(/^Agent said: “.+”\[\d+(\.\d+)?\]\d\d:\d\d$/);
+    await expect(entries[1]).toHaveTextContent(/^Failed check: pytest -q\[\d+(\.\d+)?\]\d\d:\d\d$/);
+    await citesResolvably(claim, 'What the agent claimed', '');
+    await neverDone(shown);
+  },
+};
+
+/* A departure card draws each cited entry as its own line, and pressing a number opens Full activity on that
+   entry, as the bare number did. */
+export const ADepartureCardListsEachCitedEntryAndItsNumberOpensFullActivity: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: { ...GOAL_DEPARTS, cites: ['c1', 'm1'] },
+        line_1: LINE_CONSISTENT,
+      }),
+    ),
+    facts: [PERSON, PASSED, CLAIM, FAILED],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const [first] = departures(shown);
+    const departure = first as HTMLElement;
+    await noFolds(departure);
+    const entries = citedLines(departure);
+    await expect(entries).toHaveLength(2);
+    for (const entry of entries) await expect(entry).toHaveTextContent(/\[\d+(\.\d+)?\]/);
+    await expect(departure).toHaveTextContent('Agent said: “');
+    const number = chips(departure)[0] as HTMLElement;
+    await seeInContext(number);
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          `[data-next-entry-id="${CSS.escape(number.dataset['nextCite'] ?? '')}"]`,
+        ),
+      ).toHaveAttribute('data-next-cited'),
+    );
+  },
+};
 
 /* An agent message that says "Done" with a check mark, cited by a consistent line: the number names the entry by
    kind only, so the agent's words and mark never stand inside the result. The reading cites it twice, and it

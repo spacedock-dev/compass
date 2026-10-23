@@ -100,7 +100,7 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
         within(what).getByRole('link', { name: /Show .* in Full activity/ }),
       ).toBeVisible();
     }
-    // Said once, inside Evidence and What the analysis read, not between the verdict and the cards.
+    // Said once, inside What the analysis read, not between the verdict and the cards.
     await expect(drift.querySelector('[data-next-departure-status]')).toBeNull();
     await expect(drift.querySelector('[data-next-reading-coverage]')).toBeNull();
     const read = drift.querySelector('[data-next-read-section="session"]') as HTMLElement;
@@ -122,25 +122,21 @@ export const TheAnswerFirstAndWhatQuotesTheAgent: Story = {
   },
 };
 
-/* Finding 9: Evidence heads with the line's label in a sentence's case, then the entry by number, kind and
-   time; the record-type tag is under Source; recorded times are local. */
-export const EvidenceReadsAsAHeadingThenTheEntry: Story = {
+/* A departure card draws its cited entry as one line in its own words with its number, and has no Evidence or
+   Source fold (owner, 2026-10-23: the citations are the source). Recorded times are local. */
+export const ADepartureCardHasNoEvidenceOrSourceFold: Story = {
   ...scenario({ session: TWO_DEPARTURES, facts: [PERSON, PASSED, AGENT], work: MEDIUM }),
   play: async ({ canvasElement }) => {
     const drift = await card(canvasElement);
     const goal = drift.querySelector('[data-next-departure="goal"]') as HTMLElement;
-    await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
-    const head = await waitFor(() => {
-      const node = goal.querySelector<HTMLElement>('[data-next-evidence-head]');
-      expect(node).toBeVisible();
-      return node as HTMLElement;
-    });
-    await expect(head.textContent).toMatch(/^[A-Z][a-z ]+$/);
-    await expect(goal.querySelector('.next-cockpit-assessment-entry')).toHaveTextContent(
-      new RegExp(`^\\[\\d+\\] · Agent message · ${clock(650)}$`),
+    await expect(within(goal).queryByRole('button', { name: /^(Evidence|Source)/ })).toBeNull();
+    const line = goal.querySelector('[data-next-cited-entries] > li') as HTMLElement;
+    await expect(line).toHaveTextContent(
+      new RegExp(`^At ${clock(650)} the agent said “.+”\\.\\[\\d+\\]$`),
     );
     await expect(goal.textContent).not.toContain('UTC');
-    await expect(goal.textContent).toContain('Departs; evidence [');
+    await expect(goal.textContent).not.toContain('Evidence recorded at');
+    await expect(goal.textContent).not.toContain('Departs; evidence');
   },
 };
 

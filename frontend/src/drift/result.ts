@@ -676,7 +676,7 @@ function pathTail(text: string, max: number): string {
    follows where it is given, so one entry cited under two constraints still reads as two cards. Empty where no
    cited entry is held, and the card keeps the constraint's own words then. */
 const TITLE_WORDS = 60;
-function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
+export function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
   return (
     entries.find((entry) => entry.subject === 'write' || entry.subject === 'check') ??
     entries.find(agentMessage) ??

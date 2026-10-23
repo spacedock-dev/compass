@@ -71,7 +71,9 @@ describe('a stored reading', () => {
     expect(document.querySelector('[data-next-result-heading]')).toBeNull();
     const goal = document.querySelector('[data-next-result-goal]') as HTMLElement;
     expect(goal.getAttribute('data-next-result-state')).toBe('departs');
-    expect(goal.textContent).toContain('Departs; evidence [1]');
+    // The card's What is the cited entry, with its number; no Evidence fold restates it as a status.
+    expect(goal.textContent).toContain('a check failed: pytest -q.[1]');
+    expect(goal.textContent).not.toContain('Departs; evidence');
     const line = document.querySelector('.next-cockpit-result-lines li') as HTMLElement;
     expect(line.getAttribute('data-next-result-state')).toBe('consistent');
     expect(line.textContent).toContain('Consistent with [2]');

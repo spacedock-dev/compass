@@ -324,7 +324,9 @@ export const ADepartureReadsAsWhatHappened: Story = {
     );
     const what = line.querySelector<HTMLElement>('[data-next-departure-what]') as HTMLElement;
     await expect(what).toHaveTextContent(`At ${clock(420)} the agent changed src/queue.ts.`);
-    await expect(what.querySelectorAll('p')).toHaveLength(2);
+    // The label, then one line for the one entry the departure cites.
+    await expect(what.querySelectorAll('p')).toHaveLength(1);
+    await expect(what.querySelectorAll('li')).toHaveLength(1);
     await expect(what.textContent).not.toMatch(/You said|Agent said/);
     await expect(line.querySelector('[data-next-departure-why]')).toHaveTextContent(LINE_WHY);
     await expect(goal.querySelector('[data-next-departure-why]')).toHaveTextContent(GOAL_WHY);

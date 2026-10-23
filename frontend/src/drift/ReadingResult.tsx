@@ -11,12 +11,11 @@ import { markNotAccurate } from './actions';
 import { SESSION_GOAL } from '../sessions/intent';
 import { DepartureSummaryLine } from '../sessions/SummaryParts';
 import { useDrift } from './context';
-import { EvidenceList } from './Evidence';
-import { evidenceRows } from './level';
 import {
   arrivedLine,
   cantTellReason,
   citedKind,
+  citedLine,
   departureTitle,
   departureWhat,
   claimHeading,
@@ -33,6 +32,7 @@ import {
   resultWhere,
   resultWork,
   stampModel,
+  titledEntry,
   verdictLine,
   verdictShape,
   type Answer,
@@ -91,8 +91,10 @@ function jumpName(key: string): string {
 }
 
 /* The cited entries of one finding, each as its number in the activity list and the kind of entry Compass
-   names, or on a departure card what it says, attributed ('Agent said: "…"'), so the line the departure is
-   about is in view and reads as the agent's words, never as the result's. A number opens
+   names. On a departure card and the claims row each is one line in its own words, attributed ('Agent said:
+   "…"', 'Failed check: …', 'File write: …'), the way the citation card says it, so the entry is in view and
+   reads as the agent's or yours, never as the result's (owner, 2026-10-23: the citations are the source, so no
+   Evidence or Source fold repeats them). A number opens
    Full activity at that entry; an entry the page does not hold yet keeps the press that reads older pages for
    it. The shape demotes a departure with no held citation, so a departure always reaches at least one
    number. */
@@ -105,6 +107,8 @@ function CitedEntries({
    * consistent never stands beside the agent's "Done". */
   readonly quote?: boolean;
 }) {
+  /* The claims row says each entry in its own words too, and its heading already quotes the claim. */
+  const lined = quote || row.key === CLAIMS;
   const { model, chooseFinding, jumpMissing } = useDrift();
   const record = useDisplayed((snapshot) =>
     snapshot.records.get(contextKey(model.projectKey, model.identity)),
@@ -138,29 +142,31 @@ function CitedEntries({
       </CitationLink>
     );
   };
-  /* A departure's What is one sentence about what happened, with each cited entry's number after it. */
+  /* A muted time of day after the number: when the entry was recorded, so a claim and the check that
+     contradicts it read in order. The titled entry's sentence on a departure already says its time. */
+  const at = (entry: WorkEntry) => {
+    const seen = nextNumber(entry.at);
+    return seen !== null && seen > 0 ? (
+      <span className="ml-1.5 text-label text-muted-foreground">{clock(seen)}</span>
+    ) : null;
+  };
+  const titled = quote ? titledEntry(held) : null;
   const chips = held.length ? (
-    quote ? (
-      <p
-        className="m-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
-        data-next-cited-entries={row.key}
-      >
-        {departureWhat(held)}
-        {held.map(link)}
-      </p>
-    ) : (
-      <ul className="m-0 flex list-none flex-col gap-2 p-0" data-next-cited-entries={row.key}>
-        {held.map((entry) => (
+    <ul className="m-0 flex list-none flex-col gap-2 p-0" data-next-cited-entries={row.key}>
+      {held.map((entry) => {
+        const sentence = entry === titled;
+        return (
           <li
             key={String(entry.id || '')}
             className="m-0 min-w-0 text-body leading-[1.5] text-foreground [overflow-wrap:anywhere]"
           >
-            {citedKind(entry)}
+            {sentence ? departureWhat([entry]) : lined ? citedLine(entry) : citedKind(entry)}
             {link(entry)}
+            {lined && !sentence ? at(entry) : null}
           </li>
-        ))}
-      </ul>
-    )
+        );
+      })}
+    </ul>
   ) : null;
   /* Kept while its "could not be loaded" sentence stands, so the way back from that sentence has a place to
      land. */
@@ -199,29 +205,37 @@ function sentenceCase(label: string): string {
   return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
 }
 
-/* The line's label, its full status, its why, the limit and each cited entry's own record, one click away
-   under "Evidence", as before the cards: moved, never dropped. The record-type tag ("agent_message ·
-   timestamped …") is the source's, so it sits under Source rather than beside the heading it ran into
-   (usability review, 2026-10-20). The why stays here because the reason for Can't tell stays inside Evidence
-   (owner, 2026-10-14). */
-function EvidenceMore({
+/* What a line says beyond its status: its why, the detail of a line never reached and the harness's limit. Said
+   in view on a departure card and the claims row, whose cited entries are their own source; behind Evidence on
+   the other rows. */
+function Qualifiers({
   row,
-  status,
-  rows,
-  quoted = false,
   reasoned = false,
 }: {
   readonly row: Criterion;
-  readonly status: string;
-  readonly rows: boolean;
-  /** What already quotes each cited entry's words, so its record here leaves them out. */
-  readonly quoted?: boolean;
-  /** The row's own reason is drawn above, so neither it nor the generic status is said again here. */
   readonly reasoned?: boolean;
 }) {
+  return (
+    <>
+      {row.why && !reasoned ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
+      {row.result === NOT_REACHED && row.detail ? (
+        <p className="next-cockpit-reading-detail">{row.detail}</p>
+      ) : null}
+      {row.limit && !(reasoned && !row.why) ? (
+        <span className="next-cockpit-reading-limit">{`limit · ${row.limit}`}</span>
+      ) : null}
+    </>
+  );
+}
+
+/* The line's label, its full status, its why and the limit, one click away under "Evidence", as before the
+   cards: moved, never dropped. A departure card and the claims row have no such fold: each cited entry is a
+   line of its own words with its number, and that is the source (owner, 2026-10-23). The why stays here because
+   the reason for Can't tell stays inside Evidence (owner, 2026-10-14). */
+function EvidenceMore({ row, status }: { readonly row: Criterion; readonly status: string }) {
   const { model } = useDrift();
+  const reasoned = Boolean(claimHeading(row, model.numbers)) || resultState(row) === 'cant-tell';
   const full = reasoned ? status : resultStatus(row, model.numbers, model.byId);
-  const listed = rows ? evidenceRows(row.citedIds, model.numbers, model.byId) : [];
   return (
     <Why name={`result-evidence:${row.key}`} summary="Evidence">
       <p
@@ -235,29 +249,7 @@ function EvidenceMore({
           <CitedText text={full} />
         </span>
       )}
-      {row.why && !reasoned ? <p className="next-cockpit-reading-why">{row.why}</p> : null}
-      {row.result === NOT_REACHED && row.detail ? (
-        <p className="next-cockpit-reading-detail">{row.detail}</p>
-      ) : null}
-      {row.limit && !(reasoned && !row.why) ? (
-        <span className="next-cockpit-reading-limit">{`limit · ${row.limit}`}</span>
-      ) : null}
-      {listed.length ? (
-        <EvidenceList
-          rows={listed}
-          scope={row.key}
-          sources={row.limit ? [] : row.evidence}
-          quoted={quoted}
-        />
-      ) : !row.limit && row.evidence.length ? (
-        <Why name={`result-source:${row.key}`} summary="Source">
-          {row.evidence.map((line, index) => (
-            <p key={index} className="next-cockpit-reading-evidence">
-              {line}
-            </p>
-          ))}
-        </Why>
-      ) : null}
+      <Qualifiers row={row} reasoned={reasoned} />
     </Why>
   );
 }
@@ -313,8 +305,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
           </p>
         ) : null}
         <DepartureSummaryLine row={row.key} />
-        {/* "Departs; evidence #5" says again what the label and What say, so it is said once, in Evidence. */}
-        <EvidenceMore row={row} status="" rows quoted />
+        <Qualifiers row={row} />
       </div>
     </article>
   );
@@ -405,12 +396,11 @@ function QuietRow({
           </span>
         ) : null}
         <CitedEntries row={row} />
-        <EvidenceMore
-          row={row}
-          status={status}
-          rows={claimDeparts}
-          reasoned={cantTell || Boolean(claim)}
-        />
+        {claims ? (
+          <Qualifiers row={row} reasoned={cantTell || Boolean(claim)} />
+        ) : (
+          <EvidenceMore row={row} status={status} />
+        )}
       </span>
     </Tag>
   );
