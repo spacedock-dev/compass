@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2114035,
+    "bytes": 2115811,
     "file": "react.html",
-    "sha256": "ab0447b4843a1e58d0a685d740320743ab3b653139338b84efd238de122ac7ad"
+    "sha256": "740bd369ddf96137d220c4952d44688690ed28b71c364f6f74ff6c8b55824a49"
   },
   "format": 1,
   "frontend": "react",
@@ -587,7 +587,7 @@
       },
       {
         "file": "frontend/src/drift/GoalVerdictNote.tsx",
-        "sha256": "6f984e122072bb9291a2c80c54c92462f92aa9ef0ce25f0033f8da32c0bd4092"
+        "sha256": "5f74654da89d239199a3231d5a9a9ae5dd4401088d820d8e52d8b714f71e5bf8"
       },
       {
         "file": "frontend/src/drift/MarkedNotice.tsx",
@@ -663,7 +663,7 @@
       },
       {
         "file": "frontend/src/drift/goalVerdict.ts",
-        "sha256": "e4da2780eccdca01eda1fdadbee5bf9ca930ce4d008abb45ebd3911a5e298470"
+        "sha256": "73471fa4ce42adfc84a6d2932d1d23fcc200039d75b9a0bb41d2901984e43427"
       },
       {
         "file": "frontend/src/drift/index.ts",
@@ -707,7 +707,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "89ea5f0dfbcf8cea62c999120b10031475518b1b3014050105dd4560e468de3f"
+        "sha256": "babfc0f16a1b52dc3d48f72e640f56ab38d1187b38bc8bd9854ec5a55352c90a"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -763,7 +763,7 @@
       },
       {
         "file": "frontend/src/intent/GoalField.tsx",
-        "sha256": "ddb434e462c02c95fa884906940324541bd9651c4fc63335f3644c85c94837bb"
+        "sha256": "080b92edc80f7b9e5d043464da75712022a1a70f513fb46ac3e018f49bd73b7e"
       },
       {
         "file": "frontend/src/intent/HeldTextarea.tsx",
@@ -815,7 +815,7 @@
       },
       {
         "file": "frontend/src/intent/derive.ts",
-        "sha256": "b93364629ebfb29cd07d7f630a82263afb1424044c41f3d327582e0ba8522848"
+        "sha256": "9a0b693d25d6a576c43bee86cabc595a9be1881650c2f166d77c72c7e4115c7f"
       },
       {
         "file": "frontend/src/intent/directions.ts",
