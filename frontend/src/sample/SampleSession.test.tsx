@@ -62,7 +62,7 @@ describe('the sample session', () => {
       row.annotation_assessment,
       fixture.correction,
     ]);
-    expect(stored).not.toMatch(/outcome|read against/i);
+    expect(stored).not.toMatch(/outcome/i);
     expect(row.annotation_line_1).toBe('');
   });
 

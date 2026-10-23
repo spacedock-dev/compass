@@ -26,8 +26,6 @@ These rewrites make the capture a stable sample rather than a snapshot of one af
   2026-10-20). Its times are kept as moments, which the sample's own server draws on the reader's
   local clock as the real route does. `--recompose` rewrites only that field of an existing
   fixture.
-- The cutoff's sentence "Read against your goal; no expected outcome lines were saved." is dropped:
-  the sample saves a goal alone and names no expected outcome anywhere.
 - The digests that bind the capture's stores (the board's intent revision, the summary's prompt
   digest in its model stamp) are cut to 32 characters, so nothing in the file is a credential-length
   value.
@@ -136,11 +134,7 @@ def cutoff_on_timeline(assessment: dict[str, Any]) -> str:
             return f"{match.group(1)} from about {hours}h ago"
         return ("It is" if one else "All are") + " from within the last hour"
 
-    cutoff = re.sub(r"(The oldest is|It is) from about \d+h ago", age, assessment["cutoff"])
-    # A goal-only reading says it read no outcome lines. The sample's intent is a goal alone, and
-    # the owner (2026-10-23) wants no expected outcome named on any surface of it, so the sentence
-    # is dropped here, the one place a producer sentence is rewritten for the sample.
-    return cutoff.replace(" Read against your goal; no expected outcome lines were saved.", "")
+    return re.sub(r"(The oldest is|It is) from about \d+h ago", age, assessment["cutoff"])
 
 
 def place_summary(fixture: dict[str, Any], made_at: float) -> None:

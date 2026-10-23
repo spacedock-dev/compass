@@ -91,45 +91,38 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
 - **The summary and the reading are real**, each made through an isolated Compass and the owner's
   signed-in Claude Code, and stored in the fixture as they came back, apart from the rewrites below.
   Nothing a model wrote is edited by hand.
-  - The summary was made again on 2026-10-20, with the current summary prompts (named speakers,
-    plain verbs, results attributed to whoever reported them, phase titles as headings) and the
-    broadened completion check. The summary job made it when the finished session was opened
+  - The summary was made on 2026-10-23, from this transcript, with the current summary prompts and
+    the broadened completion check. The summary job made it when the finished session was opened
     (`origin: "open"`), in three parts: two windows and the opening summary, three model calls, model
     stamp `claude:claude-sonnet-5-5` with the summary prompt's digest cut as below. It was run twice,
-    the second a Summarize again, because the first withheld 10 of its 32 lines and a phase title,
-    among them the person's steer and the agent's note filing an issue outside the milestone; the
-    second is kept. It shows its opening summary (cut at the 400-character bound), all seven phase
-    titles and 28 of its 35 lines. The 7 withheld lines were read against the raw reply and each is
-    the ruled backstop at work rather than a producer bug: a second claim joined after one speaker's
-    words, or a completion word in the summary's own voice ("merged", "finished"), or, in one case, a
-    line citing only text relayed in a person turn. The page shows each run of withheld lines as one
-    muted line in its place. The session's last phase, the steer and the agent's reply to it, is
-    withheld whole; its entries still carry the departure, and the opening summary ends on them.
-  - The reading was made on 2026-10-23 against the goal alone: one Analyze through the same kind of
-    server, `claude-sonnet-5-5`, with tool output included as the default allows. It was the first
-    model reading made, and it is kept. It found a departure on the goal, with its one-sentence
-    explanation, and a second row about what the agent claimed: the agent said the milestone's build
-    work was done and merged, and the record shows the walk found a blocker. That row is not a
-    departure from the goal, so the Drift card shows departures from the goal alone, and the drift
-    level reads Medium from the two rows together. Two presses before it made no reading: the
-    isolated server's wrapper had not passed the account name the signed-in Claude Code needs, so the
-    program answered "not logged in" before any model call. The correction quotes the goal's
-    explanation and the claim's.
-  - The summary is the one made on 2026-10-20, kept rather than made again: the transcript is
-    byte for byte the same, and a summary does not read the intent, so the new intent needed no new
-    one. It was copied in as the home's stored summary file (`compass-summaries.json`), which the
-    server read as an intact stored summary of this record. Three of the seven phases are marked as
-    holding evidence for the departure, each from the reading's citations.
-  - Model calls: seven on 2026-10-19 (six for two summaries, one for the reading), six on
-    2026-10-20 (two summaries of three calls each) and one on 2026-10-23 (the reading). The board
-    counts the kept summary's three and the one reading.
+    the second a Summarize again, because the first withheld its opening summary as a completion claim
+    in the summary's own voice; the second is kept. It shows its opening summary, all seven phase titles
+    (two parts, four phases and three) and 35 of its 37 lines. The page shows each withheld line as one
+    muted line in its place; the two were not read against the raw reply. Three phases are marked as
+    holding evidence for the departure, each from the reading's citations. The summary of
+    2026-10-20 was tried first, copied into the new home, and dropped: the server read it as made
+    from a replaced record and the page told the reader to summarize again, which a new reader must
+    not meet.
+  - The reading was made on 2026-10-23 against the goal alone, after the summary: one Analyze through
+    the same kind of server, `claude-sonnet-5-5`, with tool output included as the default allows. It
+    was the first model reading made on the final code and transcript, and it is kept. A reading
+    made earlier the same day, before the producer's cutoff sentence was shortened, was set aside for
+    that reason. It found a departure on the goal, with its one-sentence explanation, and a second row
+    about what the agent claimed: the agent said the milestone's build work was done and merged, and
+    the record shows a blocker and a pull request still behind main. That row is not a departure from
+    the goal, so the Drift card shows departures from the goal alone, and the drift level reads Medium
+    from the two rows together. Two presses at the very start made no reading: the isolated server's
+    wrapper had not passed the account name the signed-in Claude Code needs, so the program answered
+    "not logged in" before any model call. The correction quotes the goal's explanation and the
+    claim's.
+  - Model calls on 2026-10-23: eight, six for the two summaries (three calls each) and two for
+    readings, one of them set aside as above. The board counts the kept summary's three and the one
+    reading.
 - **The timeline rewrites.** `scripts/build_sample_fixture.py` puts the stored summary 30 seconds
   after the session's last record, the reading 45 seconds after it and the settling of the later
-  directions 60 seconds after it, moves the reading's age sentence ("The oldest is from about 3932h
-  ago") to the reading's place on that timeline ("about 1h ago"), drops the sentence a goal-only
-  reading adds to its cutoff about the outcome lines it did not read (the sample names no expected
-  outcome on any surface), and cuts the board's intent digest and the summary's prompt digest in its
-  model stamp to 32 characters. The summary was kept from an earlier capture than the reading, so
+  directions 60 seconds after it, moves the reading's age sentence ("The oldest is from about 3933h
+  ago") to the reading's place on that timeline ("about 1h ago"), and cuts the board's intent digest and the summary's prompt digest in its
+  model stamp to 32 characters. The summary and the reading were made in one run, in that order, and
   their moments are placed rather than shifted. The board's
   permissions are shown as a store with no stored off reads them: readings and summaries on, nothing
   refused and no notice records kept, with no notice due because both kinds of call were made, and
@@ -151,7 +144,7 @@ It is an illustration, not a byte-for-byte record. These are the parts that are 
   session's pull requests on #321 to #327 and a tracker link on #211, real and unrelated pull
   requests in this repository. Each was rewritten after sanitizing, in the transcript and the fixture
   alike, by putting a 9 in front (#9321 to #9327, #9211), including the kept reading's explanation,
-  which quotes two of them. The summary of 2026-10-20 was made from the rewritten transcript, so its
+  which quotes two of them. The summary of 2026-10-23 was made from the rewritten transcript, so its
   numbers needed no rewrite. `scripts/tests/test_sample_session_files.py` fails when a quoted
   pull request number matches one in this repository's commit subjects.
 - **Numbers inside quoted speech are the original session's.** Full activity numbers the sample's own
@@ -216,7 +209,7 @@ refuses a mapping file kept in this directory.
 
 The fixture ships inside the built page, so both are bounded before anything is built;
 [the design record](../docs/design-sample-session.md#how-big-it-may-be) owns the bounds and why. This
-session's record is 81 entries in two pages, and the fixture with its summary and reading is 140,642
+session's record is 81 entries in two pages, and the fixture with its summary and reading is 139,650
 bytes of compact JSON.
 
 ## Regenerating it
@@ -244,9 +237,8 @@ names a commit there is regenerated, and `--verify` fails if any token in the ou
    /api/annotate` `{"settle_through": ...}`, and check that `POST /api/correction` composes. To keep
    an earlier reading instead, copy that home's `compass-annotations.json` and `compass-ends.json` in
    before the server starts, and check that every citation names an entry the transcript still has.
-   To keep the stored summary (the transcript unchanged, and a summary does not read the intent),
-   copy that home's `compass-summaries.json` in the same way, and check that the context's
-   `sources.summary` reads `state: "ok"` with its opening text.
+   A summary cannot be kept this way: it is bound to the file it was made from, so a copy reads as
+   made from a replaced record and the page says so. Make it in the new home instead.
    Restart the server before the capture, so the summary carries no job metadata.
 5. `python3 scripts/build_sample_fixture.py --base-url <that server> --project acme/dashboard --sid
    <the first eight characters of the session id> --out frontend/src/sample/session.fixture.json`,

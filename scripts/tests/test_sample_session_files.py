@@ -187,11 +187,11 @@ class SampleSessionFilesTest(unittest.TestCase):
         self.assertEqual({"goal", "claims"}, set(criteria))
 
     def test_no_sentence_the_sample_shows_names_an_expected_outcome(self) -> None:
-        # The reading's cutoff is drawn on the Drift card. The server says "no expected outcome
-        # lines were saved" on a goal-only reading; the capture drops that sentence for the sample.
+        # The reading's cutoff is drawn on the Drift card. A goal-only reading says only "Read
+        # against your goal." since 2026-10-23, so the capture needs no rewrite for the sample.
         row = json.loads(FIXTURE.read_text(encoding="utf-8"))["board"]["sessions"][0]
         cutoff = row["annotation_assessment"]["cutoff"]
-        self.assertNotRegex(cutoff, r"(?i)expected outcome|read against")
+        self.assertNotRegex(cutoff, r"(?i)expected outcome")
 
     def test_the_fixture_correction_is_what_the_composer_composes_from_it(self) -> None:
         # Served verbatim by the view-only page, so a composer change (each departure's

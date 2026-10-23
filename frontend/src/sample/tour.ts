@@ -21,7 +21,7 @@ export const TOUR: readonly TourNote[] = [
   {
     id: 'phase',
     title: 'A phase that holds a departure',
-    body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold the one departure from the goal: the agent’s readback that the milestone stands at 97.3%, the walk finding a blocker so the milestone can’t close yet, and the person confirming that the open issue stays and is to be finished.',
+    body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold the one departure from the goal: the agent’s readback that the milestone stands at 97.3%, the walk finding a blocker so the milestone can’t close yet, and at the end the person replying that the open issue stays and is to be finished while a pull request is still behind main.',
   },
   {
     id: 'departure',
