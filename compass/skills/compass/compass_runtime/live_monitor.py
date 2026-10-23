@@ -604,6 +604,24 @@ def _gate(config: RuntimeConfig, session_key: str, now: float) -> tuple[str, _Se
     return next((reason for reason, hit in stops if hit), ""), session
 
 
+def ready(config: RuntimeConfig, session_key: str, now: float) -> str:
+    """Why a check of this session could not start now, or "", before anything is read for it.
+
+    A caller that would build the check's inputs (a context, a transcript read, an estimate)
+    asks this first, so a refused check costs nothing but this look. `busy` is the board's one
+    check at a time, or an Analyze press taking the slot.
+    """
+    why, _session = _gate(config, session_key, now)
+    if why:
+        return why
+    key = _key(config, session_key)
+    with _LOCK:
+        running = sum(1 for state, _ in _RUNNING if state == key[0])
+        if key in _PRESSED or running >= config.live_monitor_in_flight_limit:
+            return "busy"
+    return ""
+
+
 def _claim(
     config: RuntimeConfig, session_key: str, session: _Session, running: _Running, now: float
 ) -> str:

@@ -293,6 +293,7 @@ class CompassHTTPServer(ThreadingHTTPServer):
         if self.interaction_prototype is not None:
             self.interaction_prototype.stop()
         # The ticker and any check in flight end with the server, whichever way it stops.
+        self.application.live_leases_closed = True
         leases = getattr(self.application, "live_leases", None)
         if isinstance(leases, live_lease.Leases):
             leases.close()
@@ -452,9 +453,9 @@ def _lease_request(payload: Any, identity_cap: int) -> tuple[str, str, str, str,
     if action == "confirm" and payload.get("answer") not in {"yes", "no"}:
         return None
     visible = payload.get("visible", True)
-    if action == "beat" and not isinstance(visible, bool):
+    if action in {"start", "beat"} and not isinstance(visible, bool):
         return None
-    extra = bool(visible) if action == "beat" else payload.get("answer") == "yes"
+    extra = bool(visible) if action in {"start", "beat"} else payload.get("answer") == "yes"
     return harness, sid, tab, action, extra
 
 
@@ -463,7 +464,7 @@ def _lease_answer(
 ) -> dict[str, Any]:
     """The lease's answer to one request already read and bounded."""
     if action == "start":
-        return leases.start(harness, sid, tab)
+        return leases.start(harness, sid, tab, visible=extra)
     if action == "beat":
         return leases.beat(harness, sid, tab, visible=extra)
     if action == "confirm":
@@ -472,6 +473,26 @@ def _lease_answer(
 
 
 _LEASES_LOCK = threading.Lock()
+
+
+def _lease_row(application: Any, harness: str, sid: str) -> dict[str, Any] | None:
+    """The row for a lease, or a marker where the board lists the session twice.
+
+    Which of two rows is the session is not known, so the ticker skips the check and keeps the lease
+    rather than ending it as though the session had gone.
+    """
+    for show_all in (False, True):
+        _, body = application.collect_json(show_all=show_all)
+        rows = [
+            row
+            for row in json.loads(body)["sessions"]
+            if row.get("harness") == harness and row.get("sid") == sid
+        ]
+        if rows:
+            return (
+                rows[0] if len(rows) == 1 else {"harness": harness, "sid": sid, "ambiguous": True}
+            )
+    return None
 
 
 def _published_row_of(application: Any, harness: str, sid: str) -> dict[str, Any] | None:
@@ -520,9 +541,11 @@ def _live_leases(application: Any) -> live_lease.Leases:
             application.live_leases = live_lease.Leases(
                 application.config,
                 clock=application.clock,
-                row_for=lambda harness, sid: _published_row_of(application, harness, sid),
+                row_for=lambda harness, sid: _lease_row(application, harness, sid),
                 inputs_for=lambda harness, sid, row: _lease_inputs(application, harness, sid, row),
                 diagnostic_sink=application.diagnostic_sink,
+                # A table made after the server closed runs no ticker.
+                start_thread=not application.live_leases_closed,
             )
         leases: live_lease.Leases = application.live_leases
         return leases

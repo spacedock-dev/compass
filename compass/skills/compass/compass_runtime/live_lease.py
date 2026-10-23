@@ -107,11 +107,15 @@ class Leases:
 
     # -- the reader's presses -------------------------------------------------------------
 
-    def start(self, harness: str, sid: str, tab_id: str) -> dict[str, Any]:
-        """Take or join the lease for one session, or say why not."""
+    def start(self, harness: str, sid: str, tab_id: str, *, visible: bool = True) -> dict[str, Any]:
+        """Take or join the lease for one session, or say why not.
+
+        A tab that is hidden when it starts says so, and holds the lease without ticks until it is
+        shown: a hidden tab is never checked for.
+        """
         now = self._clock()
         key = f"{harness}:{sid}"
-        refusal = self._start_refusal(harness, sid, now)
+        refusal = "stopping" if self._stop.is_set() else self._start_refusal(harness, sid, now)
         if not refusal:
             with self._lock:
                 self._sweep_locked(now)
@@ -119,7 +123,7 @@ class Leases:
                     self._ended.pop(key, None)
                     self._leases[key] = _Lease()
                 lease = self._leases[key]
-                lease.holders[tab_id] = _Holder(last_beat=now)
+                lease.holders[tab_id] = _Holder(last_beat=now, hidden=not visible)
                 live_monitor.begin_window(self.config, key, now=now, holder=tab_id)
                 self._ensure_ticker_locked()
         return self._answer(harness, sid, refusal)
@@ -131,9 +135,12 @@ class Leases:
         with self._lock:
             self._sweep_locked(now)
             lease = self._leases.get(key)
-            if lease is not None:
+            held = lease is not None and tab_id in lease.holders
+            if lease is not None and held:
                 lease.holders[tab_id] = _Holder(last_beat=now, hidden=not visible)
-        return self._answer(harness, sid, "" if lease is not None else "not-monitoring")
+        # Only a tab that started and has not lapsed keeps the lease: a beat cannot join one, so the
+        # holders here and in `live_monitor` stay one set.
+        return self._answer(harness, sid, "" if held else "not-monitoring")
 
     def confirm(self, harness: str, sid: str, tab_id: str, *, yes: bool) -> dict[str, Any]:
         """The reader's answer to "Do you still want to monitor this session?".
@@ -148,7 +155,7 @@ class Leases:
             self._sweep_locked(now)
             lease = self._leases.get(key)
             window = live_monitor.window(self.config, key) if lease is not None else None
-            if lease is None or window is None:
+            if lease is None or window is None or tab_id not in lease.holders:
                 refusal = "not-monitoring"
             elif window["banner_due_at"] <= now < window["deadline"]:
                 if yes:
@@ -240,20 +247,46 @@ class Leases:
                 runtime_io.diag(
                     f"Compass: the Live monitor ticker failed: {exc}", self._diagnostic_sink
                 )
+            with self._lock:
+                # Decided under the lock a start takes: a lease made now keeps this thread, and one
+                # made after finds `_thread` gone and makes a new one.
+                if not self._leases:
+                    self._thread = None
+                    return
+
+    def _row_decides(
+        self, key: str, row: Mapping[str, Any] | None, status_reason: str, now: float
+    ) -> bool:
+        """Whether the row or a pause settled this pass: an end, a pause, or a row not known."""
+        if row is not None and row.get("ambiguous"):
+            # The board lists the session twice, so which is the session is not known: not an end.
+            return True
+        if row is None or row.get("ended_at"):
+            self._end(key, "ended", now)
+            return True
+        if status_reason in {"model-calls-paused", "run-disabled"}:
+            self._end(key, "paused", now)
+            return True
+        return False
 
     def _step_one(self, key: str, now: float, status_reason: str) -> None:
         harness, _, sid = key.partition(":")
         row = self._row_for(harness, sid)
-        if row is None or row.get("ended_at"):
-            self._end(key, "ended", now)
+        if self._row_decides(key, row, status_reason, now):
             return
-        if status_reason in {"model-calls-paused", "run-disabled"}:
-            self._end(key, "paused", now)
+        if row is None:
             return
         with self._lock:
             lease = self._leases.get(key)
             if lease is None or not self._due_locked(lease, now):
                 return
+        # Before the inputs, which cost a context read: a check that cannot run costs this look.
+        why = live_monitor.ready(self.config, key, now)
+        if why:
+            end = _REFUSAL_ENDS.get(why)
+            if end is not None:
+                self._end(key, end, now)
+            return
         try:
             inputs = self._inputs_for(harness, sid, row)
             if inputs is None:
@@ -346,9 +379,11 @@ class Leases:
         }:
             return "paused"
         row = self._row_for(harness, sid)
-        if row is None:
-            return "unknown-session"
-        return "ended" if row.get("ended_at") else ""
+        # One answer for a session that ended, one that is not on the board and one the board lists
+        # twice, so a start does not tell a caller which session ids exist.
+        if row is None or row.get("ambiguous") or row.get("ended_at"):
+            return "unavailable"
+        return ""
 
     def _answer(self, harness: str, sid: str, refusal: str) -> dict[str, Any]:
         state = self._state(harness, sid, self._clock())

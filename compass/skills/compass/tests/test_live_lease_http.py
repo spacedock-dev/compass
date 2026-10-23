@@ -16,7 +16,7 @@ from typing import Any
 from unittest import mock
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import live_lease, reading_policy, reading_route
+from compass_runtime import http_api, live_lease, reading_policy, reading_route
 
 from .support import make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
@@ -151,6 +151,38 @@ class TheRoundTrip(LeaseRoute):
             )
 
 
+class AHiddenTabStartsWithoutTicks(LeaseRoute):
+    def test_a_start_that_says_the_tab_is_hidden_holds_the_lease_and_is_not_visible(self) -> None:
+        with self.serving() as port:
+            _status, started = self.lease(port, "start", visible=False)
+            self.assertEqual((True, False), (started["ok"], started["state"]["visible"]))
+            status, _again = self.lease(port, "start", visible="no")
+        self.assertEqual(400, status)
+
+
+class AServerThatClosedBuildsNoTicker(LeaseRoute):
+    def test_a_table_made_after_the_server_closed_runs_no_thread(self) -> None:
+        application = self.app()
+        with self.serving(application):
+            pass
+        self.assertTrue(application.live_leases_closed)
+        leases = http_api._live_leases(application)
+        leases.start("claude", SHORT, "tab-a")
+        self.assertFalse(leases.running())
+        leases.close()
+
+
+class ATwiceListedSessionIsAmbiguousNotGone(LeaseRoute):
+    def test_the_lease_row_marks_two_rows_and_a_missing_one_is_none(self) -> None:
+        application = self.app()
+        row = {"harness": "claude", "sid": SHORT}
+        body = json.dumps({"sessions": [row, dict(row)]}).encode()
+        application.collect_json = lambda **_: (1, body)  # type: ignore[method-assign,assignment]
+        found = http_api._lease_row(application, "claude", SHORT)
+        self.assertEqual(True, (found or {}).get("ambiguous"))
+        self.assertIsNone(http_api._lease_row(application, "claude", "nobody"))
+
+
 class TheRouteIsGuardedLikeAPress(LeaseRoute):
     def test_the_refusals_before_anything_is_read(self) -> None:
         with self.serving() as port:
@@ -209,7 +241,7 @@ class StartIsRefused(LeaseRoute):
         application.overlays = _EndedSource(ended=True)
         with self.serving(application) as port:
             _status, answer = self.lease(port, "start")
-        self.assertEqual((False, "ended"), (answer["ok"], answer["reason"]))
+        self.assertEqual((False, "unavailable"), (answer["ok"], answer["reason"]))
 
     def test_for_a_harness_that_is_not_claude_code(self) -> None:
         self.assertEqual("unsupported-harness", self.reasons(harness="codex"))
@@ -218,7 +250,7 @@ class StartIsRefused(LeaseRoute):
         self.assertEqual("sample", self.reasons(sid="sample"))
 
     def test_for_a_session_the_board_does_not_hold(self) -> None:
-        self.assertEqual("unknown-session", self.reasons(sid="nobody"))
+        self.assertEqual("unavailable", self.reasons(sid="nobody"))
 
     def test_while_model_calls_are_paused(self) -> None:
         reading_policy.set_consent(self.config, False, now=NOW)

@@ -2271,14 +2271,14 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
         do_post = source[source.index("def do_POST(self)") :]
         table = do_post[do_post.index("route = {") : do_post.index("}.get(path)")]
         # The exact-match table, plus the one prefix route matched ahead of it.
-        routes = len(re.findall(r'"(/api/[a-z/]+)":', table)) + int(
+        routes = len(re.findall(r'"(/api/[a-z/-]+)":', table)) + int(
             'path.startswith("/api/events/")' in do_post
         )
         gated = len(re.findall(r"\bcoordinator\.(?:focus_)?authorized\(", source))
-        self.assertEqual(21, routes)
+        self.assertEqual(22, routes)
         self.assertEqual(2, gated)
         self.assertIn("Writing is the twenty-two POST routes", self.FLAT)
-        self.assertIn("There is nothing to authenticate with on nineteen of them", self.FLAT)
+        self.assertIn("There is nothing to authenticate with on twenty of them", self.FLAT)
         self.assertIn("Two carry a capability and they are not worth the same.", self.FLAT)
 
     def test_the_copied_correction_route_is_named_counted_and_its_residual_stated(self) -> None:

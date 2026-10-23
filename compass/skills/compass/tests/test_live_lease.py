@@ -44,6 +44,7 @@ class Rig(unittest.TestCase):
             (HARNESS, SID): {"harness": HARNESS, "sid": SID, "ended_at": None}
         }
         self.ticks: list[tuple[str, float]] = []
+        self.inputs_built = 0
         self.verdict = live_monitor.Tick("skipped", "unchanged")
         self.leases = self.make()
         self.addCleanup(self.leases.close)
@@ -53,14 +54,18 @@ class Rig(unittest.TestCase):
             config or self.config,
             clock=lambda: self.now,
             row_for=lambda harness, sid: self.rows.get((harness, sid)),
-            inputs_for=lambda _h, _s, _row: live_lease.Inputs(
-                transcript_path="/synthetic/session.jsonl",
-                facts=[],
-                intent=GOAL,
-                estimate={"level": "none_or_low"},
-            ),
+            inputs_for=self._inputs,
             tick=self._tick,
             start_thread=False,
+        )
+
+    def _inputs(self, _h: str, _s: str, _row: Any) -> live_lease.Inputs:
+        self.inputs_built += 1
+        return live_lease.Inputs(
+            transcript_path="/synthetic/session.jsonl",
+            facts=[],
+            intent=GOAL,
+            estimate={"level": "none_or_low"},
         )
 
     def _tick(self, _config: Any, session_key: str, **_kwargs: Any) -> live_monitor.Tick:
@@ -79,15 +84,15 @@ class Rig(unittest.TestCase):
                 self.leases.beat(HARNESS, SID, tab)
             self.leases.step()
 
-    def start(self, tab: str = TAB_A) -> dict[str, Any]:
-        return self.leases.start(HARNESS, SID, tab)
+    def start(self, tab: str = TAB_A, **options: Any) -> dict[str, Any]:
+        return self.leases.start(HARNESS, SID, tab, **options)
 
 
 class StartIsRefusedFor(Rig):
     def test_an_ended_session(self) -> None:
         self.rows[(HARNESS, SID)]["ended_at"] = NOW - 5
         refused = self.start()
-        self.assertEqual((False, "ended"), (refused["ok"], refused["reason"]))
+        self.assertEqual((False, "unavailable"), (refused["ok"], refused["reason"]))
         self.assertFalse(refused["state"]["on"])
 
     def test_a_harness_other_than_claude_code(self) -> None:
@@ -102,7 +107,19 @@ class StartIsRefusedFor(Rig):
 
     def test_a_session_the_board_does_not_hold(self) -> None:
         refused = self.leases.start(HARNESS, "nobody", TAB_A)
-        self.assertEqual((False, "unknown-session"), (refused["ok"], refused["reason"]))
+        self.assertEqual((False, "unavailable"), (refused["ok"], refused["reason"]))
+
+    def test_an_ended_session_and_an_unknown_one_are_refused_in_the_same_words(self) -> None:
+        # A start must not tell a caller which session ids exist.
+        self.rows[(HARNESS, SID)]["ended_at"] = NOW - 5
+        ended = self.start()
+        unknown = self.leases.start(HARNESS, "nobody", TAB_A)
+        self.assertEqual((ended["ok"], ended["reason"]), (unknown["ok"], unknown["reason"]))
+        self.assertEqual("unavailable", ended["reason"])
+
+    def test_a_session_with_two_rows_is_refused_too(self) -> None:
+        self.rows[(HARNESS, SID)] = {"harness": HARNESS, "sid": SID, "ambiguous": True}
+        self.assertEqual("unavailable", self.start()["reason"])
 
     def test_paused_model_calls(self) -> None:
         reading_policy.set_consent(self.config, False, now=NOW)
@@ -247,7 +264,7 @@ class TheSessionEnds(Rig):
         state = self.leases.state(HARNESS, SID)
         self.assertEqual((False, "ended"), (state["on"], state["last_end"]["reason"]))
         self.assertEqual(before, len(self.ticks))
-        self.assertEqual("ended", self.start()["reason"])
+        self.assertEqual("unavailable", self.start()["reason"])
 
     def test_a_session_that_leaves_the_board_ends_its_lease(self) -> None:
         self.start()
@@ -394,6 +411,118 @@ class WhatEndsTheLeaseOtherwise(Rig):
         leases.step()
         self.assertTrue(leases.state(HARNESS, SID)["on"])
         self.assertTrue(messages)
+
+
+class AHiddenTabIsNeverTicked(Rig):
+    def test_a_start_from_a_hidden_tab_holds_the_lease_and_runs_no_check(self) -> None:
+        answer = self.start(visible=False)
+        self.assertTrue(answer["ok"])
+        self.assertFalse(answer["state"]["visible"])
+        self.run_for(300)
+        self.assertEqual([], self.ticks)
+        self.assertTrue(self.leases.state(HARNESS, SID)["on"])
+        self.leases.beat(HARNESS, SID, TAB_A, visible=True)
+        self.run_for(70, beat=(TAB_A,))
+        self.assertTrue(self.ticks)
+
+    def test_a_start_is_visible_unless_it_says_otherwise(self) -> None:
+        self.assertTrue(self.start()["state"]["visible"])
+
+
+class OnlyAHolderCanBeat(Rig):
+    def test_a_tab_that_never_started_cannot_join_by_beating(self) -> None:
+        self.start(TAB_A)
+        answer = self.leases.beat(HARNESS, SID, TAB_B)
+        self.assertEqual((False, "not-monitoring"), (answer["ok"], answer["reason"]))
+        self.assertTrue(answer["state"]["on"])
+        self.assertEqual({TAB_A}, set(live_monitor._SESSIONS[(str(self.state_dir), KEY)].holders))
+        # So the one holder leaving stops it, with no stranger left holding it.
+        self.leases.stop(HARNESS, SID, TAB_A)
+        self.assertFalse(self.leases.state(HARNESS, SID)["on"])
+
+    def test_a_holder_that_lapsed_while_the_computer_slept_does_not_revive_the_lease(self) -> None:
+        self.start(TAB_A)
+        self.at(500)
+        answer = self.leases.beat(HARNESS, SID, TAB_A)
+        self.assertFalse(answer["ok"])
+        self.assertEqual("left", answer["state"]["last_end"]["reason"])
+
+    def test_a_yes_from_a_tab_that_does_not_hold_the_lease_changes_nothing(self) -> None:
+        self.start(TAB_A)
+        self.run_for(1300, beat=(TAB_A,))
+        started = (live_monitor.window(self.config, KEY) or {})["started_at"]
+        self.leases.confirm(HARNESS, SID, TAB_B, yes=True)
+        self.assertEqual(started, (live_monitor.window(self.config, KEY) or {})["started_at"])
+
+
+class ATickThatCannotRunBuildsNothing(Rig):
+    def test_a_check_that_is_not_ready_builds_no_inputs(self) -> None:
+        self.start()
+        with mock.patch.object(live_monitor, "ready", return_value="busy"):
+            self.run_for(30, beat=(TAB_A,))
+        self.assertEqual(0, self.inputs_built)
+        self.assertEqual([], self.ticks)
+        self.assertTrue(self.leases.state(HARNESS, SID)["on"])
+
+    def test_a_spent_cap_found_before_the_inputs_ends_the_lease_cap(self) -> None:
+        self.start()
+        with mock.patch.object(live_monitor, "ready", return_value="cap"):
+            self.run_for(10, beat=(TAB_A,))
+        self.assertEqual(0, self.inputs_built)
+        self.assertEqual("cap", self.leases.state(HARNESS, SID)["last_end"]["reason"])
+
+
+class ADuplicateRowDoesNotEndTheLease(Rig):
+    def test_two_rows_skip_the_check_and_keep_the_lease(self) -> None:
+        self.start()
+        self.rows[(HARNESS, SID)] = {"harness": HARNESS, "sid": SID, "ambiguous": True}
+        self.run_for(30, beat=(TAB_A,))
+        self.assertEqual([], self.ticks)
+        state = self.leases.state(HARNESS, SID)
+        self.assertEqual((True, None), (state["on"], state["last_end"]))
+        self.rows[(HARNESS, SID)] = {"harness": HARNESS, "sid": SID, "ended_at": None}
+        self.run_for(10, beat=(TAB_A,))
+        self.assertTrue(self.ticks)
+
+
+class TheTickerComesAndGoesWithTheLeases(Rig):
+    def _threaded(self) -> live_lease.Leases:
+        fast = dataclasses.replace(self.config, live_monitor_ticker_sec=0.01)
+        leases = live_lease.Leases(
+            fast,
+            clock=lambda: self.now,
+            row_for=lambda h, s: self.rows.get((h, s)),
+            inputs_for=self._inputs,
+            tick=self._tick,
+            start_thread=True,
+        )
+        self.addCleanup(leases.close)
+        return leases
+
+    def _until(self, check: Any) -> bool:
+        for _ in range(300):
+            if check():
+                return True
+            threading.Event().wait(0.01)
+        return False
+
+    def test_the_ticker_exits_when_no_lease_remains_and_returns_with_the_next_start(self) -> None:
+        leases = self._threaded()
+        self.assertFalse(leases.running())
+        leases.start(HARNESS, SID, TAB_A)
+        self.assertTrue(leases.running())
+        leases.stop(HARNESS, SID, TAB_A)
+        self.assertTrue(self._until(lambda: not leases.running()))
+        leases.start(HARNESS, SID, TAB_A)
+        self.assertTrue(leases.running())
+
+    def test_a_table_that_was_closed_starts_nothing(self) -> None:
+        leases = self._threaded()
+        leases.close()
+        answer = leases.start(HARNESS, SID, TAB_A)
+        self.assertFalse(answer["ok"])
+        self.assertFalse(leases.running())
+        self.assertFalse(leases.state(HARNESS, SID)["on"])
 
 
 class TheRealCheckBehindTheLease(Rig):
