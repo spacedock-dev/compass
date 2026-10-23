@@ -347,7 +347,11 @@ def _goal_attachment_event(attachment: Any, at: float | None) -> GoalEvent | Non
     if attachment.get("sentinel") is True:
         # Measured on 2.1.309: the same sentinel carries `met: false` for a set and `met: true`
         # for a clear of an active goal, with no reason, just before `Goal cleared:` prints.
-        return ("set", text, at, "") if attachment.get("met") is False else ("cleared", "", at, "")
+        # Only those two values are read; a missing or non-bool `met` is ignored, never a clear.
+        met = attachment.get("met")
+        if met is False:
+            return ("set", text, at, "")
+        return ("cleared", "", at, "") if met is True else None
     if attachment.get("met") is True:
         reason = attachment.get("reason")
         return ("verdict", text, at, reason if isinstance(reason, str) else "")

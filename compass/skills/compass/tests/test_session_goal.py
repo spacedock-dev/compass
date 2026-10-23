@@ -146,6 +146,18 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
         # Measured: the sentinel with `met: true` is the clear, not the evaluator's verdict.
         self.assertIsNone(read_goal([*set_goal(T0 + 5), clear_sentinel(T0 + 20)]))
 
+    def test_a_sentinel_without_a_measured_met_value_neither_sets_nor_clears(self) -> None:
+        # Only `met: false` (set) and `met: true` (clear) were measured; anything else is ignored.
+        for odd in ({}, {"met": None}, {"met": "false"}, {"met": 0}):
+            with self.subTest(odd=odd):
+                record = clear_sentinel(T0 + 20)
+                record["attachment"].pop("met")
+                record["attachment"].update(odd)
+                self.assertEqual(
+                    {"text": CONDITION, "at": T0 + 5}, read_goal([*set_goal(T0 + 5), record])
+                )
+                self.assertIsNone(read_goal([record]))
+
     def test_a_goal_cleared_in_the_measured_order_publishes_none(self) -> None:
         cleared = command_answer(T0 + 20, "clear", f"Goal cleared: {CONDITION}")
         self.assertIsNone(read_goal([*set_goal(T0 + 5), clear_sentinel(T0 + 20), cleared]))
