@@ -1114,16 +1114,20 @@ export const StateGoalDetectedCut: Story = {
   },
 };
 
+const SAVED_OWN_GOAL = {
+  annotation_goal: 'Keep the parser small and pure',
+  annotation_goal_why: '',
+  annotation_revision: 1,
+  annotation_revision_count: 1,
+  annotation_at: 1_760_000_500,
+  annotation_goal_saved_at: 1_760_000_500,
+};
+
 export const StateGoalUpdateOffered: Story = {
   args: {
     setup: {
       session: {
-        annotation_goal: 'Keep the parser small and pure',
-        annotation_goal_why: '',
-        annotation_revision: 1,
-        annotation_revision_count: 1,
-        annotation_at: 1_760_000_500,
-        annotation_goal_saved_at: 1_760_000_500,
+        ...SAVED_OWN_GOAL,
         session_goal: { text: LATER_GOAL, at: 1_760_000_600 },
       },
     },
@@ -1254,7 +1258,7 @@ export const StateEarlierGoalNoteWaitsForTheUpdateOffer: Story = {
   args: {
     setup: {
       session: {
-        ...(StateGoalUpdateOffered.args?.setup as CardSetup).session,
+        ...SAVED_OWN_GOAL,
         session_goal: {
           text: LATER_GOAL,
           at: 1_760_000_600,
