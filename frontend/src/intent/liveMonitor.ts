@@ -3,6 +3,7 @@ import { isRecord, type Row } from '../observed';
 import { identityOf } from './context';
 import { endedAt } from '../observed/values';
 import {
+  answerMinutes,
   endNote,
   idleLease,
   parseLease,
@@ -32,6 +33,8 @@ export interface MonitorEntry {
   /** The server accepted the start, so a later state saying it is off is an end. */
   readonly started: boolean;
   readonly lease: LeaseState | null;
+  /** The page clock, in milliseconds, when `lease` was learned: the countdown runs from it. */
+  readonly observedAt: number;
   /** Why the monitor is off, in a sentence the Drift card shows; '' for none. */
   readonly note: string;
   /** The reason behind the note, so the question's banner can tell an end it caused from another. */
@@ -42,6 +45,7 @@ const NONE: MonitorEntry = {
   wanted: false,
   started: false,
   lease: null,
+  observedAt: 0,
   note: '',
   noteReason: null,
 };
@@ -98,7 +102,7 @@ export function liveMonitorFor(shell: Shell): MonitorStore {
       const now = made.get(key);
       if (now.lease && lease.now < now.lease.now) return;
       if (now.lease && JSON.stringify(now.lease) === JSON.stringify(lease)) return;
-      set(key, { ...now, lease });
+      set(key, { ...now, lease, observedAt: shell.clock.now() });
     },
     end(key, reason, options = {}) {
       const now = made.get(key);
@@ -118,6 +122,7 @@ export function liveMonitorFor(shell: Shell): MonitorStore {
         wanted: false,
         started: false,
         lease: lease ?? now.lease,
+        observedAt: lease ? shell.clock.now() : now.observedAt,
         note: refusalNote(why),
         noteReason: 'refused',
       });
@@ -254,7 +259,9 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
         const lease = learn(result.body.state);
         if (!result.body.ok) {
           gone = true;
-          store.end(key, lease?.lastEnd?.reason ?? 'left');
+          store.end(key, lease?.lastEnd?.reason ?? 'left', {
+            answerMinutes: answerMinutes(lease),
+          });
         }
       });
     };
@@ -307,16 +314,20 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
       offVisible();
       offPageHide();
       abort.abort();
-      if (started && !gone) void client.postLiveMonitor(body('stop'));
+      // Nothing to stop where the server has already told this tab the lease is off.
+      if (started && !gone && store.get(key).lease?.on !== false) {
+        void client.postLiveMonitor(body('stop'));
+      }
     };
   }, [shell, store, key, harness, sid, wanted]);
 
   // The server says the lease is gone: off, with the note for why.
   const gone = wanted && entry.started && entry.lease !== null && !entry.lease.on;
-  const reason = entry.lease?.lastEnd?.reason;
+  const lease = entry.lease;
+  const reason = lease?.lastEnd?.reason;
   useEffect(() => {
-    if (gone) store.end(key, reason ?? 'left');
-  }, [gone, reason, store, key]);
+    if (gone) store.end(key, reason ?? 'left', { answerMinutes: answerMinutes(lease) });
+  }, [gone, reason, lease, store, key]);
 
   // The session ended while it was viewed, or model calls were paused: off, with the note.
   const blockedWhy = wanted ? blocked : null;

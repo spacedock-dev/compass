@@ -149,3 +149,33 @@ const REFUSALS: Readonly<Record<string, string>> = {
 export function refusalNote(reason: string): string {
   return REFUSALS[reason] ?? 'Live monitor did not start.';
 }
+
+/* The minutes the reader had to answer, from the server's own clock: the span between the question opening and
+   the deadline, which the server's config sets. Absent a clock, the shipped ten. */
+export function answerMinutes(lease: LeaseState | null): number {
+  if (lease?.bannerDueAt != null && lease.deadline != null && lease.deadline > lease.bannerDueAt) {
+    return Math.max(1, Math.round((lease.deadline - lease.bannerDueAt) / 60));
+  }
+  return 10;
+}
+
+/* The countdown, to the second: "9m 40s", then "40s". */
+export function countdown(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  return whole < 60
+    ? `${String(whole)}s`
+    : `${String(Math.floor(whole / 60))}m ${String(whole % 60)}s`;
+}
+
+/* The same, said in words for a live region: whole minutes, floored, or "less than a minute". */
+export function countdownWords(seconds: number): string {
+  const minutes = Math.floor(Math.max(0, seconds) / 60);
+  if (minutes < 1) return 'less than a minute';
+  return `${String(minutes)} minute${minutes === 1 ? '' : 's'}`;
+}
+
+/* The server's time now, estimated from the last state it published and how long the page's own clock has run
+   since that state arrived, so a countdown never depends on this machine agreeing with the server's date. */
+export function serverNow(lease: LeaseState, observedAt: number, clockMs: number): number {
+  return lease.now + Math.max(0, clockMs - observedAt) / 1000;
+}

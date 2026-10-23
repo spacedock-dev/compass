@@ -19,6 +19,7 @@ import {
   DriftStamp,
   DriftHeadControls,
   DeparturesSection,
+  MonitorQuestion,
   ReadingCapBanner,
   WorkListView,
 } from '../drift';
@@ -331,6 +332,7 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
       data-tone={observed.tone}
     >
       <ReadingCapBanner payload={payload} />
+      <MonitorQuestion session={session} payload={payload} />
       <DriftProvider session={session} payload={payload} project={route.project}>
         <Header session={session} observed={observed} route={route} generated={generated} />
         {observed.askKnown ? (

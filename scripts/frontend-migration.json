@@ -1117,12 +1117,14 @@
       "name": "The live monitor switch in the session page's Drift section",
       "owner": "DRC-4825",
       "oracles": [
-        "frontend/src/intent/LiveMonitor.test.tsx",
+        "frontend/e2e/intent-parity.mjs",
         "frontend/src/drift/LiveMonitorLevel.test.tsx",
+        "frontend/src/drift/MonitorQuestion.test.tsx",
         "frontend/src/drift/monitor.test.ts",
+        "frontend/src/intent/LiveMonitor.test.tsx",
         "frontend/src/sample/SampleMonitor.test.tsx",
         "frontend/stories/LiveMonitor.stories.tsx",
-        "frontend/e2e/intent-parity.mjs"
+        "frontend/stories/LiveMonitorQuestion.stories.tsx"
       ],
       "contract": "Live monitor drives a server lease and is held in memory only: a reload shows it off; leaving the route, switching session or hiding the tab stops the beats; the server's state decides whether it is on; an end leaves a note. Departure from the recorded session-local browser preference, recorded in docs/design-frontend-migration.md#held-to-recorded-answers.",
       "disposition": "store-held"

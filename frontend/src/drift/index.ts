@@ -10,3 +10,4 @@ export { DriftHeadControls } from './DriftHead';
 export { DeparturesSection } from './Departures';
 export { WorkListView } from './WorkListView';
 export { ReadingCapBanner } from './ReadingCapBanner';
+export { MonitorQuestion } from './MonitorQuestion';

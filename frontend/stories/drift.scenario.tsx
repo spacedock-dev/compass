@@ -99,6 +99,8 @@ export interface LeaseScenario {
   refuse?: string;
   /** What a beat finds: the lease still held, or gone, as `state` then says. */
   beat?: 'held' | 'gone';
+  /** The state the server holds after the reader answers its question. */
+  onConfirm?: (answer: string) => Record<string, unknown>;
 }
 
 export const leaseState = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -278,6 +280,8 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           lease.posts.push(body);
           if (body['action'] === 'start' && lease.refuse)
             return json({ ok: false, reason: lease.refuse, state: { ...lease.state, on: false } });
+          if (body['action'] === 'confirm' && lease.onConfirm)
+            lease.state = lease.onConfirm(String(body['answer']));
           if (body['action'] === 'beat' && lease.beat === 'gone')
             return json({ ok: false, reason: 'not-monitoring', state: lease.state });
           return json({ ok: true, reason: '', state: lease.state });
