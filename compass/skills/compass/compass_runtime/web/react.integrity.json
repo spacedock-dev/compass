@@ -719,7 +719,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "0345a7a83f188c62ffb91eccb28b98011c08a58c7ab95a0455315cb047384c6f"
+        "sha256": "5afb0d0b0a19f8124f8f3dd5553453a1d417034fe022ed0f1e64818cf74571b5"
       },
       {
         "file": "frontend/src/drift/shape.ts",
