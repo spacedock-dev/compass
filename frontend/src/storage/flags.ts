@@ -1,36 +1,5 @@
 import type { StorageAccess } from './backend';
-import { STORAGE_KEYS, sessionKey, type SessionIdentity } from './keys';
-
-export function liveEstimateKey(session: SessionIdentity): string {
-  return `${STORAGE_KEYS.liveEstimatePrefix}${sessionKey(session)}`;
-}
-
-export interface LiveEstimateStore {
-  on(session: SessionIdentity): boolean;
-  /** Off removes the key rather than writing a falsy value. Returns whether storage took it. */
-  set(session: SessionIdentity, on: boolean): boolean;
-}
-
-export function createLiveEstimateStore(access: StorageAccess): LiveEstimateStore {
-  const memory = new Map<string, boolean>();
-  return {
-    on(session) {
-      const key = liveEstimateKey(session);
-      const chosen = memory.get(key);
-      if (chosen !== undefined) return chosen;
-      const read = access.attempt((backend) => backend.getItem(key));
-      return read.ok && read.value === '1';
-    },
-    set(session, on) {
-      const key = liveEstimateKey(session);
-      memory.set(key, on);
-      return access.attempt((backend) => {
-        if (on) backend.setItem(key, '1');
-        else backend.removeItem(key);
-      }).ok;
-    },
-  };
-}
+import { STORAGE_KEYS } from './keys';
 
 export interface WorkstreamStore {
   collapsed(): boolean;

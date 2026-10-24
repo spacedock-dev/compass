@@ -26,8 +26,9 @@ from compass_runtime import (
     lifecycle,
     notifications,
     observation,
+    observer,
     reading_policy,
-    reading_route,
+    summary_store,
     unasked,
 )
 from compass_runtime import annotations as annotation_store
@@ -204,6 +205,15 @@ def claude_reading_model_arg(value: str) -> str:
         raise argparse.ArgumentTypeError(msg) from error
 
 
+def claude_monitor_model_arg(value: str) -> str:
+    """An invalid CLI value is refused without copying it into diagnostics."""
+    try:
+        return runtime_config.validate_claude_monitor_model(value)
+    except ValueError as error:
+        msg = "Choose an explicit Claude Haiku model ID, such as claude-haiku-5-5."
+        raise argparse.ArgumentTypeError(msg) from error
+
+
 def release_version() -> str | None:
     """The Compass version: the stamp a standalone binary carries, else the plugin manifest."""
     try:
@@ -256,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--observer-model",
         action="store_true",
-        help="offer model goal summaries; requires disclosure consent on refresh",
+        help="accepted for one release; does nothing and will be removed in a later release",
     )
     parser.add_argument(
         "--claude-reading-model",
@@ -265,6 +275,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "explicit Claude reading model; Sonnet/Opus generation 5 or later (default Sonnet 5.5)"
         ),
+    )
+    parser.add_argument(
+        "--claude-monitor-model",
+        type=claude_monitor_model_arg,
+        default=runtime_config.CLAUDE_MONITOR_DEFAULT_MODEL,
+        help="explicit Claude Haiku model for the Live monitor (default Haiku 5.5)",
     )
     parser.add_argument(
         "--no-observer-model",
@@ -279,9 +295,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-tool-output",
         action="store_true",
         help=(
-            "grant, for the destination Compass names, sending a Claude Code reading's checks and "
-            "written paths, so the first press asks only for the words; "
-            f"{TOOL_OUTPUT_ENV}=1 does the same; --no-observer-model refuses it"
+            "accepted for one release; does nothing and will be removed in a later release; "
+            f"{TOOL_OUTPUT_ENV}=1 is also accepted and does nothing"
         ),
     )
     parser.add_argument("--json", action="store_true", help="machine-readable --diagnose output")
@@ -359,10 +374,17 @@ def build_parser() -> argparse.ArgumentParser:
             "check annotated sessions against what you asked for without being "
             "asked, and raise a departure through the notification lane. OFF by "
             "default and the only feature here that spends your model capacity "
-            "with nobody watching: each check is a codex subprocess, bounded per "
+            "with nobody watching: each check uses Claude Code or Codex, bounded per "
             "session and per day, and only a departure is ever raised. A check "
-            "is sent only where your Codex 'Allow and analyze' covers where the "
-            "words go now, so it never sends where a press would ask again. "
+            "uses the session's own provider for Claude Code and Codex, and prefers "
+            "Claude Code elsewhere, falling back only when unavailable. Codex needs "
+            "the Drift card's 'Allow Codex to run unasked checks' toggle for the "
+            "current destination. Checks send your typed goal and bounded reader messages "
+            "through your signed-in CLI to where its settings send them, with no agent "
+            "messages, outcome lines or tool output. Claude Code also sends its working "
+            "directory, platform, shell, OS version, date and device identifier, and under "
+            "a Claude account sign-in your email address and account ID. "
+            "Pause model calls stops checks too. "
             "--no-observer-model refuses it for the run"
         ),
     )
@@ -433,7 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--forget",
         action="store_true",
         help=(
-            "delete the local history store, and exit. Refused while a "
+            "delete local observation stores and session summaries, and exit. Refused while a "
             "dashboard is running on --port, which would write it back"
         ),
     )
@@ -505,20 +527,21 @@ def build_runtime(
         spacedock_enabled=not args.no_spacedock,
         tripwires_enabled=not args.no_tripwires,
         usage_fetch_enabled=not args.no_usage,
-        observer_model_enabled=args.observer_model and not args.no_observer_model,
+        observer_model_enabled=not args.no_observer_model,
         model_calls_disabled=args.no_observer_model,
         claude_reading_model=args.claude_reading_model,
+        claude_monitor_model=args.claude_monitor_model,
         git_probe_enabled=not args.no_git,
         focus_enabled=not args.no_focus,
         irreversible_enabled=not args.no_irreversible and not args.no_events,
         dismissals_enabled=not args.no_dismiss,
         annotations_enabled=not args.no_annotations,
-        # The off switch refuses every model call, and an unasked reading is a
-        # codex subprocess (SECURITY.md, Light harness usage). Gated here rather
-        # than on `observer_model_enabled`, which is also False when nobody
-        # passed `--observer-model`, and the lane does not need that flag.
-        unasked_enabled=args.unasked_readings and not args.no_observer_model,
-        tool_output_pre_grant=args.allow_tool_output or environ.get(TOOL_OUTPUT_ENV) == "1",
+        # The lane reads typed goals, which `--no-annotations` turns off, and the
+        # Codex toggle is refused there: publishing either would draw a control
+        # that can never work.
+        unasked_enabled=args.unasked_readings
+        and not args.no_observer_model
+        and not args.no_annotations,
         ask_enabled=not args.no_ask,
         reach_enabled=not args.no_reach,
         reach_url=args.reach_url,
@@ -737,6 +760,7 @@ def run_one_shot(
         path = history.store_path(config)
         ends_path = ends.store_path(config)
         annotations_path = annotation_store.store_path(config)
+        summaries_path = summary_store.store_path(config)
         # Refused while an instance is up, because a running dashboard holds its
         # own baseline in memory and republishes it on the next transition: the
         # delete reported success and every record came back. The probe is the
@@ -762,7 +786,8 @@ def run_one_shot(
             runtime_io.diag(
                 f"Compass: a dashboard is running on port {args.port} and would "
                 f"write {path} back from memory and go on publishing the ends in "
-                f"{ends_path}; the discard records in {annotations_path} were not "
+                f"{ends_path}; the summaries in {summaries_path} and discard records "
+                f"in {annotations_path} were not "
                 "swept either, because the command refuses whole; stop it with "
                 "--stop first, then --forget",
                 print,
@@ -829,6 +854,11 @@ def run_one_shot(
             else f"Compass: no copied-correction store at {copies_path}",
             print,
         )
+        summary_outcome = summary_store.forget(config)
+        runtime_io.diag(
+            f"Compass: summary store {summaries_path}: {summary_outcome}",
+            print,
+        )
         permission_forgotten = reading_policy.forget(config)
         runtime_io.diag(
             "Compass: forgot reading permission; unexpired spend timestamps remain"
@@ -836,7 +866,7 @@ def run_one_shot(
             else "Compass: could not forget reading permission; the store is unavailable",
             print,
         )
-        return 0 if permission_forgotten else 1
+        return 0 if permission_forgotten and summary_outcome != "unwritable" else 1
     if args.stop:
         message, code = lifecycle.stop_instance(config, args.port)
         runtime_io.diag(message, print)
@@ -846,30 +876,6 @@ def run_one_shot(
         runtime_io.diag(lifecycle.render_status(status), print)
         return 0 if status["state"] == "running" else 1
     return None
-
-
-def grant_tool_output_at_launch(
-    config: RuntimeConfig, state: RuntimeState, application: aggregate.Application
-) -> RuntimeConfig:
-    """Write `--allow-tool-output`'s grant, and drop the flag from this run if the store refused.
-
-    The route words the card "allowed when this dashboard started" from the flag, so a grant
-    the store did not take must not leave it set: the card would claim tool output was allowed
-    while a press is refused `tool-output-consent-required`. The server was safe either way;
-    the page was not honest. Returns the config the run keeps holding.
-    """
-    if not config.tool_output_pre_grant:
-        return config
-    if reading_policy.grant_tool_output(config, reading_route.destinations()):
-        return config
-    config = dataclasses.replace(config, tool_output_pre_grant=False)
-    application.config = state.config = config
-    runtime_io.diag(
-        "Compass: --allow-tool-output was not recorded because the reading permission store is "
-        "unavailable, so the card asks for tool output as usual",
-        print,
-    )
-    return config
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -914,6 +920,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if page_bytes is None:
         return 1
     lifecycle.sweep_stale_states(config)
+    observer.sweep_claude_scratch(config)
     log_file = lifecycle.log_path(config, args.port)
     if args.daemon and not lifecycle.prepare_daemon_home(config, log_file):
         # Reported already; the message has to reach the terminal that asked,
@@ -967,10 +974,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError as exc:
         runtime_io.diag(http_api.bind_error_message(exc, args.port, args.host), print)
         return 1
-
-    # After the bind, so a refused start grants nothing, and before the fork, so the
-    # daemon's first press already finds it.
-    config = grant_tool_output_at_launch(config, state, application)
 
     announce_fd: int | None = None
     if args.daemon:

@@ -6,7 +6,7 @@ export function measureIntentChrome(native = false) {
     'intent-panel': '.next-cockpit-held',
     'drift-panel': '.next-session-drift',
     'reading-job': '.next-cockpit-reading-job',
-    'reading-consent': '.next-cockpit-reading-consent',
+    'reading-notice': '[data-next-reading-notice]',
     'reading-stale': '.next-cockpit-result-stale',
     'drift-nudge': '.next-session-drift-nudge',
     'steer-box': '.next-cockpit-steer-box',
@@ -21,13 +21,14 @@ export function measureIntentChrome(native = false) {
     'intent-panel',
     'drift-panel',
     'reading-job',
-    'reading-consent',
+    'reading-notice',
     'reading-stale',
     'steer-box',
     'steer-receipt',
     'work-panel',
   ];
-  const badges = ['drift-pill', 'work-flag', 'draft-source'];
+  // The draft-source badge is retired; the goal's source line is plain text beside the count.
+  const badges = ['drift-pill', 'work-flag'];
   const alerts = ['intent-note', 'drift-nudge'];
   const surfaces = native
     ? nativeSurfaces
@@ -51,7 +52,7 @@ export function measureIntentChrome(native = false) {
       let denominator = parentWidth;
       if (!native && innerWidth > 1100) {
         if (surface === 'drift-nudge') denominator -= 32;
-        if (['reading-job', 'reading-consent'].includes(surface))
+        if (['reading-job', 'reading-notice'].includes(surface))
           denominator = Math.min(
             parentWidth,
             33.75 * parseFloat(getComputedStyle(document.documentElement).fontSize),
@@ -106,7 +107,8 @@ export function measureIntentChrome(native = false) {
 export function intentChromeDifferences(rows, instances) {
   return rows
     .filter((row) => {
-      const expected = instances[row.key];
+      // The notice reuses the recorded card recipe; its removed question is covered by Drift stories.
+      const expected = instances[row.key.replace(/^reading-notice\|/, 'reading-consent|')];
       return (
         !expected ||
         !Number.isFinite(row.inlineSize.ratio) ||

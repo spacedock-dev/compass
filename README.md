@@ -12,8 +12,9 @@ and when it is safe to walk away. One local screen, every harness you use, and n
 machine that you cannot switch off.
 
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-goal and press `Analyze drift`. The `How Intent and drift works` button explains the steps, the
-reading's limits and why an expected outcome line is needed for a drift level. The Claude reader's
+goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More`
+menu explains the steps, the reading's limits and what a goal with no expected outcome line is
+read against. The Claude reader's
 accuracy check has not passed, and its latest correction is unmeasured, so read a level as an
 account of the evidence, not a measurement.
 
@@ -161,12 +162,13 @@ self-refreshing dashboard at `http://127.0.0.1:4553/`. The server binds to 127.0
 for another address with `--host`, which has no authentication behind it. Session content stays on
 the machine by default. The quota poll requires disclosure consent, carries a vendor token and no
 session content, and can be disabled with `--no-usage`. Model calls can send session content
-through an installed Claude Code or Codex CLI. A reader-requested drift analysis requires the
-permission disclosed on the session page, which names the reader, what it sends and any
-limits on identifying the destination.
-Optional goal summaries in Console use Codex and require `--observer-model` and their own
-consent; the consent choice stays in this browser. Unasked drift checks are a separate opt-in.
-`--no-observer-model` refuses every model call for the run.
+through an installed Claude Code or Codex CLI. Analyze drift runs on your press, Codex goal
+summaries when you press Summarize this session in Console, and a Claude Code session summary when you
+open a finished session or press Summarize or Update summary. With its switch on, the Live monitor asks
+Haiku through your Claude Code about once a minute while you view a Claude Code session. Each tells you
+once what is sent and where, and tells you again if the destination or content tier changes. Pause model calls stops every model call, the Live monitor's included, until Resume model calls;
+`--no-observer-model` refuses them at startup. Turn off summaries affects session summaries only,
+is disabled while paused, and keeps its saved answer through pause and resume. Unasked drift checks remain a separate opt-in.
 Dashboard assets, including the optional terminal's vendored xterm files, need no external fetch.
 A third outbound pathway sends counts-only nudges to an operator-supplied endpoint. It stays off
 until you configure a URL, and `--no-reach` disables it. See [SECURITY.md](SECURITY.md#scope)
@@ -176,16 +178,28 @@ owns the disclosures and bounds.
 The dashboard opens on Sessions. The tabs run Sessions, Projects, Attention and Intent log.
 Projects groups sessions by the label their harness publishes, and each project opens a cockpit
 with a Scope rail and a persistent Where this project stands briefing,
-and Now, Course, Decisions and Console tabs. Each session's own page leads with drift: there you
-type the goal you are holding that session to, optionally add an expected outcome, and check it for drift with one
-press, and read back what has been raised about that session and what became of the raise.
+and Now, Course, Decisions and Console tabs. Each session's own page is one column: an Intent card where you
+type the goal you are holding that session to and optionally an expected outcome, a What the session has
+done card, and a Drift card. What the session has done shows
+Compass's own outline of a Claude Code or Codex record, made with no model call, and on Claude Code a
+model-written summary: an opening paragraph on what the agent did, then phases that start closed, each
+opening on its lines and the entries they cite when you press it. A phase that holds evidence for a departure, or has failed
+test runs, says so on its heading. The Drift card is where
+you check the session for drift with one press and read back what has been raised about it and what
+became of the raise. On a Claude Code session its Live monitor switch asks Haiku, about once a minute
+while you view the page, where the latest turns are heading, and the card and header show that level
+labelled Live monitor · Haiku; its accuracy check has not been run yet. Until a check returns, or if it
+is paused or capped, they show the estimate from checks and file paths. The monitor asks whether you
+still want it after 20 minutes and turns itself off if nobody answers.
 Sessions keeps an orientation paragraph and how-to visible after a session has been checked.
 The paragraph explains analysis when annotations are on, the store is readable and a reading
 route names a provider; otherwise it explains how to inspect a session. Every goal
 cell, including saved words, opens its session at Intent.
-A finding can jump to the entries it cites in Session activity, marked with its words and their
-current numbers. Departure citations retain the neutral "Cited" tag. A current result has no rerun
-button; new work or changed intent gives one "Analyze again" with that reason.
+A citation is a bracketed number such as [41]. Hovering or focusing it shows the cited entry's own
+words in a card, and "See in context of the session" opens Full activity on that entry, marked with
+its words and its current number, loading an older entry first when it is not listed yet. Departure citations retain the neutral "Cited" tag. Once a reading exists the card header
+carries a re-run control: "Check again" when new work or changed words came after the reading, "Analyze again" when
+it is current. It stays on the page, inert, where a press cannot run.
 Console collects delegation, waiting requests,
 capacity and browser-local tripwires. The terminal bridge and semantic history remain prototypes;
 the [cockpit design contract](docs/design-next-ui.md#cockpit-reconciliation) records their limits.
@@ -199,8 +213,8 @@ under Sessions. Every other view's `Escape` returns to Sessions. The route lives
 so a reload or a pasted link comes back to the same view.
 
 New to Intent and drift? Open "See a sample session (view only)" above the Sessions list: an
-anonymized session that drifted, with its stored reading, the correction Compass composed and numbered
-(i) marks that explain each part. Nothing in it is saved, sent or run.
+anonymized session that drifted, with a stored summary of what it did, its stored reading, the
+correction Compass composed and numbered (i) marks that explain each part. Nothing in it is saved, sent or run.
 [The design record](docs/design-sample-session.md) says how it works.
 
 See [compass/skills/compass/SKILL.md](compass/skills/compass/SKILL.md) for data sources, session states, options, and troubleshooting.

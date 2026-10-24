@@ -94,6 +94,11 @@ export interface FakeEnvironment extends Environment {
   listenerCount(): number;
   firePageHide(): void;
   fireVisible(): void;
+  fireHidden(): void;
+  /** Whether the tab is hidden now, as `fireHidden` and `fireVisible` leave it. */
+  hidden: boolean;
+  /** Every beacon sent, in order. */
+  readonly beacons: { readonly url: string; readonly body: string }[];
   throwOnOpen: boolean;
 }
 
@@ -107,6 +112,9 @@ export function createFakeEnvironment(
   const clock = options.clock ?? createFakeClock();
   const pageHide = new Set<() => void>();
   const visible = new Set<() => void>();
+  const hidden = new Set<() => void>();
+  const tab = { hidden: false };
+  const beacons: { url: string; body: string }[] = [];
   const sources: FakeEventSource[] = [];
   const environment: FakeEnvironment = {
     tabId: options.tabId ?? 'tab-a',
@@ -128,14 +136,35 @@ export function createFakeEnvironment(
       visible.add(listener);
       return () => visible.delete(listener);
     },
+    onBecameHidden(listener) {
+      hidden.add(listener);
+      return () => hidden.delete(listener);
+    },
+    beacons,
+    get hidden() {
+      return tab.hidden;
+    },
+    set hidden(value: boolean) {
+      tab.hidden = value;
+    },
+    isHidden: () => tab.hidden,
+    sendBeacon(url, body) {
+      beacons.push({ url, body });
+      return true;
+    },
     streamOpens: () => sources.length,
     openStreams: () => sources.filter((source) => !source.closed).length,
-    listenerCount: () => pageHide.size + visible.size,
+    listenerCount: () => pageHide.size + visible.size + hidden.size,
     firePageHide() {
       for (const listener of [...pageHide]) listener();
     },
     fireVisible() {
+      tab.hidden = false;
       for (const listener of [...visible]) listener();
+    },
+    fireHidden() {
+      tab.hidden = true;
+      for (const listener of [...hidden]) listener();
     },
   };
   return environment;

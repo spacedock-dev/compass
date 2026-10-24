@@ -1,0 +1,40 @@
+{
+  "mid_turn": {
+    "fact_id": "fact:7494d9934b1b9fb0",
+    "at": 1790218900.0,
+    "type": "user_message",
+    "source_kind": "steer",
+    "summary": "Also prune the dead rules from the stylesheets while you are in there.",
+    "scope": "session",
+    "actor_claim": "queued-command attachment with a human origin",
+    "work_item_id": null,
+    "evidence": {
+      "source": "message the reader sent while the agent worked",
+      "confidence": "exact"
+    },
+    "intent_promoted": true,
+    "source_session": {
+      "harness": "claude",
+      "sid": "4a1c9e7d"
+    }
+  },
+  "answer": {
+    "fact_id": "fact:c7520ad692641e39",
+    "at": 1790218825.0,
+    "type": "user_message",
+    "source_kind": "steer",
+    "summary": "Ruling: Same folder in its checkout",
+    "scope": "session",
+    "actor_claim": "question tool result holding the reader's answers",
+    "work_item_id": null,
+    "evidence": {
+      "source": "reader's answer to the agent's question",
+      "confidence": "exact"
+    },
+    "intent_promoted": false,
+    "source_session": {
+      "harness": "claude",
+      "sid": "4a1c9e7d"
+    }
+  }
+}

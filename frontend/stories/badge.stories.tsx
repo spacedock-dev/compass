@@ -18,13 +18,6 @@ export const DriftPill: Story = {
     await expect(canvas.getByText(args.children as string)).toBeVisible();
   },
 };
-export const DraftSource: Story = {
-  args: { variant: 'draft-source', children: 'Badge draft-source' },
-  play: async ({ canvasElement, args }) => {
-    const canvas = within(canvasElement);
-    await expect(canvas.getByText(args.children as string)).toBeVisible();
-  },
-};
 export const CourseTag: Story = {
   args: { variant: 'course-tag', children: 'Badge course-tag' },
   play: async ({ canvasElement, args }) => {

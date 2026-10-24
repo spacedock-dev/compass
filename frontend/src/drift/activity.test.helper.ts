@@ -18,6 +18,7 @@ export function activityRow(
     actorClaim: '',
     modelDerived: false,
     subject: 'check',
+    checkId: '',
     copied: false,
     work: true,
     result: '',

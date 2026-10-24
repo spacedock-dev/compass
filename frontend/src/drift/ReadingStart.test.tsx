@@ -134,57 +134,294 @@ describe('a refusal is a state', () => {
   });
 });
 
-describe('consent and destination', () => {
-  const unconsented = {
-    reading: { providers: { claude: false }, words: {}, tool_output: {}, used: 0, limit: 10 },
+/* What is sent, as the disclosure holds it: the popover's panel is in the page while it is closed. */
+const sentText = () =>
+  [...document.querySelectorAll('[data-slot="popover-content"]')]
+    .map((node) => node.textContent ?? '')
+    .join(' ');
+
+describe('notices and the durable off switch', () => {
+  const fresh = {
+    reading: { consent: true, off: false, providers: {}, words: {}, used: 0, limit: 10 },
+  };
+  const notice = {
+    kind: 'reading',
+    provider: 'claude',
+    destination: 'first.example',
+    content: 4,
+    tool_output: 'tools.example',
+    at: 1000,
   };
 
-  it('asks before sending, names the receiver, and sends only on Allow', async () => {
+  it('runs on the first press, keeps its notice through refresh and navigation, and clears it on a press without one', async () => {
+    let calls = 0;
     const page = mountDrift({
-      payload: unconsented,
-      routes: { '/api/reading': () => json({ ok: true, produced: false }) },
+      payload: fresh,
+      routes: {
+        '/api/reading': () => {
+          calls++;
+          return json(
+            {
+              ok: true,
+              job: { id: `j${calls}`, steps: [] },
+              ...(calls === 1
+                ? { notice }
+                : calls === 3
+                  ? { notice: { ...notice, destination: 'changed.example', at: 1100 } }
+                  : {}),
+            },
+            202,
+          );
+        },
+      },
     });
     await page.settle();
     await page.settle();
-    expect(textOf('.next-cockpit-reading-ask')).toContain('Analyze drift');
+    expect(readingPosts(page)).toHaveLength(0);
     await press(byAction('reading-ask'));
-    expect(readingPosts(page)).toEqual([]);
-    expect(textOf('.next-cockpit-reading-consent')).toContain(
-      'Send this session to Claude Code for analysis?',
-    );
-    expect(textOf('.next-cockpit-reading-consent')).toContain('Your saved words.');
-    // Not now: nothing was sent, allowed or recorded.
-    await press(byAction('reading-not-now'));
-    expect(readingPosts(page)).toEqual([]);
-    expect(byAction('reading-ask')).not.toBeNull();
-    await press(byAction('reading-ask'));
-    await press(byAction('reading-allow'));
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);
-    expect(readingPosts(page)[0]?.body).toMatchObject({
-      allow: true,
-      words_destination: 'api',
-      tool_output: 'api',
-    });
+    expect(readingPosts(page)[0]?.body).not.toHaveProperty('allow');
+    /* The board has not published the job, so the notice is not open: it is in What is sent. */
+    expect(document.querySelector('[data-next-reading-notice]')).toBeNull();
+    expect(sentText()).toContain('first.example');
+    expect(sentText()).toContain('Tool output goes to: tools.example');
+    expect(sentText()).toContain('Your saved words.');
+    expect(sentText()).toContain('Claude Code');
+    await page.go('#n=sessions');
+    await page.go('#n=session:alpha%2Fapp:claude:s1');
+    await page.settle();
+    expect(sentText()).toContain('first.example');
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(sentText()).not.toContain('first.example');
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(sentText()).toContain('changed.example');
+    expect(sentText()).not.toContain('first.example');
   });
 
-  it('refuses with the stated reason, sending nothing more, when the destination moved since the draw', async () => {
+  it('names the provider the notice was recorded for after the route falls back to another', async () => {
     const page = mountDrift({
-      payload: unconsented,
+      payload: fresh,
       routes: {
-        '/api/reading': () => json({ ok: false, reason: 'destination-changed' }, 409),
+        '/api/reading': () => json({ ok: true, job: { id: 'j', steps: [] }, notice }, 202),
       },
     });
     await page.settle();
     await page.settle();
     await press(byAction('reading-ask'));
-    await press(byAction('reading-allow'));
+    await page.settle();
+    expect(sentText()).toContain('Your saved words.');
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_routes: {
+        claude: {
+          ...ROUTE,
+          provider: 'codex',
+          label: 'Codex',
+          fallback: true,
+          disclosure: 'This sends the session to Codex.',
+          disclosure_parts: ['Codex words.'],
+        },
+      },
+    });
+    const shown = sentText();
+    expect(shown).toContain('Provider: Claude Code');
+    expect(shown).toContain('first.example');
+    expect(shown).not.toContain('Provider: Codex');
+    expect(shown).toContain("The session's words and the agent's messages.");
+  });
+
+  it('draws one Pause model calls beside a notice when no disclosure popover is drawn', async () => {
+    const page = mountDrift({
+      payload: { ...fresh, reading_routes: { claude: { ...ROUTE, disclosure: '' } } },
+      routes: { '/api/reading': () => json({ ok: true, produced: false, notice }) },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    /* The notice is open while the analysis it came with runs, which the board publishes as a job. */
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_jobs: { 'claude:s1': { id: 'j', steps: [] } },
+    });
+    const shown = document.querySelector('[data-next-reading-notice]');
+    expect(shown).not.toBeNull();
+    /* One beside the notice and the one in Drift settings, which is drawn in every state. */
+    expect(shown?.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-off"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-next-focus^="reading-off-head:"]')).toHaveLength(1);
+  });
+
+  it('offers one Resume control when the route has no disclosure', async () => {
+    const page = mountDrift({
+      payload: {
+        reading: { consent: false, off: true, reason: 'model-calls-paused' },
+        reading_routes: { claude: { ...ROUTE, disclosure: '' } },
+      },
+    });
+    await page.settle();
+    await page.settle();
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-on"]')).toHaveLength(1);
+  });
+
+  it('keeps the paused reason and Resume control even when the analysis cap is spent', async () => {
+    const page = mountDrift({
+      payload: {
+        reading: {
+          consent: false,
+          off: true,
+          reason: 'daily-cap',
+          used: 10,
+          limit: 10,
+          retry_at: null,
+        },
+      },
+    });
+    await page.settle();
+    await page.settle();
+    const lines = [
+      ...document.querySelectorAll('.next-session-drift-check .next-cockpit-reading-why'),
+    ]
+      .map((node) => node.textContent ?? '')
+      .filter((line) => /Analysis limit|Model calls are paused/.test(line));
+    expect(lines[0]).toContain('Model calls are paused');
+    expect(byAction('reading-on')?.getAttribute('aria-disabled')).toBeNull();
+    expect(lines).toContain('Model calls are paused. Nothing is sent until you resume.');
+  });
+
+  it('keeps the last notice while another press is pending or its response is lost', async () => {
+    let first = true;
+    const page = mountDrift({
+      payload: fresh,
+      routes: {
+        '/api/reading': () => {
+          if (!first) return 'hold';
+          first = false;
+          return json({ ok: true, job: { id: 'first', steps: [] }, notice }, 202);
+        },
+      },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(sentText()).toContain('first.example');
+    await press(byAction('reading-ask'));
+    expect(sentText()).toContain('first.example');
+    await page.release('/api/reading', new Response('lost', { status: 200 }));
+    await page.settle();
+    expect(sentText()).toContain('first.example');
+    expect(textOf('.next-session-drift-check')).toContain('Could not confirm the reading');
+  });
+
+  it('shows a newly published job notice after this tab had a no-notice reply', async () => {
+    const page = mountDrift({
+      payload: fresh,
+      routes: { '/api/reading': () => json({ ok: true, produced: false }) },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(document.querySelector('[data-next-reading-notice]')).toBeNull();
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_jobs: { 'claude:s1': { id: 'other-tab', steps: [], notice } },
+    });
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+  });
+
+  it('collapses the notice under What is sent once the analysis it came with is over', async () => {
+    const page = mountDrift({
+      payload: fresh,
+      routes: {
+        '/api/reading': () => json({ ok: true, job: { id: 'j1', steps: [] }, notice }, 202),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    await page.poll({
+      ...(page.state.data as object),
+      generated: 1200,
+      reading_jobs: { 'claude:s1': { id: 'j1', steps: [] } },
+    });
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    await page.poll({ ...(page.state.data as object), generated: 1300, reading_jobs: {} });
+    await page.settle();
+    // No 300px card above what comes next: the same words, behind the one disclosure.
+    expect(document.querySelector('[data-next-reading-notice]')).toBeNull();
+    expect(sentText()).toContain('first.example');
+    expect(sentText()).toContain('Tool output goes to: tools.example');
+    expect(
+      [...document.querySelectorAll('button')].filter(
+        (node) => node.textContent === 'What is sent',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('restores a running job notice from the payload without sending anything', async () => {
+    const page = mountDrift({
+      payload: { ...fresh, reading_jobs: { 'claude:s1': { id: 'running', steps: [], notice } } },
+    });
+    await page.settle();
+    await page.settle();
+    expect(document.querySelector('[data-next-analyzing="running"]')).not.toBeNull();
+    expect(textOf('[data-next-reading-notice]')).toContain('first.example');
+    expect(readingPosts(page)).toHaveLength(0);
+  });
+
+  it.each([
+    { consent: false, off: true, reason: '' },
+    { consent: false, reason: 'model-calls-paused' },
+  ])('resumes model calls without starting a reading', async (reading) => {
+    const page = mountDrift({
+      payload: { reading },
+      routes: {
+        '/api/reading': () =>
+          json({ ok: true, reading: { consent: true, off: false, reason: '' } }),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    /* Analyze stays in its place, refused; Resume is the Drift card head's alone. */
+    expect(byAction('reading-ask')?.getAttribute('aria-disabled')).toBe('true');
+    expect(document.querySelectorAll('[data-next-cockpit-action="reading-on"]')).toHaveLength(1);
+    expect(textOf('.next-session-drift-check')).toContain(
+      'Model calls are paused. Nothing is sent until you resume.',
+    );
+    expect(readingPosts(page)).toHaveLength(0);
+    expect(byAction('reading-on')?.textContent).toBe('Resume model calls');
+    await press(byAction('reading-on'));
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);
-    expect(textOf('.next-session-drift-check')).toContain(
-      'Where this session would be sent changed',
-    );
-    await page.advance(5_000);
+    expect(readingPosts(page)[0]?.body).toMatchObject({
+      consent: 'on',
+      press: true,
+      observer_model: 1,
+    });
+  });
+
+  it.each([
+    [503, 'store-unavailable', 'Could not confirm model calls resumed'],
+    [400, 'page-outdated', 'Could not confirm model calls resumed'],
+  ])('explains a refused turn-on without retrying (%s)', async (status, reason, sentence) => {
+    const page = mountDrift({
+      payload: { reading: { consent: false, off: true, reason: 'model-calls-paused' } },
+      routes: { '/api/reading': () => json({ ok: false, reason }, status as number) },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-on'));
+    await page.settle();
+    expect(textOf('.next-session-drift-check')).toContain(sentence);
     expect(readingPosts(page)).toHaveLength(1);
   });
 });

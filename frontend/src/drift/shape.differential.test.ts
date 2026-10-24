@@ -110,11 +110,12 @@ describe('the reading shape contract holds as the legacy producer holds it', () 
       const own = theirs.malformed
         ? Object.fromEntries(Object.keys(theirs).map((key) => [key, (mine as never)[key]]))
         : mine;
-      /* `unloaded` is this page's own count of cited ids it holds no entry for; the retired page had no such
-         field (docs/design-frontend-migration.md#held-to-recorded-answers). */
+      /* `unloaded` is this page's own count of cited ids it holds no entry for, and `goalVerdict` carries
+         Compass's test of the harness's goal verdict; the retired page had neither field
+         (docs/design-frontend-migration.md#held-to-recorded-answers). */
       const found = firstDifference(
         canonical(theirs),
-        canonical(retiredWording(withoutKey(own, 'unloaded'))),
+        canonical(retiredWording(withoutKey(withoutKey(own, 'unloaded'), 'goalVerdict'))),
       );
       if (found) failures.push(`seed ${String(seed)}: ${found}`);
     }

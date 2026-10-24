@@ -27,16 +27,22 @@ const press = async (button: Element | null) => {
 };
 
 describe('the outcome checklist', () => {
-  it('offers one empty box where nothing is saved, and adding to it adds the second', async () => {
+  it('offers one empty box where nothing is saved, and adding focuses it instead of stacking a blank', async () => {
     const page = mountSession({ store: { goal: 'Saved', revision: 1 } });
     await settle(page);
     expect(lineBoxes()).toHaveLength(1);
     expect(lineBoxes()[0]?.value).toBe('');
-    expect(control('held-line-add')).toBeNull();
+    expect(control('held-line-add')).not.toBeNull();
+    await press(control('held-line-add'));
+    expect(lineBoxes()).toHaveLength(1);
+    expect(document.activeElement).toBe(lineBoxes()[0]);
     type(lineBoxes()[0] as HTMLTextAreaElement, 'A check');
     await press(control('held-line-add'));
     expect(lineBoxes()).toHaveLength(2);
     expect(document.activeElement).toBe(lineBoxes()[1]);
+    await press(control('held-line-add'));
+    expect(lineBoxes()).toHaveLength(2);
+    expect(lineBoxes().map((box) => box.value)).toEqual(['A check', '']);
   });
 
   it('refuses a seventh line in place, says so aloud, and keeps the control on the page and inert', async () => {

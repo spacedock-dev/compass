@@ -5,27 +5,44 @@
    test here imports the React constant where it lives and compares it with the fixture, so a change on
    either side fails until the other follows. Nothing is copied into this file. These replaced the Python
    tests that compared the retired page's source text with the same constants. */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSESSMENT_KEYS } from '../drift/shape';
 import {
   BLOCKER_LINES,
+  CORRECTION_CAP,
   CRITERION_KEYS,
+  GOAL_VERDICT_CHECKS,
+  GOAL_VERDICT_KEYS,
+  GOAL_VERDICT_REMOVAL_KEYS,
+  GOAL_VERDICT_REMOVAL_WHYS,
+  GOAL_VERDICT_WHY,
   REASON_LINES,
   RESULTS,
+  SCOPE_TEXT_IDLE,
   SILENT_REASONS,
   STORED_WHY,
 } from '../drift/sentences';
+import { CUE_TTL_MS } from '../controls/keyedState';
 import { CHECK_NOT_RECORDED_REASONS, toolReportLine } from '../drift/workList';
-import { ANNOTATION_FIELDS, HELD_UNSAFE, OUTCOME_LINES_MAX } from '../intent/annotation';
+import { DELETE_LAPSE_SECONDS } from '../sessions/summary';
+import {
+  ANNOTATION_FIELDS,
+  HELD_UNSAFE,
+  OUTCOME_LINES_MAX,
+  revisionLine,
+} from '../intent/annotation';
 import { WORK_BY_HARNESS, type WorkEntry } from '../intent/work';
 import { askBanner, notifyEdge, sessionBanner } from '../notify/edges';
 import { READING_TURN_STOP_HARNESSES } from '../observed';
-import { askingTitle } from '../sessions/detail';
+import { askingTitle, departureRow } from '../sessions/detail';
+import { revisionSuperseded } from '../sessions/rows';
 import {
   PROMPT_CHOSEN,
   PROMPT_SOURCES,
   READING_ASSESSMENT_KEYS,
+  SESSION_GOAL,
   readingNamesConstraint,
 } from '../sessions/intent';
 
@@ -33,6 +50,11 @@ interface Vocabulary {
   readonly assessmentKeys: string[];
   readonly criterionKeys: string[];
   readonly whyTokens: string[];
+  readonly goalVerdictKeys: string[];
+  readonly goalVerdictChecks: string[];
+  readonly goalVerdictWhys: string[];
+  readonly goalVerdictRemovalKeys: string[];
+  readonly goalVerdictRemovalWhys: string[];
   readonly workEvidenceByHarness: Record<string, string[]>;
   readonly checkResultWords: Record<string, string>;
   readonly checkNotRecorded: string;
@@ -42,8 +64,12 @@ interface Vocabulary {
   readonly results: string[];
   readonly promptSources: string[];
   readonly promptChosen: string;
+  readonly sessionGoal: string;
   readonly maxOutcomeLines: number;
+  readonly cueWindowSeconds: number;
   readonly turnStopHarnesses: string[];
+  readonly scopeTextMidFlightIdle: string;
+  readonly correctionCapChars: number;
   readonly levelReasons: string[];
   readonly annotationFields: string[];
   readonly unsafeChars: { readonly codePoints: [number, number][] };
@@ -61,6 +87,13 @@ const vocabulary = JSON.parse(
 
 const sorted = (values: Iterable<string>): string[] => [...values].sort();
 
+describe('the cue window', () => {
+  it('is the lifetime of a held cue, and the lapse Delete summary and the armed discard each name', () => {
+    expect(CUE_TTL_MS).toBe(vocabulary.cueWindowSeconds * 1000);
+    expect(DELETE_LAPSE_SECONDS).toBe(vocabulary.cueWindowSeconds);
+  });
+});
+
 describe('the reading vocabulary', () => {
   it('names the same assessment keys as the producer', () => {
     expect(sorted(ASSESSMENT_KEYS)).toEqual(sorted(vocabulary.assessmentKeys));
@@ -73,6 +106,14 @@ describe('the reading vocabulary', () => {
 
   it('has a sentence for every reason a stored row may give, and none the producer lacks', () => {
     expect(sorted(Object.keys(STORED_WHY))).toEqual(sorted(vocabulary.whyTokens));
+  });
+
+  it("spells the harness verdict's test as the producer does, with a sentence for every reason", () => {
+    expect(sorted(GOAL_VERDICT_KEYS)).toEqual(sorted(vocabulary.goalVerdictKeys));
+    expect(sorted(GOAL_VERDICT_CHECKS)).toEqual(sorted(vocabulary.goalVerdictChecks));
+    expect(sorted(Object.keys(GOAL_VERDICT_WHY))).toEqual(sorted(vocabulary.goalVerdictWhys));
+    expect(sorted(GOAL_VERDICT_REMOVAL_KEYS)).toEqual(sorted(vocabulary.goalVerdictRemovalKeys));
+    expect(sorted(GOAL_VERDICT_REMOVAL_WHYS)).toEqual(sorted(vocabulary.goalVerdictRemovalWhys));
   });
 
   it('agrees on which entries demonstrate work, for every harness', () => {
@@ -137,6 +178,8 @@ describe('the goal and the annotation', () => {
     expect(sorted(PROMPT_SOURCES)).toEqual(sorted(vocabulary.promptSources));
     expect(PROMPT_CHOSEN).toBe(vocabulary.promptChosen);
     expect(PROMPT_SOURCES).toContain(PROMPT_CHOSEN);
+    expect(SESSION_GOAL).toBe(vocabulary.sessionGoal);
+    expect(PROMPT_SOURCES).toContain(SESSION_GOAL);
   });
 
   it('reads exactly the fields the store publishes', () => {
@@ -166,6 +209,14 @@ describe('the goal and the annotation', () => {
 
   it('admits the turn stop for the harnesses the server does', () => {
     expect(sorted(READING_TURN_STOP_HARNESSES)).toEqual(sorted(vocabulary.turnStopHarnesses));
+  });
+
+  it('knows an idle reading by the sentence the producer stores', () => {
+    expect(SCOPE_TEXT_IDLE).toBe(vocabulary.scopeTextMidFlightIdle);
+  });
+
+  it('caps the correction where the copy route does', () => {
+    expect(CORRECTION_CAP).toBe(vocabulary.correctionCapChars);
   });
 });
 
@@ -209,5 +260,90 @@ describe('the alert the page and the server both compose', () => {
       const ask = { harness: 'claude', question, project, id: 'a' };
       expect(askBanner(labelled('Claude Code'), [ask]).body).toBe(detail);
     }
+  });
+});
+
+/* "Revision 2 is current" was the only sentence in the page that named a revision, and a reader cannot act
+   on it: the number appears nowhere else. A stale reading or raise names the moments instead (docs/design-reading-a-session.md,
+   "Amended 2026-10-21 (owner): editing the goal keeps the reading's start"). */
+describe('the sentences about words that moved on name times, not revision numbers', () => {
+  const NUMBERED = /(?:revision|version)\s*(?:\d|\$\{)/i;
+
+  it('says when a reading or a raise was made and when the intent changed', () => {
+    for (const subject of ['This reading', 'This raise']) {
+      const line = revisionSuperseded(subject, 2, 3, 1_700_000_000, 1_700_000_500);
+      expect(line).toMatch(
+        new RegExp(
+          `^${subject} was made at .+ against an earlier version of your intent\\. You changed it at .+, so it does not describe what you are asking for now\\.$`,
+        ),
+      );
+      expect(line).not.toMatch(NUMBERED);
+    }
+  });
+
+  it('leaves a moment out rather than inventing one, and says nothing when nothing moved', () => {
+    expect(revisionSuperseded('This reading', 2, 3)).toBe(
+      'This reading was made against an earlier version of your intent. You changed it, so it does not describe what you are asking for now.',
+    );
+    expect(revisionSuperseded('This reading', 3, 3, 1, 2)).toBe('');
+    expect(revisionSuperseded('This reading', null, 3, 1, 2)).toBe('');
+  });
+
+  it('words a raise’s baseline and its stale line without a number', () => {
+    for (const revision of [2, 0]) {
+      const row = departureRow({ at: 960, revision, constraint: 'TYPED GOAL' }, 3, 1000);
+      expect(`${row.base} ${row.stale}`).not.toMatch(NUMBERED);
+    }
+    expect(departureRow({ at: 960, revision: 2 }, 3, 1000).base).toBe(
+      'read against the intent as it stood then · the evidence window is not on record',
+    );
+    expect(departureRow({ at: 960, revision: 0 }, 3, 1000).base).toBe(
+      'the intent it read is not on record · the evidence window is not on record',
+    );
+  });
+
+  it('words the saved line under the goal as a time, and the store’s bound as dropped saves', () => {
+    const annotation = (extra: Record<string, unknown>) => ({
+      revision: 4,
+      revision_count: 4,
+      at: 700,
+      goal_source: '',
+      ...extra,
+    });
+    expect(revisionLine(annotation({}), 1000)).toBe('typed 5m ago');
+    expect(revisionLine(annotation({ goal_source: 'first-prompt' }), 1000)).toBe('saved 5m ago');
+    expect(revisionLine(annotation({ revision: 20, revision_count: 16 }), 1000)).toBe(
+      'typed 5m ago · older saves dropped',
+    );
+    expect(revisionLine(annotation({ at: null }), 1000)).toBe('typed, when not recorded');
+    expect(revisionLine(annotation({ revision_count: 0 }), 1000)).toBe('');
+  });
+
+  it('prints no revision number from any shipped source', () => {
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (
+          /\.tsx?$/.test(entry.name) &&
+          !/\.(test|testing|differential)\.|\.stories\./.test(entry.name)
+        )
+          files.push(path);
+      }
+    };
+    walk(new URL('..', import.meta.url).pathname);
+    expect(files.length).toBeGreaterThan(50);
+    const found = files.flatMap((path) => {
+      // Comments say why; only what is drawn is held to the vocabulary.
+      const code = readFileSync(path, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      return code
+        .split('\n')
+        .filter((line) => NUMBERED.test(line))
+        .map((line) => `${path}: ${line.trim()}`);
+    });
+    expect(found).toEqual([]);
   });
 });

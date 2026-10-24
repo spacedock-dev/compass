@@ -1,3 +1,4 @@
+import { stripPasteWrapper } from '../api/paste';
 import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import type { ReactNode } from 'react';
@@ -25,6 +26,10 @@ import type { Row } from './raw';
    result) or derived (a review that changed the course) and says which; a derived one is never promoted to
    a verified success. Evidence is behind a disclosure on every episode, and what is missing is said before
    anything is claimed. Ported from `nextCockpitCoursePanel`. */
+
+/* A direction is the reader's words: the harness's paste tags come off, and no entry number is put in front. */
+const directionWords = (summary: unknown): string =>
+  stripPasteWrapper(String(summary || '')) || 'Direction unavailable';
 
 function Evidence({
   fact,
@@ -111,7 +116,7 @@ function EpisodeRow({
       {episode.directionFact ? (
         <p>
           <b>Direction</b>
-          {` · ${String(episode.directionFact['summary'] || 'Direction unavailable')}`}
+          {` · ${directionWords(episode.directionFact['summary'])}`}
         </p>
       ) : null}
       {episode.findings.length ? (
@@ -149,7 +154,7 @@ function DirectionRow({ fact, model }: { readonly fact: Row; readonly model: Pro
         <ScopeCue scope={scope} detail={scope.detail} />
         <Badge variant="course-tag">EXACT DIRECTION</Badge>
       </header>
-      <p>{String(fact['summary'] || 'Direction unavailable')}</p>
+      <p>{directionWords(fact['summary'])}</p>
       <Evidence fact={fact} contributors={[]} model={model} />
     </Card>
   );

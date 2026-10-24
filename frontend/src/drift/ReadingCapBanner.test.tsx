@@ -9,7 +9,9 @@ const local = (h: number, m: number, dayOffset = 0) =>
 describe('the analysis budget', () => {
   it('is silent under the cap and names the limit and the reset once it is spent', () => {
     expect(readingCap({ reading: { used: 99, limit: 100 } })).toBeNull();
-    expect(readingCap({ reading: { reason: 'consent-required', used: 3, limit: 100 } })).toBeNull();
+    expect(
+      readingCap({ reading: { reason: 'model-calls-paused', used: 3, limit: 100 } }),
+    ).toBeNull();
     expect(readingCap({})).toBeNull();
     const spent = readingCap({
       reading: { reason: 'daily-cap', used: 100, limit: 100, retry_at: local(9, 38) },

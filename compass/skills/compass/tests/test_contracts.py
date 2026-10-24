@@ -43,6 +43,7 @@ from .support import (
     collect,
     collect_claude,
     config_patch,
+    make_config,
     make_runtime,
     runtime,
     serve_until_closed,
@@ -902,6 +903,21 @@ class PublishedTextSweepTest(unittest.TestCase):
         self.assertNotIn("A" * 20, json.dumps(row))
         self.assertIn(self.MARKER, row["state_detail"])
 
+    def test_a_worktree_directory_named_like_a_credential_is_masked(self) -> None:
+        # The name is operator text read from a path, so it reaches the row through
+        # `apply_project_identity` and has to leave the sweep masked.
+        with tempfile.TemporaryDirectory() as tmp:
+            main = Path(tmp) / "one" / "compass"
+            (main / ".git").mkdir(parents=True)
+            row: Any = runtime_sessions.base_session("claude", "s", "one/compass")
+            runtime_sessions.apply_project_identity(
+                make_config(), row, str(main / ".claude" / "worktrees" / self.FAKE)
+            )
+        self.assertEqual(self.FAKE, row["worktree"])
+        aggregate._redact_published_text([row])
+        self.assertNotIn("A" * 20, json.dumps(row))
+        self.assertIn(self.MARKER, row["worktree"])
+
     def test_a_subagent_name_carries_no_credential(self) -> None:
         # On opencode this is the child session's own TITLE, which is the same
         # string the sweep redacts when that session is a parent row.
@@ -1048,6 +1064,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # collectors and whichever one is added next. `records` is a leaf, so
         # this stays inward.
         "compass_runtime.aggregate": {
+            # Each row's small summary state; no blocks and no transcript read.
+            "compass_runtime.summary_store",
+            # The summary grant on the board and each row's `summary.job` metadata.
+            "compass_runtime.summary_jobs",
             "compass_runtime.reading_policy",
             # The served page's build, so an open tab can tell it is stale
             # (regressions major 1, ui5).
@@ -1088,6 +1108,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.correction": {
             "compass_runtime.copied_corrections",
             "compass_runtime.reading",
+            "compass_runtime.records",
         },
         "compass_runtime.copied_corrections": {
             "compass_runtime.config",
@@ -1136,16 +1157,20 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_policy",
             "compass_runtime.reading_route",
             "compass_runtime.state",
+            # Revoke and Pause cancel only this lane's supervised child.
+            "compass_runtime.supervise",
         },
         # The CLI is the assembly point, so it may import any runtime module.
         "compass_runtime.cli": {
+            # A starting run removes Claude reading output and stderr files that a
+            # hard kill left in the state directory.
+            "compass_runtime.observer",
+            # `--forget` deletes the summary store.
+            "compass_runtime.summary_store",
             # Startup-only development admission and inert fixture notifiers.
             "compass_runtime.frontend_dev",
             "compass_runtime.deliveries",
             "compass_runtime.reading_policy",
-            # `--allow-tool-output` names each provider's destination once at startup, by the
-            # same function a route's disclosure takes it from, so the grant and the press agree.
-            "compass_runtime.reading_route",
             # `--forget` deletes the copied-correction digests (DRC-4678).
             "compass_runtime.copied_corrections",
             "compass_runtime.aggregate",
@@ -1388,6 +1413,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.reading": {
             "compass_runtime.config",
             "compass_runtime.observer",
+            "compass_runtime.reading_policy",
             "compass_runtime.records",
             "compass_runtime.supervise",
         },
@@ -1433,6 +1459,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.observer": {
             "compass_runtime.config",
             "compass_runtime.io",
+            "compass_runtime.reading_policy",
             "compass_runtime.records",
             "compass_runtime.spacedock",
             "compass_runtime.state",
@@ -1499,9 +1526,23 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            # Deterministic grouping belongs only to the focused context answer.
+            "compass_runtime.session_outline",
+            # Stored summaries on the focused answer, and `POST /api/summary/delete`.
+            "compass_runtime.summary_store",
+            # Summary consent, start, cancel and delete routes, and the job on the focused answer.
+            "compass_runtime.summary_jobs",
+            # The summary start route reads the source page the job summarizes.
+            "compass_runtime.session_source",
             # Each message's fixed number on the record pages and the focused context (DRC-4897).
             "compass_runtime.entry_numbers",
             "compass_runtime.record_pages",
+            # `POST /api/goal/find`: the reader's prompts read for a goal on a press.
+            "compass_runtime.goal_find",
+            # Pause model calls and an Analyze press cancel a Live monitor check in flight.
+            "compass_runtime.live_monitor",
+            # `POST /api/live-monitor`, and the lease published on the focused context.
+            "compass_runtime.live_lease",
             # The immutable admitted identity selects stricter dev authority.
             "compass_runtime.frontend_dev",
             "compass_runtime.reading_policy",
@@ -1561,6 +1602,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # Serving records what a stopped dashboard left spent, and shutdown
             # kills every supervised group (DRC-4686, Q2 and Q5).
             "compass_runtime.reading_jobs",
+            "compass_runtime.summary_jobs",
             "compass_runtime.supervise",
         },
         # The read-only terminal substrate uses only the standard library. Its
@@ -1581,6 +1623,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.observer",
+            # The goal notice names the Codex destination the reading route resolves.
+            "compass_runtime.reading_route",
             "compass_runtime.record_pages",
             "compass_runtime.records",
             "compass_runtime.semantic_history",
@@ -1596,11 +1640,97 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.record_pages",
             "compass_runtime.state",
         },
+        "compass_runtime.goal_find": {
+            "compass_runtime.annotations",
+            "compass_runtime.reading",
+            "compass_runtime.records",
+        },
+        # The Live monitor's lease and its ticker: it calls the check, reads no transcript itself,
+        # and never imports the unasked lane or notifications.
+        "compass_runtime.live_lease": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.live_monitor",
+            "compass_runtime.reading_policy",
+            "compass_runtime.reading_route",
+            "compass_runtime.supervise",
+        },
+        # The Live monitor's check: the model-free level as its floor, the envelope the readings
+        # use, the guarded model seam and its own ledger. It never imports the unasked lane or
+        # notifications; `test_live_monitor` holds that.
+        "compass_runtime.live_monitor": {
+            "compass_runtime.config",
+            "compass_runtime.levels",
+            "compass_runtime.live_estimate",
+            "compass_runtime.observer",
+            "compass_runtime.reading",
+            "compass_runtime.reading_policy",
+            "compass_runtime.reading_route",
+            "compass_runtime.records",
+            "compass_runtime.supervise",
+        },
         # Project context shares the stateless chunk walker through a local import;
         # pages still reach its fact builders, without an import-time cycle.
         "compass_runtime.record_pages": {
             "compass_runtime.config",
             "compass_runtime.project_context",
+        },
+        # Forward evidence shares the admitted message ids and tool classifier, retaining no cache.
+        # It opens transcripts with the existing no-follow open, following links where the
+        # observer's direction harnesses say the transcript read does. `records` decides which
+        # person-turn text the harness relayed, so it is admitted as relayed, not as the person's.
+        "compass_runtime.session_source": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.observer",
+            "compass_runtime.project_context",
+            "compass_runtime.record_pages",
+            "compass_runtime.records",
+            # Cuts a bounded prompt title back to a whole word for the outline (`transcripts.clip`).
+            "compass_runtime.transcripts",
+        },
+        # The summary store persists the producer's frozen result and compares it with a fresh
+        # source read; it resolves the focused transcript itself and holds no model seam.
+        "compass_runtime.summary_store": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.observer",
+            "compass_runtime.records",
+            "compass_runtime.session_source",
+            "compass_runtime.session_summary",
+            "compass_runtime.state",
+        },
+        # Summary jobs run the producer part by part under reading_policy's grant and ledger,
+        # reuse the reading lane's process supervision, and write through the summary store.
+        "compass_runtime.summary_jobs": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.observer",
+            "compass_runtime.reading_jobs",
+            "compass_runtime.reading_policy",
+            "compass_runtime.reading_route",
+            "compass_runtime.session_source",
+            "compass_runtime.session_summary",
+            "compass_runtime.state",
+            "compass_runtime.summary_store",
+            "compass_runtime.supervise",
+        },
+        # Grouping resolves one transcript and keeps only built outlines in the state leaf. It
+        # calls the producer's pure plan for the focused plan, never its model seam.
+        "compass_runtime.session_outline": {
+            "compass_runtime.config",
+            "compass_runtime.observer",
+            "compass_runtime.session_source",
+            "compass_runtime.session_summary",
+            "compass_runtime.state",
+        },
+        # The summary producer is a pure function of source facts and a model seam:
+        # no store, thread or subprocess. Policy is imported only for a guarded refusal.
+        "compass_runtime.session_summary": {
+            "compass_runtime.config",
+            "compass_runtime.records",
+            "compass_runtime.session_source",
+            "compass_runtime.reading_policy",
         },
         # Semantic history is a pure reducer over bounded records and process
         # state. Project composition owns the higher-level joins.

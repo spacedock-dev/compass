@@ -838,7 +838,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
                 self.assertIn(expected, reading.WHY_TOKENS)
                 seen.add(expected)
         self.assertEqual(4, len(seen))
-        self.assertEqual(17, len(reading.WHY_TOKENS))
+        self.assertEqual(18, len(reading.WHY_TOKENS))
         self.assertIn(reading.WHY_STANDS, reading.WHY_TOKENS)
 
 
@@ -1284,8 +1284,19 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
             settle_sec=8.0,
         )
 
+    def test_an_idle_claude_code_session_with_no_recorded_finish_can_be_pressed(self) -> None:
+        # Owner, 2026-10-20: an interrupted turn, or one that went quiet mid-turn, is read up to
+        # its last recorded entry, as a running one is.
+        for acquisition in ("event", "scan-only", None):
+            row = {"harness": "claude", "state": "idle", "acquisition": acquisition}
+            with self.subTest(acquisition=acquisition):
+                self.assertEqual(
+                    {"ok": True, "reason": None, "until": None, "sentence": None},
+                    self._press(row),
+                )
+
     def test_an_idle_session_with_no_stop_and_no_end_is_refused_before_the_press(self) -> None:
-        row = {"harness": "claude", "state": "idle", "acquisition": "event"}
+        row = {"harness": "antigravity", "state": "idle", "acquisition": "event"}
         self.assertEqual(
             {
                 "ok": False,
@@ -1309,15 +1320,28 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
         for sentence in reading.WITHHELD.values():
             self.assertNotIn("finishes a turn", sentence)
 
-    def test_a_claude_code_session_with_no_recorded_turn_end_says_why_and_what_opens_it(
+    def test_an_idle_claude_code_reading_says_it_is_not_a_reading_of_how_the_turn_ended(
         self,
     ) -> None:
-        sentence = reading.withheld_sentence(
-            reading.WITHHELD_IDLE_UNKNOWN, {"harness": "claude", "state": "idle"}
+        row = {"harness": "claude", "state": "idle", "acquisition": "event"}
+        text = reading._scope_text(reading.SCOPE_MID_FLIGHT, row)
+        self.assertEqual(reading.SCOPE_TEXT_MID_FLIGHT_IDLE, text)
+        self.assertIn("not recorded as finished", text)
+        self.assertIn("last recorded entry", text)
+        self.assertNotIn("still running", text)
+        self.assertIn(text, reading.scope_texts(reading.SCOPE_MID_FLIGHT))
+        working = {**row, "state": "working"}
+        self.assertEqual(
+            reading.SCOPE_TEXT[reading.SCOPE_MID_FLIGHT],
+            reading._scope_text(reading.SCOPE_MID_FLIGHT, working),
         )
-        self.assertIn("Stop hooks", sentence)
-        self.assertIn("Make the board live rather than polled", sentence)
-        self.assertIn("once a finished turn is recorded", sentence)
+
+    def test_the_unasked_lane_still_withholds_an_idle_session_with_no_finish(self) -> None:
+        row = {"harness": "claude", "state": "idle", "acquisition": "event"}
+        self.assertEqual(
+            ("", reading.WITHHELD_IDLE_UNKNOWN),
+            reading.eligibility(row, latest_revision_at=0.0, now=self.END, settle_sec=8.0),
+        )
 
     def test_an_idle_session_another_harness_runs_is_told_what_lets_it_be_read(self) -> None:
         unreached = reading.withheld_sentence(
@@ -1667,7 +1691,10 @@ class TheWarningIsOnThePageAndNotOnlyInAConstant(unittest.TestCase):
         source = (
             pathlib.Path(__file__).resolve().parents[1] / "compass_runtime" / "aggregate.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('"reading_routes": reading_route.resolve_all(', source)
+        # Each route carries its notice due beside it (DEC-28), so a helper builds them.
+        self.assertIn("routes = reading_route.resolve_all(", source)
+        self.assertIn('"reading_routes": {', source)
+        self.assertIn("**_reading_permissions(config, out_sessions, now)", source)
         # Beside the check, because a reader who cannot press still needs to
         # know what pressing would do.
         self.assertIn('"reading_check"', source)
@@ -2095,8 +2122,57 @@ class WhatAClaudeCodeReadingCostsAndProduces(unittest.TestCase):
         )
         assessment, why, spent = self._produce(model)
         self.assertIsNone(assessment)
-        self.assertEqual(reading.WITHHELD_MODEL_FAILED, why)
+        self.assertEqual(reading.WITHHELD_CLAUDE_FAILED, why)
         self.assertTrue(spent)
+
+    def test_a_failed_claude_code_call_names_the_cause_it_reported_and_never_its_words(
+        self,
+    ) -> None:
+        planted = "Not logged in · Please run /login INJECTED-STDERR /Users/someone/secret"
+        for stream in ("stdout", "stderr"):
+            with self.subTest(stream=stream):
+
+                def run(command: list[str], *, _stream: str = stream, **kwargs: Any) -> Any:
+                    kwargs[_stream].write(planted.encode())
+                    return subprocess.CompletedProcess(command, 1)
+
+                model = reading.ClaudeReadingModel(
+                    cast("Any", self.config),
+                    runner=run,
+                    binary_resolver=lambda _name: "/bin/claude",
+                )
+                assessment, why, spent = self._produce(model)
+                self.assertIsNone(assessment)
+                self.assertEqual(reading.WITHHELD_CLAUDE_LOGIN, why)
+                self.assertTrue(spent)
+                sentence = reading.WITHHELD[why]
+                self.assertTrue(sentence.startswith("Analyze failed: Claude Code said"))
+                for leaked in ("INJECTED-STDERR", "/Users/", "/login"):
+                    self.assertNotIn(leaked, sentence)
+
+    def test_every_claude_failure_label_has_a_sentence_and_an_unknown_one_is_generic(
+        self,
+    ) -> None:
+        for label, token in reading.CLAUDE_FAILURES.items():
+            with self.subTest(label=label):
+                key = "exception_kind" if label == "timeout" else "reason"
+                self.assertEqual(token, reading.claude_failure({key: label}))
+                self.assertTrue(reading.WITHHELD[token].startswith("Analyze failed: Claude Code"))
+        for nothing in ({}, {"reason": "unknown"}, {"reason": "planted words"}):
+            self.assertEqual(reading.WITHHELD_CLAUDE_FAILED, reading.claude_failure(nothing))
+        self.assertEqual(reading.WITHHELD_MODEL_FAILED, reading.claude_failure(None))
+
+    def test_a_failure_inside_compass_before_claude_code_starts_is_not_blamed_on_it(
+        self,
+    ) -> None:
+        run = mock.Mock()
+        model = reading.ClaudeReadingModel(
+            cast("Any", self.config), runner=run, binary_resolver=lambda _name: "/bin/claude"
+        )
+        with mock.patch.object(observer, "reading_workdir_root", return_value=None):
+            self.assertEqual(("", "failed"), model("p", output_cap_bytes=10))
+        run.assert_not_called()
+        self.assertEqual(reading.WITHHELD_MODEL_FAILED, model.failure_reason())
 
     def test_a_relative_claude_code_is_not_available_so_nothing_is_reserved(self) -> None:
         for relative in ("claude", "./claude", "bin/claude"):
@@ -2741,7 +2817,7 @@ class YourOwnWordsAreAlwaysInThePrompt(unittest.TestCase):
 
     def test_a_failed_check_is_chosen_before_any_passing_one(self) -> None:
         _prompt, selection = reading.build_prompt(
-            self._ledger(), goal="add retry", lines=["tests pass"], max_bytes=2500
+            self._ledger(), goal="add retry", lines=["tests pass"], max_bytes=3000
         )
         chosen = [row["id"] for row in selection.entries]
         self.assertIn("check-0", chosen)
@@ -3391,7 +3467,7 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                                 goal, [words] * count, tool_note=tool, claims=claims, scope=scope
                             )
                             measured.append(len(header.encode()))
-                            self.assertLessEqual(len(header.encode()), 9216)
+                            self.assertLessEqual(len(header.encode()), 9728)
                             self.assertEqual(count, header.count('<outcome_line n="'))
                             self.assertEqual(count + bool(goal), header.count(words))
                             self.assertIn(reading.EVIDENCE_RULES, header)
@@ -3409,8 +3485,9 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                                     self.assertIn("no copied Goal/line verdict", header)
         self.assertEqual(168, len(measured))
         self.assertEqual(56, len(finals))
+        # Re-pinned on 2026-10-22 with the final-scope header above, for the same reason.
         self.assertEqual(
-            "3424f852823746c0578c14e3c61ab98a8e569abeba76e157691f77b91ecd8a7f",
+            "9037b0379a9d5457c1148d1b5c10f60f1b4ce86796e64a00a0942d2ddfc443ef",
             hashlib.sha256(
                 original_product_name(
                     json.dumps(finals, ensure_ascii=False, separators=(",", ":"))
@@ -3434,11 +3511,11 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                 self.assertEqual({1, 2, 3}, set(selected.by_index()))
                 self.assertLessEqual(len(prompt.encode("utf-8")), 16_384)
                 trusted_header = prompt.split(reading.MENU_HEADING, 1)[0]
-                self.assertLessEqual(len(trusted_header.encode("utf-8")), 9_216)
+                self.assertLessEqual(len(trusted_header.encode("utf-8")), 9_728)
                 full_header = reading._header(
                     words, [words] * 6, tool_note=True, claims=True, scope=scope
                 )
-                self.assertLessEqual(len(full_header.encode("utf-8")), 9_216)
+                self.assertLessEqual(len(full_header.encode("utf-8")), 9_728)
 
     def test_final_readings_keep_their_existing_scope_and_token_set(self) -> None:
         prompt, selected = reading.build_prompt(
@@ -3459,8 +3536,10 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
         header = reading._header(
             self.goal, self.lines, tool_note=True, claims=True, scope=reading.SCOPE_FINAL
         )
+        # Re-pinned on 2026-10-22: the header now offers `goal_unclear` and says to decide it before
+        # the entries, in every scope (docs/design-reading-a-session.md, DEC-26 amendment).
         self.assertEqual(
-            "4633789558cbda57c7fe90765b0a2e5a09430804b3a7a5aabc8fda3cfa444a9b",
+            "5890eaebae6eaaead3999d1d5d8c20716e0cb612caea46103cef2b14a42d8c8c",
             hashlib.sha256(original_product_name(header).encode()).hexdigest(),
         )
 
@@ -3630,6 +3709,193 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                     self.assertEqual(reading.RESULT_NOT_REACHED, result["goal"]["result"])
 
 
+class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCase):
+    """A recorded-shape mid-turn case: the agent said what it would do, kept working, and the model
+    read the missing end of that work as a departure. While the turn is open it is unfinished work.
+
+    The prompt is left alone (its trusted header has 27 of 9,216 bytes spare, and a changed header needs
+    a fresh qualification), so the guard is in the resolver, which every reading passes through.
+    """
+
+    PLAN = "Probe still shows the wrong output. Next I rerun it and push."
+    WRONG: ClassVar[dict[str, str]] = {
+        "result": "departure",
+        "detail": "The session ends with the probe still failing, no rerun and no push.",
+    }
+
+    def selected(self, *later: dict[str, Any]) -> reading.Selection:
+        said = {
+            **AGENT_MESSAGE_FACT,
+            "summary": self.PLAN,
+            reading.AGENT_WORDS_FIELD: self.PLAN,
+            "at": 99.0,
+        }
+        ledger = reading.build_ledger(
+            [WORDS_FACT, said, *later], "claude", "s1", tool_output={}, read_agent_words=True
+        )
+        _prompt, selection = reading.build_prompt(
+            ledger, goal="Fix the probe and push it.", lines=(), max_bytes=16_384
+        )
+        return selection
+
+    def resolved(
+        self,
+        selection: reading.Selection,
+        scope: str,
+        cite: str = "m1",
+        *,
+        open_call_at: float | None = None,
+    ) -> reading.Criterion:
+        index = next(i for i, row in selection.by_index().items() if row["id"] == cite)
+        parsed = reading.parse_reply(
+            json.dumps({"goal": {**self.WRONG, "cites": [index]}}),
+            reading.constraints_for(selection.lines, claims=selection.asked_claims),
+        )
+        return reading.resolve(
+            parsed,
+            selection,
+            goal="Fix the probe and push it.",
+            detail_cap_chars=200,
+            scope=scope,
+            open_call_at=open_call_at,
+        )["goal"]
+
+    def line_selected(self, line: str, *later: dict[str, Any]) -> reading.Selection:
+        said = {
+            **AGENT_MESSAGE_FACT,
+            "summary": self.PLAN,
+            reading.AGENT_WORDS_FIELD: self.PLAN,
+            "at": 99.0,
+        }
+        ledger = reading.build_ledger(
+            [WORDS_FACT, said, *later], "claude", "s1", tool_output={}, read_agent_words=True
+        )
+        _prompt, selection = reading.build_prompt(
+            ledger, goal="Fix the probe and push it.", lines=(line,), max_bytes=16_384
+        )
+        return selection
+
+    def line_resolved(self, selection: reading.Selection) -> reading.Criterion:
+        index = next(i for i, row in selection.by_index().items() if row["id"] == "m1")
+        parsed = reading.parse_reply(
+            json.dumps({"line_1": {**self.WRONG, "cites": [index]}}),
+            reading.constraints_for(selection.lines, claims=selection.asked_claims),
+        )
+        return reading.resolve(
+            parsed,
+            selection,
+            goal="Fix the probe and push it.",
+            lines=selection.lines,
+            detail_cap_chars=200,
+            scope=reading.SCOPE_MID_FLIGHT,
+        )["line_1"]
+
+    @staticmethod
+    def write_fact(path: str, at: float) -> dict[str, Any]:
+        return {
+            **check_fact(fact_id=f"w-{path}", at=at),
+            "subject": "write",
+            "result": "",
+            "summary": path,
+        }
+
+    def test_a_departure_on_words_alone_while_work_goes_on_reads_as_not_reached(self) -> None:
+        after = (
+            check_fact(fact_id="c9", result="passed", at=110.0),
+            {
+                **check_fact(fact_id="w9", at=120.0),
+                "subject": "write",
+                "result": "",
+                "summary": "src/probe.py",
+            },
+        )
+        row = self.resolved(self.selected(*after), reading.SCOPE_MID_FLIGHT)
+        self.assertEqual(reading.RESULT_NOT_REACHED, row["result"])
+        self.assertEqual(("m1",), row["cites"])
+        self.assertEqual(self.WRONG["detail"], row["detail"])
+
+    def test_the_same_reading_of_a_finished_turn_keeps_its_departure(self) -> None:
+        selection = self.selected(check_fact(fact_id="c9", result="passed", at=110.0))
+        for scope in (reading.SCOPE_LAST_TURN, reading.SCOPE_FINAL):
+            with self.subTest(scope=scope):
+                row = self.resolved(selection, scope)
+                self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_stall_with_no_work_after_the_words_stays_a_departure(self) -> None:
+        row = self.resolved(self.selected(), reading.SCOPE_MID_FLIGHT)
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_work_before_the_words_does_not_excuse_them(self) -> None:
+        before = check_fact(fact_id="c0", result="passed", at=95.0)
+        row = self.resolved(self.selected(before), reading.SCOPE_MID_FLIGHT)
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_departure_resting_on_a_failed_check_is_not_excused_by_later_work(self) -> None:
+        failed = check_fact(fact_id="c1", result="failed", at=98.0)
+        later = check_fact(fact_id="c2", result="passed", at=130.0)
+        selection = self.selected(failed, later)
+        row = self.resolved(selection, reading.SCOPE_MID_FLIGHT, cite="c1")
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_call_in_flight_with_nothing_recorded_after_the_words_is_not_a_departure(
+        self,
+    ) -> None:
+        # A call with no entry yet is the work going on; the stall rule needs a quiet record.
+        row = self.resolved(self.selected(), reading.SCOPE_MID_FLIGHT, open_call_at=120.0)
+        self.assertEqual(reading.RESULT_NOT_REACHED, row["result"])
+        self.assertEqual(self.WRONG["detail"], row["detail"])
+
+    def test_a_call_opened_before_the_words_does_not_excuse_them(self) -> None:
+        row = self.resolved(self.selected(), reading.SCOPE_MID_FLIGHT, open_call_at=95.0)
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_call_in_flight_does_not_excuse_a_departure_resting_on_a_failed_check(self) -> None:
+        failed = check_fact(fact_id="c1", result="failed", at=98.0)
+        row = self.resolved(
+            self.selected(failed), reading.SCOPE_MID_FLIGHT, cite="c1", open_call_at=120.0
+        )
+        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_call_in_flight_changes_nothing_once_the_turn_is_over(self) -> None:
+        selection = self.selected()
+        for scope in (reading.SCOPE_LAST_TURN, reading.SCOPE_FINAL):
+            with self.subTest(scope=scope):
+                row = self.resolved(selection, scope, open_call_at=120.0)
+                self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+
+    def test_a_later_write_to_somewhere_the_line_does_not_name_does_not_excuse_it(self) -> None:
+        for line in ("The tests pass", "src/probe.py is fixed"):
+            with self.subTest(line=line):
+                selection = self.line_selected(line, self.write_fact("docs/notes.md", 120.0))
+                self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
+
+    def test_a_later_check_that_does_not_cover_the_line_does_not_excuse_it(self) -> None:
+        lint = check_fact(
+            fact_id="c9", result="passed", at=110.0, summary="ruff check src/other.py"
+        )
+        selection = self.line_selected("The tests pass", lint)
+        self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
+
+    def test_a_later_check_that_covers_the_line_excuses_it(self) -> None:
+        tests = check_fact(fact_id="c9", result="passed", at=110.0, summary="pytest -q")
+        selection = self.line_selected("The tests pass", tests)
+        self.assertEqual(reading.RESULT_NOT_REACHED, self.line_resolved(selection)["result"])
+
+    def test_a_later_write_to_the_path_the_line_names_excuses_it(self) -> None:
+        selection = self.line_selected(
+            "src/probe.py is fixed", self.write_fact("src/probe.py", 120.0)
+        )
+        self.assertEqual(reading.RESULT_NOT_REACHED, self.line_resolved(selection)["result"])
+
+    def test_a_line_that_names_nothing_a_check_or_write_could_show_keeps_any_later_work(
+        self,
+    ) -> None:
+        selection = self.line_selected(
+            "The probe is fixed", self.write_fact("docs/notes.md", 120.0)
+        )
+        self.assertEqual(reading.RESULT_NOT_REACHED, self.line_resolved(selection)["result"])
+
+
 class TheResolverTakesTheQuestionFromThePrompt(unittest.TestCase):
     """K8: whether Expected Output was posed travels on the Selection from the
     header the prompt actually used, so a verdict volunteered on a clause the
@@ -3674,6 +3940,119 @@ class TheResolverTakesTheQuestionFromThePrompt(unittest.TestCase):
             window_start=0.0,
         )["line_1"]
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+
+
+NO_LINES_NOTE = "Read against your goal."
+
+
+class AGoalAloneIsReadAgainstItsOwnEndState(AClaudeCodeReadingProducer):
+    """A goal with no outcome line is read for the end state it states, or refused as too vague.
+
+    The goal-unclear verdict is the model's to give, on the goal row alone, before it reads the
+    session; no keyword or length rule in this module decides it.
+    """
+
+    def _read(
+        self,
+        goal: str,
+        answer: str,
+        *,
+        lines: list[str] | None = None,
+        read_lines: bool = True,
+    ) -> tuple[Any, str, bool]:
+        revision: dict[str, Any] = {"n": 1, "at": 50.0, "goal": goal}
+        if lines:
+            revision["lines"] = lines
+        return reading.produce(
+            cast("Any", self.config),
+            {"harness": "claude", "sid": "s1", "state": "working", "ended_at": None},
+            [revision],
+            [WORDS_FACT, check_fact(result="passed")],
+            now=200.0,
+            stamp_text="synthetic reading",
+            model=self._model(answer),
+            tool_output=ADMITTED,
+            read_lines=read_lines,
+        )
+
+    def test_the_prompt_for_a_goal_alone_asks_for_the_goals_end_state_and_poses_no_empty_line(
+        self,
+    ) -> None:
+        self._read("add retry to the webhook so a 5xx is retried three times", "{}")
+        instructions, values = self.prompts[0].split("<goal>\n", 1)
+        self.assertRegex(instructions, r"No outcome lines are given")
+        self.assertRegex(instructions, r"goal's own stated end state")
+        self.assertNotIn("<outcome_line", values)
+        self.assertNotIn("Answer each line", instructions)
+        self.assertNotIn('"line_1"', instructions)
+
+    def test_the_prompt_with_outcome_lines_does_not_tell_the_model_to_read_the_goal_as_one(
+        self,
+    ) -> None:
+        self._read("add retry", "{}", lines=["a 5xx is retried three times"])
+        instructions, values = self.prompts[0].split("<goal>\n", 1)
+        self.assertNotIn("No outcome lines are given", instructions)
+        self.assertEqual(1, values.count("<outcome_line"))
+
+    def test_the_goal_unclear_token_is_offered_for_the_goal_only_before_the_session_is_read(
+        self,
+    ) -> None:
+        for lines in (None, ["a 5xx is retried three times"]):
+            with self.subTest(lines=lines):
+                self.prompts.clear()
+                self._read("testing", "{}", lines=lines)
+                instructions = self.prompts[0].split("<goal>\n", 1)[0]
+                self.assertRegex(instructions, r'"goal_unclear" for the goal only')
+                self.assertRegex(instructions, r"before reading the entries")
+
+    def test_a_goal_without_a_stated_end_state_is_refused_with_no_other_verdict(self) -> None:
+        assessment, why, spent = self._read(
+            "testing",
+            '{"goal": {"result": "goal_unclear", "cites": [1], "detail": "too vague"},'
+            ' "line_1": {"result": "departure", "cites": [1], "detail": "x"}}',
+            lines=["a 5xx is retried three times"],
+        )
+        self.assertEqual("", why)
+        self.assertTrue(spent)
+        criteria = assessment["criteria"]
+        self.assertEqual(reading.RESULT_GOAL_UNCLEAR, criteria["goal"]["result"])
+        self.assertEqual((), criteria["goal"]["cites"])
+        self.assertEqual("", criteria["goal"]["detail"])
+        self.assertEqual(reading.WHY_STANDS, criteria["goal"]["why"])
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, criteria["line_1"]["result"])
+        self.assertEqual(reading.WHY_NOT_ASKED, criteria["line_1"]["why"])
+        self.assertEqual((), criteria["line_1"]["cites"])
+
+    def test_a_goal_with_a_stated_end_state_and_no_line_is_not_refused(self) -> None:
+        assessment, why, spent = self._read(
+            "add retry to the webhook so a 5xx is retried three times",
+            '{"goal": {"result": "unverifiable", "cites": [], "detail": ""}}',
+        )
+        self.assertEqual("", why)
+        self.assertTrue(spent)
+        self.assertEqual(["goal"], list(assessment["criteria"]))
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, assessment["criteria"]["goal"]["result"])
+
+    def test_the_token_means_nothing_on_an_outcome_line_or_the_claims_row(self) -> None:
+        self.assertIsNone(reading.result_for("line_1", "goal_unclear"))
+        self.assertIsNone(reading.result_for("claims", "goal_unclear"))
+        self.assertEqual(reading.RESULT_GOAL_UNCLEAR, reading.result_for("goal", " Goal_Unclear "))
+        self.assertEqual("goal_unclear", reading.token_for(reading.RESULT_GOAL_UNCLEAR))
+
+    def test_the_closed_result_set_carries_the_new_verdict(self) -> None:
+        self.assertIn(reading.RESULT_GOAL_UNCLEAR, reading.RESULTS)
+
+    def test_the_reading_says_it_read_the_goal_when_no_outcome_line_was_saved(self) -> None:
+        assessment, _why, _spent = self._read("add retry so a 5xx is retried", "{}")
+        self.assertIn(NO_LINES_NOTE, assessment["cutoff"])
+
+    def test_the_reading_does_not_say_it_when_the_lines_were_saved_or_merely_not_read(self) -> None:
+        saved, _why, _spent = self._read("add retry", "{}", lines=["a 5xx is retried"])
+        self.assertNotIn(NO_LINES_NOTE, saved["cutoff"])
+        unread, _why, _spent = self._read(
+            "add retry", "{}", lines=["a 5xx is retried"], read_lines=False
+        )
+        self.assertNotIn(NO_LINES_NOTE, unread["cutoff"])
 
 
 if __name__ == "__main__":

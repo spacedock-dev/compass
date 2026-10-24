@@ -17,6 +17,8 @@ export interface PayloadSession {
   readonly project?: string;
   readonly project_key?: string;
   readonly project_name?: string;
+  /** The linked worktree's directory name; null for a main checkout. */
+  readonly worktree?: string | null;
   readonly state?: string;
   readonly state_detail?: string;
   readonly active?: boolean;
@@ -64,11 +66,26 @@ export interface PayloadData {
   readonly dismiss?: boolean;
   readonly annotate?: boolean;
   readonly usage_fetch?: boolean;
+  readonly reading?: {
+    readonly consent?: boolean;
+    readonly off?: boolean;
+    readonly reason?: string;
+  };
   readonly reading_jobs?: unknown;
   readonly reading_routes?: unknown;
 }
 
+export interface ModelNoticeRecord {
+  readonly kind: string;
+  readonly provider: string;
+  readonly destination: string;
+  readonly content: number;
+  readonly tool_output: string;
+  readonly at: number;
+}
+
 export interface ObserverModelOffer {
+  readonly notice?: ModelNoticeRecord;
   readonly enabled?: boolean;
   readonly disclosure?: string;
 }
@@ -133,8 +150,13 @@ export interface AnnotateReceipt {
   readonly revision?: number;
   readonly saved_revision?: number;
   readonly revision_count?: number;
-  readonly discarded?: boolean;
+  /** When the session's discard record was made, or null where none exists. */
+  readonly discarded?: number | null;
   readonly withdrew?: boolean;
+  /** What a discard did to the session's summary: `deleted`, `absent`, `stopped`, a refusal token, or `untouched`. */
+  readonly summary?: string;
+  /** How many revisions a discard took, counted under the store's lock; null on an arm that is not a discard. */
+  readonly removed?: number | null;
 }
 
 export interface DirectionReceipt {
@@ -157,11 +179,26 @@ export interface CorrectionReceipt {
 }
 
 export interface ReadingReceipt {
+  readonly notice?: ModelNoticeRecord;
   readonly ok?: boolean;
   readonly produced?: boolean;
   readonly reason?: string;
   readonly adoption_refused?: unknown;
   readonly job?: unknown;
+}
+
+/* `POST /api/goal/find`: what one "Find goal" press answers. `found` is the goal and the prompts it quotes, or
+   null with `why` naming the closed reason none was shown. A refusal answers `reading`, the policy, as a
+   reading's does. */
+export interface GoalFindReceipt {
+  readonly ok?: boolean;
+  readonly produced?: boolean;
+  readonly reason?: string;
+  readonly why?: string;
+  readonly found?: unknown;
+  readonly route?: unknown;
+  readonly reading?: unknown;
+  readonly notice?: ModelNoticeRecord;
 }
 
 export interface ReadingCancelReceipt {
@@ -205,6 +242,15 @@ export type ApiFailure = Exclude<ApiResult<unknown>, { kind: 'ok' }>;
 
 export type FocusOutcome = 'sent' | 'declined' | 'throttled' | 'stale' | 'failed' | 'unavailable';
 
+export interface UnaskedGrantRequest extends SessionIdentity {
+  readonly provider: string;
+  readonly model: string;
+  readonly words_destination: string;
+  readonly unasked_grant: boolean;
+  readonly press: true;
+  readonly observer_model: 1;
+}
+
 export interface ReadingRequest {
   readonly harness: string;
   readonly sid: string;
@@ -215,6 +261,13 @@ export interface ReadingRequest {
   readonly settle_through?: unknown;
   readonly model?: string;
   readonly [adoption: string]: unknown;
+}
+
+export interface GoalFindRequest extends SessionIdentity {
+  readonly provider: string;
+  readonly model?: string;
+  readonly press: true;
+  readonly observer_model: 1;
 }
 
 export interface AnnotateRequest {
@@ -229,4 +282,39 @@ export interface TripwireRequest {
   readonly id: string;
   readonly stage: string;
   readonly expected_revision: string;
+}
+
+/* `POST /api/summary`: exactly one of these shapes. `open` is only ever a start. */
+export type SummaryRequest =
+  | (SessionIdentity & {
+      readonly action: 'start' | 'update' | 'rerun';
+      readonly origin: 'press' | 'open';
+    })
+  | { readonly consent: 'off' | 'on' };
+
+/* Every summary route answers a JSON object: `{ok, job, notice?}`, `{ok, summaries}`, `{ok: false, reason, ...}`,
+   `{ok, cancelling}` or `{outcome}`. Read through `api/summary.ts`, never cast further. */
+export type SummaryReceipt = Readonly<Record<string, unknown>>;
+
+/* `POST /api/live-monitor`: the Live monitor's lease for one Claude Code session
+   (docs/design-reading-a-session.md, the 2026-10-23 amendments). `observer_model` is asserted on `start`
+   alone, the one action that begins to spend. */
+export type LiveMonitorAction = 'start' | 'beat' | 'confirm' | 'stop';
+
+export interface LiveMonitorRequest extends SessionIdentity {
+  readonly action: LiveMonitorAction;
+  readonly tab_id: string;
+  readonly observer_model?: 1;
+  /** A beat: whether the tab is showing the session. A hidden tab keeps the lease and pauses the checks. */
+  readonly visible?: boolean;
+  readonly answer?: 'yes' | 'no';
+}
+
+export interface LiveMonitorReceipt {
+  readonly ok: boolean;
+  /** Why the lease refused: `ended`, `paused`, `unsupported-harness`, `sample`, `unknown-session`,
+      `no-observer-model` or `not-monitoring`. */
+  readonly reason: string;
+  /** The lease as the server holds it, the same shape the focused context publishes. */
+  readonly state: Readonly<Record<string, unknown>>;
 }

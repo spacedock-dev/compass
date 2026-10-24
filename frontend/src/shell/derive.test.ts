@@ -152,6 +152,23 @@ describe('finding the one session a route names', () => {
     );
     expect(sessionTitle(findSession(sessions, 'alpha', 'claude', 'shared'))).toBe('Claude title');
   });
+
+  it('does not call a command opener an unpublished title', () => {
+    const opened = { harness: 'claude', sid: 'c', first_prompt_control: true } as never;
+    expect(sessionTitle(opened)).toBe('No name: the session opened with a command');
+  });
+
+  it('stands in for an identifier-only title with the first prompt, as the session heading does', () => {
+    const keyed = {
+      harness: 'claude',
+      sid: 'k1',
+      project: 'alpha',
+      title: 'DRC-4929',
+      first_prompt: 'Fix the flaky http test',
+    } as never;
+    expect(sessionTitle(keyed)).toBe('Fix the flaky http test');
+    expect(sessionTitle({ ...(keyed as object), title: 'gpt-4' } as never)).toBe('gpt-4');
+  });
 });
 
 describe('a history reset is one of two literals this build knows', () => {

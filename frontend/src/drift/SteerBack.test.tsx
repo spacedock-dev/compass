@@ -66,10 +66,13 @@ describe('Steer back', () => {
     await press(byAction('steer-back'));
     await page.settle();
     expect(corrections(page)).toHaveLength(1);
-    expect(corrections(page)[0]?.body).toEqual({ harness: 'claude', sid: 's1' });
-    expect(box()?.value).toBe(
-      "Your last check failed (entry #1 in Compass's activity list). Fix it, then say so.",
-    );
+    expect(corrections(page)[0]?.body).toEqual({
+      harness: 'claude',
+      sid: 's1',
+      utc_offset_minutes: 0 - new Date().getTimezoneOffset() || 0,
+      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+    expect(box()?.value).toBe('Your last check failed. Fix it, then say so.');
     expect(byAction('steer-back')?.getAttribute('aria-expanded')).toBe('true');
     expect(textOf('[data-next-steer-box]')).toContain('Compass never sends this.');
     // Every request so far was a read or the one composition: nothing reached the session.
@@ -105,9 +108,9 @@ describe('Steer back', () => {
     await act(async () => {
       fireEvent.input(field);
     });
-    expect(textOf('[data-next-correction-count]')).toBe('1000/2000');
+    expect(textOf('[data-next-correction-count]')).toBe('1000/5140');
     const before = field.value;
-    field.value = `${before}${'x'.repeat(1500)}`;
+    field.value = `${before}${'x'.repeat(4500)}`;
     await act(async () => {
       fireEvent.input(field);
     });
@@ -123,15 +126,13 @@ describe('Steer back', () => {
     await page.settle();
     await press(byAction('correction-copy'));
     await page.settle();
-    expect(page.written).toEqual([
-      "Your last check failed (entry #1 in Compass's activity list). Fix it, then say so.",
-    ]);
+    expect(page.written).toEqual(['Your last check failed. Fix it, then say so.']);
     const recorded = corrections(page).filter((r) => r.path === '/api/correction/copied');
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.body).toEqual({
       harness: 'claude',
       sid: 's1',
-      text: "Your last check failed (entry #1 in Compass's activity list). Fix it, then say so.",
+      text: 'Your last check failed. Fix it, then say so.',
     });
     expect(textOf('[data-next-correction-cue]')).toBe('Copied');
     await page.poll({ ...(page.state.data as object), generated: 1100 });
@@ -141,7 +142,7 @@ describe('Steer back', () => {
     await act(async () => {
       fireEvent.input(field);
     });
-    expect(textOf('[data-next-correction-cue]')).toBe('Copy');
+    expect(textOf('[data-next-correction-cue]')).toBe('Copy correction');
   });
 
   it('writes one copy for one press however it is pressed', async () => {
@@ -321,6 +322,35 @@ describe('a correction the reader opened follows the record, honestly', () => {
       generated: 1600,
     });
     expect(corrections(page).filter((r) => r.path === '/api/correction')).toHaveLength(2);
+  });
+
+  it('counts the rebuilt correction, not the one it replaced', async () => {
+    const LONGER = [
+      ...PARTS,
+      ' Then run the whole suite again and tell me which of its checks still fail.',
+    ];
+    let calls = 0;
+    const page = mountSteer({
+      routes: {
+        '/api/correction': () => json({ ok: true, parts: ++calls === 1 ? PARTS : LONGER }),
+      },
+    });
+    await page.settle();
+    await page.settle();
+    await openAndLeave(page);
+    /* Untouched, the box follows the record and is rebuilt in place: it stays mounted and only its text is
+       re-keyed, so the count has to follow the new text and not the one it was first given. */
+    const first = [...(box()?.value ?? '')].length;
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(first)}/5140`);
+    const moved = { ...ASSESSMENT, read_at: 1100 };
+    await page.poll({
+      ...driftBoard({ session: { ...session, annotation_assessment: moved } }),
+      generated: 1300,
+    });
+    await page.settle();
+    const now = [...(box()?.value ?? '')].length;
+    expect(now).toBeGreaterThan(first);
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(now)}/5140`);
   });
 
   it('asks once while the recomposition is out, however many boards arrive meanwhile', async () => {

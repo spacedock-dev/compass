@@ -170,6 +170,53 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
         )
         return roots
 
+    def test_intent_card_docs_do_not_describe_the_old_card(self) -> None:
+        # The Intent card moved How Intent and drift works and Clear into its More menu
+        # and draws Add a line, Remove, Save intent and Undo changes from the first view.
+        root = SERVER_PATH.parents[3]
+        stale = (
+            "How Intent and drift works` button",
+            "How Intent and drift works button",
+            "appears after a goal edit",
+            "Under the save, the Intent card holds the goal's",
+            "`Remove` and `Add a line` appear",
+        )
+        for relative in (
+            "compass/skills/compass/SKILL.md",
+            "docs/promise-map.md",
+            "docs/design-reader-state.md",
+            "README.md",
+        ):
+            text = (root / relative).read_text(encoding="utf-8")
+            for phrase in stale:
+                self.assertNotIn(phrase, text, relative)
+        reader_state = (root / "docs" / "design-reader-state.md").read_text(encoding="utf-8")
+        self.assertIn("intent-menu", reader_state)
+
+    def test_what_a_goal_with_no_outcome_line_reads_is_the_pages(self) -> None:
+        # A goal alone is read for its own end state, or refused as too vague (owner, 2026-10-22). The
+        # how-to on the page, the skill and the promise map say it in the same words, and none of them
+        # says an outcome line is needed for a level, as the 2026-10-21 wording did.
+        root = SERVER_PATH.parents[3]
+        for relative in (
+            "compass/skills/compass/SKILL.md",
+            "docs/promise-map.md",
+            "frontend/src/intent/HowTo.tsx",
+        ):
+            text = " ".join((root / relative).read_text(encoding="utf-8").split())
+            with self.subTest(relative=relative):
+                self.assertNotIn("is normal until you add an expected outcome line", text)
+                self.assertNotIn("unless your goal departs", text)
+                self.assertRegex(
+                    text,
+                    r"(?i)no outcome line, Compass reads your goal's end state"
+                    r"[;,.] a goal too vague to read is\s+refused",
+                )
+        for relative in ("README.md", "docs/promise-map.md", "compass/skills/compass/SKILL.md"):
+            text = " ".join((root / relative).read_text(encoding="utf-8").split())
+            with self.subTest(relative=relative, sentence="needed"):
+                self.assertNotIn("why an expected outcome line is needed for a drift level", text)
+
     def test_documented_store_paths_are_the_ones_searched(self) -> None:
         # Every "~/..." path in the data-source list must be a real default.
         # ".claude/settings" (the user's own hook config) and ".compass" (Compass's
@@ -1447,14 +1494,15 @@ class SemanticHistoryContractDocumentationTest(unittest.TestCase):
         # improvement that would silently contradict both paragraphs.
         section = _flat_section(self.SECURITY, "## Operator-cockpit prototype")
         self.assertIn(
-            "`--forget` deletes the session-history and session-end stores, removes the discard "
-            "records in the annotation store, and reaches nothing else",
+            "`--forget` deletes the session-history, session-end and summary stores, removes "
+            "annotation discard records and copied-correction digests, and withdraws model "
+            "permission; it does not reach this semantic-history store.",
             section,
         )
         # Every `forget` function the command reaches (DRC-4547 added the
         # second, DRC-4565 the third), so admitting this store through any one
         # of them turns this red.
-        for module in ("history.py", "ends.py", "annotations.py"):
+        for module in ("history.py", "ends.py", "annotations.py", "summary_store.py"):
             source = (SERVER_PATH.parent / "compass_runtime" / module).read_text(encoding="utf-8")
             forget = source[source.index("def forget(") :]
             forget = forget.split("\ndef ", 1)[0]
@@ -1494,9 +1542,9 @@ class LightHarnessUsageContractDocumentationTest(unittest.TestCase):
     def test_the_section_exists_under_a_heading_other_documents_can_anchor(self) -> None:
         self.assertIn("## Light harness usage (asking a harness a bounded question)", self.SECURITY)
 
-    def test_the_observer_pathway_is_opt_in_and_has_both_rollback_spellings(self) -> None:
+    def test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings(self) -> None:
         self.assertIn("The observer model is the first implementation", self.SECTION)
-        self.assertIn("off unless `--observer-model` was supplied", self.SECTION)
+        self.assertIn("on by default", self.SECTION)
         self.assertIn("16,384 bytes", self.SECTION)
         for flag in ("--no-observer-model", "--no-harness-usage"):
             args = cli.build_parser().parse_args(["--observer-model", flag])
@@ -1515,11 +1563,17 @@ class LightHarnessUsageContractDocumentationTest(unittest.TestCase):
             "the one pathway by which the operator's own words may leave this machine", self.FLAT
         )
 
-    def test_the_consent_is_opt_in_where_the_quota_fetch_is_opt_out(self) -> None:
+    def test_the_consent_is_announced_where_the_quota_fetch_is_not(self) -> None:
         # The asymmetry is the point: reading a number is not spending capacity,
-        # and the section has to say which one it is.
-        self.assertIn("Opt-in, and off until answered", self.FLAT)
+        # and the section has to say which one it is. DEC-28 (owner, 2026-10-19)
+        # made a reader-started call opt-out with a notice; the opt-in bound it
+        # replaces is named only as superseded.
+        self.assertIn("Opt-out, with a notice, for a call a reader's action starts", self.FLAT)
+        self.assertIn('replaces the former "Opt-in, and off until answered" bound', self.FLAT)
+        self.assertNotIn("Until then", self.SECTION)
+        self.assertNotIn("consent change ships", self.FLAT)
         self.assertIn("spends their capacity rather than reading a number", self.FLAT)
+        self.assertIn("unasked drift checks", self.SECTION)
 
     def test_the_pathway_adds_no_credential_and_no_endpoint(self) -> None:
         # The quota section owns the endpoint list and the token rules, and this
@@ -1731,6 +1785,28 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         ):
             with self.subTest(read=named):
                 self.assertIn(named, self.FLAT)
+
+    def test_the_pull_request_and_skill_reads_are_named_and_counted(self) -> None:
+        # Neither read matches the `input` / `arguments` pattern above: the skill's name is read from
+        # an input the check scan already holds, and a pull request from a result's
+        # `gitOperation`, through `toolUseResult`. They are counted here so a second place that reads either fails until
+        # SECURITY.md names it (owner, 2026-10-23).
+        pattern = r'"gitOperation"|\.get\("skill"\)|\.get\("toolUseResult"\)'
+        found = {
+            path.name: len(re.findall(pattern, text))
+            for path in sorted(self.RUNTIME.rglob("*.py"))
+            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
+        }
+        # `observer.py` reads the question tool's own result and `project_context.py` three others
+        # besides the pull request read; each is another place a result's structured field is read.
+        self.assertEqual({"observer.py": 1, "project_context.py": 5}, found)
+        for phrase in (
+            "the `skill` name of a `Skill` call",
+            "`toolUseResult.gitOperation.pr` (`number`, `url`, `action`)",
+            "never the command or its output",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.SECTION)
 
     def test_the_claude_check_read_is_bounded_to_the_caps_the_section_states(self) -> None:
         # DEC-23 item 5's bounds, read out of the module rather than restated.
@@ -2195,22 +2271,22 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
         do_post = source[source.index("def do_POST(self)") :]
         table = do_post[do_post.index("route = {") : do_post.index("}.get(path)")]
         # The exact-match table, plus the one prefix route matched ahead of it.
-        routes = len(re.findall(r'"(/api/[a-z/]+)":', table)) + int(
+        routes = len(re.findall(r'"(/api/[a-z/-]+)":', table)) + int(
             'path.startswith("/api/events/")' in do_post
         )
         gated = len(re.findall(r"\bcoordinator\.(?:focus_)?authorized\(", source))
-        self.assertEqual(17, routes)
+        self.assertEqual(22, routes)
         self.assertEqual(2, gated)
-        self.assertIn("Writing is the seventeen POST routes", self.FLAT)
-        self.assertIn("There is nothing to authenticate with on fifteen of them", self.FLAT)
+        self.assertIn("Writing is the twenty-two POST routes", self.FLAT)
+        self.assertIn("There is nothing to authenticate with on twenty of them", self.FLAT)
         self.assertIn("Two carry a capability and they are not worth the same.", self.FLAT)
 
     def test_the_copied_correction_route_is_named_counted_and_its_residual_stated(self) -> None:
         # DRC-4678: the thirteenth mutating endpoint and the sixth disk writer, the
         # local-process residual, where the digests live and what clears them, and the
         # exemption of a reader's edits inside a copied correction from the floor.
-        self.assertIn("Thirteen endpoints mutate", self.FLAT)
-        self.assertIn("Six write to disk.", self.FLAT)
+        self.assertIn("Sixteen endpoints mutate", self.FLAT)
+        self.assertIn("Nine write to disk.", self.FLAT)
         self.assertIn("`POST /api/correction/copied`", self.FLAT)
         self.assertIn("`compass-copied-corrections.json`", self.FLAT)
         self.assertIn(
@@ -2346,3 +2422,97 @@ class ClaudeReaderLimitIsSaidInTwoPlacesTest(unittest.TestCase):
         self.assertIn(f'CLAUDE_READER_LIMIT =\n  "{self.SENTENCE}"', sentences)
         how_to = (self.ROOT / "frontend/src/intent/HowTo.tsx").read_text(encoding="utf-8")
         self.assertIn("{CLAUDE_READER_LIMIT}", how_to)
+
+
+class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
+    """The Live monitor calls Haiku about once a minute while a session is viewed, and every page says so.
+
+    The owner ruled it on 2026-10-23 (DEC-26's amendment of that date). The model-free estimate is the
+    monitor's fallback and still calls no model, so a sentence may say that of the estimate and may not say
+    it of the monitor.
+    """
+
+    ROOT = SERVER_PATH.parents[3]
+    PAGES = (
+        "README.md",
+        "HOW_TO_USE.md",
+        "MANUAL.md",
+        "SECURITY.md",
+        "docs/promise-map.md",
+        "compass/skills/compass/SKILL.md",
+    )
+
+    def _text(self, relative: str) -> str:
+        return re.sub(r"\s+", " ", (self.ROOT / relative).read_text(encoding="utf-8"))
+
+    def test_no_user_facing_page_says_the_monitor_calls_no_model(self) -> None:
+        retired = re.compile(
+            r"(?i)live monitor[^.]{0,240}(calls no model|with no model call|needs no model|never sent to the server)"
+        )
+        for relative in self.PAGES:
+            with self.subTest(page=relative):
+                self.assertIsNone(retired.search(self._text(relative)))
+
+    def test_no_shipped_docstring_says_the_monitor_calls_no_model(self) -> None:
+        runtime = SERVER_PATH.parent / "compass_runtime"
+        retired = re.compile(
+            r"(?i)live monitor[^.]{0,200}(calls no model|with no model call|needs no model)"
+        )
+        for path in sorted(runtime.glob("*.py")):
+            with self.subTest(module=path.name):
+                self.assertIsNone(
+                    retired.search(re.sub(r"\s+", " ", path.read_text(encoding="utf-8")))
+                )
+
+    def test_the_pages_say_it_calls_haiku_and_the_accuracy_check_has_not_run(self) -> None:
+        for relative in ("README.md", "docs/promise-map.md", "compass/skills/compass/SKILL.md"):
+            text = self._text(relative)
+            with self.subTest(page=relative):
+                self.assertIn("Live monitor · Haiku", text)
+                self.assertRegex(text, r"(?i)accuracy check has not been run")
+                self.assertRegex(text, r"(?i)about once a minute")
+
+    def test_security_lists_the_monitor_with_what_it_sends_and_every_stop(self) -> None:
+        text = self._text("SECURITY.md")
+        raw = (self.ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        row = next(line for line in raw.splitlines() if line.startswith("| A Live monitor check"))
+        for stop in (
+            "the switch",
+            "leaving the session",
+            "hiding the tab",
+            "the session ending",
+            "Pause model calls",
+            "`--no-observer-model`",
+            "the 20-minute question",
+        ):
+            self.assertIn(stop, row)
+        self.assertIn("--claude-monitor-model", text)
+        self.assertIn("Haiku", row)
+
+    def test_pause_lists_the_monitor_and_the_amendment_heading_is_unchanged(self) -> None:
+        summary = (self.ROOT / "docs/design-session-summary.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "### Amended 2026-10-19: Pause model calls, with the summaries switch nested under it",
+            summary,
+        )
+        later = summary.split("### Amended 2026-10-19: Pause model calls", 1)[1]
+        heading = re.search(
+            r"^### Amended 2026-10-23 \(owner\): the Live monitor[^\n]*$", later, re.MULTILINE
+        )
+        self.assertIsNotNone(heading)
+        self.assertIn(
+            "Pause model calls",
+            later.split(heading.group(0), 1)[1].split("\n### ", 1)[0] if heading else "",
+        )
+        self.assertIn("the Live monitor", self._text("docs/promise-map.md"))
+        self.assertRegex(
+            self._text("docs/promise-map.md"),
+            r"Pause model calls stops Analyze drift, goal summaries, session summaries and the Live monitor",
+        )
+
+    def test_the_unasked_lane_stays_the_only_path_that_spends_with_nobody_watching(self) -> None:
+        text = self._text("docs/promise-map.md")
+        self.assertIn(
+            "The Live monitor does not: it calls a model only while a reader is viewing the session.",
+            text,
+        )

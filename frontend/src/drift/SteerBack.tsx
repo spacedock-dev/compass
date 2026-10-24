@@ -3,6 +3,7 @@ import { Card } from '../ui/card';
 import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
+import { Icon } from '../ui/icons';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useFocusKey } from '../controls';
 import { openPendingDirection } from '../intent/api';
@@ -10,15 +11,16 @@ import { DirectionActionButton } from '../intent/DirectionActionButton';
 import { useDrift } from './context';
 import { correctionLength, type HeldCorrection } from './correction';
 import { attachEditor } from './editor';
-import { CORRECTION_CAP, CORRECTION_HINT, CORRECTION_OLDER } from './sentences';
+import { CORRECTION_CAP, CORRECTION_HINT, CORRECTION_OLDER, STEER_PURPOSE } from './sentences';
 import {
   copyCorrection,
   correctionDraft,
   recomposeCorrection,
   rememberShown,
+  lapseCopied,
+  COPIED_MS,
   steerBack,
 } from './steerActions';
-import { entryNumbers } from '../intent/work';
 
 /* Steer back: the button that opens the correction, and the box that holds it. The box is Copy only: the
    words are the reader's to edit and to paste where they choose, and nothing here is ever sent to the
@@ -38,6 +40,11 @@ export function SteerButton({ primary }: { readonly primary: boolean }) {
         ref={ref}
         type="button"
         variant={primary ? 'primary' : 'default'}
+        className={
+          primary
+            ? 'border-[var(--accent)] bg-primary font-bold text-[color:var(--bg)] hover:border-[var(--accent)] hover:brightness-110 px-4'
+            : undefined
+        }
         data-next-cockpit-action="steer-back"
         aria-expanded={Boolean(held?.open)}
         data-next-focus={`steer-back:${model.key}`}
@@ -61,7 +68,9 @@ export function UpdateIntentButton({ factId }: { readonly factId: string }) {
   return (
     <DirectionActionButton
       feedbackKey={`update-intent:${model.key}`}
-      weight="secondary"
+      weight="quiet"
+      fit
+      className="text-label px-3"
       label="Update intent instead"
       busyLabel="Opening…"
       pendingKey={`update-intent:${model.key}`}
@@ -75,15 +84,29 @@ export function UpdateIntentButton({ factId }: { readonly factId: string }) {
   );
 }
 
-function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
+/* Tall enough to show the composed text without scrolling, up to a bound: with each departure's explanation
+   on its own line (owner, 2026-10-20) a two-departure correction ran past the six rows the box had, and its
+   closing request sat below the fold. Counted from the text the box opened with, so typing never resizes it. */
+const CORRECTION_ROWS_MIN = 6;
+const CORRECTION_ROWS_MAX = 16;
+function correctionRows(text: string): number {
+  return Math.min(CORRECTION_ROWS_MAX, Math.max(CORRECTION_ROWS_MIN, text.split('\n').length + 1));
+}
+
+function CorrectionBox({ held, from }: { readonly held: HeldCorrection; readonly from: string }) {
   const { ctx, model } = useDrift();
   const { key, identity } = model;
-  const read = model.source.state === 'read' || model.source.state === 'empty';
-  const draft = correctionDraft(held, model.source, () =>
-    read ? entryNumbers(model.session, model.source, model.payload) : new Map(),
-  );
+  const draft = correctionDraft(held);
   /* What the box last drew, for a recomposition to freeze before the record can renumber its parts. */
   useEffect(() => rememberShown(held, draft));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per box drawn, by design.
+  useEffect(() => lapseCopied(ctx, key), []);
+  const copied = held.cue === 'copied';
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timer = setTimeout(() => lapseCopied(ctx, key), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [ctx, key, copied]);
   /* The node is mounted once per composition and keeps its caret, selection and undo across every redraw. It
      is replaced only where the page changed the words for a reason other than typing: a new composition, or
      a record that renumbered an unedited text, where there is no reader text to lose. */
@@ -95,13 +118,19 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
     setMounted(current);
   }
   const initial = current.text;
-  const [count, setCount] = useState(() => correctionLength(initial));
+  /* The count belongs to the box it was typed in: a rebuilt correction remounts the textarea under a new
+     key, and a count carried over from the old one stood at 705/5140 over a text of another length. */
+  const boxKey = `${String(held.id)}\n${initial}`;
+  const [counted, setCounted] = useState<{ readonly box: string; readonly n: number } | null>(null);
+  const count = counted?.box === boxKey ? counted.n : correctionLength(initial);
   const attach = useCallback(
     (node: HTMLTextAreaElement | null) => {
       if (!node) return undefined;
-      return attachEditor(ctx, key, node, { onCount: setCount });
+      return attachEditor(ctx, key, node, {
+        onCount: (n) => setCounted({ box: boxKey, n }),
+      });
     },
-    [ctx, key],
+    [ctx, key, boxKey],
   );
   const focusRef = useFocusKey<HTMLTextAreaElement>(
     ctx.shell.controls.focusLane,
@@ -119,21 +148,32 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
     [attach, focusRef],
   );
   const label =
-    held.cue === 'copied' ? 'Copied' : held.cue === 'failed' ? 'Copy unavailable' : 'Copy';
+    held.cue === 'copied'
+      ? 'Copied'
+      : held.cue === 'failed'
+        ? 'Copy unavailable'
+        : 'Copy correction';
   const stale = Boolean(held.stale);
   return (
     <Card variant="steer-box" className="next-cockpit-steer-box" data-next-steer-box>
-      <Label className="next-cockpit-held-label" htmlFor="next-cockpit-correction">
-        Correction to copy
-      </Label>
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <Label className="next-cockpit-held-label" htmlFor="next-cockpit-correction">
+          Correction to paste
+        </Label>
+        {from ? (
+          <span className="next-cockpit-reading-why" data-next-steer-from>
+            {from}
+          </span>
+        ) : null}
+      </div>
       {/* No `maxlength`: it counts UTF-16 units, and the cap is in characters. The editor holds the cap and
           the count says where it stands. */}
       <Textarea
         appearance="correction"
-        key={`${String(held.id)}\n${initial}`}
+        key={boxKey}
         ref={ref}
         id="next-cockpit-correction"
-        rows={6}
+        rows={correctionRows(initial)}
         defaultValue={initial}
         data-next-cockpit-correction-key={key}
         data-next-focus={`correction:${key}`}
@@ -142,6 +182,7 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
       <div className="next-cockpit-steer-tools">
         <Button
           type="button"
+          className="gap-2 border-[var(--accent)] font-bold text-[color:var(--accent)] text-label px-3"
           data-next-cockpit-action="correction-copy"
           data-next-copy-correction={key}
           data-next-focus={`correction-copy:${key}`}
@@ -151,6 +192,7 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
             if (identity) void copyCorrection(ctx, identity);
           }}
         >
+          <Icon name="copy" />
           {label}
         </Button>
         <span className="next-cockpit-held-count" data-next-correction-count>
@@ -196,9 +238,9 @@ function CorrectionBox({ held }: { readonly held: HeldCorrection }) {
   );
 }
 
-/* The design's steer box with Copy-only wording: "Correction to copy" and the hint the issue gives in place of
-   the Send hint. Copy's label is its cue, the More menu's "Copied" and "Copy unavailable". */
-export function SteerBox(): ReactNode {
+/* The design's steer box with Copy-only wording: "Correction to paste", beside what it was built from, and the
+   hint the issue gives in place of the Send hint. Copy's label is its cue, the More menu's "Copied" and "Copy unavailable". */
+export function SteerBox({ from = '' }: { readonly from?: string }): ReactNode {
   const { ctx, model } = useDrift();
   const held = ctx.drift.corrections.get(model.key);
   if (!held || !held.open || held.pending) return null;
@@ -210,5 +252,37 @@ export function SteerBox(): ReactNode {
     );
   }
   if (!Array.isArray(held.parts)) return null;
-  return <CorrectionBox held={held} />;
+  return <CorrectionBox held={held} from={from} />;
+}
+
+/* Steer back as the design draws it, a section of its own after the departures it steers from: a heading, one
+   sentence saying what it does and does not do, the press, and the correction under it. Update intent instead
+   is the quiet secondary beside the press. */
+export function SteerSection({
+  buttons,
+  box,
+}: {
+  readonly buttons: ReactNode;
+  readonly box: ReactNode;
+}): ReactNode {
+  const { model } = useDrift();
+  const head = `steer-back-head:${model.key}`;
+  return (
+    <section
+      className="flex flex-col gap-2.5 border-t border-[var(--rule)] pt-3.5"
+      aria-labelledby={head}
+      data-next-steer-section
+    >
+      <h3 id={head} className="m-0 text-body font-semibold leading-[1.45] text-foreground">
+        Steer back
+      </h3>
+      <p className="m-0 max-w-[var(--measure)] text-body leading-[1.5] text-muted-foreground">
+        {STEER_PURPOSE}
+      </p>
+      <div className="next-cockpit-reading-ask" data-next-result-steer>
+        {buttons}
+      </div>
+      {box}
+    </section>
+  );
 }

@@ -6,6 +6,8 @@ Every value here is invented. The real mapping, which holds originals, lives out
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -170,6 +172,14 @@ class SanitizerTest(unittest.TestCase):
         self.assertRegex(text, r"commit [0-9a-f]{7} in")
         self.assertRegex(text, r"run view \d{11} --repo")
 
+    def test_a_listed_number_held_as_a_json_integer_moves_with_its_text(self) -> None:
+        self.mapping.numbers = ["618"]
+        cleaner = ss.Sanitizer(self.mapping)
+        record = cleaner.value({"prNumber": 618, "prUrl": "pull/618", "count": 61, "ok": True})
+        self.assertEqual(f"pull/{record['prNumber']}", record["prUrl"])
+        self.assertNotEqual(618, record["prNumber"])
+        self.assertEqual((61, True), (record["count"], record["ok"]))
+
     def test_numbers_from_one_run_stay_close_together(self) -> None:
         self.mapping.numbers = ["41000000001", "41000000048"]
         cleaner = ss.Sanitizer(self.mapping)
@@ -192,6 +202,134 @@ class SanitizerTest(unittest.TestCase):
         self.assertIn("/Users/dev/code", text)
         self.assertIn("<REDACTED_TOKEN>", text)
         self.assertNotIn("stranger", text)
+
+    def test_a_screenshot_inside_a_tool_result_and_its_copy_are_replaced(self) -> None:
+        shot = {"type": "image", "source": {"type": "base64", "data": "QUJD" * 50}}
+        cleaner = ss.Sanitizer(self.mapping)
+        record = cleaner.record(
+            {
+                "type": "user",
+                "message": {"content": [{"type": "tool_result", "content": [shot]}]},
+                "toolUseResult": [shot],
+            }
+        )
+        text = json.dumps(record)
+        self.assertNotIn("QUJD", text)
+        self.assertEqual(2, text.count("[image omitted]"))
+
+    def test_the_short_form_of_an_id_becomes_the_short_form_of_its_replacement(self) -> None:
+        cleaner = ss.Sanitizer(self.mapping)
+        cleaner.learn_short_ids(json.dumps({"sessionId": UID}))
+        new = cleaner.text(UID)
+        self.assertEqual(
+            f"open #n=session:claude:{new[:8]}&x", cleaner.text("open #n=session:claude:11111111&x")
+        )
+        self.assertEqual("x11111111", cleaner.text("x11111111"))
+
+    def test_bare_times_move_with_the_timestamps_only_when_asked(self) -> None:
+        text = "at 13:58, [heavy] 12:56:09 start, Oct 14 13:02 file, epoch 1791957580.5 and 1791957580957"
+        self.assertEqual(text, ss.Sanitizer(self.mapping).text(text))
+        self.mapping.shift_bare_times = True  # day_shift -10, one hour later
+        self.assertEqual(
+            "at 14:58, [heavy] 13:56:09 start, Oct  4 14:02 file, "
+            "epoch 1791097180.5 and 1791097180957",
+            ss.Sanitizer(self.mapping).text(text),
+        )
+
+    def test_a_local_time_loses_its_zone_and_a_utc_one_keeps_its_place(self) -> None:
+        self.mapping.shift_bare_times = True
+        self.mapping.local_clock_offset_seconds = 8 * 3600  # local ran eight hours ahead of UTC
+        self.assertEqual(
+            "18:21:20 STATUS; at 06:58; 11:51:58 UTC; Start at  11:46:25; Status at 06:13: ok; "
+            "05:47  up 16:10, 3 users; 91391    02:59 codex",
+            ss.Sanitizer(self.mapping).text(
+                "01:21:20 STATUS; at 13:58; 10:51:58 UTC; Start at  10:46:25; Status at 13:13: ok; "
+                "12:47  up 16:10, 3 users; 91391    02:59 codex"
+            ),
+        )
+
+    def test_an_iso_time_is_moved_once_and_not_again_as_a_clock(self) -> None:
+        self.mapping.shift_bare_times = True
+        self.assertEqual(
+            "2026-07-21T02:00:00Z and 2026-07-21 02:00:00",
+            ss.Sanitizer(self.mapping).text("2026-07-31T01:00:00Z and 2026-07-31 01:00:00"),
+        )
+
+    def test_the_sweeps_flag_tracker_and_machine_shapes_and_not_ordinary_words(self) -> None:
+        def hits(text: str) -> list[str]:
+            return [label for label, pattern in ss.SWEEPS.items() if pattern.search(text)]
+
+        self.assertEqual(["tracker reference"], hits("see DRC-12 in Linear"))
+        self.assertEqual(["encoded home directory"], hits("/tmp/claude/-Users-pat-repos-x"))
+        self.assertEqual(["machine temp directory"], hits("/var/folders/ab/xyz/T/shot.jpg"))
+        self.assertEqual(["remote session link"], hits("https://claude.ai/code/session_01Real"))
+        self.assertEqual([], hits("a task-notification, a linear scan, -Users-dev-repos"))
+
+    def test_verification_reads_a_number_only_where_the_rule_replaces_it(self) -> None:
+        self.mapping.numbers = ["4647"]
+        self.source.write_text(
+            json.dumps({"type": "x", "t": "issue 4647"}) + "\n", encoding="utf-8"
+        )
+        self.run_it()
+        clean = self.target.read_text(encoding="utf-8")
+        self.target.write_text(
+            json.dumps({"type": "x", "t": json.loads(clean)["t"], "tokens": 4647, "n": "146475"})
+            + "\n",
+            encoding="utf-8",
+        )
+        self.assertEqual([], ss.verify(self.mapping, self.source, self.target))
+        self.target.write_text(
+            json.dumps({"type": "x", "t": "issue 4647"}) + "\n", encoding="utf-8"
+        )
+        problems = ss.verify(self.mapping, self.source, self.target)
+        self.assertTrue(any("'4647'" in p for p in problems), problems)
+
+    def test_an_integer_identity_that_survives_is_reported_and_a_count_is_not(self) -> None:
+        self.mapping.numbers = ["4647"]
+        self.source.write_text(
+            json.dumps({"type": "pr-link", "prNumber": 4647}) + "\n", encoding="utf-8"
+        )
+        self.target.write_text(
+            json.dumps({"type": "pr-link", "prNumber": 4647}) + "\n", encoding="utf-8"
+        )
+        problems = ss.verify(self.mapping, self.source, self.target)
+        self.assertTrue(any("'4647'" in p for p in problems), problems)
+        self.target.write_text(
+            json.dumps({"type": "pr-link", "output_tokens": 4647, "durationMs": 4647}) + "\n",
+            encoding="utf-8",
+        )
+        self.assertEqual([], ss.verify(self.mapping, self.source, self.target))
+
+    def test_every_quoted_hash_that_names_a_commit_is_regenerated_and_checked(self) -> None:
+        if not shutil.which("git"):
+            self.skipTest("git is not installed")
+        repo = self.root / "repo"
+        git = ["git", "-C", str(repo), "-c", "user.name=T", "-c", "user.email=t@example.com"]
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)  # noqa: S607
+        subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "x"], check=True)
+        full = subprocess.run(
+            [*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        short = full[:8]
+        self.mapping.commit_repo = str(repo)
+        self.mapping.hashes = []
+        self.source.write_text(
+            json.dumps({"type": "x", "t": f"{short} fix, merged as {full}; deadbeef0 stays"})
+            + "\n",
+            encoding="utf-8",
+        )
+        out = str(self.run_it()[0]["t"])
+        self.assertNotIn(short, out)
+        new_short, _, rest = out.partition(" fix, merged as ")
+        self.assertTrue(rest.startswith(new_short), out)
+        self.assertIn("deadbeef0 stays", out)
+        self.assertEqual([], ss.verify(self.mapping, self.source, self.target))
+        self.target.write_text(
+            json.dumps({"type": "x", "t": f"still {short}"}) + "\n", encoding="utf-8"
+        )
+        problems = ss.verify(self.mapping, self.source, self.target)
+        self.assertTrue(any("name a commit" in p for p in problems), problems)
+        self.assertTrue(any(f"'{short}'" in p for p in problems), problems)
 
     def test_verification_passes_a_clean_output(self) -> None:
         self.run_it()

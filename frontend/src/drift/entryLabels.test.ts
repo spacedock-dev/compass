@@ -19,23 +19,11 @@ const fact = (id: string, at: number, ordinal: number, sub?: number) => ({
 });
 
 describe('the words that name an entry by its number', () => {
-  it('says "entry #41.2" for a check and "entry #41" for a message', () => {
-    const numbers = new Map([
-      ['c', '41.2'],
-      ['m', '41'],
-    ]);
+  it('draws no Compass entry number in a correction (owner, 2026-10-20)', () => {
     expect(
-      correctionText(
-        ['A check failed at 13:58', { entry: 'c' }, '. You said so', { entry: 'm' }],
-        numbers,
-      ),
-    ).toBe(
-      "A check failed at 13:58 (entry #41.2 in Compass's activity list). You said so (entry #41 in Compass's activity list)",
-    );
-  });
-
-  it('drops an entry the list does not number, as before', () => {
-    expect(correctionText(['At 13:58', { entry: 'gone' }, '.'], new Map())).toBe('At 13:58.');
+      correctionText(['A check failed at 13:58', { entry: 'c' }, '. You said so', { entry: 'm' }]),
+    ).toBe('A check failed at 13:58. You said so');
+    expect(correctionText(['At 13:58', { entry: 'gone' }, '.'])).toBe('At 13:58.');
   });
 
   it('reads a range from the lowest label to the highest', () => {

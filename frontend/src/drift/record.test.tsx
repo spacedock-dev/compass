@@ -1,6 +1,6 @@
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { fact, json, mountDrift, press } from './testing';
+import { fact, json, mountDrift, press, openActivity } from './testing';
 
 const path = '/api/session-record';
 const session = { annotation_window_start: 1, annotation_goal_saved_at: 1 };
@@ -32,6 +32,7 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(1);
     expect(rows()).toHaveLength(50);
     expect(rows()[0]?.dataset['nextEntryId']).toBe('p100');
@@ -71,6 +72,7 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     await press(more());
     expect(rows()).toHaveLength(99);
     expect([...page.shell.runtime.store.getSnapshot().records.values()][0]?.entries).toHaveLength(
@@ -86,6 +88,7 @@ describe('a reader paging a session record', () => {
       routes: { [path]: (r) => (r.url.includes('before=') ? 'hold' : json(pageBody())) },
     });
     await page.settle();
+    await openActivity();
     const button = more();
     button.focus();
     await press(button);
@@ -113,6 +116,7 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     expect(
       screen.getByText(
         'The read stopped after reading 16 MB without reaching 50 more entries; Show more continues from there.',
@@ -128,6 +132,7 @@ describe('a reader paging a session record', () => {
       routes: { [path]: () => json(pageBody({ bound: 'time', scanned_bytes: 1048576 })) },
     });
     await page.settle();
+    await openActivity();
     expect(
       screen.getByText(
         'The read stopped after reading 1 MB without reaching 50 more entries; Show more continues from there.',
@@ -154,6 +159,7 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     const button = more();
     button.focus();
     await press(button);
@@ -168,6 +174,7 @@ describe('a reader paging a session record', () => {
       routes: { [path]: (r) => (r.url.includes('before=') ? 'hold' : json(pageBody())) },
     });
     await page.settle();
+    await openActivity();
     more().focus();
     await press(more());
     const goal = document.querySelector<HTMLTextAreaElement>(
@@ -190,6 +197,7 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     more().focus();
     await press(more());
     expect(rows()).toHaveLength(50);
@@ -208,8 +216,13 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     await press(more());
-    await press(document.querySelector('[data-next-entry-id="p50"] button'));
+    await press(
+      document.querySelector(
+        '[data-next-entry-id="p50"] [data-next-cockpit-action="direction-add"]',
+      ),
+    );
     expect(document.body.textContent).toContain('Older direction in full');
     await page.poll(page.state.data);
     expect(document.body.textContent).toContain('Older direction in full');
@@ -225,8 +238,13 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     await press(more());
-    await press(document.querySelector('[data-next-entry-id="p50"] button'));
+    await press(
+      document.querySelector(
+        '[data-next-entry-id="p50"] [data-next-cockpit-action="direction-add"]',
+      ),
+    );
     expect(document.body.textContent).toContain('Older direction in full');
     await page.go('#n=intent');
     await page.go('#n=session:alpha%2Fapp:claude:s1');
@@ -240,6 +258,7 @@ describe('a reader paging a session record', () => {
       routes: { [path]: () => json(pageBody({ state: 'unsupported', entries: [], next: null })) },
     });
     await page.settle();
+    await openActivity();
     expect(screen.getByText('Older entries are not read for this harness.')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Show 50 older entries' })).toBeNull();
   });
@@ -250,6 +269,7 @@ describe('a reader paging a session record', () => {
       routes: { [path]: () => json(pageBody({ state: 'unavailable', entries: [], next: null })) },
     });
     await page.settle();
+    await openActivity();
     expect(screen.getByText('Could not read older entries')).toBeVisible();
     page.state.routes[path] = () => json(pageBody());
     await press(more());
@@ -271,6 +291,7 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     await press(more());
     expect(page.gets(path)).toBe(3);
     expect(rows().map((r) => r.dataset['nextEntryId'])).toEqual(['fresh']);
@@ -287,6 +308,7 @@ describe('a reader paging a session record', () => {
       routes: { [path]: () => json(pageBody({ state: 'stale', entries: [], next: null })) },
     });
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(2);
     expect(
       screen.getByText('The record changed again. Show more retries from the newest entries.'),
@@ -307,6 +329,7 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     more().focus();
     await press(more());
     expect(
@@ -326,6 +349,7 @@ describe('a reader paging a session record', () => {
       routes: { [path]: () => json(pageBody()) },
     });
     await page.settle();
+    await openActivity();
     expect(rows()).toHaveLength(26);
     expect(
       screen.getByText("Everything since your intent's window opened is listed."),
@@ -344,6 +368,7 @@ describe('a reader paging a session record', () => {
       },
     });
     await page.settle();
+    await openActivity();
     await press(more());
     await page.poll(page.state.data);
     expect(rows()).toHaveLength(100);
@@ -358,6 +383,7 @@ describe('a reader paging a session record', () => {
   it('a reader leaving during a read aborts it and a late reply cannot restore discarded pages', async () => {
     const page = mountDrift({ session, routes: { [path]: () => 'hold' } });
     await page.settle();
+    await openActivity();
     await page.go('#n=intent');
     await page.release(path, json(pageBody()));
     expect(page.shell.runtime.store.getSnapshot().records.size).toBe(0);
@@ -416,16 +442,19 @@ describe('a reader leaving a session page open while it writes', () => {
     const live = world(10);
     const page = mountLive(live);
     await page.settle();
+    await openActivity();
     expect(rows()).toHaveLength(10);
     live.tail = 5;
     for (let n = 10; n < 15; n += 1) live.record.push(message(n));
     await page.poll(board(page, 1));
     await page.settle();
+    await openActivity();
     expect(rows()).toHaveLength(15);
     const before = numbers();
     live.tail = 1;
     await page.poll(board(page, 2));
     await page.settle();
+    await openActivity();
     expect(rows()).toHaveLength(15);
     expect(numbers()).toEqual(before);
     expect(before['m12']).toBe('13');
@@ -456,6 +485,7 @@ describe('a reader leaving a session page open while it writes', () => {
       },
     });
     await page.settle();
+    await openActivity();
     expect(rows()).toHaveLength(50);
     for (let n = 60; n < 180; n += 1) all.push(message(n));
     const data = page.state.data as { sessions: Record<string, unknown>[] };
@@ -465,6 +495,7 @@ describe('a reader leaving a session page open while it writes', () => {
       sessions: [{ ...data.sessions[0], last_activity: 1001 }],
     });
     await page.settle();
+    await openActivity();
     expect(rows()).toHaveLength(170);
     expect(rows()[0]?.dataset['nextEntryId']).toBe('m179');
     expect(rows().at(-1)?.dataset['nextEntryId']).toBe('m10');
@@ -477,16 +508,20 @@ describe('a reader leaving a session page open while it writes', () => {
     const live = world(10);
     const page = mountLive(live);
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(1);
     await page.poll(board(page, 0));
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(1);
     live.record.push(message(10));
     await page.poll(board(page, 1));
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(2);
     await page.poll(board(page, 1));
     await page.settle();
+    await openActivity();
     expect(page.gets(path)).toBe(2);
     expect(rows()[0]?.dataset['nextEntryId']).toBe('m10');
   });

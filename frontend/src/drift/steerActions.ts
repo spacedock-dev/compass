@@ -2,7 +2,7 @@ import { compatSessKey, contextKey } from '../api/identity';
 import type { SessionIdentity } from '../api/types';
 import { annotationOf } from '../intent/annotation';
 import { answered, liveRow } from '../intent/context';
-import { entryNumbers, workSource } from '../intent/work';
+import { workSource } from '../intent/work';
 import { stableProjectKey } from '../api/identity';
 import { payloadSessions } from '../api/bootstrap';
 import type { Row } from '../observed';
@@ -11,10 +11,11 @@ import {
   correctionStale,
   correctionStamp,
   correctionText,
+  readerTimeZone,
+  readerUtcOffset,
   type HeldCorrection,
 } from './correction';
 import { requestFocus } from './focus';
-import { currentPayload } from './overlay';
 import { CORRECTION_FAILED, CORRECTION_NOTHING, CORRECTION_PAINT_PAUSED } from './sentences';
 import type { DriftCtx } from './state';
 
@@ -30,6 +31,11 @@ function bounded(ctx: DriftCtx): { readonly signal: AbortSignal; done(): void } 
   const controller = new AbortController();
   const handle = ctx.shell.clock.setTimeout(() => controller.abort(), COMPOSE_BOUND_MS);
   return { signal: controller.signal, done: () => ctx.shell.clock.clearTimeout(handle) };
+}
+
+function zoneField(): { readonly time_zone?: string } {
+  const zone = readerTimeZone();
+  return zone ? { time_zone: zone } : {};
 }
 
 function sourceFor(ctx: DriftCtx, session: Row) {
@@ -51,22 +57,11 @@ function sourceFor(ctx: DriftCtx, session: Row) {
 }
 
 /* What the correction's text is right now: the reader's own where they edited or copied it, the frozen text of
-   a recomposition being fetched, and otherwise the server's parts with the list's numbers filled in. */
-export function correctionDraft(
-  held: HeldCorrection,
-  source: ReturnType<typeof workSource>,
-  numbersOf: () => ReadonlyMap<string, string>,
-): string {
+   a recomposition being fetched, and otherwise the server's parts as text. */
+export function correctionDraft(held: HeldCorrection): string {
   if (typeof held.text === 'string') return held.text;
   if (held.recomposing && typeof held.recomposeText === 'string') return held.recomposeText;
-  const read = source.state === 'read' || source.state === 'empty';
-  return correctionText(held.parts, read ? numbersOf() : new Map());
-}
-
-function draftNow(ctx: DriftCtx, session: Row, held: HeldCorrection): string {
-  const source = sourceFor(ctx, session);
-  const payload = currentPayload(ctx) ?? {};
-  return correctionDraft(held, source, () => entryNumbers(session, source, payload));
+  return correctionText(held.parts);
 }
 
 /* One request for the session's correction. `quiet` is the held entry of a recomposition the reader did not
@@ -99,7 +94,12 @@ export async function composeCorrection(
   }
   const request = bounded(ctx);
   try {
-    const reply = answered(await ctx.shell.runtime.client.postCorrection(identity, request.signal));
+    const reply = answered(
+      await ctx.shell.runtime.client.postCorrection(
+        { ...identity, utc_offset_minutes: readerUtcOffset(), ...zoneField() },
+        request.signal,
+      ),
+    );
     if (reply.kind === 'lost') throw new Error('correction not composed');
     const body = reply.body as Row | null;
     const parts = reply.ok && body && body['ok'] === true ? correctionParts(body['parts']) : null;
@@ -193,7 +193,7 @@ export async function copyCorrection(ctx: DriftCtx, identity: SessionIdentity): 
     requestFocus(ctx, `correction-copy:${key}`);
     return;
   }
-  const text = draftNow(ctx, session, held);
+  const text = correctionDraft(held);
   held.text = text;
   held.copying = true;
   let copied = false;
@@ -225,6 +225,19 @@ export async function copyCorrection(ctx: DriftCtx, identity: SessionIdentity): 
    never from a render. */
 export function rememberShown(held: HeldCorrection, text: string): void {
   held.shownText = text;
+}
+
+/* "Copied" answers one press and is not a state of the text: it held across navigation and read as if the
+   words on screen were already in the clipboard (usability review, 2026-10-20). The box takes it back when
+   drawn again and a moment after the press. "Copy unavailable" stays until the next press: it says what to
+   do. */
+export const COPIED_MS = 2000;
+
+export function lapseCopied(ctx: DriftCtx, key: string): void {
+  const held = ctx.drift.corrections.get(key);
+  if (held?.cue !== 'copied') return;
+  held.cue = '';
+  ctx.drift.notify();
 }
 
 /* "Updates are paused while you edit this correction": said while a board that arrived waits behind a focused,

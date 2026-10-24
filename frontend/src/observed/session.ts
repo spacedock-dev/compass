@@ -6,6 +6,7 @@ import {
   endedAt,
   isRecord,
   pair,
+  promptCopied,
   records,
   textOf,
   trimmed,
@@ -62,6 +63,43 @@ export type ObservedSession = {
    stands, so two spellings of one directory are two groups and say so. */
 export function labelOf(session: Row): string {
   return String(session['project'] == null ? '' : session['project']);
+}
+
+/* A title that is only an identifier (an issue key, or the session's own id) says nothing a reader can use, so
+   the goal, then the first prompt (never a correction the reader copied, nor a control message), then the
+   last prompt where the harness publishes no first one, stands in for it: its first line, cut at a width a heading can hold. Only the
+   session page's heading asks: a Sessions row keeps the title as published, since the rows are held to the recorded
+   page. */
+/* An issue key is upper-case with a number of two or more digits: "gpt-4" and "utf-8" are real titles. */
+const ISSUE_KEY = /^[A-Z][A-Z0-9]{1,9}-\d{2,}$/;
+const HEX_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){0,4}(?:-[0-9a-f]{12})?$/i;
+const TITLE_WIDTH = 120;
+
+/* Why a session has no title. A session whose only prompt was a harness command did publish that prompt;
+   Compass declines to name it by a command, so "not published" would say something untrue. */
+export const NO_NAME_COMMAND = 'No name: the session opened with a command';
+export function noTitleText(source: Row): string {
+  return source['first_prompt_control'] === true ? NO_NAME_COMMAND : 'Title not published';
+}
+
+export function pageTitleOf(source: Row): string {
+  const goal = goalOf(source);
+  const title = trimmed(source['title']);
+  if (!title) return '';
+  if (!ISSUE_KEY.test(title) && !HEX_ID.test(title) && title !== trimmed(source['sid']))
+    return title;
+  const firstPrompt =
+    promptCopied(source, 'first_prompt') || source['first_prompt_control'] === true
+      ? ''
+      : trimmed(source['first_prompt']);
+  const words = (goal ? trimmed(goal.text) : '') || firstPrompt || trimmed(source['last_prompt']);
+  const line =
+    words
+      .split('\n')
+      .find((part) => part.trim())
+      ?.trim() ?? '';
+  if (!line) return title;
+  return line.length > TITLE_WIDTH ? `${line.slice(0, TITLE_WIDTH - 1).trimEnd()}…` : line;
 }
 
 /* One row of the model, from one payload row. `asks` are the exact requests that belong to it,
@@ -206,7 +244,7 @@ export function observeSession(
     project: labelOf(source),
     focusable: source['focusable'] == null ? false : source['focusable'],
     resume_id: source['resume_id'] == null ? null : source['resume_id'],
-    ...pair('title', source['title'], 'Title not published'),
+    ...pair('title', source['title'], noTitleText(source)),
     ...pair('prompt', source['last_prompt'], 'Last prompt not published'),
     ...pair('now', nowValue, stateKnown ? 'Activity not published' : 'No state published'),
     ...pair('next', pending?.['subject'], 'No pending step published'),

@@ -1,15 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fakeBackend } from '../../test/storage_backends';
-import {
-  createLegacyStorage,
-  goalKey,
-  graphModeScope,
-  guardrailKey,
-  liveEstimateKey,
-  memoKey,
-} from '.';
-
-const session = { harness: 'claude', sid: 'sid:1' };
+import { createLegacyStorage, goalKey, graphModeScope, guardrailKey, memoKey } from '.';
 
 /*
  * Legacy-valid values that a tidy-up on load would change: a 201-key usage object, sixty guardrails
@@ -40,7 +31,8 @@ function preloaded() {
     'compass.observer-model-consent.v1': 'granted',
     'compass.next.workstream.collapsed': 'true',
     'compass.projectCockpitProject': 'a project',
-    [liveEstimateKey(session)]: '1',
+    // The retired live estimate key, left by an older page: nothing reads it.
+    'compass.next.live-estimate:claude:s': '1',
   });
 }
 
@@ -61,7 +53,6 @@ describe('reading storage', () => {
     storage.observerConsent.get();
     storage.workstream.collapsed();
     storage.cockpitProject.read();
-    storage.liveEstimate.on(session);
     // A poll or remount asks again; the second read must not write either.
     storage.usage.counts();
     storage.guardrails.rules('p');

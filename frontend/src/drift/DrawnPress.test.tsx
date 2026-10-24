@@ -2,7 +2,6 @@ import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import {
   ROUTE,
-  UNCONSENTED,
   byAction,
   check,
   driftBoard,
@@ -53,24 +52,22 @@ async function hold(page: ReturnType<typeof mountDrift>) {
   box?.focus();
 }
 
-describe('Allow sends what the consent card showed', () => {
-  const unconsented = { reading: UNCONSENTED };
+describe('Resume changes only the master switch', () => {
+  const off = { reading: { consent: false, off: true, reason: 'model-calls-paused' } };
   const open = async (route: Record<string, unknown> = ROUTE) => {
     const page = mountDrift({
       session,
       facts: FACTS,
-      payload: { ...unconsented, reading_routes: { claude: route } },
+      payload: { ...off, reading_routes: { claude: route } },
       routes,
     });
     await page.settle();
     await page.settle();
-    await press(byAction('reading-ask'));
-    expect(document.querySelector('.next-cockpit-reading-consent')).not.toBeNull();
     await hold(page);
     return page;
   };
   const moved = (patch: Record<string, unknown>) =>
-    later({ ...unconsented, reading_routes: { claude: { ...ROUTE, ...patch } } });
+    later({ ...off, reading_routes: { claude: { ...ROUTE, ...patch } } });
 
   it.each([
     [
@@ -86,33 +83,32 @@ describe('Allow sends what the consent card showed', () => {
     ['who reads it', { provider: 'codex' }, /The reader for this session changed/],
     ['the model', { model: 'other' }, /The reader for this session changed/],
   ])(
-    'refuses, sending nothing, when %s moved while the card was held',
-    async (_name, patch, said) => {
+    'resumes without sending session text when %s moved while the card was held',
+    async (_name, patch, _said) => {
       const page = await open();
       await page.poll(moved(patch));
-      // The card the reader consented on is the one still drawn.
-      expect(textOf('.next-cockpit-reading-consent')).toContain('Send this session to Claude Code');
-      await press(byAction('reading-allow'));
+      await press(byAction('reading-on'));
       await page.settle();
-      expect(readingPosts(page)).toEqual([]);
-      expect(textOf('.next-session-drift')).toMatch(said);
-      // And the press that follows is the reader's own, over the card the reader now sees.
+      expect(readingPosts(page)).toHaveLength(1);
+      expect(readingPosts(page)[0]?.body).toEqual({
+        consent: 'on',
+        press: true,
+        observer_model: 1,
+      });
       await page.advance(5_000);
-      expect(readingPosts(page)).toEqual([]);
+      expect(readingPosts(page)).toHaveLength(1);
     },
   );
 
-  it('sends the drawn values when nothing moved', async () => {
+  it('resumes without a provider or destination when nothing moved', async () => {
     const page = await open();
-    await press(byAction('reading-allow'));
+    await press(byAction('reading-on'));
     await page.settle();
     expect(readingPosts(page)).toHaveLength(1);
     expect(readingPosts(page)[0]?.body).toMatchObject({
-      provider: 'claude',
-      allow: true,
-      words_destination: 'api',
-      tool_output: 'api',
-      model: 'm',
+      consent: 'on',
+      press: true,
+      observer_model: 1,
     });
   });
 });

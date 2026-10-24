@@ -65,6 +65,13 @@ class RuntimeState:
     # and session. Typed `Any` because `state` imports no module that could name it without a cycle.
     entry_indexes: dict[str, Any] = field(default_factory=dict)
     entry_index_lock: LockType = field(default_factory=threading.Lock)
+    session_outlines: dict[str, Any] = field(default_factory=dict)
+    session_outline_lock: LockType = field(default_factory=threading.Lock)
+    # "harness:sid" -> the latest summary job this process knows, bounded by max_cache_entries.
+    summary_jobs: dict[str, Any] = field(default_factory=dict)
+    # (harness, sid) -> (source stamps and stored record identity, out-of-date report).
+    summary_freshness: dict[tuple[str, str], Any] = field(default_factory=dict)
+    summary_freshness_lock: LockType = field(default_factory=threading.Lock)
     transcript_user_cache: dict[
         tuple[str, str, str], tuple[tuple[int, int, int, int], list[dict[str, Any]]]
     ] = field(default_factory=dict)

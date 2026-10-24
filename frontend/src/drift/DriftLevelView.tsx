@@ -1,24 +1,24 @@
-import { SampleMark } from '../sample/SampleMark';
+import { CitedText } from './CitedText';
 import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Fragment } from 'react';
-import { annotationLines } from '../intent/annotation';
 import { intentUnsaved } from '../intent/derive';
 import { useDrift } from './context';
 import { meterSegments, readingStored, type Signals } from './level';
+import { driftAnswer, verdictNamesLevel, verdictShape } from './result';
 import { routeRefusal } from './route';
 import {
   HARNESS_LIMIT,
   WORK_HARNESSES,
-  LEVEL_HIDDEN_MARKED,
   LEVEL_SCALE,
   LIVE_LEVEL_NAMES,
   LIVE_LINE,
+  LIVE_MONITOR_LINE,
   LIVE_SAVE,
   NUDGE,
-  UNCHECKED,
 } from './sentences';
 import { EvidenceList } from './Evidence';
+import { MarkedNotice } from './MarkedNotice';
 import { Why } from './Why';
 
 /* The level, its source and time, the meter, the source line and where it rose, then the nudge at High. No
@@ -82,7 +82,13 @@ export function DriftPill() {
       <PillMeter level={level.level} />
       <span>
         Drift: <strong>{level.label}</strong>
+        {model.pillSoFar ? ' so far' : ''}
       </span>
+      {level.monitor ? (
+        <span className="ml-1 text-muted-foreground" data-next-drift-pill-source>
+          Live monitor · Haiku
+        </span>
+      ) : null}
     </Badge>
   );
 }
@@ -95,7 +101,7 @@ function SignalsView({ signals }: { readonly signals: Signals }) {
           <h3>Recorded signals</h3>
           {signals.lines.map((line) => (
             <p key={line} className="next-session-drift-reason">
-              {line}
+              <CitedText text={line} />
             </p>
           ))}
           <EvidenceList rows={signals.evidence} scope="signals" />
@@ -106,7 +112,7 @@ function SignalsView({ signals }: { readonly signals: Signals }) {
           <h3>Limits of this estimate</h3>
           {signals.limits.map((line) => (
             <p key={line} className="next-session-drift-reason">
-              {line}
+              <CitedText text={line} />
             </p>
           ))}
         </>
@@ -130,9 +136,14 @@ export function DriftLevelView() {
      draws it. */
   const analysis = model.analysis;
   const measured = model.estimate;
-  const found = analysis && analysis.level !== 'not_enough' ? analysis : (measured ?? analysis);
+  const found = analysis ?? measured;
   const liveOnly = harness === 'claude';
   const livePending = liveOnly && model.liveOn && !analysis;
+  /* A marked analysis contributes no level, and its message carries the Undo, so it comes before every branch
+     below: the live estimate, switched on, must not take the slot and leave the mark with no way back. */
+  if (!model.drafted && annotation?.['not_accurate'] === true && readingStored(annotation)) {
+    return <MarkedNotice />;
+  }
   const save = found && 'save' in found;
   if (livePending && (model.drafted || save)) {
     return (
@@ -143,34 +154,14 @@ export function DriftLevelView() {
   }
   // The monitor explanation follows its switch into More; a level still stays beside Analyze.
   const running = Boolean(model.job);
-  const level = found && 'level' in found ? found : null;
+  /* A reading that stands draws a level or none: with none, the verdict sentence above says what the reading
+     found and why no level is drawn, so no "Not enough recorded yet" bar stands in for it. */
+  const level =
+    found && 'level' in found && !(found.analysis && found.level === 'not_enough') ? found : null;
   if (model.drafted || !level || !level.label) {
-    /* A marked analysis contributes no level. Its slot says so, so the reader who marked it sees why the
-       meter is gone, where the meter was. */
-    if (!model.drafted && annotation?.['not_accurate'] === true && readingStored(annotation)) {
-      return (
-        <p className="next-session-drift-limit" data-next-drift-marked>
-          {LEVEL_HIDDEN_MARKED}
-        </p>
-      );
-    }
-    const unchecked =
-      model.annotate &&
-      annotation &&
-      !readingStored(annotation) &&
-      Boolean(String(annotation['goal'] || '').trim() || annotationLines(annotation).length);
-    if (model.drafted || !unchecked) return null;
-    return (
-      <>
-        <div className="next-session-drift-live" data-next-drift-unchecked>
-          <p className="next-session-drift-live-head">
-            <span className="next-session-drift-level">{UNCHECKED}</span>
-          </p>
-          <Meter level="" dim={running} />
-          <Scale level="" />
-        </div>
-      </>
-    );
+    /* Before any analysis there is no level, so none is drawn: "Not checked yet" over four empty segments
+       labelled nothing. */
+    return null;
   }
   const high = level.level === 'high' || level.level === 'extreme';
   /* While an analysis runs the design keeps the title and dims the meter, and drops the detail line. Over an
@@ -178,16 +169,28 @@ export function DriftLevelView() {
      words. */
   const detail =
     level.level && !running
-      ? [level.analysis ? level.line : LIVE_LINE, level.rose].filter(Boolean).join(' ')
+      ? [level.analysis ? level.line : level.monitor ? LIVE_MONITOR_LINE : LIVE_LINE, level.rose]
+          .filter(Boolean)
+          .join(' ')
       : '';
   const reasons = !running && level.reasons ? level.reasons : { first: '', blockers: [] };
   const signals: Signals | null = level.signals;
+  /* The verdict sentence above names an analysis level, so the word is not said again over its meter. */
+  const verdict = level.analysis
+    ? verdictShape({
+        annotate: model.annotate,
+        shape: model.shape,
+        raw: model.raw,
+        annotation,
+      })
+    : null;
+  const worded =
+    verdict !== null && verdictNamesLevel(driftAnswer(verdict, model.entries, model.source.scan));
   return (
     <>
       <div className="next-session-drift-live" data-next-drift-level>
         <p className="next-session-drift-live-head">
-          <span className="next-session-drift-level">{level.label}</span>
-          <SampleMark id="level" />
+          {worded ? null : <span className="next-session-drift-level">{level.label}</span>}
           {level.source ? <span className="next-session-drift-source">{level.source}</span> : null}
         </p>
         {level.level ? (
@@ -196,13 +199,31 @@ export function DriftLevelView() {
             <Scale level={level.level} />
           </Fragment>
         ) : null}
-        {detail ? <p className="next-session-drift-detail">{detail}</p> : null}
-        {!running && !level.analysis && !readingStored(annotation) ? (
+        {detail ? (
+          <p className="next-session-drift-detail">
+            <CitedText text={detail} />
+          </p>
+        ) : null}
+        {level.monitor && level.note && !running ? (
+          <p className="next-session-drift-reason" data-next-live-reason-line>
+            {level.note}
+          </p>
+        ) : null}
+        {/* A monitor level is a model's assessment, so the line saying there is none would contradict it. */}
+        {!running && !level.analysis && !level.monitor && !readingStored(annotation) ? (
           <p className="next-session-drift-detail">No model assessment for this intent yet.</p>
         ) : null}
-        {level.range && !running ? <p className="next-session-drift-range">{level.range}</p> : null}
-        {!signals && reasons.first ? (
-          <p className="next-session-drift-reason">{reasons.first}</p>
+        {/* An analysis level's range and reason are said under What the analysis read, with the rest of
+            what it read; a live estimate's stay beside it. */}
+        {level.range && !running && !level.analysis ? (
+          <p className="next-session-drift-range">
+            <CitedText text={level.range} />
+          </p>
+        ) : null}
+        {!signals && reasons.first && !level.analysis ? (
+          <p className="next-session-drift-reason">
+            <CitedText text={reasons.first} />
+          </p>
         ) : null}
         {!running && signals ? <SignalsView signals={signals} /> : null}
         {reasons.blockers.length ? (

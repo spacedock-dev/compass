@@ -1,14 +1,61 @@
 import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { mountIntent } from './testing';
+import { json, mountIntent, type RecordedRequest } from './testing';
 import { board, mountSession, SESSION_HASH, text } from './panel.testing';
 
-/* The live monitor switch decides only whether the deterministic level is drawn. It is off by default,
-   remembered for this exact session in this browser, and it never sends anything. */
+/* The Live monitor switch drives a lease the server holds. Pressing it starts the lease and beats it while
+   the session is on screen and the tab is visible; leaving the route, switching session or hiding the tab
+   stops the beats, and a reload starts with the switch off. What the server says about the lease, not a
+   key in this browser, decides whether it is on. */
 
-const KEY = 'compass.next.live-estimate:claude:s1';
 const switchButton = () =>
   document.querySelector('[data-next-cockpit-action="live-monitor"]') as HTMLButtonElement;
+const note = () => text('[data-next-live-note]');
+const reason = () => text('[data-next-live-reason]');
+
+const lease = (over: Record<string, unknown> = {}) => ({
+  on: true,
+  started_at: 1000,
+  banner_due_at: 2200,
+  deadline: 2800,
+  confirm_by: null,
+  visible: true,
+  last_end: null,
+  level: null,
+  label: 'Live monitor · Haiku',
+  model: 'claude-haiku-5-5',
+  destination: 'api.anthropic.com',
+  disclosure: 'Sends to api.anthropic.com through your Claude Code, to Haiku.',
+  interval_sec: 60,
+  now: 1100,
+  ...over,
+});
+const receipt = (ok: boolean, state: Record<string, unknown>, why = '') =>
+  json({ ok, reason: why, state });
+
+/* A server that holds one lease: start and beats keep it on, and a test can end it. */
+function leaseServer() {
+  const server = {
+    calls: [] as Record<string, unknown>[],
+    next: null as ((request: RecordedRequest) => Response) | null,
+    handler: (request: RecordedRequest): Response => {
+      server.calls.push(request.body ?? {});
+      return server.next ? server.next(request) : receipt(true, lease());
+    },
+  };
+  return server;
+}
+const actions = (server: ReturnType<typeof leaseServer>) =>
+  server.calls.map((call) =>
+    call['action'] === 'beat' ? `beat:${String(call['visible'])}` : String(call['action']),
+  );
+
+const press = async (page: ReturnType<typeof mountSession>) => {
+  await act(async () => {
+    fireEvent.click(switchButton());
+  });
+  await page.settle();
+};
 
 describe('the live monitor switch', () => {
   it('is off by default, drawn beside the Drift heading, and drawing it sends nothing', async () => {
@@ -20,37 +67,168 @@ describe('the live monitor switch', () => {
     expect(page.posts()).toBe(0);
   });
 
-  it('writes 1 for this exact session when turned on, removes the key when turned off, and sends nothing', async () => {
+  it('names the model call, the cadence and the provider in its hint', async () => {
     const page = mountSession();
     await page.settle();
-    const storage = page.shell.runtime.storage;
-    expect(storage.liveEstimate.on({ harness: 'claude', sid: 's1' })).toBe(false);
-    await act(async () => {
-      fireEvent.click(switchButton());
-    });
-    expect(switchButton().getAttribute('aria-checked')).toBe('true');
-    expect(storage.liveEstimate.on({ harness: 'claude', sid: 's1' })).toBe(true);
-    expect(storage.liveEstimate.on({ harness: 'claude', sid: 'another' })).toBe(false);
-    await act(async () => {
-      fireEvent.click(switchButton());
-    });
-    expect(switchButton().getAttribute('aria-checked')).toBe('false');
-    expect(page.posts()).toBe(0);
-    expect(
-      page.state.requests.filter(
-        (r) =>
-          r.path !== '/api/data' &&
-          r.path !== '/api/project-context' &&
-          r.path !== '/api/session-record',
-      ),
-    ).toEqual([]);
-    expect(KEY).toContain('claude:s1');
+    const hint = text('[data-next-live-hint]');
+    expect(hint).toMatch(/Haiku/);
+    expect(hint).toMatch(/about once a minute/);
+    expect(hint).toMatch(/Claude Code/);
+    expect(hint).not.toMatch(/no model call/);
   });
 
-  it('is drawn only for the harness whose estimate the server publishes, and only with annotations on', async () => {
+  it('starts a lease when turned on, with this tab’s id, then beats it every twenty seconds', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+    expect(server.calls[0]).toEqual({
+      harness: 'claude',
+      sid: 's1',
+      action: 'start',
+      tab_id: 'tab-a',
+      observer_model: 1,
+      visible: true,
+    });
+    await page.advance(20_000);
+    await page.advance(20_000);
+    expect(actions(server)).toEqual(['start', 'beat:true', 'beat:true']);
+    expect(server.calls[1]).toMatchObject({ harness: 'claude', sid: 's1', tab_id: 'tab-a' });
+  });
+
+  it('stops beating while the tab is hidden, says so once, and resumes when it is shown', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    await act(async () => {
+      page.env.fireHidden();
+    });
+    await page.settle();
+    await page.advance(120_000);
+    expect(actions(server)).toEqual(['start', 'beat:false']);
+    await act(async () => {
+      page.env.fireVisible();
+    });
+    await page.settle();
+    await page.advance(20_000);
+    expect(actions(server)).toEqual(['start', 'beat:false', 'beat:true', 'beat:true']);
+  });
+
+  it('posts stop when the reader turns it off, and beats no more', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    await press(page);
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start', 'stop']);
+    expect(note()).toBe('');
+  });
+
+  it('posts stop when the reader leaves the route, and finds it off on coming back', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    await page.go('#n=intent');
+    expect(actions(server)).toEqual(['start', 'stop']);
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start', 'stop']);
+    await page.go(SESSION_HASH);
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start', 'stop']);
+  });
+
+  it('posts stop for the first session when the reader moves to another, and does not start the second', async () => {
+    const server = leaseServer();
+    const data = board();
+    const first = data.sessions[0] as Record<string, unknown>;
+    const page = mountIntent({
+      hash: SESSION_HASH,
+      data: { ...data, sessions: [first, { ...first, sid: 's2', title: 'Beta work' }] },
+      routes: { '/api/live-monitor': server.handler },
+    });
+    await page.settle();
+    await press(page as never);
+    await page.go('#n=session:alpha%2Fapp:claude:s2');
+    expect(actions(server)).toEqual(['start', 'stop']);
+    expect(server.calls[1]).toMatchObject({ sid: 's1' });
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start', 'stop']);
+  });
+
+  it('sends a stop beacon as the page goes away, which the server does not depend on', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    await act(async () => {
+      page.env.firePageHide();
+    });
+    expect(page.env.beacons).toHaveLength(1);
+    expect(page.env.beacons[0]?.url).toBe('/api/live-monitor');
+    expect(JSON.parse(page.env.beacons[0]?.body ?? '{}')).toEqual({
+      harness: 'claude',
+      sid: 's1',
+      action: 'stop',
+      tab_id: 'tab-a',
+    });
+  });
+
+  it('shows the switch off after a reload, until it is pressed', async () => {
+    const server = leaseServer();
+    const first = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await first.settle();
+    await press(first);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+    first.unmount();
+    const second = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await second.settle();
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    expect(second.posts()).toBe(0);
+  });
+
+  it('turns back off, with the reason, when the server refuses to start', async () => {
+    const server = leaseServer();
+    server.next = () => receipt(false, lease({ on: false }), 'paused');
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    expect(note()).toMatch(/did not start.*paused/);
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start']);
+  });
+
+  it('turns off, with a note, when a beat finds the lease gone', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    server.next = () =>
+      receipt(
+        false,
+        lease({ on: false, last_end: { reason: 'left', at: 1200 } }),
+        'not-monitoring',
+      );
+    await page.advance(20_000);
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    expect(note()).toMatch(/stopped checking in/);
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start', 'beat:true']);
+  });
+
+  it('is drawn only for Claude Code with annotations on, and sends nothing for any other', async () => {
+    const server = leaseServer();
     const codex = mountIntent({
       hash: '#n=session:alpha%2Fapp:codex:c1',
       data: board({ harness: 'codex', sid: 'c1' }),
+      routes: { '/api/live-monitor': server.handler },
     });
     await codex.settle();
     expect(document.querySelector('[data-next-cockpit-action="live-monitor"]')).toBeNull();
@@ -58,13 +236,186 @@ describe('the live monitor switch', () => {
     const off = mountIntent({ hash: SESSION_HASH, data: { ...board(), annotate: false } });
     await off.settle();
     expect(document.querySelector('[data-next-cockpit-action="live-monitor"]')).toBeNull();
+    expect(server.calls).toEqual([]);
+  });
+});
+
+describe('the switch when there is nothing live to monitor', () => {
+  it('is disabled, with its reason, for a session that has ended, and a press sends nothing', async () => {
+    const server = leaseServer();
+    const page = mountSession({
+      session: { ended_at: 500 },
+      routes: { '/api/live-monitor': server.handler },
+    });
+    await page.settle();
+    expect(switchButton().getAttribute('aria-disabled')).toBe('true');
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    expect(reason()).toBe('The session has ended');
+    await act(async () => {
+      fireEvent.click(switchButton());
+    });
+    await page.settle();
+    expect(server.calls).toEqual([]);
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
   });
 
-  it('keeps the choice for the tab where storage cannot be written', async () => {
-    const page = mountSession();
+  it('flips to off and disabled, with the session-ended note, when the session ends while it is viewed', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
     await page.settle();
-    const real = page.shell.runtime.storage.liveEstimate;
-    expect(real.set({ harness: 'claude', sid: 's1' }, true)).toBeTypeOf('boolean');
-    expect(real.on({ harness: 'claude', sid: 's1' })).toBe(true);
+    await press(page);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+    await page.poll(board({ ended_at: 1200 }));
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    expect(switchButton().getAttribute('aria-disabled')).toBe('true');
+    expect(note()).toMatch(/session ended/);
+    expect(reason()).toBe('The session has ended');
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start', 'stop']);
+  });
+
+  it('is disabled, with its reason, while model calls are paused', async () => {
+    const page = mountSession({ session: {} });
+    await page.settle();
+    page.unmount();
+    const paused = mountIntent({
+      hash: SESSION_HASH,
+      data: { ...board(), reading: { off: true, reason: 'model-calls-paused' } },
+    });
+    await paused.settle();
+    expect(switchButton().getAttribute('aria-disabled')).toBe('true');
+    expect(reason()).toBe('Model calls are paused');
+  });
+
+  it('is disabled, with its reason, when model calls are off for the run', async () => {
+    const off = mountIntent({
+      hash: SESSION_HASH,
+      data: { ...board(), reading: { off: false, reason: 'run-disabled' } },
+    });
+    await off.settle();
+    expect(switchButton().getAttribute('aria-disabled')).toBe('true');
+    expect(reason()).toBe('Model calls are off for this run');
+  });
+});
+
+describe('a tab that is hidden is never ticked for', () => {
+  it('starts as hidden when the tab is hidden before it is pressed, and beats no visible cadence', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    page.env.hidden = true;
+    await press(page);
+    expect(server.calls[0]).toMatchObject({ action: 'start', visible: false });
+    await page.advance(120_000);
+    // Told once that the tab is hidden, and no beat that says it is visible.
+    expect(actions(server)).toEqual(['start', 'beat:false']);
+    await act(async () => {
+      page.env.fireVisible();
+    });
+    await page.settle();
+    await page.advance(20_000);
+    expect(actions(server)).toEqual(['start', 'beat:false', 'beat:true', 'beat:true']);
+  });
+
+  it('beats visible at once when the tab is shown again, before the next interval', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    await act(async () => {
+      page.env.fireHidden();
+    });
+    await page.settle();
+    await page.advance(5_000);
+    await act(async () => {
+      page.env.fireVisible();
+    });
+    await page.settle();
+    // Nothing waited for the 20 s interval: the visible beat is already sent.
+    expect(actions(server)).toEqual(['start', 'beat:false', 'beat:true']);
+    await page.advance(20_000);
+    expect(actions(server)).toEqual(['start', 'beat:false', 'beat:true', 'beat:true']);
+  });
+
+  it('says it is hidden when the tab hides while its start is in flight', async () => {
+    const server = leaseServer();
+    const page = mountSession({
+      routes: {
+        '/api/live-monitor': (request) => {
+          if (request.body?.['action'] === 'start') {
+            server.calls.push(request.body);
+            return 'hold';
+          }
+          return server.handler(request);
+        },
+      },
+    });
+    await page.settle();
+    await act(async () => {
+      fireEvent.click(switchButton());
+    });
+    await act(async () => {
+      page.env.fireHidden();
+    });
+    await page.release('/api/live-monitor', receipt(true, lease()));
+    await page.settle();
+    await page.advance(120_000);
+    expect(actions(server)).toEqual(['start', 'beat:false']);
+  });
+
+  it('reads the tab’s state at each beat, not the state it began in', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    // The tab went hidden without the page being told: the beat still says what is so.
+    page.env.hidden = true;
+    await page.advance(20_000);
+    expect(actions(server)).toEqual(['start', 'beat:false']);
+  });
+});
+
+describe('leaving while the start is in flight', () => {
+  it('posts stop for a lease the server made after the reader had gone', async () => {
+    const server = leaseServer();
+    const page = mountSession({
+      routes: {
+        '/api/live-monitor': (request) => {
+          server.calls.push(request.body ?? {});
+          return request.body?.['action'] === 'start' ? 'hold' : receipt(true, lease());
+        },
+      },
+    });
+    await page.settle();
+    await act(async () => {
+      fireEvent.click(switchButton());
+    });
+    await page.go('#n=intent');
+    await page.release('/api/live-monitor', receipt(true, lease()));
+    await page.settle();
+    expect(actions(server)).toEqual(['start', 'stop']);
+    await page.advance(60_000);
+    expect(actions(server)).toEqual(['start', 'stop']);
+  });
+});
+
+describe('an old lease does not carry into a new one', () => {
+  it('forgets the old question and level on leaving and on pressing again', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    server.next = () =>
+      receipt(true, lease({ banner_due_at: 1100, deadline: 1700, confirm_by: 1700, now: 1120 }));
+    await page.advance(20_000);
+    expect(document.querySelector('[data-next-live-question]')).not.toBeNull();
+    await page.go('#n=intent');
+    await page.go(SESSION_HASH);
+    // The server has a new lease with no question; the old one's deadline must not end it.
+    server.next = () => receipt(true, lease({ now: 1000, confirm_by: null }));
+    await press(page);
+    await page.advance(800_000);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+    expect(note()).toBe('');
   });
 });

@@ -13,12 +13,13 @@ import {
 import type { Held } from '../intent/held';
 import {
   conflictCandidates,
-  entryNumbers,
+  entryLabel,
+  entryNumbering,
   workSource,
   type WorkEntry,
   type WorkSource,
 } from '../intent/work';
-import type { Row } from '../observed';
+import { endedAt, type Row } from '../observed';
 import type { RecordEntry } from '../store/board';
 import { harnessLabels } from '../sessions/rows';
 import { analysisLevel, liveEstimate, type Contexts, type DriftLevel } from './level';
@@ -50,6 +51,10 @@ export interface DriftModel {
   /** The full set, never the displayed window: a citation resolves against what the payload holds. */
   readonly entries: readonly WorkEntry[];
   readonly numbers: ReadonlyMap<string, string>;
+  /** Every number the page can say, `numbers` and the fixed numbers of entries before the intent's window. */
+  readonly labels: ReadonlyMap<string, string>;
+  /** Entries from before the intent's window opened: numbered in `labels`, never read by Analyze. */
+  readonly outside: ReadonlySet<string>;
   readonly byId: ReadonlyMap<string, WorkEntry>;
   readonly generated: number;
   readonly limit: string;
@@ -69,8 +74,15 @@ export interface DriftModel {
   readonly analysis: DriftLevel | null;
   /** The level the header pill shows, which never reads "Not enough recorded yet" and never shows over a draft. */
   readonly pill: DriftLevel | null;
+  /** The pill's level is provisional: the session is running, or the reading it shows read a running turn. */
+  readonly pillSoFar: boolean;
   /** The header's "N entries": nothing where the record was not read, because 0 would be a default. */
   readonly entryCount: number | null;
+  /** The count is a floor: only the newest pages of the record are held, and older ones remain to read. The
+      header, the summary's size and the window count all read it with `entryCount`, so they say one thing. */
+  readonly entriesPartial: boolean;
+  /** The entries since the intent's window opened, where one has and entries before it are held; else null. */
+  readonly windowCount: number | null;
 }
 
 function humanLabel(value: string): string {
@@ -109,9 +121,18 @@ export interface ModelInput {
   readonly held: Held;
   /** The live monitor switch is on for this session. */
   readonly liveOn: boolean;
+  /** The level the Live monitor's last Haiku check earned, which replaces the estimate while it stands. */
+  readonly monitor?: DriftLevel | null;
 }
 
-export function buildModel(input: ModelInput): DriftModel {
+/* What the stored reading stands on, read once for the session page and for the Sessions row's chip, so the
+   chip cannot name a level the header does not show. */
+type ReadingInput = Pick<
+  ModelInput,
+  'record' | 'session' | 'payload' | 'projectKey' | 'contexts' | 'held'
+>;
+
+function readingParts(input: ReadingInput) {
   const { session, payload, contexts, held } = input;
   const annotate = annotateOn(payload);
   /* With the store off the page draws no words of the reader's and no stored reading, whatever the row carries. */
@@ -119,7 +140,22 @@ export function buildModel(input: ModelInput): DriftModel {
   const draftInput: DraftInput = { held, contexts, payload, session, annotation };
   const source = workSource(contexts, input.projectKey, session, input.record);
   const entries = source.all || source.entries;
-  const numbers = entryNumbers(session, source, payload);
+  const numbering = entryNumbering(session, source, payload);
+  const numbers = new Map(
+    [...numbering.numbers].map(([entry, n]) => [String(entry.id || ''), n] as const),
+  );
+  /* An entry before the window keeps its fixed number on a chip, muted: saving an intent once turned every chip
+     before it into the bare word "entry" and the header's 62 entries into 2, as though the record were erased.
+     Counted numbers start at the window, so an earlier entry has none to keep. */
+  const labels = new Map(numbers);
+  const outside = new Set<string>();
+  for (const entry of numbering.earlier) {
+    const id = String(entry.id || '');
+    outside.add(id);
+    const label = numbering.ordinals ? entryLabel(entry) : null;
+    if (label !== null) labels.set(id, label);
+  }
+  const read = source.state === 'read' || source.state === 'empty';
   const harness = String(session['harness'] || '');
   const draft = intentDraft(draftInput);
   /* Any stored value that is there: a malformed one is the shape contract's to refuse, not the page's to
@@ -137,22 +173,11 @@ export function buildModel(input: ModelInput): DriftModel {
         entries,
         limit,
         unsettled,
-        (line) => lineSource(line, session, source, payload),
+        (line) => lineSource(line, source),
         lineRequestFloors(session, annotation, source),
       )
     : null;
   const generated = nextNumber(payload['generated']) ?? 0;
-  const estimate = liveEstimate({
-    on: input.liveOn,
-    harness,
-    contexts,
-    projectKey: input.projectKey,
-    session,
-    annotation,
-    work: source,
-    payload,
-    generated,
-  });
   const analysis =
     annotate && raw && shape
       ? analysisLevel({
@@ -166,12 +191,95 @@ export function buildModel(input: ModelInput): DriftModel {
           generated,
         })
       : null;
-  /* The analysis level is unaffected by the switch, so its pill shows whichever way the switch is set. */
-  const shown: DriftLevel | { readonly save: true } | null =
-    analysis && analysis.level !== 'not_enough' ? analysis : (estimate ?? analysis);
   const drafted = intentDrafted(draftInput);
+  return {
+    annotate,
+    annotation,
+    draftInput,
+    source,
+    entries,
+    numbering,
+    numbers,
+    labels,
+    outside,
+    read,
+    harness,
+    draft,
+    raw,
+    limit,
+    unsettled,
+    shape,
+    generated,
+    analysis,
+    drafted,
+  };
+}
+
+/* The stored reading's level as the header pill shows it: never "Not enough recorded yet" and never over a
+   drafted intent. */
+function shownAnalysis(analysis: DriftLevel | null, drafted: boolean): DriftLevel | null {
+  return analysis &&
+    analysis.level !== 'not_enough' &&
+    !drafted &&
+    LEVEL_SCALE.includes(analysis.level)
+    ? analysis
+    : null;
+}
+
+/** The analysis level the session page's header pill would show for this session, or null. */
+export function headerAnalysis(input: ReadingInput): DriftLevel | null {
+  const parts = readingParts(input);
+  return shownAnalysis(parts.analysis, parts.drafted);
+}
+
+export function buildModel(input: ModelInput): DriftModel {
+  const { session, payload, contexts } = input;
+  const {
+    annotate,
+    annotation,
+    draftInput,
+    source,
+    entries,
+    numbering,
+    numbers,
+    labels,
+    outside,
+    read,
+    harness,
+    draft,
+    raw,
+    limit,
+    unsettled,
+    shape,
+    generated,
+    analysis,
+    drafted,
+  } = readingParts(input);
+  const estimate = liveEstimate({
+    on: input.liveOn,
+    monitor: input.monitor ?? null,
+    harness,
+    contexts,
+    projectKey: input.projectKey,
+    session,
+    annotation,
+    work: source,
+    payload,
+    generated,
+  });
+  /* The analysis level is unaffected by the switch, so its pill shows whichever way the switch is set. A
+     reading that stands owns the slot, with a level or with none: the live estimate reads checks and paths
+     and never what the intent says, so it does not draw Medium beside a reading that found no departure. */
+  const shown: DriftLevel | { readonly save: true } | null = analysis ?? estimate;
   const pill =
     shown && 'level' in shown && !drafted && LEVEL_SCALE.includes(shown.level) ? shown : null;
+  /* "So far" while the turn is open: a running session's level can still move, and a reading made then
+     covers only the work up to it, whatever the session has done since. A state the board does not publish
+     claims neither. */
+  const state = session['state'];
+  const running = typeof state === 'string' && state !== 'idle' && endedAt(session) === null;
+  const pillSoFar =
+    Boolean(pill) && (running || (pill?.analysis === true && shape?.scope === 'mid-flight'));
   return {
     session,
     payload,
@@ -189,6 +297,8 @@ export function buildModel(input: ModelInput): DriftModel {
     source,
     entries,
     numbers,
+    labels,
+    outside,
     byId: new Map(entries.map((entry) => [String(entry.id || ''), entry])),
     generated,
     limit,
@@ -202,6 +312,11 @@ export function buildModel(input: ModelInput): DriftModel {
     estimate,
     analysis,
     pill,
-    entryCount: source.state === 'read' || source.state === 'empty' ? numbers.size : null,
+    pillSoFar,
+    entryCount: read ? numbers.size + numbering.earlier.length : null,
+    /* From the record alone: whether Show more still helps is a question about the intent window, but the
+       count is a floor for as long as any older page is unread, window or none. */
+    entriesPartial: read && input.record?.status === 'loaded' && !input.record.reachedStart,
+    windowCount: read && numbering.earlier.length ? numbers.size : null,
   };
 }

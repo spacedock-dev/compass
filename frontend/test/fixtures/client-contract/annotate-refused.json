@@ -21,14 +21,16 @@
       "ok": true,
       "outcome": "refused",
       "persisted": false,
+      "removed": null,
       "revision": null,
       "revision_count": 0,
       "saved_revision": null,
+      "summary": "untouched",
       "withdrew": true
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "139",
+      "Content-Length": "176",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

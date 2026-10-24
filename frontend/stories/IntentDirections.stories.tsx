@@ -8,6 +8,8 @@ import { fakeRouterEnvironment } from '../src/router/testing';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 
+const AFTER = 'Then run the targeted tests, and push.';
+
 function DirectionsExample({
   reason,
   count = 2,
@@ -29,7 +31,6 @@ function DirectionsExample({
       source_session: { harness: 'claude', sid: 's1' },
       by: 'person:reader',
     }));
-    let directionBatches = 0;
     return createShell({
       env: createFakeEnvironment({ clock }),
       router: createRouter(history.env),
@@ -65,26 +66,21 @@ function DirectionsExample({
         if (url.startsWith('/api/session-record'))
           return json({ state: 'ok', entries: [], next: null, reached_start: true });
         if (url === '/api/direction') {
-          const request = JSON.parse(String(init?.body)) as { fact_ids?: string[] };
-          if (
-            !partial &&
-            request.fact_ids &&
-            (++directionBatches !== 1 || request.fact_ids.length !== count)
-          )
-            return json({ results: [] });
-          const answer = reason
-            ? { ok: false, reason }
-            : {
-                ok: true,
-                text: 'Build synthetic outcome 2.',
-                clipped: false,
-                goal_choice: {
-                  fact_id: 'f2',
-                  at: 800,
-                  text: 'Build synthetic outcome 2.',
-                  cut: false,
-                },
-              };
+          const request = JSON.parse(String(init?.body)) as {
+            fact_ids?: string[];
+            fact_id?: string;
+          };
+          const single = (id: string) => {
+            const n = Number(id.slice(1));
+            const text = `Build synthetic outcome ${String(n)}. ${AFTER}`;
+            return {
+              ok: true,
+              text,
+              clipped: false,
+              goal_choice: { fact_id: id, at: 600 + n * 100, text, cut: false },
+            };
+          };
+          const answer = reason ? { ok: false, reason } : single(request.fact_id ?? 'f2');
           return json(
             request.fact_ids
               ? {
@@ -93,12 +89,21 @@ function DirectionsExample({
                       ? { ok: false, reason: 'out_of_reach' }
                       : reason
                         ? answer
-                        : { ...answer, text: `Build synthetic outcome ${id.slice(1)}.` },
+                        : single(id),
                   ),
                 }
               : answer,
           );
         }
+        if (url === '/api/annotate')
+          return json({
+            ok: true,
+            outcome: 'stored',
+            persisted: true,
+            revision: 2,
+            saved_revision: 2,
+            revision_count: 1,
+          });
         return json({});
       },
     });
@@ -150,7 +155,7 @@ export const OutsideSearch: Story = {
   args: { reason: 'out_of_reach' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('button', { name: 'Keep my intent' });
+    await canvas.findByRole('button', { name: 'Leave it' });
     const prefix = 'That direction is beyond the part of the record Compass could search.';
     await failedPress(canvasElement, 'direction-goal', `${prefix} Your goal has not changed.`);
     await failedPress(canvasElement, 'direction-add', `${prefix} No outcome line was added.`);
@@ -159,6 +164,8 @@ export const OutsideSearch: Story = {
       'direction-keep',
       `${prefix} Nothing was settled and no analysis was started.`,
     );
+    // The row's own control is in Full activity, which starts collapsed.
+    await userEvent.click(canvas.getByRole('button', { name: 'Full activity' }));
     const row = canvasElement.querySelector('[data-next-entry-id="f2"]') as HTMLElement;
     await failedPress(row, 'direction-add', `${prefix} No outcome line was added.`);
     await expect(canvas.getByRole('textbox', { name: 'Goal' })).toHaveValue('Ship synthetic work');
@@ -170,7 +177,7 @@ export const OutsideSearch: Story = {
 export const SessionWriting: Story = {
   args: { reason: 'changed' },
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('button', { name: 'Keep my intent' });
+    await within(canvasElement).findByRole('button', { name: 'Leave it' });
     await failedPress(
       canvasElement,
       'direction-keep',
@@ -182,7 +189,7 @@ export const SessionWriting: Story = {
 export const MissingRecord: Story = {
   args: { reason: 'not_found' },
   play: async ({ canvasElement }) => {
-    await within(canvasElement).findByRole('button', { name: 'Keep my intent' });
+    await within(canvasElement).findByRole('button', { name: 'Leave it' });
     await failedPress(
       canvasElement,
       'direction-keep',
@@ -195,23 +202,100 @@ export const TwentyTwoDirections: Story = {
   args: { count: 22 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Keep my intent' }));
+    // Every direction is quoted whole before any press, so Leave it settles words already on screen.
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(22),
     );
-    await expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(
-      'Nothing was settled yet. Each direction Keep settles is now shown whole. Read it, then press again.',
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll('.next-cockpit-direction-whole-text')[21],
+      ).toHaveTextContent('Build synthetic outcome 22. Then run the targeted tests, and push.'),
     );
-    await expect(
-      canvasElement.querySelectorAll('.next-cockpit-direction-whole-text')[21],
-    ).toHaveTextContent('Build synthetic outcome 22.');
-    await expect(document.activeElement).toBe(
-      canvasElement.querySelector('[data-next-cockpit-direction-whole]'),
-    );
-    await expect(canvas.getByRole('button', { name: 'Keep my intent' })).not.toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'Leave it' })).not.toHaveAttribute(
       'aria-busy',
       'true',
     );
+    await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(
+        'Kept your intent and settled all 22 directions. No analysis was started.',
+      ),
+    );
+  },
+};
+
+/* A pending direction is quoted under its time before any press, beside the three choices and Analyze drift,
+   and each choice acts on its first press. */
+export const QuotedBeforeAnyPress: Story = {
+  args: { count: 1 },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText(/^Your \d\d:\d\d message adds:$/);
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-cockpit-direction-whole]')).toHaveTextContent(
+        `Build synthetic outcome 1. ${AFTER}`,
+      ),
+    );
+    for (const name of ['Add as a line', 'Make it the goal', 'Leave it', 'Analyze drift'])
+      await expect(canvas.getByRole('button', { name })).toBeVisible();
+    // One press settles it: no second press to "read it first".
+    await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(
+        'Kept your intent and settled the direction. No analysis was started.',
+      ),
+    );
+  },
+};
+
+/* Analyze drift stays offered while a later direction waits, beside the choices and not instead of them. */
+export const AnalyzeStaysAvailable: Story = {
+  args: { count: 2 },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText('2 later directions:');
+    await expect(await canvas.findByRole('button', { name: 'Analyze drift' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Leave it' })).toBeVisible();
+  },
+};
+
+/* Add as a line opens the rule, not the whole message, on the first press, with its hint, and the card's one
+   Save intent saves it: the pending line draws no Save of its own. */
+export const AddAsALineOneSave: Story = {
+  args: { count: 2 },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Add as a line' }));
+    const line = await canvas.findByDisplayValue('Build synthetic outcome 2.');
+    await expect(line.tagName).toBe('TEXTAREA');
+    // A pending line opens the Expected outcome accordion, which eases open.
+    await waitFor(() => expect(canvas.getByText('Write the rule, not the moment.')).toBeVisible());
+    await expect(canvas.getAllByRole('button', { name: /^Save\b/ })).toHaveLength(1);
+    await expect(canvas.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await userEvent.click(canvas.getByRole('button', { name: 'Save intent' }));
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-cockpit-direction-line]')).toBeNull(),
+    );
+  },
+};
+
+/* Make it the goal fills the goal with the rule on the first press, with the hint, and the same single Save. */
+export const MakeItTheGoalOneSave: Story = {
+  args: { count: 1 },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Make it the goal' }));
+    await waitFor(() =>
+      expect(canvas.getByRole('textbox', { name: 'Goal' })).toHaveValue(
+        'Build synthetic outcome 1.',
+      ),
+    );
+    // A pending line opens the Expected outcome accordion, which eases open.
+    await waitFor(() => expect(canvas.getByText('Write the rule, not the moment.')).toBeVisible());
+    await expect(canvas.getAllByRole('button', { name: /^Save\b/ })).toHaveLength(1);
   },
 };
 
@@ -219,7 +303,7 @@ export const PartialBatch: Story = {
   args: { partial: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('button', { name: 'Keep my intent' });
+    await canvas.findByRole('button', { name: 'Leave it' });
     await failedPress(
       canvasElement,
       'direction-keep',
@@ -231,7 +315,7 @@ export const PartialBatch: Story = {
     await expect(
       canvasElement.querySelector('.next-cockpit-direction-whole-text'),
     ).toHaveTextContent('Build synthetic outcome 1.');
-    await userEvent.click(canvas.getByRole('button', { name: 'Keep my intent' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(
         'Nothing was settled and no analysis was started.',
@@ -257,7 +341,7 @@ export const PhoneDirectionAndPendingLine: Story = {
         await expect(window.innerHeight).toBe(667);
       }
       const canvas = within(canvasElement);
-      await userEvent.click(await canvas.findByRole('button', { name: 'Add it to my intent' }));
+      await userEvent.click(await canvas.findByRole('button', { name: 'Add as a line' }));
       const line = await canvas.findByDisplayValue('Build synthetic outcome 2.');
       await expect(line.tagName).toBe('TEXTAREA');
       await expect(document.activeElement).toBe(line);
@@ -267,7 +351,7 @@ export const PhoneDirectionAndPendingLine: Story = {
       await expect(line).toHaveValue('My reviewed synthetic outcome');
       await expect(line.getBoundingClientRect().width).toBeLessThanOrEqual(window.innerWidth);
       await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
-      await expect(canvas.getByRole('button', { name: 'Save' })).toBeVisible();
+      await expect(canvas.getByRole('button', { name: 'Save intent' })).toBeVisible();
       await expect(canvas.getByRole('button', { name: 'Remove' })).toBeVisible();
     } finally {
       if (browserPage) await browserPage.viewport(before.width, before.height);

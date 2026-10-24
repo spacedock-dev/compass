@@ -71,17 +71,21 @@ them and ignores the other flags, though their values must still parse.
 
 ### Model use and quota
 
-Reader-requested `Analyze drift` is available without `--observer-model` when the session is eligible
-and the reader grants the disclosed permission. Optional goal summaries and unattended checks are
-separate opt-ins. A model ID selects a reader, not permission to send content or proof of accuracy.
+Analyze drift runs on your press, Codex goal summaries on Summarize this session in Console, and a
+Claude Code session summary when you open a finished session or press Summarize or Update summary.
+Each tells you once what is sent and where, again if the destination or content tier changes. Pause model calls stops every model call until Resume model calls;
+`--no-observer-model` refuses them at startup. Turn off summaries affects session summaries only,
+is disabled while paused, and keeps its saved answer through pause and resume. Unattended checks remain a separate opt-in. A model ID selects a
+reader, not proof of accuracy.
 
 | Option | Behavior and default |
 |---|---|
-| `--observer-model` | Offer Codex model goal summaries in Console. Off by default; requires its own disclosure consent in the browser. Does not enable unattended drift checks. |
+| `--observer-model` | Accepted and does nothing in this release; will be removed in a later release. Goal summaries need no flag and run on Summarize this session in Console. |
 | `--claude-reading-model MODEL` | Explicit Claude model ID for Claude readings. Default: `claude-sonnet-5-5` (Sonnet 5.5). The admission floor is Sonnet 5: explicit Sonnet or Opus generation 5 or later IDs are accepted, such as `claude-sonnet-5`. Floating aliases, Haiku and older generations are rejected. An admitted ID must still be available through your Claude Code installation. |
-| `--unasked-readings` | Enable bounded Codex checks of annotated sessions without a fresh press; only departures are raised. Off by default. Spends model capacity and requires remembered Codex permission covering the current destination. Quiet hours can suppress checks. |
-| `--allow-tool-output` | Grant tool output at launch, for the destination Compass names: a Claude Code reading may then carry its checks (command, result and the last 180 characters of output) and the paths it wrote, without a second card. It grants nothing else: the first press still asks for the words, and the disclosure says tool output was allowed when the dashboard started. A destination Compass cannot name gets no grant, and if the permission store cannot take the grant the start prints a line saying so and the card asks as usual. The grant is stored like an Allow: `Turn off readings` and `--forget` clear it, and starting again without the flag leaves it. `COMPASS_ALLOW_TOOL_OUTPUT=1` does the same. Overridden by `--no-observer-model`. |
-| `--no-observer-model`, `--no-harness-usage` | Equivalent names for refusing every model call for this run, including goal summaries, reader-requested analyses and unasked checks. Overrides both opt-ins above. |
+| `--claude-monitor-model MODEL` | Explicit Claude Haiku model ID for the Live monitor's once-a-minute check. Default: `claude-haiku-5-5` (Haiku 5.5). Only an explicit Haiku generation 4 or later ID is accepted; floating aliases such as `haiku`, and every Sonnet or Opus ID, are rejected, and this does not change `--claude-reading-model`. An accepted ID must still be available through your Claude Code installation. The setting takes effect once Live monitor runs the check. |
+| `--unasked-readings` | Enable bounded checks of sessions with a typed goal without a fresh press; only departures are raised. Off by default. Claude Code reads Claude Code sessions; Codex reads Codex sessions. On other harnesses an unasked check prefers Claude Code, where Analyze drift prefers Codex; if the preferred provider is unavailable or unqualified on this machine, the other serves. Codex needs the Drift card's "Allow Codex to run unasked checks" toggle for the current destination; Attention points to it when sessions with a typed goal are waiting. Claude Code needs no separate grant; the Drift card names it and lists what each check sends. Analyze and Resume never grant it. Revoking it, Pause model calls and `--no-observer-model` stop checks; Pause followed by Resume clears the grant. Quiet hours hold the notification, not the check. The caps remain three per session, twelve per rolling day, with a fifteen-minute floor. A call that starts and fails counts toward both caps. No effect under `--no-annotations`. |
+| `--allow-tool-output` | Accepted and does nothing in this release; will be removed in a later release. Claude Code readings include tool output by default where the destination is named, and disclose it in the notice. |
+| `--no-observer-model`, `--no-harness-usage` | Equivalent names for refusing every model call for this run, including goal summaries, reader-requested analyses and unasked checks. Includes session summaries. Overrides the unasked opt-in. |
 | `--no-usage` | Refuse vendor quota network fetches and quota pushed into Compass for this run, regardless of the stored dashboard setting. Quota recorded in harness-owned stores, such as Codex or Copilot, still appears. Does not disable model calls or reach nudges. |
 
 ### History and annotations
@@ -95,9 +99,9 @@ Dashboards using the same Compass home share persistent stores.
 | `--history-days DAYS` | Retain observations for this many days. Default: `14`. Must be finite and greater than zero; fractions are accepted. Narrowing the window evicts older records; widening it cannot recover them. |
 | `--history-max-bytes BYTES` | History size and read cap. Default: `1048576` (1 MiB). Must be a positive integer. A history file larger than this cap is discarded unread rather than parsed. |
 | `--no-history` | Do not read or write observation history for this run. Existing history is left on disk. Does not disable the separate annotations or session-end store. |
-| `--no-annotations` | Do not read or write saved goals, expected outcome lines or readings for this run. The page offers no editable intent fields; `Analyze drift` remains visible but disabled with a reason. Existing annotations are left on disk. |
+| `--no-annotations` | Do not read or write saved goals, expected outcome lines or readings for this run. The page offers no editable intent fields; `Analyze drift` remains visible but disabled with a reason. Existing annotations are left on disk. Does not govern the separate session-summary store. |
 | `--no-dismiss` | Do not read or write the handled-session store. Previously handled sessions return to the board and its dismiss control is unavailable for this run. |
-| `--forget` | A one-shot cleanup: delete observation history, recorded session ends and copied-correction digests; sweep annotation discard records; clear reading permission. Preserve the words you typed and unexpired model-spend timestamps. Refused while a dashboard answers on the selected port: stop it first. This is irreversible cleanup, not a feature-off switch. |
+| `--forget` | A one-shot cleanup: delete observation history, recorded session ends, stored session summaries and copied-correction digests; sweep annotation discard records; store model calls as paused, which stops readings, goal summaries and session summaries until you use Resume model calls in the page, and store session summaries as off, which stays after you resume until you turn summaries on again. Preserve the words you typed and unexpired model-spend timestamps. Refused while a dashboard answers on the selected port: stop it first. The deletions are irreversible. |
 
 `--forget` checks only the named port. Stop every dashboard sharing that Compass home before
 cleanup; an instance on another port can otherwise retain or recreate observations. It does not
@@ -156,7 +160,7 @@ owned by the installed harness, as explained in [Security](SECURITY.md#observer-
 | Variable | Effect |
 |---|---|
 | `COMPASS_HOME` | Move Compass's own state, logs and persistent stores. Default: `.compass` under your home directory. Does not relocate harness transcripts. Use the same value for start, stop, status and forget. |
-| `COMPASS_ALLOW_TOOL_OUTPUT` | Set to exactly `1` to start as `--allow-tool-output` does; any other value is ignored. `--no-observer-model` overrides it. |
+| `COMPASS_ALLOW_TOOL_OUTPUT` | `1` is accepted and does nothing in this release; will be removed in a later release. |
 | `COMPASS_REACH_URL` | Reach endpoint when `--reach-url` is absent; takes precedence over the `reach_url` file in the Compass home. `--no-reach` overrides all sources. |
 | `COMPASS_QUIET_HOURS` | Quiet-hours window when `--quiet-hours` is absent; takes precedence over the `quiet_hours` file in the Compass home. `--no-quiet-hours` overrides all sources. |
 | `CLAUDE_CONFIG_DIR` | Claude configuration root; Compass searches `projects`, `tasks` and `teams` below it. |
@@ -184,10 +188,11 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-history.json` | Bounded observation history. |
 | `compass-ends.json` | Recorded session ends from the event coordinator. |
 | `compass-annotations.json` | Saved reader goals, outcome lines, readings and discard records. |
+| `compass-summaries.json` | Stored session summaries and word-free source comparison metadata. Independent of annotations; Delete summary removes one session and `--forget` deletes the store. |
 | `compass-dismissals.json` | Sessions marked handled. |
 | `compass-tripwires.json` | Saved workflow stage conditions. |
 | `compass-copied-corrections.json` | Digests recording copied corrections, without their text. |
-| `compass-reading-permission.sqlite3` | Reading permissions and model-spend admission timestamps. |
+| `compass-reading-permission.sqlite3` | Reading permissions, the model-call pause, the session-summary switch, the one-time notices shown, and the spend admission timestamps for readings and for session summaries, kept apart. |
 | `reach_url`, `quiet_hours` | Optional plain-text defaults for reach and quiet hours. |
 
 See [local-store security](SECURITY.md#scope) for retention, permissions and other persistent data.
@@ -198,8 +203,9 @@ Keep logs and state private when reporting a problem; they can contain local pat
 The same launcher supports macOS, Linux and Windows. Native notifications and terminal focus
 depend on the platform and harness; see [Compatibility](COMPATIBILITY.md).
 
-On Windows, `--daemon` respawns the server and deliberately omits the model opt-ins
-`--observer-model` and `--unasked-readings`. The experimental interaction-origin pair is also not
+On Windows, `--daemon` respawns the server and deliberately omits the unattended-check opt-in
+`--unasked-readings`. The compatibility flags `--observer-model` and `--allow-tool-output`
+do nothing and need no forwarding. The experimental interaction-origin pair is also not
 forwarded. Use foreground mode on Windows when you need those options. Feature-off switches,
 port, host, display/history bounds, Claude model choice, reach URL and quiet
 hours are forwarded.
@@ -208,7 +214,7 @@ hours are forwarded.
 
 | Code | Meaning |
 |---|---|
-| `0` | Help, the version or diagnosis completed; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget completed its reading-permission cleanup. `--stop` can succeed when no instance is running. |
+| `0` | Help, the version or diagnosis completed; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
 | `1` | Status found no running Compass, or startup/stop/forget failed or was refused. A foreign process is not stopped. |
 | `2` | Invalid command-line syntax or rejected values/combinations, reported by the argument parser. |
 

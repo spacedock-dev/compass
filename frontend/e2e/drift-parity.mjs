@@ -37,7 +37,7 @@ import {
   ROUTE,
   SAVED,
   SID,
-  UNCONSENTED,
+  FIRST_PRESS,
   check,
   fact,
   freshScript,
@@ -113,6 +113,9 @@ const summarizeCard = () => {
     trigger.after(panels[0].cloneNode(true));
     joined.add(trigger);
   }
+  /* Predates the one-column page (2026-10-19): the session More is retired and these parts now sit in the
+     Drift card's head and the Intent card, so this lookup finds nothing until the proof is brought forward.
+     The proof is on demand only; docs/design-reading-a-session.md#where-everything-in-more-went is the map. */
   const more = document.querySelector('[data-next-session-more]');
   const copy = (selector) => more?.querySelector(selector)?.cloneNode(true);
   const header = card.querySelector('.next-session-drift-head');
@@ -176,10 +179,6 @@ const summarizeCard = () => {
       : null;
     card.insertBefore(node, anchor ?? null);
   };
-  for (const selector of ['[data-next-delegated-work]', '[data-next-delegated-check]']) {
-    const node = copy(selector);
-    if (node) beforeDepartures(node);
-  }
   for (const selector of ['.next-cockpit-conflict', '.next-session-drift-caveats']) {
     const node = copy(selector);
     if (node) beforeDepartures(node);
@@ -511,7 +510,7 @@ try {
     'an Allow is owed: Analyze offers the receiver one click away and sends nothing',
     async () => {
       const state = await compare('allow owed', (g) =>
-        claude(g, { payload: { reading: UNCONSENTED } }),
+        claude(g, { payload: { reading: FIRST_PRESS } }),
       );
       assert.match(state.text, /What is sent to Claude Code/);
     },
@@ -716,8 +715,8 @@ try {
         .locator('[data-next-finding]')
         .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label')));
       assert.deepEqual(names, [
-        'Show cited entries in Session activity for Goal: Ship the queue worker',
-        'Show cited entries in Session activity for Expected outcome line 1: Tests pass',
+        'Show #1 in Full activity for Goal: Ship the queue worker',
+        'Show #2 in Full activity for Expected outcome line 1: Tests pass',
       ]);
       assert.equal(new Set(names).size, names.length);
       for (const name of names)
@@ -867,7 +866,7 @@ try {
         'question, an Allow owed',
         (g) =>
           claude(g, {
-            payload: { reading: UNCONSENTED },
+            payload: { reading: FIRST_PRESS },
             facts: [fact('d1', g - 100, { summary: 'Keep the flag off by default.' })],
           }),
         { skip: REWORKED },
@@ -907,13 +906,16 @@ try {
     'pressing Analyze where an Allow is owed asks for it, naming the receiver, and sends nothing',
     async () => {
       const g = await clockOf();
-      await setState(react, () => claude(g, { payload: { reading: UNCONSENTED } }));
+      await setState(react, () => claude(g, { payload: { reading: FIRST_PRESS } }));
       await load(react);
       await react.page.locator('[data-next-cockpit-action="reading-ask"]').click();
       const old = golden.observe('consent: the step');
       const mine = norm(await read(react));
       assert.deepEqual(mine, old, 'the consent step differs from the recorded step');
       assert.match(old.text, /Send this session to Claude Code for analysis\?/);
+      /* Predates the one-column page (2026-10-19): the Allow and analyze step is retired and a press writes
+         no Allow, so this fails when the proof is run on demand until it is brought forward to the notice a
+         first Analyze drift shows. */
       assert.deepEqual(
         old.buttons.filter(([label]) => ['Allow and analyze', 'Not now'].includes(label)).length,
         2,
@@ -1303,7 +1305,7 @@ try {
     async () => {
       await apply(react, (g) =>
         claude(g, {
-          payload: { reading: UNCONSENTED },
+          payload: { reading: FIRST_PRESS },
           routes: {
             '/api/reading': () => ({
               status: 409,
@@ -1331,6 +1333,9 @@ try {
       await react.page.keyboard.press('Enter');
       await sleep(patience(200));
       assert.equal(postsTo(react.script, '/api/reading').length, 0);
+      /* Predates the one-column page (2026-10-19): the reading-allow action is retired and a press writes no
+         Allow, so this fails when the proof is run on demand until it is brought forward to the notice a
+         first Analyze drift shows. */
       await react.page.locator('[data-next-cockpit-action="reading-allow"]').click();
       await sleep(patience(400));
       const sent = postsTo(react.script, '/api/reading');
@@ -1600,7 +1605,7 @@ try {
     async () => {
       await apply(react, (g) =>
         claude(g, {
-          payload: { reading: UNCONSENTED },
+          payload: { reading: FIRST_PRESS },
           routes: { '/api/reading': () => ({ body: { ok: true, produced: false } }) },
         }),
       );
@@ -1624,6 +1629,8 @@ try {
       await react.page.waitForSelector('.next-cockpit-reading-consent');
       assert.equal(postsTo(react.script, '/api/reading').length, 0);
       // The question holds focus, and Tab reaches Allow and then Not now, in that order.
+      /* Predates the one-column page (2026-10-19): the reading-allow action is retired, so this fails when
+         the proof is run on demand until it is brought forward to the Drift card's own focus order. */
       await react.page.keyboard.press('Tab');
       assert.equal(
         await react.page.evaluate(() =>
@@ -1682,7 +1689,7 @@ try {
                 payload: { reading_jobs: { [`${HARNESS}:${SID}`]: JOB(g) } },
               }),
           ],
-          ['the consent step', (g) => claude(g, { payload: { reading: UNCONSENTED } })],
+          ['the consent step', (g) => claude(g, { payload: { reading: FIRST_PRESS } })],
           [
             'a stale result and a gap',
             (g) => stored(g, { session: { annotation_revision: 4 }, contextError: true }),

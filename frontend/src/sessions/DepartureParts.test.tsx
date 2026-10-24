@@ -6,15 +6,23 @@ import { testControls } from '../controls/testControls';
 import { genPayload } from '../observed/generate.test.helper';
 import { loadLegacyViews } from '../observed/legacy.test.helper';
 import type { Row } from '../observed';
-import { DelegatedWorkLine, UnaskedDepartureBody } from './DepartureParts';
+import { UnaskedDepartureBody } from './DepartureParts';
+import { allowUnreadGoldens } from '../../test/legacy_goldens';
 import { retractSessionCopies } from '../../test/sessionCopyDeviation';
+import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
-/* The departure rows, the way back beside them and the delegated-work line, held to the legacy page's own
+/* The departure rows, the way back beside them, held to the legacy page's own
    functions over every session a generated payload carries. The comparison is the rendered text, plus the
    accessible names of the controls, because a missing way back is exactly what a text-only comparison would
    miss. */
 
 const legacy = loadLegacyViews();
+/* The recording holds the retired page's answers for its delegated-work line as well. The Drift card no longer
+   draws that line (docs/design-frontend-migration.md#held-to-recorded-answers), so those answers are not asked
+   for, and the rows and the way back are still compared in full. */
+allowUnreadGoldens(
+  'the delegated-work line left the Drift card, so its recorded answers are not asked for',
+);
 const CASES = 40;
 const norm = (node: Element | null): string =>
   node ? (node.textContent ?? '').replace(/\s+/g, ' ').trim() : '';
@@ -56,10 +64,10 @@ describe('the departure rows read as the legacy rows do', () => {
             </StrictMode>,
           );
           const root = view.container.querySelector('[data-root]') as Element;
-          expect({ seed, sid: session['sid'], text: norm(root) }).toEqual({
+          expect({ seed, sid: session['sid'], text: maskRevisionWords(norm(root)) }).toEqual({
             seed,
             sid: session['sid'],
-            text: norm(template.content as unknown as Element),
+            text: maskRevisionWords(norm(template.content as unknown as Element)),
           });
           // `norm` of a fragment is its text; the controls are compared by what they are called.
           expect({ seed, controls: labels(root) }).toEqual({
@@ -108,34 +116,5 @@ describe('the departure rows read as the legacy rows do', () => {
     await act(() => Promise.resolve());
     expect(kit.written).toEqual([]);
     expect(kit.raised).toEqual([]);
-  });
-});
-
-describe('the delegated-work line reads as the legacy line does', () => {
-  it('agrees on the sentence, the drawing rule and the check, for every generated session at several clocks', () => {
-    for (let seed = 1; seed <= CASES; seed += 1) {
-      for (const session of sessionsOf(seed)) {
-        for (const now of [1000, 5000, 1e7]) {
-          const work = legacy.call<{ draw: boolean; risky: boolean; text: string }>(
-            'nextDelegatedWork',
-            session,
-            now,
-          );
-          const view = render(<DelegatedWorkLine session={session} now={now} />);
-          const lines = [...view.container.querySelectorAll('p')].map((node) => node.textContent);
-          expect(lines).toEqual(
-            work.draw
-              ? work.risky
-                ? [
-                    work.text,
-                    'Is the work this session launched still running? Show its process and latest output.',
-                  ]
-                : [work.text]
-              : [],
-          );
-          view.unmount();
-        }
-      }
-    }
   });
 });

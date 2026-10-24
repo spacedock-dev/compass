@@ -1,6 +1,8 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountSessions } from './testing';
+import { rowState } from './rows';
+import type { ObservedSession } from '../observed';
 
 const NOW = 5000;
 const board = (sessions: unknown[], extra: Record<string, unknown> = {}) => ({
@@ -125,7 +127,198 @@ describe('the groups', () => {
     expect(document.querySelector('[data-next-session-drift-mark]')?.textContent).toBe(
       'Drift · 1m ago',
     );
-    expect(document.querySelector('[data-next-fleet-fact="active"] strong')?.textContent).toBe('0');
+    // Counted with the cards listed under Active now, and still not called working.
+    expect(document.querySelector('[data-next-fleet-fact="active"] strong')?.textContent).toBe('1');
+    expect(document.querySelector('[data-next-fleet-fact="working"] strong')?.textContent).toBe(
+      '0',
+    );
+  });
+
+  it('words a session that opened with a command as the page heading does, on its row and its link', async () => {
+    await open(
+      board([
+        {
+          harness: 'claude',
+          sid: 'cmd',
+          project: 'p',
+          state: 'idle',
+          first_prompt: '/goal a file exists',
+          first_prompt_control: true,
+        },
+      ]),
+    );
+    const row = document.querySelector('article[data-next-session="cmd"]');
+    expect(row?.textContent).toContain('No name: the session opened with a command');
+    expect(row?.textContent).not.toContain('Title not published');
+    expect(row?.querySelector('a.next-operation-route')?.getAttribute('aria-label')).toContain(
+      'No name: the session opened with a command',
+    );
+  });
+
+  it('leads each row with one state word and shows the project label alone as where', async () => {
+    await open(data);
+    const state = (sid: string) =>
+      document.querySelector(`article[data-next-session="${sid}"] [data-next-row-state]`)
+        ?.textContent;
+    expect(state('gate')).toBe('Waiting on you');
+    expect(state('work')).toBe('Working');
+    expect(state('idle-new')).toBe('Idle');
+    expect(state('done')).toBe('Ended');
+    const groups = [...document.querySelectorAll('[data-next-operation-group]')];
+    for (const group of groups) expect(group.textContent).not.toMatch(/NOW · |QUIET/);
+    expect(document.body.textContent).not.toContain('Exact location not published');
+    expect(
+      document.querySelector('article[data-next-session="work"] [data-next-operation-fact="where"]')
+        ?.textContent,
+    ).toBe('PROJECTp');
+  });
+
+  it('names the level of a departing stored reading on the drift chip', async () => {
+    await open(
+      board(
+        [
+          {
+            harness: 'claude',
+            sid: 'read',
+            project: 'p',
+            state: 'idle',
+            annotation_revision: 2,
+            annotation_assessment: {
+              read_at: NOW - 240,
+              revision_read: 2,
+              criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'x' } },
+            },
+          },
+        ],
+        { annotate: true },
+      ),
+    );
+    const mark = document.querySelector('[data-next-session-drift-mark]');
+    // This tab holds no analysis for the project, so the chip says what a departure is at least, and draws
+    // no meter, which would show Medium for what may be High.
+    expect(mark?.textContent).toBe('Drift: Medium or higher · 4m ago');
+    expect(
+      mark?.querySelector('[data-next-row-drift-level]')?.getAttribute('data-next-row-drift-level'),
+    ).toBe('medium_or_higher');
+    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
+  });
+
+  describe('the chip and the session header name one level', () => {
+    const departing = {
+      harness: 'claude',
+      sid: 'read',
+      project: 'p',
+      project_key: '/p',
+      state: 'idle',
+      annotation_goal: 'Ship the queue',
+      annotation_line_1: 'Tests pass',
+      annotation_revision: 2,
+      annotation_assessment: {
+        read_at: NOW - 240,
+        revision_read: 2,
+        criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'x' } },
+      },
+    };
+    /* The entry the departure cites: a departure naming one the record does not hold is refused, and a
+       level stands only on a departure the reading shows. */
+    const said = {
+      fact_id: 'f1',
+      type: 'agent_message',
+      by: 'agent',
+      summary: 'Done: the queue ships.',
+      at: NOW - 300,
+      source_session: { harness: 'claude', sid: 'read' },
+      evidence: { source: 'transcript', confidence: 'exact' },
+    };
+    const context = (level: string) => ({
+      semantic: { facts: [said] },
+      sources: {
+        work: {
+          tool_reports: [],
+          analysis_levels: [
+            {
+              harness: 'claude',
+              sid: 'read',
+              revision_read: 2,
+              read_at: NOW - 240,
+              computed_at: NOW - 240,
+              level,
+              reasons: ['departure'],
+              cites: ['f1'],
+            },
+          ],
+        },
+      },
+    });
+    const chip = () => document.querySelector('[data-next-session-drift-mark]');
+
+    it.each([
+      ['high', 'High'],
+      ['medium', 'Medium'],
+    ])('names %s on the chip once this tab holds the analysis', async (level, word) => {
+      const page = mountSessions({
+        hash: '#n=session:p:claude:read',
+        data: board([departing], { annotate: true }),
+        context: context(level),
+      });
+      await page.settle();
+      const pill = document.querySelector('[data-next-drift-pill] strong')?.textContent;
+      expect(pill).toBe(word);
+      await act(async () => {
+        page.router.navigate({ view: 'sessions' });
+      });
+      await page.settle();
+      expect(chip()?.querySelector('strong')?.textContent).toBe(pill);
+      expect(
+        chip()
+          ?.querySelector('[data-next-row-drift-level]')
+          ?.getAttribute('data-next-row-drift-level'),
+      ).toBe(level);
+    });
+
+    it('names no level for a raise beside a reading that does not depart', async () => {
+      const page = mountSessions({
+        hash: '#n=session:p:claude:read',
+        data: board(
+          [
+            {
+              ...departing,
+              departures: [{ at: NOW - 60, revision: 2 }],
+              annotation_assessment: {
+                read_at: NOW - 240,
+                revision_read: 2,
+                criteria: {
+                  goal: { result: 'consistent', cites: ['f1'], detail: '', clause: 'x' },
+                },
+              },
+            },
+          ],
+          { annotate: true },
+        ),
+        context: context('none_or_low'),
+      });
+      await page.settle();
+      await act(async () => {
+        page.router.navigate({ view: 'sessions' });
+      });
+      await page.settle();
+      expect(chip()?.textContent).toMatch(/^Drift · /);
+      expect(chip()?.querySelector('[data-next-row-drift-level]')).toBeNull();
+    });
+  });
+
+  it('shows Idle only for a published idle state', () => {
+    const session = (state: unknown) =>
+      ({
+        isEnded: false,
+        isNeeds: false,
+        askKnown: false,
+        isWorking: false,
+        isQuiet: state === 'idle',
+      }) as unknown as ObservedSession;
+    expect(rowState(session('idle'))).toBe('Idle');
+    expect(rowState(session(undefined))).toBe('State not published');
+    expect(rowState(session('dozing'))).toBe('State not published');
   });
 
   it('says annotations are off, and the goal cell says so too, when the payload does not publish them', async () => {
@@ -416,4 +609,31 @@ describe('the Sessions first step', () => {
       );
     },
   );
+});
+
+describe('two sessions in two worktrees of one repository', () => {
+  const tree = (sid: string, worktree: string | null) => ({
+    harness: 'claude',
+    sid,
+    project: 'one/compass',
+    project_key: 'git:abc',
+    worktree,
+    title: `Synthetic ${sid}`,
+    state: 'working',
+    last_activity: NOW - 5,
+  });
+
+  it('files both under one project and names each worktree on its row', async () => {
+    await open(board([tree('s1', 'haiku-a'), tree('s2', 'haiku-b'), tree('s3', null)]));
+    const facts = (sid: string) =>
+      document.querySelector(
+        `article[data-next-session="${sid}"] [data-next-operation-fact="where"]`,
+      )?.textContent;
+    expect(facts('s1')).toContain('one/compass');
+    expect(facts('s2')).toContain('one/compass');
+    expect(facts('s1')).toContain('worktree haiku-a');
+    expect(facts('s2')).toContain('worktree haiku-b');
+    // A main checkout publishes no worktree, so no worktree is drawn for it.
+    expect(facts('s3')).toBe('PROJECTone/compass');
+  });
 });

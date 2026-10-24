@@ -351,14 +351,13 @@
       "contract": "Live estimates and model readings show the actual drift in words, times/evidence and limitations; monitoring choice does not imply a new model reading."
     },
     {
-      "name": "analyze-consent-and-reading-result",
+      "name": "analyze-notice-and-reading-result",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/drift/ReadingStart.test.tsx",
-        "frontend/src/drift/ReadingResult.test.tsx",
-        "frontend/e2e/drift-parity.mjs"
+        "frontend/src/drift/ReadingResult.test.tsx"
       ],
-      "contract": "Only explicit authorized Analyze starts work; consent/destination, revision floor, pending/error/withheld/completed state and result cues remain correct."
+      "contract": "Only explicit authorized Analyze starts work; notice/destination, durable off switch, revision floor, pending/error/withheld/completed state and result cues remain correct."
     },
     {
       "name": "correction-to-copy",
@@ -575,13 +574,13 @@
       "contract": "Explicit browser permission and server/native lane ownership avoid duplicate notifications and preserve reporting across refresh."
     },
     {
-      "name": "observer-model-consent-controls",
+      "name": "observer-model-request-controls",
       "owner": "DRC-4827",
       "oracles": [
         "frontend/src/capacity/ObserverControls.test.tsx",
         "frontend/e2e/capacity-parity.mjs"
       ],
-      "contract": "Console observer controls distinguish unread capability from disabled and require an explicit consented exact request without automatic model invocation."
+      "contract": "Console observer controls distinguish unread capability from disabled and require an explicit exact request with the server off switch and a non-blocking notice without automatic model invocation."
     },
     {
       "name": "live-update-and-fallback-continuity",
@@ -775,6 +774,17 @@
       "disposition": "stable-identity"
     },
     {
+      "name": "The Expected outcome accordion in the Intent card",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/intent/FirstView.test.tsx",
+        "frontend/src/controls/Disclosure.test.tsx",
+        "frontend/stories/IntentCard.stories.tsx"
+      ],
+      "contract": "The accordion's open flag is the shared disclosure store's, keyed by project and exact session. It is closed until a saved or drafted line, a pending later direction or a departure citing an outcome line is held, then opens on each rise of that condition; a reader's close holds while it stays true and a key the reader has written is not reopened on a first draw.",
+      "disposition": "store-held"
+    },
+    {
       "name": "An open run of checks",
       "owner": "DRC-4825",
       "oracles": [
@@ -894,16 +904,17 @@
       "disposition": "store-held"
     },
     {
-      "name": "An open Select popup",
+      "name": "An open Select popup, or the open list of prompts",
       "owner": "DRC-4823",
       "oracles": [
         "frontend/src/controls/choiceProbe.test.tsx",
         "frontend/src/controls/displayGate.test.ts",
+        "frontend/src/intent/PromptSelect.test.tsx",
         "frontend/e2e/controls-continuity.mjs",
         "frontend/e2e/intent-parity.mjs",
         "frontend/e2e/css-contract.mjs"
       ],
-      "contract": "React retains the controlled value and open popup. Defer background board paints while actually open for at most 12 consecutive holds; popup closure catches up once. Manual and cap paints retain popup identity.",
+      "contract": "React retains the controlled value and open Select popup, and the open list of prompts, a popover under a button that holds no value and is held open by its aria-expanded=true trigger. Defer background board paints while actually open for at most 12 consecutive holds; popup closure catches up once. Manual and cap paints retain popup identity.",
       "disposition": "retained-deferral"
     },
     {
@@ -996,7 +1007,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "A prompt chosen from \"Use your prompt\" or an explicit later direction, not yet saved",
+      "name": "A prompt chosen from \"Use your prompt\", the session's /goal taken from the list or from its update offer, or an explicit later direction, not yet saved",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/intent/IntentAdoption.test.tsx",
@@ -1004,6 +1015,27 @@
         "frontend/e2e/intent-parity.mjs"
       ],
       "contract": "Chosen adoption is fact id+words+source time, not typed draft; drop only matching adopted choice, never a newer in-flight choice.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "The /goal the reader declined to take as an update",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/DetectedGoal.test.tsx",
+        "frontend/stories/IntentCard.stories.tsx"
+      ],
+      "contract": "Keep the time of the declined /goal per session in memory; a /goal set later is offered again, and nothing is offered over a goal-less or discarded session.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "A goal found in the reader's prompts, and what the press that found it said",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/FindGoal.test.tsx",
+        "frontend/src/intent/foundGoal.test.ts",
+        "frontend/stories/FindGoal.stories.tsx"
+      ],
+      "contract": "Keep the found goal and the press's last sentence per session in memory. The goal stands only while the box holds its words, a saved goal or a /goal outranks it, and nothing is stored.",
       "disposition": "store-held"
     },
     {
@@ -1018,7 +1050,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "A later direction opened by \"Add it to my intent\" or \"Update intent instead\", pending review",
+      "name": "A later direction opened by \"Add as a line\" or \"Update intent instead\", pending review",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/intent/IntentDirections.test.tsx",
@@ -1070,26 +1102,82 @@
       "disposition": "store-held"
     },
     {
-      "name": "The whole text of each direction Keep opened before settling",
+      "name": "The whole text of each open later direction, read when the question is drawn",
       "owner": "DRC-4825",
       "oracles": [
         "frontend/src/intent/IntentDirections.test.tsx",
+        "frontend/src/intent/IntentDirectionChoice.test.tsx",
         "frontend/src/drift/KeepAnalyze.test.tsx",
         "frontend/e2e/drift-parity.mjs"
       ],
-      "contract": "Keep holds whole directions and the drawn revision. Its first press reads and shows every direction, a new arrival is unread, and a later settlement names that drawn revision. The count-only question permits no one-press settlement.",
+      "contract": "The page reads every open direction's whole text when the question is drawn, with no press, and holds the ids drawn whole for the tab. Each choice acts on words already on screen, a failed read quotes the first sentence and Leave it reads again, and every Leave it names the intent revision on screen.",
       "disposition": "store-held"
     },
     {
       "name": "The live monitor switch in the session page's Drift section",
       "owner": "DRC-4825",
       "oracles": [
+        "frontend/e2e/intent-parity.mjs",
+        "frontend/src/drift/LiveMonitorLevel.test.tsx",
+        "frontend/src/drift/MonitorQuestion.test.tsx",
+        "frontend/src/drift/monitor.test.ts",
         "frontend/src/intent/LiveMonitor.test.tsx",
-        "frontend/src/storage/flags.test.ts",
-        "frontend/e2e/intent-parity.mjs"
+        "frontend/src/sample/SampleMonitor.test.tsx",
+        "frontend/stories/LiveMonitor.stories.tsx",
+        "frontend/stories/LiveMonitorQuestion.stories.tsx"
       ],
-      "contract": "Live monitor is session-local1/absent browser preference with tab-memory fallback; only toggles displayed deterministic cues, never server/model behavior.",
+      "contract": "Live monitor drives a server lease and is held in memory only: a reload shows it off; leaving the route, switching session or hiding the tab stops the beats; the server's state decides whether it is on; an end leaves a note. Departure from the recorded session-local browser preference, recorded in docs/design-frontend-migration.md#held-to-recorded-answers.",
       "disposition": "store-held"
+    },
+    {
+      "name": "An outline entry chip pressed in What the session has done",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionOutline.stories.tsx",
+        "frontend/src/sessions/outline.test.ts"
+      ],
+      "contract": "A chip press opens the Full activity disclosure and focuses the entry's row, reading older record pages for a prompt the page does not hold; only the latest press settles. The \"Full activity does not show\" sentence stays across board refreshes until the next press and goes with the session page. The outline is the focused context's, redrawn each board revision, and nothing is stored.",
+      "disposition": "stable-identity"
+    },
+    {
+      "name": "The summary's notice, and the answer to Turn off summaries",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx",
+        "frontend/src/sessions/summary.test.ts"
+      ],
+      "contract": "The notice the last summary start's reply carried is held per session in memory until a later start's reply replaces or clears it, or Turn off summaries clears every held notice; a running job's own notice stands in when none is held. The grant is the server's; a consent reply is drawn over only the board it answered. The once-per-page-load open start is marked in the same entry before anything is sent, and Delete summary sets it. Delete summary's arm (`deleteArmedAt`) lapses after 30 seconds, and the deletion's time (`deletedAt`) is said until the next start. A start made by Summarize again or after a delete here is held as `rewritten` and said until a later plain start. Once a summary stands the notice is folded under the `summary-notice` disclosure. Nothing reaches browser storage.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "A summary's progress",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx",
+        "frontend/src/sessions/summary.test.ts"
+      ],
+      "contract": "The job is the focused context's, redrawn each board revision; the job a 202 named is drawn only until a focused read made after that answer. No per-part announcement. A press's refusal or lost answer is held per session until the next press.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "An open citation in a summary",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx",
+        "frontend/src/sessions/summary.test.ts"
+      ],
+      "contract": "As an outline chip: the press opens Full activity and focuses the entry's row, reading older record pages by fact id within the page cap, so every chip lands or says it could not be loaded. Only the latest press settles. The sentence a press leaves stays until the next press.",
+      "disposition": "stable-identity"
+    },
+    {
+      "name": "The Full activity target, and the jumps between a summary phase and a departure",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx",
+        "frontend/src/sessions/summary.test.ts"
+      ],
+      "contract": "The full-activity disclosure key is written open and the entry focused on the reader's press only; a summary that lands moves no focus and replaces no node an edit lives in. The phase and departure headings are focused only by the jump buttons. Which phase holds a departure is derived each render; nothing is stored.",
+      "disposition": "stable-identity"
     },
     {
       "name": "A finding selected in the session result",
@@ -1109,7 +1197,7 @@
         "frontend/src/drift/DrawnPress.test.tsx",
         "frontend/e2e/drift-parity.mjs"
       ],
-      "contract": "Unsaved Not accurate error remains per session for tab; actual mark/aria-pressed derive from payload, not optimistic local state.",
+      "contract": "Unsaved Not accurate error remains per session for tab; actual mark/aria-pressed derive from payload, not optimistic local state. There is no what-was-wrong choice: it was held in memory, sent nowhere and outlived the reading, so it was dropped.",
       "disposition": "store-held"
     },
     {
@@ -1211,7 +1299,7 @@
         "frontend/src/drift/ReadingRefusals.test.tsx",
         "frontend/e2e/drift-parity.mjs"
       ],
-      "contract": "Reading pending/latest feedback survives scope changes for tab; duplicate press suppressed; local refusal disappears when its reason changes; payload eligibility wins.",
+      "contract": "Reading pending/latest feedback and notice survive scope changes for tab; successful no-notice reply clears notice, pending/lost/refused press keeps it, running job notice survives reload; duplicate press suppressed; local refusal disappears when its reason changes; payload eligibility wins.",
       "disposition": "store-held"
     },
     {
@@ -1257,7 +1345,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "Observer model consent and request status",
+      "name": "Observer model request status and notice",
       "owner": "DRC-4822",
       "oracles": [
         "frontend/src/capacity/ObserverControls.test.tsx",
@@ -1265,7 +1353,7 @@
         "frontend/src/storage/consent.test.ts",
         "frontend/e2e/capacity-parity.mjs"
       ],
-      "contract": "Observer summary consent persists with tab fallback; explicit request only, per-session pending/result keeps redraw; passive stale read cannot replace requested result.",
+      "contract": "Observer summary uses the server off switch; payload notices name destinations; explicit request only, per-session pending/result keeps redraw; passive stale read cannot replace requested result.",
       "disposition": "store-held"
     },
     {
@@ -1309,6 +1397,36 @@
         "frontend/stories/IntentDirections.stories.tsx"
       ],
       "contract": "The exact question, goal, activity-row or Update intent control holds its own refusal across polls until the next press or an intent edit; a persistent polite region announces it, and failure retains that control focus without filling an editor. Exact session keys keep another session's feedback.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "A Full activity row's Source sentence",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/stories/SessionSummary.stories.tsx"
+      ],
+      "contract": "Closed until the reader presses the row's Source toggle; kept open across redraws, a board refresh and a remount under the disclosure key entry-source:<entry id>, scoped by project and the activity list's scope. A plain button over the keyed disclosure store, not a Disclosure.",
+      "disposition": "stable-identity"
+    },
+    {
+      "name": "Why a run of hidden summary lines was hidden",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/sessions/summary.test.ts",
+        "frontend/stories/SessionSummary.stories.tsx"
+      ],
+      "contract": "Closed until opened; kept open across redraws and a refreshed summary under summary-hidden:<phase place>:cites:<cited entry ids>, so a shifted run does not open another run's reasons. A run that cites nothing is keyed by its place.",
+      "disposition": "stable-identity"
+    },
+    {
+      "name": "The departures the last drawn reading carried, and what the next reading cleared",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/stories/DriftLevelNeedsDeparture.stories.tsx",
+        "frontend/stories/DriftPastedCorrection.stories.tsx",
+        "frontend/src/drift/ClearedDeparture.test.tsx"
+      ],
+      "contract": "Held for the life of the tab, one per session, bounded at 16, never stored. A later reading with no departure, after one this tab drew with some, is named once as clearing them, and the reading after it takes the line down; a reload says nothing.",
       "disposition": "store-held"
     }
   ],
@@ -1361,18 +1479,6 @@
       "format": "Fixed key; JSON {id:random-base36+'-'+Date.now(),ts:Date.now() milliseconds}; renew2000ms/stale6000ms; one lease, no payload-size bound in loader; foreign owner causes current leader to yield even when stale; failed storage makes tab self-lead. Clearing a legacy value writes an empty new key to suppress fallback on reload."
     },
     {
-      "name": "compass.next.live-estimate:",
-      "owner": "DRC-4825",
-      "oracles": [
-        "frontend/src/storage/flags.test.ts",
-        "frontend/src/intent/LiveMonitor.test.tsx",
-        "frontend/e2e/intent-parity.mjs",
-        "frontend/e2e/storage-conformance.mjs"
-      ],
-      "contract": "Switch changes display only, persists only for exact harness/session, defaults off and retains tab answer on storage failure.",
-      "format": "Key prefix+harness+':'+sid (sessKey, no URL encoding); raw '1' means on, absent/other value off; off removes key; no TTL/session-count cap; in-memory choice wins after a local toggle. Clearing a legacy value writes an empty new key to suppress fallback on reload."
-    },
-    {
       "name": "compass.next.revision",
       "owner": "DRC-4822",
       "oracles": [
@@ -1415,7 +1521,7 @@
         "frontend/src/capacity/ObserverControls.test.tsx",
         "frontend/e2e/storage-conformance.mjs"
       ],
-      "contract": "Summary consent survives reload without automatic model action; source availability and explicit press remain separate.",
+      "contract": "Retired browser answer retained for storage compatibility only; it never gates goal summaries. The server off switch and explicit press govern requests.",
       "format": "Fixed key raw 'granted'|'declined'; missing/unrecognized falls back to null/memo; no TTL; storage consulted first, setter memo before write; not qualification or Analyze authorization."
     },
     {

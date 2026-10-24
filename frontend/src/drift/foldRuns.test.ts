@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { activityRow } from './activity.test.helper';
-import { foldRuns, toolReportParts } from './workList';
+import {
+  foldRuns,
+  lastTurnLead,
+  newestFirst,
+  rowsByNumber,
+  rowWords,
+  toolReportParts,
+} from './workList';
 
 const rows = () => [6, 5, 4, 3, 2, 1].map((n) => activityRow(n));
 describe('a reader folds consecutive checks', () => {
@@ -64,5 +71,54 @@ describe('a reader folds consecutive checks', () => {
       const parts = toolReportParts(activityRow(1, { result, resultSource }).entry);
       expect(parts.check).toMatchObject({ result: state, marks: [{ icon: state, words }] });
     }
+  });
+});
+
+describe('the drawn order and the last turn', () => {
+  const at = (n: string, turn: boolean, type = 'tool_report', summary = `entry ${n}`) => ({
+    ...activityRow(Number(n.replace('.', '')), { id: `e${n}`, type, summary }),
+    n,
+    turn,
+  });
+  it('draws newest message first and keeps each message’s checks under it', () => {
+    const rows = rowsByNumber([
+      at('59', false, 'agent_message'),
+      at('59.1', false),
+      at('60', false, 'agent_message'),
+    ]);
+    expect(newestFirst(rows).map((row) => row.n)).toEqual(['60', '59', '59.1']);
+  });
+  it('puts the Last turn label on a row drawn outside a folded run', () => {
+    const rows = rowsByNumber([
+      at('6', true, 'agent_message'),
+      at('6.1', true),
+      at('6.2', true),
+      at('6.3', true),
+    ]);
+    const folded = foldRuns(newestFirst(rows));
+    expect(folded.map((item) => item.kind)).toEqual(['row', 'run']);
+    expect(lastTurnLead(rows, folded)).toEqual({ id: 'e6', range: '#6 to #6.3', run: null });
+  });
+  it('gives the label to the run when the whole turn folds', () => {
+    const rows = rowsByNumber([at('7.1', true), at('7.2', true), at('7.3', true)]);
+    const folded = foldRuns(newestFirst(rows));
+    const run = folded[0];
+    expect(run?.kind).toBe('run');
+    expect(lastTurnLead(rows, folded)?.run).toBe(run?.kind === 'run' ? run.last.entry.id : '');
+  });
+  it('keeps a check command’s globs and a person’s words literal', () => {
+    for (const summary of [
+      'ls src/**/lib/**',
+      'pytest tests/**/a.py tests/**/b.py',
+      'deny **/secrets/**',
+    ]) {
+      expect(rowWords({ type: 'tool_report', summary })).toBe(summary);
+      expect(rowWords({ type: 'user_message', summary })).toBe(summary);
+    }
+    expect(rowWords({ type: 'agent_message', summary: 'Risk is **High**.' })).toBe('Risk is High.');
+    expect(rowWords({ type: 'gate_decision', summary: 'It is **ok**.', modelDerived: true })).toBe(
+      'It is ok.',
+    );
+    expect(rowWords({ type: 'tool_report', summary: '**x**', modelDerived: true })).toBe('**x**');
   });
 });

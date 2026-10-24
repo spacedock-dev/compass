@@ -650,3 +650,76 @@ describe('controlled popovers keep the dismissal contract', () => {
     remove.mockRestore();
   });
 });
+
+describe('an accordion that opens by default', () => {
+  const accordion = (view: ReturnType<typeof mount>['view']) =>
+    view.getByText('Phase').closest('[data-slot=accordion]') as HTMLElement;
+
+  it('opens the first time its key is drawn and keeps a reader’s close through a redraw', () => {
+    const ui = (
+      <Disclosure disclosureKey={key('phase')} summary="Phase" openByDefault>
+        Lines
+      </Disclosure>
+    );
+    const { view, rerender, kit } = mount(ui);
+    expect(isOpen(accordion(view))).toBe(true);
+    toggle(accordion(view), false);
+    expect(isOpen(accordion(view))).toBe(false);
+    rerender(ui);
+    expect(isOpen(accordion(view))).toBe(false);
+    expect(kit.controls.disclosures.isOpen(key('phase'))).toBe(false);
+  });
+
+  it('does not reopen a key the reader has closed before it is drawn again', () => {
+    const kit = testControls();
+    kit.controls.disclosures.set(key('phase'), false);
+    const view = render(
+      <ControlsProvider controls={kit.controls}>
+        <Disclosure disclosureKey={key('phase')} summary="Phase" openByDefault>
+          Lines
+        </Disclosure>
+      </ControlsProvider>,
+    );
+    expect(isOpen(accordion(view as never))).toBe(false);
+  });
+
+  it('stays closed without the prop', () => {
+    const { view } = mount(
+      <Disclosure disclosureKey={key('phase')} summary="Phase">
+        Lines
+      </Disclosure>,
+    );
+    expect(isOpen(accordion(view))).toBe(false);
+  });
+
+  it('opens on each rise of openWhen, and a reader’s close holds while it stays true', () => {
+    const make = (when: boolean) => (
+      <Disclosure disclosureKey={key('phase')} summary="Phase" openWhen={when}>
+        Lines
+      </Disclosure>
+    );
+    const { view, rerender } = mount(make(false));
+    expect(isOpen(accordion(view))).toBe(false);
+    rerender(make(true));
+    expect(isOpen(accordion(view))).toBe(true);
+    toggle(accordion(view), false);
+    rerender(make(true));
+    expect(isOpen(accordion(view))).toBe(false);
+    rerender(make(false));
+    rerender(make(true));
+    expect(isOpen(accordion(view))).toBe(true);
+  });
+
+  it('does not reopen over openWhen a key the reader closed before it was drawn again', () => {
+    const kit = testControls();
+    kit.controls.disclosures.set(key('phase'), false);
+    const view = render(
+      <ControlsProvider controls={kit.controls}>
+        <Disclosure disclosureKey={key('phase')} summary="Phase" openWhen>
+          Lines
+        </Disclosure>
+      </ControlsProvider>,
+    );
+    expect(isOpen(accordion(view as never))).toBe(false);
+  });
+});

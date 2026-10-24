@@ -1,4 +1,5 @@
 import { buttonVariants } from '../ui/button';
+import { Icon } from '../ui/icons';
 import { Button } from '../ui/button';
 import { AttentionAnnouncer } from '../attention';
 import { MoreMenu } from '../controls/MoreMenu';
@@ -112,7 +113,11 @@ export function Header({ route }: { readonly route: Route }) {
   const detail = route.view === 'project';
   return (
     <header className="next-header">
-      <div className="next-header-left">
+      <div className="next-header-left flex flex-wrap items-center gap-x-7">
+        <span className="inline-flex items-center gap-2 text-value font-bold text-foreground">
+          <Icon name="compass" size="1.15em" className="text-primary" />
+          Compass
+        </span>
         <PrimaryNavigation route={route} />
       </div>
       <div className="next-header-right">

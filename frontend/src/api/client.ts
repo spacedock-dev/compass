@@ -12,14 +12,21 @@ import type {
   FocusOutcome,
   FocusReceipt,
   InteractionOrigin,
+  LiveMonitorReceipt,
+  LiveMonitorRequest,
   NotifyReceipt,
   PayloadData,
   ProjectContext,
   ReadingCancelReceipt,
+  GoalFindReceipt,
+  GoalFindRequest,
   ReadingReceipt,
   ReadingRequest,
+  UnaskedGrantRequest,
   SessionIdentity,
   SessionRecord,
+  SummaryReceipt,
+  SummaryRequest,
   TripwireReceipt,
   TripwireRequest,
 } from './types';
@@ -197,8 +204,11 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       body: SessionIdentity & { readonly fact_ids: readonly string[] },
       signal?: AbortSignal,
     ) => post<DirectionBatchReceipt>('/api/direction', body, signal),
-    postReading: (body: ReadingRequest, signal?: AbortSignal) =>
+    postReading: (body: ReadingRequest | UnaskedGrantRequest, signal?: AbortSignal) =>
       post<ReadingReceipt>('/api/reading', body, signal),
+    /* "Find goal": the reader's prompts read for a goal, on one press (docs/design-reading-a-session.md). */
+    postGoalFind: (body: GoalFindRequest, signal?: AbortSignal) =>
+      post<GoalFindReceipt>('/api/goal/find', body, signal),
     postReadingCancel: (
       body: SessionIdentity & {
         readonly job: string;
@@ -207,8 +217,23 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       },
       signal?: AbortSignal,
     ) => post<ReadingCancelReceipt>('/api/reading/cancel', body, signal),
-    postCorrection: (body: SessionIdentity, signal?: AbortSignal) =>
-      post<CorrectionReceipt>('/api/correction', body, signal),
+    /* A summary start, Update summary, Summarize again, or the summary grant's off and on
+       (docs/design-session-summary.md#requests-and-replies). */
+    postSummary: (body: SummaryRequest, signal?: AbortSignal) =>
+      post<SummaryReceipt>('/api/summary', body, signal),
+    postSummaryCancel: (body: SessionIdentity, signal?: AbortSignal) =>
+      post<SummaryReceipt>('/api/summary/cancel', body, signal),
+    postSummaryDelete: (body: SessionIdentity, signal?: AbortSignal) =>
+      post<SummaryReceipt>('/api/summary/delete', body, signal),
+    /* `time_zone` is the reader's named zone, which the correction's times are drawn in; `utc_offset_minutes`
+       is the fallback where the server does not know that name, and without either it uses its own clock. */
+    /* The Live monitor's lease: start, a beat about every 20 seconds, the answer to its question, and stop. */
+    postLiveMonitor: (body: LiveMonitorRequest, signal?: AbortSignal) =>
+      post<LiveMonitorReceipt>('/api/live-monitor', body, signal),
+    postCorrection: (
+      body: SessionIdentity & { readonly utc_offset_minutes?: number; readonly time_zone?: string },
+      signal?: AbortSignal,
+    ) => post<CorrectionReceipt>('/api/correction', body, signal),
     postCorrectionCopied: (
       body: SessionIdentity & { readonly text: string },
       signal?: AbortSignal,

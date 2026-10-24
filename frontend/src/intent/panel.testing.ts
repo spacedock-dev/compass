@@ -111,3 +111,24 @@ export function type(box: HTMLTextAreaElement, value: string): void {
 
 export const text = (selector: string): string =>
   (document.querySelector(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+/* A lease the server holds as the page reads it, and a route that answers every lease call with it as
+   accepted: for a test that needs the Live monitor on and is not about the lease. */
+export const monitorLease = (over: Record<string, unknown> = {}) => ({
+  on: true,
+  started_at: 1000,
+  banner_due_at: 2200,
+  deadline: 2800,
+  confirm_by: null,
+  visible: true,
+  last_end: null,
+  level: null,
+  label: 'Live monitor · Haiku',
+  model: 'claude-haiku-5-5',
+  destination: 'api.anthropic.com',
+  disclosure: 'Sends to api.anthropic.com through your Claude Code, to Haiku.',
+  interval_sec: 60,
+  now: 1100,
+  ...over,
+});
+export const LEASE_ROUTE: Handler = () => json({ ok: true, reason: '', state: monitorLease() });

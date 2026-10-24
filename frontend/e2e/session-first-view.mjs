@@ -170,7 +170,7 @@ try {
       .waitFor({ state: 'visible' });
     await page.getByRole('button', { name: 'Clear', exact: true }).waitFor({ state: 'visible' });
     await page
-      .getByRole('button', { name: 'Turn off readings', exact: true })
+      .getByRole('button', { name: 'Pause model calls', exact: true })
       .waitFor({ state: 'visible' });
     const update = page.waitForResponse((response) => response.url().includes('/api/data'));
     await refreshReact(page, true);
@@ -223,21 +223,26 @@ try {
       .waitFor({ state: 'visible' });
     await page.getByText('9 of 10 left today', { exact: true }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: 'More', exact: true }).click();
-    await page.getByText(/Delegated work: 1 recorded launch/).waitFor({ state: 'visible' });
-    await page
-      .getByText(/Compass cannot see all work this session started/)
-      .waitFor({ state: 'visible' });
+    // The Drift card draws no Delegated work line (amended 2026-10-21): launches surface only in At risk.
+    if (await page.getByText(/Delegated work/).count()) {
+      throw new Error('More still draws a Delegated work line');
+    }
     await page.getByRole('button', { name: /Saved.*reads from/ }).click();
     await page
-      .getByText('Adding a line keeps this window; saving new goal words opens another.', {
-        exact: true,
-      })
+      .getByText(
+        'Editing the goal or adding a line keeps this start. Read from my latest message moves it.',
+        {
+          exact: true,
+        },
+      )
       .waitFor({ state: 'visible' });
     await page.getByRole('button', { name: 'Discard everything', exact: true }).click();
     await page
       .getByRole('button', { name: 'Discard everything', exact: true })
       .last()
       .waitFor({ state: 'visible' });
+    /* Predates the one-column page (2026-10-19): the session More is gone, so this count fails when the proof
+       is run on demand until it is brought forward to the Intent and Drift cards that now hold those parts. */
     assert.equal(
       await page.locator('[data-next-session-more-items]').evaluate((node) => node.children.length),
       6,

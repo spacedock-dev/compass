@@ -394,9 +394,7 @@ def destinations(
     return {provider: destination(provider, environ=environ, root=root) for provider in PROVIDERS}
 
 
-def _tool_output_sentence(
-    provider: str, harness: str, where: str, *, pre_granted: bool = False
-) -> str:
+def _tool_output_sentence(provider: str, harness: str, where: str) -> str:
     """What a check sends, or that none is sent; where it goes is the `To:` item after it.
 
     The expected outcome lines rode here on Claude Code while a check was the
@@ -414,12 +412,11 @@ def _tool_output_sentence(
             "Tool output is not sent, because Compass cannot name where it would go, though "
             "the agent's messages may quote it."
         )
-    # `--allow-tool-output` is the reader's consent, given at launch; the words still need an Allow.
-    lead = "allowed when this dashboard started" if pre_granted else "only after you allow it"
     return (
-        f"Tool output, {lead}: a check's command, result and last "
+        "Tool output is included by default: a check's command, result and last "
         f"{TOOL_OUTPUT_TAIL_CHARS} characters of output as printed, the paths of the files it "
-        "wrote; agent messages may quote it."
+        "wrote, the repository and number of a pull request it created, and the names of skills "
+        "it used; agent messages may quote it."
     )
 
 
@@ -567,12 +564,11 @@ def _route(
     fallback: bool,
     where: Callable[[str], str],
     claude_model: str,
-    pre_granted: bool = False,
 ) -> Route:
     # Where the words go, on every harness; tool output, only where checks exist.
     to = where(provider) if provider else ""
     reached = to if harness in TOOL_OUTPUT_HARNESSES else ""
-    sentence = _tool_output_sentence(provider, harness, reached, pre_granted=pre_granted)
+    sentence = _tool_output_sentence(provider, harness, reached)
     parts = (
         [
             note,
@@ -606,24 +602,31 @@ def resolve(
     environ: Mapping[str, str] | None = None,
     root: Path | None = None,
     config: runtime_config.RuntimeConfig | None = None,
+    unasked: bool = False,
 ) -> Route:
     """The one provider that reads a session on this harness, or why none can.
 
     Own harness first; else the other provider, said before the press; else
-    nothing. Never a third choice, and never a second provider after a launch
-    failed: the route is decided once, here, before anything is spent.
+    nothing. `unasked` changes only the choice on a harness with no producer
+    of its own: Claude Code first there, Codex as the fallback. Never a third
+    choice, and never a second provider after a launch failed: the route is
+    decided once, here, before anything is spent.
     """
     which = binary_resolver or shutil.which
     claude_model = runtime_config.validate_claude_reading_model(
         config.claude_reading_model if config is not None else observer.CLAUDE_READING_MODEL
     )
 
-    pre_granted = config is not None and config.tool_output_pre_grant
-
     def where(provider: str) -> str:
         return destination(provider, environ=environ, root=root)
 
-    preferred = CLAUDE if harness == OWN_HARNESS[CLAUDE] else CODEX
+    # The unasked lane prefers Claude Code where no own producer exists (owner,
+    # 2026-10-20); Analyze keeps Codex there, which that ruling did not change.
+    preferred = (
+        (CODEX if harness == OWN_HARNESS[CODEX] else CLAUDE)
+        if unasked
+        else (CLAUDE if harness == OWN_HARNESS[CLAUDE] else CODEX)
+    )
     other = CODEX if preferred == CLAUDE else CLAUDE
     own = harness == OWN_HARNESS[preferred]
     lead = [] if own else [_NO_PRODUCER]
@@ -641,7 +644,6 @@ def resolve(
                 fallback=False,
                 where=where,
                 claude_model=claude_model,
-                pre_granted=pre_granted,
             )
         return _route(
             harness,
@@ -651,7 +653,6 @@ def resolve(
             fallback=False,
             where=where,
             claude_model=claude_model,
-            pre_granted=pre_granted,
         )
     second = _state(other, which)
     if second == "usable":
@@ -665,7 +666,6 @@ def resolve(
             fallback=True,
             where=where,
             claude_model=claude_model,
-            pre_granted=pre_granted,
         )
     # The harness's own lack stands as a sentence of its own, so the two
     # machine facts after it join with one "and" rather than a chain of them.
@@ -682,7 +682,6 @@ def resolve(
         fallback=False,
         where=where,
         claude_model=claude_model,
-        pre_granted=pre_granted,
     )
 
 
@@ -693,6 +692,7 @@ def resolve_all(
     environ: Mapping[str, str] | None = None,
     root: Path | None = None,
     config: runtime_config.RuntimeConfig | None = None,
+    unasked: bool = False,
 ) -> dict[str, Route]:
     """One route per harness, looking each CLI up at most once per call."""
     which = binary_resolver or shutil.which
@@ -704,6 +704,25 @@ def resolve_all(
         return memo[name]
 
     return {
-        harness: resolve(harness, binary_resolver=cached, environ=environ, root=root, config=config)
+        harness: resolve(
+            harness,
+            binary_resolver=cached,
+            environ=environ,
+            root=root,
+            config=config,
+            unasked=unasked,
+        )
         for harness in sorted(set(harnesses))
     }
+
+
+def unasked_parts(route: Route) -> list[str]:
+    """What an unasked check sends on this route: words only, whatever the harness.
+
+    The lane never sends the agent's messages, outcome lines or tool output, so
+    its list is the words-only one and never the press's.
+    """
+    provider = route["provider"]
+    if not provider:
+        return []
+    return [*_base_parts(provider, route["words_destination"], model=route["model"]), CAVEAT]

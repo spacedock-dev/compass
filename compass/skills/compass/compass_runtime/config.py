@@ -29,6 +29,55 @@ DIRECTION_SCAN_MAX_SECONDS = 2.0
 ENTRY_INDEX_MAX_SECONDS = 5.0
 # How many sessions' indexes the runtime keeps. Each holds one time and one id per message.
 ENTRY_INDEX_LIMIT = 16
+# A summary source may cross the same image-heavy stretches as a press; its time bound is also
+# the press's two seconds, with continuation instead of sampling messages out of the middle.
+SESSION_SOURCE_PAGE_MAX_BYTES = 64 * 1024 * 1024
+SESSION_SOURCE_PAGE_MAX_SECONDS = 2.0
+# The share of that time held back from scanning for classifying the calls scanned. A scan that
+# spent it all left classification past the deadline, and the page then made no progress.
+SESSION_SOURCE_CLASSIFY_SHARE = 0.25
+# Reuse the forward index's single-line ceiling: larger records are gaps before any text masking.
+SESSION_SOURCE_LINE_MAX_BYTES = 16 * 1024 * 1024
+# A focused poll pays much less than a press; a clipped outline names its unread prefix.
+SESSION_OUTLINE_MAX_BYTES = 2 * 1024 * 1024
+# The head read that keeps a session's first prompt in the outline once the newest window passes it
+# (docs/design-session-summary.md#the-outline-always-opens-at-the-first-prompt).
+SESSION_OUTLINE_HEAD_BYTES = 256 * 1024
+SESSION_OUTLINE_MAX_SECONDS = 0.25
+# Keep the focused answer small while retaining several recent turns and three examples per list.
+SESSION_OUTLINE_MAX_BLOCKS = 20
+SESSION_OUTLINE_HIGHLIGHTS = 3
+# Match the message-index cache's session count; only built, word-free outlines are retained.
+SESSION_OUTLINE_CACHE_LIMIT = 16
+
+# In docs/design-session-summary.md#proposed-ceilings, thirty windows covered
+# the 45 MiB session; 32 leaves room without turning one reader action into an unbounded job.
+SESSION_SUMMARY_WINDOW_BYTES = 16_384
+SESSION_SUMMARY_MAX_WINDOWS = 32
+# The same measurement used 36 calls and 541,407 input bytes; four retries fit beside 32
+# windows and a lede, with headroom above the measured maximum prompt and 307-second job.
+SESSION_SUMMARY_MAX_CALLS = 37
+SESSION_SUMMARY_MAX_BYTES_SENT = 786_432
+SESSION_SUMMARY_MAX_SECONDS = 600.0
+# Equal to observer.OBSERVER_READING_TIMEOUT_SEC. The job lane wires the timeout; this
+# producer passes none to the subprocess path. The slowest measured call took 12.3 seconds.
+SESSION_SUMMARY_CALL_TIMEOUT = 180.0
+# Separate from Analyze's budget; enforced by the job lane, not the pure producer.
+# The proposed ceilings allow about five summaries the size of the largest measured per day.
+SESSION_SUMMARY_ROLLING_CAP = 200
+# The measurement's output allowance, including complete-phase salvage at a cut reply.
+SESSION_SUMMARY_OUTPUT_CAP_BYTES = 64 * 1024
+# The measured prompt's closed shape; caps apply independently to each finished block.
+SESSION_SUMMARY_MAX_PHASES = 4
+SESSION_SUMMARY_MAX_BULLETS = 6
+SESSION_SUMMARY_MAX_CITES = 8
+SESSION_SUMMARY_TITLE_CHARS = 60
+SESSION_SUMMARY_BULLET_CHARS = 200
+SESSION_SUMMARY_LEDE_CHARS = 400
+# 32 windows x 4 phases x 6 bullets x (200 characters + 8 ordinary fact ids), including
+# JSON overhead, fits in 512 KiB at ordinary text widths. A 256 KiB ceiling would cut that
+# closed shape even in ASCII; wider text and ids still need whole-block byte gaps.
+SESSION_SUMMARY_MAX_BYTES = 512 * 1024
 
 STORE_ENV_VARS = (
     "CLAUDE_CONFIG_DIR",
@@ -85,6 +134,30 @@ def claude_reading_model_rank(value: str) -> tuple[int, int, int]:
         msg = "The model ID has no admitted rank."
         raise ValueError(msg)
     return int(match[2]), int(match[3] or 0), CLAUDE_READING_FAMILY_RANKS[match[1]]
+
+
+# The Live monitor's own model setting, apart from the reading floor above. The owner pinned an
+# explicit Haiku id, defaulting to the newest released one at merge, and the `compass-release`
+# pre-flight asks whether a newer Haiku has shipped.
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+CLAUDE_MONITOR_DEFAULT_MODEL: Final = "claude-haiku-5-5"
+CLAUDE_MONITOR_MODEL_POLICY: Final = "haiku-explicit-v1"
+_CLAUDE_MONITOR_ID = re.compile(r"claude-haiku-([1-9][0-9]?)(?:-([1-9][0-9]?))?(?:-([0-9]{8}))?")
+
+
+def validate_claude_monitor_model(value: str) -> str:
+    """Admit an explicit Claude Haiku generation 4 or later id, never a floating alias.
+
+    The floor of 4 is the oldest Haiku that is an explicit id of this shape; it is the owner's
+    admission policy for a sidecar that never makes a verdict, not a measured quality rank.
+    """
+    match = _CLAUDE_MONITOR_ID.fullmatch(value) if isinstance(value, str) else None
+    if match is None or int(match[1]) < 4:
+        msg = "Choose an explicit Claude Haiku model ID, such as claude-haiku-5-5."
+        raise ValueError(msg)
+    if snapshot := match[3]:
+        date.fromisoformat(f"{snapshot[:4]}-{snapshot[4:6]}-{snapshot[6:]}")
+    return value
 
 
 # The history store's two bounds as shipped, and the defaults the two flags that
@@ -156,11 +229,6 @@ class RuntimeConfig:
     # four preconditions rather than its existence: the switch ships off, and
     # the flag is what turns it on.
     unasked_enabled: bool
-    # The reader's launch-time consent to send a Claude Code reading's checks and written paths to
-    # the destination Compass names, written as the grant at startup so the first press asks only
-    # for the words. `--no-observer-model` refuses it, as it refuses every model call
-    # ([the ruling](SECURITY.md#tool-output-in-a-claude-code-reading)).
-    tool_output_pre_grant: bool
     # Whether the local history store is read and written at all.
     # `--no-history` is the off switch
     # [DEC-6](SECURITY.md#local-history-the-session-history-store)'s contract made part of the
@@ -203,6 +271,57 @@ class RuntimeConfig:
     direction_scan_max_seconds: float
     entry_index_max_seconds: float
     entry_index_limit: int
+    session_source_page_max_bytes: int
+    session_source_page_max_seconds: float
+    session_source_classify_share: float
+    session_source_line_max_bytes: int
+    session_outline_max_bytes: int
+    session_outline_head_bytes: int
+    session_outline_max_seconds: float
+    session_outline_max_blocks: int
+    session_outline_highlights: int
+    session_outline_cache_limit: int
+    session_summary_window_bytes: int
+    session_summary_max_windows: int
+    session_summary_max_calls: int
+    session_summary_max_bytes_sent: int
+    session_summary_max_seconds: float
+    session_summary_call_timeout: float
+    session_summary_rolling_cap: int
+    session_summary_output_cap_bytes: int
+    session_summary_max_phases: int
+    session_summary_max_bullets: int
+    session_summary_max_cites: int
+    session_summary_title_chars: int
+    session_summary_bullet_chars: int
+    session_summary_lede_chars: int
+    session_summary_max_bytes: int
+    # The entry clips the measurement used, not source admission limits; redaction precedes
+    # every clip (docs/design-session-summary.md#measurement-and-ceilings).
+    session_summary_person_chars: int
+    session_summary_agent_chars: int
+    session_summary_check_chars: int
+    session_summary_path_chars: int
+    # One retry for an empty reply; the focused plan's upper bound counts both attempts.
+    session_summary_attempts_per_part: int
+    # How long a focused freshness answer clipped by the read's time allowance is reused for an
+    # unchanged transcript. Re-reading it on every board revision cost about two seconds a poll
+    # on 42 and 52 MiB transcripts; never re-reading it would pin a slow-disk answer.
+    summary_freshness_retry_sec: float
+    # Full UUID session ids fit in 64 characters, as in the annotation store's key contract.
+    summary_store_key_cap_chars: int
+    # A provider/model identity is tens of characters. The stamp is resent on every focused poll,
+    # so an edited file or a buggy caller must not make it kilobytes.
+    summary_store_model_stamp_cap_chars: int
+    # Match annotation writers: ten seconds bounds one local queue plus the filesystem lock.
+    summary_store_lock_wait_sec: float
+    summary_store_filename: str
+    # 64 summaries x 512 KiB = 32 MiB, plus 32 MiB for comparison metadata and envelopes.
+    # Independent of annotations so summary eviction can never remove a reader's saved words.
+    summary_store_max_bytes: int
+    # Eviction orders by last write or read, so an hour's precision is enough; touching on every
+    # focused poll would rewrite a store of up to 64 MiB once per board revision.
+    summary_store_touch_interval_sec: float
     popup_cooldown_sec: float
     global_popup_cooldown_sec: float
     popup_repeat_suppress_sec: float
@@ -558,6 +677,31 @@ class RuntimeConfig:
     # is at-least-once and reorderable and a reading composed on the instant
     # of the end can be contradicted by a `turn_started` already in flight.
     reading_settle_sec: float
+    # How old a Claude Code reading's output or stderr file in `state_dir` must be before a starting
+    # run removes it as left by a hard kill (review, 2026-10-20). Every call is bounded by its
+    # timeout, 180 s for a reading, and a second instance may share the directory mid-call, so the
+    # bound is a day: far past any live call, and still short of leaving raw stderr for long.
+    reading_scratch_stale_sec: float
+    # The Live monitor, one block (the 2026-10-23 amendment cited above): the pinned Haiku id,
+    # the floor between two checks of one session, the call's timeout, the prompt and output
+    # bounds, the two caps (ticks per session per TTL window, ticks across the board per rolling
+    # 24 h) and how many checks may run at once on the board. The window is the banner's 20
+    # minutes plus its 10. A tab beats about every 20 s, a visible tab that stops for 50 s has
+    # left, and the ticker wakes every 5 s. The 240 board cap is PENDING THE OWNER'S FIGURE: none
+    # was given, and 240 is a sixth of a day of once-a-minute checks. The 6,000-character prompt
+    # cap holds the recent window a check re-sends beside its new turns.
+    claude_monitor_model: str
+    live_monitor_interval_sec: float
+    live_monitor_timeout_sec: float
+    live_monitor_prompt_cap_chars: int
+    live_monitor_output_cap_bytes: int
+    live_monitor_session_tick_cap: int
+    live_monitor_lapse_sec: float
+    live_monitor_ticker_sec: float
+    live_monitor_banner_sec: float
+    live_monitor_window_sec: float
+    live_monitor_daily_cap: int
+    live_monitor_in_flight_limit: int
 
 
 def resolve_store_roots(
@@ -676,16 +820,16 @@ def build_runtime_config(
     spacedock_enabled: bool = True,
     tripwires_enabled: bool = True,
     usage_fetch_enabled: bool = True,
-    observer_model_enabled: bool = False,
+    observer_model_enabled: bool = True,
     model_calls_disabled: bool = False,
     claude_reading_model: str = CLAUDE_READING_DEFAULT_MODEL,
+    claude_monitor_model: str = CLAUDE_MONITOR_DEFAULT_MODEL,
     git_probe_enabled: bool = True,
     focus_enabled: bool = True,
     irreversible_enabled: bool = True,
     dismissals_enabled: bool = True,
     annotations_enabled: bool = True,
     unasked_enabled: bool = False,
-    tool_output_pre_grant: bool = False,
     ask_enabled: bool = True,
     reach_enabled: bool = True,
     reach_url: str | None = None,
@@ -698,6 +842,7 @@ def build_runtime_config(
 ) -> RuntimeConfig:
     """Construct runtime configuration solely from explicit inputs."""
     selected_claude_model = validate_claude_reading_model(claude_reading_model)
+    selected_monitor_model = validate_claude_monitor_model(claude_monitor_model)
     windows = platform_name == "win32"
     join = ntpath.join if windows else posixpath.join
     home_key = "USERPROFILE" if windows else "HOME"
@@ -747,7 +892,6 @@ def build_runtime_config(
         dismissals_enabled=dismissals_enabled,
         annotations_enabled=annotations_enabled,
         unasked_enabled=unasked_enabled,
-        tool_output_pre_grant=tool_output_pre_grant and not model_calls_disabled,
         ask_enabled=ask_enabled,
         reach_enabled=reach_enabled,
         reach_url=reach_url,
@@ -775,6 +919,43 @@ def build_runtime_config(
         direction_scan_max_seconds=DIRECTION_SCAN_MAX_SECONDS,
         entry_index_max_seconds=ENTRY_INDEX_MAX_SECONDS,
         entry_index_limit=ENTRY_INDEX_LIMIT,
+        session_source_page_max_bytes=SESSION_SOURCE_PAGE_MAX_BYTES,
+        session_source_page_max_seconds=SESSION_SOURCE_PAGE_MAX_SECONDS,
+        session_source_classify_share=SESSION_SOURCE_CLASSIFY_SHARE,
+        session_source_line_max_bytes=SESSION_SOURCE_LINE_MAX_BYTES,
+        session_outline_max_bytes=SESSION_OUTLINE_MAX_BYTES,
+        session_outline_head_bytes=SESSION_OUTLINE_HEAD_BYTES,
+        session_outline_max_seconds=SESSION_OUTLINE_MAX_SECONDS,
+        session_outline_max_blocks=SESSION_OUTLINE_MAX_BLOCKS,
+        session_outline_highlights=SESSION_OUTLINE_HIGHLIGHTS,
+        session_outline_cache_limit=SESSION_OUTLINE_CACHE_LIMIT,
+        session_summary_window_bytes=SESSION_SUMMARY_WINDOW_BYTES,
+        session_summary_max_windows=SESSION_SUMMARY_MAX_WINDOWS,
+        session_summary_max_calls=SESSION_SUMMARY_MAX_CALLS,
+        session_summary_max_bytes_sent=SESSION_SUMMARY_MAX_BYTES_SENT,
+        session_summary_max_seconds=SESSION_SUMMARY_MAX_SECONDS,
+        session_summary_call_timeout=SESSION_SUMMARY_CALL_TIMEOUT,
+        session_summary_rolling_cap=SESSION_SUMMARY_ROLLING_CAP,
+        session_summary_output_cap_bytes=SESSION_SUMMARY_OUTPUT_CAP_BYTES,
+        session_summary_max_phases=SESSION_SUMMARY_MAX_PHASES,
+        session_summary_max_bullets=SESSION_SUMMARY_MAX_BULLETS,
+        session_summary_max_cites=SESSION_SUMMARY_MAX_CITES,
+        session_summary_title_chars=SESSION_SUMMARY_TITLE_CHARS,
+        session_summary_bullet_chars=SESSION_SUMMARY_BULLET_CHARS,
+        session_summary_lede_chars=SESSION_SUMMARY_LEDE_CHARS,
+        session_summary_max_bytes=SESSION_SUMMARY_MAX_BYTES,
+        session_summary_person_chars=1_200,
+        session_summary_agent_chars=700,
+        session_summary_check_chars=220,
+        session_summary_path_chars=220,
+        session_summary_attempts_per_part=2,
+        summary_freshness_retry_sec=300.0,
+        summary_store_key_cap_chars=64,
+        summary_store_model_stamp_cap_chars=256,
+        summary_store_lock_wait_sec=10.0,
+        summary_store_filename="compass-summaries.json",
+        summary_store_max_bytes=64 * 1024 * 1024,
+        summary_store_touch_interval_sec=3600.0,
         popup_cooldown_sec=60,
         global_popup_cooldown_sec=15,
         popup_repeat_suppress_sec=600,
@@ -910,6 +1091,19 @@ def build_runtime_config(
         observer_block_cap_chars=200,
         observer_model_context_chars=8_192,
         reading_settle_sec=8.0,
+        reading_scratch_stale_sec=86_400.0,
+        claude_monitor_model=selected_monitor_model,
+        live_monitor_interval_sec=60.0,
+        live_monitor_timeout_sec=45.0,
+        live_monitor_prompt_cap_chars=6_000,
+        live_monitor_output_cap_bytes=2_048,
+        live_monitor_session_tick_cap=30,
+        live_monitor_lapse_sec=50.0,
+        live_monitor_ticker_sec=5.0,
+        live_monitor_banner_sec=1_200.0,
+        live_monitor_window_sec=1_800.0,
+        live_monitor_daily_cap=240,
+        live_monitor_in_flight_limit=1,
     )
 
 

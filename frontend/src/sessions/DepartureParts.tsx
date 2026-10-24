@@ -1,10 +1,10 @@
 import { RaiseControl, useControls } from '../controls';
-import { delegatedWork, type Row } from '../observed';
+import type { Row } from '../observed';
 import { LANE_OFF_RECORD, laneOffWhy, unaskedDepartures, type DepartureRow } from './detail';
 
 /* The pieces of the session page that sit beside the Intent panel's reading and are measured evidence in
-   their own right: what became of a departure raised to the reader, the way back into the session beside
-   it, and what the session launched that nobody has seen finish. The Intent step composes them into its
+   their own right: what became of a departure raised to the reader and the way back into the session beside
+   it. The Intent step composes them into its
    panel; this step draws them in the panel's slot until that panel exists, so a raise on record is never
    hidden by the panel being absent. Each takes the session row and nothing else it could get wrong. */
 
@@ -60,31 +60,6 @@ export function UnaskedDepartureBody({ session }: { readonly session: Row }) {
       ))}
       {body.why ? <p className="next-session-departures-why">{body.why}</p> : null}
       {body.absence ? <p className="next-session-delivery-why">{body.absence}</p> : null}
-    </>
-  );
-}
-
-/* What the session launched. Counts concern recorded launches; unpaired and activity concern this session's
-   own launches, and an unread child is never a completed job. Drawn only where a launch was recorded or its
-   time was, so a session that never delegated says nothing; the check beneath it appears only when the
-   silence has lasted half an hour with a launch unpaired. */
-export function DelegatedWorkLine({
-  session,
-  now,
-}: {
-  readonly session: Row;
-  readonly now: number | null;
-}) {
-  const work = delegatedWork(session, now);
-  if (!work.draw) return null;
-  return (
-    <>
-      <p data-next-delegated-work>{work.text}</p>
-      {work.risky ? (
-        <p data-next-delegated-check>
-          Is the work this session launched still running? Show its process and latest output.
-        </p>
-      ) : null}
     </>
   );
 }

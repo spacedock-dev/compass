@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import re
 import sys
 import unittest
+import urllib.parse
 from pathlib import Path
+from typing import Any
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -41,6 +46,190 @@ class RewriteTest(unittest.TestCase):
     def test_the_last_record_is_the_latest_fact_time(self) -> None:
         context = {"semantic": {"facts": [{"at": 5}, {"at": 9.5}, {"at": None}, {}]}}
         self.assertEqual(9.5, bf.last_record_time(context))
+
+
+class SummaryAndCutoffTest(unittest.TestCase):
+    """The stored summary is placed on the sample's timeline, and the reading's age counted from it."""
+
+    @staticmethod
+    def fixture() -> dict[str, Any]:
+        job = {"started_at": CAPTURED - 100, "notice": {"at": CAPTURED - 100}}
+        summary = {
+            "exists": True,
+            "made_at": CAPTURED - 90,
+            "model_stamp": "claude:claude-sonnet-5-5:" + "ab" * 32,
+            "spend": {"calls": 3, "seconds": 21.5},
+            "job": dict(job),
+        }
+        return {
+            "context": {"sources": {"summary": dict(summary)}},
+            "prompts": {"sources": {"summary": dict(summary, job=dict(job))}},
+            "board": {
+                "sessions": [{"summary": {"made_at": CAPTURED - 90, "job": dict(job)}}],
+                "summaries": {"used": 6, "notices": {"claude": {}}, "off": False, "reason": ""},
+            },
+        }
+
+    def test_the_summary_sits_before_the_reading_and_its_digest_is_cut(self) -> None:
+        fixture = self.fixture()
+        bf.place_summary(fixture, 1000.0)
+        for answer in (fixture["context"], fixture["prompts"]):
+            summary = answer["sources"]["summary"]
+            self.assertEqual(1000.0, summary["made_at"])
+            self.assertEqual(1000.0 - 21.5, summary["job"]["started_at"])
+            self.assertIsNone(summary["job"]["notice"])
+            self.assertEqual("claude:claude-sonnet-5-5:" + "ab" * 16, summary["model_stamp"])
+        self.assertEqual(1000.0, fixture["board"]["sessions"][0]["summary"]["made_at"])
+        grant = fixture["board"]["summaries"]
+        self.assertEqual((3, {}, None), (grant["used"], grant["notices"], grant["retry_at"]))
+
+    def test_no_stored_summary_changes_nothing(self) -> None:
+        fixture: dict[str, Any] = {
+            "context": {"sources": {}},
+            "prompts": {},
+            "board": {"summaries": {"used": 2}},
+        }
+        bf.place_summary(fixture, 1000.0)
+        self.assertEqual(2, fixture["board"]["summaries"]["used"])
+
+    def test_a_kept_reading_and_its_settle_are_placed_after_the_summary(self) -> None:
+        # A reading kept from an earlier capture carries that day's moments, months past the six-hour
+        # shift, in the row and in both focused answers' levels.
+        earlier = CAPTURED + 40 * 86400
+        level = {"read_at": earlier}
+        fixture: dict[str, Any] = {
+            "board": {
+                "sessions": [
+                    {
+                        "annotation_settled_at": earlier + 150,
+                        "annotation_assessment": {
+                            "read_at": earlier,
+                            "stamp": "claude-sonnet-5-5 · read at 16:13",
+                            "window_start": 1000.0 - 600,
+                            "coverage": {"tail_start": 0},
+                            "cutoff": "Read it. The oldest is from about 3846h ago.",
+                        },
+                    }
+                ]
+            },
+            "context": {"sources": {"work": {"analysis_levels": [dict(level)]}}},
+            "prompts": {"sources": {"work": {"analysis_levels": [dict(level)]}}},
+        }
+        bf.place_reading(fixture, 1000.0)
+        row = fixture["board"]["sessions"][0]
+        read_at = 1000.0 + bf.READ_AFTER_LAST_RECORD
+        self.assertEqual(read_at, row["annotation_assessment"]["read_at"])
+        self.assertEqual("claude-sonnet-5-5 · read at 00:17", row["annotation_assessment"]["stamp"])
+        for answer in (fixture["context"], fixture["prompts"]):
+            self.assertEqual(read_at, answer["sources"]["work"]["analysis_levels"][0]["read_at"])
+        self.assertEqual(1000.0 + bf.SETTLED_AFTER_LAST_RECORD, row["annotation_settled_at"])
+        self.assertLess(bf.SUMMARIZED_AFTER_LAST_RECORD, bf.READ_AFTER_LAST_RECORD)
+        self.assertLess(bf.READ_AFTER_LAST_RECORD, bf.SETTLED_AFTER_LAST_RECORD)
+        self.assertLess(bf.SETTLED_AFTER_LAST_RECORD, bf.GENERATED_AFTER_LAST_RECORD)
+
+    def test_the_oldest_entry_is_aged_from_the_reading_not_the_capture(self) -> None:
+        assessment = {
+            "read_at": 10_000.0,
+            "window_start": 10_000.0 - 5_500,
+            "coverage": {"tail_start": 0},
+            "cutoff": "Read all 88 entries. The oldest is from about 3846h ago. More.",
+        }
+        self.assertEqual(
+            "Read all 88 entries. The oldest is from about 1h ago. More.",
+            bf.cutoff_on_timeline(assessment),
+        )
+        assessment["window_start"] = 10_000.0 - 600
+        self.assertIn("All are from within the last hour.", bf.cutoff_on_timeline(assessment))
+
+    def test_a_single_entry_keeps_its_own_subject(self) -> None:
+        assessment = {
+            "read_at": 10_000.0,
+            "window_start": 10_000.0 - 7_300,
+            "coverage": {"tail_start": 0},
+            "cutoff": "Read the one entry. It is from about 3846h ago.",
+        }
+        self.assertEqual(
+            "Read the one entry. It is from about 2h ago.", bf.cutoff_on_timeline(assessment)
+        )
+        assessment["window_start"] = 10_000.0 - 600
+        self.assertEqual(
+            "Read the one entry. It is from within the last hour.",
+            bf.cutoff_on_timeline(assessment),
+        )
+
+
+class RecordPagesTest(unittest.TestCase):
+    """The capture reads every record page back to the start, and keeps nothing of the server's cursors."""
+
+    def serve(self, pages: list[dict[str, Any]]) -> list[str]:
+        asked: list[str] = []
+        cursors = {f"signed-{i}": page for i, page in enumerate(pages[1:], 1)}
+
+        def fetch(_base: str, path: str, _body: object = None) -> dict[str, Any]:
+            asked.append(path)
+            before = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get("before")
+            return dict(cursors[before[0]] if before else pages[0])
+
+        patcher = mock.patch.object(bf, "fetch", fetch)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return asked
+
+    @staticmethod
+    def page(n: int, *, last: bool) -> dict[str, Any]:
+        return {
+            "state": "ok",
+            "entries": [{"fact_id": f"fact:{n}"}],
+            "reached_start": last,
+            "next": None if last else f"signed-{n + 1}",
+        }
+
+    def test_every_older_page_is_captured_under_a_cursor_of_its_own(self) -> None:
+        asked = self.serve(
+            [self.page(0, last=False), self.page(1, last=False), self.page(2, last=True)]
+        )
+        newest, older = bf.capture_record("http://x", "project=p&session=s")
+        self.assertEqual(3, len(asked))
+        self.assertTrue(all("limit=50" in path for path in asked))
+        self.assertEqual("older-1", newest["next"])
+        self.assertEqual(["older-1", "older-2"], list(older))
+        self.assertEqual("older-2", older["older-1"]["next"])
+        self.assertIsNone(older["older-2"]["next"])
+        self.assertNotIn("signed", json.dumps([newest, older]))
+
+    def test_a_one_page_record_has_no_older_pages(self) -> None:
+        self.serve([self.page(0, last=True)])
+        newest, older = bf.capture_record("http://x", "s")
+        self.assertEqual({}, older)
+        self.assertIsNone(newest["next"])
+
+    def test_a_record_longer_than_the_page_can_resolve_is_refused(self) -> None:
+        pages = [self.page(n, last=False) for n in range(bf.RECORD_MAX_PAGES + 1)]
+        self.serve(pages)
+        with self.assertRaises(SystemExit):
+            bf.capture_record("http://x", "s")
+
+    def test_a_page_that_is_not_ok_is_refused(self) -> None:
+        self.serve([{**self.page(0, last=False), "state": "stale"}])
+        with self.assertRaises(SystemExit):
+            bf.capture_record("http://x", "s")
+
+
+class PageConstantsTest(unittest.TestCase):
+    def test_the_capture_reads_pages_the_way_the_page_does(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[2] / "frontend" / "src" / "transport" / "record.ts"
+        ).read_text(encoding="utf-8")
+
+        def exported(name: str) -> int:
+            match = re.search(rf"^export const {name} = (\d+);", source, re.MULTILINE)
+            self.assertIsNotNone(match, name)
+            return int(match.group(1)) if match else 0
+
+        self.assertEqual(
+            (exported("RECORD_PAGE_SIZE"), exported("RESOLVE_MAX_PAGES")),
+            (bf.RECORD_PAGE_SIZE, bf.RECORD_MAX_PAGES),
+        )
 
 
 if __name__ == "__main__":

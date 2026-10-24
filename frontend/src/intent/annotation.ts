@@ -122,17 +122,20 @@ export function discardAccount(
   annotation: Annotation | null | undefined,
   departures: unknown,
   published: Row,
+  /* False while the result of the discard just pressed stands: it says the same thing, so the record waits
+     for the result to lapse rather than repeating it beside it. */
+  withRecord = true,
 ): string[] {
   if (!annotation || !annotationDiscarded(annotation)) return [];
-  const record = String(annotation['discarded_why'] || published['record'] || '');
+  const record = withRecord ? String(annotation['discarded_why'] || published['record'] || '') : '';
   const rows = Array.isArray(departures) ? departures : [];
   const standing = rows.length ? String(published['record_standing'] || '') : '';
   return [record, standing].filter(Boolean);
 }
 
-/* "revision 4 of 4", or "revision 20, 16 kept" once the store has started dropping the oldest. Past the
-   bound the sentence names both numbers for what they are, because read as "N of M" the pair goes
-   arithmetically impossible the moment they diverge. */
+/* When the words were saved, and whether the store has started dropping the oldest. Never a revision
+   number: nothing else on the page names one, and a reader cannot act on "4 of 16". Past the store's bound
+   the sentence says older saves are gone, which is what the pair of numbers was there to say. */
 export function revisionLine(
   annotation: Annotation | null | undefined,
   generated: number | null,
@@ -143,10 +146,8 @@ export function revisionLine(
   const age = durationSince(generated, annotation?.['at']);
   const goalSource = annotation?.['goal_source'];
   const verb = PROMPT_SOURCES.includes(goalSource as string) ? 'saved' : 'typed';
-  const typed = age === null ? '' : ` · ${verb} ${age} ago`;
-  return revision > count
-    ? `revision ${String(revision)}, ${String(count)} kept${typed} · older revisions dropped`
-    : `revision ${String(revision)} of ${String(count)}${typed}`;
+  const when = age === null ? `${verb}, when not recorded` : `${verb} ${age} ago`;
+  return revision > count ? `${when} · older saves dropped` : when;
 }
 
 /* The store's own character class, character for character. `records.safe_text` turns every run of
@@ -166,6 +167,26 @@ export const HELD_UNSAFE = new RegExp(`[${UNSAFE_CLASS}]+`, 'g');
 
 export function scrub(text: string): string {
   return text.replace(HELD_UNSAFE, ' ');
+}
+
+export { stripPasteWrapper } from '../api/paste';
+
+/* The rule in a direction: its first line, and within that its first sentence, so a message that goes on to
+   say what to do next ("run the targeted tests, and push") does not become a standing line or the goal. A
+   message with no sentence break is its own rule, whole. The reader edits what this offers; it is where
+   they start, never what is saved without them. */
+export function trimToRule(text: string): string {
+  const first = text.split(/\r?\n/).find((part) => part.trim()) ?? '';
+  const line = first.replace(/^\s*(?:\d+[.)]|[-*\u2022])\s+/, '').trim();
+  // A stop after an abbreviation or a bare opener ("Yes.") is not the end of a rule: a
+  // sentence under three words runs on to the next stop, or to the end of the line.
+  for (const stop of line.matchAll(/[.!?](?=\s|$)/g)) {
+    const head = line.slice(0, stop.index + 1);
+    if (/(?:^|\s)(?:e\.g|i\.e|vs|etc)\.$/i.test(head)) continue;
+    if (head.split(/\s+/).length < 3) continue;
+    return head;
+  }
+  return line;
 }
 
 /* The server's own cap on a typed box, published as `annotate_cap`, and 240 where it did not publish one. */

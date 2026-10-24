@@ -54,7 +54,7 @@ function tag(value: unknown): string {
 
 /* Fields the retired page never had. A recorded answer is keyed by the arguments it was given, so a field
    added since must not reach the key: the legacy code is handed the shape it was recorded against. */
-const LATER_FIELDS = new Set(['ordinal', 'ordinalSub', 'ordinals', 'resultReason']);
+const LATER_FIELDS = new Set(['ordinal', 'ordinalSub', 'ordinals', 'checkId', 'resultReason']);
 
 export function withoutLaterFields(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutLaterFields);

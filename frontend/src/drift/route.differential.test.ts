@@ -8,20 +8,16 @@ import { genSession, mulberry32, pick, type Rng } from '../intent/generate.test.
 import { canonical, firstDifference } from '../observed/legacy.test.helper';
 import { loadLegacyDrift } from './legacy.test.helper';
 import {
-  anyConsent,
   capReset,
   eligibility,
-  needsAllow,
   policyReason,
   pressRefusal,
   promptReadingRefusal,
-  readingConsent,
   readingJob,
   readingRefusal,
   readingRoute,
   readingStates,
   routeRefusal,
-  toolOutputGranted,
   withheldAge,
 } from './route';
 
@@ -134,7 +130,7 @@ function genRow(rnd: Rng, index: number): Record<string, unknown> {
   };
 }
 
-describe('the route, consent and refusals read as the legacy page reads them', () => {
+describe('the route and unchanged refusals read as the legacy page reads them', () => {
   it(`agree on ${String(SEEDS)} generated payloads and sessions`, () => {
     const failures: string[] = [];
     const seen: Record<string, number> = {};
@@ -187,9 +183,14 @@ describe('the route, consent and refusals read as the legacy page reads them', (
           canonical(
             typeof theirs === 'string'
               ? capped(
+                  /* Deviation (owner, 2026-10-20): Claude Code has no idle line of its own, since an
+                     idle Claude Code session is read rather than refused; a stale idle token falls to
+                     the line every harness gets. */
                   theirs.replace(
                     "Last turn isn't recorded as finished. Run another turn to open Analyze.",
-                    'Analyze opens while this session runs.',
+                    session['acquisition'] === 'event'
+                      ? 'Analyze opens while this session runs or once it ends.'
+                      : 'Analyze opens while this session runs.',
                   ),
                 )
               : theirs,
@@ -200,22 +201,13 @@ describe('the route, consent and refusals read as the legacy page reads them', (
       };
       same('route', legacy.call('nextReadingRoute', session), route);
       const provider = route && route['provider'] ? String(route['provider']) : '';
-      same(
-        'consent',
-        legacy.call('nextReadingConsent', provider, String(session['harness'])),
-        readingConsent(payload as never, provider, String(session['harness'])),
-      );
-      same(
-        'tool output',
-        legacy.call('nextReadingToolOutputGranted', route),
-        toolOutputGranted(payload as never, route),
-      );
-      same(
-        'needs allow',
-        legacy.call('nextReadingNeedsAllow', route),
-        needsAllow(payload as never, route),
-      );
-      same('any consent', legacy.call('nextReadingAnyConsent'), anyConsent(payload as never));
+      /* These four recorded admission answers predate the owner’s opt-out ruling (2026-10-19).
+         Keep the oracle calls in sequence; they no longer describe a reader-started press.
+         [The widening](../../../docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts) */
+      legacy.call('nextReadingConsent', provider, String(session['harness']));
+      legacy.call('nextReadingToolOutputGranted', route);
+      legacy.call('nextReadingNeedsAllow', route);
+      legacy.call('nextReadingAnyConsent');
       same(
         'eligibility',
         legacy.call('nextReadingEligibility', session),

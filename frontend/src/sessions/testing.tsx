@@ -26,6 +26,8 @@ export interface SessionsShellOptions {
   readonly strict?: boolean;
   readonly focusCapability?: string;
   readonly answer?: AnswerScript;
+  /** The project context a session page reads; without it the read falls through to the board. */
+  readonly context?: unknown;
 }
 
 export interface Request {
@@ -71,6 +73,8 @@ export function mountSessions(options: SessionsShellOptions = {}) {
         ),
       );
     }
+    if (options.context !== undefined && url.startsWith('/api/project-context'))
+      return Promise.resolve(new Response(JSON.stringify(options.context), { status: 200 }));
     if (url === '/api/answer') {
       const script = state.answer;
       switch (script.kind) {

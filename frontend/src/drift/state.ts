@@ -31,6 +31,36 @@ export interface Flip {
   drawn: number;
 }
 
+/* The departures a reading carried the last time this tab drew it, and what the next reading cleared. Held
+   in the tab and never stored: it says only what this tab watched happen, so a reading it never saw depart
+   cannot clear. */
+export interface SeenReading {
+  readAt: number;
+  departures: readonly DepartureMark[];
+  /** The reading drawn before this one, and the departures it carried. */
+  before: { readonly readAt: number; readonly departures: readonly DepartureMark[] } | null;
+}
+
+/** What names one departure from one reading to the next: the line it stands on, the reason it gave and the
+    entries it cited. A model words one finding differently each time it reads, so the reason alone is not it. */
+export interface DepartureMark {
+  readonly key: string;
+  readonly detail: string;
+  readonly cites: readonly string[];
+}
+
+const sameDeparture = (left: DepartureMark, right: DepartureMark): boolean =>
+  left.key === right.key &&
+  (left.detail.trim() === right.detail.trim() || left.cites.some((id) => right.cites.includes(id)));
+
+/** The earlier reading's departures that the reading now standing no longer finds. */
+export interface ClearedDeparture {
+  readonly readAt: number;
+  readonly count: number;
+  /** How many corrections the reader pasted into the session between the two readings: what they named. */
+  readonly corrections: number;
+}
+
 export type FlipTimerName = 'hold' | 'until' | 'line' | 'say';
 
 /* A Cancel in flight, or one that could not be confirmed, per session and for the one job it named, so
@@ -87,6 +117,7 @@ export function createDriftState(shell: Shell) {
   const jobsSeen = new Map<string, JobSeen>();
   const corrections = new Map<string, HeldCorrection>();
   const notAccurate = new Set<string>();
+  const readings = new Map<string, SeenReading>();
   const timers = new Map<FlipTimerName, { at: number; handle: TimerHandle }>();
   const wants = new Map<FlipTimerName, number | null>();
   let overlay: Overlay = { stamp: -1, jobs: {}, routes: {}, reading: null };
@@ -181,6 +212,58 @@ export function createDriftState(shell: Shell) {
       return () => {
         mounted -= 1;
       };
+    },
+
+    /* The reading now standing for a session and the departures it carries: the departures the one before it
+       carried that this one does not are returned for as long as it stands, and the next reading, whatever it
+       finds, takes the note down. Without a correction pasted between the two, that is how many fewer
+       departures this one carries than the one before it, up to the ones it no longer finds: two to one names
+       one, and a clear to zero names every one. With one, it is each departure the correction named that
+       this reading no longer finds, whether or not another stands: a steer that worked can leave the reading
+       departing on something else, and the reader is told the first was met. The departures are the latest drawn
+       for that reading, because the entries a departure cites may load after the first draw. Idempotent per
+       `readAt`, so a render that runs twice says the same. */
+    noteReading(
+      key: string,
+      readAt: number,
+      departures: readonly DepartureMark[],
+      pastedAt: readonly number[] = [],
+    ): ClearedDeparture | null {
+      const seen = readings.get(key);
+      if (seen && seen.readAt === readAt) {
+        seen.departures = departures;
+      } else {
+        const before =
+          seen && readAt > seen.readAt
+            ? { readAt: seen.readAt, departures: seen.departures }
+            : null;
+        readings.delete(key);
+        readings.set(key, { readAt, departures, before });
+        while (readings.size > HELD_CUE_LIMIT) {
+          const [oldest] = readings.keys();
+          if (oldest === undefined) break;
+          readings.delete(oldest);
+        }
+      }
+      const now = readings.get(key);
+      if (!now?.before) return null;
+      const since = now.before.readAt;
+      const corrections = pastedAt.filter((at) => at > since && at <= readAt).length;
+      const gone = now.before.departures.filter(
+        (earlier) => !departures.some((later) => sameDeparture(earlier, later)),
+      ).length;
+      /* With a correction between, every departure it named that no longer stands is named, standing ones
+         beside it or not. Without one, the net fall is, and so is a departure replaced one for one by a
+         different one, up to as many as now stand: a model words a finding differently from reading to
+         reading, so the page never says more ended than were watched to (the sameness rule above holds a
+         reworded survivor to its shared entry), and a reading that departs on exactly what it did says
+         nothing. */
+      const replaced = Math.min(gone, departures.length);
+      const count =
+        corrections > 0
+          ? gone
+          : Math.max(replaced, Math.min(gone, now.before.departures.length - departures.length));
+      return count > 0 ? { readAt: since, count, corrections } : null;
     },
 
     /* The flip ledger is bounded as the cue lanes are: past sixteen drawn sessions the oldest goes. */

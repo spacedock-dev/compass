@@ -5,19 +5,20 @@ import type { WorkEntry, WorkSource } from '../intent/work';
 import { entryNumbers, labelOrder } from '../intent/work';
 import { clock, isRecord, type Row } from '../observed';
 import type { ContextEntry } from '../store/board';
-import { recordedTime } from './result';
+import { localRecordedTime, recordedTime } from './result';
 import { fmtDur } from './route';
 import {
   BLOCKER_LINES,
   CLAIMS,
   CONSISTENT,
   DEPARTURE,
+  GOAL_NOT_SHOWN,
   LEVEL_SCALE,
   LIVE_LEVEL_NAMES,
   REASON_LINES,
   UNSUPPORTED,
 } from './sentences';
-import { agentMessage, evidenceAt, type Shape } from './shape';
+import { agentMessage, evidenceAt, isOutcomeLine, type Shape } from './shape';
 
 /* The Drift level: the live estimate (deterministic, from checks and file paths, never a model) and the
    analysis-derived level (the server's `levels.analysis_level` over the stored reading and the record as it
@@ -25,6 +26,9 @@ import { agentMessage, evidenceAt, type Shape } from './shape';
    or low" from a model and from a path count are different claims
    ([DEC-26](../../../docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
    The legacy cockpit's `nextDrift*` functions are the oracle (`level.differential.test.ts`). */
+
+/* The levels that read as a finding of drift: each needs a departure behind it. */
+const ABOVE_LOW: readonly string[] = ['medium', 'high', 'extreme'];
 
 export type Contexts = ReadonlyMap<string, ContextEntry>;
 
@@ -40,6 +44,21 @@ function workOf(
   const work = sources && isRecord(sources['work']) ? sources['work'] : null;
   const rows = work?.[field];
   return Array.isArray(rows) ? (rows as Row[]) : [];
+}
+
+/* A single object the focused context's work source publishes under `field`: the Live monitor's lease. */
+export function workObject(
+  contexts: Contexts,
+  projectKey: string,
+  session: Row,
+  field: string,
+): Row | null {
+  const entry = contexts.get(contextKey(projectKey, session as never));
+  const data = entry?.data as unknown as Row | null | undefined;
+  const sources = isRecord(data?.['sources']) ? data['sources'] : null;
+  const work = sources && isRecord(sources['work']) ? sources['work'] : null;
+  const value = work?.[field];
+  return isRecord(value) ? (value as Row) : null;
 }
 
 /* The focused context's live row for this session. A level measured against an earlier revision is about
@@ -207,6 +226,13 @@ export interface EvidenceRow {
   readonly at: string;
   readonly result: string;
   readonly source: string;
+  /** The row as the page draws it, in the reader's local time; the fields above are the retired page's. */
+  readonly shown: {
+    readonly head: string;
+    readonly summary: string;
+    readonly at: string;
+    readonly result: string;
+  };
 }
 
 /* The cited entries' own rows: what each is, who recorded it, and when, with the source one click away. A
@@ -228,19 +254,25 @@ export function evidenceRows(
         ? 'Result time not recorded.'
         : `Result recorded at ${recordedTime(entry.resultAt)}`
       : '';
+    const at = nextNumber(entry.at);
+    const kind = check
+      ? `${entry.result || 'Recorded'} check`
+      : entry.subject === 'write'
+        ? 'File write'
+        : entry.subject === 'pr'
+          ? 'Pull request created'
+          : entry.subject === 'skill'
+            ? 'Skill used'
+            : agentMessage(entry)
+              ? 'Agent message'
+              : String(entry.type || 'Recorded entry');
     return {
       id: String(entry.id || ''),
       label: [
         n === undefined ? 'Entry not numbered in this view' : `#${String(n)}`,
         String(entry.summary || 'Recorded entry'),
       ].join(' · '),
-      kind: check
-        ? `${entry.result || 'Recorded'} check`
-        : entry.subject === 'write'
-          ? 'File write'
-          : agentMessage(entry)
-            ? 'Agent message'
-            : String(entry.type || 'Recorded entry'),
+      kind,
       who: [harness || 'Harness not recorded', entry.workerKind].filter(Boolean).join(' · '),
       eventLabel:
         entry.type === 'tool_report' && check && harness === 'claude'
@@ -249,6 +281,20 @@ export function evidenceRows(
       at: recordedTime(entry.at),
       result,
       source: String(entry.source || 'Source not recorded'),
+      shown: {
+        head: [
+          n === undefined ? 'Entry not numbered in this view' : `#${String(n)}`,
+          kind,
+          ...(at !== null && at > 0 ? [clock(at)] : []),
+        ].join(' · '),
+        summary: String(entry.summary || ''),
+        at: localRecordedTime(entry.at),
+        result: check
+          ? localRecordedTime(entry.resultAt) === 'time not recorded'
+            ? 'Result time not recorded.'
+            : `Result recorded at ${localRecordedTime(entry.resultAt)}`
+          : '',
+      },
     };
   });
 }
@@ -295,6 +341,18 @@ function recordedSignals(
   return { lines, evidence, limits };
 }
 
+/* A reading of the goal alone has no outcome line to be unshown, so "a line of your intent" would name
+   something the reader never saved; the goal is the line no check shows (owner feedback, 2026-10-22). */
+function goalAloneBlockers(reasons: Reasons, shape: Shape): Reasons {
+  const goalAlone = !shape.criteria.some((line) => isOutcomeLine(line.key));
+  return {
+    first: reasons.first,
+    blockers: reasons.blockers.map((line) =>
+      goalAlone && line === BLOCKER_LINES['line-not-shown-by-a-check'] ? GOAL_NOT_SHOWN : line,
+    ),
+  };
+}
+
 export interface DriftLevel {
   readonly level: string;
   readonly label: string;
@@ -304,13 +362,19 @@ export interface DriftLevel {
   readonly signals: Signals | null;
   readonly reasons: Reasons;
   readonly analysis: boolean;
-  /** The analysis line, "Analysis at 14:03 · intent against cited checks and messages." */
+  /** The analysis line, "Intent against cited checks and messages."; the read time is the card header's. */
   readonly line: string;
   readonly range: string;
+  /** Drawn by the Live monitor's Haiku check, not computed from checks and paths or read from an analysis. */
+  readonly monitor?: boolean;
+  /** The monitor's own sentence about where the latest turns are heading. */
+  readonly note?: string;
 }
 
 export interface LiveInput {
   readonly on: boolean;
+  /** The level a Haiku check earned, which replaces the estimate while it stands. */
+  readonly monitor?: DriftLevel | null;
   readonly harness: string;
   readonly contexts: Contexts;
   readonly projectKey: string;
@@ -326,6 +390,7 @@ export interface LiveInput {
    revision the panel no longer shows is not drawn. */
 export function liveEstimate(input: LiveInput): DriftLevel | { readonly save: true } | null {
   if (input.harness !== 'claude' || !input.on) return null;
+  if (input.monitor) return input.monitor;
   const row = liveRow(input.contexts, input.projectKey, input.session);
   if (!row) return null;
   const level = String(row['level'] || '');
@@ -419,14 +484,34 @@ export function analysisLevel(input: AnalysisInput): DriftLevel | null {
   if (current !== null && nextNumber(raw['revision_read']) !== current) return null;
   let level = String(row['level'] || '');
   if (!Object.hasOwn(LIVE_LEVEL_NAMES, level)) return null;
-  if (level === 'none_or_low' && !analysisShown(shape)) level = 'not_enough';
+  /* The tokens the level is explained from: the server's, and the page's own where it withholds a level the
+     server drew, so the sentence that says why none is drawn has something to say. */
+  const tokens: unknown[] = Array.isArray(row['reasons']) ? [...(row['reasons'] as unknown[])] : [];
+  if (level === 'none_or_low' && !analysisShown(shape)) {
+    level = 'not_enough';
+    tokens.push(
+      shape.criteria.some((line) => line.key === CLAIMS && line.result === UNSUPPORTED)
+        ? 'claim-not-shown'
+        : 'line-not-shown-by-a-check',
+    );
+  } else if (ABOVE_LOW.includes(level) && shape.departures.length === 0) {
+    /* A level above None or low is set from a departure the reading carries. The server also reads Medium
+       from a contradicted claim or a pass followed by a change, and High from a failed check, and the page
+       will not draw any of them beside a reading that found no departure: the level stood on nothing the
+       reading said
+       ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)).
+       What it did find is said in the verdict sentence instead. */
+    level = 'not_enough';
+  }
   const numbers = entryNumbers(input.session, input.work, input.payload);
   const held = input.work.all || input.work.entries || [];
   return {
     level,
     label: LIVE_LEVEL_NAMES[level] as string,
     source: 'Analysis',
-    line: `Analysis at ${clock(readAt)} · intent against cited checks and messages.`,
+    /* The read time is the card header's, once ("Analysis last run HH:MM"); this line says only what the
+       analysis was made against. */
+    line: 'Intent against cited checks and messages.',
     analysis: true,
     rose: '',
     anchored: false,
@@ -437,19 +522,22 @@ export function analysisLevel(input: AnalysisInput): DriftLevel | null {
       nextNumber(raw['window_start']),
       nextNumber(raw['evidence_through']) ?? readAt,
     ),
-    reasons: driftReasons(
-      level,
-      row['reasons'],
-      row['cites'],
-      held,
-      numbers,
-      new Set(
-        shape.criteria
-          .filter((line) => line.result === DEPARTURE && line.key !== CLAIMS)
-          .flatMap((line) => line.citedIds || [])
-          .map(String),
+    reasons: goalAloneBlockers(
+      driftReasons(
+        level,
+        tokens,
+        row['cites'],
+        held,
+        numbers,
+        new Set(
+          shape.criteria
+            .filter((line) => line.result === DEPARTURE && line.key !== CLAIMS)
+            .flatMap((line) => line.citedIds || [])
+            .map(String),
+        ),
+        input.generated,
       ),
-      input.generated,
+      shape,
     ),
   };
 }

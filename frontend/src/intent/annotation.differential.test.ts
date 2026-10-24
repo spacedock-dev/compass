@@ -19,6 +19,7 @@ import {
   pick,
 } from './generate.test.helper';
 import { loadLegacyIntent } from './legacy.test.helper';
+import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
 /* The annotation reader and the sentences built from it, run next to the legacy functions over generated
    rows. The legacy source is the oracle; a difference is a bug here. */
@@ -27,7 +28,9 @@ const CASES = 80;
 const SEEDS = CASES;
 
 function agree(label: string, left: unknown, right: unknown): string | null {
-  const found = firstDifference(canonical(left), canonical(right));
+  const masked = (value: unknown): unknown =>
+    typeof value === 'string' ? maskRevisionWords(value) : value;
+  const found = firstDifference(canonical(masked(left)), canonical(masked(right)));
   return found ? `${label}: ${found}` : null;
 }
 
@@ -112,7 +115,7 @@ describe('the annotation reader agrees with the legacy page over generated rows'
       if (annotation) seen.known += 1;
       if (annotationDiscarded(annotation)) seen.discarded += 1;
       if (annotationLines(annotation).some((line) => line.source === 'entry')) seen.entry += 1;
-      if (/older revisions dropped/.test(revisionLine(annotation, 1000))) seen.past += 1;
+      if (/older saves dropped/.test(revisionLine(annotation, 1000))) seen.past += 1;
       if (session['project'] === '') seen.blank += 1;
     }
     for (const [name, count] of Object.entries(seen)) expect(count, name).toBeGreaterThan(0);

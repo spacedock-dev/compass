@@ -19,7 +19,7 @@
         "sid": "a1b2c3d4"
       },
       "observer_model": {
-        "disclosure": "Send redacted transcript excerpts and workflow stage to OpenAI through Codex for a goal summary? Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. --no-observer-model refuses calls for this run.",
+        "disclosure": "A focused refresh sends redacted transcript excerpts and workflow stage through Codex to OpenAI for a goal summary. Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. Pause model calls or --no-observer-model stops these calls.",
         "enabled": false,
         "max_prompt_bytes": 16384
       },
@@ -75,6 +75,16 @@
             }
           ]
         },
+        "outline": {
+          "basis": "grouping",
+          "blocks": [],
+          "coverage": null,
+          "harness": "claude",
+          "made_by": "compass",
+          "more_blocks": 0,
+          "reason": "unavailable",
+          "state": "unavailable"
+        },
         "scope": "focused session",
         "steer": {
           "live": 0,
@@ -87,11 +97,33 @@
             }
           ]
         },
+        "summary": {
+          "exists": false,
+          "job": null,
+          "plan": null,
+          "state": "absent"
+        },
         "surrounding_active": 0,
         "work": {
           "analysis_levels": [],
           "line_requests": [],
           "live": 0,
+          "live_monitor": {
+            "banner_due_at": null,
+            "confirm_by": null,
+            "deadline": null,
+            "destination": null,
+            "disclosure": null,
+            "interval_sec": 60.0,
+            "label": "Live monitor · Haiku",
+            "last_end": null,
+            "level": null,
+            "model": "claude-haiku-5-5",
+            "now": 1900000000.0,
+            "on": false,
+            "started_at": null,
+            "visible": false
+          },
           "omitted": [],
           "support": {
             "collapsed_contributors": 0,
@@ -120,7 +152,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "1871",
+      "Content-Length": "2409",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

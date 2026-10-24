@@ -16,6 +16,7 @@ import { RouteLink } from './RouteLink';
 import { useDisplayed } from './context';
 import { AttentionView } from '../attention';
 import { IntentLog } from '../intent';
+import { useLiveMonitorLease } from '../intent/liveMonitor';
 import { SampleSession } from '../sample/SampleSession';
 import { isSampleRoute } from '../sample/ids';
 import { SessionDetail, SessionsView } from '../sessions';
@@ -148,7 +149,19 @@ function SessionView({ route }: { readonly route: SessionRoute }) {
       </section>
     );
   }
-  return <SessionDetail route={route} data={data} session={session as unknown as Row} />;
+  return (
+    <>
+      <LiveMonitorLease session={session as unknown as Row} payload={data as unknown as Row} />
+      <SessionDetail route={route} data={data} session={session as unknown as Row} />
+    </>
+  );
+}
+
+/* The Live monitor's lease for the session on screen: nothing is drawn, and the lease lives exactly as long as
+   this is mounted, so leaving the route, or moving to another session, ends it. */
+function LiveMonitorLease({ session, payload }: { readonly session: Row; readonly payload: Row }) {
+  useLiveMonitorLease(session, payload);
+  return null;
 }
 
 function ProjectView({ route }: { readonly route: ProjectRoute }) {

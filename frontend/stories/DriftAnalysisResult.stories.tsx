@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import {
-  LEVEL_HIDDEN_MARKED,
   READ_NEVER,
   READ_SUMMARY,
   RESULT_MARKED,
@@ -87,6 +86,28 @@ export const UnderTheLimitSaysNothingAboutIt: Story = {
   },
 };
 
+/* Paused with a current result: the re-run control stays in the head, inert, and Resume model calls stays
+   drawn beside it, outside any popover, because it changes permission and starts nothing. */
+export const PausedResultStillOffersResume: Story = {
+  ...scenario({
+    ...RESULT,
+    payload: { reading: { consent: false, off: true, reason: 'model-calls-paused' } },
+  }),
+  play: async ({ canvasElement }) => {
+    const root = await card(canvasElement);
+    await foot(root);
+    const resume = await within(root).findByRole('button', { name: 'Resume model calls' });
+    await expect(resume).toBeVisible();
+    await expect(within(root).getAllByRole('button', { name: 'Resume model calls' })).toHaveLength(
+      1,
+    );
+    await expect(within(root).getByRole('button', { name: 'Analyze again' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  },
+};
+
 export const LimitReachedHoldsTheTopOfThePage: Story = {
   ...scenario({
     ...RESULT,
@@ -133,28 +154,39 @@ export const MarkAsInaccurateSaysWhatItDoes: Story = {
     await expect(row).toHaveTextContent(RESULT_NOT_ACCURATE_HINT);
     await waitFor(() => expect(drift.querySelector('[data-next-drift-level]')).not.toBeNull());
     await within(drift).findByRole('button', { name: 'Steer back' });
+    await expect(drift.querySelector('[data-next-disowned]')).toBeNull();
     const mark = within(row).getByRole('button', { name: RESULT_NOT_ACCURATE });
     mark.scrollIntoView({ block: 'center' });
     const before = row.getBoundingClientRect().top;
     await userEvent.click(mark);
-    // After: what changed, said beside the control, and Undo in its place.
+    // After: one message, at the top where the level was, with Undo and Analyze again beside it.
     await waitFor(() => expect(row).toHaveAttribute('data-next-result-mark', 'marked'));
-    await expect(within(row).getByRole('status')).toHaveTextContent(RESULT_MARKED);
-    const undo = within(row).getByRole('button', { name: RESULT_UNMARK });
-    // The level and Steer back left the column above; the control stayed where it was pressed.
+    const notice = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
+    // Said once: the foot no longer repeats it, and no second Undo stands there.
+    await expect(row.textContent).not.toContain('Marked inaccurate');
+    await expect(within(row).queryByRole('button', { name: RESULT_UNMARK })).toBeNull();
+    await expect(drift.textContent?.split(RESULT_MARKED).length).toBe(2);
+    const undo = within(notice).getByRole('button', { name: RESULT_UNMARK });
+    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    // The level and Steer back left the column above; the foot stayed where the press was.
     await expect(Math.abs(row.getBoundingClientRect().top - before)).toBeLessThan(4);
     await expect(drift.querySelector('[data-next-drift-level]')).toBeNull();
-    await expect(drift.querySelector('[data-next-drift-marked]')).toHaveTextContent(
-      LEVEL_HIDDEN_MARKED,
-    );
     await expect(within(drift).queryByRole('button', { name: 'Steer back' })).toBeNull();
     await userEvent.click(undo);
     await waitFor(() => expect(row).toHaveAttribute('data-next-result-mark', 'unmarked'));
     await waitFor(() => expect(drift.querySelector('[data-next-drift-level]')).not.toBeNull());
     await expect(drift.querySelector('[data-next-drift-marked]')).toBeNull();
+    await expect(drift.querySelector('[data-next-disowned]')).toBeNull();
   },
 };
 
+/* A reading marked inaccurate keeps its verdicts on the card, drawn as disowned, so a later scan does not
+   read them as standing; the card offers a way forward. */
 export const MarkedInaccurate: Story = {
   ...scenario({
     ...RESULT,
@@ -164,14 +196,85 @@ export const MarkedInaccurate: Story = {
     const drift = await card(canvasElement);
     const row = await foot(drift);
     await expect(row).toHaveAttribute('data-next-result-mark', 'marked');
-    await expect(within(row).getByRole('status')).toHaveTextContent(RESULT_MARKED);
-    await expect(within(row).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
-    await expect(drift.querySelector('[data-next-drift-marked]')).toHaveTextContent(
-      LEVEL_HIDDEN_MARKED,
-    );
+    const notice = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
+    await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
+    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    // The verdicts stay readable and are set aside: dimmed, and under the one message.
+    const disowned = drift.querySelector<HTMLElement>('[data-next-disowned]');
+    await expect(disowned).not.toBeNull();
+    await expect(disowned).toHaveTextContent('Departs from your intent');
+    await expect(Number(getComputedStyle(disowned as HTMLElement).opacity)).toBeLessThan(0.8);
     // The old wording is gone.
     await expect(drift.textContent).not.toContain('Not accurate?');
-    await expect(drift.textContent).not.toContain('You marked this analysis not accurate.');
+    await expect(drift.textContent).not.toContain('Drift level hidden because you marked');
+  },
+};
+
+/* The Live monitor is the reader's opt-in switch, and a live estimate must not take the marked reading's slot:
+   with it on and a live level row published, the message, Undo and Analyze again still stand. */
+export const MarkedInaccurateWithTheLiveMonitorOn: Story = {
+  ...scenario({
+    ...RESULT,
+    session: { ...RESULT.session, annotation_not_accurate: true },
+    work: {
+      analysis_levels: [analysisRow('claude')],
+      live_levels: [
+        {
+          harness: 'claude',
+          sid: 's1',
+          revision: 3,
+          computed_at: 990,
+          level: 'high',
+          reasons: ['failed-check'],
+          cites: ['c1'],
+          rose_at: '',
+          rose_from: '',
+        },
+      ],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const head = drift.querySelector('header') as HTMLElement;
+    await userEvent.click(within(head).getByRole('button', { name: 'Drift settings' }));
+    const monitor = await within(document.body).findByRole('switch', { name: 'Live monitor' });
+    await userEvent.click(monitor);
+    await waitFor(() => expect(monitor).toHaveAttribute('aria-checked', 'true'));
+    const notice = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
+    await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
+    await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
+    await expect(drift.querySelector('[data-next-disowned]')).not.toBeNull();
+  },
+};
+
+/* The card asks nothing it keeps nowhere: an optional "what was wrong" choice was held in this tab, sent to
+   no one and outlived the reading, so a marked reading offers the mark and its way back and forward only. */
+export const MarkedInaccurateOffersNoChoiceItDoesNotKeep: Story = {
+  ...scenario({
+    ...RESULT,
+    session: { ...RESULT.session, annotation_not_accurate: true },
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const notice = await waitFor(() => {
+      const node = drift.querySelector<HTMLElement>('[data-next-drift-marked]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
+    await expect(notice.querySelector('[data-next-marked-wrong]')).toBeNull();
+    await expect(notice).not.toHaveTextContent(/what was wrong/i);
+    await expect(within(notice).queryByRole('button', { pressed: true })).toBeNull();
   },
 };
 
@@ -189,9 +292,15 @@ export const WhatTheAnalysisRead: Story = {
     const section = (name: string) =>
       read.querySelector<HTMLElement>(`[data-next-read-section="${name}"]`) as HTMLElement;
     const headings = [...read.querySelectorAll('h4')].map((h) => h.textContent);
-    await expect(headings).toEqual(['Model', 'Your intent', 'The session', 'Not read']);
-    await expect(section('model')).toHaveTextContent('claude-sonnet-5-5 · read at 09:38');
-    await expect(section('intent')).toHaveTextContent(/Version 3 · typed .+ ago/);
+    await expect(headings).toEqual([
+      'Model',
+      'Your intent',
+      'The session',
+      'Where the work went',
+      'Not read',
+    ]);
+    await expect(section('model')).toHaveTextContent(/^Modelclaude-sonnet-5-5$/);
+    await expect(section('intent')).toHaveTextContent(/typed .+ ago/);
     await expect([...section('intent').querySelectorAll('li')].map((li) => li.textContent)).toEqual(
       ['Goal “Ship the queue”', 'Expected outcome “Tests pass”'],
     );
@@ -200,9 +309,12 @@ export const WhatTheAnalysisRead: Story = {
       'Everything up to the session’s end.',
       'Read all 4 entries after your intent: 1 from you, 1 file write, 1 failed check, 1 passed check.',
       'The oldest is from about 13h ago.',
+      // The level's range and reason, moved here from between the meter and the answer (2026-10-20).
+      'Entries read: [1] to [4].',
+      'pytest -q failed 8m ago at [2]; no passing re-run recorded.',
     ]);
     // Each item is its own line, not one run of words.
-    await expect(new Set(session.map((li) => li.getBoundingClientRect().top)).size).toBe(3);
+    await expect(new Set(session.map((li) => li.getBoundingClientRect().top)).size).toBe(5);
     await expect(section('not-read')).toHaveTextContent(READ_NEVER);
     for (const retired of [
       'A reading is one model pass',

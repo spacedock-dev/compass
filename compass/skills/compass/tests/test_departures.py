@@ -282,6 +282,22 @@ class DepartureFollowUpTest(unittest.TestCase):
 
         self.assertEqual(departures.FOLLOW_UP_NOT_RAISED_AGAIN, by_constraint["TYPED GOAL"])
 
+    def test_a_later_check_that_never_finished_says_no_later_check(self) -> None:
+        """A cancelled or failed call is a withdrawn row: charged, and not a check.
+
+        Read as a check it published "did not raise this constraint again" about
+        a check that never read anything.
+        """
+        stored = (
+            _check(),
+            _check(at=2_000.0, cutoff=2_000.0, constraint="", clause="", withdrawn=True),
+        )
+
+        rows = departures.published(stored, "claude", "abcd1234")
+
+        self.assertEqual(departures.FOLLOW_UP_NO_LATER_CHECK, rows[0]["follow_up"])
+        self.assertEqual(2, departures.counts(stored, "claude", "abcd1234", since=0)[0])
+
     def test_another_session_s_later_check_says_nothing_about_this_one(self) -> None:
         stored = (_check(), _check(sid="zzzz9999", at=2_000.0, cutoff=2_000.0, constraint=""))
 

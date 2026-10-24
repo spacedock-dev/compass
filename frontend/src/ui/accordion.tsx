@@ -22,10 +22,11 @@ export function AccordionItem(props: AccordionPrimitive.Item.Props) {
 export function AccordionTrigger({
   className,
   children,
+  headerProps,
   ...props
-}: AccordionPrimitive.Trigger.Props) {
+}: AccordionPrimitive.Trigger.Props & { readonly headerProps?: AccordionPrimitive.Header.Props }) {
   return (
-    <AccordionPrimitive.Header render={<div />}>
+    <AccordionPrimitive.Header render={<div />} {...headerProps}>
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(disclosureTrigger, className)}

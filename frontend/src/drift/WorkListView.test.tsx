@@ -1,7 +1,7 @@
 import type { ProjectContext } from '../api/types';
 import { act } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { check, fact, mountDrift, press } from './testing';
+import { check, fact, jumpTo, mountDrift, press } from './testing';
 
 /* The session's activity list reads newest first. The numbers are the oldest-first ones every "#<n>" and
    every citation names, so the column reads from the highest down to #1 and a reader opens on what just
@@ -196,12 +196,37 @@ describe('the session activity list', () => {
     await page.settle();
     await page.settle();
     expect(document.querySelectorAll('[data-check-run]')).toHaveLength(1);
-    await press(document.querySelector('[data-next-cockpit-action="finding-jump"]'));
+    await jumpTo(document.querySelector('[data-next-cockpit-action="finding-jump"]'));
     const row = document.querySelector('[data-next-entry-id="c4"]');
     expect(row?.closest('[data-check-run]')).toBeNull();
     expect(document.querySelectorAll('[data-check-run]')).toHaveLength(2);
     expect(document.activeElement).toBe(row);
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(row?.querySelector('[data-next-finding-entry]')).not.toBeNull();
+  });
+
+  it('reads an adopted /goal as a prompt source when placing the window anchor, as it does a prompt', async () => {
+    const anchor = async (goalSource: string): Promise<string> => {
+      const page = mountDrift({
+        facts: [fact('p1', 900), fact('p2', 920)],
+        session: {
+          annotation_window_start: 800,
+          annotation_at: 800,
+          annotation_goal_saved_at: 800,
+          annotation_goal_source: goalSource,
+          annotation_reading_count: 0,
+        },
+      });
+      await page.settle();
+      await page.settle();
+      const text = document.body.textContent ?? '';
+      page.unmount();
+      return text.includes('no longer reaches back to where your intent’s window opens')
+        ? 'anchor'
+        : '';
+    };
+    expect(await anchor('first-prompt')).toBe('anchor');
+    expect(await anchor('session-goal')).toBe('anchor');
+    expect(await anchor('typed')).toBe('');
   });
 });

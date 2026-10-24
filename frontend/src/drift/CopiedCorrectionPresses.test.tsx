@@ -22,8 +22,7 @@ const ASSESSMENT = {
   },
 };
 const PARTS = ['Your last check failed', { entry: 'c1' }, '. Fix it, then say so.'];
-const CORRECTION =
-  "Your last check failed (entry #1 in Compass's activity list). Fix it, then say so.";
+const CORRECTION = 'Your last check failed. Fix it, then say so.';
 
 let counted: string[] = [];
 let stop: (() => void) | undefined;

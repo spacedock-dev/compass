@@ -35,14 +35,14 @@
         "note": "This page is from an older version of Compass, so nothing was sent. Reload the page to analyze.",
         "provider": "",
         "reason": "page-outdated",
-        "tool_output": "Tool output, only after you allow it: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote; agent messages may quote it.",
+        "tool_output": "Tool output is included by default: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote, the repository and number of a pull request it created, and the names of skills it used; agent messages may quote it.",
         "vendor": "Anthropic",
         "words_destination": "Anthropic"
       }
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "599",
+      "Content-Length": "686",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

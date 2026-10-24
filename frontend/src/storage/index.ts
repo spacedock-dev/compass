@@ -5,8 +5,8 @@
  */
 import { browserBackend, storageAccess, type BackendProvider } from './backend';
 import { createConsentStore, type ConsentStore } from './consent';
-import { createCockpitProjectStore, createLiveEstimateStore, createWorkstreamStore } from './flags';
-import type { CockpitProjectStore, LiveEstimateStore, WorkstreamStore } from './flags';
+import { createCockpitProjectStore, createWorkstreamStore } from './flags';
+import type { CockpitProjectStore, WorkstreamStore } from './flags';
 import { createGoalStore, type GoalStore } from './goal';
 import { createGraphModeStore, type GraphModeStore } from './graphMode';
 import { createGuardrailStore, type GuardrailStore } from './guardrails';
@@ -19,8 +19,7 @@ import { createUsageStore, type UsageStore } from './usage';
 export type { Attempt, BackendProvider, StorageAccess, StorageBackend } from './backend';
 export { browserBackend, storageAccess } from './backend';
 export type { ConsentAnswer, ConsentStore } from './consent';
-export type { CockpitProjectStore, LiveEstimateStore, WorkstreamStore } from './flags';
-export { liveEstimateKey } from './flags';
+export type { CockpitProjectStore, WorkstreamStore } from './flags';
 export type { GoalClear, GoalSave, GoalStore } from './goal';
 export { GOAL_EDITOR_MAX_UTF16, goalKey } from './goal';
 export type { GraphMode, GraphModeStore } from './graphMode';
@@ -56,7 +55,6 @@ export interface LegacyStorage {
   readonly graphMode: GraphModeStore;
   readonly guardrails: GuardrailStore;
   readonly lease: LeaseStore;
-  readonly liveEstimate: LiveEstimateStore;
   readonly revision: RevisionStore;
   readonly usageConsent: ConsentStore;
   readonly workstream: WorkstreamStore;
@@ -77,7 +75,6 @@ export function createLegacyStorage(provider: BackendProvider = browserBackend):
     graphMode: createGraphModeStore(access),
     guardrails: createGuardrailStore(access),
     lease: createLeaseStore(access),
-    liveEstimate: createLiveEstimateStore(access),
     revision: createRevisionStore(access),
     usageConsent: createConsentStore(access, STORAGE_KEYS.usageConsent),
     workstream: createWorkstreamStore(access),

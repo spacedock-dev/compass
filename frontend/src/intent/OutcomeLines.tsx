@@ -1,5 +1,8 @@
-import { useId } from 'react';
+import { useContext, useId } from 'react';
 import { Label } from '../ui/label';
+import { Disclosure, disclosureKey } from '../controls';
+import { DriftContext } from '../drift/context';
+import { isOutcomeLine } from '../drift/shape';
 import { compatSessKey } from '../api/identity';
 import { annotationLines, storeUnreadable, OUTCOME_LINES_MAX } from './annotation';
 import { heldSentence } from './cues';
@@ -9,14 +12,19 @@ import { DirectionActionButton } from './DirectionActionButton';
 import {
   cancelDirection,
   replaceDirection,
-  saveDirection,
   typeDirection,
   adoptDirectionAsGoal,
 } from './directions';
 import { addLine, escapeLines, removeLine, typeLine } from './edit';
 import { HeldTextarea } from './HeldTextarea';
-import { DIRECTION_CLIPPED, LINES_FULL } from './sentences';
-import { entryNumbers } from './work';
+import {
+  DIRECTION_CLIPPED,
+  GOAL_DIRECTION,
+  INTENT_EDITED_ADD,
+  LINES_FULL,
+  RULE_HINT,
+} from './sentences';
+import { datedClock } from '../observed/values';
 import { usePanel } from './useIntent';
 
 /* The expected outcome, as a checklist of up to six lines. One draft per session, an array held beside the
@@ -41,7 +49,7 @@ export function DirectionGoalButton({
     <DirectionActionButton
       feedbackKey={focus}
       weight="secondary"
-      label="Use this as my goal"
+      label={GOAL_DIRECTION}
       pendingKey={`direction-goal:${key}`}
       busyLabel="Opening…"
       action="direction-goal"
@@ -56,7 +64,7 @@ export function DirectionGoalButton({
    arm of `/api/annotate`. Per session, beside the lines draft. */
 function DirectionLineView() {
   const boxId = useId();
-  const { ctx, input, session, source, cap, payload } = usePanel();
+  const { ctx, input, session, source, cap } = usePanel();
   const key = compatSessKey(session);
   const held = ctx.held.directions.get(key);
   const annotation = input.annotation;
@@ -64,13 +72,17 @@ function DirectionLineView() {
   if (!held || typeof held.text !== 'string') return null;
   /* From its fact id on every render, as every "#<n>" on the page is, and gone once its direction is no
      longer open. The panel drops it after the render that finds it so. */
-  const read = source.state === 'read' || source.state === 'empty';
-  const n = read ? (entryNumbers(session, source, payload).get(held.factId) ?? null) : held.n;
+  const entry = (source.all ?? source.entries).find((item) => item.id === held.factId);
+  const at = Number(entry?.at) || 0;
   const text = held.text;
   const why = directionWhy(held, input, cap);
-  const ready = !why && Boolean(text.trim()) && !held.pending;
   const full = annotationLines(annotation).length >= OUTCOME_LINES_MAX;
-  const from = n !== null ? `from #${String(n)} · not saved` : 'from your direction · not saved';
+  const from =
+    at > 0
+      ? `from your ${datedClock(at, ctx.shell.clock.now() / 1000)} message · not saved`
+      : 'from your direction · not saved';
+  /* The card's Save intent saves this line, so an unsaved edit is no reason to say "save first" here. */
+  const said = why === INTENT_EDITED_ADD ? '' : why;
   const cue = held.cue ? heldSentence(held.cue, null) : '';
   return (
     <li
@@ -93,26 +105,16 @@ function DirectionLineView() {
           and Remove on the right. */}
       <div className="next-cockpit-held-under">
         <span className="next-cockpit-held-count" data-next-cockpit-direction-count>
-          {`${String(text.length)}/${String(cap)}`}
+          {`${String(text.length)} / ${String(cap)}`}
         </span>
         <Label className="next-cockpit-held-source" htmlFor={boxId}>
           {from}
         </Label>
         <span className="next-cockpit-direction-tools">
           <ActionButton
-            weight="none"
-            label="Save"
-            busyLabel="Saving…"
-            reserve="Saving…"
-            pendingKey={`direction-save:${key}`}
-            inert={!ready}
-            describedBy={why ? 'next-cockpit-direction-why' : ''}
-            action="direction-save"
-            focusKey={`direction-save:${key}`}
-            onPress={() => void saveDirection(ctx, session)}
-          />
-          <ActionButton
-            weight="none"
+            weight="secondary"
+            className="border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
+            icon="remove"
             label="Remove"
             action="direction-cancel"
             focusKey={`direction-cancel:${key}`}
@@ -142,12 +144,12 @@ function DirectionLineView() {
         className="next-cockpit-held-full"
         id="next-cockpit-direction-why"
         data-next-cockpit-direction-why
-        hidden={!why}
+        hidden={!said}
       >
-        {why}
+        {said}
       </p>
-      <p className="next-cockpit-held-hint">Write the rule, not the moment.</p>
-      {why || held.clipped ? <DirectionGoalButton factId={held.factId} scope="line" /> : null}
+      <p className="next-cockpit-held-hint">{RULE_HINT}</p>
+      {said || held.clipped ? <DirectionGoalButton factId={held.factId} scope="line" /> : null}
       {held.clipped ? <p className="next-cockpit-held-full">{DIRECTION_CLIPPED}</p> : null}
       {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
     </li>
@@ -158,14 +160,12 @@ function LineRow({
   index,
   text,
   boxId,
-  used,
 }: {
   readonly index: number;
   readonly text: string;
   readonly boxId: string | undefined;
-  readonly used: boolean;
 }) {
-  const { ctx, input, session, cap, source, payload } = usePanel();
+  const { ctx, input, session, cap, source } = usePanel();
   const key = linesKey(session);
   const saved = annotationLines(input.annotation);
   /* Remove shares the box row so a saved outcome does not push Keep below the phone viewport.
@@ -174,19 +174,26 @@ function LineRow({
   const line = place && place.text === text ? place : null;
   return (
     <li
-      className={`next-cockpit-held-line${used ? ' grid-cols-[minmax(0,1fr)_auto]' : ''}`}
+      className="next-cockpit-held-line grid-cols-[auto_minmax(0,1fr)_auto]"
       data-next-cockpit-held-line={index}
     >
+      <span
+        aria-hidden="true"
+        className="col-start-1 col-end-2 self-center min-w-[18px] [font-family:var(--mono)] text-label text-muted-foreground"
+        data-next-cockpit-held-line-number={index}
+      >
+        {String(index + 1)}
+      </span>
       <HeldTextarea
         id={boxId}
-        className={`${used ? 'col-start-1 col-end-2 ' : ''}max-[760px]:h-[44px]`}
+        className="col-start-2 col-end-3 max-[760px]:h-[44px]"
         aria-label={`Expected outcome line ${String(index + 1)}`}
         rows={3}
         maxLength={cap}
         memoryKey={`${key}:${String(index)}`}
         focusKey={`${key}:${String(index)}`}
         text={text}
-        placeholder="one thing that should exist when it is done"
+        placeholder="One thing that should be true when it's done"
         data-next-cockpit-held-line-index={index}
         data-next-cockpit-held-lines-key={key}
         data-next-cockpit-held-saved={place ? place.text : ''}
@@ -199,9 +206,9 @@ function LineRow({
           escapeLines(ctx, input);
         }}
       />
-      <div className="next-cockpit-held-under">
+      <div className="next-cockpit-held-under col-start-2 col-end-3">
         <span className="next-cockpit-held-count" data-next-cockpit-held-line-count={index}>
-          {`${String(text.length)}/${String(cap)}`}
+          {`${String(text.length)} / ${String(cap)}`}
         </span>
         {place && place.source === 'entry' ? (
           <span
@@ -209,29 +216,41 @@ function LineRow({
             data-next-cockpit-held-line-source={index}
             {...(line ? {} : { 'data-next-cockpit-held-line-source-stale': '' })}
           >
-            {lineSource(place, session, source, payload)}
+            {lineSource(place, source)}
           </span>
         ) : null}
       </div>
-      {used ? (
-        <ActionButton
-          weight="secondary"
-          className="next-cockpit-held-remove col-start-2 row-start-1 row-span-2 self-start"
-          label="Remove"
-          action="held-line-remove"
-          arg={String(index)}
-          ariaLabel={`Remove line ${String(index + 1)}`}
-          focusKey={`${key}:remove:${String(index)}`}
-          onPress={() => removeLine(input, index)}
-        />
-      ) : null}
+      <ActionButton
+        weight="secondary"
+        className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"
+        icon="remove"
+        label="Remove"
+        action="held-line-remove"
+        arg={String(index)}
+        ariaLabel={`Remove line ${String(index + 1)}`}
+        focusKey={`${key}:remove:${String(index)}`}
+        onPress={() => removeLine(input, index)}
+      />
     </li>
   );
 }
 
+/* Whether the card holds an outcome line the reader should not have to open the accordion to find: a saved
+   or drafted line, a later direction pending as one, or a departure in the reading on show that cites one.
+   The accordion opens on each rise of this, not whenever it holds, so a reader who closes it keeps it closed
+   [the open-disclosure row](../../../docs/design-reader-state.md#the-inventory). */
+function useOutcomesHeld(): boolean {
+  const { ctx, input, session } = usePanel();
+  const drift = useContext(DriftContext);
+  const key = compatSessKey(session);
+  const draft = linesDraft(ctx.held, session, input.annotation);
+  const departed = (drift?.model.shape?.departures ?? []).some((row) => isOutcomeLine(row.key));
+  return draft.length > 0 || ctx.held.directions.has(key) || departed;
+}
+
 export function OutcomeLines() {
   const firstBoxId = useId();
-  const { ctx, input, session, payload, cap } = usePanel();
+  const { ctx, input, session, payload, cap, project } = usePanel();
   const { held } = ctx;
   const key = linesKey(session);
   const annotation = input.annotation;
@@ -239,13 +258,9 @@ export function OutcomeLines() {
   const boxes = draft.length ? draft : [''];
   const full = draft.length >= OUTCOME_LINES_MAX;
   const line = held.directions.get(compatSessKey(session));
-  const used =
-    draft.length > 1 ||
-    draft.some((text) => text.trim()) ||
-    annotationLines(annotation).length > 0 ||
-    Boolean(line?.text?.trim());
   const why = storeUnreadable(payload) ? '' : String(annotation?.['lines_why'] || '');
   const cue = heldSentence(held.kind(key), null);
+  const holds = useOutcomesHeld();
   /* Where an open later direction already says the list is full beside its own save, the list's sentence is
      hidden rather than drawn twice. Only then: the line checks saved lines and the list counts draft lines,
      and a line giving another reason would leave the disabled add control with none. It stays in the DOM for
@@ -259,32 +274,44 @@ export function OutcomeLines() {
       className="next-cockpit-held-field next-cockpit-held-lines"
       data-next-cockpit-held-field="lines"
     >
-      <div className="next-cockpit-held-heading">
-        <Label className="next-cockpit-held-label" htmlFor={firstBoxId}>
-          Expected outcome (optional)
-        </Label>
-      </div>
-      <ol className="next-cockpit-held-list">
-        {boxes.map((text, index) => (
-          // A line is its position: the list holds no ids, and an index is what the store sends.
-          <LineRow
-            key={index}
-            index={index}
-            text={text}
-            used={Boolean(used)}
-            boxId={index === 0 ? firstBoxId : undefined}
-          />
-        ))}
-        <DirectionLineView />
-      </ol>
-      <p
-        className="next-cockpit-held-full"
-        id="next-cockpit-held-full"
-        data-next-cockpit-held-full
-        hidden={!(full && !said)}
+      <Disclosure
+        disclosureKey={disclosureKey({
+          project,
+          scope: compatSessKey(session),
+          name: 'outcome-lines',
+        })}
+        openWhen={holds}
+        summary={
+          <span className="next-cockpit-held-label" data-next-cockpit-held-label>
+            {'Expected outcome (optional) '}
+            <span className="ms-1 font-normal text-[var(--ink3)]">{`· up to ${String(OUTCOME_LINES_MAX)} lines`}</span>
+          </span>
+        }
+        focusKey={`${key}:outcomes`}
       >
-        {LINES_FULL}
-      </p>
+        <ol className="next-cockpit-held-list">
+          {boxes.map((text, index) => (
+            // A line is its position: the list holds no ids, and an index is what the store sends.
+            <LineRow
+              key={index}
+              index={index}
+              text={text}
+              boxId={index === 0 ? firstBoxId : undefined}
+            />
+          ))}
+          <DirectionLineView />
+        </ol>
+        <p
+          className="next-cockpit-held-full"
+          id="next-cockpit-held-full"
+          data-next-cockpit-held-full
+          hidden={!(full && !said)}
+        >
+          {LINES_FULL}
+        </p>
+        <AddOutcomeLine />
+        {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
+      </Disclosure>
       {why ? (
         <p
           className="next-cockpit-held-absent next-visually-hidden"
@@ -295,7 +322,6 @@ export function OutcomeLines() {
           {why}
         </p>
       ) : null}
-      {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
     </div>
   );
 }
@@ -303,16 +329,10 @@ export function OutcomeLines() {
 export function AddOutcomeLine() {
   const { ctx, input, session } = usePanel();
   const draft = linesDraft(ctx.held, session, input.annotation);
-  const line = ctx.held.directions.get(compatSessKey(session));
-  const used =
-    draft.length > 1 ||
-    draft.some((text) => text.trim()) ||
-    annotationLines(input.annotation).length > 0 ||
-    Boolean(line?.text?.trim());
-  if (!used) return null;
   return (
     <ActionButton
       label="+ Add a line"
+      className="border-dashed font-bold text-label px-3"
       action="held-line-add"
       arg="lines"
       inert={draft.length >= OUTCOME_LINES_MAX}

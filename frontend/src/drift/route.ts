@@ -7,16 +7,22 @@ import {
   annotateOn,
   type Annotation,
 } from '../intent/annotation';
-import { editedRefusal, intentDraft, intentUnsaved, type DraftInput } from '../intent/derive';
+import {
+  editedRefusal,
+  foundGoal,
+  intentDraft,
+  intentUnsaved,
+  type DraftInput,
+} from '../intent/derive';
 import { isRecord, type Row } from '../observed';
 import { formatDuration } from '../shell/format';
 import { openedWithControl, promptCandidate } from '../sessions/intent';
 import {
   ANNOTATIONS_OFF,
   MODEL_OFF,
+  READINGS_OFF,
   MODEL_UNREAD,
   NO_WORDS,
-  PRESS_CLAUDE,
   PRESS_CODEX,
   PRESS_EVENTS,
   PRESS_LINES,
@@ -25,7 +31,7 @@ import {
   UNAUTHORIZED,
 } from './sentences';
 
-/* Who would read a session, whether they were allowed to, and what refuses a press before it is made. Every
+/* Who would read a session, whether readings are on, and what refuses a press before it is made. Every
    function reads the payload it is given and nothing else, so the refusal the control draws and the one the
    handler enforces come from one derivation: a handler with a second opinion can refuse a press the button
    offered, or take one it refused. The legacy cockpit's `nextReading*` functions are the oracle. */
@@ -40,41 +46,23 @@ export function readingRoute(payload: Row, session: Row | null | undefined): Row
   return isRecord(route) ? route : null;
 }
 
-/* The harnesses a press carries the agent's own messages from (`reading_route.AGENT_MESSAGE_HARNESSES`).
-   Elsewhere a press sends none of them, so an Allow given before the disclosure named them still covers it:
-   the server publishes that answer as `words`. */
-const AGENT_WORDS_HARNESSES: readonly string[] = ['claude'];
-
-/* Permission is per receiver: a Codex answer never stands in for Claude Code's. A payload without the
-   per-provider map predates the second provider, and its one answer was Codex's. */
-export function readingConsent(payload: Row, provider: string, harness = ''): boolean {
-  const policy = payload['reading'];
-  if (!isRecord(policy) || !provider) return false;
-  const words = policy['words'];
-  const map =
-    !AGENT_WORDS_HARNESSES.includes(String(harness || '')) && words && typeof words === 'object'
-      ? words
-      : policy['providers'];
-  return map && typeof map === 'object'
-    ? (map as Row)[provider] === true
-    : provider === 'codex' && policy['consent'] === true;
+/* Who an unasked check of this session would reach. Not `reading_routes`: on a harness with no producer of its
+   own the lane prefers Claude Code where Analyze reads with Codex, so the toggle asks only where the lane sends. */
+export function unaskedRoute(payload: Row, session: Row | null | undefined): Row | null {
+  const routes = payload['unasked_routes'];
+  const route =
+    isRecord(routes) && session ? (routes as Row)[String(session['harness'] || '')] : null;
+  return isRecord(route) ? route : null;
 }
 
-/* Tool output is its own answer, keyed by where it goes: a words-only Allow, or one given for another
-   destination, never covers it. */
-export function toolOutputGranted(payload: Row, route: Row | null): boolean {
+export function readingsOff(payload: Row): boolean {
   const policy = payload['reading'];
-  const map = isRecord(policy) ? policy['tool_output'] : null;
-  const granted = isRecord(map) && route ? map[String(route['provider'])] : null;
-  return Array.isArray(granted) && granted.includes(String(route?.['destination']));
+  return isRecord(policy) && (policy['off'] === true || policy['reason'] === 'model-calls-paused');
 }
 
-export function needsAllow(payload: Row, route: Row | null): boolean {
-  if (!route || !route['provider']) return false;
-  return (
-    !readingConsent(payload, String(route['provider']), String(route['harness'] || '')) ||
-    Boolean(route['destination'] && !toolOutputGranted(payload, route))
-  );
+export function readingsOn(payload: Row): boolean {
+  const policy = payload['reading'];
+  return isRecord(policy) && policy['consent'] === true && !readingsOff(payload);
 }
 
 /* Whether a press could read this row now, as the board published it, or as this tab's last press was
@@ -98,12 +86,14 @@ export function eligibility(
 /* The short line beside an inert Analyze drift, one per token the board can publish as
    `reading_eligibility.reason`. Codex, which reads only while a turn runs and has no session end the board
    can observe, gets its own line for both idle tokens. No line promises Analyze opens "once this session
-   finishes a turn": the turn may have finished where Compass could not see it. */
+   finishes a turn": the turn may have finished where Compass could not see it. Claude Code has no idle line
+   since the owner's ruling of 2026-10-20: an idle Claude Code session is read up to its last recorded entry,
+   so the board never refuses one for being idle, and the line it had ("Analyze opens while this session
+   runs.") was false of a session that would not run again. */
 export function pressLine(session: Row | null | undefined, held: Row): string {
   const reason = String(held['reason']);
   const harness = String(session?.['harness'] || '');
   if (harness === 'codex' && ['idle-unknown', 'turn-stop'].includes(reason)) return PRESS_CODEX;
-  if (reason === 'idle-unknown' && harness === 'claude') return PRESS_CLAUDE;
   if (reason === 'idle-unknown' && session && session['acquisition'] === 'event')
     return PRESS_EVENTS;
   return Object.hasOwn(PRESS_LINES, reason)
@@ -128,14 +118,6 @@ export function withheldAge(annotation: Annotation | null | undefined, generated
   return age < 60 ? 'just now' : `${fmtDur(age)} ago`;
 }
 
-export function anyConsent(payload: Row): boolean {
-  const policy = payload['reading'];
-  const map = isRecord(policy) ? policy['providers'] : null;
-  return map && typeof map === 'object'
-    ? Object.values(map).some((value) => value === true)
-    : Boolean(isRecord(policy) && policy['consent']);
-}
-
 export function routeRefusal(payload: Row, session: Row): string {
   const route = readingRoute(payload, session);
   if (!route) return ROUTE_UNREAD;
@@ -144,10 +126,13 @@ export function routeRefusal(payload: Row, session: Row): string {
 
 export function policyReason(policy: unknown, nowMs: number = Date.now()): string {
   if (!isRecord(policy)) return MODEL_UNREAD;
+  /* The master pause outranks spend, while a startup refusal or unreadable store still leads.
+     [Consent notice payload](../../../docs/design-session-summary.md#consent-notice-payload) */
   if (policy['reason'] === 'run-disabled') return MODEL_OFF;
   if (policy['reason'] === 'store-unavailable') {
     return 'Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before analyzing drift.';
   }
+  if (policy['off'] === true || policy['reason'] === 'model-calls-paused') return READINGS_OFF;
   if (policy['reason'] === 'daily-cap') {
     const at = nextNumber(policy['retry_at']);
     return at === null
@@ -258,7 +243,11 @@ export function promptReadingRefusal(
   if (press) return press;
   if (intentUnsaved(input)) return editedRefusal(saving);
   let annotation = input.annotation;
-  if (!String(annotation?.['goal'] || '').trim()) {
+  const found = foundGoal(input);
+  if (found) {
+    // The press saves a found goal as typed words before it reads, so it is read as the saved goal.
+    annotation = { ...annotation, goal: found.text, discarded_at: null, discarded_why: '' };
+  } else if (!String(annotation?.['goal'] || '').trim()) {
     const draft = intentDraft(input);
     /* Over a control-first session the latest prompt is no goal either, so the press falls to the refusal
        for nothing typed. */
@@ -274,8 +263,7 @@ export function promptReadingRefusal(
   return readingRefusal(payload, annotation) || routeRefusal(payload, session);
 }
 
-/* The server's own parts, a short list in its order and unreworded: in the consent step, and idle in the
-   "What is sent" popover, so the two cannot differ. A route from before the parts were published shows its
+/* The server's own parts, unreworded in the notice and the "What is sent" popover. A route from before the parts were published shows its
    whole disclosure as one item. */
 export function disclosureParts(
   route: Row | null | undefined,

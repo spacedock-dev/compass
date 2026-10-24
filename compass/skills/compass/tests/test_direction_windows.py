@@ -170,7 +170,8 @@ class AnUnchangedGoalKeepsItsWindow(unittest.TestCase):
         self.assertEqual("stored", outcome)
         self.assertEqual(100.0, self.saved()["window_start"])
 
-    def test_new_goal_words_move_the_window(self) -> None:
+    def test_new_goal_words_keep_the_window_unless_read_from_now_is_asked(self) -> None:
+        """The owner's ruling of 2026-10-21 replaced "new goal words move the window"."""
         annotation_store.annotate(
             self.config,
             self.state,
@@ -181,7 +182,19 @@ class AnUnchangedGoalKeepsItsWindow(unittest.TestCase):
             window_start=1900.0,
             expected_revision=1,
         )
-        self.assertEqual(1900.0, self.saved()["window_start"])
+        self.assertEqual(100.0, self.saved()["window_start"])
+        annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            goal="Ship parser and lexer",
+            now=2100.0,
+            window_start=2050.0,
+            read_from_now=True,
+            expected_revision=2,
+        )
+        self.assertEqual(2050.0, self.saved()["window_start"])
 
     def test_clock_step_back_clamps_the_carried_window(self) -> None:
         annotation_store.annotate(
@@ -593,7 +606,8 @@ class TheServerVerifiesAnExplicitDirection(_ClaudeSession):
         self.assertEqual("stored", answer["outcome"])
         saved = annotation_store.load(self.config)[0]["revisions"][-1]
         self.assertEqual(choice["text"], saved["goal"])
-        self.assertEqual(choice["at"], saved["window_start"])
+        # The ruling of 2026-10-21: using a direction as the goal keeps the window the saved words had.
+        self.assertEqual(FIRST_AT + 1, saved["window_start"])
 
     def test_unknown_fact_and_changed_expectation_adopt_nothing(self) -> None:
         old = self.direction()

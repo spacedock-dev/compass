@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { seeInContext } from './citation';
 import { expect, userEvent, within, waitFor } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { ShowMore } from '../src/drift/ShowMore';
@@ -17,6 +18,11 @@ const meta = {
 } satisfies Meta<typeof ShowMore>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+/* Full activity starts collapsed; a reader opens it before reading or paging the record. */
+const openActivity = async (element: HTMLElement) => {
+  const trigger = await within(element).findByRole('button', { name: 'Full activity' });
+  if (trigger.getAttribute('aria-expanded') !== 'true') await userEvent.click(trigger);
+};
 const ready = { ...EMPTY_RECORD, status: 'loaded' as const, pages: 1, next: 'older' };
 const pagingButton = async (element: HTMLElement) => {
   const button = within(element).getByRole('button', { name: 'Show 50 older entries' });
@@ -267,6 +273,7 @@ function SessionRecordExample({
 export const ReaderAppendsOlderEntries: Story = {
   render: () => <SessionRecordExample />,
   play: async ({ canvasElement }) => {
+    await openActivity(canvasElement);
     const canvas = within(canvasElement);
     const button = await canvas.findByRole('button', { name: 'Show 50 older entries' });
     await waitFor(() =>
@@ -305,6 +312,7 @@ export const ReaderAppendsOlderEntries: Story = {
 export const NumbersStayWhenOlderEntriesLoad: Story = {
   render: () => <SessionRecordExample intent ordinals />,
   play: async ({ canvasElement }) => {
+    await openActivity(canvasElement);
     const canvas = within(canvasElement);
     const number = (id: string) =>
       canvasElement.querySelector(`[data-next-entry-id="${id}"]`)?.getAttribute('data-next-entry');
@@ -326,6 +334,7 @@ export const NumbersStayWhenOlderEntriesLoad: Story = {
 export const OlderDirectionDraftSurvivesNavigation: Story = {
   render: () => <SessionRecordExample intent />,
   play: async ({ canvasElement }) => {
+    await openActivity(canvasElement);
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole('button', { name: 'Show 50 older entries' }));
     await waitFor(() =>
@@ -333,15 +342,19 @@ export const OlderDirectionDraftSurvivesNavigation: Story = {
     );
     const row = canvasElement.querySelector('[data-next-entry-id="e50"]') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: 'Add to my intent' }));
-    await expect(await canvas.findByDisplayValue('Synthetic older direction')).toBeVisible();
+    // The pending line opens the Expected outcome accordion, which eases open.
+    const opened = await canvas.findByDisplayValue('Synthetic older direction');
+    await waitFor(() => expect(opened).toBeVisible());
     // Primary links belong to browser hashchange; this isolated router owns its keyboard path.
-    await userEvent.click(canvas.getByRole('heading', { name: 'Session activity' }));
+    await userEvent.click(canvas.getByRole('heading', { name: 'Drift' }));
     await userEvent.keyboard('s');
     await userEvent.click(await canvas.findByRole('link', { name: /Synthetic record/ }));
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('[data-next-entry-id]')).toHaveLength(50),
     );
-    await expect(await canvas.findByDisplayValue('Synthetic older direction')).toBeVisible();
+    // The pending line opens the Expected outcome accordion, which eases open.
+    const pending = await canvas.findByDisplayValue('Synthetic older direction');
+    await waitFor(() => expect(pending).toBeVisible());
     await expect(canvasElement.querySelector('[data-next-entry-id="e50"]')).toBeNull();
   },
 };
@@ -349,6 +362,7 @@ export const OlderDirectionDraftSurvivesNavigation: Story = {
 export const ReadingNamesEntriesItHasNotLoaded: Story = {
   render: () => <SessionRecordExample intent reading />,
   play: async ({ canvasElement }) => {
+    await openActivity(canvasElement);
     const canvas = within(canvasElement);
     const note = await waitFor(() => {
       const found = canvasElement.querySelector('[data-next-unloaded]');
@@ -368,11 +382,12 @@ export const ReadingNamesEntriesItHasNotLoaded: Story = {
   },
 };
 
-/* The entries a reading cites are found at a glance: pressing "Show cited entries" tints each cited row,
+/* The entries a reading cites are found at a glance: pressing a cited entry's number tints each cited row,
    so it stands apart from the list around it. Read from the computed style, since a tint is only visible. */
 export const CitedEntriesAreTinted: Story = {
   render: () => <SessionRecordExample intent reading />,
   play: async ({ canvasElement }) => {
+    await openActivity(canvasElement);
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole('button', { name: 'Show 50 older entries' }));
     await waitFor(() =>
@@ -382,7 +397,7 @@ export const CitedEntriesAreTinted: Story = {
     const background = (node: HTMLElement) => getComputedStyle(node).backgroundColor;
     await expect(row()).not.toHaveAttribute('data-next-cited');
     const plain = background(row());
-    await userEvent.click(await canvas.findByRole('button', { name: /^Show cited entries/ }));
+    await seeInContext(await canvas.findByRole('link', { name: /^Show #\d+/ }));
     await waitFor(() => expect(row()).toHaveAttribute('data-next-cited'));
     await expect(background(row())).not.toBe(plain);
     await expect(getComputedStyle(row()).borderLeftWidth).toBe('3px');

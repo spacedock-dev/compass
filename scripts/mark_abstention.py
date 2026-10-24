@@ -518,6 +518,10 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
             read_lines=True,
             read_agent_words=True,
             admit_turn_stop=True,
+            # Not the idle admission of 2026-10-20, as `score_abstention` passes it: the cases are
+            # marked under the earlier rule, which withheld an idle session with no recorded
+            # finish, and a freeze that admitted one would capture a prompt the scorer never sends.
+            admit_idle=False,
             tool_output=reading.ToolOutput(
                 destination="native-dry",
                 label="native dry",

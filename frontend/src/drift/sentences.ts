@@ -10,13 +10,24 @@ export const UNVERIFIABLE = 'not verifiable from available evidence';
    on the claims row. */
 export const UNSUPPORTED = 'not shown by the record';
 export const NOT_REACHED = 'not reached at this stop';
+/* `reading.RESULT_GOAL_UNCLEAR`: the model read the goal, and the outcome lines if any, before the session
+   and found no end state to read the work against. The goal row's alone, and it stands in place of a level:
+   `levels.REASON_GOAL_UNCLEAR` is the reason the level carries. */
+export const GOAL_UNCLEAR_RESULT = 'goal too vague to analyze against';
 export const RESULTS: readonly string[] = [
   DEPARTURE,
   CONSISTENT,
   UNVERIFIABLE,
   UNSUPPORTED,
   NOT_REACHED,
+  GOAL_UNCLEAR_RESULT,
 ];
+/* The warning under the Goal field, in Compass's voice (owner, 2026-10-22). Its one home: the level's
+   blocker line below says it too, so the sentence cannot drift between the two. */
+export const GOAL_UNCLEAR =
+  'This goal is too vague to analyze against. Rewrite it with what should be true when the work is done, then try again.';
+/* The Drift card's own answer over a refused goal, where a level would stand. */
+export const GOAL_UNCLEAR_VERDICT = 'No level: the goal is too vague to analyze against.';
 export const CLAIMS = 'claims';
 
 /* The published shape, spelt once on each side: a producer and a renderer disagreeing about a key name
@@ -36,6 +47,20 @@ export function unloadedCites(count: number): string {
     ? 'This reading cites an entry that is not listed. Show more, under the list, may load it.'
     : `This reading cites ${String(count)} entries that are not listed. Show more, under the list, may load them.`;
 }
+/* What a press of a cited number or Load the cited entries found it could not list, once every page it may
+   read has been read. Only a read that reached the record's start may say the record does not list it; one
+   that stopped short (the page cap, a failed page) says Show more may still load it, as `unloadedCites` does. */
+export function missingCites(count: number, reason: 'start' | 'stopped' | 'unshown'): string {
+  if (reason === 'unshown')
+    return 'The entries this finding cites are loaded, but none is marked in the list: they fall outside what this reading read, or its stated limit sets them aside.';
+  if (reason === 'stopped')
+    return count === 1
+      ? 'An entry this finding cites could not be loaded: the read stopped before the start of the record. Show more, under the list, may load it.'
+      : `${String(count)} entries this finding cites could not be loaded: the read stopped before the start of the record. Show more, under the list, may load them.`;
+  return count === 1
+    ? 'An entry this finding cites could not be loaded: the record read for this session does not list it.'
+    : `${String(count)} entries this finding cites could not be loaded: the record read for this session does not list them.`;
+}
 export const BASELINE_OPEN =
   'You have given a later direction that is still unsettled, so this reads against a baseline that may not be the one you want.';
 export const CLAUSE_UNRETAINED = 'the words of the revision this reading read are not retained';
@@ -46,9 +71,10 @@ export const NO_WORDS = `Nothing has been typed for this session, so there is no
 export const MODEL_UNREAD =
   'Reading availability has not been read, so no reading can be offered. Compass asks again with the next update.';
 export const JOB_TITLE = 'Analyzing drift';
+/* The title over a run that keeps the last result in view, dimmed, until the new one lands. */
+export const JOB_TITLE_AGAIN = 'Reading again';
 export const JOB_NOTE = 'You can keep working. The result will appear here.';
 export const JOB_NOTE_SO_FAR = 'Reads only the work so far. The result will appear here.';
-export const BACKGROUND = 'Runs in the background.';
 export const CANCEL_FAILED =
   'Could not confirm the cancel. The analysis may still be running; refresh to check.';
 export const MODEL_OFF =
@@ -104,6 +130,12 @@ export const FAILED_CHECK_UNREAD =
   'A check that failed was not read, because the reading had no room for it, so nothing here says the output is consistent.';
 export const CLAIM_RECORD_UNREAD =
   "Not all of this session's checks were read, so the analysis cannot say the record does not show what the agent said.";
+/* The stored token of an outcome line the producer settled from a recorded write (`reading.WHY_RECORDED_WRITE`).
+   Unlike every other token it is on a verdict that stands, so this sentence is only ever the reason a page that
+   does not hold the write it cites gives for withdrawing it. */
+export const RECORDED_WRITE = 'recorded-write';
+export const RECORDED_WRITE_UNHELD =
+  'Compass settled this from a file write it recorded, and this page does not hold that entry, so it reads as not verifiable.';
 export const CLAIM_UNCITED =
   "The analysis did not cite the agent's message and, for a contradiction or a match, the entry it compared it with, so it reads as not verifiable.";
 
@@ -127,10 +159,72 @@ export const STORED_WHY: Readonly<Record<string, string>> = {
   'failed-check-on-record': FAILED_CHECK_ON_RECORD,
   'claim-uncited': CLAIM_UNCITED,
   'claim-record-unread': CLAIM_RECORD_UNREAD,
+  [RECORDED_WRITE]: RECORDED_WRITE_UNHELD,
 };
 
+/* The harness's own "goal met" verdict, and Compass's test of it (`reading.GOAL_VERDICT_*`). The verdict is
+   always the harness's claim and the sentences here are Compass's: the producer's `check` and `why` are
+   closed tokens, and its prose never reaches the page through them. A claim never moves a level and is never
+   a passing check, and the sentences say so where a reader might take it for either
+   ([DEC-26](../../../docs/design-reading-a-session.md#amended-2026-10-22-a-goal-met-verdict-is-a-claim)). */
+export const GOAL_VERDICT_KEYS: readonly string[] = ['at', 'check', 'why', 'cites'];
+/* A dispute that rests on a file taken away names the file and the moment, both or neither. */
+export const GOAL_VERDICT_REMOVAL_KEYS: readonly string[] = ['path', 'changed_at'];
+export const GOAL_VERDICT_REMOVAL_WHYS: readonly string[] = ['deleted-after', 'moved-after'];
+export const GOAL_VERDICT_CHECKS: readonly string[] = ['agrees', 'disputed', 'unconfirmed'];
+export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
+  'written-before': 'the file its reason names is recorded as written before the verdict',
+  'passed-before': 'a check of the kind its reason names is recorded as passing before the verdict',
+  'pr-created-before':
+    'the pull request its reason names is recorded as created before the verdict',
+  'written-after': 'the file its reason names was written again after the verdict',
+  'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
+  'moved-after': 'a file its reason or the goal names was moved away after the verdict',
+  'check-failed': 'a check of the kind its reason names has a failing latest run',
+  'not-found': 'the record Compass read does not show what its reason names',
+  'nothing-checkable': 'its reason names no file or check Compass can look for',
+};
+/* "the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict":
+   the pull request fact the test confirmed, named from the entry it cites. */
+export const goalVerdictPullRequest = (name: string): string =>
+  `the pull request its reason names, ${name}, is recorded as created before the verdict`;
+/* "docs/e2e/notes.md was deleted at 22:59, after the verdict": the file and the moment the record shows. */
+export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
+  `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;
+export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
+/* Both claims name the product, not the payload's harness label ("Claude"): only Claude Code reports a goal
+   met or ends one this way, and the Intent card's note says "Claude Code" too. */
+export const goalVerdictClaim = (at: string): string =>
+  `Claude Code marked this goal met at ${at}.`;
+export const goalGaveUpClaim = (at: string): string => `Claude Code gave up on this goal at ${at}.`;
+/* A give-up is the harness's say-so about a goal it ended: Compass does not check it and it moves no level. */
+export const GOAL_GAVE_UP_LINE = 'Compass has not checked it, and it does not change the level.';
+export const GOAL_VERDICT_LINES: Readonly<Record<string, (why: string) => string>> = {
+  'claim-only': () =>
+    'Compass has not analyzed this session, so nothing has checked it and no level is implied.',
+  unchecked: () =>
+    'Compass’s reading does not cover this verdict, so nothing has checked it. Analyze again to check it.',
+  agrees: (why) =>
+    `Compass agrees: ${why}. This does not change the level and is not a passing check.`,
+  disputed: (why) => `Compass disputes it: ${why}. Compass’s own reading stands.`,
+  unconfirmed: (why) => `Compass could not confirm it: ${why}. This does not change the level.`,
+};
+
+/* Said once, on the reading that no longer finds a departure the one before it did, with that reading's time:
+   a departure that clears names itself, since nothing else on the card says the earlier one ended. When the
+   reader pasted corrections between the two readings it says they named it, in the singular for the one. */
+export const clearedLine = (count: number, at: string, corrections = 0): string => {
+  const subject = count === 1 ? 'The departure' : `The ${String(count)} departures`;
+  const verb = count === 1 ? 'no longer holds' : 'no longer hold';
+  if (corrections === 0) return `${subject} from the ${at} reading ${verb}.`;
+  const who = corrections === 1 ? 'your correction' : 'your corrections';
+  return `${subject} ${who} named, from the ${at} reading, ${verb}.`;
+};
+export const CLAIM_LEAD = 'What the agent claimed';
 export const RESULT_CANT_TELL = "Can't tell";
 export const RESULT_NOTHING_SHOWS = "Can't tell: nothing recorded shows this yet";
+export const RESULT_NOTHING_SHOWS_REASON =
+  'Nothing recorded shows this yet: no write, check or message it read speaks to it.';
 export const RESULT_CLAIM_TAIL = "The record read is the board's recent tail.";
 export const RESULT_DEPARTS = 'Departs from your intent';
 export const RESULT_NOTHING_FOUND =
@@ -141,11 +235,9 @@ export const RESULT_NOT_ACCURATE = 'Mark as inaccurate';
 export const RESULT_NOT_ACCURATE_HINT =
   'Stops this analysis from setting the drift level or Steer back. Nothing is sent or re-run.';
 export const RESULT_MARKED =
-  'Marked inaccurate. This analysis no longer sets the drift level or Steer back.';
+  'Marked inaccurate. This analysis no longer sets the drift level or Steer back, and its verdicts below are set aside.';
 export const RESULT_UNMARK = 'Undo';
 export const RESULT_MARK_UNSAVED = 'Your mark was not saved. Try again.';
-export const LEVEL_HIDDEN_MARKED =
-  'Drift level hidden because you marked this analysis inaccurate.';
 
 /* What it read: the model, the intent it read against, how much of the session it read, and what it never
    reads. Headings and short items rather than one paragraph of caveats. */
@@ -162,6 +254,15 @@ export const READ_SCOPE: Readonly<Record<string, string>> = {
   'last-turn': 'Everything up to the last finished turn.',
   withdrawn: 'The session end this analysis relied on is no longer reported.',
 };
+/* `reading.SCOPE_TEXT_MID_FLIGHT_IDLE`, the stored sentence of a press on an idle Claude Code session whose
+   last turn has no recorded finish (owner, 2026-10-20). Recognised by its words, because its scope token is
+   the running session's, and drawn as the reading's own line with the local time of the last entry it read. */
+export const SCOPE_TEXT_IDLE =
+  'The session was idle and its last turn was not recorded as finished, so this covers the work up to the last recorded entry. It is not a reading of how the turn or the session ended.';
+export const readIdle = (at: string): string =>
+  at
+    ? `Read up to the last recorded entry at ${at}; the last turn was not recorded as finished.`
+    : 'Read up to the last recorded entry; the last turn was not recorded as finished.';
 /* The scope arrives in the stored reading, so a name the table does not list (or one inherited from
    Object.prototype, such as "constructor") falls back to the producer's own words rather than reading the
    prototype. */
@@ -177,7 +278,7 @@ export const DEPARTURE_DEFINITION =
   'A departure is a place the record does not match the words you chose.';
 export const READING_DEFINITION =
   'A reading is one model pass over the record, made only when you press for it.';
-export const REVISION_DEFINITION = 'Each save is a revision.';
+export const REVISION_DEFINITION = 'Each save is kept on its own.';
 
 export const OFFER =
   'A reading is a model’s account of the evidence on this page: the observed record in this session’s activity and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or what you saw on your screen.';
@@ -193,8 +294,10 @@ export const PRESS_LINES: Readonly<Record<string, string>> = {
   'revision-after-end': 'Your intent was saved after this session ended.',
 };
 export const PRESS_CODEX = 'Codex sessions can be analyzed only while a turn is running.';
-export const PRESS_CLAUDE = 'Analyze opens while this session runs.';
 export const PRESS_EVENTS = 'Analyze opens while this session runs or once it ends.';
+/* The disclosure under a refused Analyze, which holds the server's whole sentence. Its old name, "Why it can't
+   read", answered a question the reader had not asked; the reader wants to know why the button is off. */
+export const WHY_OFF = 'Why Analyze is off';
 
 export const FLIP_HOLD_MS = 10_000;
 export const FLIP_SAY_EVERY_MS = 60_000;
@@ -206,14 +309,38 @@ export const FLIP_OPEN_ENDED = 'Analyze is open: the session ended.';
 export const FLIP_CLOSED = 'Analyze closed: the session went quiet.';
 export const FLIP_CLOSED_REVISION =
   'Analyze closed: your intent was saved after the session ended.';
-export const FLIP_CLOSED_UNANSWERED = 'Analyze closed before you answered, so nothing was sent.';
 
 export const WORK_HARNESSES: readonly string[] = ['claude', 'pi'];
 export const WORK_READ_FROM = 'Compass reads work results from Claude Code and Pi only.';
 export const WORK_AS_REPORTED = 'Results are as the tool reported; not inspected.';
 
-export const CORRECTION_CAP = 2000;
+/* The copy route's cap (`copied_corrections.CORRECTION_CAP_CHARS`): the lines' own 2,000 and room for eight
+   explanations of 277 each, since the owner's ruling of 2026-10-20 that a departure carries its explanation
+   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)),
+   and room for seven quotes of the agent's own words of 132 each since the owner's second ruling that day
+   ([local time and quoted words](../../../docs/design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)):
+   2,000 + 8 × 277 + 7 × 132. */
+export const CORRECTION_CAP = 5140;
+/* The label the server writes before a departure's explanation (`correction.EXPLANATION_LABEL`). */
+export const CORRECTION_WHY_LABEL = 'Why Compass reads this as drift: ';
 export const STEER_HARNESSES: readonly string[] = ['claude'];
+/* Over the correction, since it steers from the stored reading, which can be older than the session's latest
+   work: the time that reading was read, on the reader's clock (owner, 2026-10-20). */
+export const steerFrom = (at: string): string =>
+  `Built from your saved intent and the reading at ${at}`;
+/* Under the Steer back heading, in the design's words. */
+export const STEER_PURPOSE =
+  'Compass writes a correction for you to paste into the session. It never types into the session itself.';
+/* Beside departures Steer back will not carry, so the button is never simply missing (owner, 2026-10-20). The
+   rules are unchanged: a reading marked inaccurate, or one of an earlier version of the intent, sets no
+   correction. With a failed check still offering one, the line says the departures are left out of it. */
+export const STEER_OFF_MARKED = 'Steer back is off because you marked this analysis inaccurate.';
+export const STEER_OFF_OLDER =
+  'Steer back is off because this analysis read an earlier version of your intent. Analyze again to steer back from it.';
+export const STEER_LEAVES_MARKED =
+  'Steer back leaves these departures out because you marked this analysis inaccurate.';
+export const STEER_LEAVES_OLDER =
+  'Steer back leaves these departures out because this analysis read an earlier version of your intent.';
 export const CORRECTION_HINT = 'Compass never sends this. Copy it and paste it into the session.';
 export const CORRECTION_NOTHING = 'Nothing recorded now gives a correction to steer back from.';
 export const CORRECTION_FAILED = 'Could not compose a correction. Press Steer back again to retry.';
@@ -221,7 +348,7 @@ export const CORRECTION_OLDER =
   'This was composed from an older record. Recompose replaces your edit with a correction from the record as it stands.';
 export const CORRECTION_EDIT_REFUSED = 'This edit is unavailable here. Your text is kept.';
 export const CORRECTION_COMPOSITION_REFUSED =
-  'This composition would exceed 2,000 characters and was not kept.';
+  'This composition would exceed 5,140 characters and was not kept.';
 export const CORRECTION_UNDO_UNAVAILABLE =
   'The previous text was restored. Undo is unavailable for this refused edit.';
 export const CORRECTION_PAINT_PAUSED =
@@ -242,8 +369,15 @@ export const LIVE_LEVEL_NAMES: Readonly<Record<string, string>> = {
 export const LEVEL_SCALE: readonly string[] = ['none_or_low', 'medium', 'high', 'extreme'];
 export const LIVE_LINE =
   'Reads checks and file paths, not what your intent says. Files written by shell commands, such as a build, are not seen.';
+/* What the switch does, in the monitor notice's words: a model call, how often, to whom, and what it falls back
+   to. The server's own "What is sent" sentence, naming the destination, stands beside it while the monitor
+   is on. */
 export const LIVE_HINT =
-  'Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header.';
+  'Asks Haiku, through your Claude Code, where the latest turns are heading, about once a minute while this session is on screen. Until a check returns, the level comes from checks and file paths. The level shows here and in the header.';
+/* The monitor level's source line: what a Haiku check read, and what it does not say. The estimate's own line
+   above stays the line for the level computed from checks and paths. */
+export const LIVE_MONITOR_LINE =
+  'A Haiku check of the latest turns, about once a minute while you view the session. It reads your goal and the turns it was sent, and says where they are heading, not whether the work met the goal.';
 export const LIVE_SAVE = 'Save your intent to see a live estimate.';
 export const UNCHECKED = 'Not checked yet';
 export const NUDGE = 'This is a quick estimate. Analyze to see what drifted and how to steer back.';
@@ -270,6 +404,13 @@ export const REASON_LINES: Readonly<Record<string, (n: string) => string>> = {
    one. Every reason has exactly one home, a line, a blocker or this list, and
    `api/vocabulary.test.ts` holds the three to the producer's list. */
 export const SILENT_REASONS: readonly string[] = ['draft-unsaved', 'floor-met', 'no-reading'];
+/* The same blocker for a reading of the goal alone, where no outcome line was saved. */
+export const GOAL_NOT_SHOWN = 'Your goal is not shown by any check.';
+/* The verdict's own sentence over a goal-only reading that found nothing: what the reading did find, why
+   there is no level, and what would let one be drawn (owner decision, 2026-10-23: the evidence floor stands,
+   a level still needs a passing check or, since 2026-10-24, a recorded pull request or skill the line cites). */
+export const GOAL_ONLY_NO_LEVEL =
+  'Nothing departs from your goal, but no check shows it done, so no level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again.';
 export const BLOCKER_LINES: Readonly<Record<string, string>> = {
   'no-passing-check': 'No check has passed yet.',
   'check-not-recorded': 'A check ran and its result was not recorded.',
@@ -282,7 +423,10 @@ export const BLOCKER_LINES: Readonly<Record<string, string>> = {
   'scan-incomplete': 'The record was not read in full.',
   'line-not-shown-by-a-check': 'A line of your intent is not shown by any check.',
   'outcome-not-reached': 'Work against your intent was not reached at this stop.',
+  /* Retired as a reason a new reading carries, kept for the payloads a reading stored before it still
+     publishes: they keep the sentence they were stored with. */
   'no-outcome-line': 'No expected outcome line was saved.',
+  'goal-unclear': GOAL_UNCLEAR,
   'reading-malformed': 'Part of the stored analysis could not be read.',
 };
 
@@ -291,3 +435,22 @@ export const absenceAttr = (text: string): Record<string, string> => {
   const kind = REFUSAL_ABSENCE.get(text);
   return kind ? { 'data-absence': kind } : {};
 };
+
+export const MODEL_PAUSE_EXPLANATION =
+  'Compass stops sending session text to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.';
+export const READINGS_OFF = 'Model calls are paused. Nothing is sent until you resume.';
+export const PAGE_OUTDATED = 'Reload this page before resuming model calls. Nothing was sent.';
+export const NOTICE_SENT = 'This request sends:';
+/* The re-run control in the Drift card's header, from the first reading on: Check again over a reading that
+   new work or a changed intent left behind, Analyze again over a current one. */
+export const RERUN_STALE = 'Check again';
+export const RERUN_CURRENT = 'Analyze again';
+export const SETTINGS = 'Drift settings';
+export const NOTICE_WORDS = "The session's words, without the agent's messages.";
+export const NOTICE_WORDS_AND_MESSAGES = "The session's words and the agent's messages.";
+export const READINGS_OFF_CONSOLE = 'Model calls are paused. Nothing is sent until you resume.';
+export const noticeProvider = (label: string): string => `Provider: ${label}`;
+export const noticeDestination = (destination: string): string =>
+  `Words go to: ${destination || 'destination not published'}`;
+export const noticeToolOutput = (destination: string): string =>
+  `Tool output goes to: ${destination}`;

@@ -24,14 +24,16 @@
       "ok": true,
       "outcome": "stored",
       "persisted": true,
+      "removed": null,
       "revision": 1,
       "revision_count": 1,
       "saved_revision": 1,
+      "summary": "untouched",
       "withdrew": true
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "131",
+      "Content-Length": "168",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

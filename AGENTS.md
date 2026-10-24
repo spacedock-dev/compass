@@ -56,9 +56,9 @@ frontend/                           # React sources, unit tests, Storybook stori
 ├── e2e/                            # Playwright browser proofs, run on demand by `pnpm test:*:browser`; not required by CI or the pre-PR list
 └── build/ dev/                     # the packager and the contributor development supervisor
 sample-session/                    # the anonymized example session behind "Sample session (view only)"; not shipped
-│                                   # (`example-session.jsonl`, `shaping.json`, its README). The page's fixture built from it
-│                                   # is `frontend/src/sample/session.fixture.json`; `scripts/sanitize_session.py`,
-│                                   # `shape_sample_session.py` and `build_sample_fixture.py` make both
+│                                   # (`milestone-session.jsonl` and its README). The page's fixture built from it
+│                                   # is `frontend/src/sample/session.fixture.json`; `scripts/cut_sample_session.py`,
+│                                   # `sanitize_session.py` and `build_sample_fixture.py` make both
 scripts/frozen-page/               # the retired page's script parts, outside the plugin: the paused study
 │                                   # binds their digest (`scripts/frozen_page.py` loads them); not shipped
 compass-gemini/                    # extension root: Gemini CLI (hooks only)
@@ -107,7 +107,7 @@ shipped skill body, lives in the `sync-docs` skill at `.claude/skills/sync-docs/
 | `docs/design-reading-a-session.md` | **Canonical** record of the four rulings that govern what Compass may say about a session against the words a reader typed: the evidence floor and the reader-requested model overlay, whether an assessment may be stored, that Compass never writes into a session, and the seven-rule shape contract a reading must satisfy. The runtime cites its headings, because three of those rules are built into the producer rather than checked after it. |
 | [docs/design-adapter-packaging.md](docs/design-adapter-packaging.md) | **Canonical** adapter admission and packaging contract: identity normalizers, hook-shaped mappings, and implementation-language boundaries. |
 | `docs/design-sample-session.md` | **Canonical** record of the Sample session (view only): the reserved route, the second shell, the view-only guard, the numbered marks, and what was rejected. |
-| `sample-session/README.md` | What the sample session is made from: what is real and what is authored, the one recorded exception to the transcript policy, the checks it passed, and how to regenerate it. User-facing by default. |
+| `sample-session/README.md` | What the sample session is made from: what is real and what is authored, the recorded exceptions to the transcript policy, the checks each transcript passed, and how to regenerate it. User-facing by default. |
 | `docs/design-*.md` | Durable design rationale, including alternatives that were tried and rejected. Each links to the architecture owner rather than repeating its module map. |
 | `docs/plans/*.md` | Transient plans for unshipped work. Delete a plan once its work ships. |
 | `docs/roadmap-burndown/README.md` | The Spacedock workflow the roadmap burndown runs on: its stages, gates, and the measured rules each one earned. Machinery rather than prose — entity state lives on an orphan branch and is gitignored. |

@@ -407,6 +407,14 @@ class ToolPositionFunctionTest(EntryNumbersTestCase):
         self.assertEqual(left, right)
         self.assertEqual({"a": (1, 1), "b": (1, 2)}, left)
 
+    def test_a_pull_request_or_skill_takes_a_small_natural_place_in_time_order(self) -> None:
+        index = entry_numbers.MessageIndex("claude", SHORT)
+        index._add("a", 1.0)
+        positions = entry_numbers.tool_positions(
+            index, [("check:x", 2.0), ("pr:o/r#1", 3.0), ("skill:s", 4.0)]
+        )
+        self.assertEqual({"check:x": (1, 1), "pr:o/r#1": (1, 2), "skill:s": (1, 3)}, positions)
+
 
 class FocusedContextTest(EntryNumbersTestCase):
     def app(self) -> Any:

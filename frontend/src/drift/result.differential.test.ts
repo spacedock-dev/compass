@@ -19,6 +19,7 @@ import {
 } from './result';
 import { readingShape } from './shape';
 import { seedSample } from '../../test/legacy_goldens';
+import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
 /* The result stage's words, run next to the legacy page's over generated readings: the status line of each
    row, the answer over all of them, where the work went, why a reading is stale. */
@@ -189,7 +190,7 @@ describe('the result stage says what the legacy page says', () => {
       note(`answer:${answerB.kind}`);
       const foundAnswer = firstDifference(
         canonical(answerA),
-        canonical(withoutKey(answerB, 'unloaded')),
+        canonical(withoutKey(withoutKey(answerB, 'unloaded'), 'goalVerdict')),
       );
       if (foundAnswer) failures.push(`seed ${String(seed)} answer: ${foundAnswer}`);
       const drawn = legacy.call<unknown[]>('nextCockpitClaimsDrawn', legacyShape).length;
@@ -260,9 +261,10 @@ describe('the result stage says what the legacy page says', () => {
         failures.push(`seed ${String(seed)} stale presence`);
       if (stale) {
         note(`stale:${stale.kind}`);
-        const expected = squash(`${stale.head} ${stale.superseded}`);
-        if (text(staleHtml) !== expected) {
-          failures.push(`seed ${String(seed)} stale text: ${text(staleHtml)} / ${expected}`);
+        const expected = squash(maskRevisionWords(`${stale.head} ${stale.superseded}`));
+        const recorded = text(maskRevisionWords(staleHtml));
+        if (recorded !== expected) {
+          failures.push(`seed ${String(seed)} stale text: ${recorded} / ${expected}`);
         }
       }
       const arrivedA = text(legacy.call<string>('nextReadingArrivedLine', annotation, entries));
@@ -295,7 +297,7 @@ describe('the result stage says what the legacy page says', () => {
    it holds no entry for; the retired page had no such field and its recorded answers are keyed by their
    arguments, so it is dropped here (docs/design-frontend-migration.md#held-to-recorded-answers). */
 function legacyShape2(shape: unknown): unknown {
-  return retiredWording(withoutKey(shape, 'unloaded'));
+  return retiredWording(withoutKey(withoutKey(shape, 'unloaded'), 'goalVerdict'));
 }
 
 /* A named departure from the retired page. Its goal-source sentence said "Analyze read up to 1,000

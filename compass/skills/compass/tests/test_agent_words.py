@@ -757,6 +757,7 @@ class TheUnaskedLaneSendsNothingTheAgentSaidTest(words_tests._Collected):
         self.session.save(self.board.path)
 
     def test_the_unasked_lanes_prompt_holds_no_agent_words(self) -> None:
+        self.config = dataclasses.replace(self.config, unasked_enabled=True)
         self.annotate()
         reading_policy.set_consent(self.config, True, now=1_000.0, provider="codex", destination="")
         lane = unasked.Lane(
@@ -805,7 +806,11 @@ class TheUnaskedLaneSendsNothingTheAgentSaidTest(words_tests._Collected):
 
 
 class AnAllowGivenBeforeTheAgentsMessagesDoesNotCoverThemTest(unittest.TestCase):
-    """Review, 2026-10-03: the Allow is bound to what a reading sends, as it is to where."""
+    """Review, 2026-10-03: the Allow is bound to what a reading sends, as it is to where.
+
+    Since DEC-28 a press no longer needs that coverage; it is the explicit coverage the
+    unasked lane and the current page read, published as `providers`.
+    """
 
     def setUp(self) -> None:
         temp = tempfile.TemporaryDirectory()
@@ -820,15 +825,17 @@ class AnAllowGivenBeforeTheAgentsMessagesDoesNotCoverThemTest(unittest.TestCase)
         # The Allow as a build before this one stored it: a destination and no version.
         self.sql("DELETE FROM permission_disclosure")
         old = self.status()
-        self.assertFalse(old["consent"])
+        self.assertFalse(old["providers"]["codex"])
         self.assertEqual(reading_policy.CONTENT_CHANGED, old["rebind"]["codex"])
         # A press that carries no agent words, and the board's answer for one, still covered.
-        self.assertTrue(self.status(content=reading_policy.WORDS_CONTENT_VERSION)["consent"])
+        self.assertTrue(
+            self.status(content=reading_policy.WORDS_CONTENT_VERSION)["providers"]["codex"]
+        )
         self.assertTrue(old["words"]["codex"])
         again = reading_policy.set_consent(
             self.config, True, now=NOW, provider="codex", destination="OpenAI"
         )
-        self.assertTrue(again["consent"])
+        self.assertTrue(again["providers"]["codex"])
         self.assertEqual({}, again["rebind"])
 
     def sql(self, *statements: str) -> None:
@@ -867,7 +874,7 @@ class AnAllowGivenBeforeTheAgentsMessagesDoesNotCoverThemTest(unittest.TestCase)
                     "INSERT OR REPLACE INTO permission VALUES (1, 1)",
                     "INSERT OR REPLACE INTO permission_destination VALUES ('codex', 'OpenAI')",
                 )
-                self.assertFalse(self.status()["consent"])
+                self.assertFalse(self.status()["providers"]["codex"])
 
     def test_an_older_builds_allow_for_another_destination_is_not_covered(self) -> None:
         reading_policy.set_consent(
@@ -876,7 +883,7 @@ class AnAllowGivenBeforeTheAgentsMessagesDoesNotCoverThemTest(unittest.TestCase)
         # An older build's Allow with no Turn off between: it rebinds the destination
         # and writes no disclosure, so the one on record names the old destination.
         self.sql("INSERT OR REPLACE INTO permission_destination VALUES ('codex', 'gw.example')")
-        self.assertFalse(self.status("gw.example")["consent"])
+        self.assertFalse(self.status("gw.example")["providers"]["codex"])
 
     def test_the_unasked_lane_reads_at_the_words_version(self) -> None:
         reading_policy.set_consent(
@@ -894,7 +901,11 @@ class AnAllowGivenBeforeTheAgentsMessagesDoesNotCoverThemTest(unittest.TestCase)
             mock.patch.object(reading_policy, "status", status),
             mock.patch.object(reading_route, "destination", lambda *_a, **_k: "OpenAI"),
         ):
-            model = unasked._Bound(self.config, lambda *_a, **_k: ("{}", "ok"), lambda: NOW)
+            model = unasked._Bound(
+                dataclasses.replace(self.config, unasked_enabled=True),
+                lambda *_a, **_k: ("{}", "ok"),
+                lambda: NOW,
+            )
             # An Allow from before the bump still covers the lane, which sends no agent words.
             self.assertEqual(("{}", "ok"), model("prompt", output_cap_bytes=10))
         self.assertEqual([reading_policy.WORDS_CONTENT_VERSION], seen)

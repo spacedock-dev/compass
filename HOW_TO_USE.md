@@ -262,8 +262,10 @@ Claude Code's hooks go in `~/.claude/settings.json`. Antigravity's status line g
 settings file. Both are yours to edit; the plugin does not write either.
 
 Analyze drift reads a Claude Code session's last turn once Claude Code records it finishing, which
-it does when Stop hooks are registered (the plugin registers them), whichever board you view. Any
-other harness can be read after its session ends only when its hooks reach this board.
+it does when Stop hooks are registered (the plugin registers them), whichever board you view. An
+idle Claude Code session whose last turn has no recorded finish, such as an interrupted turn, is
+read up to its last recorded entry instead, and the result says so. Any other harness can be read
+after its session ends only when its hooks reach this board.
 
 ## Install or migrate Droid hooks
 
@@ -413,36 +415,61 @@ dashboard was started with. Tested: a dashboard started under a scratch `COMPASS
 by a `--stop` issued with no `COMPASS_HOME` at all, and its state file was cleaned up anyway, because
 the process removes its own on the way out.
 
-To analyze drift, press **Analyze drift** on the session page, then read the disclosure and
-choose **Allow and analyze**. With no saved goal, the check adopts the goal drafted from your first
+To analyze drift, press **Analyze drift** on the session page. It runs on your press and tells
+you once what is sent and where. With no saved goal, the check adopts the goal drafted from your first
 permitted Claude Code or Codex prompt, or from your latest prompt where no first prompt with a time
 is published. **Use your prompt** beside the goal lists up to five of your own prompts from the
 session; choosing one fills the goal box without saving it, and **Save intent** saves it. You
-can also type your own goal. Adopted words say "from your prompt", and editing them makes a typed
-goal. An unavailable prompt time means you must type a goal instead. The permission is remembered across tabs and restarts
-for as long as the words go where it named: where the disclosure named a destination, start the
-dashboard with a setting that moves it, such as `ANTHROPIC_BASE_URL` or `CLAUDE_CODE_USE_BEDROCK`,
-and the next press asks again first. Where the disclosure said Compass cannot name the
-destination, which is always on Windows and for a Codex base URL, a later move is not detected,
-and the Allow keeps covering it.
-Use **Turn off readings** on a session page to revoke it. A Claude Code session is read by Claude
+can also type your own goal. A line above the box says where the words came from ("Drafted from your first prompt", then "Your edit of your first prompt" once you change them),
+and words you type over them say "You typed this". **Find goal**, beside it, shows while no goal is saved and the session set no `/goal`. On your
+press it sends the prompts you typed in that session to the same reader Analyze would use, counts
+against the same daily limit, and does nothing while model calls are paused. If your own words
+state a clear end state it fills the box, marked **Goal detected**, with the prompts it quotes
+linked to their entries in Full activity and the quoted words listed beneath. Otherwise it says no clear goal was found and leaves the
+box as it was. Nothing is saved until you press **Save intent**. An unavailable prompt time means you must type a goal instead. The notice is remembered
+across tabs and restarts and shown again if the destination or content tier changes. Where Compass
+cannot name the destination (always on Windows and for a Codex base URL), a move between unnamed
+destinations cannot be detected.
+When a session that ran with `/goal` ends on Claude Code's own "goal met" verdict, the Drift card says so as the harness's claim, with the time and the reason it gave. Once you analyze, Compass checks that claim against the files it wrote and the checks it ran, and says whether the record agrees, disputes it or cannot confirm it. A file the claim names that a later command deleted or moved away is a dispute, and the card names the file and the time. The claim never changes the drift level and never counts as a passing check.
+When Claude Code gives up on a `/goal` it judged unreachable, the goal is over, and the Drift card says so as the harness's claim with the time and the reason it gave. Compass has not checked that claim, and it changes no level. Above the Goal field, the Intent card says what became of an earlier `/goal` (replaced, met or given up, with the time) and, when you cleared it, "Your /goal was cleared" with the time. It never repeats the earlier goal's words, and it stays quiet while Compass is offering your newer `/goal`.
+
+Use **Pause model calls** on a session page, under **Drift settings** at the top of the Drift card (it is also in the **What is sent** popover), to pause every model call. While paused, **Resume model calls** stands beside Drift settings. A Claude Code session is read by Claude
 Code when `claude` is on the dashboard's PATH, and by Codex when it is not; every other session is
 read by Codex, or by Claude Code on a machine without Codex. Checks spend the capacity of whichever
-reads. **What is sent**, under the button, opens a short list naming it, and with neither installed that reason takes
-the button's place and says no analysis can run. Permission is kept per provider, and
-Turn off readings revokes all of them. Twelve attempts are allowed in a rolling twenty-four
-hours; a refused check names when capacity under that limit becomes available again. Goal summaries
-in Console still require their separate startup flag and consent.
+reads. **What is sent**, under the button and, once there is a result, in the card's footer, opens a short list naming it, and with neither installed that reason takes
+the button's place and says no analysis can run. Pause model calls stops readings and goal
+summaries and session summaries until **Resume model calls**. Compass stops sending session text
+to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.
+An off saved before an upgrade stays paused. **Turn off summaries** stops session summaries alone;
+while paused, that control stays disabled with "Model calls are paused" beside it. Pause and Resume
+keep its saved answer, so summaries resume exactly as you left them. **Delete summary** takes two presses,
+says what it removes before the second, and reports the deletion with its time; it removes one
+session's saved summary, but it lasts until that finished session is opened again: opening it makes
+a new summary and sends its text once more, unless summaries are turned off or model calls are paused.
+Analyze allows 100 attempts in a rolling
+twenty-four hours and says when capacity becomes available again. Codex goal summaries need no
+startup flag: press **Summarize this session** in Console, and the first one shows its own one-time
+notice.
 
-A Claude Code reading is only as good as the checks it can see. The first press of Allow and analyze
-already grants tool output, which is a check's command, its result and the last 180 characters of its
-output, and the paths the session wrote, for the destination the disclosure names. To grant it when
-the dashboard starts, so the card asks only for the words, start it with `--allow-tool-output`, or set
-`COMPASS_ALLOW_TOOL_OUTPUT=1`. It grants nothing else and no reading runs until you allow the words.
-`--no-observer-model` refuses it, and Turn off readings and `--forget` clear it. If the permission store cannot take the grant, the start prints a line saying so and the card asks as usual.
+A Claude Code reading includes its checks by default where Compass can name the destination: the
+command, result, last 180 characters of output, written paths, the repository and number of a pull
+request the session created and the names of skills it used. The notice names tool output too.
+`--observer-model`, `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do
+nothing in this release; they will be removed in a later release. Pause model calls or
+`--no-observer-model` stops these calls.
 
-`--forget` also clears reading permission without resetting its rolling spend budget. It deletes the local history store and the session-end store, removes the records of any
-session you discarded everything for, and exits. It belongs with `--status` and `--stop` rather
+The Live monitor is the one model call that repeats. With its switch on, a Claude Code session page asks
+Haiku through your Claude Code about once a minute while the page is open and its tab is visible, and it
+stops when you turn it off, leave, hide the tab for good, or the session ends. After 20 minutes it asks
+whether you still want it, and turns itself off if nobody answers within 10. It uses `claude-haiku-5-5`
+unless you start the dashboard with `--claude-monitor-model` and another explicit Haiku ID. Turning it on
+again after a reload is yours to do: nothing about it is remembered. Its limits are its own, apart from
+Analyze's 100 attempts.
+
+`--forget` also stores model calls as paused and session summaries as off, without resetting
+either rolling spend budget. Readings and goal summaries wait for **Resume model calls**, and
+session summaries also wait for **Turn summaries on**. It deletes the local history store, the session-end store and the stored
+session summaries, removes the records of any session you discarded everything for, and exits. It belongs with `--status` and `--stop` rather
 than in the table below, because what it does is not undone by running the next command without it:
 
 ```bash
@@ -455,8 +482,8 @@ same reason: `--no-annotations` is a switch for one run, not a statement about t
 session-end store goes with it, because both are the machine's memory of what it observed, and a
 session whose end was recorded then reads as quiet again. Nothing over the loopback port can delete
 history; this is the only way. It deletes nothing you typed: the goal and the expected outcome lines you wrote against a
-session, and any reading made against them, go when you discard that session's words on its
-session page. The one thing it takes out of that store is the record of a discard, which holds when the act
+session, any reading made against them, and that session's summary, go when you discard that
+session's words on its session page. The one thing it takes out of that store is the record of a discard, which holds when the act
 happened and no text, and is the machine's memory of something it did rather than anything you
 wrote. It also deletes `compass-copied-corrections.json`, the digests of corrections you copied
 from Compass, which hold no text either.
@@ -465,7 +492,8 @@ Stop the dashboard first if one is running. `--forget` refuses while an instance
 it names, because a running server keeps its own copy of the history in memory and writes the
 deleted records back on its next observation, so the delete would report success and be undone a
 few seconds later. The refusal is for the whole command rather than for that one store, so the
-discard records are still there afterwards too, and the message names all three files. It finds the
+discard records and stored summaries are still there afterwards too, and the message names all four
+files. It finds the
 instance with the same probe `--status` and `--stop` use, so `--stop` and then `--forget` is the
 whole procedure.
 
@@ -497,7 +525,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
 | `--no-annotations` | The goal and expected outcome lines you typed against a session. Nothing is shown or saved, and the page offers no field |
 | `--no-focus` | Raising a session's terminal. No focus command runs, no terminal identity is recorded, and the page is offered no raise control. `--no-events` turns it off as well |
-| `--no-observer-model` | Every model call, including goal summaries, reader-requested analyses and unasked checks. It overrides `--observer-model` and `--unasked-readings` for both Claude Code and Codex |
+| `--no-observer-model` | Every model call, including goal summaries, session summaries, reader-requested analyses and unasked checks. It overrides `--unasked-readings` for both Claude Code and Codex |
 | `--no-reach` | Off-machine reach nudges. Outbound webhook nudges are disabled for this run |
 
 [SKILL.md](compass/skills/compass/SKILL.md#options) owns the full option reference.
@@ -508,7 +536,7 @@ Start the dashboard with `--claude-reading-model claude-sonnet-5` to select the 
 The default requests `claude-sonnet-5-5`. Use an explicit Sonnet or Opus generation 5 or later ID;
 floating aliases such as `sonnet` are refused. An account that cannot use the chosen model gets a
 failed reading, without a retry on another model. A daemon respawn keeps your selection.
-The disclosure before **Allow and analyze** names the selected Claude model.
+The disclosure beside **Analyze drift** names the selected Claude model.
 [SECURITY.md](SECURITY.md#amended-2026-10-05-claude-reading-model-baseline) owns the admission policy.
 
 ### Move the history's two bounds

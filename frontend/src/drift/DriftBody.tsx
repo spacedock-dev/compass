@@ -1,67 +1,67 @@
 import type { ReactNode } from 'react';
+import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
+import { nextNumber } from '../api/bootstrap';
 import { endedAt } from '../observed';
-import { directionsOpen, intentKey, intentUnsaved } from '../intent/derive';
-import type { DirectionReading } from '../intent/directions';
-import { useDisplayed } from '../shell/context';
-import { keepReading } from './actions';
+import { datedClock } from '../observed/values';
+import { directionsOpen, intentUnsaved } from '../intent/derive';
 import { useDrift } from './context';
-import { offeredDirection, steerOffer, steerTrigger, type SteerOffer } from './correction';
-import { DriftLevelView } from './DriftLevelView';
-import { readingBoard } from './flip';
 import {
-  DISCLOSURE_ID,
-  DisclosureParts,
+  offeredDirection,
+  steerOffer,
+  steerTrigger,
+  steerWithheld,
+  type SteerOffer,
+} from './correction';
+import { LiveMonitorNote } from './LiveMonitorNote';
+import { DriftLevelView } from './DriftLevelView';
+import { GoalVerdictNote } from './GoalVerdictNote';
+import type { Board } from './flip';
+import {
   ReadingControl,
+  RunPress,
   ReadingCount,
   REFUSED_ID,
   JobBox,
+  ReadingNotice,
+  ReadingsOffAsk,
+  WhatIsSent,
   type SteerSlot,
 } from './ReadingControl';
-import { ReadingResult } from './ReadingResult';
-import { disclosureParts, needsAllow, promptReadingRefusal, routeRefusal } from './route';
-import { absenceAttr, OFFER, READING_DEFINITION, SCOPE, UNKNOWN_KEY } from './sentences';
+import { DriftVerdict, ReadingResult } from './ReadingResult';
+import { readingsOff } from './route';
+import {
+  absenceAttr,
+  READINGS_OFF,
+  OFFER,
+  READING_DEFINITION,
+  SCOPE,
+  steerFrom,
+  UNKNOWN_KEY,
+  WHY_OFF,
+} from './sentences';
+import { CitedText } from './CitedText';
 import { SteerBox, SteerButton, UpdateIntentButton } from './SteerBack';
+import { resultStale } from './result';
 import { useFollowCorrection } from './useFollowCorrection';
+import { useRunBoard } from './useRunBoard';
 import { Why } from './Why';
 import { READING_NOT_A_VERIFICATION } from '../intent/logModel';
 
-/* The Drift section's body, in the page's order: the level, the one control (or the question before it, or the
+/* The Drift section's body, in the page's order: the answer in one sentence, the level, the one control (or the question before it, or the
    result that stands in its place), what analysis does, what the session launched, and a reading this build
    could not read. Everything here is drawn from the payload and the reader's held state; a press sends, and
    nothing else does. The legacy page's `nextCockpitDriftBlock` and `nextCockpitReadingParts` are the oracle,
    and `drift-parity.mjs` draws both over one board. */
 
-/* A claim alone is a question and always secondary, including without a reader. */
-function steerPrimary(offer: SteerOffer | null, noReader: boolean, primary: boolean): boolean {
-  return Boolean(primary && offer && (offer.departed || (offer.failed && noReader)));
-}
-
 export function DriftBody({ primary }: { readonly primary: boolean }) {
   const { ctx, model } = useDrift();
   const { session, payload, annotation, key, annotate, shape } = model;
-  const held = ctx.intent.held;
-  /* One more pass of the drawn card: an entry the flip ledger last saw two passes ago was not drawn between. */
-  const epoch = ctx.drift.nextEpoch();
-  const saving = useDisplayed((snapshot) =>
-    snapshot.pending.includes(`${intentKey(session)}:save`),
-  );
-  const request = held.requests.get(key);
-  const now = ctx.shell.clock.now();
-  const refusalInput = { input: model.input, saving, answered: request, nowMs: now };
-  const refusal = promptReadingRefusal(refusalInput);
-  const heldLive = promptReadingRefusal(refusalInput, true);
-  const board = readingBoard(ctx, {
-    session,
-    reason: refusal,
-    heldLive,
-    payload: model.base,
-    epoch,
-    request,
-  });
+  const { board, refusal } = useRunBoard(true);
   const pending = annotate ? directionsOpen(model.input, model.source) : [];
   const hasQuestion = pending.length > 0;
-  const steerable = steerOffer({
+  const now = ctx.shell.clock.now();
+  const offered = steerOffer({
     session,
     annotation,
     source: model.source,
@@ -69,27 +69,36 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     annotate,
     drafted: model.drafted,
   });
+  /* Steer back only where a departure stands behind it: a failed check or a claim the record does not show,
+     with no departure from the intent, left it offered over "Not checked yet" and over readings that found
+     nothing, with nothing to steer from. The server still composes a correction from them; the page no
+     longer offers the press. */
+  const steerable = offered?.departed ? offered : null;
   useFollowCorrection(steerable !== null);
-  const offer = hasQuestion ? null : steerable;
-  const departed = Boolean(offer?.departed);
-  const noReader = annotate ? routeRefusal(payload, session) : '';
+  /* While a later direction stands, Steer back stays beside the departures it steers from (owner, 2026-10-20):
+     the question owns the primary press, so Steer back is secondary there and offers no Update intent instead,
+     which the question's own Add already is. */
+  const offer = steerable;
+  const readAt = nextNumber(model.raw?.['read_at']);
+  const from =
+    offer && readAt !== null && readAt > 0 ? steerFrom(datedClock(readAt, now / 1000)) : '';
   const slotted: SteerSlot | null = offer
     ? {
-        lead: departed,
+        lead: !hasQuestion,
         button: (
-          <>
-            <SteerButton primary={steerPrimary(offer, Boolean(noReader), primary)} />
-            {departed ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <SteerButton primary={!hasQuestion} />
+            {!hasQuestion ? (
               <UpdateIntentButton
                 factId={offeredDirection(annotation, model.entries, session, shape, model.draft)}
               />
             ) : null}
-          </>
+          </div>
         ),
         box: (
           <>
             <TriggerLine offer={offer} />
-            <SteerBox />
+            <SteerBox from={from} />
           </>
         ),
       }
@@ -103,7 +112,37 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       ? SCOPE
       : `${OFFER} ${READING_NOT_A_VERIFICATION}`;
   const job = model.job;
-  const control = hasQuestion ? <QuestionWithAnalysis board={board} primary={primary} /> : null;
+  const readable = annotate && Boolean(raw && shape && !shape.malformed);
+  /* While an analysis runs over a reading the question waits: its box stands where the progress does. */
+  const control =
+    hasQuestion && !(readable && job) ? (
+      <QuestionWithAnalysis board={board} primary={primary} />
+    ) : null;
+  const stale = Boolean(
+    readable && shape && raw && annotation && resultStale(shape, raw, annotation, model.entries),
+  );
+  const result =
+    readable && raw && shape ? (
+      <ReadingResult
+        question={control}
+        slotted={slotted}
+        steerOff={steerWithheld({ session, annotation, shape, offer })}
+        again={(steer) => (
+          <ReadingControl board={board} primary={false} again steer={steer} refusalOf={refusal} />
+        )}
+      />
+    ) : null;
+  const answer = (
+    <>
+      <DriftVerdict focus={!job && !hasQuestion && !stale} />
+      <LiveMonitorNote />
+      <DriftLevelView />
+      <GoalVerdictNote />
+    </>
+  );
+  /* The answer first, then the level, in every state: a later direction's question once drew above the level,
+     so the verdict moved between visits (usability review, 2026-10-20). A run over a reading keeps that reading
+     in view, dimmed and out of reach, under the progress that replaces it, until the new one lands. */
   let area: ReactNode;
   if (!annotate) {
     area = (
@@ -111,22 +150,19 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
         <ReadingControl board={board} primary={primary} refusalOf={refusal} />
       </div>
     );
-  } else if (raw && shape && !shape.malformed && !job) {
+  } else if (readable && !job) {
+    area = result;
+  } else if (readable && job) {
     area = (
-      <ReadingResult
-        question={control}
-        slotted={slotted}
-        again={(steer, showRun = true) => (
-          <ReadingControl
-            board={board}
-            primary={false}
-            again
-            showRun={showRun}
-            steer={steer}
-            refusalOf={refusal}
-          />
-        )}
-      />
+      <>
+        <div className="next-session-drift-check">
+          <ReadingControl board={board} primary={false} refusalOf={refusal} />
+        </div>
+        <div className="flex flex-col opacity-45" aria-busy="true" inert data-next-result-dimmed>
+          {answer}
+          {result}
+        </div>
+      </>
     );
   } else {
     area = (
@@ -134,7 +170,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
         {control ?? (
           <ReadingControl
             board={board}
-            primary={primary && !departed}
+            primary={primary}
             steer={slotted}
             about={about}
             refusalOf={refusal}
@@ -144,12 +180,12 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     );
   }
   return (
-    <>
-      {hasQuestion ? area : null}
-      <DriftLevelView />
-      {hasQuestion ? null : area}
+    <div className="contents" data-next-drift-body>
+      <UnaskedPermission key={key} payload={payload} session={session} />
+      {readable && job ? null : answer}
+      {area}
       <ReadingSection />
-    </>
+    </div>
   );
 }
 
@@ -158,78 +194,71 @@ function TriggerLine({ offer }: { readonly offer: SteerOffer }) {
   const text = steerTrigger({
     offer,
     shape: model.shape,
-    session: model.session,
     entries: model.entries,
     numbers: model.numbers,
-    scan: model.source.scan,
     generated: model.generated,
   });
-  return text ? <p className="next-cockpit-reading-why">{text}</p> : null;
+  return text ? (
+    <p className="next-cockpit-reading-why">
+      <CitedText text={text} />
+    </p>
+  ) : null;
 }
 
 /* The question before the press, in the Analyze control's place while a later direction is unsettled: Keep is
    then the stage's one primary. The question is the Intent step's; this adds the Analyze step's side of it: the
-   reading Keep may start, the box a running analysis draws above it, Turn off readings beside it, and the
+   reading Keep may start, the box a running analysis draws above it, Pause model calls beside it, and the
    disclosure, the count and the refusal under it. */
 function QuestionWithAnalysis({
   board,
   primary,
 }: {
-  readonly board: ReturnType<typeof readingBoard>;
+  readonly board: Board;
   readonly primary: boolean;
 }) {
   const { ctx, model } = useDrift();
-  const { payload, session, annotation, route, identity, job } = model;
+  const { session, annotation, route, job } = model;
+  /* Over a reading the card's footer draws What is sent, once. */
+  const kept = Boolean(model.raw && model.shape && !model.shape.malformed);
   const edited = intentUnsaved(model.input);
-  const reason = board.reason;
-  const owed = needsAllow(payload, route);
+  const off = readingsOff(model.payload);
+  const reason = off ? READINGS_OFF : board.reason;
   const provider = route?.['provider'] ? String(route['provider']) : '';
   const disclosure = provider && route?.['disclosure'] ? String(route['disclosure']) : '';
-  const receiver = String(route?.['label'] || provider);
-  const analyze = !edited && !reason && !job && !owed;
+  const analyze = !edited && !reason && !job;
   const request = ctx.intent.held.requests.get(model.key);
   const count = Number(annotation?.['reading_count']) || 0;
   const running = endedAt(session) === null && session['state'] !== 'idle';
-  const reading: DirectionReading = {
-    reason,
-    job: Boolean(job),
-    owed,
-    ...(disclosure ? { disclosureId: DISCLOSURE_ID } : {}),
-    start: (request2) => {
-      if (!identity) throw new Error('no identity');
-      return keepReading(ctx, identity, request2);
-    },
-  };
   return (
     <DirectionQuestion
-      reading={reading}
       primary={primary}
-      before={job ? <JobBox job={job} running={running} /> : null}
+      buttons={
+        kept ? null : (
+          <RunPress
+            board={board}
+            weight="secondary"
+            label="Analyze drift"
+            focusKey={`reading:${model.key}`}
+          />
+        )
+      }
+      before={job ? <JobBox job={job} running={running} again={kept} /> : null}
       after={
-        <>
-          {board.changed ? (
-            <p className="next-cockpit-reading-why next-cockpit-reading-change">{board.changed}</p>
-          ) : null}
-          {analyze && disclosure ? (
-            /* The same "What is sent" popover the idle Analyze button draws, in the same words: this
-               question's Keep runs under an Allow already given, and the whole list stays one click away
-               and describes Keep, instead of standing as a paragraph under the buttons. */
-            <Why
-              name="reading-sent"
-              pop
-              summary={
-                route?.['fallback'] === true ? `What is sent to ${receiver}` : 'What is sent'
-              }
-            >
-              <DisclosureParts
-                parts={disclosureParts(route, provider, disclosure)}
-                id={DISCLOSURE_ID}
-              />
-            </Why>
-          ) : null}
-          {annotation ? <ReadingCount count={count} /> : null}
-          {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
-        </>
+        off ? (
+          <ReadingsOffAsk refusedId={!edited} />
+        ) : (
+          <>
+            <ReadingNotice />
+            {board.changed ? (
+              <p className="next-cockpit-reading-why next-cockpit-reading-change">
+                {board.changed}
+              </p>
+            ) : null}
+            {analyze && disclosure && !kept ? <WhatIsSent /> : null}
+            {annotation ? <ReadingCount count={count} /> : null}
+            {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
+          </>
+        )
       }
     />
   );
@@ -239,7 +268,7 @@ function RefusedLine({
   board,
   request,
 }: {
-  readonly board: ReturnType<typeof readingBoard>;
+  readonly board: Board;
   readonly request:
     | { readonly refusal?: boolean | undefined; readonly announced?: boolean | undefined }
     | undefined;
@@ -259,7 +288,7 @@ function RefusedLine({
       {board.inert && board.pressed ? (
         <Why
           name={`reading-why:${model.key}`}
-          summary="Why it can't read"
+          summary={WHY_OFF}
           body={String(board.pressed['sentence'] || '')}
         />
       ) : null}
