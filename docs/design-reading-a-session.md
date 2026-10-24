@@ -5625,9 +5625,6 @@ and the rest of the list still withdraw it, and a pull request cited beside a ch
 to describe only what a pull request or skill entry shows. The header's bytes are pinned for final readings and
 its budget is tight, so that costs a re-pin and a requalification for a rule the set-aside already covers.
 
-Also, the places a message's group numbers a pull request or a skill begin at 1,000, so a check, file or launch
-already numbered keeps its number when either kind joins its group.
-
 ### Amended 2026-10-23: a verdict may name a pull request
 
 [The 2026-10-22 amendment](#amended-2026-10-22-a-goal-met-verdict-is-a-claim) lists the facts a verdict's reason
