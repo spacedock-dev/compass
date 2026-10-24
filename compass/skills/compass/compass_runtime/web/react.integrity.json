@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2140167,
+    "bytes": 2140183,
     "file": "react.html",
-    "sha256": "b72cd05d9fa10a4c1e1908910d47734e2a3d485a574f801ee748ac4597f5b7e4"
+    "sha256": "cb9ed19d68a1f8a785175cc21e280e5bc4abf4545acb42c4b808925ce7963a8c"
   },
   "format": 1,
   "frontend": "react",
@@ -567,7 +567,7 @@
       },
       {
         "file": "frontend/src/drift/DriftLevelView.tsx",
-        "sha256": "fdc30bb12b2b5a01e92776cd79867dfde7936dc0994521d19019566c446724ae"
+        "sha256": "4d4f8393beeb7d7c3f2ecac23cd1feaa4ac925eb74db6611ff598847492382df"
       },
       {
         "file": "frontend/src/drift/DriftProvider.tsx",
