@@ -286,6 +286,51 @@ class AReadingIsSentThePullRequestAndSkillFacts(base.AClaudeCodeReadingProducer)
         )
         self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
 
+    def _consistent_with(self, subject: str, detail: str, extra: list[dict[str, Any]]) -> str:
+        facts = [base.WORDS_FACT, *extra, pr_fact() if subject == "pr" else skill_fact()]
+        ledger = reading.build_ledger(facts, "claude", "s1", tool_output={})
+        n = 1 + next(i for i, row in enumerate(ledger) if row.get("subject") == subject)
+        row = self._line(
+            facts,
+            "Use the linear-deep-dive skill and create a PR of the work",
+            {"line_1": {"result": "consistent", "cites": [n], "detail": detail}},
+        )
+        return str(row["result"])
+
+    def test_a_pull_request_line_may_say_it_was_successfully_created_or_confirmed(self) -> None:
+        # What a reader's own goal line reads like on a session that did both: the record shows a
+        # pull request created, and the words that report that must not read as a landed verdict.
+        for subject, detail in (
+            ("pr", "The pull request was successfully created."),
+            ("pr", "The record confirmed the pull request was opened."),
+            ("skill", "The skill was successfully used."),
+        ):
+            with self.subTest(detail=detail):
+                self.assertEqual(
+                    reading.RESULT_CONSISTENT, self._consistent_with(subject, detail, [])
+                )
+
+    def test_the_same_words_still_withdraw_a_verdict_that_rests_on_anything_else(self) -> None:
+        passed = base.check_fact(result="passed", fact_id="c1", at=125.0)
+        for detail in (
+            "The pull request was created and the work is delivered.",
+            "The pull request was created and the feature works.",
+        ):
+            with self.subTest(detail=detail):
+                self.assertEqual(
+                    reading.RESULT_UNVERIFIABLE, self._consistent_with("pr", detail, [])
+                )
+        # A passing check cited beside it keeps the check's own rule: "successfully" is a verdict.
+        facts = [base.WORDS_FACT, passed, pr_fact()]
+        ledger = reading.build_ledger(facts, "claude", "s1", tool_output={})
+        ns = [1 + i for i, row in enumerate(ledger) if row.get("subject") in ("pr", "check")]
+        row = self._line(
+            facts,
+            "The tests pass and a PR is created",
+            {"line_1": {"result": "consistent", "cites": ns, "detail": "It successfully ran."}},
+        )
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+
     def test_neither_can_carry_a_departure(self) -> None:
         facts = [base.WORDS_FACT, pr_fact()]
         ledger = reading.build_ledger(facts, "claude", "s1", tool_output={})

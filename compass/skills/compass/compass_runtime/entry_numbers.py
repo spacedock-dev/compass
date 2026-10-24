@@ -39,6 +39,10 @@ if TYPE_CHECKING:
 # parse one up to their 64 MiB budget, but masking a message that size takes minutes, and this pass
 # runs on every collection of the focused session. A message on such a line is listed by a page
 # and drawn without a number; no later number depends on it.
+# Candidate key prefixes of the two kinds added after numbers were first published, and where
+# their places begin: past any count of checks, files and launches one message can hold.
+LATE_KINDS = ("pr:", "skill:")
+LATE_PLACE_BASE = 1_000
 _LINE_CAP = 16 * 1024 * 1024
 _SKIP_CHUNK = 1 << 20
 
@@ -205,6 +209,13 @@ def tool_positions(
     positions: dict[str, tuple[int, int]] = {}
     for anchor, members in groups.items():
         members.sort()
-        for place, (_first_at, key) in enumerate(members, start=1):
+        # A created pull request or a used skill is counted apart, from `LATE_PLACE_BASE`, so
+        # adding the two kinds shifted no check, file or launch already numbered (owner review,
+        # 2026-10-23), and a later check cannot take a pull request's place.
+        ordinary = [key for _at, key in members if not key.startswith(LATE_KINDS)]
+        late = [key for _at, key in members if key.startswith(LATE_KINDS)]
+        for place, key in enumerate(ordinary, start=1):
+            positions[key] = (anchor, place)
+        for place, key in enumerate(late, start=LATE_PLACE_BASE + 1):
             positions[key] = (anchor, place)
     return positions

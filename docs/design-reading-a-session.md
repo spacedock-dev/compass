@@ -5611,6 +5611,23 @@ dispute. "Could not confirm it" remains the answer where nothing in the record s
 claim, and Compass's own level stands either way.
 
 
+### Amended 2026-10-24: the words that report a created pull request or a used skill
+
+A live walk of the owner's session showed a goal line that asked for a skill and a pull request still read Can't
+tell, though the reading cited both facts and the verdict check agreed: the reading's explanation carried a word
+of [the success list](#amended-2026-09-24-a-checks-own-result-word-is-not-a-verdict-owner-ruling) and the backstop
+withdrew the result as a stated verdict. The stored reading does not keep a withdrawn explanation, so the words
+were reproduced on a synthetic goal, where "successfully created" and "the record confirmed" tripped it.
+Where every entry a consistent cites is one of those two facts inside the window, `successfully` and
+`confirmed` are now set aside, as a check's own result words are for a check; `delivered`, `works`, `completed`
+and the rest of the list still withdraw it, and a pull request cited beside a check keeps the check's rule.
+"Created" and "opened" were never on the list. Not done: a sentence in the trusted instructions telling the model
+to describe only what a pull request or skill entry shows. The header's bytes are pinned for final readings and
+its budget is tight, so that costs a re-pin and a requalification for a rule the set-aside already covers.
+
+Also, the places a message's group numbers a pull request or a skill begin at 1,000, so a check, file or launch
+already numbered keeps its number when either kind joins its group.
+
 ### Amended 2026-10-23: a verdict may name a pull request
 
 [The 2026-10-22 amendment](#amended-2026-10-22-a-goal-met-verdict-is-a-claim) lists the facts a verdict's reason

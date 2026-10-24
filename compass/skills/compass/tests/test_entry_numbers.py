@@ -407,6 +407,37 @@ class ToolPositionFunctionTest(EntryNumbersTestCase):
         self.assertEqual(left, right)
         self.assertEqual({"a": (1, 1), "b": (1, 2)}, left)
 
+    def test_a_pull_request_or_skill_never_moves_the_number_of_an_older_kind(self) -> None:
+        # Owner review, 2026-10-23: a saved number is what a reader sees and cites. A pull request or
+        # skill joining a message's group must not shift any check, file or launch after it.
+        index = entry_numbers.MessageIndex("claude", SHORT)
+        index._add("a", 1.0)
+        before = entry_numbers.tool_positions(
+            index, [("check:x", 2.0), ("write:f", 3.0), ("launch:l", 4.0)]
+        )
+        after = entry_numbers.tool_positions(
+            index,
+            [
+                ("check:x", 2.0),
+                ("pr:o/r#1", 2.5),
+                ("write:f", 3.0),
+                ("skill:s", 3.5),
+                ("launch:l", 4.0),
+            ],
+        )
+        for key, position in before.items():
+            self.assertEqual(position, after[key], key)
+        self.assertEqual(5, len(set(after.values())))
+
+    def test_a_pull_request_keeps_its_number_as_later_checks_arrive(self) -> None:
+        index = entry_numbers.MessageIndex("claude", SHORT)
+        index._add("a", 1.0)
+        first = entry_numbers.tool_positions(index, [("check:x", 2.0), ("pr:o/r#1", 3.0)])
+        later = entry_numbers.tool_positions(
+            index, [("check:x", 2.0), ("pr:o/r#1", 3.0), ("check:y", 4.0), ("write:f", 5.0)]
+        )
+        self.assertEqual(first["pr:o/r#1"], later["pr:o/r#1"])
+
 
 class FocusedContextTest(EntryNumbersTestCase):
     def app(self) -> Any:

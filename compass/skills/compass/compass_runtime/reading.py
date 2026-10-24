@@ -940,6 +940,10 @@ def _words(text: str) -> set[str]:
 # and "no tests passed" are failure statements (verifier, 2026-09-24). A
 # negated "work" or "expected" says the output is not what was asked.
 _PASS_FORMS = frozenset({"pass", *CHECK_REPORT_WORDS})
+# The words that report a created pull request or a used skill ("successfully created", "the record
+# confirmed it was opened"). Set aside only where every entry a consistent cites is one of those two
+# facts (owner, 2026-10-23, from a live walk); "delivered", "works" and the rest still withdraw it.
+RECORDED_DONE_WORDS = frozenset({"successfully", "confirmed"})
 _OUTCOME_FORMS = frozenset({"work", "expected"})
 
 
@@ -3115,7 +3119,12 @@ def _indices(value: Any) -> tuple[int, ...]:
 
 
 def _states_a_verdict(
-    detail: str, result: str, *, reported: bool = False, earlier_failed: bool = False
+    detail: str,
+    result: str,
+    *,
+    reported: bool = False,
+    earlier_failed: bool = False,
+    recorded_done: bool = False,
 ) -> bool:
     """Whether this prose states a verdict the model is not allowed to state.
 
@@ -3137,6 +3146,8 @@ def _states_a_verdict(
         if _negated(ordered, _PASS_FORMS, 2) or _negated(ordered, _OUTCOME_FORMS, 3):
             return True
     words = _words(detail)
+    if recorded_done:
+        words -= RECORDED_DONE_WORDS
     if reported:
         words -= CHECK_REPORT_WORDS
         if earlier_failed:
@@ -3917,6 +3928,15 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     # A claims departure or `unsupported` quotes the agent's own success words
     # by its nature ("said the change works"), and neither says the work
     # landed, so the backstop reads only a claims `consistent` (review, PR C).
+    recorded_done = (
+        result == RESULT_CONSISTENT
+        and bool(cited)
+        and all(
+            entry.get("subject") in (PR_SUBJECT, SKILL_SUBJECT)
+            and check_supports(entry, RESULT_CONSISTENT, window_start)
+            for entry in cited
+        )
+    )
     quoting = name == CONSTRAINT_CLAIMS and result in (RESULT_DEPARTURE, RESULT_UNSUPPORTED)
     if (
         result
@@ -3928,6 +3948,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
             result,
             reported=bool(reported),
             earlier_failed=any(entry.get("earlier_failed") is True for entry in reported),
+            recorded_done=recorded_done,
         )
     ):
         result, why = RESULT_UNVERIFIABLE, WHY_VERDICT_STATED
