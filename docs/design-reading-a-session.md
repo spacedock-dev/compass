@@ -6061,6 +6061,29 @@ as None or low, is published as None or low.
 - **The model level is published beside the estimate** as the fallback it replaces, with the estimate's
   reasons, so a page can say which one decided.
 
+### Amended 2026-10-24 (owner): an Analyze reading's None or low may rest on recorded harness facts
+
+This extends [the 2026-10-23 ruling on the Haiku level's own floor](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor),
+which let the monitor's None or low stand with no passing check, to the stored reading's analysis level, more
+strictly. It was taken under the owner's standing instruction to act on the lead's recommendations, after a
+live walk where a session that used a skill and created a pull request read Consistent on its goal line and
+still drew no level, because no check had run.
+
+An analysis level may be None or low with no passing check when all of these hold:
+
+- every goal line, and every outcome line, is Consistent, and none carries a `why`;
+- every outcome line that is Consistent cites at least one recorded harness fact: a pull request created, a
+  skill used (item 3's amendment of 2026-10-23), or a passing check as before, and not only the agent's or
+  the reader's messages. A goal that stands alone as the one outcome line is read the same way;
+- there is no failed check, no unsettled later direction, no departure and no unsettled claim, which is the
+  floor's own blockers and unchanged;
+- the scan is complete enough that the existing abstention rules do not already block it.
+
+The agent's words alone still never lift the level, and a line resting on words beside one resting on a fact
+keeps the floor off. A pull request or a skill does not age: it is a record that something was done, so a
+later file write does not turn it into a pass followed by a change. The live estimate's floor (item 1) is not
+touched; it still asks for a passing check.
+
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
 Decided 2026-10-11 (DRC-4855), on the Actions Front and Center project, in the milestone "Intent

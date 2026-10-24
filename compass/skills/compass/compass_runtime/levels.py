@@ -530,7 +530,17 @@ class _LineTally:
         # arrived (DRC-4702); one with no time cannot. A consistent resting on
         # the agent's account alone has no pass, so the agent's word alone
         # never reaches the floor.
-        if resolved.get("result") == reading.RESULT_CONSISTENT and not why and passes:
+        # A created pull request or a used skill is a recorded harness fact, and a consistent line
+        # that cites one reaches the floor with no pass (owner, 2026-10-24, extending the monitor's
+        # floor):
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-24-owner-an-analyze-readings-none-or-low-may-rest-on-recorded-harness-facts)  # noqa: E501
+        done = [
+            f
+            for f in cited
+            if f.get("subject") in (reading.PR_SUBJECT, reading.SKILL_SUBJECT)
+            and f.get("work") is True
+        ]
+        if resolved.get("result") == reading.RESULT_CONSISTENT and not why and (passes or done):
             self.shown.extend(resolved["cites"])
         else:
             self.not_shown += 1

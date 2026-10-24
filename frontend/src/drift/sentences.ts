@@ -408,7 +408,7 @@ export const SILENT_REASONS: readonly string[] = ['draft-unsaved', 'floor-met', 
 export const GOAL_NOT_SHOWN = 'Your goal is not shown by any check.';
 /* The verdict's own sentence over a goal-only reading that found nothing: what the reading did find, why
    there is no level, and what would let one be drawn (owner decision, 2026-10-23: the evidence floor stands,
-   a level still needs a passing check). */
+   a level still needs a passing check or, since 2026-10-24, a recorded pull request or skill the line cites). */
 export const GOAL_ONLY_NO_LEVEL =
   'Nothing departs from your goal, but no check shows it done, so no level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again.';
 export const BLOCKER_LINES: Readonly<Record<string, string>> = {
