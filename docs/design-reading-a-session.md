@@ -46,6 +46,35 @@ off hides the level and the pill; it does not stop the server computing the leve
 reaches a row, a total, a notification or the unasked lane. The overlay is still a reading the
 reader asks for, and a verdict on whether the work met the request is still refused.
 
+### Amended 2026-10-23 (owner): the Live monitor may evaluate on a cadence while the session is viewed
+
+The owner ruled on 2026-10-23, in these words:
+
+> I actually disagree and believe tha the Live monitor should use model calls. Specifically (lets focus
+> on Claude for the moment), when the Live Monitor is on and a user is viewing the session, a sidecar
+> with the latest Haiku model should check and keep an eye on the session. The estimate should only run
+> once per minute, and if the session has ended, the "Live monitor" should turn off (if it is on) and
+> the toggle should be disabled (because there is nothing "live" to monitor). Also, if a user navigates
+> away from the session, the Live monitor should not continue to run. We can also add a, "Do you still
+> want to monitor this session?" banner that shows up after 20 minutes that will stay active in the UI
+> for 10 minutes. If the user does not respond to the banner, the Live monitor will turn off with a note
+> (so as to not drain a users tokens accidentally). If they do respond to the banner, if they
+> responded, "yes", the TTL will reset and the live monitor will continue. If they respond "no", the
+> live monitor will turn off.
+
+This section's refusal of "evaluation on a cadence" and the 2026-09-24 amendment's "it uses no model"
+are amended for one case and no other: the Live monitor, for Claude Code sessions, while the reader
+is viewing the session. Everything else on a cadence stays refused. There is still no always-on drift
+indicator and nothing evaluates in the background: a session nobody is viewing is never checked, and a
+check never runs for a session the reader has navigated away from. Other harnesses are unchanged for now.
+[The DEC-26 amendment of the same date](#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)
+holds the rulings and the remaining decisions.
+
+[DEC-16](#dec-16-compass-does-not-write-into-a-session) still applies, unamended: the check runs as a
+supervised child, is never resumed into the watched session and is never injected into it. The overlay
+the reader asks for, and the refusal of a verdict on whether the work met the request, are also
+unchanged.
+
 ## DEC-15b: an assessment may be stored
 
 An outcome assessment and the annotation revision it read persist in session history, so both
@@ -3039,6 +3068,58 @@ back into a session. And the Claude reader's accuracy check has not passed
 so Compass does not add a second, weaker route to a correction. DEC-24 item 7's list of triggers
 stays as it is: a surviving model departure, a contradicted or unshown claim, a failed check.
 
+### Amended 2026-10-23 (owner): pnpm shorthand for a closed runner is a check
+
+[The closed lists](#the-closed-lists) name `pnpm exec` as a wrapper and no other pnpm form. The owner
+ruled on 2026-10-23 that `pnpm <runner>` counts as a check whenever `<runner>` is on the closed list,
+the same as `pnpm exec <runner>`: `pnpm vitest run X`, `pnpm tsc --noEmit`, `pnpm eslint .`. A pnpm
+word that is not a closed runner (`pnpm install`, `pnpm dev`, `pnpm playwright`) stays unread, and
+`pnpm test` and `pnpm build` keep the pairs they already had. `poetry run` and `pipenv run` already
+are the shorthand of their package managers, so no other manager gains a form.
+
+Found on a real session whose agent proved a fix with `pnpm vitest run` on a regression test that
+went red and then green; neither run was counted. The attribution rule is unchanged: a shorthand
+call piped beside other `&&` segments still reads `piped_beside_other_commands`, and a lone one
+piped only to an output filter reads its summary line as the `exec` form does.
+
+### Amended 2026-10-23 (owner): PR and skill facts
+
+Two things become evidence on Claude Code, each a closed fact kind added to [the closed lists](#the-closed-lists)
+and neither read from shell text.
+
+- **A pull request created.** The source is Claude Code's own structured record of creating it: the shell
+  call's result carries `toolUseResult.gitOperation.pr` with `action: created`, and the same pull request is
+  written again as a top-level `pr-link` record
+  ([the capture](captures/claude/pr-and-skill-shapes-2.1.309-macos.jsonl), taken against a stub `gh` in a
+  scratch repository). Compass reads the result alone, because the `pr-link` record repeats what the result
+  holds and is written twice per pull request. A call that errored, an action other than `created`, and any URL
+  that is not `https://github.com/<owner>/<repo>/pull/<number>` with a number matching the record publish
+  nothing. The fact carries the repository, the number, the URL rebuilt from those parts, and the time the
+  result was recorded (`pr_repository`, `pr_number`, `pr_url`, `at`). The command line and the output are not
+  read: `gh pr create` is still not a check, and DEC-23 items 3 and 5 keep the rest of the command and its
+  output out of every prompt. One pull request is one fact however many records name it.
+- **A skill used.** The source is a `Skill` tool call whose result did not error, and only the skill's name is
+  read, held to `[A-Za-z0-9][A-Za-z0-9_.:-]` up to 80 characters. The call's arguments are never read. One
+  fact per name, at its first use.
+
+Both are `tool_report` facts (subjects `pr` and `skill`), so they ride the existing admission: a reading is sent
+them only under the tool-output grant for a named destination, beside checks and written paths, and the
+unasked lane never receives them. The consent sentence says so: "the repository and number of a pull request
+it created, and the names of skills it used", and because the sentence changed, a reader who allowed tool output
+before is asked again. A pull request ranks with the passes and is listed beside the twelve-entry cap when newer
+entries would push it out (up to twelve more), because the verdict check reads the listing. A skill ranks after
+every other entry, so it can never push out a written path; a dropped path would be counted as outside the named
+folders and raise the live level. Under the prompt's byte bound a pull request is reserved like a pass and a
+skill after a write. A reading may cite either as `consistent` for a line the fact
+shows done, inside the evidence window. Neither can carry a departure, since neither has a result that can fail.
+
+The owner also ruled that `git commit` and `git push` keep counting as commands that may change files. That rule
+is unchanged: a pull request created is a fact beside them and not a reason to read their text.
+
+Found on a real session whose goal was to use a skill and create a pull request: the agent did both, Claude
+Code recorded its own goal as met with a reason naming the pull request, and the analysis said Can't tell,
+because neither the pull request nor the skill was anywhere in what a reading is sent.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
@@ -5530,6 +5611,35 @@ dispute. "Could not confirm it" remains the answer where nothing in the record s
 claim, and Compass's own level stands either way.
 
 
+### Amended 2026-10-24: the words that report a created pull request or a used skill
+
+A live walk of the owner's session showed a goal line that asked for a skill and a pull request still read Can't
+tell, though the reading cited both facts and the verdict check agreed: the reading's explanation carried a word
+of [the success list](#amended-2026-09-24-a-checks-own-result-word-is-not-a-verdict-owner-ruling) and the backstop
+withdrew the result as a stated verdict. The stored reading does not keep a withdrawn explanation, so the words
+were reproduced on a synthetic goal, where "successfully created" and "the record confirmed" tripped it.
+Where every entry a consistent cites is one of those two facts inside the window, `successfully` and
+`confirmed` are now set aside, as a check's own result words are for a check; `delivered`, `works`, `completed`
+and the rest of the list still withdraw it, and a pull request cited beside a check keeps the check's rule.
+"Created" and "opened" were never on the list. Not done: a sentence in the trusted instructions telling the model
+to describe only what a pull request or skill entry shows. The header's bytes are pinned for final readings and
+its budget is tight, so that costs a re-pin and a requalification for a rule the set-aside already covers.
+
+### Amended 2026-10-23: a verdict may name a pull request
+
+[The 2026-10-22 amendment](#amended-2026-10-22-a-goal-met-verdict-is-a-claim) lists the facts a verdict's reason
+may cite as the files it names and the kinds of check it says passed. A third is added by
+[the pull request and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts) to DEC-23: a pull request
+the reason names, as `PR #7`, `PR 7`, `PR (#7)`, `pull request #7`, a list (`PRs #6 and #7`, `PRs #7, #8`), `pull/7` or a `github.com/<owner>/<repo>/pull/7` URL (a bare `#7` is not read, because it is as often an issue), which
+agrees when the record holds a created-pull-request fact for that number (and that repository, where the reason
+gives one) at or before the verdict and no earlier than the goal's own set time. The stored `why` for it is
+`pr-created-before`. A written file the reason names still agrees first, and a failed check of a claimed kind
+still disputes before either. Without the fact the result stays **unconfirmed** with `not-found`, never
+disputed: absence is not contradiction (rule 3). A reason that names none of a file, a check kind or a pull
+request number is still `nothing-checkable`.
+
+A pull request cannot be disputed by a later record, because the record holds no event that undoes a creation.
+
 ### Amended 2026-10-23: a goal that ended is said to have ended
 
 DRC-4956, owner ruling of the same date, built on a measured run recorded in
@@ -5869,6 +5979,110 @@ level is drawn. Run a check that shows the goal is done (a test, lint or build),
 The sentence is the verdict line's own for the goal-only blocker; where outcome lines exist the existing
 wording ("Nothing found against what it read, but no level is drawn: a line of your intent is not shown
 by any check.") is unchanged.
+
+### Amended 2026-10-23 (owner): the live level comes from a Haiku check
+
+Amends items 2, 4 and 5 for Claude Code, and [DEC-15's amendment of the same date](#amended-2026-10-23-owner-the-live-monitor-may-evaluate-on-a-cadence-while-the-session-is-viewed)
+carries the owner's words. Items 1, 3 and 6 stand, and so does item 5's other half: the monitor never
+makes a session eligible for the unasked lane, never feeds, triggers, orders or gates it, and raises no
+notification, desktop or page.
+
+**The owner's four follow-up rulings, the same day.**
+
+1. The Haiku check produces the live drift level. It replaces the checks-and-paths estimate as the level
+   on the Drift card and in the header pill, in this decision's four levels. An Analyze reading outranks
+   it. It never makes a verdict on whether the work met the goal. The model-free estimate stays as the
+   fallback when the check is paused, capped, failed or has not run.
+2. It ships labelled "Live monitor · Haiku" and is qualified later. The qualification run (an abstention
+   check bound to the explicit Haiku id, with an AGY reviewer at `gemini-3.8-flash-medium` or
+   `gemini-3.8-flash-high`) is its own piece of work. It blocks nothing, and the Verification issue does
+   not wait on it. [DEC-21's 2026-09-23 amendment](#amended-2026-09-23-claude-code-is-built-and-gated)
+   is the rule a new producer falls under; this ruling ships ahead of it, on the owner's word.
+3. An exact Haiku id is pinned in a separate monitor model setting, defaulting to the newest released
+   Haiku id at merge, and a release checklist item names the bump. Floating aliases stay refused, and the
+   Sonnet floor for readings is unchanged: the reading validator still refuses Haiku.
+4. "Viewing" means the session route is mounted and the tab is visible. A hidden tab pauses ticks, and they
+   resume when the tab is visible again within the TTL.
+
+**What changes in the items.** Item 2's "computed without a model" now describes the fallback only. Item 4's
+"browser-only, never sent to the server, no new route" is superseded: the switch drives a server lease and
+adds routes. An "on" is not remembered across reloads, so a reload shows the switch off until it is pressed.
+Item 5's "calls no model" is superseded and its "raises nothing" holds. The source line for the level reads
+"Live monitor · Haiku", and says it read the latest turns of the transcript, not that it judged the goal met.
+
+**The remaining decisions.** The lane, cap, TTL, stops, `ended_at` and reload decisions are the
+recommendations, taken as given. The ruling on Analyze against a tick is the owner's own, and the
+level's floor is ruled in [its own amendment](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor)
+below, which supersedes the floor bullet here.
+
+- **Lane.** A call the reader starts, under [DEC-28's widening](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
+  with its own notice kind `monitor` and a one-press off beside it. It is kept out of the unasked lane,
+  which is off by default and whose 900 s per-session floor cannot meet a once-a-minute cadence. The
+  20-minute banner is the re-consent.
+- **Cap.** The monitor's own caps, apart from Analyze's `DAILY_CAP`: at most 30 ticks per session per TTL
+  window, and a rolling 24 h cap across the board. Spending either leaves the other untouched. A tick
+  skipped because the transcript did not change makes no call and costs nothing. Reservation follows
+  `reading_policy`: charge before launch, never refund uncertain spend.
+- **Analyze against a tick.** A press of Analyze while a tick holds the `reading.claim` slot cancels the
+  tick, and the press then takes the slot. The tick's reserved spend is not refunded, because it is
+  uncertain. The owner decided this on 2026-10-23; it is no longer a recommendation.
+- **TTL.** The clock is held on the server. The banner is due 20 minutes after the start or after the last
+  Yes, and the deadline is 10 minutes after that. No answer by the deadline turns the monitor off with a
+  note saying why, Yes resets the clock and No turns it off.
+- **Stops.** Pause model calls and `--no-observer-model` both stop the monitor and refuse to start it.
+  Pause cancels a tick in flight. Under DEC-28's opt-out, consent means "not paused": the monitor has
+  no grant of its own for a reader to give, the `monitor` notice is recorded with the first charged
+  call, and a store that cannot say whether the reader paused refuses the call.
+- **Sessions with no `ended_at` stamp.** The TTL banner is what stops the monitor. Idleness is not read as
+  an end. A session that has an end turns the monitor off and disables the switch.
+- **The level's floor.** Superseded by [the owner's floor amendment](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor).
+  The level is held to [DEC-17's shape contract](#dec-17-the-shape-contract) and carries no verdict.
+  The model level is absent, not low, until a tick completes.
+
+### Amended 2026-10-23 (owner): the Haiku level's own None or low floor
+
+The owner ruled on 2026-10-23 that the Haiku level has a floor of its own for "None or low", apart from
+item 1's floor for the model-free estimate, which asks for a passing check. A model "None or low" stands
+when Haiku cites at least one turn it was sent and the estimate shows neither of the blockers item 1
+shares across both sources: **no failed check, and no unsettled later direction**. "Too little recorded",
+including no passing check, does not block it, so a pull request created with no check run, read by Haiku
+as None or low, is published as None or low.
+
+- **The live-only shell blocker is not included.** Item 1 names a shell command that is neither a check
+  nor read-only, run after a check's latest pass, as a blocker "for the live estimate" and not for both
+  sources, so it binds the estimate alone. The estimate's other blockers (a check not recorded, a
+  background run, an incomplete scan, entries not listed) are not item 1's shared two and do not block it
+  either.
+- **Where a blocker holds**, the estimate's own answer stands in place of the model's None or low: its
+  raised level, or "Not enough recorded yet", never None or low.
+- **The floor works both ways.** A raised estimate (Medium, High or Extreme) above what the model said is
+  published over it, because a model reading a window of turns cannot clear a failed check it was never
+  shown. A model that says Not enough over an estimate of None or low keeps its abstention.
+- **The model level is published beside the estimate** as the fallback it replaces, with the estimate's
+  reasons, so a page can say which one decided.
+
+### Amended 2026-10-24 (owner): an Analyze reading's None or low may rest on recorded harness facts
+
+This extends [the 2026-10-23 ruling on the Haiku level's own floor](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor),
+which let the monitor's None or low stand with no passing check, to the stored reading's analysis level, more
+strictly. It was taken under the owner's standing instruction to act on the lead's recommendations, after a
+live walk where a session that used a skill and created a pull request read Consistent on its goal line and
+still drew no level, because no check had run.
+
+An analysis level may be None or low with no passing check when all of these hold:
+
+- every goal line, and every outcome line, is Consistent, and none carries a `why`;
+- every outcome line that is Consistent cites at least one recorded harness fact: a pull request created, a
+  skill used (item 3's amendment of 2026-10-23), or a passing check as before, and not only the agent's or
+  the reader's messages. A goal that stands alone as the one outcome line is read the same way;
+- there is no failed check, no unsettled later direction, no departure and no unsettled claim, which is the
+  floor's own blockers and unchanged;
+- the scan is complete enough that the existing abstention rules do not already block it.
+
+The agent's words alone still never lift the level, and a line resting on words beside one resting on a fact
+keeps the floor off. A pull request or a skill does not age: it is a record that something was done, so a
+later file write does not turn it into a pass followed by a change. The live estimate's floor (item 1) is not
+touched; it still asks for a passing check.
 
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
@@ -6493,6 +6707,19 @@ work, which left a reader with an unchanged finished session no way to read agai
 notice by a stored "seen" flag, a new published field declared in five places for a fact the job's
 ending already states; and removing `steerOffer`'s claim and failed-check offers, which the server and
 the legacy oracle still hold.
+
+### Amended 2026-10-23 (owner): the Live monitor row and its switch describe a Haiku check
+
+Row 6b's "off by default and needs no model" no longer holds for Claude Code: with the switch on, a Haiku
+check of the latest turns runs about once a minute while the session is viewed, under
+[the DEC-26 amendment of this date](#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check). The
+switch is still off by default and its placement in row 6b, in Drift settings, is unchanged. Its state is
+the server's lease, so a reload shows it off, and it is disabled with a reason once the session has ended.
+
+The copy table's switch description, "Shows a level after every turn, from checks and file paths, with no
+model call. The level shows here and in the header.", now reads, for Claude Code with annotations on: "Asks Haiku, through your Claude Code, where the latest turns are heading, about once a minute while this session is on screen. Until a check returns, the level comes from checks and file paths. The level shows here and in the header." Other harnesses keep the earlier sentence. A banner after 20 minutes
+asks "Do you still want to monitor this session?" and stays for 10 minutes; its answers, and the note left
+when it goes unanswered, are in the DEC-26 amendment.
 
 ## DEC-28: a model may summarize a session, and the summary is kept
 

@@ -117,6 +117,7 @@
   "goalVerdictWhys": [
     "written-before",
     "passed-before",
+    "pr-created-before",
     "written-after",
     "deleted-after",
     "moved-after",

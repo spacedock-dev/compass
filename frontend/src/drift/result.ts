@@ -617,9 +617,13 @@ export function entryKind(entry: WorkEntry): string {
     ? `${entry.result || 'Recorded'} check`
     : entry.subject === 'write'
       ? 'File write'
-      : agentMessage(entry)
-        ? 'Agent message'
-        : String(entry.type || 'Recorded entry');
+      : entry.subject === 'pr'
+        ? 'Pull request created'
+        : entry.subject === 'skill'
+          ? 'Skill used'
+          : agentMessage(entry)
+            ? 'Agent message'
+            : String(entry.type || 'Recorded entry');
 }
 
 /* What a cited entry is, in Compass's own words, beside its number on a finding: never a model's account of
@@ -627,6 +631,8 @@ export function entryKind(entry: WorkEntry): string {
 export function citedKind(entry: WorkEntry): string {
   if (entry.subject === 'check') return `${entry.result || 'Recorded'} check`;
   if (entry.subject === 'write') return 'File write';
+  if (entry.subject === 'pr') return 'Pull request created';
+  if (entry.subject === 'skill') return 'Skill used';
   if (agentMessage(entry)) return 'Agent message';
   if (personAuthored(entry)) return 'Your message';
   return 'Recorded entry';
@@ -741,6 +747,8 @@ export function citedLine(entry: WorkEntry): string {
     return `${result.charAt(0).toUpperCase()}${result.slice(1)} check: ${words}`;
   }
   if (entry.subject === 'write') return `File write: ${words}`;
+  if (entry.subject === 'pr') return `Pull request created: ${words}`;
+  if (entry.subject === 'skill') return `Skill used: ${words}`;
   if (agentMessage(entry)) return `Agent said: “${words}”`;
   if (personAuthored(entry)) return `You said: “${words}”`;
   return citedKind(entry);
@@ -753,11 +761,15 @@ function entryPhrase(entry: WorkEntry): string {
       ? `a ${String(entry.result || 'recorded')} check`
       : entry.subject === 'write'
         ? 'a file write'
-        : agentMessage(entry)
-          ? "the agent's message"
-          : personAuthored(entry)
-            ? 'your message'
-            : 'an entry';
+        : entry.subject === 'pr'
+          ? 'a pull request created'
+          : entry.subject === 'skill'
+            ? 'a skill used'
+            : agentMessage(entry)
+              ? "the agent's message"
+              : personAuthored(entry)
+                ? 'your message'
+                : 'an entry';
   const at = nextNumber(entry.at);
   return at !== null && at > 0 ? `${kind} at ${clock(at)}` : kind;
 }

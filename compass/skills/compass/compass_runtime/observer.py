@@ -501,6 +501,8 @@ class PreparedClaude:
         error_path: str = "",
         error_output: Any = subprocess.DEVNULL,
         on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
+        validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
+        effort: str = "",
     ) -> None:
         self.binary = binary
         self.workdir = workdir
@@ -514,9 +516,21 @@ class PreparedClaude:
         self.error_path = error_path
         self.error_output = error_output
         self.on_diagnostic = on_diagnostic
+        # The Live monitor's own model rule and effort ride the same envelope; a reading
+        # keeps the Sonnet floor and `CLAUDE_READING_EFFORT` by passing neither.
+        self.validator = validator
+        self.effort = effort
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
-        command = [self.binary, *_claude_reading_argv(self.model, system_prompt=self.system_prompt)]
+        command = [
+            self.binary,
+            *_claude_reading_argv(
+                self.model,
+                system_prompt=self.system_prompt,
+                validator=self.validator,
+                effort=self.effort,
+            ),
+        ]
         started = time.monotonic()
         status = "failed"
         returncode: int | None = None
@@ -620,7 +634,11 @@ def _claude_failure_reason(path: str) -> str:
 
 
 def _claude_reading_argv(
-    model: str, *, system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT
+    model: str,
+    *,
+    system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
+    validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
+    effort: str = "",
 ) -> list[str]:
     return [
         "--print",
@@ -641,9 +659,9 @@ def _claude_reading_argv(
         "--output-format",
         "text",
         "--model",
-        runtime_config.validate_claude_reading_model(model),
+        validator(model),
         "--effort",
-        CLAUDE_READING_EFFORT,
+        effort or CLAUDE_READING_EFFORT,
         "--system-prompt",
         system_prompt,
     ]
@@ -666,7 +684,7 @@ def claude_reading_provenance(config: RuntimeConfig) -> dict[str, Any]:
 
 
 @contextlib.contextmanager
-def prepare_claude_exec(
+def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller names)
     config: RuntimeConfig,
     *,
     runner: Any = supervise.run,
@@ -675,6 +693,9 @@ def prepare_claude_exec(
     system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
     timeout: float | None = None,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
+    model: str | None = None,
+    validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
+    effort: str = "",
 ) -> Iterator[PreparedClaude]:
     """Prepare the private cwd and output before qualification spends a call.
 
@@ -691,9 +712,7 @@ def prepare_claude_exec(
     error_output: BinaryIO | None = None
     try:
         try:
-            selected_model = runtime_config.validate_claude_reading_model(
-                config.claude_reading_model
-            )
+            selected_model = validator(config.claude_reading_model if model is None else model)
         except ValueError as error:
             raise ClaudePreparationError("unavailable") from error
         try:
@@ -729,6 +748,8 @@ def prepare_claude_exec(
             error_path=error_path,
             error_output=error_output if error_output is not None else subprocess.DEVNULL,
             on_diagnostic=on_diagnostic,
+            validator=validator,
+            effort=effort,
         )
     finally:
         # Ownership starts at allocation, before a stream or yielded context

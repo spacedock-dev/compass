@@ -3,7 +3,9 @@
 [DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)
 rules the levels None or low, Medium, High and Extreme, a floor per source for the first, and
 "Not enough recorded yet" whenever the evidence is too little. Two pure functions, neither calling a
-model and neither storing anything (item 6):
+model and neither storing anything (item 6). The Live monitor's Haiku level is a third thing, made
+by `live_monitor`; it reads `live_level`'s reasons for its floor and falls back to its level, and
+these two functions stay model-free:
 
 - `live_level` reads layer 1's published `tool_report` facts and full-scan counts
   ([DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work))
@@ -528,7 +530,17 @@ class _LineTally:
         # arrived (DRC-4702); one with no time cannot. A consistent resting on
         # the agent's account alone has no pass, so the agent's word alone
         # never reaches the floor.
-        if resolved.get("result") == reading.RESULT_CONSISTENT and not why and passes:
+        # A created pull request or a used skill is a recorded harness fact, and a consistent line
+        # that cites one reaches the floor with no pass (owner, 2026-10-24, extending the monitor's
+        # floor):
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-24-owner-an-analyze-readings-none-or-low-may-rest-on-recorded-harness-facts)  # noqa: E501
+        done = [
+            f
+            for f in cited
+            if f.get("subject") in (reading.PR_SUBJECT, reading.SKILL_SUBJECT)
+            and f.get("work") is True
+        ]
+        if resolved.get("result") == reading.RESULT_CONSISTENT and not why and (passes or done):
             self.shown.extend(resolved["cites"])
         else:
             self.not_shown += 1

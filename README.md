@@ -164,8 +164,9 @@ the machine by default. The quota poll requires disclosure consent, carries a ve
 session content, and can be disabled with `--no-usage`. Model calls can send session content
 through an installed Claude Code or Codex CLI. Analyze drift runs on your press, Codex goal
 summaries when you press Summarize this session in Console, and a Claude Code session summary when you
-open a finished session or press Summarize or Update summary. Each tells you once what is sent and where, and
-tells you again if the destination or content tier changes. Pause model calls stops every model call until Resume model calls;
+open a finished session or press Summarize or Update summary. With its switch on, the Live monitor asks
+Haiku through your Claude Code about once a minute while you view a Claude Code session. Each tells you
+once what is sent and where, and tells you again if the destination or content tier changes. Pause model calls stops every model call, the Live monitor's included, until Resume model calls;
 `--no-observer-model` refuses them at startup. Turn off summaries affects session summaries only,
 is disabled while paused, and keeps its saved answer through pause and resume. Unasked drift checks remain a separate opt-in.
 Dashboard assets, including the optional terminal's vendored xterm files, need no external fetch.
@@ -185,7 +186,11 @@ model-written summary: an opening paragraph on what the agent did, then phases t
 opening on its lines and the entries they cite when you press it. A phase that holds evidence for a departure, or has failed
 test runs, says so on its heading. The Drift card is where
 you check the session for drift with one press and read back what has been raised about it and what
-became of the raise.
+became of the raise. On a Claude Code session its Live monitor switch asks Haiku, about once a minute
+while you view the page, where the latest turns are heading, and the card and header show that level
+labelled Live monitor · Haiku; its accuracy check has not been run yet. Until a check returns, or if it
+is paused or capped, they show the estimate from checks and file paths. The monitor asks whether you
+still want it after 20 minutes and turns itself off if nobody answers.
 Sessions keeps an orientation paragraph and how-to visible after a session has been checked.
 The paragraph explains analysis when annotations are on, the store is readable and a reading
 route names a provider; otherwise it explains how to inspect a session. Every goal

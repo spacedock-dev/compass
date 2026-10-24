@@ -12,6 +12,8 @@ import type {
   FocusOutcome,
   FocusReceipt,
   InteractionOrigin,
+  LiveMonitorReceipt,
+  LiveMonitorRequest,
   NotifyReceipt,
   PayloadData,
   ProjectContext,
@@ -225,6 +227,9 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       post<SummaryReceipt>('/api/summary/delete', body, signal),
     /* `time_zone` is the reader's named zone, which the correction's times are drawn in; `utc_offset_minutes`
        is the fallback where the server does not know that name, and without either it uses its own clock. */
+    /* The Live monitor's lease: start, a beat about every 20 seconds, the answer to its question, and stop. */
+    postLiveMonitor: (body: LiveMonitorRequest, signal?: AbortSignal) =>
+      post<LiveMonitorReceipt>('/api/live-monitor', body, signal),
     postCorrection: (
       body: SessionIdentity & { readonly utc_offset_minutes?: number; readonly time_zone?: string },
       signal?: AbortSignal,

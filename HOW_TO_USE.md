@@ -452,10 +452,19 @@ startup flag: press **Summarize this session** in Console, and the first one sho
 notice.
 
 A Claude Code reading includes its checks by default where Compass can name the destination: the
-command, result, last 180 characters of output and written paths. The notice names tool output too.
+command, result, last 180 characters of output, written paths, the repository and number of a pull
+request the session created and the names of skills it used. The notice names tool output too.
 `--observer-model`, `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do
 nothing in this release; they will be removed in a later release. Pause model calls or
 `--no-observer-model` stops these calls.
+
+The Live monitor is the one model call that repeats. With its switch on, a Claude Code session page asks
+Haiku through your Claude Code about once a minute while the page is open and its tab is visible, and it
+stops when you turn it off, leave, hide the tab for good, or the session ends. After 20 minutes it asks
+whether you still want it, and turns itself off if nobody answers within 10. It uses `claude-haiku-5-5`
+unless you start the dashboard with `--claude-monitor-model` and another explicit Haiku ID. Turning it on
+again after a reload is yours to do: nothing about it is remembered. Its limits are its own, apart from
+Analyze's 100 attempts.
 
 `--forget` also stores model calls as paused and session summaries as off, without resetting
 either rolling spend budget. Readings and goal summaries wait for **Resume model calls**, and

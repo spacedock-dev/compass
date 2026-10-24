@@ -13,6 +13,7 @@ import {
   LEVEL_SCALE,
   LIVE_LEVEL_NAMES,
   LIVE_LINE,
+  LIVE_MONITOR_LINE,
   LIVE_SAVE,
   NUDGE,
 } from './sentences';
@@ -83,6 +84,11 @@ export function DriftPill() {
         Drift: <strong>{level.label}</strong>
         {model.pillSoFar ? ' so far' : ''}
       </span>
+      {level.monitor ? (
+        <span className="ml-1 text-muted-foreground" data-next-drift-pill-source>
+          Live monitor · Haiku
+        </span>
+      ) : null}
     </Badge>
   );
 }
@@ -163,7 +169,9 @@ export function DriftLevelView() {
      words. */
   const detail =
     level.level && !running
-      ? [level.analysis ? level.line : LIVE_LINE, level.rose].filter(Boolean).join(' ')
+      ? [level.analysis ? level.line : level.monitor ? LIVE_MONITOR_LINE : LIVE_LINE, level.rose]
+          .filter(Boolean)
+          .join(' ')
       : '';
   const reasons = !running && level.reasons ? level.reasons : { first: '', blockers: [] };
   const signals: Signals | null = level.signals;
@@ -196,7 +204,13 @@ export function DriftLevelView() {
             <CitedText text={detail} />
           </p>
         ) : null}
-        {!running && !level.analysis && !readingStored(annotation) ? (
+        {level.monitor && level.note && !running ? (
+          <p className="next-session-drift-reason" data-next-live-reason-line>
+            {level.note}
+          </p>
+        ) : null}
+        {/* A monitor level is a model's assessment, so the line saying there is none would contradict it. */}
+        {!running && !level.analysis && !level.monitor && !readingStored(annotation) ? (
           <p className="next-session-drift-detail">No model assessment for this intent yet.</p>
         ) : null}
         {/* An analysis level's range and reason are said under What the analysis read, with the rest of

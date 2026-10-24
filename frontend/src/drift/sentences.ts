@@ -175,6 +175,8 @@ export const GOAL_VERDICT_CHECKS: readonly string[] = ['agrees', 'disputed', 'un
 export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
   'written-before': 'the file its reason names is recorded as written before the verdict',
   'passed-before': 'a check of the kind its reason names is recorded as passing before the verdict',
+  'pr-created-before':
+    'the pull request its reason names is recorded as created before the verdict',
   'written-after': 'the file its reason names was written again after the verdict',
   'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
   'moved-after': 'a file its reason or the goal names was moved away after the verdict',
@@ -182,6 +184,10 @@ export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
   'not-found': 'the record Compass read does not show what its reason names',
   'nothing-checkable': 'its reason names no file or check Compass can look for',
 };
+/* "the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict":
+   the pull request fact the test confirmed, named from the entry it cites. */
+export const goalVerdictPullRequest = (name: string): string =>
+  `the pull request its reason names, ${name}, is recorded as created before the verdict`;
 /* "docs/e2e/notes.md was deleted at 22:59, after the verdict": the file and the moment the record shows. */
 export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
   `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;
@@ -363,8 +369,15 @@ export const LIVE_LEVEL_NAMES: Readonly<Record<string, string>> = {
 export const LEVEL_SCALE: readonly string[] = ['none_or_low', 'medium', 'high', 'extreme'];
 export const LIVE_LINE =
   'Reads checks and file paths, not what your intent says. Files written by shell commands, such as a build, are not seen.';
+/* What the switch does, in the monitor notice's words: a model call, how often, to whom, and what it falls back
+   to. The server's own "What is sent" sentence, naming the destination, stands beside it while the monitor
+   is on. */
 export const LIVE_HINT =
-  'Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header.';
+  'Asks Haiku, through your Claude Code, where the latest turns are heading, about once a minute while this session is on screen. Until a check returns, the level comes from checks and file paths. The level shows here and in the header.';
+/* The monitor level's source line: what a Haiku check read, and what it does not say. The estimate's own line
+   above stays the line for the level computed from checks and paths. */
+export const LIVE_MONITOR_LINE =
+  'A Haiku check of the latest turns, about once a minute while you view the session. It reads your goal and the turns it was sent, and says where they are heading, not whether the work met the goal.';
 export const LIVE_SAVE = 'Save your intent to see a live estimate.';
 export const UNCHECKED = 'Not checked yet';
 export const NUDGE = 'This is a quick estimate. Analyze to see what drifted and how to steer back.';
@@ -395,7 +408,7 @@ export const SILENT_REASONS: readonly string[] = ['draft-unsaved', 'floor-met', 
 export const GOAL_NOT_SHOWN = 'Your goal is not shown by any check.';
 /* The verdict's own sentence over a goal-only reading that found nothing: what the reading did find, why
    there is no level, and what would let one be drawn (owner decision, 2026-10-23: the evidence floor stands,
-   a level still needs a passing check). */
+   a level still needs a passing check or, since 2026-10-24, a recorded pull request or skill the line cites). */
 export const GOAL_ONLY_NO_LEVEL =
   'Nothing departs from your goal, but no check shows it done, so no level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again.';
 export const BLOCKER_LINES: Readonly<Record<string, string>> = {

@@ -4,10 +4,16 @@
    a request nobody meant to make fails loudly. Not imported by production code. */
 import { act, fireEvent } from '@testing-library/react';
 import { json } from '../intent/testing';
-import { board, mountSession, SESSION_HASH, type Store } from '../intent/panel.testing';
+import {
+  board,
+  LEASE_ROUTE,
+  mountSession,
+  SESSION_HASH,
+  type Store,
+} from '../intent/panel.testing';
 import type { IntentShellOptions, Handler, RecordedRequest } from '../intent/testing';
 
-export { json, SESSION_HASH, type Handler };
+export { json, LEASE_ROUTE, SESSION_HASH, type Handler };
 
 export const ROUTE = {
   provider: 'claude',

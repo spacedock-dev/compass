@@ -136,6 +136,30 @@ def claude_reading_model_rank(value: str) -> tuple[int, int, int]:
     return int(match[2]), int(match[3] or 0), CLAUDE_READING_FAMILY_RANKS[match[1]]
 
 
+# The Live monitor's own model setting, apart from the reading floor above. The owner pinned an
+# explicit Haiku id, defaulting to the newest released one at merge, and the `compass-release`
+# pre-flight asks whether a newer Haiku has shipped.
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+CLAUDE_MONITOR_DEFAULT_MODEL: Final = "claude-haiku-5-5"
+CLAUDE_MONITOR_MODEL_POLICY: Final = "haiku-explicit-v1"
+_CLAUDE_MONITOR_ID = re.compile(r"claude-haiku-([1-9][0-9]?)(?:-([1-9][0-9]?))?(?:-([0-9]{8}))?")
+
+
+def validate_claude_monitor_model(value: str) -> str:
+    """Admit an explicit Claude Haiku generation 4 or later id, never a floating alias.
+
+    The floor of 4 is the oldest Haiku that is an explicit id of this shape; it is the owner's
+    admission policy for a sidecar that never makes a verdict, not a measured quality rank.
+    """
+    match = _CLAUDE_MONITOR_ID.fullmatch(value) if isinstance(value, str) else None
+    if match is None or int(match[1]) < 4:
+        msg = "Choose an explicit Claude Haiku model ID, such as claude-haiku-5-5."
+        raise ValueError(msg)
+    if snapshot := match[3]:
+        date.fromisoformat(f"{snapshot[:4]}-{snapshot[4:6]}-{snapshot[6:]}")
+    return value
+
+
 # The history store's two bounds as shipped, and the defaults the two flags that
 # override them carry. Named rather than written twice, because `cli.py`'s
 # argparse defaults and this module's constructor are the same figure, and
@@ -658,6 +682,26 @@ class RuntimeConfig:
     # timeout, 180 s for a reading, and a second instance may share the directory mid-call, so the
     # bound is a day: far past any live call, and still short of leaving raw stderr for long.
     reading_scratch_stale_sec: float
+    # The Live monitor, one block (the 2026-10-23 amendment cited above): the pinned Haiku id,
+    # the floor between two checks of one session, the call's timeout, the prompt and output
+    # bounds, the two caps (ticks per session per TTL window, ticks across the board per rolling
+    # 24 h) and how many checks may run at once on the board. The window is the banner's 20
+    # minutes plus its 10. A tab beats about every 20 s, a visible tab that stops for 50 s has
+    # left, and the ticker wakes every 5 s. The 240 board cap is PENDING THE OWNER'S FIGURE: none
+    # was given, and 240 is a sixth of a day of once-a-minute checks. The 6,000-character prompt
+    # cap holds the recent window a check re-sends beside its new turns.
+    claude_monitor_model: str
+    live_monitor_interval_sec: float
+    live_monitor_timeout_sec: float
+    live_monitor_prompt_cap_chars: int
+    live_monitor_output_cap_bytes: int
+    live_monitor_session_tick_cap: int
+    live_monitor_lapse_sec: float
+    live_monitor_ticker_sec: float
+    live_monitor_banner_sec: float
+    live_monitor_window_sec: float
+    live_monitor_daily_cap: int
+    live_monitor_in_flight_limit: int
 
 
 def resolve_store_roots(
@@ -779,6 +823,7 @@ def build_runtime_config(
     observer_model_enabled: bool = True,
     model_calls_disabled: bool = False,
     claude_reading_model: str = CLAUDE_READING_DEFAULT_MODEL,
+    claude_monitor_model: str = CLAUDE_MONITOR_DEFAULT_MODEL,
     git_probe_enabled: bool = True,
     focus_enabled: bool = True,
     irreversible_enabled: bool = True,
@@ -797,6 +842,7 @@ def build_runtime_config(
 ) -> RuntimeConfig:
     """Construct runtime configuration solely from explicit inputs."""
     selected_claude_model = validate_claude_reading_model(claude_reading_model)
+    selected_monitor_model = validate_claude_monitor_model(claude_monitor_model)
     windows = platform_name == "win32"
     join = ntpath.join if windows else posixpath.join
     home_key = "USERPROFILE" if windows else "HOME"
@@ -1046,6 +1092,18 @@ def build_runtime_config(
         observer_model_context_chars=8_192,
         reading_settle_sec=8.0,
         reading_scratch_stale_sec=86_400.0,
+        claude_monitor_model=selected_monitor_model,
+        live_monitor_interval_sec=60.0,
+        live_monitor_timeout_sec=45.0,
+        live_monitor_prompt_cap_chars=6_000,
+        live_monitor_output_cap_bytes=2_048,
+        live_monitor_session_tick_cap=30,
+        live_monitor_lapse_sec=50.0,
+        live_monitor_ticker_sec=5.0,
+        live_monitor_banner_sec=1_200.0,
+        live_monitor_window_sec=1_800.0,
+        live_monitor_daily_cap=240,
+        live_monitor_in_flight_limit=1,
     )
 
 

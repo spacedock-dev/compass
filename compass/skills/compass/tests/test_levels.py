@@ -124,6 +124,33 @@ SUPPORTED = a_reading(
 )
 
 
+def done_fact(fid: str, subject: str, summary: str, at: float) -> dict[str, Any]:
+    """A created pull request or a used skill, as layer 1 publishes it."""
+    return {
+        "fact_id": fid,
+        "type": "tool_report",
+        "subject": subject,
+        "summary": summary,
+        "at": at,
+        "source_session": {"harness": "claude", "sid": "s"},
+        "evidence": {"source": "Claude Bash call result", "confidence": "exact"},
+    }
+
+
+RECORDED_DONE = evidence(
+    [
+        done_fact("skill1", "skill", "linear-deep-dive", SAVE + 10),
+        done_fact("pr1", "pr", "example-org/example-repo#7", SAVE + 20),
+        *PASSING.facts[2:],
+    ],
+    scan(),
+)
+RECORDED_DONE_READING = a_reading(
+    goal=criterion(reading.RESULT_CONSISTENT, "skill1", "pr1"),
+    line_1=criterion(reading.RESULT_CONSISTENT, "pr1"),
+)
+
+
 class AnIncompletePassIsCautionTest(unittest.TestCase):
     def test_it_does_not_meet_the_live_floor(self) -> None:
         facts = evidence(
@@ -387,6 +414,48 @@ class FloorTest(unittest.TestCase):
         got = analyze(a_reading(goal=criterion(reading.RESULT_CONSISTENT, "c1")), PASSING)
         self.assertEqual(got.level, levels.NONE_OR_LOW)
         self.assertNotIn(levels.REASON_NO_OUTCOME_LINE, got.reasons)
+
+    def test_recorded_harness_facts_show_a_goal_and_its_line_with_no_passing_check(self) -> None:
+        # DEC-26's 2026-10-24 amendment: a created pull request or a used skill is a recorded
+        # harness fact, so a consistent line that cites one reaches the floor without a pass.
+        got = analyze(RECORDED_DONE_READING, RECORDED_DONE)
+        self.assertEqual(levels.NONE_OR_LOW, got.level)
+        self.assertEqual((levels.REASON_FLOOR_MET,), got.reasons)
+        self.assertEqual({"pr1"}, set(got.cites))
+
+    def test_the_same_shape_citing_only_the_agents_words_draws_no_level(self) -> None:
+        row = a_reading(
+            goal=criterion(reading.RESULT_CONSISTENT, "m1"),
+            line_1=criterion(reading.RESULT_CONSISTENT, "m1"),
+        )
+        got = analyze(row, RECORDED_DONE)
+        self.assertEqual(levels.NOT_ENOUGH, got.level)
+        self.assertIn(levels.REASON_LINE_NOT_SHOWN, got.reasons)
+
+    def test_one_line_resting_on_words_alone_still_keeps_the_floor_off(self) -> None:
+        row = a_reading(
+            goal=criterion(reading.RESULT_CONSISTENT, "skill1", "pr1"),
+            line_1=criterion(reading.RESULT_CONSISTENT, "m1"),
+        )
+        self.assertEqual(levels.NOT_ENOUGH, analyze(row, RECORDED_DONE).level)
+
+    def test_a_failed_check_or_a_later_direction_still_blocks_recorded_facts(self) -> None:
+        failing = evidence([*RECORDED_DONE.facts, check("f1", SAVE + 40, "failed")], scan(failed=1))
+        self.assertNotEqual(levels.NONE_OR_LOW, analyze(RECORDED_DONE_READING, failing).level)
+        later = evidence(list(RECORDED_DONE.facts), dict(RECORDED_DONE.scan), directions=1)
+        got = analyze(RECORDED_DONE_READING, later)
+        self.assertEqual(levels.NOT_ENOUGH, got.level)
+        self.assertIn(levels.REASON_LATER_DIRECTION, got.reasons)
+
+    def test_a_recorded_fact_outside_the_reading_window_does_not_show_a_line(self) -> None:
+        early = evidence(
+            [
+                {**f, "at": SAVE - 50} if f["fact_id"] in ("skill1", "pr1") else f
+                for f in RECORDED_DONE.facts
+            ],
+            dict(RECORDED_DONE.scan),
+        )
+        self.assertEqual(levels.NOT_ENOUGH, analyze(RECORDED_DONE_READING, early).level)
 
     def test_a_goal_alone_the_agents_word_only_supports_is_not_none_or_low(self) -> None:
         got = analyze(a_reading(goal=criterion(reading.RESULT_CONSISTENT, "m1")), PASSING)

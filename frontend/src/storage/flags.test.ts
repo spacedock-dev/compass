@@ -1,58 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { blockedBackend, fakeBackend, readOnlyBackend } from '../../test/storage_backends';
 import { compatSessKey } from '../api/identity';
-import { createLegacyStorage, liveEstimateKey, memoKey, sessionKey, STORAGE_KEYS } from '.';
+import { createLegacyStorage, memoKey, sessionKey, STORAGE_KEYS } from '.';
 
-describe('live estimate family (compass.next.live-estimate:)', () => {
+describe('the retired live estimate family (compass.next.live-estimate:)', () => {
   const session = { harness: 'claude', sid: 'a b:c' };
 
-  it('keys on the unencoded harness:sid pair', () => {
-    expect(liveEstimateKey(session)).toBe('compass.next.live-estimate:claude:a b:c');
-    expect(liveEstimateKey({ harness: 'codex', sid: 'a b:c' })).not.toBe(liveEstimateKey(session));
+  it('is no longer a family: the Live monitor is a lease the server holds, so nothing of it is stored', () => {
+    expect(Object.keys(STORAGE_KEYS)).not.toContain('liveEstimatePrefix');
+    const backend = fakeBackend({ 'compass.next.live-estimate:claude:a b:c': '1' });
+    const storage = createLegacyStorage(() => backend);
+    expect(Object.keys(storage)).not.toContain('liveEstimate');
+    expect(backend.writes).toEqual([]);
   });
 
   it('keys a row with no sid on its display id, as the page does, and agrees with the API layer', () => {
     const row = { harness: 'claude', sid: '', session: 'abcd1234' };
-    expect(liveEstimateKey(row)).toBe('compass.next.live-estimate:claude:abcd1234');
     expect(sessionKey(row)).toBe(compatSessKey(row));
     expect(memoKey('p', row, 'focus')).toBe('compass.cockpit.memo.v2:p:claude%3Aabcd1234:focus');
-    expect(liveEstimateKey({ harness: 'claude', sid: '' })).toBe(
-      'compass.next.live-estimate:claude:',
-    );
-  });
-
-  it('is on only for the raw word 1, and off removes the key', () => {
-    const key = liveEstimateKey(session);
-    const backend = fakeBackend();
-    const { liveEstimate } = createLegacyStorage(() => backend);
-    expect(liveEstimate.on(session)).toBe(false);
-    liveEstimate.set(session, true);
-    expect(backend.data.get(key)).toBe('1');
-    liveEstimate.set(session, false);
-    expect(backend.data.has(key)).toBe(false);
-    for (const raw of ['0', 'true', 'on', '']) {
-      const other = createLegacyStorage(() => fakeBackend({ [key]: raw }));
-      expect(other.liveEstimate.on(session)).toBe(false);
-    }
-    expect(createLegacyStorage(() => fakeBackend({ [key]: '1' })).liveEstimate.on(session)).toBe(
-      true,
-    );
-  });
-
-  it('lets the in-tab choice win over what storage later says', () => {
-    const key = liveEstimateKey(session);
-    const backend = fakeBackend();
-    const { liveEstimate } = createLegacyStorage(() => backend);
-    liveEstimate.set(session, false);
-    backend.data.set(key, '1');
-    expect(liveEstimate.on(session)).toBe(false);
-  });
-
-  it('keeps the switch for the tab when storage is blocked', () => {
-    const { liveEstimate } = createLegacyStorage(() => blockedBackend());
-    expect(liveEstimate.on(session)).toBe(false);
-    expect(liveEstimate.set(session, true)).toBe(false);
-    expect(liveEstimate.on(session)).toBe(true);
+    expect(sessionKey(session)).toBe(compatSessKey(session));
   });
 });
 
@@ -96,14 +62,13 @@ describe('workstream collapse family (compass.next.workstream.collapsed)', () =>
   });
 });
 
-describe('the twelve keys', () => {
+describe('the eleven keys', () => {
   it('are spelled exactly as released', () => {
     expect(STORAGE_KEYS).toEqual({
       memoPrefix: 'compass.cockpit.memo.v2:',
       graphMode: 'compass.next.graph.mode',
       guardrailPrefix: 'compass.next.guardrails.',
       leader: 'compass.next.leader',
-      liveEstimatePrefix: 'compass.next.live-estimate:',
       revision: 'compass.next.revision',
       usageConsent: 'compass.next.usage.consent',
       workstreamCollapsed: 'compass.next.workstream.collapsed',

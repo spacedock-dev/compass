@@ -30,6 +30,8 @@ from compass_runtime import (
     goal_find,
     levels,
     live_estimate,
+    live_lease,
+    live_monitor,
     notifications,
     quota,
     reading_policy,
@@ -290,6 +292,11 @@ class CompassHTTPServer(ThreadingHTTPServer):
     def server_close(self) -> None:
         if self.interaction_prototype is not None:
             self.interaction_prototype.stop()
+        # The ticker and any check in flight end with the server, whichever way it stops.
+        self.application.live_leases_closed = True
+        leases = getattr(self.application, "live_leases", None)
+        if isinstance(leases, live_lease.Leases):
+            leases.close()
         super().server_close()
 
     def server_bind(self) -> None:
@@ -412,6 +419,159 @@ def _with_message_ordinals(
         return result
     facts = entry_numbers.with_message_ordinals(index, semantic["facts"])
     return {**result, "semantic": {**semantic, "facts": facts}}
+
+
+_LEASE_ACTIONS = frozenset({"start", "beat", "confirm", "stop"})
+_TAB_ID_CAP = 128
+
+
+def _lease_request(payload: Any, identity_cap: int) -> tuple[str, str, str, str, bool] | None:
+    """A lease request's fields, or None when any is missing, mistyped or unbounded.
+
+    The last element is what the action carries: `visible` for a beat and `answer == "yes"`
+    for a confirm.
+    """
+    if not isinstance(payload, dict):
+        return None
+    harness, sid, tab, action = (payload.get(k) for k in ("harness", "sid", "tab_id", "action"))
+    if not (
+        isinstance(harness, str)
+        and isinstance(sid, str)
+        and isinstance(tab, str)
+        and isinstance(action, str)
+        and harness
+        and sid
+        and tab
+    ):
+        return None
+    if (
+        action not in _LEASE_ACTIONS
+        or len(tab) > _TAB_ID_CAP
+        or len(f"{harness}:{sid}") > identity_cap
+    ):
+        return None
+    if action == "confirm" and payload.get("answer") not in {"yes", "no"}:
+        return None
+    visible = payload.get("visible", True)
+    if action in {"start", "beat"} and not isinstance(visible, bool):
+        return None
+    extra = bool(visible) if action in {"start", "beat"} else payload.get("answer") == "yes"
+    return harness, sid, tab, action, extra
+
+
+def _lease_answer(
+    leases: live_lease.Leases, harness: str, sid: str, tab: str, action: str, extra: bool
+) -> dict[str, Any]:
+    """The lease's answer to one request already read and bounded."""
+    if action == "start":
+        return leases.start(harness, sid, tab, visible=extra)
+    if action == "beat":
+        return leases.beat(harness, sid, tab, visible=extra)
+    if action == "confirm":
+        return leases.confirm(harness, sid, tab, yes=extra)
+    return leases.stop(harness, sid, tab)
+
+
+_LEASES_LOCK = threading.Lock()
+
+
+def _lease_row(application: Any, harness: str, sid: str) -> dict[str, Any] | None:
+    """The row for a lease, or a marker where the board lists the session twice.
+
+    Which of two rows is the session is not known, so the ticker skips the check and keeps the lease
+    rather than ending it as though the session had gone.
+    """
+    for show_all in (False, True):
+        _, body = application.collect_json(show_all=show_all)
+        rows = [
+            row
+            for row in json.loads(body)["sessions"]
+            if row.get("harness") == harness and row.get("sid") == sid
+        ]
+        if rows:
+            return (
+                rows[0] if len(rows) == 1 else {"harness": harness, "sid": sid, "ambiguous": True}
+            )
+    return None
+
+
+def _published_row_of(application: Any, harness: str, sid: str) -> dict[str, Any] | None:
+    """This session's row as the board publishes it, which is after `_apply_overlays`.
+
+    The default variant first, which is warm within `collect_memo_sec`, and the all-sessions one
+    only when the default lacks the row.
+    """
+    for show_all in (False, True):
+        _, body = application.collect_json(show_all=show_all)
+        rows = [
+            row
+            for row in json.loads(body)["sessions"]
+            if row.get("harness") == harness and row.get("sid") == sid
+        ]
+        if rows:
+            return rows[0] if len(rows) == 1 else None
+    return None
+
+
+def _lease_inputs(
+    application: Any, harness: str, sid: str, row: Mapping[str, Any]
+) -> live_lease.Inputs | None:
+    """What one Live monitor check reads for a session: transcript, record, goal, estimate."""
+    config = application.config
+    if not config.annotations_enabled:
+        return None
+    transcript = runtime_observer.resolve_transcript(config, application.state, harness, sid)
+    if not transcript:
+        return None
+    entry = annotation_store.find(annotation_store.active(config, application.state), harness, sid)
+    saved = live_estimate.saved_intent(row)
+    facts = _facts_of(_session_context(application, dict(row)))
+    floor = annotation_store.direction_floor(entry, row)
+    estimate = live_estimate.for_session(
+        config, row, transcript, facts, floor=floor, now=application.clock()
+    )
+    words = " ".join(part for part in (saved.goal, *saved.lines) if part.strip())
+    return live_lease.Inputs(transcript, facts, words if saved.saved else "", estimate)
+
+
+def _live_leases(application: Any) -> live_lease.Leases:
+    """The application's lease table, made on first use."""
+    with _LEASES_LOCK:
+        if not isinstance(application.live_leases, live_lease.Leases):
+            application.live_leases = live_lease.Leases(
+                application.config,
+                clock=application.clock,
+                row_for=lambda harness, sid: _lease_row(application, harness, sid),
+                inputs_for=lambda harness, sid, row: _lease_inputs(application, harness, sid, row),
+                diagnostic_sink=application.diagnostic_sink,
+                # A table made after the server closed runs no ticker.
+                start_thread=not application.live_leases_closed,
+            )
+        leases: live_lease.Leases = application.live_leases
+        return leases
+
+
+def _with_lease(
+    application: Any, context: dict[str, Any], rows: list[dict[str, Any]], focus: tuple[str, str]
+) -> dict[str, Any]:
+    """The focused session's Live monitor lease, on `sources.work` and on no row.
+
+    Read with the row's own `ended_at`, which is after the overlay pass, so a session that has
+    ended ends its lease here as it does on the ticker's next pass.
+    """
+    harness, sid = focus
+    if harness != live_lease.HARNESS:
+        return context
+    row = next((r for r in rows if (r.get("harness"), r.get("sid")) == focus), None)
+    if row is None:
+        return context
+    published = _live_leases(application).state(harness, sid, ended=bool(row.get("ended_at")))
+    raw_sources = context.get("sources")
+    sources: dict[str, Any] = raw_sources if isinstance(raw_sources, dict) else {}
+    raw_work = sources.get("work")
+    work: dict[str, Any] = dict(raw_work) if isinstance(raw_work, dict) else {}
+    work["live_monitor"] = published
+    return {**context, "sources": {**sources, "work": work}}
 
 
 def _with_levels(
@@ -1253,6 +1413,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if focus is not None:
             result = _with_message_ordinals(application, result, focus)
             result = _with_levels(application, result, collected["sessions"], focus, project)
+            result = _with_lease(application, result, collected["sessions"], focus)
             matching = [
                 row
                 for row in collected["sessions"]
@@ -2231,6 +2392,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # And an unasked check already running (owner, 2026-10-20).
         if application.unasked_lane is not None:
             application.unasked_lane.stop()
+        # And a Live monitor check in flight; its reply cannot publish.
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+        if isinstance(application.live_leases, live_lease.Leases):
+            application.live_leases.stop_all("paused")
+        else:
+            live_monitor.cancel_all(application.config, "model-calls-paused")
         # Pause model calls also stops session summaries, including a call already running
         # (docs/design-session-summary.md#job-and-grant-contract); a lock failure leaves
         # the next part's recheck to refuse.
@@ -2451,6 +2618,41 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "application/json",
             202 if accepted else 409,
         )
+
+    def _live_monitor(self) -> None:
+        """Start, beat, answer and stop the Live monitor lease for one Claude Code session.
+
+        Guarded as the reading presses are, by the navigation and loopback refusals, and answered
+        before any session is read. `start` is the call that begins to spend, so it alone carries
+        the `observer_model` assertion a press does. Every refusal that can be known without the
+        model is the lease's own, and comes back as `ok: false` with a reason.
+        """
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+        config = self.server.application.config
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= config.ask_body_cap_bytes:
+            self._reject(413)
+            return
+        try:
+            payload = json.loads(self._read_body(length) or b"{}")
+        except (ValueError, json.JSONDecodeError, RecursionError):
+            payload = None
+        parsed = _lease_request(payload, config.ask_project_cap_chars)
+        starting = parsed is not None and parsed[3] == "start"
+        if parsed is None or (starting and payload.get("observer_model") != 1):
+            self._reject(400)
+            return
+        if starting and not config.annotations_enabled:
+            self._reject(503)
+            return
+        answer = _lease_answer(_live_leases(self.server.application), *parsed)
+        self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
 
     def _goal_find(self) -> None:
         """Find a goal in the reader's own prompts. One press, one call, nothing stored.
@@ -2870,17 +3072,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         the row supplies only identity, paths and the prompt fields
         `direction_floor` reads. The adoption arm keeps its own clear.
         """
-        application = self.server.application
-        for show_all in (False, True):
-            _, body = application.collect_json(show_all=show_all)
-            rows = [
-                row
-                for row in json.loads(body)["sessions"]
-                if row.get("harness") == harness and row.get("sid") == sid
-            ]
-            if rows:
-                return rows[0] if len(rows) == 1 else None
-        return None
+        return _published_row_of(self.server.application, harness, sid)
 
     def _later_direction(
         self,
@@ -3335,8 +3527,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if self._press_withheld(rows[0], entry):
             return
         key = f"{harness}:{sid}"
-        job = runtime_reading.start_job(
-            config, key, provider=route["provider"], label=route["label"], now=application.clock()
+        # A press outranks a Live monitor tick holding this session's slot: the tick is
+        # cancelled and waited for, its spend is not refunded, and the press takes the slot.
+        # This is after Analyze's own route, consent and cap checks, so a refused press never
+        # costs a tick.
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+        job = live_monitor.start_with_priority(
+            config,
+            key,
+            lambda: runtime_reading.start_job(
+                config,
+                key,
+                provider=route["provider"],
+                label=route["label"],
+                now=application.clock(),
+            ),
         )
         if job is None:
             # One in flight per session, and no retry: a second press starts
@@ -3976,6 +4181,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/reading": self._reading,
             "/api/reading/cancel": self._reading_cancel,
             "/api/goal/find": self._goal_find,
+            "/api/live-monitor": self._live_monitor,
             "/api/summary": self._summary,
             "/api/summary/cancel": self._summary_cancel,
             "/api/summary/delete": self._summary_delete,

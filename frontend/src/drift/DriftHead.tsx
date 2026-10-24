@@ -30,6 +30,7 @@ export function DriftHeadControls() {
             name: 'drift-settings',
           })}
           summary={SETTINGS}
+          focusKey={`drift-settings:${compatSessKey(model.session)}`}
         >
           <div className="flex flex-col gap-3" data-next-drift-settings>
             {monitor ? <LiveMonitorSwitch /> : null}

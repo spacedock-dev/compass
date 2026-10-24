@@ -62,4 +62,10 @@ export interface Environment {
   openStream(): EventSourceLike;
   onPageHide(listener: () => void): () => void;
   onBecameVisible(listener: () => void): () => void;
+  /** Whether the tab is hidden now. */
+  isHidden(): boolean;
+  /** The tab went from visible to hidden. The Live monitor stops beating while it is. */
+  onBecameHidden(listener: () => void): () => void;
+  /** Fire and forget a JSON body as the page goes away. False where the browser has no beacon or refused it. */
+  sendBeacon(url: string, body: string): boolean;
 }

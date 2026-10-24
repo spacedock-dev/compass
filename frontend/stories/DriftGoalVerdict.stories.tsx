@@ -94,6 +94,32 @@ export const ClaimBesideAnAgreeingAnalysis: Story = {
   },
 };
 
+export const ClaimConfirmedByTheCreatedPullRequest: Story = {
+  ...scenario({
+    session: {
+      session_goal: {
+        ...GOAL,
+        verdict: { met: true, at: VERDICT_AT, reason: 'the agent created PR #7 and pushed' },
+      },
+      ...checked('agrees', 'pr-created-before', VERDICT_AT, { cites: ['pr1'] }),
+    },
+    facts: [...FACTS, fact('pr1', 550, { subject: 'pr', summary: 'example-org/example-repo#7' })],
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'agrees');
+    // Names the pull request fact it confirmed, in Compass's words, and is still only the harness's claim.
+    await waitFor(() =>
+      expect(node).toHaveTextContent(
+        'Compass agrees: the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict.',
+      ),
+    );
+    await expect(node).toHaveTextContent('The harness’s claim: Claude Code marked this goal met');
+    await expect(node).toHaveTextContent('does not change the level and is not a passing check');
+  },
+};
+
 export const ClaimDisputedWhereTheRecordUndoesIt: Story = {
   ...scenario({
     session: { ...claimed, ...checked('disputed', 'written-after') },

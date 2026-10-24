@@ -32,6 +32,7 @@ export function GoalVerdictNote() {
     shape: model.shape,
     clock: datedClock(verdict.at, ctx.shell.clock.now() / 1000),
     changedClock: changed ? datedClock(changed, ctx.shell.clock.now() / 1000) : '',
+    cited: model.byId,
   });
   return (
     <div

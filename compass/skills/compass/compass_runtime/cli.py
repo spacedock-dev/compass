@@ -205,6 +205,15 @@ def claude_reading_model_arg(value: str) -> str:
         raise argparse.ArgumentTypeError(msg) from error
 
 
+def claude_monitor_model_arg(value: str) -> str:
+    """An invalid CLI value is refused without copying it into diagnostics."""
+    try:
+        return runtime_config.validate_claude_monitor_model(value)
+    except ValueError as error:
+        msg = "Choose an explicit Claude Haiku model ID, such as claude-haiku-5-5."
+        raise argparse.ArgumentTypeError(msg) from error
+
+
 def release_version() -> str | None:
     """The Compass version: the stamp a standalone binary carries, else the plugin manifest."""
     try:
@@ -266,6 +275,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "explicit Claude reading model; Sonnet/Opus generation 5 or later (default Sonnet 5.5)"
         ),
+    )
+    parser.add_argument(
+        "--claude-monitor-model",
+        type=claude_monitor_model_arg,
+        default=runtime_config.CLAUDE_MONITOR_DEFAULT_MODEL,
+        help="explicit Claude Haiku model for the Live monitor (default Haiku 5.5)",
     )
     parser.add_argument(
         "--no-observer-model",
@@ -515,6 +530,7 @@ def build_runtime(
         observer_model_enabled=not args.no_observer_model,
         model_calls_disabled=args.no_observer_model,
         claude_reading_model=args.claude_reading_model,
+        claude_monitor_model=args.claude_monitor_model,
         git_probe_enabled=not args.no_git,
         focus_enabled=not args.no_focus,
         irreversible_enabled=not args.no_irreversible and not args.no_events,

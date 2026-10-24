@@ -372,6 +372,22 @@
               "sid": "a1b2c3d4"
             }
           ],
+          "live_monitor": {
+            "banner_due_at": null,
+            "confirm_by": null,
+            "deadline": null,
+            "destination": null,
+            "disclosure": null,
+            "interval_sec": 60.0,
+            "label": "Live monitor · Haiku",
+            "last_end": null,
+            "level": null,
+            "model": "claude-haiku-5-5",
+            "now": 1900000000.0,
+            "on": false,
+            "started_at": null,
+            "visible": false
+          },
           "omitted": [],
           "support": {
             "collapsed_contributors": 0,
@@ -399,9 +415,11 @@
               "other_commands": 0,
               "outside_paths": 0,
               "passed": 0,
+              "pull_requests": 0,
               "read_only_commands": 0,
               "shell_calls": 0,
               "sid": "a1b2c3d4",
+              "skills_used": 0,
               "subagent_transcripts": 0,
               "subagent_transcripts_unread": 0,
               "unknown_flags": 0,
@@ -423,7 +441,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "7621",
+      "Content-Length": "7936",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

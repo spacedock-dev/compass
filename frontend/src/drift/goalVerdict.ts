@@ -5,8 +5,10 @@ import {
   GOAL_VERDICT_LINES,
   GOAL_VERDICT_WHY,
   goalVerdictClaim,
+  goalVerdictPullRequest,
   goalVerdictRemoval,
 } from './sentences';
+import type { WorkEntry } from '../intent/work';
 import type { Shape } from './shape';
 
 /* The harness's "goal met" verdict, as the row publishes it under `session_goal.verdict`, and what the card says
@@ -70,6 +72,8 @@ export function verdictNote(input: {
   readonly clock: string;
   /** The time a removal dispute names, drawn as the card draws times; empty where the test names none. */
   readonly changedClock?: string;
+  /** The entries the test cited, by fact id, so a confirmed pull request can be named. */
+  readonly cited?: ReadonlyMap<string, WorkEntry>;
 }): VerdictNote {
   const { verdict, shape } = input;
   const test = shape && !shape.malformed ? shape.goalVerdict : null;
@@ -79,10 +83,16 @@ export function verdictNote(input: {
       ? (test.check as VerdictState)
       : 'unchecked';
   const tested = test && test.at === verdict.at ? test : null;
+  const pr =
+    tested?.why === 'pr-created-before'
+      ? tested.cites.map((id) => input.cited?.get(id)).find((entry) => entry?.subject === 'pr')
+      : undefined;
   const why = tested
     ? tested.path && input.changedClock
       ? goalVerdictRemoval(tested.why, tested.path, input.changedClock)
-      : (GOAL_VERDICT_WHY[tested.why] ?? '')
+      : pr?.summary
+        ? goalVerdictPullRequest(pr.summary)
+        : (GOAL_VERDICT_WHY[tested.why] ?? '')
     : '';
   const line = GOAL_VERDICT_LINES[state];
   return {

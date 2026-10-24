@@ -841,7 +841,13 @@ class ToolOutputIsDisclosedByDefaultTest(unittest.TestCase):
         self.assertIn("Tool output is included by default:", route["tool_output"])
         self.assertNotIn("only after you allow it", route["disclosure"])
         # What is sent is unchanged: the same four facts follow the lead.
-        for fact in ("a check's command", "180 characters", "paths of the files it wrote"):
+        for fact in (
+            "a check's command",
+            "180 characters",
+            "paths of the files it wrote",
+            "the repository and number of a pull request it created",
+            "the names of skills it used",
+        ):
             self.assertIn(fact, route["tool_output"])
         self.assertIn(route["tool_output"], route["disclosure_parts"])
 
@@ -878,10 +884,12 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
         # The 2026-10-05 selected-model amendment adds two words on Claude routes: using <id>.
         # Content version 3 adds one 19-word item for the newest recorded final reply.
         # Keep the existing 31-word per-item limit and all previous disclosure facts.
+        # The 2026-10-23 pull request and skill amendment adds 18 words to the tool output item,
+        # which alone may run to 47, and to the two Claude Code session routes' totals.
         budgets = {
             "codex": (4, 61),
-            "claude": (7, 150),
-            "claude-by-codex": (6, 129),
+            "claude": (7, 168),
+            "claude-by-codex": (6, 147),
             "codex-by-claude": (5, 100),
         }
         for name, (harness, installed) in self.ROUTES.items():
@@ -891,7 +899,8 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
                 parts = route["disclosure_parts"]
                 self.assertLessEqual(len(parts), items, parts)
                 for part in parts:
-                    self.assertLessEqual(len(part.split()), 31, part)
+                    limit = 47 if part.startswith("Tool output is included") else 31
+                    self.assertLessEqual(len(part.split()), limit, part)
                 self.assertLessEqual(len(route["disclosure"].split()), words)
 
     def test_no_item_repeats_another(self) -> None:

@@ -415,7 +415,8 @@ def _tool_output_sentence(provider: str, harness: str, where: str) -> str:
     return (
         "Tool output is included by default: a check's command, result and last "
         f"{TOOL_OUTPUT_TAIL_CHARS} characters of output as printed, the paths of the files it "
-        "wrote; agent messages may quote it."
+        "wrote, the repository and number of a pull request it created, and the names of skills "
+        "it used; agent messages may quote it."
     )
 
 

@@ -1786,6 +1786,28 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
             with self.subTest(read=named):
                 self.assertIn(named, self.FLAT)
 
+    def test_the_pull_request_and_skill_reads_are_named_and_counted(self) -> None:
+        # Neither read matches the `input` / `arguments` pattern above: the skill's name is read from
+        # an input the check scan already holds, and a pull request from a result's
+        # `gitOperation`, through `toolUseResult`. They are counted here so a second place that reads either fails until
+        # SECURITY.md names it (owner, 2026-10-23).
+        pattern = r'"gitOperation"|\.get\("skill"\)|\.get\("toolUseResult"\)'
+        found = {
+            path.name: len(re.findall(pattern, text))
+            for path in sorted(self.RUNTIME.rglob("*.py"))
+            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
+        }
+        # `observer.py` reads the question tool's own result and `project_context.py` three others
+        # besides the pull request read; each is another place a result's structured field is read.
+        self.assertEqual({"observer.py": 1, "project_context.py": 5}, found)
+        for phrase in (
+            "the `skill` name of a `Skill` call",
+            "`toolUseResult.gitOperation.pr` (`number`, `url`, `action`)",
+            "never the command or its output",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.SECTION)
+
     def test_the_claude_check_read_is_bounded_to_the_caps_the_section_states(self) -> None:
         # DEC-23 item 5's bounds, read out of the module rather than restated.
         for phrase in (
@@ -2249,14 +2271,14 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
         do_post = source[source.index("def do_POST(self)") :]
         table = do_post[do_post.index("route = {") : do_post.index("}.get(path)")]
         # The exact-match table, plus the one prefix route matched ahead of it.
-        routes = len(re.findall(r'"(/api/[a-z/]+)":', table)) + int(
+        routes = len(re.findall(r'"(/api/[a-z/-]+)":', table)) + int(
             'path.startswith("/api/events/")' in do_post
         )
         gated = len(re.findall(r"\bcoordinator\.(?:focus_)?authorized\(", source))
-        self.assertEqual(21, routes)
+        self.assertEqual(22, routes)
         self.assertEqual(2, gated)
-        self.assertIn("Writing is the twenty-one POST routes", self.FLAT)
-        self.assertIn("There is nothing to authenticate with on nineteen of them", self.FLAT)
+        self.assertIn("Writing is the twenty-two POST routes", self.FLAT)
+        self.assertIn("There is nothing to authenticate with on twenty of them", self.FLAT)
         self.assertIn("Two carry a capability and they are not worth the same.", self.FLAT)
 
     def test_the_copied_correction_route_is_named_counted_and_its_residual_stated(self) -> None:
@@ -2400,3 +2422,97 @@ class ClaudeReaderLimitIsSaidInTwoPlacesTest(unittest.TestCase):
         self.assertIn(f'CLAUDE_READER_LIMIT =\n  "{self.SENTENCE}"', sentences)
         how_to = (self.ROOT / "frontend/src/intent/HowTo.tsx").read_text(encoding="utf-8")
         self.assertIn("{CLAUDE_READER_LIMIT}", how_to)
+
+
+class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
+    """The Live monitor calls Haiku about once a minute while a session is viewed, and every page says so.
+
+    The owner ruled it on 2026-10-23 (DEC-26's amendment of that date). The model-free estimate is the
+    monitor's fallback and still calls no model, so a sentence may say that of the estimate and may not say
+    it of the monitor.
+    """
+
+    ROOT = SERVER_PATH.parents[3]
+    PAGES = (
+        "README.md",
+        "HOW_TO_USE.md",
+        "MANUAL.md",
+        "SECURITY.md",
+        "docs/promise-map.md",
+        "compass/skills/compass/SKILL.md",
+    )
+
+    def _text(self, relative: str) -> str:
+        return re.sub(r"\s+", " ", (self.ROOT / relative).read_text(encoding="utf-8"))
+
+    def test_no_user_facing_page_says_the_monitor_calls_no_model(self) -> None:
+        retired = re.compile(
+            r"(?i)live monitor[^.]{0,240}(calls no model|with no model call|needs no model|never sent to the server)"
+        )
+        for relative in self.PAGES:
+            with self.subTest(page=relative):
+                self.assertIsNone(retired.search(self._text(relative)))
+
+    def test_no_shipped_docstring_says_the_monitor_calls_no_model(self) -> None:
+        runtime = SERVER_PATH.parent / "compass_runtime"
+        retired = re.compile(
+            r"(?i)live monitor[^.]{0,200}(calls no model|with no model call|needs no model)"
+        )
+        for path in sorted(runtime.glob("*.py")):
+            with self.subTest(module=path.name):
+                self.assertIsNone(
+                    retired.search(re.sub(r"\s+", " ", path.read_text(encoding="utf-8")))
+                )
+
+    def test_the_pages_say_it_calls_haiku_and_the_accuracy_check_has_not_run(self) -> None:
+        for relative in ("README.md", "docs/promise-map.md", "compass/skills/compass/SKILL.md"):
+            text = self._text(relative)
+            with self.subTest(page=relative):
+                self.assertIn("Live monitor · Haiku", text)
+                self.assertRegex(text, r"(?i)accuracy check has not been run")
+                self.assertRegex(text, r"(?i)about once a minute")
+
+    def test_security_lists_the_monitor_with_what_it_sends_and_every_stop(self) -> None:
+        text = self._text("SECURITY.md")
+        raw = (self.ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        row = next(line for line in raw.splitlines() if line.startswith("| A Live monitor check"))
+        for stop in (
+            "the switch",
+            "leaving the session",
+            "hiding the tab",
+            "the session ending",
+            "Pause model calls",
+            "`--no-observer-model`",
+            "the 20-minute question",
+        ):
+            self.assertIn(stop, row)
+        self.assertIn("--claude-monitor-model", text)
+        self.assertIn("Haiku", row)
+
+    def test_pause_lists_the_monitor_and_the_amendment_heading_is_unchanged(self) -> None:
+        summary = (self.ROOT / "docs/design-session-summary.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "### Amended 2026-10-19: Pause model calls, with the summaries switch nested under it",
+            summary,
+        )
+        later = summary.split("### Amended 2026-10-19: Pause model calls", 1)[1]
+        heading = re.search(
+            r"^### Amended 2026-10-23 \(owner\): the Live monitor[^\n]*$", later, re.MULTILINE
+        )
+        self.assertIsNotNone(heading)
+        self.assertIn(
+            "Pause model calls",
+            later.split(heading.group(0), 1)[1].split("\n### ", 1)[0] if heading else "",
+        )
+        self.assertIn("the Live monitor", self._text("docs/promise-map.md"))
+        self.assertRegex(
+            self._text("docs/promise-map.md"),
+            r"Pause model calls stops Analyze drift, goal summaries, session summaries and the Live monitor",
+        )
+
+    def test_the_unasked_lane_stays_the_only_path_that_spends_with_nobody_watching(self) -> None:
+        text = self._text("docs/promise-map.md")
+        self.assertIn(
+            "The Live monitor does not: it calls a model only while a reader is viewing the session.",
+            text,
+        )

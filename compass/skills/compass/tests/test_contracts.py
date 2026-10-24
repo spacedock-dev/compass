@@ -1539,6 +1539,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.record_pages",
             # `POST /api/goal/find`: the reader's prompts read for a goal on a press.
             "compass_runtime.goal_find",
+            # Pause model calls and an Analyze press cancel a Live monitor check in flight.
+            "compass_runtime.live_monitor",
+            # `POST /api/live-monitor`, and the lease published on the focused context.
+            "compass_runtime.live_lease",
             # The immutable admitted identity selects stricter dev authority.
             "compass_runtime.frontend_dev",
             "compass_runtime.reading_policy",
@@ -1640,6 +1644,30 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.annotations",
             "compass_runtime.reading",
             "compass_runtime.records",
+        },
+        # The Live monitor's lease and its ticker: it calls the check, reads no transcript itself,
+        # and never imports the unasked lane or notifications.
+        "compass_runtime.live_lease": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.live_monitor",
+            "compass_runtime.reading_policy",
+            "compass_runtime.reading_route",
+            "compass_runtime.supervise",
+        },
+        # The Live monitor's check: the model-free level as its floor, the envelope the readings
+        # use, the guarded model seam and its own ledger. It never imports the unasked lane or
+        # notifications; `test_live_monitor` holds that.
+        "compass_runtime.live_monitor": {
+            "compass_runtime.config",
+            "compass_runtime.levels",
+            "compass_runtime.live_estimate",
+            "compass_runtime.observer",
+            "compass_runtime.reading",
+            "compass_runtime.reading_policy",
+            "compass_runtime.reading_route",
+            "compass_runtime.records",
+            "compass_runtime.supervise",
         },
         # Project context shares the stateless chunk walker through a local import;
         # pages still reach its fact builders, without an import-time cycle.

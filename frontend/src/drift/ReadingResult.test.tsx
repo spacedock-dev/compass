@@ -8,6 +8,7 @@ import {
   fact,
   json,
   jumpTo,
+  LEASE_ROUTE,
   mountDrift,
   press,
   textOf,
@@ -523,12 +524,15 @@ describe('A marked reading with the Live monitor on', () => {
     const page = mountDrift({
       session: stored({ annotation_not_accurate: true }),
       facts: FACTS,
-      routes: { '/api/project-context': contextRoute(FACTS, { live_levels: rows }) },
+      routes: {
+        '/api/project-context': contextRoute(FACTS, { live_levels: rows }),
+        '/api/live-monitor': LEASE_ROUTE,
+      },
     });
     await page.settle();
     await page.settle();
     await act(async () => {
-      liveMonitorFor(page.shell).set({ harness: 'claude', sid: 's1' }, true);
+      liveMonitorFor(page.shell).update('claude:s1', { wanted: true });
     });
     await page.settle();
     expect(document.querySelector('[data-next-drift-marked]')).not.toBeNull();

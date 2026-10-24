@@ -61,7 +61,7 @@ DESTINATION_MOVED = "destination-changed"
 # the epoch changes; Codex unasked calls retain the explicit coverage boundary.
 CONTENT_VERSION = 4
 WORDS_CONTENT_VERSION = 1
-NOTICE_KINDS = ("reading", "goal", "summary")
+NOTICE_KINDS = ("reading", "goal", "summary", "monitor")
 CONTENT_CHANGED = "What a reading sends has changed since you allowed this, so allow it again."
 
 
@@ -805,10 +805,19 @@ class GuardedModel:
         cancelled: Callable[[], bool] | None = None,
         content: int = CONTENT_VERSION,
         unasked: bool = False,
+        reserve_with: Callable[..., Status] | None = None,
     ) -> None:
+        if reserve_with is not None and before_reserve is not None:
+            # `before_reserve` returns the job id the charge is recorded under, and a ledger of
+            # its own records none, so the pair would drop the marker's promise silently.
+            msg = "A ledger of its own takes no job marker"
+            raise ValueError(msg)
         self.config = config
         self.content = content
         self.unasked = unasked
+        # A ledger of its own for a caller that must not spend Analyze's budget: the Live monitor
+        # charges `reserve_monitor` here, at the same seam and in the same order.
+        self.reserve_with = reserve_with
         self.model = model
         self.clock = clock
         self.provider = provider
@@ -837,6 +846,19 @@ class GuardedModel:
         failure = getattr(self.model, "failure_reason", None)
         return str(failure()) if callable(failure) else ""
 
+    def _reserve(self) -> Status:
+        if self.reserve_with is not None:
+            return self.reserve_with(self.config, now=self.clock())
+        job_id = self.before_reserve() if self.before_reserve is not None else None
+        return reserve(
+            self.config,
+            now=self.clock(),
+            provider=self.provider,
+            job_id=job_id or "",
+            destination=self.destination,
+            content=self.content,
+        )
+
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         available = getattr(self.model, "available", None)
         if available is not None and not available():
@@ -857,15 +879,7 @@ class GuardedModel:
             if answer["reason"]:
                 raise RefusedError(answer)
             return self.model(prompt, output_cap_bytes=output_cap_bytes)
-        job_id = self.before_reserve() if self.before_reserve is not None else None
-        answer = reserve(
-            self.config,
-            now=self.clock(),
-            provider=self.provider,
-            job_id=job_id or "",
-            destination=self.destination,
-            content=self.content,
-        )
+        answer = self._reserve()
         if answer["reason"] == "stopping":
             # The shutdown reached the reservation before its commit, so the
             # call is the stop the early look above would have refused.
@@ -1173,3 +1187,91 @@ def summary_receipts(config: RuntimeConfig, job_id: str) -> int | None:
             )
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         return None
+
+
+# The Live monitor's ledger: its own table in this store and its own cap, so a tick never spends
+# Analyze's `DAILY_CAP` and Analyze never spends a tick's. Charged before launch and never
+# refunded, as every spend here is. Timestamps only: no session identity or content enters it.
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+
+
+def _monitor_answer(
+    config: RuntimeConfig,
+    dates: tuple[float, ...] = (),
+    *,
+    paused: bool = False,
+    reason: str = "",
+) -> Status:
+    answer = _answer(off=paused, reason=reason)
+    full = len(dates) >= config.live_monitor_daily_cap
+    answer["used"] = len(dates)
+    answer["limit"] = config.live_monitor_daily_cap
+    answer["retry_at"] = min(dates) + DAY_SEC if full and dates else None
+    answer["reason"] = reason or ("model-calls-paused" if paused else "cap" if full else "")
+    return answer
+
+
+def _monitor_dates(db: Any, now: float) -> tuple[float, ...]:
+    dates = tuple(
+        float(at)
+        for (at,) in db.execute(
+            "SELECT at FROM monitor_spends WHERE at > ? ORDER BY at", (now - DAY_SEC,)
+        )
+    )
+    if any(not math.isfinite(at) or at <= 0 for at in dates):
+        raise ValueError("Invalid monitor spend")
+    return dates
+
+
+def _monitor_transaction(config: RuntimeConfig, now: float, operation: str) -> Status:
+    with contextlib.closing(
+        _connect(config, READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC)
+    ) as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("CREATE TABLE IF NOT EXISTS monitor_spends (at REAL NOT NULL)")
+        db.execute("DELETE FROM monitor_spends WHERE at <= ?", (now - DAY_SEC,))
+        dates = _monitor_dates(db, now)
+        answer = _monitor_answer(config, dates, paused=_readings_off(db))
+        if operation == "reserve" and not answer["reason"]:
+            with supervise.admitting() as open_:
+                if not open_:
+                    db.execute("ROLLBACK")
+                    return {**answer, "reason": "stopping"}
+                db.execute("INSERT INTO monitor_spends VALUES (?)", (now,))
+                db.execute("COMMIT")
+            return {**answer, "used": answer["used"] + 1}
+        db.execute("COMMIT")
+        return answer
+
+
+def _monitor_run(config: RuntimeConfig, now: float, operation: str) -> Status:
+    refusal = (
+        "run-disabled"
+        if config.model_calls_disabled
+        else ""
+        if math.isfinite(now) and now > 0
+        else "store-unavailable"
+    )
+    if refusal:
+        return _monitor_answer(config, reason=refusal)
+    if operation == "read" and not os.path.lexists(store_path(config)):
+        return _monitor_answer(config)
+    try:
+        return _monitor_transaction(config, now, operation)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return _monitor_answer(config, reason="store-unavailable")
+
+
+def monitor_status(config: RuntimeConfig, *, now: float) -> Status:
+    """The monitor's own rolling answer: used and limit count ticks, never Analyze's readings."""
+    return _monitor_run(config, now, "read")
+
+
+def reserve_monitor(config: RuntimeConfig, *, now: float) -> Status:
+    """Charge one tick before launch; a refusal, a pause or a shutdown charges nothing.
+
+    The reason is `cap` at the board-wide rolling limit, `model-calls-paused` while paused,
+    `run-disabled` under `--no-observer-model` and `stopping` once the runner has shut. An
+    uncertain spend is never refunded by the caller, as `reserve` never refunds one.
+    """
+    return _monitor_run(config, now, "reserve")

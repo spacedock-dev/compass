@@ -1117,11 +1117,16 @@
       "name": "The live monitor switch in the session page's Drift section",
       "owner": "DRC-4825",
       "oracles": [
+        "frontend/e2e/intent-parity.mjs",
+        "frontend/src/drift/LiveMonitorLevel.test.tsx",
+        "frontend/src/drift/MonitorQuestion.test.tsx",
+        "frontend/src/drift/monitor.test.ts",
         "frontend/src/intent/LiveMonitor.test.tsx",
-        "frontend/src/storage/flags.test.ts",
-        "frontend/e2e/intent-parity.mjs"
+        "frontend/src/sample/SampleMonitor.test.tsx",
+        "frontend/stories/LiveMonitor.stories.tsx",
+        "frontend/stories/LiveMonitorQuestion.stories.tsx"
       ],
-      "contract": "Live monitor is session-local1/absent browser preference with tab-memory fallback; only toggles displayed deterministic cues, never server/model behavior.",
+      "contract": "Live monitor drives a server lease and is held in memory only: a reload shows it off; leaving the route, switching session or hiding the tab stops the beats; the server's state decides whether it is on; an end leaves a note. Departure from the recorded session-local browser preference, recorded in docs/design-frontend-migration.md#held-to-recorded-answers.",
       "disposition": "store-held"
     },
     {
@@ -1472,18 +1477,6 @@
       ],
       "contract": "Use released namespaced lease only; cross-tab sole stream owner, private storage fallback and pagehide release preserved.",
       "format": "Fixed key; JSON {id:random-base36+'-'+Date.now(),ts:Date.now() milliseconds}; renew2000ms/stale6000ms; one lease, no payload-size bound in loader; foreign owner causes current leader to yield even when stale; failed storage makes tab self-lead. Clearing a legacy value writes an empty new key to suppress fallback on reload."
-    },
-    {
-      "name": "compass.next.live-estimate:",
-      "owner": "DRC-4825",
-      "oracles": [
-        "frontend/src/storage/flags.test.ts",
-        "frontend/src/intent/LiveMonitor.test.tsx",
-        "frontend/e2e/intent-parity.mjs",
-        "frontend/e2e/storage-conformance.mjs"
-      ],
-      "contract": "Switch changes display only, persists only for exact harness/session, defaults off and retains tab answer on storage failure.",
-      "format": "Key prefix+harness+':'+sid (sessKey, no URL encoding); raw '1' means on, absent/other value off; off removes key; no TTL/session-count cap; in-memory choice wins after a local toggle. Clearing a legacy value writes an empty new key to suppress fallback on reload."
     },
     {
       "name": "compass.next.revision",

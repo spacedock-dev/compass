@@ -46,6 +46,21 @@ function workOf(
   return Array.isArray(rows) ? (rows as Row[]) : [];
 }
 
+/* A single object the focused context's work source publishes under `field`: the Live monitor's lease. */
+export function workObject(
+  contexts: Contexts,
+  projectKey: string,
+  session: Row,
+  field: string,
+): Row | null {
+  const entry = contexts.get(contextKey(projectKey, session as never));
+  const data = entry?.data as unknown as Row | null | undefined;
+  const sources = isRecord(data?.['sources']) ? data['sources'] : null;
+  const work = sources && isRecord(sources['work']) ? sources['work'] : null;
+  const value = work?.[field];
+  return isRecord(value) ? (value as Row) : null;
+}
+
 /* The focused context's live row for this session. A level measured against an earlier revision is about
    words the panel no longer shows, which `estimate` checks. */
 export function liveRow(contexts: Contexts, projectKey: string, session: Row): Row | null {
@@ -244,9 +259,13 @@ export function evidenceRows(
       ? `${entry.result || 'Recorded'} check`
       : entry.subject === 'write'
         ? 'File write'
-        : agentMessage(entry)
-          ? 'Agent message'
-          : String(entry.type || 'Recorded entry');
+        : entry.subject === 'pr'
+          ? 'Pull request created'
+          : entry.subject === 'skill'
+            ? 'Skill used'
+            : agentMessage(entry)
+              ? 'Agent message'
+              : String(entry.type || 'Recorded entry');
     return {
       id: String(entry.id || ''),
       label: [
@@ -346,10 +365,16 @@ export interface DriftLevel {
   /** The analysis line, "Intent against cited checks and messages."; the read time is the card header's. */
   readonly line: string;
   readonly range: string;
+  /** Drawn by the Live monitor's Haiku check, not computed from checks and paths or read from an analysis. */
+  readonly monitor?: boolean;
+  /** The monitor's own sentence about where the latest turns are heading. */
+  readonly note?: string;
 }
 
 export interface LiveInput {
   readonly on: boolean;
+  /** The level a Haiku check earned, which replaces the estimate while it stands. */
+  readonly monitor?: DriftLevel | null;
   readonly harness: string;
   readonly contexts: Contexts;
   readonly projectKey: string;
@@ -365,6 +390,7 @@ export interface LiveInput {
    revision the panel no longer shows is not drawn. */
 export function liveEstimate(input: LiveInput): DriftLevel | { readonly save: true } | null {
   if (input.harness !== 'claude' || !input.on) return null;
+  if (input.monitor) return input.monitor;
   const row = liveRow(input.contexts, input.projectKey, input.session);
   if (!row) return null;
   const level = String(row['level'] || '');

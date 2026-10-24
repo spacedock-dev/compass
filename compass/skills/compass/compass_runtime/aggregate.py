@@ -756,6 +756,11 @@ class Application:
         # collection and must not start a `codex` subprocess while reporting
         # what the stores hold.
         self.unasked_lane: UnaskedLane | None = None
+        # Created on the first Live monitor start, so a board nobody monitors holds no table and
+        # runs no thread. Never persisted: a restart starts with no lease.
+        self.live_leases: Any = None
+        # Set when the server closes, so a request that arrives after builds no ticker.
+        self.live_leases_closed = False
 
     def harness_label(self, key: str) -> str:
         """The registry's display label for a harness key, or "" for anything else.

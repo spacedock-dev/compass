@@ -11,7 +11,8 @@ data. The model lane is the one path that can send session content off this mach
 reader's action starts (a focused refresh for a goal line, a press for a reading, or the open of a
 finished session or a press for a session summary) runs without a prior question and shows a
 one-time, non-blocking notice naming what is sent and where, with its off switch beside it: Pause
-model calls for a reading or a goal line, Turn off summaries for a summary. Unasked drift checks stay off by default, and `--no-observer-model` refuses
+model calls for a reading or a goal line, Turn off summaries for a summary. Turning on the Live monitor
+starts a Haiku check about once a minute for as long as the session is viewed, and shows its own notice. Unasked drift checks stay off by default, and `--no-observer-model` refuses
 every model call.
 [Observer model calls](#observer-model-calls) states its bounds;
 [Light harness usage](#light-harness-usage-asking-a-harness-a-bounded-question) states the notice rule.
@@ -344,7 +345,8 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause model calls) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |
 | An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
 | A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
-| The live drift estimate | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
+| The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
+| A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
 | The git probe | One bounded `git` command, in a repository you chose. Nothing leaves the machine. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all` |
@@ -358,7 +360,8 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 ### The launch grant for tool output
 
 Tool output is included by default in a reader-pressed Claude Code reading when Compass can name
-its destination: a check's command, result, last 180 characters of output and written paths.
+its destination: a check's command, result, last 180 characters of output, written paths, the
+repository and number of a pull request it created, and the names of skills it used.
 [Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns the content bounds.
 `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do nothing for one release;
 they will be removed in a later release. They write no grant and need no forwarding on respawn.
@@ -1026,6 +1029,14 @@ control does not render.
 
 ### Known and accepted
 
+The Claude Code CLI that Compass starts for a reading, a summary or the Live monitor is told not to
+persist a session, but it keeps its own local state under `~/.claude`, which Compass neither writes nor
+prunes and has not measured. A press passes redacted session text through it once. The Live monitor
+passes the recent window through it about once a minute for as long as the switch is on and the session
+is viewed, so the same exposure repeats at that cadence. It is accepted rather than solved, because the
+CLI's own storage is outside what Compass controls, and the switch, Pause model calls and the
+20-minute question are what bound how long it repeats. [The Live monitor](#the-live-monitor) owns the rest.
+
 A row's attribution is unverified, as the ask lane's already is. A forged registration cannot make a
 window appear, because the target comes from a collector rather than from a request, but a reader
 who clicks is trusting a row Compass measured rather than one a session proved.
@@ -1323,7 +1334,9 @@ that could drift. These are the paths that can send session content off the
 machine. A reading of a Claude Code session is made by Claude Code when `claude` is on the
 server's PATH, and by Codex when it is not: Codex then spends the operator's Codex capacity and
 sends that session's evidence to OpenAI, and the disclosure before the press says which. A reader-requested reading requires the remembered answer and rolling budget above; an
-unasked reading requires `--unasked-readings`. `--no-observer-model` always wins over both.
+unasked reading requires `--unasked-readings`. `--no-observer-model` always wins over both. The Live
+monitor is a third reader-started path, to Claude Code and on to Haiku only; [The Live
+monitor](#the-live-monitor) states what it sends and every way it stops.
 
 Two requests can reach the model. A focused `/api/project-context` refresh can summarize the
 focused session and up to three active children whose assignment is unavailable.
@@ -1780,6 +1793,16 @@ fields are held in memory and published on the session row; they do not enter
 session history. Launch facts are excluded from every Analyze ledger, including
 one carrying tool output. Terminal task notifications pair only within the
 originating admitted stream, and their text is never published or stored.
+
+Two more kinds join it by the owner's ruling of 2026-10-23
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)): a pull
+request Claude Code recorded as created, and a skill it launched. A pull request is read from the
+structured `gitOperation.pr` on a shell call's result alone, and published as its repository, number, a
+URL rebuilt from those two and the time, only when the URL is `https://github.com/<owner>/<repo>/pull/<number>`
+with a matching number and the action is `created`. A skill is read from a `Skill` call whose result did not
+error, and published as its name alone, in a closed character set of at most 80 characters. Neither reads a
+command, an output tail or a skill's arguments. Like a check, each reaches a prompt only under the same
+grant for a named destination, and the unasked lane never receives them.
 
 The content class is what a Claude Code transcript recorded about the checks a session ran and the
 files it wrote. Since 2026-09-28 that includes the session's subagents, read from their own
@@ -2261,6 +2284,38 @@ bullet's kind from it, but it cannot check that the cited entry is relevant to t
 rewrite of the store faces the limit the 2026-10-05 delegated acceptance records for a reading's
 `detail`: redaction and escaping apply, and nothing authenticates model output against a local
 process that can rewrite the file.
+
+### The Live monitor
+
+Ruled 2026-10-23 by the owner
+([DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)).
+With the switch on and the session on screen, a Haiku check of the latest turns runs about once a
+minute and produces the live drift level. It is a call the reader starts, under
+[DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
+with a `monitor` notice shown before the first charged call.
+
+- What is sent. The saved goal, and, redacted and clipped first, the person's own messages, the
+  agent's replies, the commands of checks with their result, and the paths of files written, from
+  this session's own record only. The recent window is sent again by each later check, and again each
+  time the switch is turned off and on. Where Compass cannot name the destination, checks and paths are
+  not sent, as for Analyze. No command output, file contents or other tool output is sent.
+- How it runs. A supervised `claude --print` child on an explicit Haiku id, set with `--claude-monitor-model`
+  (default `claude-haiku-5-5`; only an explicit Haiku id is accepted, and the reading model's Sonnet floor is
+  unchanged), with no tools and no session persistence, in a private working directory. It is never resumed into or injected into the watched
+  session. Nothing is written into the session.
+- What holds it. A lease in memory, one per session, held by any number of tabs. A tab beats about every
+  20 seconds, and a visible tab that stops for 50 seconds has left. A hidden tab pauses the checks and
+  keeps the lease. The lease ends when the last tab leaves, the session ends, model calls are paused,
+  nobody answers the 20-minute question within 10 minutes, or a cap is spent. A restart starts with no
+  lease and makes no check until a page starts one.
+- What caps it. At least 60 seconds between two checks of a session, 30 checks per session per window,
+  and its own rolling 24-hour cap across the board (240 checks at present), kept apart from Analyze's. A check cancelled by an
+  Analyze press is not refunded.
+- What is not known yet. The page labels its level `Live monitor · Haiku`, and its accuracy check has not
+  been run: it ships labelled and is qualified later, so read its level as an account of the latest turns,
+  not a measurement.
+- What it never does. It never feeds or triggers the unasked lane and never raises a notification.
+  The estimate stays as the level when the check is paused, capped, failed or has not run.
 
 ### The abstention check
 
@@ -3475,8 +3530,11 @@ The operator-cockpit prototype also reads dispatch evidence:
   of its `Write`, `Edit`, `MultiEdit` and `NotebookEdit` calls (`file_path`, or `notebook_path`),
   for the checks it ran and the files it wrote, its subagents' calls included through the same
   expression. Of a file-write call it reads the path, and of its
-  result the error flag alone. [Tool output in a Claude Code
-  reading](#tool-output-in-a-claude-code-reading) states its bounds and where the result may go.
+  result the error flag alone. Since 2026-10-23 it also reads the `skill` name of a `Skill` call
+  (never its arguments), and of a `Bash` call's result only the structured
+  `toolUseResult.gitOperation.pr` (`number`, `url`, `action`), never the command or its output. Both
+  go through closed shapes and publish nothing that does not match them. [Tool output in a Claude
+  Code reading](#tool-output-in-a-claude-code-reading) states its bounds and where the result may go.
 
 These are evidence reads, not command execution. In total, eight expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.
@@ -3934,14 +3992,14 @@ that was.
 saying the machine's network may read the board, and there is no second gate behind it: everything
 the paragraph below grants another account on the machine, a non-default bind grants anything that
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
-project paths. Writing is the twenty-one POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
+project paths. Writing is the twenty-two POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Two of the twenty-one store nothing of their own: `POST /api/direction` returns the whole text
+somebody other than you. Three of the twenty-two store nothing durable of their own: `POST /api/direction` returns the whole text
 of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
 message's published title of at most 112 characters. Both answer only a loopback peer, so a non-default bind does not widen them; their
-bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on nineteen of them, for the reason the
+bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client
@@ -3950,7 +4008,7 @@ and Event ingress below is where it is stated. `POST /api/focus`'s capability bu
 injected into the served document, so anything that can load the board under a non-default bind can
 also ask for a raise, and `/api/data` names which rows would answer it. What that second gate
 actually separates is a page from a document navigation and from a local process that never fetched
-the board, which is the exposure the focus section states.
+the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session and writes nothing; it answers only a loopback peer that is not a document navigation, and `start` is the one action that begins to spend.
 
 What the non-default bind does *not* spend is the rebinding defense. The Host and Origin gate widens
 to addresses and never to names. Under `0.0.0.0`, that means any address a client could arrive on.

@@ -422,6 +422,13 @@ CHECK_EARLIER_FAILED = "an earlier run failed"
 CHECK_REPORT_WORDS = frozenset({"passed", "passes", "passing"})
 CHECK_BEFORE_LAST_CHANGE = "before the last change"
 PATH_WRITTEN = "file written"
+# Two more subjects of a tool report, read from Claude Code's structured records only (owner,
+# 2026-10-23):
+# [DEC-23](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)
+PR_SUBJECT = "pr"
+SKILL_SUBJECT = "skill"
+PR_CREATED = "pull request created"
+SKILL_USED = "skill used"
 # Priority inside the byte bound, after the reader's own messages: the tool
 # report ruling's item 4 order as amended on 2026-10-04, so a pass is never
 # chosen over a failure, and a run with no recorded result, which carries no
@@ -933,6 +940,10 @@ def _words(text: str) -> set[str]:
 # and "no tests passed" are failure statements (verifier, 2026-09-24). A
 # negated "work" or "expected" says the output is not what was asked.
 _PASS_FORMS = frozenset({"pass", *CHECK_REPORT_WORDS})
+# The words that report a created pull request or a used skill ("successfully created", "the record
+# confirmed it was opened"). Set aside only where every entry a consistent cites is one of those two
+# facts (owner, 2026-10-23, from a live walk); "delivered", "works" and the rest still withdraw it.
+RECORDED_DONE_WORDS = frozenset({"successfully", "confirmed"})
 _OUTCOME_FORMS = frozenset({"work", "expected"})
 
 
@@ -1731,6 +1742,10 @@ def _tool_report_summary(
         if read_incomplete or fact.get("read_incomplete") is True:
             words.append("part of the work record was not read")
         suffix = f" ({'; '.join(words)})"
+    elif fact.get("subject") == PR_SUBJECT:
+        suffix = f" ({PR_CREATED})"
+    elif fact.get("subject") == SKILL_SUBJECT:
+        suffix = f" ({SKILL_USED})"
     else:
         suffix = f" ({PATH_WRITTEN})"
     room = max(0, cap_chars - len(suffix))
@@ -2339,7 +2354,17 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
                     else "check with no recorded result"
                 )
                 if subject == CHECK_SUBJECT
-                else ("file write" if subject == WRITE_SUBJECT else "launch")
+                else (
+                    "file write"
+                    if subject == WRITE_SUBJECT
+                    else (
+                        "created pull request"
+                        if subject == PR_SUBJECT
+                        else "used skill"
+                        if subject == SKILL_SUBJECT
+                        else "launch"
+                    )
+                )
             )
         elif row["author"] == AUTHOR_PERSON:
             name = "from you"
@@ -2355,6 +2380,8 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
         "failed check": "failed checks",
         "check with no recorded result": "checks with no recorded result",
         "file write": "file writes",
+        "created pull request": "created pull requests",
+        "used skill": "used skills",
         "launch": "launches",
     }
     return ", ".join(
@@ -2438,7 +2465,7 @@ NONFINAL_CLAIMS_RULE = (
 )
 
 
-def _priority(entry: LedgerEntry) -> int:
+def _priority(entry: LedgerEntry) -> int:  # noqa: PLR0911 - one return per kind of entry
     """Which entries the byte bound reserves first (lower is earlier)."""
     if entry["author"] == AUTHOR_PERSON:
         return 0
@@ -2450,6 +2477,12 @@ def _priority(entry: LedgerEntry) -> int:
         return _CHECK_PRIORITY.get(entry.get("result", ""), _CHECK_PRIORITY["not-recorded"])
     if entry.get("subject") == WRITE_SUBJECT:
         return _WRITE_PRIORITY
+    # A created pull request is reserved like a pass, so no write outlasts it; a skill after a write
+    # (owner review, 2026-10-23), as the collector's own cap ranks them.
+    if entry.get("subject") == PR_SUBJECT:
+        return _CHECK_PRIORITY[RESULT_PASSED]
+    if entry.get("subject") == SKILL_SUBJECT:
+        return _WRITE_PRIORITY + 1
     # The agent's messages last, below a write: a long session says far more
     # than it does, and a hundred newer messages dropped the older write that
     # showed what it did (review, 2026-10-03).
@@ -3086,7 +3119,12 @@ def _indices(value: Any) -> tuple[int, ...]:
 
 
 def _states_a_verdict(
-    detail: str, result: str, *, reported: bool = False, earlier_failed: bool = False
+    detail: str,
+    result: str,
+    *,
+    reported: bool = False,
+    earlier_failed: bool = False,
+    recorded_done: bool = False,
 ) -> bool:
     """Whether this prose states a verdict the model is not allowed to state.
 
@@ -3108,6 +3146,8 @@ def _states_a_verdict(
         if _negated(ordered, _PASS_FORMS, 2) or _negated(ordered, _OUTCOME_FORMS, 3):
             return True
     words = _words(detail)
+    if recorded_done:
+        words -= RECORDED_DONE_WORDS
     if reported:
         words -= CHECK_REPORT_WORDS
         if earlier_failed:
@@ -3219,7 +3259,7 @@ def failure_followed_by_write(
     )
 
 
-def check_supports(
+def check_supports(  # noqa: PLR0911 - one return per kind of entry
     entry: Mapping[str, Any],
     result: str,
     window_start: float,
@@ -3245,6 +3285,15 @@ def check_supports(
     is_report = str(entry.get("type") or "") == TOOL_REPORT_TYPE
     if not is_report and entry.get("subject") != CHECK_SUBJECT:
         return not _subjectless_pi_check(entry)
+    if entry.get("subject") in (PR_SUBJECT, SKILL_SUBJECT):
+        # What the record shows was done, with no result to be failed: it carries a consistent
+        # inside the window and nothing else (owner, 2026-10-23).
+        return (
+            result == RESULT_CONSISTENT
+            and is_report
+            and (evidence_at(entry) or 0.0) > 0
+            and not _before_window(entry, window_start)
+        )
     if entry.get("subject") != CHECK_SUBJECT:
         return (
             recorded_write
@@ -3879,6 +3928,15 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     # A claims departure or `unsupported` quotes the agent's own success words
     # by its nature ("said the change works"), and neither says the work
     # landed, so the backstop reads only a claims `consistent` (review, PR C).
+    recorded_done = (
+        result == RESULT_CONSISTENT
+        and bool(cited)
+        and all(
+            entry.get("subject") in (PR_SUBJECT, SKILL_SUBJECT)
+            and check_supports(entry, RESULT_CONSISTENT, window_start)
+            for entry in cited
+        )
+    )
     quoting = name == CONSTRAINT_CLAIMS and result in (RESULT_DEPARTURE, RESULT_UNSUPPORTED)
     if (
         result
@@ -3890,6 +3948,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
             result,
             reported=bool(reported),
             earlier_failed=any(entry.get("earlier_failed") is True for entry in reported),
+            recorded_done=recorded_done,
         )
     ):
         result, why = RESULT_UNVERIFIABLE, WHY_VERDICT_STATED
@@ -4087,8 +4146,19 @@ class RecordedRemoval:
 
 
 @dataclass(frozen=True)
+class RecordedPr:
+    """A pull request Claude Code's structured record shows created, with the fact that shows it."""
+
+    id: str
+    repository: str
+    number: int
+    at: float
+
+
+@dataclass(frozen=True)
 class Recorded:
-    """The writes and checks the session's record holds, whether or not a prompt carried them.
+    """The writes, checks and created pull requests the session's record holds, whether or not a
+    prompt carried them.
 
     Built from the facts by `recorded_from` and used only to settle and to cite. Nothing in it
     is sent to a model.
@@ -4097,6 +4167,7 @@ class Recorded:
     writes: tuple[RecordedWrite, ...] = ()
     checks: tuple[LedgerEntry, ...] = ()
     removals: tuple[RecordedRemoval, ...] = ()
+    prs: tuple[RecordedPr, ...] = ()
 
 
 def recorded_from(
@@ -4114,9 +4185,15 @@ def recorded_from(
     """
     writes: list[RecordedWrite] = []
     checks: list[LedgerEntry] = []
+    prs: list[RecordedPr] = []
     changed = tool_output.changed_after if tool_output is not None else frozenset()
     incomplete = tool_output.read_incomplete if tool_output is not None else frozenset()
     for fact in facts:
+        if isinstance(fact, dict) and fact.get("subject") == PR_SUBJECT:
+            pr = _recorded_pr(fact, harness, sid)
+            if pr is not None:
+                prs.append(pr)
+            continue
         if not isinstance(fact, dict) or fact.get("subject") not in (WRITE_SUBJECT, CHECK_SUBJECT):
             continue
         if fact.get("subject") == WRITE_SUBJECT:
@@ -4154,7 +4231,27 @@ def recorded_from(
         RecordedRemoval(path, at, kind)
         for path, at, kind in (tool_output.removals if tool_output is not None else ())
     )
-    return Recorded(tuple(writes), tuple(checks), removals)
+    return Recorded(tuple(writes), tuple(checks), removals, tuple(prs))
+
+
+def _recorded_pr(fact: Mapping[str, Any], harness: str, sid: str) -> RecordedPr | None:
+    session = fact.get("source_session")
+    fact_id = records.safe_text(fact.get("fact_id"), 160).strip()
+    stamp, number = _number(fact.get("at")), fact.get("pr_number")
+    repository = str(fact.get("pr_repository") or "")
+    if (
+        isinstance(session, dict)
+        and (session.get("harness"), session.get("sid")) == (harness, sid)
+        and fact.get("type") == TOOL_REPORT_TYPE
+        and fact_id
+        and stamp is not None
+        and stamp > 0
+        and type(number) is int
+        and number > 0
+        and repository
+    ):
+        return RecordedPr(fact_id, repository, number, stamp)
+    return None
 
 
 def recorded_departure(
@@ -4218,11 +4315,13 @@ GOAL_VERDICT_WRITTEN_AFTER = "written-after"
 GOAL_VERDICT_FAILED = "check-failed"
 GOAL_VERDICT_DELETED_AFTER = "deleted-after"
 GOAL_VERDICT_MOVED_AFTER = "moved-after"
+GOAL_VERDICT_PR = "pr-created-before"
 GOAL_VERDICT_NOT_FOUND = "not-found"
 GOAL_VERDICT_NOTHING_CHECKABLE = "nothing-checkable"
 GOAL_VERDICT_WHYS = (
     GOAL_VERDICT_WRITTEN,
     GOAL_VERDICT_PASSED,
+    GOAL_VERDICT_PR,
     GOAL_VERDICT_WRITTEN_AFTER,
     GOAL_VERDICT_DELETED_AFTER,
     GOAL_VERDICT_MOVED_AFTER,
@@ -4249,6 +4348,31 @@ _ELIDED_HEAD = re.compile(r"(?:\.\.\.|\u2026)/")
 def _verdict_files(reason: str) -> tuple[str, ...]:
     text = _ELIDED_HEAD.sub("", reason)
     return tuple(path for path in _path_tokens(text, files=True) if _VERDICT_FILE.fullmatch(path))
+
+
+# A pull request the evaluator's prose names: "PR #7", "PR 7", "PR (#7)", "pull request #7", a list
+# of them ("PRs #6 and #7", "PRs #7, #8"), or a `pull/7` path, which may carry the repository
+# before it (owner, 2026-10-23). A bare "#7" is not read: it is as often an issue.
+_VERDICT_PR_URL = re.compile(
+    r"(?:github\.com/(?P<repo>[\w.-]+/[\w.-]+)/pull/|\bpull/)(?P<number>\d+)\b", re.IGNORECASE
+)
+_VERDICT_PR_LIST = re.compile(
+    r"\b(?:PRs?|pull\s+requests?)\s*\(?\s*(?P<list>#?\d+\b(?:\s*(?:,|and|&)\s*#?\d+\b)*)",
+    re.IGNORECASE,
+)
+
+
+def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
+    named = [
+        ((found["repo"] or "").lower(), int(found["number"]))
+        for found in _VERDICT_PR_URL.finditer(reason)
+    ]
+    named.extend(
+        ("", int(number))
+        for found in _VERDICT_PR_LIST.finditer(reason)
+        for number in re.findall(r"\d+", found["list"])
+    )
+    return tuple(dict.fromkeys(named))
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:
@@ -4292,13 +4416,14 @@ def _removal_covers(removed: str, path: str) -> bool:
     )
 
 
-def check_goal_verdict(  # noqa: PLR0911 - one return per answer the record can give
+def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the record can give
     goal: Any, recorded: Recorded
 ) -> GoalVerdictCheck | None:
     """Test the harness's `met` verdict on a session's goal against what the record holds.
 
-    The facts the evaluator's reason cites are the files it names and the kinds of check it says
-    passed. A cited file the record shows written, or a check of a claimed kind that passed, at or
+    The facts the evaluator's reason cites are the files it names, the kinds of check it says
+    passed, and a pull request it names by number that the record shows created. A cited
+    file the record shows written, or a check of a claimed kind that passed, at or
     before the verdict and since undone by nothing, agrees. A cited file written after the verdict,
     or a check of a claimed kind whose latest run failed (and that no later whole-suite run before
     the verdict superseded), disputes it, and a dispute outweighs what agrees. Nothing found, or
@@ -4325,6 +4450,7 @@ def check_goal_verdict(  # noqa: PLR0911 - one return per answer the record can 
         }
 
     files, kinds = _verdict_files(reason), _verdict_check_kinds(reason)
+    named_prs = _verdict_prs(reason)
     # The condition names files too ("the file docs/e2e/notes.md exists"), and a file it names that
     # the record shows taken away after the verdict contradicts the claim whatever the reason said.
     named = tuple(dict.fromkeys((*files, *_verdict_files(str(goal.get("text") or "")))))
@@ -4338,7 +4464,7 @@ def check_goal_verdict(  # noqa: PLR0911 - one return per answer the record can 
             "path": records.safe_text(taken.path, VERDICT_PATH_CAP_CHARS),
             "changed_at": taken.at,
         }
-    if not files and not kinds:
+    if not files and not kinds and not named_prs:
         return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOTHING_CHECKABLE)
     writes = [
         write
@@ -4363,6 +4489,17 @@ def check_goal_verdict(  # noqa: PLR0911 - one return per answer the record can 
         return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_FAILED, failed)
     if writes:
         return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_WRITTEN, [write.id for write in writes])
+    created = [
+        pr.id
+        for pr in recorded.prs
+        if set_at <= pr.at <= at
+        and any(
+            number == pr.number and repository in ("", pr.repository.lower())
+            for repository, number in named_prs
+        )
+    ]
+    if created:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_PR, created)
     passed = [
         entry["id"]
         for entry in checks
