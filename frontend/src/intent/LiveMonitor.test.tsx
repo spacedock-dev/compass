@@ -317,6 +317,26 @@ describe('a tab that is hidden is never ticked for', () => {
     expect(actions(server)).toEqual(['start', 'beat:false', 'beat:true', 'beat:true']);
   });
 
+  it('beats visible at once when the tab is shown again, before the next interval', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    await act(async () => {
+      page.env.fireHidden();
+    });
+    await page.settle();
+    await page.advance(5_000);
+    await act(async () => {
+      page.env.fireVisible();
+    });
+    await page.settle();
+    // Nothing waited for the 20 s interval: the visible beat is already sent.
+    expect(actions(server)).toEqual(['start', 'beat:false', 'beat:true']);
+    await page.advance(20_000);
+    expect(actions(server)).toEqual(['start', 'beat:false', 'beat:true', 'beat:true']);
+  });
+
   it('says it is hidden when the tab hides while its start is in flight', async () => {
     const server = leaseServer();
     const page = mountSession({

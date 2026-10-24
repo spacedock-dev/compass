@@ -111,6 +111,7 @@ export const OnWithTheHaikuLevel: Story = {
     await expect(level).toHaveTextContent('Live monitor · Haiku');
     await expect(level).toHaveTextContent('The latest turns wrote outside the saved folders.');
     await expect(level).not.toHaveTextContent('Live estimate');
+    await expect(level).not.toHaveTextContent('No model assessment for this intent yet');
     await expect(actions(args.scenario.lease as LeaseScenario)[0]).toBe('start');
     // The server's own words about what is sent stand under the switch while it is on.
     await expect(document.querySelector('[data-next-live-sent]')).toHaveTextContent(
@@ -132,6 +133,7 @@ export const OnWithTheEstimateAsFallback: Story = {
     const level = card.querySelector('[data-next-drift-level]') as HTMLElement;
     await expect(level).toHaveTextContent('Live estimate');
     await expect(level).not.toHaveTextContent('Live monitor · Haiku');
+    await expect(level).toHaveTextContent('No model assessment for this intent yet');
   },
 };
 

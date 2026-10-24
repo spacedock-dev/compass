@@ -112,6 +112,8 @@ const source = () =>
 const detail = () =>
   document.querySelector('[data-next-drift-level] .next-session-drift-detail')?.textContent ?? '';
 
+const card = () => document.querySelector('[data-next-drift-level]')?.textContent ?? '';
+
 describe('the level the monitor draws', () => {
   it('labels the pill with the monitor, and not the estimate or an analysis', async () => {
     const first = await open({
@@ -149,6 +151,26 @@ describe('the level the monitor draws', () => {
     expect(document.querySelector('[data-next-live-reason-line]')?.textContent).toBe(
       'The latest turns wrote outside the saved folders.',
     );
+  });
+
+  it('does not say there is no model assessment under a level a model produced', async () => {
+    await open({
+      work: {
+        live_levels: [ESTIMATE('none_or_low')],
+        live_monitor: monitorLease({ level: MONITOR('none_or_low'), now: LATER }),
+      },
+    });
+    expect(card()).not.toMatch(/No model assessment for this intent yet/);
+  });
+
+  it('still says it under the model-free estimate, where it is true', async () => {
+    await open({
+      work: {
+        live_levels: [ESTIMATE('medium')],
+        live_monitor: monitorLease({ level: null, now: LATER }),
+      },
+    });
+    expect(card()).toMatch(/No model assessment for this intent yet/);
   });
 
   it('shows the estimate, labelled as the estimate, while no check has completed', async () => {

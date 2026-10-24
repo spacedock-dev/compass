@@ -209,7 +209,8 @@ export function DriftLevelView() {
             {level.note}
           </p>
         ) : null}
-        {!running && !level.analysis && !readingStored(annotation) ? (
+        {/* A monitor level is a model's assessment, so the line saying there is none would contradict it. */}
+        {!running && !level.analysis && !level.monitor && !readingStored(annotation) ? (
           <p className="next-session-drift-detail">No model assessment for this intent yet.</p>
         ) : null}
         {/* An analysis level's range and reason are said under What the analysis read, with the rest of
