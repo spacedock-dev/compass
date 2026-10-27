@@ -248,6 +248,38 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
         self.assertEqual(reading.GOAL_VERDICT_PASSED, checked["why"])
         self.assertEqual(("check-1",), checked["cites"])
 
+    def test_a_ci_job_name_in_the_reason_does_not_agree_on_a_local_pytest_run(self) -> None:
+        passing = [base.check_fact(result="passed", at=130.0)]
+        for reason in (
+            "the server-unittest pass shows it",
+            "coverage-gate pass and server-unittest pass, nothing marked fail",
+            "ci/lint failed earlier, then passed",
+            "the tests pass in CI",
+            "the workflow shows the tests passed",
+            "the tests passed https://github.com/acme/widgets/actions/runs/123456",
+            "the tests passed https://gitlab.com/acme/widgets/-/pipelines/99",
+        ):
+            with self.subTest(reason=reason):
+                checked = self._checked(passing, reason)
+                self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, checked["check"])
+
+    def test_all_the_local_tests_passing_still_agrees(self) -> None:
+        for reason in ("All 14 tests pass", "pytest passes", "type-check passed"):
+            with self.subTest(reason=reason):
+                fact = base.check_fact(result="passed", at=130.0)
+                if reason.startswith("type"):
+                    fact = base.check_fact(result="passed", at=130.0, summary="mypy")
+                checked = self._checked([fact], reason)
+                self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
+
+    def test_a_reason_mixing_a_local_claim_and_a_ci_job_agrees_on_the_local_one(self) -> None:
+        checked = self._checked(
+            [base.check_fact(result="passed", at=130.0)],
+            "All 14 tests pass locally and the server-unittest check on the PR passed",
+        )
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
+        self.assertEqual(("check-1",), checked["cites"])
+
     def test_a_check_that_failed_after_the_verdict_disputes_a_claim_that_it_passed(self) -> None:
         checked = self._checked(
             [

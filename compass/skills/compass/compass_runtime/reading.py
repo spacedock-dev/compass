@@ -4580,13 +4580,40 @@ _NOT_A_RESULT = re.compile(
 _CLAUSE_BREAK = re.compile(r"[.;,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
 
 
+# A phrase that names a remote job is no claim about a local run. A CI job's name is a hyphen- or
+# slash-joined token ("server-unittest pass") that often holds a kind word, so it is dropped whole
+# rather than split to find one. A clause that speaks of CI, a workflow, GitHub Actions or "check
+# on" a pull request, or holds a run URL, is a remote claim too. Matching a job name to a CI fact is
+# a separate rule; here such a phrase contributes no local kind. The rule and what it leaves alone:
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-27-a-ci-job-named-in-the-reason-is-not-a-local-check)  # noqa: E501
+_CI_RUN_URL = re.compile(
+    r"https?://[^\s)]*/(?:actions/runs|pipelines|jobs)/\d+[^\s)]*", re.IGNORECASE
+)
+_REMOTE_MARK = "ciremoterun"
+_REMOTE_JOB = re.compile(
+    r"(?<![\w-])(?!type-?checks?\b)\w[\w.]*(?:[-/]\w[\w.]*)+\s+(?:pass|passed|fail|failed)\b",
+    re.IGNORECASE,
+)
+# Case matters for the two short words: "ci" and "actions" are ordinary words in a reason.
+_REMOTE_CLAUSE = re.compile(
+    rf"\b(?:CI|Actions)\b|(?i:\bworkflows?\b|\bchecks?\s+on\b|\b{_REMOTE_MARK}\b)"
+)
+
+
+def _local_clauses(text: str) -> list[str]:
+    """The clauses of a line that can speak of a local run, remote phrasing removed."""
+    marked = _CI_RUN_URL.sub(f" {_REMOTE_MARK} ", text)
+    clauses = (_REMOTE_JOB.sub(" ", clause) for clause in _CLAUSE_BREAK.split(marked))
+    return [clause for clause in clauses if not _REMOTE_CLAUSE.search(clause)]
+
+
 def _claims_result(text: str, kind: str) -> bool:
     """Whether one clause of the line speaks of this kind of check and says how it came out."""
     return any(
         _LINE_KINDS[kind].search(clause)
         and _RESULT_CLAIM.search(clause)
         and not _NOT_A_RESULT.search(clause)
-        for clause in _CLAUSE_BREAK.split(text)
+        for clause in _local_clauses(text)
     )
 
 

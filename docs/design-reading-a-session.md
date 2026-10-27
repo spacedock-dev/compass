@@ -5887,6 +5887,28 @@ neither writes a goal record.
   publishing the earlier goal's words. A replaced goal's text is not the reader's to be shown a second time,
   and nothing needs it.
 
+### Amended 2026-10-27: a CI job named in the reason is not a local check
+
+A reason that said `server-unittest pass` was read as a claim that the tests passed, because the job's name holds
+the word `unittest`. The check then looked for local test runs and could agree on one that had nothing to do
+with the job the evaluator meant. A phrase that names a remote job is now left out of the claims the check
+matches to local runs. Three shapes count, and nothing more:
+
+- a token joined by hyphens or slashes directly before `pass`, `passed`, `fail` or `failed` (`server-unittest pass`,
+  `ci/lint fail`), which is dropped whole and never split to find a kind word inside it. `type-check` and
+  `typecheck` are not job names for this purpose, so "type-check passed" is still a local claim;
+- a clause that says `CI`, `Actions`, a workflow, or `check on` or `checks on` something, so "the tests pass in CI"
+  claims nothing about a local run. `CI` and `Actions` are read in capitals only, because `ci` and `actions` are
+  ordinary words in a sentence;
+- a CI run URL (`.../actions/runs/<n>`, or a GitLab `pipelines` or `jobs` URL), which marks its clause the same way.
+
+Clauses are still split at commas, full stops, semicolons and `and`, so "All 14 tests pass locally and the
+server-unittest check on the PR passed" agrees on the local claim alone. "The tests pass", "pytest passes" and
+"lint is clean" keep their match. Such a phrase contributes no kind, so a reason that is only remote reads as
+`nothing-checkable`. Matching a job's name to a recorded CI fact is a separate rule and is not built here.
+Rejected: reading `server-unittest` as a test claim when a local test run exists, which is the wrong-reason
+agreement this removes.
+
 ### What reading a Codex `/goal` decided, 2026-10-27
 
 Built against `docs/captures/codex/goal-0.164.0-macos.jsonl`. Codex 0.164.0 has a `/goal` with edit,
