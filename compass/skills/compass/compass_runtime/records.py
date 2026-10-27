@@ -722,10 +722,12 @@ _MASK_HEADER_ALONE: Final = re.compile(
     rf"^['\"]?(?:{_MASK_HEADER_OPENERS}['\"]?|[^\s=]*extraheader=['\"]?)?{_MASK_HEADER_WIDE}\s*:$",
     re.IGNORECASE,
 )
-# A dotted config key (`http.extraheader=`, `credential.helper=`) whose last
-# component names a credential. It starts with a letter, so `--max-tokens=4096`,
-# `--password-file=/x` and `--secrets-dir=...` are flags and not keys.
-_MASK_DOTTED_KEY: Final = re.compile(r"^(['\"]?[A-Za-z][\w-]*(?:\.[^\s=]*)+=).+$", re.DOTALL)
+# Segments exclude `.` so a run of dots cannot split many ways (exponential
+# backtracking on `Loading.....`). A dotted config key (`http.extraheader=`,
+# `credential.helper=`) whose last component names a credential. It starts with a
+# letter, so `--max-tokens=4096`, `--password-file=/x` and `--secrets-dir=...` are
+# flags and not keys.
+_MASK_DOTTED_KEY: Final = re.compile(r"^(['\"]?[A-Za-z][\w-]*(?:\.[^\s=.]+)+=).+$", re.DOTALL)
 _MASK_DOTTED_CREDENTIAL: Final = re.compile(
     r"(?:extraheader|password|passwd|token|secret|apikey|api-key)$", re.IGNORECASE
 )

@@ -1104,6 +1104,17 @@ class MaskCommandTest(unittest.TestCase):
         masked = mask("git -c 'http.extraheader=AUTHORIZATION: basic FakeB64Value99' fetch")
         self.assertNotIn("FakeB64Value99", masked)
 
+    def test_a_long_run_of_dots_in_one_word_returns_promptly(self) -> None:
+        started = time.monotonic()
+        self.assertEqual(["Loading" + "." * 60], records.mask_words(["Loading" + "." * 60]))
+        masked = records.mask_prose("please wait" + "." * 60 + " ok")
+        self.assertIn("ok", masked)
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertNotIn(
+            "FakeB64Value99",
+            mask("git -c http.https://github.com/.extraheader=FakeB64Value99 fetch"),
+        )
+
     def test_redis_cli_password_flag_is_masked_only_for_redis_cli(self) -> None:
         self.assertNotIn("FakePass99", mask("redis-cli -a FakePass99 ping"))
         self.assertNotIn("FakePass99", mask("redis-cli --pass FakePass99 ping"))
