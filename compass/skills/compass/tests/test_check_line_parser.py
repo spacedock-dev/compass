@@ -911,7 +911,14 @@ class ALoopOrANegationAroundACheckIsStillThatCheck(CheckLineTestCase):
                 self.assertTrue(titles and all(t == "pytest -q" for t in titles), titles)
 
     def test_a_negated_check_is_listed_and_never_a_pass(self) -> None:
-        for command in ("! pytest -q", "if ! pytest -q; then echo broke; fi", "ls && ! pytest -q"):
+        for command in (
+            "! pytest -q",
+            "if ! pytest -q; then echo broke; fi",
+            "ls && ! pytest -q",
+            "! (cd . && pytest -q)",
+            "! { cd . && pytest -q; }",
+            "! if true; then pytest -q; fi",
+        ):
             for output, is_error in (("5 passed", False), ("", False), ("1 failed", True)):
                 with self.subTest(command=command, output=output):
                     self.fresh()
@@ -919,6 +926,13 @@ class ALoopOrANegationAroundACheckIsStillThatCheck(CheckLineTestCase):
                     check = self.only_check()
                     self.assertEqual("pytest -q", check["title"])
                     self.assertEqual("not-recorded", check["result"])
+
+    def test_a_bang_that_governs_only_the_first_command_leaves_the_check_alone(self) -> None:
+        for command in ("! cd . && pytest -q", "! false; pytest -q"):
+            with self.subTest(command=command):
+                self.fresh()
+                self.session.bash(command, "5 passed", is_error=False)
+                self.assertEqual("passed", self.only_check()["result"])
 
     def test_a_bang_inside_a_test_expression_negates_nothing(self) -> None:
         self.session.bash("[ ! -f x ] && pytest -q", "5 passed", is_error=False)
@@ -949,7 +963,7 @@ class ACiPollingLoopIsReadOnly(CheckLineTestCase):
     def test_the_loop_alone_does_not_age_a_pass(self) -> None:
         self.assertIs(False, self.changed_after(self.POLL, keep_commit=False))
 
-    def test_the_commit_and_push_still_do_and_the_loop_adds_nothing_to_them(self) -> None:
+    def test_the_commit_and_push_still_age_a_pass_with_or_without_the_loop(self) -> None:
         self.assertIs(True, self.changed_after(self.POLL))
         self.assertIs(True, self.changed_after())
 

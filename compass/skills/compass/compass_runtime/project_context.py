@@ -2210,7 +2210,7 @@ _READ_ONLY_TRIPLES = frozenset(
         "glab ci status",
     }
 )
-# Words that run nothing: the loop and test keywords, and the commands a loop condition or a
+# Words that write nothing: the loop and test keywords, and the commands a loop condition or a
 # polling loop's counter uses. `for`'s own header is `_for_header`.
 _LOOP_WORDS = frozenset(
     {"sleep", "seq", "true", "false", ":", "break", "continue", "test", "[", "[["}
@@ -3799,7 +3799,24 @@ class _ShellCall:
     def negated(self, index: int) -> bool:
         """Whether `!` inverts the segment's exit status. A negated check has no recorded
         result: the flag and the summary no longer say whether the code is sound."""
-        return "!" in self.parts[index].syntax
+        if "!" in self.parts[index].syntax:
+            return True
+        return any(self._negates_group(part) for part in self.parts[:index])
+
+    @staticmethod
+    def _negates_group(part: _Part) -> bool:
+        """Whether `!` on this part governs a group it opens, so the parts after it are inside
+        the negation. Where the group ends is not tracked: reading the rest of the call as
+        negated errs toward "not recorded", which is the safe answer."""
+        syntax = part.syntax
+        if "!" not in syntax:
+            return False
+        if part.opens > part.closes:
+            return True
+        bang = syntax.index("!")
+        return part.words[:1] == ["for"] or any(
+            word in syntax[bang + 1 :] for word in ("{", "if", "while", "until")
+        )
 
     def unestablished(self, index: int) -> bool:
         """Whether a `||` before the segment leaves its execution unknown."""
