@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2145203,
+    "bytes": 2153971,
     "file": "react.html",
-    "sha256": "9ca9e3190d57d3c635d01d642754fd591196e29c22c10c8d075839f8bc32f5d4"
+    "sha256": "28f1c7b64f7cd507b5aca5a1380a6d897a89c55dd6ad7c1bf95374006b204641"
   },
   "format": 1,
   "frontend": "react",
@@ -295,7 +295,7 @@
       },
       {
         "file": "frontend/src/api/readings.ts",
-        "sha256": "20daf257318cd1dac74e5363d91da33d8e90bc20d11e1fa0772a9a89b078dca1"
+        "sha256": "560c2583a57ad51e20f44d8f058963ab774bd2ef548c4846c87cf90c326361e3"
       },
       {
         "file": "frontend/src/api/summary.ts",
@@ -546,6 +546,10 @@
         "sha256": "7dcf99e6dbb24fee32060e3f467a44806e07e9998da8399c61be4690769838d0"
       },
       {
+        "file": "frontend/src/drift/CiReadNote.tsx",
+        "sha256": "2ebfb2e149af54653726a4edfd1e5cea1f206ac877e5b4228daad447d97b9e42"
+      },
+      {
         "file": "frontend/src/drift/CitationLink.tsx",
         "sha256": "b366bf149440cf9ea94c93502d5d5b48e0c28a377a53a0b1186aad4669187247"
       },
@@ -559,7 +563,7 @@
       },
       {
         "file": "frontend/src/drift/DriftBody.tsx",
-        "sha256": "1b65c765f5c57588119169044553ff2a7efc9cfc921da32da81e8374cf515ab7"
+        "sha256": "8fffbadb1db54f77dc3f540ab62eced1ea66a6642c17ce88f64564689781355a"
       },
       {
         "file": "frontend/src/drift/DriftHead.tsx",
@@ -611,7 +615,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingControl.tsx",
-        "sha256": "48f3badbf6cf17a598648fc9133ab4ee5a67e32e789836f507a22148d82dd90d"
+        "sha256": "9ffd0bf82c326afdbf40f5be5eb9352a6b95c8c58abc4226ad99da6dcc62a66b"
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
@@ -639,7 +643,11 @@
       },
       {
         "file": "frontend/src/drift/actions.ts",
-        "sha256": "f60c260bdc644eefff48800358f349d4ab4c881f926124462d85cd79c7d08723"
+        "sha256": "b68e413b7b3389a7c0928b70312101a8b00fbc6d2c80fea26ef3e209be83e155"
+      },
+      {
+        "file": "frontend/src/drift/ciRead.ts",
+        "sha256": "d3d5a06b989f09b9dea27a5c9ebe6e4ec0cc63d3d55155d6f4f318f32e81b34f"
       },
       {
         "file": "frontend/src/drift/citations.ts",
@@ -691,11 +699,11 @@
       },
       {
         "file": "frontend/src/drift/level.ts",
-        "sha256": "e6d4dd24ac6c4242582bcd0093fdbc81102b7937bee658f3542ea58947898d1a"
+        "sha256": "42c0bef00740a0e617be42830e96fafbf6bbbec673a1c5128b23c4ea8773d2fa"
       },
       {
         "file": "frontend/src/drift/model.ts",
-        "sha256": "1f9b2eda2cd221adc81f7a0fe23aad9b0885fc572f9c1cdba17a79a0ce6cdb86"
+        "sha256": "b29ea800b0d65121bf160ac6144fdcd921f8a9ce8c8bbfe778ad188ad09c9b24"
       },
       {
         "file": "frontend/src/drift/monitor.ts",
@@ -715,7 +723,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "246a377126b4600ef92aa05f802541bc90b72867bbf1d8c3f9d66b76e16890c5"
+        "sha256": "6bcafb5b1abb3a97ffb546993c7a0bb91dbc7128726d5f936207ee5ce15461d4"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -723,11 +731,11 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "bca1e701603d58779dbf42cc0e5dcf4f368beda76b06e532bcfcee8f6f2c8045"
+        "sha256": "c9c243e37b988b3503b885c2f77dd24a967c298e4ef3502a931e23d03ca7b412"
       },
       {
         "file": "frontend/src/drift/shape.ts",
-        "sha256": "4b0b942a8f0954f1febb3d45fc81c28f43b44420a6eb87225c351be666e75740"
+        "sha256": "ca9c0469c281d27fddef396a4bb685d7cdd9e5f5d02b090f7520126a0ced5d67"
       },
       {
         "file": "frontend/src/drift/state.ts",
@@ -899,7 +907,7 @@
       },
       {
         "file": "frontend/src/intent/work.ts",
-        "sha256": "39b6b82058fd50c104b93013fcae6a9aea9129155d61a1ceffaf646d7edb4de5"
+        "sha256": "c6da3a17bba78c9e737f932cf6d93f532e9b2d18f7af8955c018219314d1e563"
       },
       {
         "file": "frontend/src/lib/utils.ts",
@@ -1195,7 +1203,7 @@
       },
       {
         "file": "frontend/src/sessions/intent.ts",
-        "sha256": "a5cc34e4bc7d04a31ada45f23aa9ea3c2de4e9ffc4c1a05fbeb83f5c06ddd002"
+        "sha256": "455eda4668cc28adf89fa9d84987317625628013379019a53050b703433376c2"
       },
       {
         "file": "frontend/src/sessions/notes.ts",
