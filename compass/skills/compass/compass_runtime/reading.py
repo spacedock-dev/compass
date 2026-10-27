@@ -2650,7 +2650,7 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
     counts: dict[str, int] = {}
     for row in selected:
         if row["type"] == CI_CHECK_TYPE:
-            name = "CI check read from GitHub"
+            name = "CI check read from GitHub or GitLab"
         elif row["type"] == TOOL_REPORT_TYPE:
             subject, result = row.get("subject"), row.get("result")
             name = (
@@ -2701,7 +2701,7 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
         "file write": "file writes",
         "created pull request": "created pull requests",
         "used skill": "used skills",
-        "CI check read from GitHub": "CI checks read from GitHub",
+        "CI check read from GitHub or GitLab": "CI checks read from GitHub or GitLab",
         "launch": "launches",
     }
     return ", ".join(
@@ -4558,7 +4558,7 @@ class RecordedPr:
 
 @dataclass(frozen=True)
 class RecordedCi:
-    """One CI check the press read from GitHub for a pull request, with whether it may settle."""
+    """One CI check the press read from GitHub or GitLab, with whether it may settle."""
 
     id: str
     repository: str
@@ -4800,14 +4800,23 @@ def _verdict_files(reason: str) -> tuple[str, ...]:
     return tuple(path for path in _path_tokens(text, files=True) if _VERDICT_FILE.fullmatch(path))
 
 
-# A pull request the evaluator's prose names: "PR #7", "PR 7", "PR (#7)", "pull request #7", a list
-# of them ("PRs #6 and #7", "PRs #7, #8"), or a `pull/7` path, which may carry the repository
-# before it (owner, 2026-10-23). A bare "#7" is not read: it is as often an issue.
+# A pull request the evaluator's prose names: "PR #7", "PR 7", "PR (#7)", "pull request #7",
+# "MR !7", a list of them ("PRs #6 and #7", "PRs #7, #8"), or a `pull/7` path, which may carry
+# the repository before it (owner, 2026-10-23). A bare "#7" is not read: it is as often an issue.
 _VERDICT_PR_URL = re.compile(
     r"(?:github\.com/(?P<repo>[\w.-]+/[\w.-]+)/pull/|\bpull/)(?P<number>\d+)\b", re.IGNORECASE
 )
 _VERDICT_PR_LIST = re.compile(
-    r"\b(?:PRs?|pull\s+requests?)\s*\(?\s*(?P<list>#?\d+\b(?:\s*(?:,|and|&)\s*#?\d+\b)*)",
+    r"\b(?:PRs?|MRs?|pull\s+requests?|merge\s+requests?)\s*\(?\s*"
+    r"(?P<list>[#!]?\d+\b(?:\s*(?:,|and|&)\s*[#!]?\d+\b)*)",
+    re.IGNORECASE,
+)
+# A GitLab merge request by its URL, which names the host and the project the way `ci_read` stores
+# them, so a verdict that names another project's merge request number does not match this one.
+_VERDICT_MR_URL = re.compile(
+    r"(?<![\w.-])(?:https://)?"
+    r"(?P<repo>(?:[A-Za-z0-9-]{1,63}\.){1,10}[A-Za-z0-9-]{1,63}(?:/[\w.-]{1,100}){2,20})"
+    r"/-/merge_requests/(?P<number>\d+)\b",
     re.IGNORECASE,
 )
 
@@ -4817,6 +4826,9 @@ def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
         ((found["repo"] or "").lower(), int(found["number"]))
         for found in _VERDICT_PR_URL.finditer(reason)
     ]
+    named.extend(
+        (found["repo"].lower(), int(found["number"])) for found in _VERDICT_MR_URL.finditer(reason)
+    )
     named.extend(
         ("", int(number))
         for found in _VERDICT_PR_LIST.finditer(reason)

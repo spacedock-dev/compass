@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2153971,
+    "bytes": 2155307,
     "file": "react.html",
-    "sha256": "28f1c7b64f7cd507b5aca5a1380a6d897a89c55dd6ad7c1bf95374006b204641"
+    "sha256": "d33514d172663c2988aad98ae753e1359b0041500a3e06f774755c32b72bf60d"
   },
   "format": 1,
   "frontend": "react",
@@ -547,7 +547,7 @@
       },
       {
         "file": "frontend/src/drift/CiReadNote.tsx",
-        "sha256": "2ebfb2e149af54653726a4edfd1e5cea1f206ac877e5b4228daad447d97b9e42"
+        "sha256": "88f9d78db0fde64899e763f6d8eb1323849b71e8691e4c129ab59330f6606ab0"
       },
       {
         "file": "frontend/src/drift/CitationLink.tsx",
@@ -643,11 +643,11 @@
       },
       {
         "file": "frontend/src/drift/actions.ts",
-        "sha256": "b68e413b7b3389a7c0928b70312101a8b00fbc6d2c80fea26ef3e209be83e155"
+        "sha256": "4da8fad3b2e02f65e01ee6d4d3d3fbe46eee7ca512d79239cb142d87c0a06fbc"
       },
       {
         "file": "frontend/src/drift/ciRead.ts",
-        "sha256": "d3d5a06b989f09b9dea27a5c9ebe6e4ec0cc63d3d55155d6f4f318f32e81b34f"
+        "sha256": "b44fa78c9ea9763aa1efd426ed3b20df22c6d392103edc1f93f9dacfe9a06dd2"
       },
       {
         "file": "frontend/src/drift/citations.ts",
@@ -699,7 +699,7 @@
       },
       {
         "file": "frontend/src/drift/level.ts",
-        "sha256": "42c0bef00740a0e617be42830e96fafbf6bbbec673a1c5128b23c4ea8773d2fa"
+        "sha256": "a75be506f26961d840144d83cfc6d3c94f3dbd2eb612e484cd99b1628301b030"
       },
       {
         "file": "frontend/src/drift/model.ts",
@@ -723,7 +723,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "6bcafb5b1abb3a97ffb546993c7a0bb91dbc7128726d5f936207ee5ce15461d4"
+        "sha256": "af89f12070917f423d2f5072fb4c5383188c78962e3a955735d18bcec8815b29"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -731,7 +731,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "c9c243e37b988b3503b885c2f77dd24a967c298e4ef3502a931e23d03ca7b412"
+        "sha256": "fcd6267141fb2d11d9a6ebcc388ff42fad8b54f17af6201b905de19f97189901"
       },
       {
         "file": "frontend/src/drift/shape.ts",

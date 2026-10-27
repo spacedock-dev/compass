@@ -17,6 +17,7 @@ import {
   CI_CAUTION,
   CI_ENTRY_RESULT,
   CI_ENTRY_SOURCE,
+  CI_ENTRY_SOURCE_GITLAB,
   CI_ENTRY_WORDS,
   CI_HEAD_MOVED,
   CI_READ_ERRORS,
@@ -75,6 +76,7 @@ interface Vocabulary {
   readonly ciEntryResults: Record<string, string>;
   readonly ciEntryWords: Record<string, string>;
   readonly ciEntrySource: string;
+  readonly ciEntrySourceGitlab: string;
   readonly ciHeadMoved: string;
   readonly ciCaution: string;
   readonly workEvidenceByHarness: Record<string, string[]>;
@@ -154,6 +156,7 @@ describe('the reading vocabulary', () => {
     const opens = (page: string, producer: string): boolean =>
       page.replaceAll('\u2019', "'").toLowerCase().startsWith(producer.toLowerCase());
     expect(opens(CI_ENTRY_SOURCE, vocabulary.ciEntrySource)).toBe(true);
+    expect(opens(CI_ENTRY_SOURCE_GITLAB, vocabulary.ciEntrySourceGitlab)).toBe(true);
     expect(opens(CI_HEAD_MOVED, vocabulary.ciHeadMoved)).toBe(true);
     expect(opens(CI_CAUTION, vocabulary.ciCaution)).toBe(true);
   });

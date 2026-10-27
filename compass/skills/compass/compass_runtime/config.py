@@ -202,11 +202,11 @@ class RuntimeConfig:
     # ruling, and off means no git command runs and
     # both published fields stay `None` — never a confident clean.
     git_probe_enabled: bool
-    # Whether an Analyze press may read a pull request's CI checks from GitHub with `gh`.
+    # Whether an Analyze press may read a pull or merge request's CI checks with `gh` or `glab`.
     # `--no-ci-read` is the off switch
     # [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)  # noqa: E501
-    # rules into the feature; the page has a setting of its own, and either one off means no `gh`
-    # runs.
+    # rules into the feature; the page has a setting of its own, and either one off means neither
+    # `gh` nor `glab` runs.
     ci_read_enabled: bool
     # Whether the focus command may run at all. `--no-focus` is the off switch
     # SECURITY.md's focus section made part of the feature, and off means no

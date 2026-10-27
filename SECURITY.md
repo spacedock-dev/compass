@@ -58,7 +58,7 @@ The posture rests on two invariants:
    exposure. The quota poll carries a vendor token out and quota numbers back, and no session
    content whatever. The pull request CI read, described in Pull request CI reads below, starts
    your own `gh` when you press Analyze and sends GitHub a repository and a pull request number (or a pushed branch's name, where that bound
-   it); it carries no session text. A harness invocation, described in Light harness usage below, can carry
+   it), or your own `glab` and sends a GitLab host you have signed in to a project and a merge request number; it carries no session text. A harness invocation, described in Light harness usage below, can carry
    session-derived text: it is the one pathway by which the operator's own words may leave this
    machine. A nudge to an endpoint the operator supplies, described in Off-machine nudges below,
    carries two counts and nothing that names a session. The observer model and reader-requested
@@ -353,7 +353,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
-| A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, the page's switch beside the notice, and the refusals every press meets first (`--no-observer-model`, Pause model calls, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise |
+| A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, the page's switch beside the notice, and the refusals every press meets first (`--no-observer-model`, Pause model calls, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
 | The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and, only inside an admitted Analyze press that reads a pull request's checks, two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`). Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
@@ -2364,10 +2364,10 @@ reading model with the rest of the entries, so the model's own notice covers the
 
 What runs: `gh pr view` for the head commit before the checks and again after them, so a head that
 moved in between matches nothing, and `gh pr checks` twice, with `--repo github.com/OWNER/REPO`
-always explicit. A pull request read within 30 seconds of the last is not read again. `github.com` is the only host in this build. Nothing runs without a press: not the
+always explicit. A pull request read within 30 seconds of the last is not read again. Nothing runs without a press: not the
 Live monitor, the live estimate, a summary, the unasked lane or `--diagnose`.
 
-The launch keeps these bounds, each pinned by `test_ci_read`:
+The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_read_gitlab` for GitLab:
 
 - The binary is an absolute path resolved against a `PATH` with every relative element removed, as
   the git probe does it, and a missing `gh` is said beside the reading.
@@ -2381,6 +2381,26 @@ The launch keeps these bounds, each pinned by `test_ci_read`:
 - Its output is read as JSON whatever the exit code, since `gh` exits 8 while a check is pending and
   1 while one has failed, then checked against a closed schema. Anything else is one closed error
   token. Its stderr is read only to choose that token and is then dropped.
+- GitLab is read through `glab api`, a fixed GET of the merge request and then of its pipeline's jobs
+  (a hundred a page, ten pages at most, anything past that is unreadable and never a pass), and the
+  merge request again at the end for the head. The project path is a closed pattern, percent-encoded,
+  and the numbers are integers. `GLAB_*`, `OAUTH_TOKEN` and `REMOTE_ALIAS` go with `GITLAB_*` and
+  `GL_*`, so `GITLAB_TOKEN`, which applies to any host a command names, never reaches the child: a reader
+  who signs in to `glab` by that variable alone reads nothing, and one signed in with `glab auth login`
+  reads normally. Before anything is launched Compass reads the host names under `hosts:` in glab's
+  own configuration file (`glab-cli/config.yml` in `XDG_CONFIG_HOME`, else `~/.config`, else
+  `%APPDATA%` on Windows), keeps no value from it, and reads only a host that matches one exactly, over
+  https, as a dotted name that is never an IP literal and carries no port. A host whose block sets
+  `api_protocol` to anything but https, `api_host` to another address, or `skip_tls_verify` on is
+  not read either (those three values are read from the block, and no token). A pipeline counts only when
+  it ran the merge request's head, which is the session's commit; a merged-results pipeline settles
+  nothing. A goal URL that names any
+  other host starts no process and says so beside the reading. Only a goal URL binds a merge request:
+  what Claude Code writes for one is not measured
+  ([the capture note](docs/captures/claude/gitlab-merge-request-read-unmeasured.md)).
+  GitLab has no required-checks list, so a job allowed to fail counts as neither a pass nor a
+  failure, a manual job counts as pending unless it may be skipped, and a pipeline whose own
+  status disagrees with its jobs (a trigger job's child failed) is listed as a check named `pipeline`.
 - To place the session, Compass runs `git rev-parse HEAD` and `git config --get remote.origin.url`
   in the session folder, with the status probe's flags and the same scrubbed `PATH`. It keeps the
   commit and the host and repository the remote names. Any user or token in the URL, and the URL

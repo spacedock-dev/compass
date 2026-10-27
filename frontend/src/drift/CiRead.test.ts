@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ciEntries, ciReadNote } from './ciRead';
+import { ciReadReason } from './sentences';
 import { readingCi, readingShape, type CiRead } from './shape';
 
 const HEAD = 'a'.repeat(40);
@@ -38,6 +39,48 @@ describe('the pull request check read, as the card says it', () => {
     const note = ciReadNote(accepted(), '10:00');
     expect(note.state).toBe('settles');
     expect(note.lines[0]).toBe('Read from GitHub at 10:00: acme/widgets#12, 2 passed, 1 skipped.');
+  });
+
+  it('says the provider and the merge request’s own number sign for a GitLab read', () => {
+    const gitlab = 'gitlab.example.com/acme/widgets';
+    const note = ciReadNote(accepted({ repository: gitlab }), '10:00');
+    expect(note.state).toBe('settles');
+    expect(note.lines[0]).toBe(
+      'Read from GitLab at 10:00: gitlab.example.com/acme/widgets!12, 2 passed, 1 skipped.',
+    );
+    const failed = ciReadNote(accepted({ repository: gitlab, error: 'rate-limited' }), 'x');
+    expect(failed.lines[0]).toBe(
+      'Merge request checks were not read from GitLab: GitLab is rate limiting your glab login.',
+    );
+    const unlisted = ciReadNote(
+      accepted({ repository: gitlab, error: 'host-not-configured' }),
+      'x',
+    );
+    expect(unlisted.lines[0]).toContain('does not name that GitLab host');
+  });
+
+  it('names glab, never gh, when a GitLab read comes back in a shape Compass does not read', () => {
+    expect(ciReadReason('unreadable-output', 'GitLab')).toContain('glab');
+    expect(ciReadReason('unreadable-output', 'GitLab')).not.toMatch(/\bgh\b/);
+    for (const token of [
+      'pull-request-not-found',
+      'rate-limited',
+      'timeout',
+      'unreadable-output',
+    ]) {
+      expect(ciReadReason(token, 'GitLab')).not.toMatch(/\bgh\b/);
+    }
+  });
+
+  it('rebuilds a GitLab read’s entries as GitLab words, so a cited job resolves', () => {
+    const [first] = ciEntries(
+      accepted({ repository: 'gitlab.example.com/acme/widgets' }),
+      'claude',
+      's1',
+    );
+    expect(first?.by).toBe('gitlab');
+    expect(first?.source).toBe('GitLab merge request pipeline job, read by Compass · recorded');
+    expect(first?.id).toBe('ci:12:0');
   });
 
   it.each([

@@ -1731,6 +1731,7 @@ def vocabulary() -> dict[str, Any]:
         "ciEntryResults": dict(runtime_ci_read._RESULT),  # noqa: SLF001 - the producer's own words
         "ciEntryWords": dict(runtime_ci_read._WORDS),  # noqa: SLF001
         "ciEntrySource": runtime_ci_read.SOURCE_TEXT,
+        "ciEntrySourceGitlab": runtime_ci_read.SOURCE_TEXT_GITLAB,
         "ciHeadMoved": runtime_ci_read.HEAD_MOVED_TEXT,
         "ciCaution": runtime_ci_read.CAUTION_TEXT,
         "workEvidenceByHarness": {

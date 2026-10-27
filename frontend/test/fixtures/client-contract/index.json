@@ -512,7 +512,7 @@
       "method": "POST",
       "name": "reading-destination-changed",
       "route": "/api/reading",
-      "sha256": "84a9242c14c7a21c1e1d0ef535b793259a9c6f4b14e2cfb29c46e09f9e4cc79c",
+      "sha256": "347b60d592fb61a88a933948d3167fef108249781c453bf0a0101e9572177229",
       "status": 409
     },
     {
@@ -547,7 +547,7 @@
       "method": "POST",
       "name": "reading-off",
       "route": "/api/reading",
-      "sha256": "48ba8f6a1a0baeec7abba3cebd964859751c1224157e63ab687c667ccfea6bed",
+      "sha256": "490cedd8974ca16779d295f199939bd3587bf3d6d95a58d0f43aad28498b24d8",
       "status": 403
     },
     {
@@ -561,7 +561,7 @@
       "method": "POST",
       "name": "reading-provider-changed",
       "route": "/api/reading",
-      "sha256": "607d4eb943809fcf669cfb7b09cd6136a1a99ab9fd9304a450ad63ddafb7547c",
+      "sha256": "b28047a1f2ef893db74d280f55c2bf2dd603b921d1e788f827cc1b8deb3ce128",
       "status": 409
     },
     {
@@ -575,7 +575,7 @@
       "method": "POST",
       "name": "reading-stale-model",
       "route": "/api/reading",
-      "sha256": "58d3e13423827879e137d8bc66df89cf6d6cfce5ad8613952e64d6ee79d28cd8",
+      "sha256": "71f21000f126e821ea43ff61cce5cb66434bd85f21786d48b792d7ba1f17b755",
       "status": 409
     },
     {

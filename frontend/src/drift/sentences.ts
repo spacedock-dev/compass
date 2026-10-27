@@ -216,11 +216,36 @@ export const CI_READ_ERRORS: Readonly<Record<string, string>> = {
   timeout: 'GitHub did not answer in time',
   'unreadable-output': 'gh answered in a shape Compass does not read',
   'gh-failed': 'gh failed',
+  'glab-missing': 'the glab command was not found on this machine',
+  'glab-signed-out': 'glab is not signed in, so run glab auth login to let Compass read them',
+  'glab-failed': 'glab failed',
+  'host-not-configured': 'glab’s own configuration does not name that GitLab host',
 };
+/* The three tokens both providers share, worded for GitLab. */
+const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
+  'pull-request-not-found': 'GitLab does not show that merge request to your glab login',
+  'rate-limited': 'GitLab is rate limiting your glab login',
+  timeout: 'GitLab did not answer in time',
+  'unreadable-output': 'glab answered in a shape Compass does not read',
+};
+export type CiProvider = 'GitHub' | 'GitLab';
+/* Which provider a stored repository names. A GitLab one is stored as `host/group/project`, and no GitHub
+   owner holds a dot (`ci_read.host_of`). */
+export const ciProvider = (repository: string): CiProvider =>
+  repository.split('/')[0]?.includes('.') ? 'GitLab' : 'GitHub';
+export const ciReadReason = (token: string, provider: CiProvider): string =>
+  (provider === 'GitLab' ? CI_READ_ERRORS_GITLAB[token] : undefined) ??
+  CI_READ_ERRORS[token] ??
+  token;
+/* The merge request GitLab numbers with a bang, and a pull request GitHub numbers with a hash. */
+export const ciRequestName = (repository: string, number: number): string =>
+  `${repository}${ciProvider(repository) === 'GitLab' ? '!' : '#'}${String(number)}`;
 export const CI_READ_LABEL = 'Pull request checks';
 /* The entry a stored CI check is, as the producer's fact words it (`ci_read.facts`), so a citation of one
    resolves on this page as it did when the reading was made. */
 export const CI_ENTRY_SOURCE = 'GitHub pull request check, read by Compass · recorded';
+export const CI_ENTRY_SOURCE_GITLAB =
+  'GitLab merge request pipeline job, read by Compass · recorded';
 export const CI_ENTRY_WORDS: Readonly<Record<string, string>> = {
   pass: 'passed on the pull request',
   fail: 'failed on the pull request',
@@ -236,6 +261,7 @@ export const CI_ENTRY_RESULT: Readonly<Record<string, string>> = {
   cancel: 'cancelled',
 };
 export const CI_ENTRY_KIND = 'GitHub check';
+export const ciEntryKind = (by: string): string => (by === 'gitlab' ? 'GitLab job' : CI_ENTRY_KIND);
 export const CI_BUCKET_WORDS: Readonly<Record<string, string>> = {
   pass: 'passed',
   fail: 'failed',
@@ -243,10 +269,14 @@ export const CI_BUCKET_WORDS: Readonly<Record<string, string>> = {
   skipping: 'skipped',
   cancel: 'cancelled',
 };
-export const ciReadFailed = (reason: string): string =>
-  `Pull request checks were not read from GitHub: ${reason}.`;
-export const ciReadFrom = (at: string, pr: string, counts: string): string =>
-  `Read from GitHub at ${at}: ${pr}, ${counts}.`;
+export const ciReadFailed = (reason: string, provider: CiProvider = 'GitHub'): string =>
+  `${provider === 'GitLab' ? 'Merge request' : 'Pull request'} checks were not read from ${provider}: ${reason}.`;
+export const ciReadFrom = (
+  at: string,
+  pr: string,
+  counts: string,
+  provider: CiProvider = 'GitHub',
+): string => `Read from ${provider} at ${at}: ${pr}, ${counts}.`;
 export const CI_NO_CHECKS = 'no checks reported';
 export const CI_SETTLES = 'Every check that counts passed on this session’s commit.';
 export const CI_FAILING = 'A failing check on this session’s commit counts against the work.';
@@ -261,10 +291,10 @@ export const CI_CAUTION = 'This session changed the CI configuration.';
 export const CI_REQUIRED_ONLY = 'Only the checks GitHub requires are counted.';
 /* The switch beside the notice. `flag-off` is the run's own `--no-ci-read`, which the page cannot lift. */
 export const CI_SWITCH_ON =
-  'Pull request checks are read from GitHub with your gh login when you press Analyze.';
-export const CI_SWITCH_OFF = 'Pull request checks are not read from GitHub.';
+  'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Analyze.';
+export const CI_SWITCH_OFF = 'Pull request checks are not read from GitHub or GitLab.';
 export const CI_SWITCH_FLAG =
-  'Pull request checks are not read from GitHub for this run (--no-ci-read).';
+  'Pull request checks are not read from GitHub or GitLab for this run (--no-ci-read).';
 export const CI_SWITCH_FAILED = 'Could not save that. Try again.';
 
 /* "the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict":

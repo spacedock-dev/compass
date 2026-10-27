@@ -40,7 +40,7 @@ export function CiReadSwitch() {
       {state === 'flag-off' ? null : (
         <ActionButton
           weight="secondary"
-          label={on ? 'Turn off the GitHub read' : 'Turn on the GitHub read'}
+          label={on ? 'Turn off the pull request read' : 'Turn on the pull request read'}
           busyLabel="Saving…"
           pendingKey={`ci-read:${model.key}`}
           action={on ? 'ci-read-off' : 'ci-read-on'}

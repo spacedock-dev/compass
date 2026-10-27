@@ -173,8 +173,9 @@ Dashboard assets, including the optional terminal's vendored xterm files, need n
 A third outbound pathway starts your own `gh` when you press
 Analyze drift on a session tied to a pull request, sends GitHub the repository and the number (or, where a pushed
 branch bound it, the repository and that branch's name), and
-reads that pull request's checks; `--no-ci-read` and a switch beside the notice turn it off. A fourth sends
-counts-only nudges to an operator-supplied endpoint. It stays off
+reads that pull request's checks. On GitLab it starts your own `glab` the same way for a merge request
+your goal names by its URL, on a host `glab` already knows. `--no-ci-read` and a switch beside the notice turn it off.
+A fourth sends counts-only nudges to an operator-supplied endpoint. It stays off
 until you configure a URL, and `--no-reach` disables it. See
 [SECURITY.md](SECURITY.md#scope) for all four, and before you use `--host`; its [model-call policy](SECURITY.md#observer-model-calls)
 owns the disclosures and bounds.

@@ -378,7 +378,7 @@ export async function ciReadAnswer(
   const { intent, shell } = ctx;
   const key = identity ? compatSessKey(identity) : '';
   const control = `ci-read:${key}`;
-  const press = pendingStart(intent, control, 'Saving…', 'Saving the GitHub read setting.');
+  const press = pendingStart(intent, control, 'Saving…', 'Saving the pull request read setting.');
   if (!press) return;
   intent.held.notify();
   try {
