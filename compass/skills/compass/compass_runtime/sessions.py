@@ -251,6 +251,20 @@ def project_root(cwd: str) -> str | None:
     return _git_identity_root(canonical) or canonical
 
 
+def checkout_root(cwd: str) -> str | None:
+    """The toplevel of the checkout holding a measured working directory.
+
+    Unlike `project_root`, a linked worktree is its own root here: a relative script runs from
+    the checkout it sits in, and the main checkout's copy is a different file.
+    """
+    if not cwd or not os.path.isabs(cwd):
+        return None
+    canonical = os.path.realpath(cwd)
+    if not os.path.isdir(canonical):
+        return None
+    return _git_checkout(canonical)[0] or canonical
+
+
 def project_identity(config: RuntimeConfig, cwd: str) -> dict[str, str]:
     """Stable local project key and basename from a measured working directory.
 

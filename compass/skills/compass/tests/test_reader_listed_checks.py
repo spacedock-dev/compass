@@ -8,6 +8,8 @@ Every project, command and path here is synthetic.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -346,6 +348,34 @@ class AListedScriptThePathNamesNeedsTheProjectRootAndAnUntouchedFile(ReaderCheck
         self.list_checks({str(self.cwd): [self.SCRIPT]})
         self.session.bash(f"cd {self.root / 'elsewhere'} && {self.SCRIPT}", "ok")
         self.assertEqual([], self.titles())
+
+    def test_a_script_run_from_a_linked_worktree_root_counts(self) -> None:
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "x",
+            "GIT_AUTHOR_EMAIL": "x@x",
+            "GIT_COMMITTER_NAME": "x",
+            "GIT_COMMITTER_EMAIL": "x@x",
+        }
+        repo = self.root / "wtrepo"
+        repo.mkdir()
+        worktree = self.root / "wtree"
+        for args, where in (
+            (["init", "-q"], repo),
+            (["commit", "-q", "--allow-empty", "-m", "i"], repo),
+            (["worktree", "add", "-q", str(worktree)], repo),
+        ):
+            subprocess.run(
+                ["/usr/bin/git", *args], cwd=where, check=True, capture_output=True, env=env
+            )
+        for label, began in (("main", repo), ("worktree", worktree), ("subdir", worktree / "pkg")):
+            with self.subTest(began=label):
+                (worktree / "pkg").mkdir(exist_ok=True)
+                self.session = type(self.session)(began)
+                self.session.prompt("go")
+                self.list_checks({str(repo): [self.SCRIPT]})
+                self.session.bash(self.SCRIPT, "ok")
+                self.assertEqual([] if label == "subdir" else [self.SCRIPT], self.titles())
 
     def test_a_program_on_the_path_still_counts_from_any_folder(self) -> None:
         self.list_checks()

@@ -5655,7 +5655,7 @@ def _declared_scripts(
     if loaded is None:
         loaded = project_scripts.Declarations("", "", {}, {}, {})
     if listed:
-        root = runtime_sessions.project_root(began_in)
+        root = runtime_sessions.checkout_root(began_in)
         loaded = dataclasses.replace(
             loaded,
             listed=listed,
