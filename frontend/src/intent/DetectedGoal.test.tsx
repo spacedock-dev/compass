@@ -155,8 +155,19 @@ describe('a /goal over a session with no saved goal', () => {
     expect(source()).toMatch(/· saved$/);
   });
 
-  it('reads no goal into a session that is not a Claude Code session', async () => {
-    const page = mountSession({ session: { harness: 'codex', session_goal: DETECTED } });
+  it('reads a Codex /goal the same way', async () => {
+    const page = mountSession({
+      hash: '#n=session:alpha%2Fapp:codex:s1',
+      session: { harness: 'codex', session_goal: DETECTED },
+    });
+    await settle(page);
+    expect(goalBox().value).toBe(GOAL);
+    expect(mark()?.textContent).toBe('Goal detected');
+    expect(source()).toMatch(/^From your \/goal at \d\d:\d\d · not saved$/);
+  });
+
+  it('reads no goal into a session whose harness publishes none', async () => {
+    const page = mountSession({ session: { harness: 'pi', session_goal: DETECTED } });
     await settle(page);
     expect(mark()).toBeNull();
   });

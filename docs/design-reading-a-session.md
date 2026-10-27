@@ -5680,6 +5680,34 @@ neither writes a goal record.
   publishing the earlier goal's words. A replaced goal's text is not the reader's to be shown a second time,
   and nothing needs it.
 
+### What reading a Codex `/goal` decided, 2026-10-27
+
+Built against `docs/captures/codex/goal-0.164.0-macos.jsonl`. Codex 0.164.0 has a `/goal` with edit,
+pause, resume and clear, and the reader typed it, so it is the same source as a Claude Code `/goal`: the
+same `session_goal` field, the same `session-goal` adoption token, and the same page.
+
+- The set is the `thread_goal_updated` event, not the `user.goal` message beside it. The message is Codex's
+  restatement and drops any objective of 699 characters or more; the event keeps it whole to 4,000. The time
+  is the goal's `createdAt`, so an edit (which keeps it) is the same goal in new words and says nothing about
+  an earlier goal, while a pause and a resume change nothing the row publishes.
+- A goal the model creates with `create_goal`, including every `codex exec "/goal ..."`, writes no event and
+  is not read: its objective is the model's wording, not the reader's.
+- A clear is the `User cleared the goal.` line and counts only over a held goal. Codex writes the same line
+  for a clear with no goal and before every goal set over a completed one (20 of 20 measured), so on its own
+  it does not mean a reader dropped a goal. A replace writes that line and then the new set, so a Codex goal
+  never carries `earlier: replaced`.
+- An objective over 4,000 characters is stored as "Read the Codex goal objective file at ...". That sentence
+  is the harness's, and it publishes nothing.
+- The `<codex_internal_context>` wrapper joins the Codex injected-tag list. All 83 leading occurrences
+  measured on one machine were Codex's own (55 goal actions, 27 goal continuation instructions, 1 daemon
+  recovery notice); before this they were read as the reader's prompts, and a goal-only session drafted
+  "User set the goal: ..." as its goal.
+- A Codex session started with `/goal` and never prompted since has no prompt to name it, so its goal does.
+- Rejected for now: reading `~/.codex/goals_1.sqlite` for the met state. Completion never reaches the rollout
+  (21 of 21 measured), and the working model marks its own goal complete, so a met state there is a weaker
+  claim than Claude Code's separate evaluator. Reading it means a new file outside the rollout, which needs
+  its own entry in `SECURITY.md`; it is left for a later change rather than folded into this one.
+
 ### The starting definitions
 
 These are what DRC-4692 validates, not a measured result. Medium: a pass is followed by writes, or

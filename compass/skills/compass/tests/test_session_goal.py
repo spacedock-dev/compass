@@ -798,8 +798,12 @@ class TheGoalIsAdoptableTest(unittest.TestCase):
         row = {"harness": "claude", "session_goal": None}
         self.assertEqual(("", None), annotation_store.prompt_candidate(row, "session-goal"))
 
-    def test_another_harness_never_resolves_one(self) -> None:
+    def test_a_codex_row_resolves_its_goal_the_same_way(self) -> None:
         row = {**self.ROW, "harness": "codex"}
+        self.assertEqual((CONDITION, 10.0), annotation_store.prompt_candidate(row, "session-goal"))
+
+    def test_a_harness_that_publishes_no_goal_never_resolves_one(self) -> None:
+        row = {**self.ROW, "harness": "pi"}
         self.assertEqual(("", None), annotation_store.prompt_candidate(row, "session-goal"))
 
     def test_a_malformed_row_value_resolves_to_nothing(self) -> None:

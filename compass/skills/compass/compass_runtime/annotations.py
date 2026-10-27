@@ -2915,7 +2915,7 @@ def prompt_candidate(row: dict[str, Any], source: str) -> tuple[str, float | Non
         text, at = instruction.get("text"), instruction.get("at")
     elif source == "latest-prompt" and row.get("prompt_states_work") is True:
         text, at = row.get("title"), row.get("prompt_at")
-    elif source == reading.SESSION_GOAL and harness == "claude":
+    elif source == reading.SESSION_GOAL and harness in records.SESSION_GOAL_HARNESSES:
         goal = records.as_dict(row.get("session_goal"))
         # The excerpt where the goal is longer than the Goal field holds, so the words the page
         # offers, the words an adoption names and the words the store keeps are one string.

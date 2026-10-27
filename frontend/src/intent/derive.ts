@@ -8,6 +8,7 @@ import {
   PROMPT_CHOSEN,
   PROMPT_SOURCES,
   SESSION_GOAL,
+  SESSION_GOAL_HARNESSES,
   sessionGoalCandidate,
   type PromptCandidate,
 } from '../sessions/intent';
@@ -443,7 +444,11 @@ const EARLIER_GOAL: Readonly<Record<string, (clock: string) => string>> = {
 };
 
 function goalClearedAt(session: Row): number | null {
-  if (session['harness'] !== 'claude' || isRecord(session['session_goal'])) return null;
+  if (
+    !SESSION_GOAL_HARNESSES.includes(String(session['harness'])) ||
+    isRecord(session['session_goal'])
+  )
+    return null;
   const cleared = session['session_goal_cleared'];
   return isRecord(cleared) ? firstMoment(cleared['at']) : null;
 }

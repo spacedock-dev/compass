@@ -20,6 +20,9 @@ GOAL_SOURCE_CUT_FIELD: Final = "goal_source_cut"
 # mirrors them (`vocabulary.json`). `typed`, the fallback, is not one of them.
 PROMPT_CHOSEN: Final = "chosen-prompt"
 SESSION_GOAL: Final = "session-goal"
+# The harnesses whose rows publish `session_goal`: Claude Code and Codex record a `/goal` the
+# reader set; no other harness writes one Compass reads. The page holds the same pair.
+SESSION_GOAL_HARNESSES: Final = ("claude", "codex")
 PROMPT_SOURCES: Final = ("latest-prompt", "first-prompt", PROMPT_CHOSEN, SESSION_GOAL)
 
 # C0 and DEL, the zero-width space, the two directional marks, and the bidi
@@ -1204,6 +1207,11 @@ _CODEX_USER_TAGS = frozenset(
         "bash-stdout",  # 14
         "user_shell_command",  # 5
         "turn_aborted",  # 3 here, and 52 leading a developer-role record
+        # 83 over a later local corpus (codex-cli 0.149 to 0.164), every one written by Codex:
+        # 55 `source="user_goal"` lines restating a `/goal` action, 27 `source="goal"` goal
+        # continuation instructions, 1 `source="daemon_recovery"`. The goal itself is published
+        # as `session_goal` (`claude_data._codex_goal_event`).
+        "codex_internal_context",
     }
 )
 

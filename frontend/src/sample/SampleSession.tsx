@@ -44,7 +44,8 @@ function Banner() {
           <li>Open a session from Sessions.</li>
           <li>
             Set its goal: type what should be true when the work is done, use one of your prompts,
-            press Find goal, or let Compass pick up a goal you set with /goal in Claude Code.
+            press Find goal, or let Compass pick up a goal you set with /goal in Claude Code or
+            Codex.
           </li>
           <li>Press Analyze drift.</li>
           <li>

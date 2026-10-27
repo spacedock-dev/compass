@@ -411,6 +411,58 @@ def _goal_event(record: Any) -> GoalEvent | None:
     return ("cleared", "", at, "") if printed.startswith("Goal cleared") else None
 
 
+# What Codex 0.164.0 stores as the objective of a goal over 4,000 characters, the words moved to an
+# attachment file. The sentence is the harness's, not the reader's goal, and the file is not read.
+CODEX_GOAL_FILE_POINTER = "Read the Codex goal objective file at "
+CODEX_GOAL_CLEARED = "User cleared the goal."
+
+
+def _codex_goal_event(record: Any) -> GoalEvent | None:
+    """One goal-relevant Codex rollout record as `(kind, objective, at, "")`, or None.
+
+    `set` is a `thread_goal_updated` event, which Codex writes for a set, an edit, a pause, a
+    resume and the new goal of a replace, and never for a completion or for a goal the model
+    creates itself. It is timed by the goal's own `createdAt`, which an edit keeps. `dropped` is
+    the `user.goal` message saying `User cleared the goal.`; Codex also writes that for a clear
+    with no goal and before every goal set over a completed one, so it ends only a goal the read
+    holds. Completion reaches only `goals_1.sqlite`, so no verdict is read here. Shapes:
+    docs/captures/codex/goal-0.164.0-macos.jsonl.
+    """
+    if not isinstance(record, dict) or not isinstance(record.get("payload"), dict):
+        return None
+    payload = record["payload"]
+    if record.get("type") == "event_msg" and payload.get("type") == "thread_goal_updated":
+        return _codex_goal_set(payload.get("goal"))
+    if (
+        record.get("type") == "response_item"
+        and payload.get("type") == "message"
+        and payload.get("role") == "user"
+        and _codex_goal_cleared(payload)
+    ):
+        return ("dropped", "", records.parse_ts(record.get("timestamp") or ""), "")
+    return None
+
+
+def _codex_goal_set(goal: Any) -> GoalEvent | None:
+    if not isinstance(goal, dict):
+        return None
+    created, objective = goal.get("createdAt"), goal.get("objective")
+    if isinstance(created, bool) or not isinstance(created, (int, float)) or created <= 0:
+        return None
+    text = objective if isinstance(objective, str) else ""
+    if text.startswith(CODEX_GOAL_FILE_POINTER):
+        text = ""
+    return ("set", text, float(created), "")
+
+
+def _codex_goal_cleared(payload: dict[str, Any]) -> bool:
+    meta = payload.get("internal_chat_message_metadata_passthrough")
+    kinds = meta.get("content_item_kinds") if isinstance(meta, dict) else None
+    if not isinstance(kinds, list) or "user.goal" not in kinds:
+        return False
+    return CODEX_GOAL_CLEARED in records.extract_text(payload.get("content")).splitlines()
+
+
 def _goal_words(condition: str) -> str:
     """The condition as the one masked line a row publishes, or "" if it cannot be held whole."""
     if not condition.strip() or len(condition) > GOAL_CAP_CHARS:
@@ -468,6 +520,8 @@ def _advance_goal(state: GoalState, event: GoalEvent) -> GoalState:
     kind, condition, at, reason = event
     if kind == "cleared":
         return _after_clear(state, at)
+    if kind == "dropped":
+        return _after_clear(state, at) if state["goal"] is not None else state
     words = _goal_words(condition)
     if kind == "set":
         return _after_set(state, words, at)
@@ -490,6 +544,12 @@ def _after_set(state: GoalState, words: str, at: float | None) -> GoalState:
         return _empty_goal_state()
     if goal is not None and goal["text"] == words and goal["at"] == at:
         return state
+    if goal is not None and goal["at"] == at:
+        # A Codex edit rewrites the objective and keeps `createdAt`: the same goal in new words, so
+        # it keeps how the earlier one ended and loses a verdict given on the old words. Claude
+        # Code stamps each set when it runs, so no two of its sets share an instant.
+        kept = {key: value for key, value in goal.items() if key != "verdict"}
+        return {**state, "goal": {**kept, "text": words}}
     held: dict[str, Any] = {"text": words, "at": at}
     earlier = _earlier_goal(state, at)
     if earlier is not None:
@@ -516,8 +576,13 @@ def _after_verdict(state: GoalState, words: str, at: float | None, reason: str) 
     return {**state, "goal": {**goal, "verdict": verdict}}
 
 
-def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any] | None:
-    """The `/goal` this Claude session holds, `{"text", "at"}`, or None.
+def session_goal(
+    config: RuntimeConfig, state: RuntimeState, path: str, harness: str = "claude"
+) -> dict[str, Any] | None:
+    """The `/goal` this Claude or Codex session holds, `{"text", "at"}`, or None.
+
+    `harness` picks the record reader (`_goal_event` or `_codex_goal_event`); the state the two
+    advance, the cache and the published mapping are shared. A Codex goal carries no verdict.
 
     Read forward and incrementally, as `turns.scan_turns` is: each call parses only the bytes
     appended since the last, because the newest goal can sit anywhere in a long file and a
@@ -537,6 +602,7 @@ def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[
     except OSError:
         return None
     key = f"session-goal:{path}"
+    read_event = _codex_goal_event if harness == "codex" else _goal_event
     with state.cache_lock:
         cached = state.metadata_cache.get(key)
     if (
@@ -572,7 +638,7 @@ def session_goal(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[
                 if b"goal" not in raw or not raw.startswith(b"{"):
                     continue
                 try:
-                    event = _goal_event(json.loads(raw))
+                    event = read_event(json.loads(raw))
                 except (ValueError, RecursionError):
                     continue
                 if event is not None:

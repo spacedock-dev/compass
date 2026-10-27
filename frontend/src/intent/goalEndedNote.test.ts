@@ -109,6 +109,13 @@ describe('goalEndedNote over a cleared /goal and a prompt draft', () => {
     );
   });
 
+  it('says a Codex clear the same way', () => {
+    const input = plain({ harness: 'codex' });
+    expect(goalEndedNote(input)).toMatch(
+      /^Your \/goal was cleared at (\d{4}-\d{2}-\d{2} )?\d\d:\d\d$/,
+    );
+  });
+
   it('says nothing about a draft where there is none', () => {
     const input = plain({ first_prompt: '', first_prompt_at: null });
     expect(goalEndedNote(input)).toMatch(

@@ -334,7 +334,7 @@ class InjectedPromptTest(unittest.TestCase):
         shape and nothing fails. These figures are the vocabulary itself, so a
         tag that goes missing or an unmeasured one that creeps in is caught.
         """
-        self.assertEqual(11, len(records._CODEX_USER_TAGS))
+        self.assertEqual(12, len(records._CODEX_USER_TAGS))
         self.assertEqual(7, len(records._CODEX_DEVELOPER_TAGS))
         self.assertEqual(9, len(records._CLAUDE_USER_TAGS))
         self.assertEqual(
@@ -347,7 +347,13 @@ class InjectedPromptTest(unittest.TestCase):
             },
             (records._CODEX_USER_TAGS | records._CODEX_DEVELOPER_TAGS) & records._CLAUDE_USER_TAGS,
         )
-        for tag in ("recommended_plugins", "skill", "subagent_notification", "user_shell_command"):
+        for tag in (
+            "recommended_plugins",
+            "skill",
+            "subagent_notification",
+            "user_shell_command",
+            "codex_internal_context",
+        ):
             self.assertIn(tag, records._CODEX_USER_TAGS)
         for tag in ("permissions", "multi_agent_mode", "collaboration_mode"):
             self.assertIn(tag, records._CODEX_DEVELOPER_TAGS)

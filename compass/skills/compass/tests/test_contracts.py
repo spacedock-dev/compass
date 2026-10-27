@@ -1503,7 +1503,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.state",
             "compass_runtime.transcripts",
         },
+        # `claude_data` for `session_goal`: a Codex `/goal` advances the same goal state the
+        # Claude reader keeps, read by a Codex record reader beside it.
         "compass_runtime.collectors.codex": {
+            "compass_runtime.claude_data",
             "compass_runtime.spacedock",
             "compass_runtime.config",
             "compass_runtime.io",

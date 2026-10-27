@@ -11,7 +11,8 @@ import { createShell } from '../src/shell/createShell';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 
-const SESSION_ROUTE = '#n=session:alpha%2Fapp:claude:s1';
+/* The session route for the harness a story's session names, Claude Code unless it says otherwise. */
+const sessionRoute = (harness: string) => `#n=session:alpha%2Fapp:${harness}:s1`;
 /* The reader's latest message in the stories that move a reading's start, after the start they open at. */
 const LATEST_MESSAGE = 1_760_000_700;
 const FIRST_START = 1_760_000_200;
@@ -49,7 +50,13 @@ function buildPayload(
       record:
         'What you asked of this session was discarded, along with any reading of it. None of it is kept here: this record says only that the act happened and when.',
     },
-    projects: [{ project: 'alpha/app', project_key: '/repo/alpha', sessions: ['claude:s1'] }],
+    projects: [
+      {
+        project: 'alpha/app',
+        project_key: '/repo/alpha',
+        sessions: [`${String(sessionOverrides['harness'] ?? 'claude')}:s1`],
+      },
+    ],
     sessions: [
       {
         harness: 'claude',
@@ -83,7 +90,9 @@ function buildPayload(
 function IntentCardHarness({ setup }: { readonly setup?: CardSetup }) {
   const [shell] = useState(() => {
     const clock = createFakeClock();
-    const history = fakeRouterEnvironment(SESSION_ROUTE);
+    const history = fakeRouterEnvironment(
+      sessionRoute(String(setup?.session?.['harness'] ?? 'claude')),
+    );
     let generation = 1_760_001_000;
     let currentSession: Record<string, unknown> = { ...(setup?.session ?? {}) };
     const prompts = setup?.prompts ?? [
@@ -1126,6 +1135,24 @@ export const StateGoalDetected: Story = {
     await userEvent.type(view.getByRole('textbox', { name: 'Goal' }), ', and the report is linked');
     await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
     await expect(goalSource(card)).toBe('Your edit of your /goal · not saved');
+  },
+};
+
+/* A Codex session's /goal reads exactly as a Claude Code one. */
+export const StateGoalDetectedCodex: Story = {
+  args: {
+    setup: {
+      session: { harness: 'codex', session_goal: { text: DETECTED_GOAL, at: 1_760_000_300 } },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
+    await expect(card.querySelector('[data-next-goal-detected]')).toHaveTextContent(
+      'Goal detected',
+    );
+    await expect(goalSource(card)).toBe(`From your /goal at ${clock(1_760_000_300)} · not saved`);
   },
 };
 

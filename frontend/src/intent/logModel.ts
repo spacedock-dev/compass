@@ -152,7 +152,7 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   } else {
     line('Cached deterministic goal', 'No cached deterministic goal available.');
   }
-  /* A Claude Code /goal is a fourth place a goal can live, so a session that states one never reads as
+  /* A /goal is a fourth place a goal can live, so a session that states one never reads as
      goal-less: the sentence below is scoped to the sources listed, and a reader takes it for the session. */
   if (statedGoal) line('Goal stated with /goal', statedGoal);
   if (payload['spacedock_enabled'] === false)

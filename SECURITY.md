@@ -3406,6 +3406,19 @@ refuses the reading whole. The verdict never lowers a drift level and never coun
 reason that names nothing the record can show is "unconfirmed", never "disputed", because a capped listing
 cannot prove absence.
 
+A Codex session that states a goal with `/goal` has it read from the rollout's own records the same way, into
+the same `session_goal`, `{text, at}`, with the same masking, the same 4,000-character bound, the same excerpt
+keys and the same 8 MiB forward read. The goal is the objective a `thread_goal_updated` event carries, timed by
+the goal's own `createdAt`; Codex writes that event for a set, an edit, a pause and a resume, never for a goal
+the model creates itself, so a goal the model wrote is never published as the reader's. A clear is the
+`User cleared the goal.` line Codex writes in its own `<codex_internal_context>` wrapper, published as
+`session_goal_cleared` only when a goal was held, because Codex writes the same line for a clear with no goal
+and before every new goal. An objective over 4,000 characters is stored by Codex as a sentence naming a file
+it wrote the words to; that sentence publishes nothing, and the file is not read. Codex reports a goal met
+only in `~/.codex/goals_1.sqlite`, which Compass does not read, so a Codex goal carries no `verdict` and no
+give-up. The `<codex_internal_context>` messages are Codex's own wording and are never read as a prompt the
+reader typed.
+
 The revision number beside them, `annotation_revision`, is in the record and not on this list. It
 is an integer the board derives, not text anybody typed.
 

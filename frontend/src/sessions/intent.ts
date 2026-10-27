@@ -11,9 +11,12 @@ import { isRecord, promptCopied, type Row } from '../observed';
 /* The closed goal-source tokens an adopted goal carries, spelt as the server's `reading.PROMPT_SOURCES`
    spells them; the legacy page's test compares the two. */
 export const PROMPT_CHOSEN = 'chosen-prompt';
-/* The goal a Claude Code session states itself with `/goal`: the reader typed that command, so it reads
-   as their prompt (the same tags, the same baseline at its own time). It is the server's `reading.SESSION_GOAL`. */
+/* The goal a Claude Code or Codex session states itself with `/goal`: the reader typed that command, so it
+   reads as their prompt (the same tags, the same baseline at its own time). It is the server's
+   `reading.SESSION_GOAL`. */
 export const SESSION_GOAL = 'session-goal';
+/* The harnesses whose rows publish `session_goal`, as the server's `records.SESSION_GOAL_HARNESSES`. */
+export const SESSION_GOAL_HARNESSES: readonly string[] = ['claude', 'codex'];
 export const PROMPT_SOURCES: readonly string[] = [
   'latest-prompt',
   'first-prompt',
@@ -112,12 +115,12 @@ export interface SessionGoalCandidate extends PromptCandidate {
   readonly cut: boolean;
 }
 
-/* The goal a Claude Code session set with `/goal`, as the Goal field can hold it: the server's excerpt where
+/* The goal a Claude Code or Codex session set with `/goal`, as the Goal field can hold it: the server's excerpt where
    the condition is longer than the field (`cut`), so the page, an adoption and the store agree on the words
    and none clips on its own. Null for another harness, no goal, or one with no moment, which an adoption
    refuses. */
 export function sessionGoalCandidate(session: Row | null | undefined): SessionGoalCandidate | null {
-  if (!session || session['harness'] !== 'claude') return null;
+  if (!session || !SESSION_GOAL_HARNESSES.includes(String(session['harness']))) return null;
   const stated = session['session_goal'];
   if (!isRecord(stated)) return null;
   const cut = stated['cut'] === true && typeof stated['offered'] === 'string';
