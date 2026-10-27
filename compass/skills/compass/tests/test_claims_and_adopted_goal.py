@@ -771,6 +771,7 @@ class EachCheckHasOneToolFamilyTest(unittest.TestCase):
             "uv run pytest tests": "pytest",
             "rtk pytest": "pytest",
             "rtk proxy pytest": "pytest",
+            "rtk bypass pytest": "pytest",
             "npx tsc --noEmit": "tsc",
             "bunx tsc": "tsc",
             "poetry run pytest": "pytest",

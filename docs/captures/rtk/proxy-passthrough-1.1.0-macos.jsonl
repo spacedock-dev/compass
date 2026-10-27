@@ -2,3 +2,6 @@
 {"harness": "rtk", "kind": "arm", "arm": "proxy_sh_summary_then_exit_1", "argv": ["rtk", "proxy", "sh", "-c", "echo '14 passed in 1.0s'; exit 1"], "stdout": "14 passed in 1.0s\n", "stderr": "", "exit": 1}
 {"harness": "rtk", "kind": "arm", "arm": "proxy_false", "argv": ["rtk", "proxy", "false"], "stdout": "", "stderr": "", "exit": 1}
 {"harness": "rtk", "kind": "arm", "arm": "proxy_sh_exit_0", "argv": ["rtk", "proxy", "sh", "-c", "echo '14 passed in 1.0s'; exit 0"], "stdout": "14 passed in 1.0s\n", "stderr": "", "exit": 0}
+{"harness": "rtk", "kind": "arm", "arm": "bypass_sh_summary_then_exit_1", "argv": ["rtk", "bypass", "sh", "-c", "echo '14 passed in 1.0s'; exit 1"], "stdout": "14 passed in 1.0s\n", "stderr": "", "exit": 1}
+{"harness": "rtk", "kind": "arm", "arm": "bypass_false", "argv": ["rtk", "bypass", "false"], "stdout": "", "stderr": "", "exit": 1}
+{"harness": "rtk", "kind": "arm", "arm": "bypass_sh_exit_0", "argv": ["rtk", "bypass", "sh", "-c", "echo '14 passed in 1.0s'; exit 0"], "stdout": "14 passed in 1.0s\n", "stderr": "", "exit": 0}

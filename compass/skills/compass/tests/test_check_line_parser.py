@@ -900,6 +900,8 @@ class ALoopOrANegationAroundACheckIsStillThatCheck(CheckLineTestCase):
         for command in (
             "for i in 1 2 3; do pytest -q; done",
             "for i in 1 2\ndo\n  pytest -q\ndone",
+            "while ((1)); do pytest -q; done",
+            "for ((i=0;i<3;i++)); do pytest -q; done",
             "while true; do pytest -q; done",
             "until pytest -q; do sleep 1; done",
             "i=0; while [ $i -lt 2 ]; do pytest -q; i=$((i + 1)); done",
@@ -977,6 +979,10 @@ class ACiPollingLoopIsReadOnly(CheckLineTestCase):
             "gh run watch 123 --exit-status",
             "glab ci status",
             "for i in 1 2; do sleep 1; done",
+            "for ((i=0;i<3;i++)); do sleep 1; done",
+            "while ((i<3)); do sleep 1; i=$((i+1)); done",
+            "for i; do sleep 1; done",
+            "for ((i=0;i<3;i++)); do ((n++)); sleep 1; done",
             "out=$(gh pr checks 7 --repo acme/widgets)",
             "while ! gh pr checks 7; do sleep 5; done",
         ):
@@ -991,6 +997,10 @@ class ACiPollingLoopIsReadOnly(CheckLineTestCase):
             "gh pr merge 7",
             "for f in *; do rm $f; done",
             "for i in 1 2; do sleep 1; touch x; done",
+            "for ((;;)); do rm x; done",
+            "for ((i=0;i<3;i++)); do echo x > f; done",
+            "while ((i<3)); do i=$((i+1)); echo x > f; done",
+            "for i; do rm x; done",
             "out=$(gh run download 123)",
             "while true; do gh pr checks 7 > checks.txt; done",
         ):

@@ -2070,6 +2070,7 @@ MASKED_VALUES_MAX = 512
 _SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _PYTHON_RE = re.compile(r"^python(?:\d+(?:\.\d+)?)?$")
 _DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
 _REDIRECT_RE = re.compile(r"^(?:\d*>&\d+|&>.*|\d*>>?.+|<.+)$")
@@ -2240,8 +2241,10 @@ _READ_ONLY_TRIPLES = frozenset(
 )
 # Words that write nothing: the loop and test keywords, and the commands a loop condition or a
 # polling loop's counter uses. `for`'s own header is `_for_header`.
+# An arithmetic command `((i++))` only sets a shell variable; a redirect on it is still read
+# as a write, and a substitution inside it is read on its own.
 _LOOP_WORDS = frozenset(
-    {"sleep", "seq", "true", "false", ":", "break", "continue", "test", "[", "[["}
+    {"sleep", "seq", "true", "false", ":", "break", "continue", "test", "[", "[[", _ARITHMETIC}
 )
 # At a command's start the shell reads these as syntax, not as a program: they are dropped so
 # the command after them is read as itself, as `then` always was. `!` negates the exit status,
@@ -2283,7 +2286,7 @@ def _skip_options(words: list[str], takes_value: frozenset[str]) -> list[str]:
 def _unwrap_rtk(words: list[str]) -> list[str]:
     """The words behind a leading `rtk`. `rtk lint` is rtk's own name for the eslint runner
     (`rtk rewrite 'eslint .'` prints `rtk lint .`); a bare `lint` stays no runner."""
-    if words[1:2] == ["proxy"]:
+    if words[1:2] in (["proxy"], ["bypass"]):
         return words[2:]
     return ["eslint", *words[2:]] if words[1:2] == ["lint"] else words[1:]
 
@@ -2295,9 +2298,10 @@ def _stripped(words: list[str]) -> tuple[list[str], bool]:
         if _ASSIGNMENT_RE.match(words[0]):
             words = words[1:]
         elif words[0] == "rtk":
-            # `rtk proxy` is unfiltered: the runner's own output and status pass
-            # through, so only another `rtk` form reads the flag alone.
-            proxied = words[1:2] == ["proxy"]
+            # `rtk proxy` and its 1.1.0 name `rtk bypass` are unfiltered: the runner's
+            # own output and status pass through, so only another `rtk` form reads the
+            # flag alone.
+            proxied = words[1:2] in (["proxy"], ["bypass"])
             words, rtk = _unwrap_rtk(words), rtk or not proxied
         elif words[:2] == ["uv", "run"]:
             words = _skip_options(words[2:], _UV_VALUE_OPTIONS)
@@ -2430,8 +2434,9 @@ class _ShellLexer:
         # word after a withheld brace word may be a named form's value.
         hide_next = False
         while self.pos < len(self.text):
-            if not words and self.text.startswith("((", self.pos):
-                # An arithmetic command: `<<` in it is a shift, not a heredoc.
+            if (not words or words == ["for"]) and self.text.startswith("((", self.pos):
+                # An arithmetic command, or the C-style `for ((init; test; step))` header,
+                # whose semicolons are not separators: `<<` in it is a shift, not a heredoc.
                 self.pos += 1
                 self._skip_group(arithmetic=True)
                 words.append(_ARITHMETIC)
@@ -3612,9 +3617,16 @@ def _reads_only(redirects: list[_Redirect], words: list[str]) -> bool:
 
 
 def _for_header(words: list[str]) -> bool:
-    """`for NAME in WORDS`: it assigns a variable and runs nothing itself. A substitution in
-    the word list is read on its own, by `_body_facts`."""
-    return len(words) >= 3 and words[0] == "for" and words[2] == "in"
+    """`for NAME in WORDS`, bare `for NAME` and C-style `for ((…))`: each assigns a variable
+    and runs nothing itself. A substitution in the word list is read on its own, by
+    `_body_facts`."""
+    if words[:1] != ["for"]:
+        return False
+    if words[1:] == [_ARITHMETIC]:
+        return True
+    if len(words) == 2:
+        return _NAME_RE.match(words[1]) is not None
+    return len(words) >= 3 and words[2] == "in"
 
 
 def _gh_api_reads_only(args: list[str]) -> bool:

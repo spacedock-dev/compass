@@ -1136,6 +1136,26 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
                 self.assertEqual("python -m pytest -q", check["title"])
                 self.assertEqual(expected, check["result"])
 
+    def test_rtk_bypass_reads_the_runners_own_output(self) -> None:
+        # rtk 1.1.0 renamed `rtk proxy` to `rtk bypass`; it behaves identically.
+        for output, flag, expected in (
+            ("14 passed in 1.0s", False, "passed"),
+            ("1 failed, 3 passed", False, "failed"),
+            ("14 passed in 1.0s", True, "failed"),
+        ):
+            with self.subTest(output=output, flag=flag):
+                self.setUp()
+                self.session.bash("rtk bypass python -m pytest -q", output, is_error=flag)
+                check = self.only_check()
+                self.assertEqual("python -m pytest -q", check["title"])
+                self.assertEqual(expected, check["result"])
+
+    def test_a_hook_rewritten_rtk_bypass_reads_the_same_way(self) -> None:
+        call_id = self.session.call("Bash", {"command": "python -m pytest -q"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk bypass python -m pytest -q"))
+        self.session.result(call_id, "14 passed in 1.0s", is_error=False)
+        self.assertEqual("passed", self.only_check()["result"])
+
     def test_a_command_a_hook_rewrote_is_the_command_that_ran(self) -> None:  # R12
         """The agent typed `pytest`; the hook ran `rtk pytest`, whose output no rule may read."""
         call_id = self.session.call("Bash", {"command": "pytest"})

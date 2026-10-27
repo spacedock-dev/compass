@@ -872,7 +872,7 @@ def _program(words: list[str]) -> int:
         elif base in _MASK_WRAPPERS:
             arity = _MASK_WRAPPERS[base]
             index += 1
-            if base == "rtk" and index < count and words[index] == "proxy":
+            if base == "rtk" and index < count and words[index] in ("proxy", "bypass"):
                 index += 1
             while index < count and words[index].startswith("-"):
                 index += 1 + arity.get(words[index], 0)
