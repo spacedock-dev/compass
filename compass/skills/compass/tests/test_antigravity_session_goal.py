@@ -77,6 +77,14 @@ class TheAntigravityGoalReadFromTheTranscriptTest(unittest.TestCase):
         system = {**set_goal(T0 + 5), "type": "SYSTEM_MESSAGE", "source": "SYSTEM"}
         self.assertIsNone(read([planner, system]))
 
+    def test_a_goal_over_the_claude_bound_is_kept_up_to_its_own(self) -> None:
+        longer = "x " * 3000  # 6,000 characters: over 4,000, which agy accepted in the capture
+        goal = read([set_goal(T0 + 5, longer.strip())])
+        assert goal is not None
+        self.assertTrue(goal["cut"])
+        too_long = "x" * (claude_data.ANTIGRAVITY_GOAL_CAP_CHARS + 1)
+        self.assertIsNone(read([set_goal(T0 + 5, too_long)]))
+
     def test_a_long_condition_is_offered_as_its_excerpt(self) -> None:
         long = " ".join([CONDITION] * 30)
         goal = read([set_goal(T0 + 5, long)])

@@ -347,6 +347,11 @@ def session_instruction(
 # whole words travel and nothing is clipped silently. Over the limit the record is not a goal
 # Claude Code could have accepted, and publishes nothing.
 GOAL_CAP_CHARS = 4000
+# Antigravity's own bound is unmeasured: agy 1.4.7 accepted 5,000 characters and refused nothing
+# (docs/captures/antigravity/goal-1.4.7-macos.jsonl). Owner ruling 2026-10-27: a higher bound than
+# the other two, so a long agy goal is offered cut rather than published as nothing. 16,000 sits
+# well above what was measured and still keeps one pasted document off every board payload.
+ANTIGRAVITY_GOAL_CAP_CHARS = 16_000
 
 
 # The longest evaluator reason published. The reason is the small fast model's own sentence or two,
@@ -495,9 +500,9 @@ def _codex_goal_cleared(payload: dict[str, Any]) -> bool:
     return CODEX_GOAL_CLEARED in records.extract_text(payload.get("content")).splitlines()
 
 
-def _goal_words(condition: str) -> str:
+def _goal_words(condition: str, cap: int = GOAL_CAP_CHARS) -> str:
     """The condition as the one masked line a row publishes, or "" if it cannot be held whole."""
-    if not condition.strip() or len(condition) > GOAL_CAP_CHARS:
+    if not condition.strip() or len(condition) > cap:
         return ""
     masked = records.safe_text(records.mask_prose(condition), 2 * len(condition) + 64)
     return " ".join(masked.split())
@@ -535,7 +540,7 @@ def _earlier_goal(state: GoalState, at: float) -> dict[str, Any] | None:
     return None
 
 
-def _advance_goal(state: GoalState, event: GoalEvent) -> GoalState:
+def _advance_goal(state: GoalState, event: GoalEvent, cap: int = GOAL_CAP_CHARS) -> GoalState:
     """The session's goal state after one more event: the latest set wins, a met one is kept.
 
     A verdict only confirms a goal already held, by its words, and is kept on it as the
@@ -554,7 +559,7 @@ def _advance_goal(state: GoalState, event: GoalEvent) -> GoalState:
         return _after_clear(state, at)
     if kind == "dropped":
         return _after_clear(state, at) if state["goal"] is not None else state
-    words = _goal_words(condition)
+    words = _goal_words(condition, cap)
     if kind == "set":
         return _after_set(state, words, at)
     if kind == "gave_up":
@@ -636,6 +641,7 @@ def session_goal(
         return None
     key = f"session-goal:{path}"
     read_event = _GOAL_READERS.get(harness, _goal_event)
+    cap = ANTIGRAVITY_GOAL_CAP_CHARS if harness == "antigravity" else GOAL_CAP_CHARS
     with state.cache_lock:
         cached = state.metadata_cache.get(key)
     if (
@@ -676,7 +682,7 @@ def session_goal(
                     continue
                 if event is not None:
                     seen = True
-                    goal_state = _advance_goal(goal_state, event)
+                    goal_state = _advance_goal(goal_state, event, cap)
             pos += end + 1
     with state.cache_lock:
         runtime_state.bounded_put(

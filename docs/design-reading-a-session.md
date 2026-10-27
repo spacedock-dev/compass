@@ -5726,8 +5726,11 @@ keeps the model working through a stop hook until the model writes `<!-- GOAL_CO
   ends a goal: a replace writes only the next set, and met or cancelled is the model's own marker, which the
   2026-09-27 ruling keeps unread. Saying "Replaced an earlier /goal" would be wrong whenever the earlier one
   had been met.
-- The 4,000-character bound is shared with the other two harnesses although agy accepts 5,000 and more. A
-  longer condition publishes nothing rather than a bound of its own.
+- Amended the same day (owner): Antigravity has its own 16,000-character bound
+  (`ANTIGRAVITY_GOAL_CAP_CHARS`). The 4,000 the other two use is their own harness's limit; agy accepted 5,000
+  and refused nothing, so a shared 4,000 published nothing for a real goal. 16,000 is well above anything
+  measured and still keeps a pasted document from riding every board payload. A longer condition publishes
+  nothing, and anything over the Goal field's 240 is offered as its excerpt, as for the other two.
 - The server adopts `session-goal` from an Antigravity row and nothing else from it: its prompts were never
   adoptable, and this does not change that.
 - Rejected: reading the `GOAL_COMPLETE` marker as a verdict. It is the working model's own claim, and one

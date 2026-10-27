@@ -3432,8 +3432,8 @@ An Antigravity session that states a goal with `/goal` has it read from the pers
 the directions are already read from that holds the same records with no field cut. Only a `USER_INPUT` from
 `USER_EXPLICIT` whose request opens `/goal ` and whose metadata carries agy's fixed `/goal is a [Slash
 Command]` paragraph counts, and the condition is the request after the command. It is published as the same
-`session_goal`, with the same masking, the same 4,000-character bound (agy itself accepts longer, and a
-longer one publishes nothing), the same excerpt keys and the same 8 MiB forward read, and the same symlink
+`session_goal`, with the same masking and its own 16,000-character bound (agy accepted 5,000 and refused
+nothing, so the 4,000 the other two use would drop real goals; a longer one publishes nothing), the same excerpt keys and the same 8 MiB forward read, and the same symlink
 checks guard the path. agy records no end to a goal: a met or cancelled goal is a marker in the model's own
 reply, which Compass does not read, so an Antigravity goal carries no verdict, no clear and no `earlier`, and
 the latest `/goal` stays the session's goal. The server adopts an Antigravity row's `session-goal` and still
