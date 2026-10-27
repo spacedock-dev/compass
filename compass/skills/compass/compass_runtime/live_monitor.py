@@ -199,7 +199,8 @@ def disclosure(destination: str) -> str:
     """The "What is sent" words for the `monitor` notice: what leaves, to whom, how to stop."""
     sent = (
         "your saved goal, and your recent messages, the agent's replies, the commands of checks "
-        "with their result and the paths of files written"
+        "with their result, every other command's line with its exit status, and the paths of "
+        "files written"
         if destination
         else "your saved goal, and your recent messages and the agent's replies. Checks and "
         "file paths are not sent, because Compass cannot name where they would go"
@@ -208,8 +209,8 @@ def disclosure(destination: str) -> str:
         f"Sends to {destination or 'a destination Compass cannot name'} through your Claude Code, "
         "to Haiku, about once a minute while Live monitor is on and you are viewing this "
         f"session: {sent}. Recent turns are sent again in later checks, and again each time "
-        "Live monitor is turned off and on. Everything is redacted first. No other command, "
-        "file or tool output is sent. Pause model calls stops it, and it turns itself off "
+        "Live monitor is turned off and on. Everything is redacted first. No file or tool "
+        "output is sent. Pause model calls stops it, and it turns itself off "
         "after a while unless you say you still want it."
     )
 

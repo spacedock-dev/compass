@@ -83,7 +83,7 @@ export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
    notes at the right edge, as a reader's flag is, and `toolReportLine` is the same words in one line. */
 export type CheckResult = 'unrecorded' | 'passed' | 'failed';
 export interface ActivityMark {
-  readonly icon: CheckResult | 'stale' | 'earlier-failed';
+  readonly icon: CheckResult | 'command' | 'stale' | 'earlier-failed';
   readonly short: string;
   readonly words: string;
 }
@@ -161,6 +161,9 @@ function commandParts(entry: WorkEntry): {
       marks: [
         {
           ...RESULT_MARKS[result],
+          /* A command that exited 0 draws its own glyph, never a check's tick: a pass of a command
+             Compass does not know proves nothing the tick would say. A failure keeps the failed glyph. */
+          icon: !ci && result === 'passed' ? 'command' : RESULT_MARKS[result].icon,
           short: reason ? `${short}: ${reason}` : short,
           words: words[0]?.toUpperCase() + words.slice(1),
         },

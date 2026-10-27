@@ -822,6 +822,40 @@ _MASK_ARG_FLAGS: Final = {
 _MASK_CONFIG_SECRET: Final = re.compile(r"secret|token|password|passwd|key", re.IGNORECASE)
 
 
+# Commands whose own exit status is always 0, or whose result is not the command's own: a pass of
+# one proves nothing. `export`, `unset` and `set` only change the shell, `eval` runs text this
+# reading cannot see, and `tee` exits 0 whatever the program feeding it did.
+ALWAYS_ZERO_WORDS: Final = frozenset(
+    {"true", ":", "printf", "echo", "export", "unset", "set", "eval", "tee"}
+)
+_LAUNCH_WRAPPERS: Final = frozenset({"command", "builtin", "nohup", "exec", "time"})
+_DIGITS: Final = re.compile(r"[0-9]+")
+
+
+def launched_words(words: list[str]) -> list[str]:
+    """The words of the program a segment launches: past `command`, `nohup`, `time` and their
+    `-p`, with a path (`/bin/true`) reduced to its program name."""
+    at = 0
+    while at < len(words) and os.path.basename(words[at]) in _LAUNCH_WRAPPERS:
+        at += 1
+        while at < len(words) and words[at] == "-p":
+            at += 1
+    rest = words[at:]
+    return [os.path.basename(rest[0]) or rest[0], *rest[1:]] if rest else rest
+
+
+def always_zero(words: list[str]) -> bool:
+    """Whether a segment's exit status is 0 whatever it does, by any spelling of it."""
+    rest = launched_words(words)
+    if not rest:
+        return False
+    if rest[0] in ALWAYS_ZERO_WORDS:
+        return True
+    return rest[0] in {"exit", "return"} and (
+        len(rest) == 1 or (_DIGITS.fullmatch(rest[1]) is not None and int(rest[1]) == 0)
+    )
+
+
 def _program(words: list[str]) -> int:
     """The index of the program a segment runs, past assignments and wrappers.
 

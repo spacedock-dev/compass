@@ -10,9 +10,18 @@ from __future__ import annotations
 
 import json
 import unittest
+from types import SimpleNamespace
 from typing import Any, cast
+from unittest import mock
 
-from compass_runtime import levels, project_context, reading, reading_route
+from compass_runtime import (
+    http_api,
+    levels,
+    observer,
+    project_context,
+    reading,
+    reading_route,
+)
 
 from . import test_levels as lv
 from . import test_reading as base
@@ -24,6 +33,21 @@ def facts_of(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         project_context._semantic_fact_from_event(dict(row), str(row["kind"]), "tool_report", "")
         for row in entries
     ]
+
+
+ALWAYS_ZERO_SPELLINGS = (
+    "/bin/true",
+    "/usr/bin/true",
+    "command true",
+    "/bin/echo done",
+    "exit 00",
+    "exit",
+    "nohup true",
+    "eval true",
+    "return 0",
+    "set -e",
+    "tee out.log",
+)
 
 
 class TheProducerListsEachTier(ClaudeChecksTestCase):
@@ -80,13 +104,126 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
         self.assertEqual("failed", by_title["gh pr checks 14"]["result"])
         self.assertEqual({2}, {event["tier"] for event in by_title.values()})
 
-    def test_gh_run_view_counts_only_with_exit_status(self) -> None:
+    def test_gh_run_view_records_only_a_failure_and_only_with_exit_status(self) -> None:
+        # `--exit-status` exits 0 for a run still in progress, so a pass says nothing.
         self.session.bash("gh run view 5", "completed failure", is_error=False)
-        self.session.bash("gh run view 6 --exit-status", "ok", is_error=False)
+        self.session.bash("gh run view 6 --exit-status", "in_progress", is_error=False)
+        self.session.bash("gh run view 7 --exit-status", "failure", is_error=True)
         self.assertEqual(
-            [("gh run view 6 --exit-status", "passed")],
-            [(e["title"], e["result"]) for e in self.commands("ci_command")],
+            {
+                "gh run view 6 --exit-status": "not-recorded",
+                "gh run view 7 --exit-status": "failed",
+            },
+            {e["title"]: e["result"] for e in self.commands("ci_command")},
         )
+
+    def test_gh_pr_checks_records_a_failure_only_for_exit_1_with_checks_reported(self) -> None:
+        self.session.bash("gh pr checks 20", "Exit code 1\nbuild\tfail", is_error=True)
+        self.session.bash("gh pr checks 14", "Exit code 4\nrun gh auth login", is_error=True)
+        self.session.bash("gh pr checks 15", "Exit code 1\nno checks reported", is_error=True)
+        self.session.bash("gh pr checks 16", "Exit code 2\ncancelled", is_error=True)
+        by_title = {e["title"]: e["result"] for e in self.commands("ci_command")}
+        self.assertEqual("failed", by_title["gh pr checks 20"])
+        for number in (14, 15, 16):
+            self.assertEqual("not-recorded", by_title[f"gh pr checks {number}"])
+
+    def test_a_filter_at_the_end_of_a_pipe_speaks_for_nothing_upstream(self) -> None:
+        for command in (
+            "pytest -q | tee out.log",
+            "make test | sed 's/a/b/'",
+            "make test | jq .",
+            "pnpm test | tee log",
+        ):
+            self.session.bash(command, "1 failed, 2 passed", is_error=False)
+        self.assertNotIn("passed", [c["result"] for c in self.commands()])
+        self.assertEqual([], self.passed_checks())
+
+    def test_a_lone_command_and_one_before_a_read_only_filter_read_as_they_did(self) -> None:
+        self.session.bash("sed -n 1p notes.txt", "x", is_error=False)
+        self.session.bash("./release.sh | tail -5", "done", is_error=False)
+        self.assertEqual(
+            {"sed -n 1p notes.txt": "passed", "./release.sh": "not-recorded"},
+            {c["title"]: c["result"] for c in self.commands()},
+        )
+
+    def test_a_command_that_cannot_fail_is_never_listed_under_any_spelling(self) -> None:
+        for command in ALWAYS_ZERO_SPELLINGS:
+            with self.subTest(command=command):
+                self.session.bash(command, "", is_error=False)
+        self.assertEqual([], self.commands())
+
+    def test_a_listed_command_always_says_whether_it_can_fail(self) -> None:
+        self.session.bash("make deploy", "done", is_error=False)
+        self.session.bash("find build -delete", "", is_error=False)
+        self.assertEqual([False, False], [c["cannot_fail"] for c in self.commands()])
+
+    def test_the_resolvers_never_fails_words_are_the_producers_read_only_words(self) -> None:
+        for word in reading._NEVER_FAILS_WORDS:
+            with self.subTest(word=word):
+                self.assertTrue(
+                    project_context._always_zero([word])
+                    or project_context._reads_only([], [word, "x"]),
+                )
+        for text in (*reading._NEVER_FAILS_PAIRS, *reading._NEVER_FAILS_TRIPLES):
+            with self.subTest(text=text):
+                self.assertTrue(project_context._reads_only([], [*text.split(), "x"]))
+
+    def passed_checks(self) -> list[dict[str, Any]]:
+        return [c for c in self.checks() if c["result"] == "passed"]
+
+    def read_levels(self, *, last_user_at: float = 1.0) -> levels.Level:
+        entries, scan = self.read()
+        return levels.live_level(
+            lv.evidence(facts_of(entries), {**lv.scan(), **scan, "last_user_at": last_user_at}),
+            lv.intent("Tests pass"),
+        )
+
+    def test_a_failed_ci_read_after_the_person_reads_high_like_a_failed_check(self) -> None:
+        self.session.write(self.file("src/new.py"))
+        self.session.bash("gh pr checks 3", "Exit code 1\nbuild\tfail", is_error=True)
+        got = self.read_levels()
+        self.assertEqual(levels.HIGH, got.level)
+        self.assertIn(levels.REASON_FAILED_CHECK, got.reasons)
+
+    def test_a_pending_ci_read_blocks_the_live_floor_as_a_check_without_a_result_does(self) -> None:
+        self.session.bash("pytest -q", "3 passed", is_error=False)
+        self.session.write(self.file("src/new.py"))
+        self.session.bash("pytest -q", "3 passed", is_error=False)
+        self.session.bash("gh pr checks 3", "Exit code 8\npending", is_error=True)
+        got = self.read_levels(last_user_at=9e9)
+        self.assertEqual(levels.NOT_ENOUGH, got.level)
+        self.assertIn(levels.REASON_CHECK_NOT_RECORDED, got.reasons)
+
+    def test_a_tier_3_failure_blocks_the_floor_only_until_something_later_passes(self) -> None:
+        self.session.write(self.file("src/new.py"))
+        self.session.bash("git commit -m wip", "hook rejected", is_error=True)
+        self.session.bash("git commit -m fix", "done", is_error=False)
+        self.session.bash("pytest -q", "3 passed", is_error=False)
+        self.assertEqual(levels.NONE_OR_LOW, self.read_levels(last_user_at=9e9).level)
+
+    def test_a_tier_3_failure_with_nothing_passing_after_it_still_blocks_the_floor(self) -> None:
+        self.session.write(self.file("src/new.py"))
+        self.session.bash("pytest -q", "3 passed", is_error=False)
+        self.session.bash("git commit -m wip", "hook rejected", is_error=True)
+        got = self.read_levels(last_user_at=9e9)
+        self.assertEqual(levels.NOT_ENOUGH, got.level)
+        self.assertIn(levels.REASON_FAILED_CHECK, got.reasons)
+
+    def test_a_failed_command_a_listing_names_still_supports_a_departure(self) -> None:
+        self.session.bash("git commit -m wip", "hook rejected", is_error=True)
+        self.session.bash("git commit -m fix", "done", is_error=False)
+        entries, _scan = self.read()
+        rows = reading.build_ledger(
+            [base.WORDS_FACT, *facts_of(entries)], "claude", SHORT, tool_output={}
+        )
+        failed = next(r for r in rows if r.get("result") == "failed")
+        self.assertTrue(reading.check_supports(failed, reading.RESULT_DEPARTURE, 0.0))
+
+    def test_a_command_that_writes_is_not_withdrawn_as_one_that_cannot_fail(self) -> None:
+        self.session.bash("find build -delete", "", is_error=False)
+        entries, _scan = self.read()
+        rows = reading.build_ledger(facts_of(entries), "claude", SHORT, tool_output={})
+        self.assertTrue(any(row["work"] for row in rows))
 
     def test_glab_ci_status_records_no_result(self) -> None:
         self.session.bash("glab ci status", "running", is_error=False)
@@ -225,6 +362,7 @@ class TheResolverReadsATierThreeResult(base.AClaudeCodeReadingProducer):
             self.command(summary="make deploy; exit 0"),
             self.command(summary="git status"),
             self.command(cannot_fail=True),
+            *(self.command(summary=spelling) for spelling in ALWAYS_ZERO_SPELLINGS),
         ):
             with self.subTest(summary=fact["summary"], flag=fact.get("cannot_fail")):
                 self.assertNotEqual(reading.RESULT_CONSISTENT, self.cite(fact)["result"])
@@ -310,6 +448,58 @@ class TheVendorRuleDecidesWhatOutputLeaves(ClaudeChecksTestCase):
         self.assertIn("SYNTHETICCHECKTAIL", text)
         self.assertIn("SYNTHETICCITAIL", text)
         self.assertIn("make deploy (exited 0; Compass does not know what it checks)", text)
+
+    def test_a_rerun_command_leaves_no_earlier_tail_for_another_vendor(self) -> None:
+        self.session.bash("./stage.sh && pytest -q tests/a.py", "SYNTHETICSTAGEOUT\n3 passed")
+        self.session.bash("./stage.sh", "SYNTHETICLATERSTAGE")
+        self.assertNotIn("SYNTHETICSTAGEOUT", self.prompt("codex"))
+        self.assertIn("SYNTHETICSTAGEOUT", self.prompt("claude"))
+        press = project_context.claude_check_press(self.config, str(self.path))
+        self.assertEqual({"toolu_001", "toolu_002"}, set(press.tier3_calls))
+
+    def route_tails(self, provider: str) -> dict[str, str]:
+        """The tails the real request handler hands a route of this provider."""
+        self.session.save(self.path)
+        handler = SimpleNamespace(
+            server=SimpleNamespace(
+                application=SimpleNamespace(
+                    config=self.config, state=SimpleNamespace(), clock=lambda: 1.0
+                )
+            )
+        )
+        route = {
+            "harness": "claude",
+            "provider": provider,
+            "destination": "Synthetic destination",
+            "words_destination": "Synthetic destination",
+            "label": "Claude Code",
+            "model": "synthetic-model",
+        }
+        hooks = SimpleNamespace(
+            spawned=None, reserved=None, before_reserve=None, cancelled=None, phase=None
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            arguments = http_api._RequestHandler._reading_arguments(
+                cast("Any", handler),
+                {"harness": "claude", "sid": SHORT},
+                cast("Any", {"revisions": []}),
+                cast("Any", route),
+                cast("Any", hooks),
+            )
+        return dict(arguments["tool_output"].tails)
+
+    def test_the_request_handler_sends_a_codex_route_no_tier_3_call_tail(self) -> None:
+        self.session.bash("make deploy", "SYNTHETICTIER3TAIL", is_error=False)
+        self.session.bash("./stage.sh && pytest -q tests/a.py", "SYNTHETICSTAGEOUT\n3 passed")
+        self.session.bash("./stage.sh", "SYNTHETICLATERSTAGE")
+        self.session.bash("pytest -q", "SYNTHETICCHECKTAIL\n3 passed", is_error=False)
+        other = "\n".join(self.route_tails("codex").values())
+        same = "\n".join(self.route_tails("claude").values())
+        for marker in ("SYNTHETICTIER3TAIL", "SYNTHETICSTAGEOUT", "SYNTHETICLATERSTAGE"):
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, other)
+                self.assertIn(marker, same)
+        self.assertIn("SYNTHETICCHECKTAIL", other)
 
     def test_the_notice_names_the_vendor_rule_in_one_line_either_way(self) -> None:
         same = reading_route._tool_output_sentence("claude", "claude", "Anthropic")

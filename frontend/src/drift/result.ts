@@ -101,8 +101,12 @@ export function resultStatus(
       const who = row.restsOn === 'message' ? 'the agent' : 'the session';
       if (short) {
         return row.restsOn === 'tool'
-          ? `Consistent with ${where}`
+          ? `Consistent with ${where}${row.restsOnEntry?.subject === 'command' ? ', a command' : ''}`
           : `Consistent with what ${who} said at ${where}`;
+      }
+      const command = row.restsOnEntry?.subject === 'command';
+      if (command) {
+        return `Consistent with ${where}; the command exited 0 and Compass does not know what it checks`;
       }
       return row.restsOn === 'tool'
         ? `Consistent with ${where}, as the tool reported; not inspected`
@@ -705,9 +709,13 @@ function pathTail(text: string, max: number): string {
    follows where it is given, so one entry cited under two constraints still reads as two cards. Empty where no
    cited entry is held, and the card keeps the constraint's own words then. */
 const TITLE_WORDS = 60;
+const isCommand = (entry: WorkEntry): boolean =>
+  entry.subject === 'command' || entry.subject === 'ci_command';
+
 export function titledEntry(entries: readonly WorkEntry[]): WorkEntry | null {
   return (
     entries.find((entry) => entry.subject === 'write' || entry.subject === 'check') ??
+    entries.find((entry) => isCommand(entry) && entry.result === 'failed') ??
     entries.find(agentMessage) ??
     entries[0] ??
     null
@@ -733,6 +741,17 @@ export function departureTitle(entries: readonly WorkEntry[], constraint = ''): 
   if (entry.subject === 'check') {
     return `${entry.result === 'failed' ? 'A check failed' : 'A check ran'}${at}${constraint ? ` against ${from}` : ''}`;
   }
+  if (isCommand(entry)) {
+    const what =
+      entry.subject === 'ci_command'
+        ? entry.result === 'failed'
+          ? 'A CI check failed'
+          : 'A CI check was read'
+        : entry.result === 'failed'
+          ? 'A command exited non-zero'
+          : 'A command ran';
+    return `${what}${at}${constraint ? ` against ${from}` : ''}`;
+  }
   if (agentMessage(entry)) return `What the agent said${at} departs from ${from}`;
   return personAuthored(entry)
     ? `Your own words${at} depart from ${from}`
@@ -755,6 +774,17 @@ export function departureWhat(entries: readonly WorkEntry[]): string {
   if (entry.subject === 'check') {
     const failed = entry.result === 'failed';
     return `${when}a ${failed ? 'check failed' : 'check ran'}${words ? `: ${stop(words)}` : '.'}`;
+  }
+  if (isCommand(entry)) {
+    const what =
+      entry.subject === 'ci_command'
+        ? entry.result === 'failed'
+          ? 'a CI check failed'
+          : 'a CI check was read'
+        : entry.result === 'failed'
+          ? 'a command exited non-zero'
+          : 'a command ran';
+    return `${when}${what}${words ? `: ${stop(words)}` : '.'}`;
   }
   if (agentMessage(entry))
     return `${when}the agent said ${words ? `“${words.replace(/\.+$/, '')}”` : 'something'}.`;

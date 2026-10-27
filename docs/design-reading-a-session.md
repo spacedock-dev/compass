@@ -7353,23 +7353,32 @@ the build had to decide, in the order a reader meets it:
   carrying its tier. A check's subject was never reused, so a consumer that tests `check` reads no command by
   accident, and the scan counts them under `command_*` and `ci_*` beside the check counters the page and the
   live floor already read.
-- **The CI reads.** `gh pr checks` counts by exit status: 0 is a pass, 8 is pending and records no result, and
-  any other non-zero is a failure. `gh run view` counts only with `--exit-status`. `glab ci status` lists
+- **The CI reads.** `gh pr checks` counts by exit status: 0 is a pass, and 1 is a failure unless its output says
+  no checks were reported or names a login or request error. 8 (pending), 2 (cancelled), 4 (login) and any
+  other code record no result, so a tool error or a pull request with no CI is never a failed CI read.
+  `gh run view` counts only with `--exit-status`, and then only a failure: it exits 0 for a run still in
+  progress, so a pass is not recorded. `glab ci status` lists
   nothing, because no measurement of its exit status exists yet. All three stay on the read-only list, so a
   CI poll never ages a pass.
 - **What cannot fail is not listed.** `echo`, `printf`, `true`, `:`, `export`, `unset` and `exit 0` never become a
   command: `export` and `unset` were added to the ruling's list because they only change the shell's variables
   and a pass of one is no evidence. A command whose status a later `|| true`, `; true` or `; exit 0` forces is
-  listed with no result and `cannot_fail` set. The resolver also reads the published line, so a fact that
-  lacks the flag is withdrawn the same way. `false` is not on the list: it always fails, which is a result.
+  listed with no result and `cannot_fail` set. The producer always publishes `cannot_fail`, true or false,
+  and the resolver trusts it; it reads the published line only for an older stored fact that lacks the key, so
+  `find build -delete`, which writes, is never withdrawn as one that cannot fail. Every spelling counts: a
+  program by path (`/bin/true`), behind `command`, `nohup` or `time`, `exit 00`, `return 0`, and `set`, `eval`
+  and `tee` too. A stage after a `|` that follows other work records no result, since the call's status speaks
+  for the filter. `false` is not on the list: it always fails, which is a result.
 - **A structured git record stands alone.** A call whose result carries Claude Code's `gitOperation` publishes
   that record (the pull request) and no command line, because a pull request's title and body are free text
   the record deliberately never carried.
 - **One table decides every consumer.** `reading.CONSUMER_SUBJECTS` names the subjects each consumer reads,
   and `test_subject_consumers` runs a fact of every subject through the real consumer. The work floor and the
   verdict resolver read both new subjects. The live level reads the CI read as a check and a command only as a
-  blocker of its floor: a command's own call is a changing command, so a pass of it is never unchanged and
-  could not reach the floor anyway. The Live monitor sends both. The goal verdict reads neither, because it
+  blocker of its floor, and only until a later check or command passes: commands supersede one another by
+  identical text alone, so a retried command would otherwise pin the level for the session. A tier 3 pass is
+  never unchanged, since its own call is a changing command. A failed or pending CI read reads as a failed or
+  unrecorded check does, in the live level and in a stored reading's level. The Live monitor sends both. The goal verdict reads neither, because it
   matches a check's words to the claim by keyword, which the 2026-09-30 rejection of keyword relevance rules
   out for a command whose purpose Compass does not know. The history store and the unasked lane read no
   command.
@@ -7379,7 +7388,8 @@ the build had to decide, in the order a reader meets it:
   pull request, skill and CI read and the checks with no result, and ahead of the agent's messages.
 - **The label.** A command's result reads "exited 0; Compass does not know what it checks" or "exited
   non-zero; Compass does not know what it checks", on the row the model reads and on the page, where it never
-  uses a check's mark or its words and is not folded into a run of checks.
+  uses a check's mark or its words (a command that exited 0 draws a terminal glyph, not a check's tick) and is
+  not folded into a run of checks.
 - **The prompt header is unchanged**, so its pinned digest stands. The new false-`consistent` class is the
   qualification item 9 owes after the wave ships, and it has not run.
 

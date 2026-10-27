@@ -139,11 +139,16 @@ export const CommandsKeepTheirLabel: Story = {
     await expect(canvasElement.querySelectorAll('[data-story-entry]')).toHaveLength(4);
     const labelled = canvas.getAllByLabelText('Exited 0; Compass does not know what it checks');
     await expect(labelled).toHaveLength(3);
-    for (const mark of labelled) await expect(mark).toHaveTextContent('Exited 0');
+    for (const mark of labelled) {
+      await expect(mark).toHaveTextContent('Exited 0');
+      await expect(mark.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'command');
+    }
     await expect(canvas.getAllByText('command')).toHaveLength(3);
     await expect(canvas.getByText('CI check')).toBeVisible();
     // Only the CI read says what a check says; no command says it passed.
-    await expect(canvas.getAllByLabelText('Passed, as the tool reported')).toHaveLength(1);
+    const passed = canvas.getAllByLabelText('Passed, as the tool reported');
+    await expect(passed).toHaveLength(1);
+    await expect(passed[0]?.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'passed');
     await expect(canvasElement.textContent).not.toMatch(/Passed, as the tool reported.*make step/);
   },
 };

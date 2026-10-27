@@ -3559,20 +3559,15 @@ def _tail_result(tail: str) -> tuple[str, str] | None:
     return None
 
 
-# Commands whose own exit status is always 0: a pass of one proves nothing, so none is listed as a
-# command at all, by the cannot-fail rule. `export` and `unset` only change the shell's variables.
-_ALWAYS_ZERO_WORDS = frozenset({"true", ":", "printf", "echo", "export", "unset"})
-
-
-def _always_zero(words: list[str]) -> bool:
-    return bool(words) and (words[0] in _ALWAYS_ZERO_WORDS or words[:2] == ["exit", "0"])
+_always_zero = records.always_zero
 
 
 def _ci_run_kind(words: list[str]) -> str:
     """The tier-2 CI read a read-only segment is, or "" where it records no result.
 
-    `gh pr checks` exits non-zero on failing or pending checks. `gh run view` exits 0 on a failed
-    run unless `--exit-status` is given, so without it the command is a read and records nothing,
+    `gh pr checks` exits 1 on a failing check and 8 on a pending one. `gh run view --exit-status`
+    exits non-zero on a failed run but 0 on one still in progress, so only its failure counts;
+    without the flag it exits 0 on a failed run and the command is a read that records nothing,
     and `glab ci status` records nothing until a later measurement shows it exits non-zero on a
     failed pipeline, as the CI rule for these reads says.
     """
@@ -3583,9 +3578,24 @@ def _ci_run_kind(words: list[str]) -> str:
     return ""
 
 
-# `gh pr checks` exits 8 while checks are pending: neither a pass nor a failure.
-_PENDING_EXIT = 8
+_NOT_A_CI_FAILURE = re.compile(
+    r"no checks reported|gh auth login|authentication|HTTP \d{3}|could not resolve", re.IGNORECASE
+)
 _EXIT_CODE_RE = re.compile(r"\AExit code (\d+)\b")
+
+
+def _ci_outcome(ci: str, outcome: str, source: str, text: str) -> tuple[str, str]:
+    """What a CI read's flag result stands for once its exit code is read."""
+    if ci == "pr_checks" and outcome == "failed":
+        # Only exit 1 is a failing check. 8 is pending, 2 a cancelled run and 4 a missing login,
+        # and exit 1 also reports a pull request with no CI or a request that failed.
+        exited = _EXIT_CODE_RE.match(text)
+        if not exited or int(exited[1]) != 1 or _NOT_A_CI_FAILURE.search(text):
+            return "not-recorded", ""
+    elif ci == "run_view" and outcome == "passed":
+        # Exit 0 also means a run still in progress, so only its failure counts.
+        return "not-recorded", ""
+    return outcome, source
 
 
 def _flag_result(flag: object, *, last: bool, all_and: bool, alone: bool) -> str:
@@ -3953,6 +3963,19 @@ class _ShellCall:
     def unestablished(self, index: int) -> bool:
         """Whether a `||` before the segment leaves its execution unknown."""
         return "||" in self.joiners()[:index]
+
+    def piped_after_work(self, index: int) -> bool:
+        """Whether a pipe feeds this segment from a stage that did work. The call's status then
+        speaks for the last stage, a filter such as `tee` or `sed`, and says nothing about the
+        program upstream of it."""
+        joiners = self.joiners()
+        at = index
+        while at > 0 and joiners[at - 1] == "|":
+            at -= 1
+            words = self.words[at][0]
+            if words and not (self._reads_only(at) or _always_zero(words)):
+                return True
+        return False
 
     def status_masked(self, index: int) -> bool:
         """Whether a later segment forces the call's exit status to 0 (`|| true`, `; true`,
@@ -4438,7 +4461,10 @@ class _ToolReportTally:
             outcome, source = "not-recorded", ""
             masked = call.status_masked(index)
             if result is not None and not (
-                call.unestablished(index) or call.negated(index) or masked
+                call.unestablished(index)
+                or call.negated(index)
+                or masked
+                or call.piped_after_work(index)
             ):
                 flag_result = _flag_result(
                     flag,
@@ -4448,14 +4474,7 @@ class _ToolReportTally:
                 )
                 if flag_result:
                     outcome, source = flag_result, "flag"
-                exited = _EXIT_CODE_RE.match(text)
-                if (
-                    ci == "pr_checks"
-                    and outcome == "failed"
-                    and exited
-                    and int(exited[1]) == _PENDING_EXIT
-                ):
-                    outcome, source = "not-recorded", ""
+                outcome, source = _ci_outcome(ci, outcome, source, text)
             if not tail and result is not None:
                 tail = _scrubbed_tail(text, call.masked_values)
             identity = _check_identity(
@@ -4531,8 +4550,9 @@ class _ToolReportTally:
             if ci
             else (_COMMAND_FAILED_RANK if latest["result"] == "failed" else _COMMAND_RANK),
         }
-        if latest["cannot_fail"]:
-            entry["cannot_fail"] = True
+        # Always published, so a reader can tell a command that can fail from an older fact that
+        # never said: only the latter is read by its text.
+        entry["cannot_fail"] = bool(latest["cannot_fail"])
         if latest["result_source"]:
             entry["result_source"] = latest["result_source"]
         if latest["result_at"] is not None:
@@ -4621,9 +4641,23 @@ class _ToolReportTally:
                 histories[key].extend(histories.pop(identity))
         return list(histories.items())
 
+    def _last_pass_at(self) -> float | None:
+        """The call time of the newest foreground check or tier 3 command whose latest run
+        passed."""
+        times = [
+            history[self._latest(history)]["at"]
+            for histories in (self.runs, self.commands)
+            for history in histories.values()
+            if history[self._latest(history)]["result"] == "passed"
+            and not history[self._latest(history)]["background"]
+            and history[self._latest(history)].get("subject") != CI_SUBJECT
+        ]
+        return max(times) if times else None
+
     def entries(self, sid: str, index: Any = None) -> list[dict[str, Any]]:
         histories = self._histories()
         candidates = self._ranked(histories)
+        last_pass_at = self._last_pass_at()
         for entry in candidates:
             if entry["subject"] == "check":
                 self.scan[str(entry["result"]).replace("-", "_")] += 1
@@ -4631,6 +4665,17 @@ class _ToolReportTally:
                 # Kept apart from the check counters: the page's "N checks" and the live floor's
                 # check blockers read those, and a command is not one.
                 prefix = "ci" if entry["subject"] == CI_SUBJECT else "command"
+                if (
+                    entry["subject"] == COMMAND_SUBJECT
+                    and entry["result"] == "failed"
+                    and last_pass_at is not None
+                    and last_pass_at > entry["at"]
+                ):
+                    # A tier 3 failure blocks the live floor only while nothing later passed:
+                    # commands supersede one another by identical text alone, so a retried
+                    # command with another flag would otherwise pin the level for the session.
+                    # The fact stays listed and can still support a departure.
+                    continue
                 self.scan[f"{prefix}_{str(entry['result']).replace('-', '_')}"] += 1
         listed = candidates[:TOOL_REPORT_MAX_ENTRIES]
         # A created pull request is what a goal such as "create a PR" rests on, and the verdict
@@ -4822,13 +4867,15 @@ class _ToolReportTally:
         return tails
 
     def tier3_calls(self) -> frozenset[str]:
-        """The call ids whose latest foreground run of a tier 3 command is listed: a call that
-        holds one has an output tail that is not a tier 1 or 2 tail
+        """The call ids that ever held a listed foreground run of a tier 3 command, not only the
+        latest: a command that re-ran in a later call leaves the earlier call's output tail behind,
+        and that tail is not a tier 1 or 2 tail either
         ([DEC-31](docs/design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor))."""
         return frozenset(
             run["record_id"]
             for history in self.commands.values()
-            if (run := history[self._latest(history)])["subject"] == COMMAND_SUBJECT
+            for run in history
+            if run["subject"] == COMMAND_SUBJECT
         )
 
     def _all_histories(self) -> Iterable[list[dict[str, Any]]]:

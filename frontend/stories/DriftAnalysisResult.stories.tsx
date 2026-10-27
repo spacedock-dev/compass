@@ -91,6 +91,59 @@ export const AnOlderReadingWithoutTiersStillRenders: Story = {
   },
 };
 
+/* A departure that rests on a failed command, and a consistent line that rests on a command that exited 0: the
+   title and the sentence name a command, never a check, and the consistent line says what Compass does not
+   know. */
+const COMMAND_READING = {
+  ...READING,
+  criteria: {
+    goal: {
+      result: 'departure',
+      cites: ['k1'],
+      detail: 'The release step failed.',
+      clause: 'Ship the queue',
+    },
+    line_1: {
+      result: 'consistent with the evidence read',
+      cites: ['k2'],
+      detail: '',
+      clause: 'Tests pass',
+    },
+  },
+};
+export const ACommandCitedInADepartureAndInAConsistentLine: Story = {
+  ...scenario({
+    session: { ...STORED_READING, annotation_assessment: COMMAND_READING },
+    facts: [
+      written('w1', 220, 'src/queue/worker.ts'),
+      fact('k1', 500, {
+        subject: 'command',
+        tier: 3,
+        result: 'failed',
+        result_source: 'flag',
+        summary: 'make release',
+      }),
+      fact('k2', 600, {
+        subject: 'command',
+        tier: 3,
+        result: 'passed',
+        result_source: 'flag',
+        summary: 'make stage',
+      }),
+    ],
+    work: { analysis_levels: [analysisRow('claude')] },
+  }),
+  play: async ({ canvasElement }) => {
+    const root = await card(canvasElement);
+    await foot(root);
+    await expect(root.textContent).toMatch(/A command exited non-zero/);
+    await expect(root.textContent).not.toMatch(/A check failed/);
+    await expect(root.textContent).toMatch(
+      /the command exited 0 and Compass does not know what it checks/,
+    );
+  },
+};
+
 export const UnderTheLimitSaysNothingAboutIt: Story = {
   ...scenario(RESULT),
   play: async ({ canvasElement }) => {

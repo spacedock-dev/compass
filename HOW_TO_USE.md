@@ -452,8 +452,9 @@ startup flag: press **Summarize this session** in Console, and the first one sho
 notice.
 
 A Claude Code reading includes its checks by default where Compass can name the destination: the
-command, result, last 180 characters of output, written paths, the repository and number of a pull
-request the session created and the names of skills it used. The notice names tool output too.
+command, result, last 180 characters of output, written paths, every other command as its masked line
+and exit status (with its output only when the reading runs on Claude Code itself), the repository and
+number of a pull request the session created and the names of skills it used. The notice names tool output too.
 `--observer-model`, `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do
 nothing in this release; they will be removed in a later release. Pause model calls or
 `--no-observer-model` stops these calls.

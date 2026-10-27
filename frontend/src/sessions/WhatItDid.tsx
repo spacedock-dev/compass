@@ -40,6 +40,7 @@ export const OUTSIDE_WINDOW = 'Before your intent’s start; not read by Analyze
    until its record page arrives (the press reads for it). */
 export const UNNUMBERED_BEFORE = 'before your intent';
 export const UNNUMBERED_OLDER = 'older entry';
+export const UNNUMBERED_COMMAND = 'command';
 export function EntryChip({
   id,
   purpose,
@@ -55,16 +56,23 @@ export function EntryChip({
   const { model } = useDrift();
   const n = model.labels.get(id) ?? null;
   const outside = model.outside.has(id);
+  /* A command is on the page and takes no number, so it is not an older entry the page has yet to read. */
+  const subject = model.byId.get(id)?.subject;
+  const command = !n && !outside && (subject === 'command' || subject === 'ci_command');
   const word = n
     ? cite
       ? `[${n}]`
       : `#${n}`
-    : cite
-      ? '[?]'
-      : outside
-        ? UNNUMBERED_BEFORE
-        : UNNUMBERED_OLDER;
-  const label = `Open ${n ? `entry #${n}` : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
+    : command
+      ? cite
+        ? '[command]'
+        : UNNUMBERED_COMMAND
+      : cite
+        ? '[?]'
+        : outside
+          ? UNNUMBERED_BEFORE
+          : UNNUMBERED_OLDER;
+  const label = `Open ${n ? `entry #${n}` : command ? 'a command, not numbered' : outside ? 'the entry before your intent’s start' : 'an older entry the page has not read yet'}, ${purpose}, in Full activity${outside ? `. ${OUTSIDE_WINDOW}` : ''}`;
   const marks = {
     'data-next-outline-entry': id,
     'data-next-cockpit-action': 'finding-jump',

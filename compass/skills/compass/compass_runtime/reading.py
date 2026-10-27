@@ -468,6 +468,9 @@ CONSUMER_SUBJECTS: dict[str, frozenset[str]] = {
     # The model-free level: a tier 3 command only blocks the floor, since its own call is a
     # changing command and so can never show a later pass unchanged.
     "live_level": frozenset({CHECK_SUBJECT, "write", COMMAND_SUBJECT, CI_SUBJECT}),
+    # The stored reading's level: a failed CI read counts as a failed check does. A tier 3 command
+    # is the live level's blocker alone, since nothing there judges whether it mattered.
+    "analysis_level": frozenset({CHECK_SUBJECT, CI_SUBJECT}),
     "monitor_turn": frozenset({CHECK_SUBJECT, "write", COMMAND_SUBJECT, CI_SUBJECT}),
     # Keyword overlap decides what a command covers there, and the command tiers ruling rejects
     # that for a command whose purpose Compass does not know.
@@ -486,12 +489,12 @@ def admits(consumer: str, subject: object) -> bool:
 
 # What can never fail, by its text: a program whose status is 0 whatever it does, a command on
 # the read-only list, and a line that ends by forcing a 0 status. The producer sets `cannot_fail`
-# from the parsed call, and this reads the published line as the backstop for a fact that lacks
-# the flag. A copy of `project_context`'s lists, held equal by a test.
+# from the parsed call and always publishes it, so this reads the published line only for an older
+# stored fact that lacks the key. The words are a copy of `project_context`'s lists, plus the
+# program names `records.ALWAYS_ZERO_WORDS` holds; a test holds each one to the producer.
 _NEVER_FAILS_WORDS = frozenset(
     {"ls", "cat", "head", "tail", "grep", "rg", "find", "wc", "pwd", "echo", "which", "file",
-     "stat", "tree", "less", "true", ":", "printf", "export", "unset", "sleep", "seq",
-     "test", "[", "[["}
+     "stat", "tree", "less", "sleep", "seq", "test", "[", "[["}
 )  # fmt: skip
 _NEVER_FAILS_PAIRS = frozenset(
     {"git status", "git log", "git diff", "git show", "git rev-parse", "git merge-base"}
@@ -509,18 +512,19 @@ def cannot_fail(entry: Mapping[str, Any]) -> bool:
     """
     if entry.get("subject") not in (COMMAND_SUBJECT, CI_SUBJECT):
         return False
-    if entry.get("cannot_fail") is True:
-        return True
+    flag = entry.get("cannot_fail")
+    if isinstance(flag, bool):
+        return flag
     if entry.get("subject") == CI_SUBJECT:
         return False
     line = str(entry.get("summary") or "").rsplit(" (", 1)[0].strip()
-    words = line.split()
+    words = records.launched_words(line.split())
     if not words:
         return False
     return bool(
         _STATUS_FORCED.search(line)
+        or records.always_zero(words)
         or words[0] in _NEVER_FAILS_WORDS
-        or words[:2] == ["exit", "0"]
         or " ".join(words[:2]) in _NEVER_FAILS_PAIRS
         or " ".join(words[:3]) in _NEVER_FAILS_TRIPLES
     )
@@ -3414,8 +3418,12 @@ def failed_checks_after_person(
     *,
     anchor: float | None = None,
     floor: float = 0.0,
+    subjects: frozenset[str] = frozenset({CHECK_SUBJECT}),
 ) -> list[Mapping[str, Any]]:
     """A named failure whose result arrived after the person's last message.
+
+    `subjects` names the report subjects that count: a check by default, and the level also
+    admits a tier 2 CI read, which a check's failure rules apply to as they stand.
 
     Unknown times and unlisted counts block reassurance but cannot raise High.
     [DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)
@@ -3429,7 +3437,8 @@ def failed_checks_after_person(
         f
         for f in facts
         if f.get("type") == TOOL_REPORT_TYPE
-        and f.get("subject") == CHECK_SUBJECT
+        and f.get("subject") in subjects
+        and not (f.get("subject") != CHECK_SUBJECT and cannot_fail(f))
         and f.get("result") == RESULT_FAILED
         and (at := evidence_at(f)) is not None
         and at > start

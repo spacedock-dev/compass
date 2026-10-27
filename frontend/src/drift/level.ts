@@ -124,6 +124,10 @@ export function driftRange(
   return first === last ? `#${first}` : `#${first} to #${last}`;
 }
 
+/* The subjects whose failure holds a level at "A failed check": a check, a CI read and, for the live estimate's
+   floor, a tier 3 command ([DEC-29](../../../docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)). */
+const FAILING_SUBJECTS: ReadonlySet<string> = new Set(['check', 'command', 'ci_command']);
+
 export interface Reasons {
   readonly first: string;
   readonly blockers: readonly string[];
@@ -152,17 +156,28 @@ export function driftReasons(
   const failureLine = (): string => {
     const fid = cited.find((id) => {
       const fact = byId.get(id);
-      return Boolean(fact) && fact?.subject === 'check' && fact?.result === 'failed';
+      return (
+        Boolean(fact) && FAILING_SUBJECTS.has(String(fact?.subject)) && fact?.result === 'failed'
+      );
     });
     const fact = fid ? byId.get(fid) : undefined;
     if (!fact) return 'A failed check is counted but its entry is not listed.';
     const at = evidenceAt(fact) || 0;
     const age = at > 0 ? `${fmtDur(Math.max(0, generated - at))} ago` : 'time not recorded';
     const n = fid ? numbers.get(fid) : undefined;
+    if (fact.subject === 'command' || fact.subject === 'ci_command') {
+      /* Neither is a test: a command exited non-zero, a CI read failed. Neither takes a place number. */
+      const what = fact.subject === 'command' ? 'Command' : 'CI check';
+      const tail = fact.beforeLastChange
+        ? '; files changed after it'
+        : '; nothing passing after it';
+      return `${what} ${String(fact.summary || '')} ${fact.subject === 'command' ? 'exited non-zero' : 'failed'} ${age}${tail}.`;
+    }
     return `${String(fact.summary || 'A check')} failed ${age}${n !== undefined ? ` at #${String(n)}` : ''}${fact.beforeLastChange ? '; files changed after it' : '; no passing re-run recorded'}.`;
   };
   const finders: Record<string, (entry: WorkEntry | undefined, id: string) => boolean> = {
-    'failed-check': (entry) => entry?.subject === 'check' && entry?.result === 'failed',
+    'failed-check': (entry) =>
+      FAILING_SUBJECTS.has(String(entry?.subject)) && entry?.result === 'failed',
     departure: (_entry, fid) => departing.has(fid),
     'claim-contradicted': (entry) => agentMessage(entry),
     'claim-not-shown': (entry) => agentMessage(entry),

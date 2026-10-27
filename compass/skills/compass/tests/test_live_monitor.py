@@ -645,6 +645,19 @@ class TheNoticeAndTheProvenance(Case):
         ):
             self.assertIn(phrase, text)
         self.assertNotIn("No command", text)
+        self.assertIn("No file or tool output is sent", text)
+
+    def test_the_disclosure_has_a_phrase_for_every_kind_of_row_it_sends(self) -> None:
+        phrases = {
+            "check": "commands of checks with their result",
+            "write": "paths of files written",
+            "command": "every other command's line with its exit status",
+        }
+        self.assertEqual(set(phrases), set(live_monitor._TOOL_KINDS))
+        text = live_monitor.disclosure("api.anthropic.com")
+        for kind, phrase in phrases.items():
+            with self.subTest(kind=kind):
+                self.assertIn(phrase, text)
 
     def test_the_notice_names_the_tool_output_class_as_analyze_does(self) -> None:
         self.begin()

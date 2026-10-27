@@ -95,6 +95,15 @@ def live_level(subject: str) -> bool:
     return (alone.level, alone.reasons) != (with_it.level, with_it.reasons)
 
 
+def analysis_level(subject: str) -> bool:
+    alone = lv.analyze(lv.SUPPORTED, lv.PASSING)
+    failed = fact(subject, "failed")
+    with_it = lv.analyze(
+        lv.SUPPORTED, lv.evidence([*lv.PASSING.facts, failed], dict(lv.PASSING.scan))
+    )
+    return (alone.level, alone.reasons) != (with_it.level, with_it.reasons)
+
+
 def monitor_turn(subject: str) -> bool:
     return live_monitor._turn_text(fact(subject)) is not None
 
@@ -116,6 +125,7 @@ CONSUMERS: dict[str, Callable[[str], bool]] = {
     "work_floor": work_floor,
     "check_supports": check_supports,
     "live_level": live_level,
+    "analysis_level": analysis_level,
     "monitor_turn": monitor_turn,
     "goal_verdict": goal_verdict,
     "history": history,
