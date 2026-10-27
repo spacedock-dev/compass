@@ -353,6 +353,9 @@ class TheHttpPressAsksForItsOwnWindow(PressReachTestCase):
         with (
             mock.patch.object(http_api, "_session_context", side_effect=collected),
             mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            # The window is what is under test; the press-time CI read has its own suite and
+            # needs an application this stand-in does not carry.
+            mock.patch.object(http_api, "_read_ci", return_value=None),
         ):
             compose: Any = http_api._RequestHandler._compose_reading
             got, _why, _spent = compose(
