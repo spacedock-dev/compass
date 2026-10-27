@@ -8,6 +8,7 @@ the vendor rule. Every command and path below is synthetic.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shlex
 import time
@@ -17,6 +18,7 @@ from typing import Any, cast
 from unittest import mock
 
 from compass_runtime import (
+    ci_read,
     http_api,
     levels,
     observer,
@@ -397,6 +399,143 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
         )
 
 
+class ACiPollCountsOnlyWhenItReadsTheSessionsOwnPullRequest(ClaudeChecksTestCase):
+    """A recorded `gh pr checks` or `gh run view` is a CI result only for this session's own pull
+    request or repository. Every repository, number and branch below is synthetic.
+    """
+
+    def polls(self) -> dict[str, dict[str, Any]]:
+        return {e["title"]: e for e in self.read()[0] if e["subject"] in ("command", "ci_command")}
+
+    def assert_unbound(self, poll: dict[str, Any]) -> None:
+        self.assertEqual(
+            ("command", 3, True, "ci_poll_unbound"),
+            (poll["subject"], poll["tier"], poll["cannot_fail"], poll["result_reason"]),
+        )
+
+    def test_a_poll_of_another_repositorys_pull_request_does_not_count(self) -> None:
+        self.session.bash("gh pr checks 99 --repo other/old", "all pass", is_error=False)
+        (poll,) = self.polls().values()
+        self.assert_unbound(poll)
+        # Its exit status stays on the row; only the count and the verdict are withdrawn.
+        self.assertEqual("passed", poll["result"])
+        _entries, scan = self.read()
+        self.assertEqual(
+            (0, 0, 0, 0),
+            (scan["ci_passed"], scan["ci_failed"], scan["command_passed"], scan["command_failed"]),
+        )
+
+    def test_a_failed_poll_of_another_pull_request_blocks_no_level(self) -> None:
+        self.session.bash("gh pr checks 99 -R other/old", "Exit code 1\nbuild\tfail", is_error=True)
+        entries, scan = self.read()
+        self.assertEqual(0, scan["command_failed"] + scan["ci_failed"])
+        facts = facts_of(entries)
+        self.assertEqual(
+            [],
+            [f for f in facts if f.get("subject") == "ci_command" and not reading.cannot_fail(f)],
+        )
+
+    def test_a_poll_of_a_pull_request_the_goal_names_counts(self) -> None:
+        self.goal_texts = ("Merge https://github.com/acme/widgets/pull/42 once it is green.",)
+        self.session.bash("gh pr checks 42", "all pass", is_error=False)
+        (poll,) = self.polls().values()
+        self.assertEqual(
+            ("ci_command", 2, "passed"), (poll["subject"], poll["tier"], poll["result"])
+        )
+        self.assertEqual(1, self.read()[1]["ci_passed"])
+
+    def test_a_poll_of_a_pull_request_a_pr_link_record_names_counts(self) -> None:
+        self.goal_texts = ()
+        self.session.bash("gh pr checks 17", "all pass", is_error=False)
+        self.session.rows.append(
+            {"type": "pr-link", "prNumber": 17, "prRepository": "acme/widgets"}
+        )
+        self.session.rows.append({"type": "pr-link", "prNumber": 5, "prRepository": "other/old"})
+        (poll,) = self.polls().values()
+        self.assertEqual("ci_command", poll["subject"])
+
+    def test_a_record_for_another_repository_binds_nothing_here(self) -> None:
+        self.goal_texts = ()
+        self.session.bash("gh pr checks 5", "all pass", is_error=False)
+        self.session.rows.append({"type": "pr-link", "prNumber": 5, "prRepository": "other/old"})
+        (poll,) = self.polls().values()
+        self.assert_unbound(poll)
+
+    def test_a_poll_of_a_number_nothing_binds_does_not_count(self) -> None:
+        self.goal_texts = ()
+        self.session.bash("gh pr checks 77", "all pass", is_error=False)
+        (poll,) = self.polls().values()
+        self.assert_unbound(poll)
+
+    def test_a_poll_of_a_pushed_branch_counts_and_of_another_branch_does_not(self) -> None:
+        self.goal_texts = ()
+        self.session.rows.append(
+            {
+                "type": "user",
+                "toolUseResult": {"gitOperation": {"push": {"branch": "fix/widget-guard"}}},
+            }
+        )
+        self.session.bash("gh pr checks fix/widget-guard", "all pass", is_error=False)
+        self.session.bash("gh pr checks fix/elsewhere", "all pass", is_error=False)
+        found = self.polls()
+        self.assertEqual("ci_command", found["gh pr checks fix/widget-guard"]["subject"])
+        self.assert_unbound(found["gh pr checks fix/elsewhere"])
+
+    def test_a_poll_naming_no_repository_or_number_reads_the_folders_own_remote(self) -> None:
+        self.goal_texts = ()
+        self.session.bash("gh pr checks", "all pass", is_error=False)
+        self.session.bash("gh pr checks --repo acme/widgets", "all pass", is_error=False)
+        for poll in self.polls().values():
+            self.assertEqual("ci_command", poll["subject"])
+
+    def test_a_poll_whose_url_names_another_repository_does_not_count(self) -> None:
+        self.session.bash(
+            "gh pr checks https://github.com/other/old/pull/3", "all pass", is_error=False
+        )
+        (poll,) = self.polls().values()
+        self.assert_unbound(poll)
+
+    def test_a_gh_repo_override_in_the_environment_is_a_repository_the_poll_names(self) -> None:
+        self.session.bash("GH_REPO=other/old gh pr checks 3", "all pass", is_error=False)
+        (poll,) = self.polls().values()
+        self.assert_unbound(poll)
+
+    def test_no_git_identity_leaves_the_reason_token(self) -> None:
+        self.remote = None
+        self.session.bash("gh pr checks 3", "all pass", is_error=False)
+        (poll,) = self.polls().values()
+        self.assert_unbound(poll)
+
+    def test_a_remote_that_is_not_github_binds_nothing(self) -> None:
+        self.remote = ("gitlab.example.net", "acme/widgets")
+        self.session.bash("gh pr checks 3", "all pass", is_error=False)
+        (poll,) = self.polls().values()
+        self.assert_unbound(poll)
+
+    def test_no_git_leaves_the_reason_token_without_running_git(self) -> None:
+        self.config = dataclasses.replace(self.config, git_probe_enabled=False)
+        self.session.bash("gh pr checks 3", "all pass", is_error=False)
+        with mock.patch.object(ci_read, "probe_session") as probe:
+            (poll,) = self.polls().values()
+        self.assert_unbound(poll)
+        probe.assert_not_called()
+
+    def test_a_run_view_binds_by_repository_alone(self) -> None:
+        self.goal_texts = ()
+        self.session.bash("gh run view 5 --exit-status", "failure", is_error=True)
+        self.session.bash("gh run view 6 --exit-status --repo other/old", "failure", is_error=True)
+        found = self.polls()
+        self.assertEqual("failed", found["gh run view 5 --exit-status"]["result"])
+        self.assertEqual("ci_command", found["gh run view 5 --exit-status"]["subject"])
+        self.assert_unbound(found["gh run view 6 --exit-status --repo other/old"])
+
+    def test_a_session_that_never_polled_runs_no_git(self) -> None:
+        self.session.bash("make build", "done", is_error=False)
+        with mock.patch.object(ci_read, "probe_session") as probe:
+            self.read()
+        probe.assert_not_called()
+
+
 class TheResolverReadsATierThreeResult(base.AClaudeCodeReadingProducer):
     def command(self, **overrides: Any) -> dict[str, Any]:
         row: dict[str, Any] = {
@@ -518,7 +657,7 @@ class TheResolverReadsATierThreeResult(base.AClaudeCodeReadingProducer):
 class TheVendorRuleDecidesWhatOutputLeaves(ClaudeChecksTestCase):
     def prompt(self, provider: str) -> str:
         self.session.save(self.path)
-        entries, _scan = project_context.claude_tool_reports(self.config, str(self.path), SHORT)
+        entries, _scan = self.read()
         press = project_context.claude_check_press(self.config, str(self.path))
         tails = reading_route.tails_for(provider, "claude", press.tails, press.tier3_calls)
         ledger = reading.build_ledger(

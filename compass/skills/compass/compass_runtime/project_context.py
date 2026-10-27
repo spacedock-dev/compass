@@ -22,6 +22,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 from . import (
+    ci_read,
     claude_data,
     entry_numbers,
     events,
@@ -3680,7 +3681,9 @@ CHECK_NOT_RECORDED_REASONS = {
     "directory_not_placeable": "directory not placeable",
     "piped_beside_other_commands": "output is piped beside other commands",
     "printed_beside_other_commands": "output is printed beside other commands",
+    "ci_poll_unbound": "a CI poll of a pull request or repository this session is not bound to",
 }
+CI_POLL_UNBOUND = "ci_poll_unbound"
 
 
 def _withheld_reason(
@@ -4838,6 +4841,42 @@ class _ShellCall:
         return 1 if self.all_background else sum(part.launches for part in self.parts)
 
 
+class _CiBinding:
+    """What a recorded CI poll is checked against: the folder's remote and the session's records.
+
+    A poll counts only when it reads the session's own repository and, where it names one, a pull
+    request or branch the session is bound to
+    ([DEC-29](docs/design-reading-a-session.md#amended-2026-10-28-owner-a-ci-poll-counts-only-when-it-reads-the-sessions-own-pull-request)).
+    Both reads are lazy, so a session that never polled CI starts no git process and reads no
+    record, and each runs once per binding. With the git probe off or no remote, nothing binds.
+    """
+
+    def __init__(
+        self, config: RuntimeConfig, transcript_path: str, goal_texts: Iterable[str] = ()
+    ) -> None:
+        self._config = config
+        self._transcript_path = transcript_path
+        self.goal_texts = tuple(text for text in goal_texts if text)
+        self._remotes: dict[str, tuple[str, str]] = {}
+        self._records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] | None = None
+
+    def _remote(self, cwd: str) -> tuple[str, str]:
+        if cwd not in self._remotes:
+            found = ci_read.probe_session(self._config, cwd)
+            self._remotes[cwd] = (found.host, found.repository) if found else ("", "")
+        return self._remotes[cwd]
+
+    def bound(self, poll: ci_read.Poll, cwd: str, created: Iterable[tuple[str, int]]) -> bool:
+        if not self._config.git_probe_enabled or not cwd:
+            return False
+        if self._records is None:
+            self._records = ci_read.scan_records(self._config, self._transcript_path)
+        links, pushes = self._records
+        return ci_read.poll_bound(
+            poll, self._remote(cwd), self.goal_texts, (*links, *created), pushes
+        )
+
+
 class _ToolReportTally:
     """The full scan of one transcript's calls, and the entries chosen from it."""
 
@@ -4846,8 +4885,11 @@ class _ToolReportTally:
         results: dict[str, _Result],
         session_dir: str,
         declared: project_scripts.Declarations | None = None,
+        ci_binding: _CiBinding | None = None,
     ) -> None:
         self.results = results
+        # Without one nothing a CI poll names can be bound, so no poll counts.
+        self.ci_binding = ci_binding
         # The project's own check scripts, as the commit the session began on held them.
         self.declared = declared
         # Where a written path is read from: not a record's `cwd`, which a `cd` moves.
@@ -5342,6 +5384,7 @@ class _ToolReportTally:
             ci = _ci_run_kind(words) if reads_only else ""
             if (reads_only and not ci) or _always_zero(words):
                 continue
+            poll = ci_read.parse_poll(ci, words, call.parts[index].raw) if ci else None
             outcome, source = "not-recorded", ""
             masked = call.status_masked(index)
             if result is not None and not (
@@ -5382,6 +5425,8 @@ class _ToolReportTally:
                 "seq": self.shell_seq,
                 "worker": worker,
                 "subject": CI_SUBJECT if ci else COMMAND_SUBJECT,
+                "ci_poll": poll,
+                "cwd": call.directories[index] if call.placed[index] else self.session_dir,
                 "cannot_fail": masked,
                 "changes_later_in_call": any(
                     i > index
@@ -5551,6 +5596,10 @@ class _ToolReportTally:
             elif entry["subject"] in (COMMAND_SUBJECT, CI_SUBJECT):
                 # Kept apart from the check counters: the page's "N checks" and the live floor's
                 # check blockers read those, and a command is not one.
+                if entry.get("result_reason") == CI_POLL_UNBOUND:
+                    # Counted nowhere: a poll of a pull request this session never touched
+                    # is neither a failure that blocks the floor nor a pass that clears it.
+                    continue
                 prefix = "ci" if entry["subject"] == CI_SUBJECT else "command"
                 if (
                     entry["subject"] == COMMAND_SUBJECT
@@ -5700,7 +5749,13 @@ class _ToolReportTally:
                 self._entry_cache[key] = entry
             # Not counted by `entries` for a fixed place: a command listed there would move the
             # number of every check and file after it in a session already read.
-            candidates.append({**entry, "_key": key, "_first_at": history[0]["at"]})
+            candidates.append(
+                {
+                    **self._bound(entry, history[self._latest(history)]),
+                    "_key": key,
+                    "_first_at": history[0]["at"],
+                }
+            )
         candidates.extend(self._write_entry(path, write) for path, write in self.writes.items())
         candidates.extend(self._pr_entry(key, pr) for key, pr in self.prs.items())
         candidates.extend(self._skill_entry(name, skill) for name, skill in self.skills.items())
@@ -5713,6 +5768,30 @@ class _ToolReportTally:
         # kept ones in time order (orchestrator, 2026-09-24).
         candidates.sort(key=lambda row: (row["rank"], -float(row["at"])))
         return candidates
+
+    def _bound(self, entry: dict[str, Any], latest: dict[str, Any]) -> dict[str, Any]:
+        """A CI poll that reads nothing of this session, put down as the plain command it is.
+
+        It keeps its exit status and loses its tier: `cannot_fail` withdraws it from every
+        verdict and level, so a pass or a failure of another pull request's checks is neither.
+        Decided here and not when the run is read, because a pull request the session created
+        or pushed may be recorded after the poll, and the entry cache never sees that arrive.
+        """
+        poll = latest.get("ci_poll")
+        if poll is None or entry["subject"] != CI_SUBJECT:
+            return entry
+        binding = self.ci_binding
+        created = [(pr["repository"], pr["number"]) for pr in self.prs.values()]
+        if binding is not None and binding.bound(poll, latest["cwd"], created):
+            return entry
+        return {
+            **entry,
+            "subject": COMMAND_SUBJECT,
+            "tier": 3,
+            "cannot_fail": True,
+            "result_reason": CI_POLL_UNBOUND,
+            "rank": _COMMAND_FAILED_RANK if entry["result"] == "failed" else _COMMAND_RANK,
+        }
 
     def passes_and_writes(self) -> tuple[tuple[str, str, float], ...]:
         """(record id, title, time) of every latest passing check and written path.
@@ -6161,6 +6240,7 @@ class _CheckScan(NamedTuple):
     source_reads: tuple[tuple[str, runtime_io.TranscriptRead | None], ...]
     session_dir: str = ""
     declared: project_scripts.Declarations | None = None
+    ci_binding: _CiBinding | None = None
 
 
 # Programs whose arguments name the files they change, for a listed script's own name.
@@ -6542,6 +6622,7 @@ def _live_check_scan(
     *,
     max_bytes: int | None = None,
     child_paths: Sequence[str] | None = None,
+    goal_texts: Iterable[str] = (),
 ) -> _CheckScan:
     """Parent-first actual bytes; metadata sorts children without spending B."""
     budget = _scan_budget(config, max_bytes)
@@ -6599,6 +6680,7 @@ def _live_check_scan(
         tuple(source_reads),
         began_in,
         _declared_scripts(config, transcript_path, began_in, parent, children),
+        _CiBinding(config, transcript_path, goal_texts),
     )
 
 
@@ -6613,6 +6695,7 @@ def _tally_of(  # noqa: PLR0913 - the scan's own facts ride beside what it reads
     parent_failed: bool = False,
     orphan_unread: bool = False,
     declared: project_scripts.Declarations | None = None,
+    ci_binding: _CiBinding | None = None,
 ) -> _ToolReportTally:
     """One tally over a parent's calls and its subagents', in call time order.
 
@@ -6628,7 +6711,9 @@ def _tally_of(  # noqa: PLR0913 - the scan's own facts ride beside what it reads
     unavailable child makes every held pass incomplete without inventing a
     timestamp. A measured failure remains a failure.
     """
-    tally = _ToolReportTally(_merged_check_results(parent, subagents), session_dir, declared)
+    tally = _ToolReportTally(
+        _merged_check_results(parent, subagents), session_dir, declared, ci_binding
+    )
     tally.reads_from = reads_from
     tally.scan["last_user_at"] = _last_person_at(parent)
     tally.named_unread = named_unread
@@ -6690,8 +6775,15 @@ def _claude_tally(
     *,
     max_bytes: int | None = None,
     child_paths: Sequence[str] | None = None,
+    goal_texts: Iterable[str] = (),
 ) -> _ToolReportTally:
-    scan = _live_check_scan(config, transcript_path, max_bytes=max_bytes, child_paths=child_paths)
+    scan = _live_check_scan(
+        config,
+        transcript_path,
+        max_bytes=max_bytes,
+        child_paths=child_paths,
+        goal_texts=goal_texts,
+    )
     return _tally_of(
         scan.parent,
         scan.children,
@@ -6702,6 +6794,7 @@ def _claude_tally(
         orphan_unread=scan.orphan_unread,
         session_dir=scan.session_dir,
         declared=scan.declared,
+        ci_binding=scan.ci_binding,
     )
 
 
@@ -6982,6 +7075,7 @@ def claude_tool_reports(
     max_bytes: int | None = None,
     window_start: float | _WindowNotRequested | None = _WINDOW_NOT_REQUESTED,
     index_provider: Callable[[], Any] | None = None,
+    goal_texts: Iterable[str] = (),
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """The listed checks and written paths, and the full-scan counts behind them,
     a subagent's included and labelled.
@@ -6989,7 +7083,7 @@ def claude_tool_reports(
     Claude Code only, and published into the observed record only:
     [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
     """
-    tally = _claude_tally(config, transcript_path, max_bytes=max_bytes)
+    tally = _claude_tally(config, transcript_path, max_bytes=max_bytes, goal_texts=goal_texts)
     # Asked for after the tally has read. A message written meanwhile is later than every entry the
     # tally read, so it cannot belong to the position of one of them.
     entries = tally.entries(sid, index_provider() if index_provider is not None else None)
@@ -7121,6 +7215,7 @@ def _frozen_check_scan(config: RuntimeConfig, transcript_path: str, until: float
         tuple(source_reads),
         began_in,
         _declared_scripts(config, transcript_path, began_in, parent, children),
+        _CiBinding(config, transcript_path),
     )
 
 
@@ -7147,6 +7242,7 @@ def frozen_claude_checks(
         parent_failed=scan.parent_failed,
         session_dir=scan.session_dir,
         declared=scan.declared,
+        ci_binding=scan.ci_binding,
     )
     facts = [
         _semantic_fact_from_event(row, str(row["kind"]), _SEMANTIC_FACT_TYPES[row["kind"]], "")
@@ -7970,6 +8066,15 @@ def _index_provider(
     return provide
 
 
+def _goal_texts(session: Mapping[str, Any]) -> tuple[str, ...]:
+    """The reader's own words for the goal, as the press binds a pull request from them."""
+    goal = session.get("session_goal")
+    return (
+        str(goal.get("text") or "") if isinstance(goal, dict) else "",
+        str(session.get("annotation_goal") or ""),
+    )
+
+
 def _session_work_evidence(
     config: RuntimeConfig,
     transcript_path: str,
@@ -7994,6 +8099,7 @@ def _session_work_evidence(
             sid,
             window_start=_assessment_window_start(session),
             index_provider=index_provider,
+            goal_texts=_goal_texts(session),
         )
         events.extend(report_rows)
         tool_report_scans.append({**identity, **scan})

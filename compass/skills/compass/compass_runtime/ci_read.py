@@ -251,6 +251,143 @@ def bind(
     return None
 
 
+@dataclass(frozen=True)
+class Poll:
+    """What a recorded CI poll names: its repository, and the pull request or branch it reads.
+
+    `repository` is empty when the command names none (it then reads the folder's own remote).
+    `number` and `branch` are both empty when it names no pull request, which for `gh pr checks`
+    means the current branch's. `valid` is False when a word it names is not one this module will
+    compare, so the poll binds to nothing.
+    """
+
+    repository: str = ""
+    number: int = 0
+    branch: str = ""
+    valid: bool = True
+
+
+# Options that take a value, by command: the word after one is not the positional target.
+_POLL_VALUE_FLAGS: Final = {
+    "pr_checks": frozenset({"-i", "--interval", "--json", "-q", "--jq", "-t", "--template"}),
+    "run_view": frozenset(
+        {"-j", "--job", "-a", "--attempt", "--json", "-q", "--jq", "-t", "--template"}
+    ),
+}
+_REPO_FLAGS: Final = ("-R", "--repo")
+
+
+def _poll_repository(value: str) -> str | None:
+    """`owner/repo` for a `--repo` value, or the value itself when it names another host.
+
+    A repository on another host is kept as written so it never equals a GitHub `origin`;
+    None is a value that names no repository at all.
+    """
+    text = value.strip()
+    if "://" in text or text.startswith("git@"):
+        host, repository = git_status.parse_remote(text)
+        if not repository:
+            return None
+        return repository if host == HOST and _github_repository(repository) else text
+    parts = text.split("/")
+    if len(parts) == 3 and parts[0].lower() == HOST and _github_repository("/".join(parts[1:])):
+        return "/".join(parts[1:])
+    if len(parts) == 3 and _HOST_RE.fullmatch(parts[0].lower()):
+        return text
+    return text if len(parts) == 2 and _github_repository(text) else None
+
+
+def _poll_operands(kind: str, rest: Sequence[str]) -> tuple[list[str], list[str]]:
+    """The `--repo` values and the positional words among a poll's arguments."""
+    repos: list[str] = []
+    positional: list[str] = []
+    value_flags = _POLL_VALUE_FLAGS[kind]
+    at = 0
+    while at < len(rest):
+        word = rest[at]
+        at += 1
+        flag, equals, inline = word.partition("=")
+        if word == "--":
+            positional.extend(rest[at:])
+            break
+        if flag in _REPO_FLAGS:
+            if not equals and at < len(rest):
+                inline, at = rest[at], at + 1
+            repos.append(inline)
+        elif word.startswith("-R") and not word.startswith("--"):
+            repos.append(word[2:])
+        elif flag in value_flags:
+            at += 0 if equals else 1
+        elif not word.startswith("-"):
+            positional.append(word)
+    return repos, positional
+
+
+def parse_poll(kind: str, words: Sequence[str], raw: Sequence[str] = ()) -> Poll:
+    """The repository and target a `gh pr checks` or `gh run view` command names.
+
+    `kind` is `pr_checks` or `run_view`; `words` are the program's words after any wrapper, and
+    `raw` the segment's words before wrappers and assignments were stripped, so a `GH_REPO=...`
+    prefix, which points `gh` at another repository, is read like `--repo`.
+    """
+    repos, positional = _poll_operands(kind, words[3:])
+    repos.extend(word.partition("=")[2] for word in raw if word.startswith("GH_REPO="))
+    named = {_poll_repository(value) for value in repos}
+    if len(named) > 1 or None in named or len(positional) > 1:
+        return Poll(valid=False)
+    repository = next(iter(named), "") or ""
+    if kind == "run_view" or not positional:
+        return Poll(repository=repository)
+    target = positional[0]
+    if target.isdigit():
+        number = int(target)
+        return Poll(repository, number) if 0 < number <= _NUMBER_MAX else Poll(valid=False)
+    urls = pull_request_urls(target) if target.startswith("https://") else ()
+    if len(urls) == 1:
+        url_repository, number = urls[0]
+        if repository and repository.lower() != url_repository.lower():
+            return Poll(valid=False)
+        return Poll(url_repository, number)
+    return Poll(repository, branch=target) if _usable_branch(target) else Poll(valid=False)
+
+
+def poll_bound(
+    poll: Poll,
+    remote: tuple[str, str],
+    goal_texts: Iterable[str],
+    links: Sequence[tuple[str, int]],
+    pushes: Sequence[str],
+) -> bool:
+    """Whether a recorded CI poll reads this session's own pull request or repository.
+
+    The poll's repository, its own or the folder's where it names none, must be the folder's
+    `origin`; a poll that names a number or a branch must name one the session is bound to, by
+    [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)'s
+    sources: the goal's own URL, a `pr-link` or created-pull-request record, or a pushed branch.
+    A poll naming neither is the current branch's, and binds with the repository. No remote, or one
+    that is not a GitHub repository, binds nothing: a recorded run cannot be checked further
+    without a network call.
+    """
+    host, repository = remote
+    if not poll.valid or host != HOST or not _github_repository(repository):
+        return False
+    folded = repository.lower()
+    if poll.repository and poll.repository.lower() != folded:
+        return False
+    if poll.number:
+        named = {
+            number
+            for text in goal_texts
+            for linked, number in pull_request_urls(text)
+            if linked.lower() == folded
+        }
+        named.update(number for linked, number in links if linked.lower() == folded)
+        return poll.number in named
+    if poll.branch:
+        return poll.branch in pushes
+    return True
+
+
 def _usable_branch(branch: str) -> bool:
     return bool(
         _BRANCH_RE.fullmatch(branch)

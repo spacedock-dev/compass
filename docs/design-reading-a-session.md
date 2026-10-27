@@ -7920,6 +7920,48 @@ told the session had written it, and an interpreter that rewrote a listed script
   the scan for these names. A longer call is parsed each time it is asked for, so the process-wide memo does
   not hold a pasted script.
 
+### Amended 2026-10-28 (owner): a CI poll counts only when it reads the session's own pull request
+
+Item 6 made `gh pr checks` and `gh run view --exit-status` a tier 2 `ci_command` fact and asked for no binding,
+so `gh pr checks 99 --repo other/old` exiting 0 counted as a CI pass toward the live floor although that pull
+request has nothing to do with the session. A pass the reader's session did not earn is the false pass the
+tiers exist to refuse.
+
+- **The rule.** A poll counts only when its repository is the folder's own `origin` and, where it names a pull
+  request number or a branch, the session is bound to that one. The repository is the poll's `--repo` or `-R`
+  (or a `GH_REPO=` assignment, which `gh` reads the same way), or the folder's own remote where it names none;
+  a URL target carries its own, and a URL that disagrees with `--repo` binds nothing. The folder is the call's
+  own directory after any `cd`, and the session's where the call's cannot be placed.
+- **What binds a number or a branch.** The sources
+  [DEC-30](#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze) uses for the press:
+  the reader's goal naming the pull request by its URL, a `pr-link` record or a pull request the session
+  created, each for the folder's own repository, and a branch the session pushed. `ci_read.poll_bound` reuses
+  that module's URL, repository and branch checks and its record scan, and `git_status.identity` for the remote.
+  A press binds one pull request, the newest. A poll may be any the session is bound to, so a session that opened
+  two pull requests keeps both polls. A poll that names neither a number nor a branch reads the current
+  branch's, and binds with the repository.
+- **A run names no pull request.** `gh run view <id> --exit-status` counts when `--repo` is absent or equals the
+  folder's remote. Nothing further can bind a run id without a network call, so a run of another workflow in the
+  same repository counts. That residual is accepted: the failure it permits is a run of the session's own
+  repository.
+- **No network, and fail safe.** Collection never calls the network, so a binding that needs one is not
+  established. With the git probe off (`--no-git`), no `origin`, a remote that is not on `github.com`, or a
+  poll that cannot be read (two repositories, two targets, a word outside the closed patterns), the poll is
+  listed as a tier 3 command: its exit status stays on the row, it is published with `cannot_fail` and
+  `result_reason` `ci_poll_unbound`, and no verdict, level or scan count reads it. The page says "a CI poll of a
+  pull request or repository this session is not bound to". The goal's URL binds only at the scan that is given
+  the goal, which is every collection and live estimate and not the frozen abstention packet, which therefore
+  counts a poll only by the session's own records.
+- **A goal URL in another repository.** It binds the press (`bind`), where the reader's words name what to read,
+  and does not bind a poll, which must also be in the folder's own repository.
+- **Ordering.** The binding is decided when the entries are chosen and not when the run is read, because a
+  `pr-link` or a created pull request is often recorded after the first poll and the entry cache never sees one
+  arrive. The live estimate replays each call position, so a poll made before the record shows unbound there
+  until the next replay, and the stored reading reads the full transcript.
+- **What was rejected.** Dropping the unbound poll from the list: a reader looking at a session that polled
+  something sees nothing, and "ran" is the honest word. Asking `gh` which pull request a branch or run belongs
+  to: that is a network call at collection time.
+
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
 Decided by the owner on 2026-10-27 (DRC-4973). This layer writes the ruling down; the layers that follow build

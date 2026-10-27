@@ -1903,7 +1903,11 @@ a command: its line, masked and clipped as a check line is, and its exit status 
 speaks for it. `gh pr checks` and `gh run view --exit-status` are published as CI reads. `gh pr checks`
 records a failure only on exit 1 with checks reported, and no result on exit 8 (pending), 2, 4 or a pull
 request with no checks. `gh run view --exit-status` exits 0 for a run still in progress, so only its failure
-counts. A command that cannot fail (`echo`, `printf`, `true`, `:`, `export`, `unset`, `set`, `eval`, `tee`,
+counts. A CI read counts only when it reads the session's own repository, which is the poll's `--repo` or the
+folder's own `origin`, and, where it names a pull request or a branch, one the session is bound to by your goal's
+URL, a recorded pull request link or created pull request, or a pushed branch of that repository. Any other poll,
+and every poll in a folder with no `origin` on `github.com` or when `--no-git` is set, is published as a plain
+command with its exit status and counts for nothing. A command that cannot fail (`echo`, `printf`, `true`, `:`, `export`, `unset`, `set`, `eval`, `tee`,
 `exit 0`, `return 0`, by any spelling such as a path or `command true`) is never published, and one whose
 status a later `|| true` or `; exit 0` forces is published with no result and withdrawn from every verdict
 and level. A stage after a `|` that follows other work, such as `tee` or `sed`, records no result, since the
