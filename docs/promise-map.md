@@ -81,7 +81,10 @@ Haiku, and its accuracy check has not been run yet. Until a check returns, or wh
 capped or fails, the level is the estimate from recorded checks and file paths rather than the
 meaning of your intent. An analysis shows its level, each outcome line against the recorded work and
 what the agent said with its source, where files were written, and why a result is stale. Recorded
-checks and file paths include subagent work, labelled as such. On Claude Code sessions, What the
+checks and file paths include subagent work, labelled as such. A project's own test, lint and
+build scripts count as checks only when the script is a known runner, read from the commit the
+session began on; a runner Compass does not know, and a workflow file, leave the command an
+ordinary one. On Claude Code sessions, What the
 session has done tells the session as a short story in phases, each line citing the entries it rests
 on, written by a model through your own Claude Code. A finished session is summarized when you open
 it and a running one when you press Summarize or Update summary; the first summary says what is sent

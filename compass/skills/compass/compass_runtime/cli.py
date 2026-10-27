@@ -325,7 +325,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "do not run the end-of-session git probe in any session's working "
-            "repository (the dirty and changed fields then stay empty)"
+            "repository (the dirty and changed fields then stay empty), and "
+            "do not read a project's own check scripts from git"
         ),
     )
     parser.add_argument(

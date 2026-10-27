@@ -7393,6 +7393,71 @@ the build had to decide, in the order a reader meets it:
 - **The prompt header is unchanged**, so its pinned digest stands. The new false-`consistent` class is the
   qualification item 9 owes after the wave ships, and it has not run.
 
+### Amended 2026-10-27 (owner): a project's own scripts are tier 2 checks
+
+Item 1 puts a project's own test, lint, build and typecheck scripts in tier 2 "when the script body is itself
+a closed-list runner". This layer builds that, and what the build had to decide is below.
+
+- **What counts.** A package script, a make target or a just recipe is a check when its own body is a closed-list
+  runner or a `&&` chain of them, and its name carries a check verb (`test`, `lint`, `typecheck`, `check`,
+  `build`, as a whole word of the name split on `:`, `-`, `_` and `.`). A script that names another declared
+  script runs through the same test, four levels deep at most. A body that redirects into a file, opens a
+  subshell, substitutes a command, backgrounds anything, joins with `;`, `||` or a pipe, or holds a fixer
+  (`--fix`, `--write`, `format` without `--check`) never counts. Neither does a name carrying a word like
+  `fix`, `format`, `deploy`, `clean`, `dev` or `watch`, since a body such as `tsc --build --clean` looks like a
+  runner and is not a check. An installer, `echo`, `true`, `:`, `exit 0` and a deploy are not on the closed list,
+  so no body of them passes. `npm` and `pnpm` run `pre<name>` and `post<name>` around a script, so one that is
+  declared and is not itself a check withdraws the script. A body that watches, rewrites snapshots or
+  autocorrects (`--watch`, `-u`, `--update`, `--snapshot-update`, `-A`) is not a check either, while a warning
+  filter such as `python -m pytest -W error` is. `format:check` counts when every body line says `--check`.
+  A make target counts only when `.PHONY` in the same file lists it or it has a prerequisite, because
+  `make test` beside a `test/` directory prints "up to date" and runs nothing; a trailing `#` comment on a
+  rule line is dropped, unless the line also holds a `$`.
+- **What the session typed.** `pnpm <name>`, `pnpm run <name>`, `npm run <name>`, `yarn <name>`, `make <targets>`
+  and `just <recipes>`, from the toplevel of the work tree (`bun run <name>` reads as `npm run`). A package
+  manager option before or after the name and before a literal `--` (`--filter`, `-r`, `-C`, `--dir`,
+  `--prefix`, `--workspace`, `--script-shell`) selects another package or stops the script, so its declaration
+  is not the one that ran. A `--fix` or `--write` anywhere can turn a check into a writer, a make variable on
+  the command line rewrites a recipe, and a variable that steers the run (`npm_config_*`, `MAKEFLAGS`, `MAKE`,
+  `JUST_*`) changes what runs. Each leaves the command an ordinary tier 3 command. An argument after `--`
+  reaches the script, so `npm run typecheck -- --noEmit` still counts. `pnpm test`, `npm run test`, `make test` and the other names
+  already on the closed list count as they did, whatever their script holds.
+- **Where the declaration is read.** The agent can write every declaring file, so a declaration is read from the
+  git object database, at the newest first-parent commit of HEAD that is no newer than the transcript's first
+  stamped record, and never from the working tree alone. Compass does not record the commit a session began on,
+  and the transcript carries a branch name at most, so the first record's time stands in for it; a commit the
+  session made later is never the base. The working-tree file must also be a regular file whose bytes equal that
+  commit's, and a cached read is checked against the work tree again before it is used. A session that edited
+  it by any tool, or by a shell command, leaves it different, so it declares nothing, and a recorded write by a write tool withdraws that kind of file even when the session restored it.
+  An edit made by a shell command and then put back is the one case neither check sees; the work tree after the
+  session is the same file the commit held.
+- **Bounds.** Only the toplevel of the work tree of the directory the session began in; `lstat` before any open,
+  regular files only, no link followed, a non-blocking open; 256 KiB a file, 4,096 characters a line, 500 scripts, seven files, one five
+  second deadline for all of git. A symlink, a FIFO, an oversized file, an unparseable one and a Makefile that
+  uses `include`, conditionals, `define`, `.ONESHELL` or a custom `SHELL` add nothing, and `--diagnose` names the
+  file and a closed reason, never its content. A command in a subfolder runs that folder's scripts, which are not
+  read. Workflow `run:` steps are out of scope, because no YAML parser ships. On Windows a checkout that converts
+  line endings differs from its commit byte for byte, so its declarations are skipped as edited.
+- **What stays a command.** The closed list is the whole vocabulary of a body: `biome check`, `storybook test`,
+  `./gradlew check` and any runner not on it leave their scripts tier 3 until the list grows or a later layer
+  reads them. This layer does not widen the list.
+- **Ageing and the answer.** A declared script is a check and still a change, as item 4 says of every command
+  that is not read-only: it ages the passes before it, its own pass stands, and a later one ages that. Its result is
+  read as any check's is, from the call's exit status and the output the producer already reads. The line
+  published is the session's own command, never the script's body.
+- **Three readers, one classification.** The published facts, the source pages and the model-free live level all
+  take the same declarations from one read, and the live replay restarts when which scripts are declared
+  changes. The live level therefore starts git, four read-only commands against the object database, and the
+  test that pins "no process" for it allows exactly those. `--no-git` stops the read, and the scripts become
+  commands again.
+- **The command.** `git -c core.fsmonitor= -c core.hooksPath=/dev/null --no-optional-locks` with `rev-parse
+  --show-toplevel`, `rev-list -1 --first-parent --before=<ISO date in UTC> HEAD`, `ls-tree -l -z <commit> --
+  <names>` and `cat-file blob <id>`, in `git_status.py` beside the status probe, by the same resolved executable
+  and scrubbed environment, with `GIT_NO_REPLACE_OBJECTS=1` set so a replace ref cannot present an edited
+  file as the committed one. Measured: `--before=<digits>` is not a timestamp, since git matched a commit newer
+  than the bound, so the date is written out. None of the four reads the index, runs a filter or an fsmonitor.
+  [SECURITY.md](../SECURITY.md#the-committed-file-read-project-check-scripts) states the contract.
+
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
 Decided by the owner on 2026-10-27 (DRC-4973). This layer writes the ruling down; the layers that follow build

@@ -24,6 +24,7 @@ from . import (
     entry_numbers,
     events,
     observer,
+    project_scripts,
     reading_route,
     records,
     semantic_history,
@@ -3158,6 +3159,225 @@ def _is_check(words: list[str]) -> bool:
     return _is_named_runner(words) or _is_test_program(words)
 
 
+# A project's own scripts (package.json, a Makefile, a justfile) are tier 2 checks when the body
+# is itself a closed-list runner, or a `&&` chain of them, and the script's name carries a check
+# verb. The ruling:
+# [DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)  # noqa: E501
+# The name rule is there because bodies alone admit `format`-like scripts that only look like
+# runners: `"deploy": "pnpm test && ./push.sh"` fails the body rule, and `"clean": "tsc --build
+# --clean"` passes it and still must not read as a check.
+_SCRIPT_VERBS = frozenset({"test", "tests", "lint", "typecheck", "check", "build"})
+_SCRIPT_REFUSED = frozenset(
+    {"fix", "format", "write", "deploy", "publish", "release", "install", "clean", "reset", "dev",
+     "watch", "serve", "start", "seed", "migrate", "update", "upgrade", "push", "up", "down",
+     "open", "preview", "generate", "codegen", "docker"}
+)  # fmt: skip
+# Words after a package manager that are its own commands, never a script of that name.
+_PACKAGE_COMMANDS = frozenset(
+    {"install", "i", "add", "remove", "rm", "uninstall", "update", "up", "upgrade", "exec", "dlx",
+     "create", "init", "link", "unlink", "list", "ls", "outdated", "publish", "pack", "audit",
+     "prune", "store", "env", "config", "fetch", "import", "patch", "rebuild", "rb", "root",
+     "setup", "server", "start", "restart", "stop", "test", "t", "x", "why", "info", "pm",
+     "workspace", "workspaces", "global", "cache", "run", "run-script", "dev"}
+)  # fmt: skip
+# Arguments that turn a declared check into something that writes or never ends.
+_SCRIPT_WRITING_ARGS = frozenset(
+    {"--fix", "--write", "-w", "--update", "-u", "--updateSnapshot", "--update-snapshots",
+     "--watch", "--watchAll", "-W", "--fix-only", "--unsafe-fixes"}
+)  # fmt: skip
+# A declared body that watches, rewrites snapshots or autocorrects is not a check. `-W` is left
+# out: `python -W error -m pytest` is a check, and the flag is a warning filter there.
+_BODY_WRITING_ARGS = frozenset(
+    {"--watch", "--watchAll", "-w", "--continuous", "-u", "--update", "--updateSnapshot",
+     "--update-snapshots", "--snapshot-update", "-update", "--autocorrect", "--auto-correct",
+     "-a", "-A", "--fix", "--write"}
+)  # fmt: skip
+_SCRIPT_NAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.:-]*")
+_MAKE_OPTIONS = re.compile(r"^(?:-s|--silent|--quiet|-k|--keep-going|--no-print-directory|-j\d*)$")
+_SCRIPT_DEPTH = 4
+
+
+def _script_name_ok(name: str, lines: tuple[str, ...] = ()) -> bool:
+    tokens = set(re.split(r"[^a-z0-9]+", name.lower()))
+    refused = tokens & _SCRIPT_REFUSED
+    # `format:check` is the usual spelling of a formatter's verify mode. The name alone is not
+    # enough, so the body has to ask for it with `--check` or `-c` on every line.
+    if refused == {"format"} and "check" in tokens and lines:
+        refused = set() if all(_asks_to_check_only(line) for line in lines) else refused
+    return bool(tokens & _SCRIPT_VERBS) and not refused
+
+
+def _asks_to_check_only(line: str) -> bool:
+    return any(word in ("--check", "-c") for word in line.split())
+
+
+def _package_invocation(program: str, rest: list[str]) -> tuple[str, list[str]] | None:
+    direct = program in ("pnpm", "yarn")
+    if rest[:1] in (["run"], ["run-script"]) and len(rest) > 1:
+        name, args = rest[1], rest[2:]
+    elif direct and rest and rest[0] not in _PACKAGE_COMMANDS:
+        name, args = rest[0], rest[1:]
+    else:
+        return None
+    # An option before the literal `--` is the package manager's own, whichever side of the name
+    # it sits on: `--prefix`, `--workspace(s)`, `--filter`, `--dir`, `--script-shell` and
+    # `--ignore-scripts` each select another package or stop the script, so the declared one is
+    # not what ran. After the `--` an argument reaches the script itself.
+    own, _separator, forwarded = _partition_double_dash(args)
+    if (
+        name.startswith("-")
+        or _SCRIPT_NAME_RE.fullmatch(name) is None
+        or any(arg.startswith("-") for arg in own)
+        or any(arg.split("=", 1)[0] in _SCRIPT_WRITING_ARGS for arg in (*own, *forwarded))
+    ):
+        return None
+    return "package", [name]
+
+
+def _partition_double_dash(args: list[str]) -> tuple[list[str], list[str], list[str]]:
+    if "--" not in args:
+        return args, [], []
+    at = args.index("--")
+    return args[:at], ["--"], args[at + 1 :]
+
+
+# Variables that change which script or recipe a package manager, `make` or `just` runs, or
+# whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`).
+_STEERING_VARIABLE_RE = re.compile(r"^(?:npm_config_|JUST_)|^(?:MAKEFLAGS|MAKE)$", re.IGNORECASE)
+
+
+def _steers_a_script(raw: tuple[str, ...]) -> bool:
+    """Whether a segment's words, before stripping, assign a variable that steers a script run."""
+    return any(
+        _ASSIGNMENT_RE.match(word) and _STEERING_VARIABLE_RE.match(word.split("=", 1)[0])
+        for word in raw
+    )
+
+
+def _script_invocation(words: list[str]) -> tuple[str, list[str]] | None:
+    """The declaring-file kind and script names a command runs, or None for anything else.
+
+    Only the plain forms: no package-manager option on either side of the script's name before a
+    literal `--` (`--filter`, `-r`, `-C`, `--dir`, `--prefix` and `--workspace` select another
+    package or directory, whose declarations are not read, and `--script-shell` can stop the script
+    running), and no argument that writes.
+    """
+    if not words:
+        return None
+    program, rest = words[0], words[1:]
+    if program in ("npm", "pnpm", "yarn", "bun"):
+        return _package_invocation(program, rest)
+    if program == "make":
+        rest = [word for word in rest if not _MAKE_OPTIONS.match(word)]
+    elif program != "just":
+        return None
+    if not rest or any(_SCRIPT_NAME_RE.fullmatch(word) is None for word in rest):
+        return None
+    return program, rest
+
+
+def _script_line_is_check(
+    declared: project_scripts.Declarations, line: str, depth: int, trail: tuple[str, ...]
+) -> bool:
+    """Whether one declared command line is a `&&` chain of closed-list runners and checks."""
+    try:
+        parts = _call_parts(line)
+    except _Unbalanced:
+        return False
+    for index, part in enumerate(parts):
+        words = part.words
+        if (
+            not words
+            or part.hides_change
+            or part.background
+            or part.opens
+            or part.closes
+            or part.syntax
+            or _writes_a_file(part.redirects)
+            or (index < len(parts) - 1 and part.joiner != "&&")
+            or _is_fixer(words)
+            or _always_zero(words)
+            or _steers_a_script(part.raw)
+            or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
+        ):
+            return False
+        if _is_check(words):
+            continue
+        invoked = _script_invocation(words)
+        if invoked is None or depth >= _SCRIPT_DEPTH:
+            return False
+        kind, names = invoked
+        if not all(_script_is_check(declared, kind, name, depth + 1, trail) for name in names):
+            return False
+    return bool(parts)
+
+
+def _script_is_check(
+    declared: project_scripts.Declarations,
+    kind: str,
+    name: str,
+    depth: int = 0,
+    trail: tuple[str, ...] = (),
+    *,
+    named: bool = True,
+) -> bool:
+    key = (kind, name, named)
+    if key in declared.memo:
+        return declared.memo[key]
+    top = not trail
+    identity = f"{kind}:{name}"
+    script = declared.kind(kind).get(name)
+    result = False
+    if (
+        script is not None
+        and identity not in trail
+        and (not named or _script_name_ok(name, script.lines))
+    ):
+        trail = (*trail, identity)
+        result = (
+            bool(script.lines or script.needs)
+            and all(
+                _script_is_check(declared, kind, need, depth + 1, trail) for need in script.needs
+            )
+            and all(_script_line_is_check(declared, line, depth, trail) for line in script.lines)
+            # `npm` and `pnpm` run `pre<name>` and `post<name>` around a script, so a hook that is
+            # not itself a check makes the script something else.
+            and (
+                kind != "package"
+                or all(
+                    hook not in declared.package
+                    or _script_is_check(declared, kind, hook, depth + 1, trail, named=False)
+                    for hook in (f"pre{name}", f"post{name}")
+                )
+            )
+        )
+    # Only an answer reached from the top is kept: one reached under a cycle guard or the depth
+    # limit is a fact about that path, and would poison a later direct ask.
+    if top:
+        declared.memo[key] = result
+    return result
+
+
+def _declared_check(
+    declared: project_scripts.Declarations | None,
+    directory: str,
+    words: list[str],
+    raw: tuple[str, ...] = (),
+) -> bool:
+    """Whether a segment runs a script the project's own declarations make a check.
+
+    Only in the toplevel of the work tree the declarations were read from: a command in a
+    subfolder runs that folder's own scripts, which are not read.
+    """
+    if declared is None or not words or not declared.at(directory) or _steers_a_script(raw):
+        return False
+    invoked = _script_invocation(words)
+    if invoked is None:
+        return False
+    kind, names = invoked
+    return all(_script_is_check(declared, kind, name) for name in names)
+
+
 def _harmless_redirect(redirect: _Redirect) -> bool:
     if redirect.kind == ">&" and (redirect.target.isdigit() or redirect.target == "-"):
         return True
@@ -3760,7 +3980,13 @@ class _ShellCall:
     """One Bash call, split into segments, with the facts every rule reads."""
 
     def __init__(
-        self, at: float, cwd: str, tool_input: dict[str, Any], *, moved: bool = False
+        self,
+        at: float,
+        cwd: str,
+        tool_input: dict[str, Any],
+        *,
+        moved: bool = False,
+        declared: project_scripts.Declarations | None = None,
     ) -> None:
         command = tool_input.get("command")
         self.at = at
@@ -3780,6 +4006,18 @@ class _ShellCall:
             i for i, (words, _rtk) in enumerate(self.words) if words and words[0] != "cd"
         ]
         self.checks = [i for i in self.meaningful if _is_check(self.words[i][0])]
+        # A declared script is a check, and still a change: its body is not run through this
+        # reader, so it ages earlier passes as any command whose effects are not known does
+        # (`changes`, `changes_later_in_call`). It is not in `changing_others`, which would stop
+        # its own output from being read as the call's one check's.
+        self.declared_checks = [
+            i
+            for i in self.meaningful
+            if i not in self.checks
+            and self.placed[i]
+            and _declared_check(declared, self.directories[i], self.words[i][0], self.parts[i].raw)
+        ]
+        self.checks = sorted([*self.checks, *self.declared_checks])
         # A check's own redirection into a file is a recorded write by the call
         # (DRC-4709), each target read from the directory its segment ran in,
         # or the group's or wrapper's start for their own (review W3).
@@ -4003,7 +4241,13 @@ class _ShellCall:
 
     def changes(self) -> bool:
         """Whether any segment may change files without a recorded write."""
-        return bool(self.unbalanced or self.fixers or self.changing_others or self.substituted)
+        return bool(
+            self.unbalanced
+            or self.fixers
+            or self.changing_others
+            or self.declared_checks
+            or self.substituted
+        )
 
     def launches(self) -> int:
         """Background launches: the call, or each `&`-ended list in it."""
@@ -4013,8 +4257,15 @@ class _ShellCall:
 class _ToolReportTally:
     """The full scan of one transcript's calls, and the entries chosen from it."""
 
-    def __init__(self, results: dict[str, _Result], session_dir: str) -> None:
+    def __init__(
+        self,
+        results: dict[str, _Result],
+        session_dir: str,
+        declared: project_scripts.Declarations | None = None,
+    ) -> None:
         self.results = results
+        # The project's own check scripts, as the commit the session began on held them.
+        self.declared = declared
         # Where a written path is read from: not a record's `cwd`, which a `cd` moves.
         self.session_dir = session_dir
         self.runs: dict[str, list[dict[str, Any]]] = {}
@@ -4235,7 +4486,11 @@ class _ToolReportTally:
         launch_result = launch_found.block if launch_found is not None else None
         launch_text = _tool_result_text(launch_result) if launch_result is not None else ""
         launch_call = _ShellCall(
-            at, cwd, tool_input, moved=bool(_MOVED_TO_BACKGROUND_RE.match(launch_text))
+            at,
+            cwd,
+            tool_input,
+            moved=bool(_MOVED_TO_BACKGROUND_RE.match(launch_text)),
+            declared=self.declared,
         )
         launched = not (
             launch_result is not None
@@ -4252,7 +4507,13 @@ class _ToolReportTally:
         call = (
             launch_call
             if launch_found is found
-            else _ShellCall(at, cwd, tool_input, moved=bool(_MOVED_TO_BACKGROUND_RE.match(text)))
+            else _ShellCall(
+                at,
+                cwd,
+                tool_input,
+                moved=bool(_MOVED_TO_BACKGROUND_RE.match(text)),
+                declared=self.declared,
+            )
         )
         self.shell_seq += 1
         if len(self.masked_values) < MASKED_VALUES_MAX:
@@ -4403,6 +4664,7 @@ class _ToolReportTally:
                         for i in (
                             *call.fixers,
                             *call.changing_others,
+                            *call.declared_checks,
                             *call.substituted,
                             *(j for j, _target, _at in call.redirect_writes),
                         )
@@ -4519,6 +4781,7 @@ class _ToolReportTally:
                     for i in (
                         *call.fixers,
                         *call.changing_others,
+                        *call.declared_checks,
                         *call.substituted,
                         *(j for j, _target, _at in call.redirect_writes),
                     )
@@ -5145,6 +5408,57 @@ class _CheckScan(NamedTuple):
     budget: runtime_io.ReadBudget
     source_reads: tuple[tuple[str, runtime_io.TranscriptRead | None], ...]
     session_dir: str = ""
+    declared: project_scripts.Declarations | None = None
+
+
+def _written_declaring_files(
+    parent: list[dict[str, Any]], children: Sequence[list[dict[str, Any]]]
+) -> frozenset[str]:
+    """The declaring-file names any write tool of the session targeted, in any folder.
+
+    By file name alone, so a write anywhere withdraws that kind: a session that wrote a
+    `package.json` is not trusted to have left another one alone. A write by a shell command is
+    not seen here; the work tree's bytes decide it (`project_scripts`). Read through
+    `_claude_tool_uses`, the one place a tool call's input is read.
+    """
+    found: set[str] = set()
+    streams = [_claude_tool_uses(parent), *(_claude_tool_uses(c, sidechain=True) for c in children)]
+    for stream in streams:
+        for _at, _cwd, _call_id, name, tool_input, _worker in stream:
+            path = tool_input.get("file_path") or tool_input.get("notebook_path")
+            if (
+                name in _WRITE_TOOLS
+                and isinstance(path, str)
+                and os.path.basename(path) in project_scripts.DECLARING_FILES
+            ):
+                found.add(os.path.basename(path))
+    return frozenset(found)
+
+
+def _declared_scripts(
+    config: RuntimeConfig,
+    transcript_path: str,
+    began_in: str,
+    parent: list[dict[str, Any]],
+    children: Sequence[list[dict[str, Any]]],
+) -> project_scripts.Declarations | None:
+    """The project's own check scripts for the session, or None where none can be trusted.
+
+    The base commit is the one HEAD was on at the transcript's first stamped record, since Compass
+    does not record the commit a session began on; a clipped read falls back to its oldest
+    record, which is later, and the work tree's byte comparison still refuses a file the session
+    changed.
+    """
+    # `--no-git` means no git command runs in any repository, and this reader runs three.
+    if not config.git_probe_enabled or not began_in:
+        return None
+    start = claude_data.head_start(config, transcript_path) or _oldest_at(parent)
+    if start is None:
+        return None
+    loaded = project_scripts.load(began_in, start)
+    if loaded is None or not loaded.files:
+        return None
+    return loaded.without(_written_declaring_files(parent, children))
 
 
 def _live_check_scan(
@@ -5197,6 +5511,7 @@ def _live_check_scan(
     # cannot prove a named missing child, yet neither can its pass prove that
     # unread delegated work did not change files.
     orphan_unread = not parent_read.complete and bool(orphan - complete_ids)
+    began_in = _session_directory(config, transcript_path, parent)
     return _CheckScan(
         parent,
         children,
@@ -5207,11 +5522,12 @@ def _live_check_scan(
         orphan_unread,
         budget,
         tuple(source_reads),
-        _session_directory(config, transcript_path, parent),
+        began_in,
+        _declared_scripts(config, transcript_path, began_in, parent, children),
     )
 
 
-def _tally_of(
+def _tally_of(  # noqa: PLR0913 - the scan's own facts ride beside what it reads
     parent: list[dict[str, Any]],
     subagents: list[list[dict[str, Any]]],
     unread: int,
@@ -5221,6 +5537,7 @@ def _tally_of(
     named_unread: bool = False,
     parent_failed: bool = False,
     orphan_unread: bool = False,
+    declared: project_scripts.Declarations | None = None,
 ) -> _ToolReportTally:
     """One tally over a parent's calls and its subagents', in call time order.
 
@@ -5236,7 +5553,7 @@ def _tally_of(
     unavailable child makes every held pass incomplete without inventing a
     timestamp. A measured failure remains a failure.
     """
-    tally = _ToolReportTally(_merged_check_results(parent, subagents), session_dir)
+    tally = _ToolReportTally(_merged_check_results(parent, subagents), session_dir, declared)
     tally.reads_from = reads_from
     tally.scan["last_user_at"] = _last_person_at(parent)
     tally.named_unread = named_unread
@@ -5309,6 +5626,7 @@ def _claude_tally(
         parent_failed=scan.parent_failed,
         orphan_unread=scan.orphan_unread,
         session_dir=scan.session_dir,
+        declared=scan.declared,
     )
 
 
@@ -5715,6 +6033,7 @@ def _frozen_check_scan(config: RuntimeConfig, transcript_path: str, until: float
         horizon = _later(horizon, until if mtime is None else min(mtime, until))
     missing = _named_agent_ids(parent) - read_ids
     unread += len(missing - unread_ids)
+    began_in = _session_directory(config, transcript_path, parent)
     return _CheckScan(
         parent,
         children,
@@ -5725,7 +6044,8 @@ def _frozen_check_scan(config: RuntimeConfig, transcript_path: str, until: float
         False,
         budget,
         tuple(source_reads),
-        _session_directory(config, transcript_path, parent),
+        began_in,
+        _declared_scripts(config, transcript_path, began_in, parent, children),
     )
 
 
@@ -5751,6 +6071,7 @@ def frozen_claude_checks(
         named_unread=scan.named_unread,
         parent_failed=scan.parent_failed,
         session_dir=scan.session_dir,
+        declared=scan.declared,
     )
     facts = [
         _semantic_fact_from_event(row, str(row["kind"]), _SEMANTIC_FACT_TYPES[row["kind"]], "")

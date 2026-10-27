@@ -1095,6 +1095,33 @@ def head_cwd(config: RuntimeConfig, path: str) -> str:
     return ""
 
 
+def head_start(config: RuntimeConfig, path: str) -> float | None:
+    """When the transcript's first stamped record was written, None if its head holds none.
+
+    The nearest thing to a session's start time that the transcript keeps, and the time the
+    project-script reader asks git for the commit HEAD was on. A clipped read begins later, which
+    is why this reads the head of the file and not the records already in hand.
+    """
+    try:
+        for line in runtime_io.iter_bounded_text_lines(
+            path,
+            max_lines=config.claude_cwd_scan_lines,
+            per_line_bytes=config.claude_cwd_line_bytes,
+        ):
+            if '"timestamp"' not in line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            stamp = records.parse_ts(record.get("timestamp")) if isinstance(record, dict) else None
+            if stamp is not None:
+                return stamp
+    except OSError:  # pragma: no cover - iterator handles filesystem failures
+        return None
+    return None
+
+
 def session_cwd(config: RuntimeConfig, state: RuntimeState, path: str) -> str:
     """Working directory recorded on the transcript head, ``""`` if absent.
 

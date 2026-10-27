@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
-from compass_runtime import tripwires
+from compass_runtime import project_scripts, tripwires
 
 if TYPE_CHECKING:
     from compass_runtime.aggregate import Application
@@ -139,6 +139,9 @@ def diagnose(application: Application) -> dict[str, Any]:
         # Failures the collectors swallowed. Without these a corrupt database
         # reads as a healthy store with no sessions.
         "store_errors": store_errors,
+        # Declaring files (package.json, a Makefile, a justfile) the collection above found and
+        # did not trust, with why. Names and a closed reason only, never a file's content.
+        "project_scripts": project_scripts.problems(),
         "stores": {
             key: {
                 "primary": primary,
@@ -153,6 +156,15 @@ def diagnose(application: Application) -> dict[str, Any]:
             for harness in data["harnesses"]
         ],
     }
+
+
+def _project_script_lines(problems: list[dict[str, str]]) -> list[str]:
+    if not problems:
+        return []
+    lines = ["", "Project scripts not read as checks"]
+    for problem in problems:
+        lines.extend([f"  [  --] {problem['file']}", f"           {problem['reason']}"])
+    return lines
 
 
 def render_diagnosis(report: dict[str, Any]) -> str:
@@ -193,6 +205,8 @@ def render_diagnosis(report: dict[str, Any]) -> str:
         for path, message in report["store_errors"].items():
             lines.append(f"  [  --] {path}")
             lines.append(f"           {message}")
+
+    lines.extend(_project_script_lines(report.get("project_scripts") or []))
 
     lines.append("")
     lines.append("Stores searched (in order)")

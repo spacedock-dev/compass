@@ -310,7 +310,8 @@ class _Journey(_App):
         subclasses below hand the model the same resolver.
         """
 
-        def which(name: str) -> str | None:
+        def which(name: str, path: str | None = None) -> str | None:  # noqa: ARG001
+            # `git_status.executable` passes the scrubbed PATH it resolves against.
             return f"/usr/local/bin/{name}" if name in installed else None
 
         def resolving(real: type) -> type:
@@ -720,6 +721,7 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
         "reach": "Reach nudge",
         "supervise": "A press for a reading",
         "git_status": "The git probe",
+        "project_scripts": "The git probe",
         "observation": "The focus command",
         "focus": "The focus command",
         "notifications": "A native notification",
