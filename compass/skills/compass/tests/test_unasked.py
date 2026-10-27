@@ -1388,10 +1388,11 @@ class TheUnaskedLaneUsesTheSessionProviderTest(unittest.TestCase):
 
 
 class TheUnaskedLaneNeverSendsACheckTest(unittest.TestCase):
-    """DEC-23 item 10: the lane never receives tool outcomes until DEC-18's
-    rubric thresholds exist, whatever the reader allowed for a press. Run
-    through the real producer, so the prompt the lane would send is the one
-    asserted on."""
+    """DEC-23 item 10 as the 2026-10-27 amendment leaves it: the lane sends no tool outcome
+    on a route its Allow does not cover, whatever the reader allowed for a press. Here that is
+    the Codex fallback, whose Allow covers words; the Claude Code route sends failures only
+    (`test_unasked_failures`). Run through the real producer, so the prompt the lane would send
+    is the one asserted on."""
 
     CHECK: ClassVar[dict[str, Any]] = {
         "fact_id": "check-1",
@@ -1452,9 +1453,15 @@ class TheUnaskedLaneNeverSendsACheckTest(unittest.TestCase):
         self.assertNotIn("pytest", prompts[0])
         self.assertNotIn("tool_report", prompts[0])
 
-    def test_the_lane_names_no_tool_output_admission_at_all(self) -> None:
+    def test_the_lane_admits_tool_output_only_as_failures(self) -> None:
+        # DEC-31 opened the ruling's item 10 for failed results. The lane hands the producer a
+        # `ToolOutput` only with `failures_only`, which `build_ledger` turns into a ledger of
+        # failures; `test_unasked_failures` holds the ledger to that, and this holds the lane
+        # to asking for it and to the press that reads nothing a pass could add.
         source = Path(unasked.__file__).read_text(encoding="utf-8")
-        for name in ("tool_output", "ToolOutput", "press_check_tails", "claude_check_tails"):
+        self.assertIn("failures_only=True", source)
+        self.assertNotIn("passes_and_writes", source)
+        for name in ("press_check_tails", "claude_check_tails"):
             with self.subTest(name=name):
                 self.assertNotIn(name, source)
 

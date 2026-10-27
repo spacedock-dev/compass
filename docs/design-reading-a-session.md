@@ -3364,6 +3364,34 @@ on a harness with no scan. A lone count, a count that is not a whole number, and
 refuse the reading, because a malformed count read as zero would say no command ran. No command text is stored or
 sent: both are integers, and the model's prompt does not change.
 
+### Amended 2026-10-27 (owner): the unasked lane reads failed results
+
+Item 10 ("the unasked lane never receives tool outcomes") is opened for failed results only, by
+[DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor), without waiting
+for DEC-18's rubric thresholds. This is the build.
+
+- **What the lane receives.** A tool report is listed in the unasked ledger only when its result is
+  `failed` and its subject is a check, a tier 3 command or a CI command
+  ([DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)), and
+  the command can fail. A pass, a run that recorded no result, a CI pass, a write, a pull request, a skill and
+  a command that cannot fail are never listed. The output tail rides with a failed row alone. The same rule
+  holds the ledger whatever the press read: `reading.build_ledger` takes `failed_only`, set by the lane and by
+  nothing else.
+- **Why failures and not passes.** The lane raises departures and never reassures. A failure adds signal
+  against the goal; a pass would add a comfort the lane may not give, and the ruling's evidence floor is why.
+  The reading says so in its cutoff, and the model's "no check found" stays unread rather than absent when a
+  report was left out.
+- **Where it applies.** Claude Code reading a Claude Code session, with a destination Compass can name.
+  No grant is asked for, as for a pressed reading. A Codex fallback keeps the words-only Allow it runs under,
+  which does not cover tool output, so it sends none. The output tail follows the vendor rule
+  (`reading_route.tails_for`); on the one route that sends, the session's own vendor, that is every tail.
+- **What stays.** The caps (three per session, twelve per rolling day, a fifteen-minute floor), the rule that
+  only a typed goal makes a session a candidate, and the lane's refusal to send the agent's messages or an
+  outcome line.
+- **What was rejected.** Listing every result so the model could weigh a pass against a failure: it is the
+  reassurance the lane is built not to give. Sending a failure's tail to Codex under a words-only Allow: it
+  widens an Allow past the content it disclosed.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.

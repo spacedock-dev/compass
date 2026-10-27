@@ -477,10 +477,10 @@ CONSUMER_SUBJECTS: dict[str, frozenset[str]] = {
     # Keyword overlap decides what a command covers there, and the command tiers ruling rejects
     # that for a command whose purpose Compass does not know.
     "goal_verdict": frozenset({CHECK_SUBJECT, "write", "pr"}),
-    # The history store and the unasked lane keep no tool report at all;
-    # the unasked lane's failed commands are a later layer's.
+    # The history store keeps no tool report at all. The unasked lane reads a failed result of
+    # these three subjects and nothing else; `_listed` holds it to failures.
     "history": frozenset(),
-    "unasked_ledger": frozenset(),
+    "unasked_ledger": RESULT_SUBJECTS,
 }
 
 
@@ -1888,7 +1888,7 @@ def _tail_field(value: Any) -> str:
     return json.dumps(text, ensure_ascii=False) if text else ""
 
 
-def build_ledger(
+def build_ledger(  # noqa: PLR0913 (each is one keyword its caller names)
     facts: Iterable[Mapping[str, Any]],
     harness: str,
     sid: str,
@@ -1898,6 +1898,7 @@ def build_ledger(
     changed_after: frozenset[tuple[str, str]] = frozenset(),
     read_incomplete: frozenset[tuple[str, str]] = frozenset(),
     read_agent_words: bool = False,
+    failed_only: bool = False,
 ) -> tuple[LedgerEntry, ...]:
     """Every entry naming this session, oldest first.
 
@@ -1916,8 +1917,8 @@ def build_ledger(
     One deliberate difference from the page: a `TOOL_REPORT_TYPE` entry is
     listed there and here only when `tool_output` is given, which the reading
     route passes only under a grant for a named destination. `None`, the
-    default every other caller keeps, the unasked lane included, drops them.
-    Given, it maps a check's record id to its redacted output tail. Item 7:
+    default every other caller keeps, drops them. Given, it maps a check's record id to its
+    redacted output tail. Item 7:
     [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
 
     A second difference: a person's message carries its `WORDS_FIELD` as
@@ -1930,12 +1931,26 @@ def build_ledger(
     and the level's re-read of a stored reading do. `False`, the default the
     unasked lane and the scorers keep, drops what the agent said entirely, so
     a reading nobody pressed for sends none of it (review, 2026-10-03).
+
+    A fourth: `failed_only`, which only the unasked lane sets, lists a tool report only when
+    it is a failed result of a subject `CONSUMER_SUBJECTS` gives that lane, so no pass, no
+    run without a result, no write and no command that cannot fail reaches it. The lane
+    raises departures and never reassures, so a failure adds signal and a pass would add a
+    comfort it may not give. The amendment of 2026-10-27 to the ruling cited above, "the unasked
+    lane reads failed results", records it.
     """
     if not harness.strip() or not sid.strip():
         return ()
     rows: list[LedgerEntry] = []
     for fact in facts:
-        if not _listed(fact, harness, sid, reports=tool_output is not None, said=read_agent_words):
+        if not _listed(
+            fact,
+            harness,
+            sid,
+            reports=tool_output is not None,
+            said=read_agent_words,
+            failed_only=failed_only,
+        ):
             continue
         is_report = fact.get("type") == TOOL_REPORT_TYPE
         # Stripped before the emptiness test: a whitespace-only id survives
@@ -1989,7 +2004,9 @@ def _work_subject(fact: Mapping[str, Any]) -> bool:
     return admits("work_floor", fact.get("subject")) and not cannot_fail(fact)
 
 
-def _listed(fact: Any, harness: str, sid: str, *, reports: bool, said: bool) -> bool:
+def _listed(
+    fact: Any, harness: str, sid: str, *, reports: bool, said: bool, failed_only: bool = False
+) -> bool:
     """Whether `build_ledger` lists this fact: this session's, and of a kind the caller admits."""
     if not isinstance(fact, dict):
         return False
@@ -2004,7 +2021,18 @@ def _listed(fact: Any, harness: str, sid: str, *, reports: bool, said: bool) -> 
     # [DEC-23](docs/design-reading-a-session.md#amended-2026-10-04-owner-delegated-launches)
     if kind == TOOL_REPORT_TYPE and fact.get("subject") == "launch":
         return False
+    if kind == TOOL_REPORT_TYPE and failed_only and not _failed_result(fact):
+        return False
     return (reports or kind != TOOL_REPORT_TYPE) and (said or kind != AGENT_MESSAGE_TYPE)
+
+
+def _failed_result(fact: Mapping[str, Any]) -> bool:
+    """Whether a tool report is a failed result the unasked lane may read."""
+    return (
+        admits("unasked_ledger", fact.get("subject"))
+        and fact.get("result") == RESULT_FAILED
+        and not cannot_fail(fact)
+    )
 
 
 def _add_person_words(row: LedgerEntry, fact: Mapping[str, Any]) -> None:
@@ -5231,6 +5259,7 @@ def produce(  # noqa: PLR0913
     final_source_lookup: FinalLookup | None = None,
     settled_through: Any = None,
     open_call_lookup: Callable[[], float | None] | None = None,
+    failures_only: bool = False,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -5242,11 +5271,14 @@ def produce(  # noqa: PLR0913
     Every refusal here happens BEFORE the subprocess. A gate that answers after
     spending the reader's capacity has not held.
 
-    `tool_output` is the reading route's to give, and every other caller, the
-    unasked lane among them, leaves it `None`, which keeps checks off the
-    prompt (item 10 of the ruling `build_ledger` cites). One with an empty
+    `tool_output` is the reading route's to give, and the unasked lane's under
+    `failures_only`; every other caller leaves it `None`, which keeps checks off
+    the prompt (item 10 of the ruling `build_ledger` cites). One with an empty
     destination keeps them off too, and the cutoff sentence then says they
     were not sent and why.
+
+    `failures_only` is the unasked lane's alone: the ledger then lists a failed result and
+    never a pass (`build_ledger`), and the cutoff says so.
 
     `read_lines` is the reading route's to give as well: every other caller,
     the unasked lane among them, reads the goal alone (item 12 of the ruling
@@ -5306,6 +5338,7 @@ def produce(  # noqa: PLR0913
         changed_after=tool_output.changed_after if tool_output is not None else frozenset(),
         read_incomplete=tool_output.read_incomplete if tool_output is not None else frozenset(),
         read_agent_words=read_agent_words,
+        failed_only=failures_only,
     )
     ledger, stopped, left_out, withheld = _ledger_to_read(ledger, row, scope, window_start(latest))
     if withheld:
@@ -5339,7 +5372,7 @@ def produce(  # noqa: PLR0913
     selected = replace(
         selected,
         record_failed=_failed_on_record(unsent, harness, sid, window_start(latest)),
-        checks_unsent=not admitted and _has_reports(facts, harness, sid),
+        checks_unsent=_has_unsent_reports(facts, harness, sid, ledger, admitted, failures_only),
         unlisted=_left_out(
             tool_output, facts, selected.entries, window_start(latest), until=stopped
         )
@@ -5427,14 +5460,7 @@ def produce(  # noqa: PLR0913
     )
     cutoff += "" if outcome_lines(latest) else NO_OUTCOME_LINES_NOTE
     cutoff += _FINAL_NOTES.get(selected.newest_final or "", "")
-    if tool_output is not None and not admitted and _has_reports(facts, harness, sid):
-        cutoff += (
-            " The checks this session recorded were not sent, because tool output was not "
-            "allowed when the reading ran."
-            if not tool_output.allowed
-            else " The checks this session recorded were not sent, because Compass cannot "
-            f"name where {tool_output.label or 'the reading model'} would send them."
-        )
+    cutoff += _unsent_checks_note(tool_output, facts, harness, sid, admitted, failures_only)
     revision = latest.get("n")
     assessment: Assessment = {
         "revision_read": revision if isinstance(revision, int) and revision > 0 else 1,
@@ -5608,6 +5634,64 @@ def _failed_on_record(facts: Sequence[Any], harness: str, sid: str, window_start
         and fact.get("type") == TOOL_REPORT_TYPE
         and fact.get("source_session") == {"harness": harness, "sid": sid}
         and _failed_in_window(fact, window_start)
+        for fact in facts
+    )
+
+
+def _unsent_checks_note(
+    tool_output: ToolOutput | None,
+    facts: Sequence[Any],
+    harness: str,
+    sid: str,
+    admitted: bool,
+    failures_only: bool,
+) -> str:
+    """The cutoff's sentence about the checks a reading was not shown, or none."""
+    if admitted and failures_only:
+        return (
+            " Only the failed checks and commands this session recorded were sent, so a check"
+            " that passed is not shown."
+        )
+    if tool_output is None or admitted or not _has_reports(facts, harness, sid):
+        return ""
+    if not tool_output.allowed:
+        return (
+            " The checks this session recorded were not sent, because tool output was not "
+            "allowed when the reading ran."
+        )
+    return (
+        " The checks this session recorded were not sent, because Compass cannot "
+        f"name where {tool_output.label or 'the reading model'} would send them."
+    )
+
+
+def _has_unsent_reports(
+    facts: Sequence[Any],
+    harness: str,
+    sid: str,
+    ledger: Sequence[LedgerEntry],
+    admitted: bool,
+    failures_only: bool,
+) -> bool:
+    """Whether a tool report the session recorded did not go to the model.
+
+    Without a grant that is every report. Under `failures_only` it is each report the failed
+    filter left out, which a claim of "no check found" must still read as unread rather than as
+    absent.
+    """
+    if not admitted:
+        return _has_reports(facts, harness, sid)
+    if not failures_only:
+        return False
+    sent = {row["id"] for row in ledger}
+    return any(
+        isinstance(fact, dict)
+        and fact.get("type") == TOOL_REPORT_TYPE
+        and fact.get("subject") != "launch"
+        and isinstance(fact.get("source_session"), dict)
+        and (fact["source_session"].get("harness"), fact["source_session"].get("sid"))
+        == (harness, sid)
+        and records.safe_text(fact.get("fact_id"), 160).strip() not in sent
         for fact in facts
     )
 

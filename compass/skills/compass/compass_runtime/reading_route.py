@@ -749,13 +749,36 @@ def resolve_all(
     }
 
 
-def unasked_parts(route: Route) -> list[str]:
-    """What an unasked check sends on this route: words only, whatever the harness.
+def unasked_sends_failures(route: Route) -> bool:
+    """Whether an unasked check on this route sends the failed results of a session's checks.
 
-    The lane never sends the agent's messages, outcome lines or tool output, so
-    its list is the words-only one and never the press's.
+    Only Claude Code reading a Claude Code session, where the destination can be named. That
+    provider runs under the owner's acceptance. A Codex fallback keeps the words-only Allow it
+    runs under, which does not cover tool output.
+    """
+    return (
+        route["provider"] == CLAUDE
+        and route["harness"] in TOOL_OUTPUT_HARNESSES
+        and bool(route["destination"])
+    )
+
+
+def unasked_parts(route: Route) -> list[str]:
+    """What an unasked check sends on this route.
+
+    The lane never sends the agent's messages or outcome lines. Where `unasked_sends_failures`
+    holds it sends the failed results of a session's checks and commands as well, and a pass
+    never.
     """
     provider = route["provider"]
     if not provider:
         return []
-    return [*_base_parts(provider, route["words_destination"], model=route["model"]), CAVEAT]
+    parts = _base_parts(provider, route["words_destination"], model=route["model"])
+    if unasked_sends_failures(route):
+        parts.insert(
+            1,
+            "A check or command that failed goes too, with its masked line, its exit status and "
+            f"the last {TOOL_OUTPUT_TAIL_CHARS} characters of its output as printed. Nothing that "
+            "passed is sent.",
+        )
+    return [*parts, CAVEAT]

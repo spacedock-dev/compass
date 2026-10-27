@@ -108,7 +108,7 @@ class Lane:
     and it starts at most one worker per call.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 (each is one keyword its caller names)
         self,
         config: RuntimeConfig,
         *,
@@ -118,6 +118,7 @@ class Lane:
         harness_label: Callable[[str], str] | None = None,
         produce: Callable[..., tuple[runtime_reading.Assessment | None, str, bool]] | None = None,
         facts_for: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
+        press_for: Callable[..., runtime_project_context.PressChecks] | None = None,
         spawn: Callable[[Callable[[], None]], None] = _spawn,
     ) -> None:
         self.config = config
@@ -134,6 +135,7 @@ class Lane:
         # function that decides for itself whether to run one.
         self.produce = produce or runtime_reading.produce
         self.facts_for = facts_for or self._facts
+        self.press_for = press_for or runtime_project_context.press_checks
         self.spawn = spawn
         self._call_lock = threading.Lock()
         self._group: supervise.Group | None = None
@@ -361,6 +363,8 @@ class Lane:
             self.facts_for(state, row, now),
             now=now,
             stamp_text=f"unasked check at {time.strftime('%H:%M', time.localtime(now))}",
+            tool_output=self._failed_results(state, row, route),
+            failures_only=True,
             model=_Bound(
                 self.config,
                 model,
@@ -408,6 +412,31 @@ class Lane:
             # the output the evidence-floor ruling called most damaging. The
             # board says it on return, where they came looking.
             self._announce(row, raised, landed=landed, now=now)
+
+    def _failed_results(
+        self, state: RuntimeState, row: Mapping[str, Any], route: reading_route.Route
+    ) -> runtime_reading.ToolOutput | None:
+        """What the lane may carry of a session's checks, or nothing.
+
+        The press reads every output tail, and `build_ledger` under `failed_only` lists only the
+        failed ones, so a passing check's tail is read here and goes no further. No grant is
+        asked for, as for a pressed reading, and the destination must be nameable.
+        """
+        if not reading_route.unasked_sends_failures(route):
+            return None
+        harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
+        press = self.press_for(self.config, state, harness, sid)
+        return runtime_reading.ToolOutput(
+            destination=route["destination"],
+            label=route["label"],
+            tails=reading_route.tails_for(
+                route["provider"], harness, press.tails, press.tier3_calls
+            ),
+            changed_after=press.changed_after,
+            read_incomplete=press.read_incomplete,
+            removals=press.removals,
+            masked_values=press.masked_values,
+        )
 
     def _announce(
         self, row: Mapping[str, Any], raised: list[departures.Check], *, landed: bool, now: float

@@ -1855,7 +1855,7 @@ qualification run; whether another account may use it is unmeasured.
 Ruled 2026-09-24 by [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work). The record and its route to a model are both built:
 `project_context.claude_tool_reports` reads it into the observed record, and `reading.build_ledger`
 admits it by default to a reader-pressed reading for a named destination, disclosed in the notice.
-With no named destination, and in the unasked lane always, it drops it. The
+With no named destination it drops it, and the unasked lane keeps only a failed result ([the amendment](docs/design-reading-a-session.md#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)). The
 named read is listed under Irreversible actions.
 
 The delegated launch summary added on 2026-10-04 reads the same bounded parent
@@ -1874,7 +1874,7 @@ URL rebuilt from those two and the time, only when the URL is `https://github.co
 with a matching number and the action is `created`. A skill is read from a `Skill` call whose result did not
 error, and published as its name alone, in a closed character set of at most 80 characters. Neither reads a
 command, an output tail or a skill's arguments. Like a check, each reaches a prompt only under the same
-grant for a named destination, and the unasked lane never receives them.
+grant for a named destination, and the unasked lane never receives them: it takes a failed check or command and nothing else.
 
 Commands join it by the owner's rulings of 2026-10-27
 ([DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)
@@ -1900,7 +1900,7 @@ reading a Claude Code session) is sent each command's line and status, and tails
 only: a tail whose call also holds a command is withheld whole, because it is the whole call's output.
 The notice names it in one sentence. The residual: redaction is by named form and shape and is best
 effort, so a credential in a form it does not name can reach the provider, and across vendors the command
-line is the one place that can. The unasked lane and the history store receive no command.
+line is the one place that can. The history store receives no command. The unasked lane receives a failed command only, on Claude Code, and never a pass.
 
 The content class is what a Claude Code transcript recorded about the checks a session ran and the
 files it wrote. Since 2026-09-28 that includes the session's subagents, read from their own
@@ -2002,7 +2002,9 @@ The destination rule: it goes to the reading producer that reads the session, or
 route `reading_route.resolve` selects and discloses before the press. Tool output is included by
 default for a named destination, and the non-blocking reading notice names it. No separate grant
 is required; `tool-output-consent-required` is no longer a refusal. Explicit off blocks the press
-and the reservation. The unasked lane still receives no tool output.
+and the reservation. The unasked lane receives the failed results of a Claude Code session's checks and
+commands and no other tool output
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)).
 
 - The legacy `tool_output_permission` table remains keyed by provider and destination, so an older
   build can still read its explicit grants. Old word-only answers remain distinct from those
@@ -2071,8 +2073,8 @@ and the reservation. The unasked lane still receives no tool output.
 It is quoted into the prompt as untrusted data, never into an instruction Compass writes: each
 check is one numbered row whose result words are Compass's own, and its output tail is one
 JSON-quoted field on that row with line breaks and the menu heading neutralised. A reply that obeys
-an instruction in that output is held to the same shape rules as any other. The unasked lane never
-receives it until DEC-18's rubric thresholds exist. The live drift estimate (DEC-26) reads
+an instruction in that output is held to the same shape rules as any other. The unasked lane receives
+it for a failed result alone. The live drift estimate (DEC-26) reads
 the check results and written paths on this machine, never the output tail, and publishes a derived
 level on the focused session's project context only: never on a row, in history, in the reading
 route's context or in any off-machine payload. It starts no model and writes nothing, and its only process is the read-only committed-file
@@ -3202,8 +3204,12 @@ agent said: a pressed reading of a Claude Code session carries the agent's own m
 and no goal is not read by it at all (item 12 of
 [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)).
 The lane uses `reading_policy.GuardedModel`, the same guarded model seam as a requested reading.
-It sends no tool output, outcome lines or agent messages. Claude Code runs under the owner's
-2026-10-02 acceptance and needs no separate grant. Codex sends only with a stored Allow for the
+It sends no outcome lines or agent messages, and no tool output but one kind: on Claude Code, reading a
+Claude Code session where Compass can name the destination, a check or command that failed goes with its masked
+line, its exit status and the last 180 characters of its output, as for a pressed reading. A check that passed,
+a run with no result, a CI pass and a command that cannot fail never go, and neither does anything on the Codex
+route, whose stored Allow covers words. The reading's cutoff says only failures were sent. Claude Code runs under
+the owner's 2026-10-02 acceptance and needs no separate grant. Codex sends only with a stored Allow for the
 current destination, checked again at the seam. With no grant, after Pause model calls, under the
 model off switch, or after a destination change, nothing is sent and the skip is logged. The
 session's Drift card shows the grant and a toggle to allow or revoke it, with the words and
