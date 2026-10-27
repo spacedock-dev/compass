@@ -248,6 +248,86 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
         self.assertEqual(reading.GOAL_VERDICT_PASSED, checked["why"])
         self.assertEqual(("check-1",), checked["cites"])
 
+    def test_a_ci_job_name_in_the_reason_does_not_agree_on_a_local_pytest_run(self) -> None:
+        passing = [base.check_fact(result="passed", at=130.0)]
+        for reason in (
+            "the server-unittest pass shows it",
+            "coverage-gate pass and server-unittest pass, nothing marked fail",
+            "the tests pass in CI",
+            "the workflow shows the tests passed",
+            "the tests passed https://github.com/acme/widgets/actions/runs/123456",
+            "the tests passed https://gitlab.com/acme/widgets/-/pipelines/99",
+            "`server-unittest` passed",
+            "server-unittest passes",
+            "server-unittest is green",
+            "server-unittest succeeded",
+            "server-unittest: pass",
+            "server-unittest (pass)",
+            "'server-unittest' passed",
+            "the server-unittest job passed",
+            "the server-unittest check passed",
+            "nothing red; build-and-test pass",
+            "tests passed in github actions",
+            "tests passed on ci",
+        ):
+            with self.subTest(reason=reason):
+                checked = self._checked(passing, reason)
+                self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, checked["check"])
+
+    def test_a_ci_job_in_the_reason_claims_no_kind(self) -> None:
+        self.assertEqual(
+            frozenset(), reading._verdict_check_kinds("ci/lint failed earlier, then passed")
+        )
+
+    def test_a_hyphen_joined_job_name_holding_a_kind_word_claims_no_kind(self) -> None:
+        for reason in ("server-unittest pass", "build-and-test passed", "ci/lint pass"):
+            with self.subTest(reason=reason):
+                self.assertEqual(frozenset(), reading._verdict_check_kinds(reason))
+
+    def test_a_joined_list_of_kinds_is_a_local_claim(self) -> None:
+        for reason, kinds in (
+            ("pytest/ruff pass", {"test", "lint"}),
+            ("lint/type-check pass", {"lint", "types"}),
+            ("tests/lint pass", {"test", "lint"}),
+            ("pytest-ruff pass", {"test", "lint"}),
+        ):
+            with self.subTest(reason=reason):
+                self.assertEqual(frozenset(kinds), reading._verdict_check_kinds(reason))
+
+    def test_outcome_line_coverage_ignores_remote_phrasing(self) -> None:
+        self.assertTrue(reading.covers_line("the tests pass in CI", "pytest -x"))
+        self.assertTrue(reading.covers_line("the tests pass in CI", "python3 -m pytest tests"))
+
+    def test_local_claims_that_look_like_job_names_keep_their_kind(self) -> None:
+        for reason in (
+            "tests: 14/14 pass",
+            "all tests in tests/unit pass",
+            "the tests in compass/skills pass",
+            "pytest 14/14 passed",
+            "CI-related tests pass",
+            "Actions: all tests pass",
+            "the ciremoterun tests pass",
+        ):
+            with self.subTest(reason=reason):
+                self.assertEqual(frozenset({"test"}), reading._verdict_check_kinds(reason))
+
+    def test_all_the_local_tests_passing_still_agrees(self) -> None:
+        for reason in ("All 14 tests pass", "pytest passes", "type-check passed"):
+            with self.subTest(reason=reason):
+                fact = base.check_fact(result="passed", at=130.0)
+                if reason.startswith("type"):
+                    fact = base.check_fact(result="passed", at=130.0, summary="mypy")
+                checked = self._checked([fact], reason)
+                self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
+
+    def test_a_reason_mixing_a_local_claim_and_a_ci_job_agrees_on_the_local_one(self) -> None:
+        checked = self._checked(
+            [base.check_fact(result="passed", at=130.0)],
+            "All 14 tests pass locally and the server-unittest check on the PR passed",
+        )
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
+        self.assertEqual(("check-1",), checked["cites"])
+
     def test_a_check_that_failed_after_the_verdict_disputes_a_claim_that_it_passed(self) -> None:
         checked = self._checked(
             [
