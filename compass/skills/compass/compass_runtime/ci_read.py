@@ -24,6 +24,7 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
@@ -431,6 +432,44 @@ def _listed(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: _LISTING_ORDER.get(row["bucket"], 4))[:MAX_LISTED]
 
 
+class Floor:
+    """The cache floor: a pull request read within `FLOOR_SEC` of the last one is not read again.
+
+    One read per pull request per press is the ruling, and a reader who presses twice in a row
+    (or two sessions on one pull request) has no new fact to ask GitHub for. Only a read that
+    answered is kept: a missing or signed-out `gh` is the very thing a reader fixes and presses
+    again, and would otherwise be told the old answer for half a minute.
+    """
+
+    FLOOR_SEC = 30.0
+    MAX_KEPT = 64
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._kept: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
+
+    def get(self, key: tuple[Any, ...], now: float) -> dict[str, Any] | None:
+        with self._lock:
+            kept = self._kept.get(key)
+        if kept is None or not 0 <= now - kept[0] < self.FLOOR_SEC:
+            return None
+        copy: dict[str, Any] = json.loads(json.dumps(kept[1]))
+        return copy
+
+    def put(self, key: tuple[Any, ...], now: float, record: dict[str, Any]) -> None:
+        with self._lock:
+            if len(self._kept) >= self.MAX_KEPT:
+                self._kept.pop(next(iter(self._kept)))
+            self._kept[key] = (now, json.loads(json.dumps(record)))
+
+    def clear(self) -> None:
+        with self._lock:
+            self._kept.clear()
+
+
+FLOOR: Final = Floor()
+
+
 def read(
     binding: Binding,
     *,
@@ -439,14 +478,33 @@ def read(
     now: float,
     environ: Mapping[str, str] | None = None,
     runner: Callable[..., Any] = supervise.run,
+    floor: Floor | None = None,
 ) -> dict[str, Any]:
     """One press's read of one pull request: the stored record, with `error` set when it failed.
 
     Validated before any subprocess: a repository, number or branch that is not a plain name
-    launches nothing. The head commit is read first and the checks after, so a push between the
-    two calls would show newer checks under the older head; the window is the two calls' own
-    duration and the head test is what then fails, never passes, on a moved head.
+    launches nothing. The head commit is read before the checks and again after them, and a
+    head that moved between the two matches nothing.
     """
+
+    key = (binding.repository, binding.number, binding.branch, session_head, caution)
+    if floor is not None and (kept := floor.get(key, now)) is not None:
+        return kept
+    record = _read_once(binding, session_head, caution, now, environ, runner)
+    if floor is not None and not record["error"]:
+        floor.put(key, now, record)
+    return record
+
+
+def _read_once(
+    binding: Binding,
+    session_head: str,
+    caution: bool,
+    now: float,
+    environ: Mapping[str, str] | None,
+    runner: Callable[..., Any],
+) -> dict[str, Any]:
+    """One uncached read: `read` without the floor."""
     record: dict[str, Any] = {
         "read_at": now,
         "error": "",
@@ -471,21 +529,16 @@ def read(
     if binary is None:
         return {**record, "error": ERROR_MISSING}
     where = ["--repo", f"{HOST}/{binding.repository}"]
+    viewing = [
+        "pr",
+        "view",
+        binding.branch or str(binding.number),
+        *where,
+        "--json",
+        "headRefOid,number",
+    ]
     try:
-        view = _run(
-            runner,
-            binary,
-            [
-                "pr",
-                "view",
-                binding.branch or str(binding.number),
-                *where,
-                "--json",
-                "headRefOid,number",
-            ],
-            env,
-        )
-        head, number = _head(view)
+        head, number = _head(_run(runner, binary, viewing, env))
         listing = [
             "pr",
             "checks",
@@ -499,8 +552,14 @@ def read(
             row["name"]
             for row in _parse_checks(_run(runner, binary, [*listing, "--required"], env))
         )
+        # The head again, by the number now: `gh pr checks` names no commit, so a push between the
+        # first look and the listing would put the new commit's checks under the old head. A head
+        # that moved is the one reported, and it matches nothing.
+        later, _ = _head(_run(runner, binary, [*viewing[:2], str(number), *viewing[3:]], env))
     except _FailureError as failure:
         return {**record, "error": failure.token}
+    moved = later != head
+    head = later
     # Where GitHub names required checks they are the ones that count and the ones listed, and
     # the counts are over that same set, so the page's sentence and the verdict read one thing.
     if required:
@@ -509,7 +568,9 @@ def read(
         **record,
         "number": number,
         "head": head,
-        "head_matches": bool(record["session_head"]) and head == record["session_head"],
+        "head_matches": not moved
+        and bool(record["session_head"])
+        and head == record["session_head"],
         "required_only": bool(required),
         "counts": _counts(rows),
         "checks": _listed(rows),

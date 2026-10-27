@@ -5790,7 +5790,9 @@ def _ledger_to_read(
     # Decided over the whole ledger, before the stop cut: that sentence says
     # nothing is after the words, which a turn the cut removed contradicts
     # (review F1).
-    if all(_before_window(entry, opened) for entry in ledger):
+    # A CI check is read at the press and is never in the window for want of anything to read, so
+    # it does not stand in for a session that did nothing since the words.
+    if all(_before_window(entry, opened) for entry in ledger if entry["type"] != CI_CHECK_TYPE):
         return (), None, left_out, WITHHELD_WINDOW_EMPTY
     # Through the last turn means through the observed stop. A resumed turn
     # whose state update lags leaves the row idle at the old stop while the
@@ -5810,7 +5812,12 @@ def _ledger_to_read(
             kept.append(entry)
     # Entries after the words exist, so an empty list here is a turn not yet
     # stopped, never an empty record (owner, 2026-09-27).
-    return tuple(kept), stopped, left_out, "" if kept else WITHHELD_AFTER_STOP
+    return (
+        tuple(kept),
+        stopped,
+        left_out,
+        "" if any(entry["type"] != CI_CHECK_TYPE for entry in kept) else WITHHELD_AFTER_STOP,
+    )
 
 
 def _call_failed(model: Callable[..., tuple[str, str]], status: str) -> tuple[str, bool] | None:

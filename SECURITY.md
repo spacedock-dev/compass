@@ -2359,8 +2359,9 @@ the session's text. Both are session content, and they leave the machine with yo
 second `gh` call asks which checks the repository requires, and the checks that come back go to the
 reading model with the rest of the entries, so the model's own notice covers them.
 
-What runs: `gh pr view` for the head commit and `gh pr checks` twice, with `--repo github.com/OWNER/REPO`
-always explicit. `github.com` is the only host in this build. Nothing runs without a press: not the
+What runs: `gh pr view` for the head commit before the checks and again after them, so a head that
+moved in between matches nothing, and `gh pr checks` twice, with `--repo github.com/OWNER/REPO`
+always explicit. A pull request read within 30 seconds of the last is not read again. `github.com` is the only host in this build. Nothing runs without a press: not the
 Live monitor, the live estimate, a summary, the unasked lane or `--diagnose`.
 
 The launch keeps these bounds, each pinned by `test_ci_read`:

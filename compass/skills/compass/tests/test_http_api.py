@@ -3549,6 +3549,9 @@ class ReadingRouteTest(unittest.TestCase):
         started is read off a file and no real login or network is involved.
         """
         stub = StubGh(self)
+        # The floor is the process's, and the clock here never moves, so a read an earlier test made
+        # would answer this one.
+        runtime_ci_read.FLOOR.clear()
         application = self._app(config, state)
         annotation_store.annotate(
             config, state, "pi", "s1", goal=f"Make CI green on {GOAL_URL}", output="", now=11.0
@@ -3571,8 +3574,8 @@ class ReadingRouteTest(unittest.TestCase):
         with self._github(config, state) as port:
             status, _ = self._post(port, self._press())
         self.assertEqual(202, status)
-        # One view and two listings of the one pull request, and one model call.
-        self.assertEqual(3, len(self.stub.calls))
+        # A view, two listings and a second view of the one pull request, and one model call.
+        self.assertEqual(4, len(self.stub.calls))
         self.assertEqual(1, len(self.model_calls))
         self.assertIn("passed on the pull request", self.model_calls[0])
         entry = annotation_store.find(annotation_store.load(config), "pi", "s1")

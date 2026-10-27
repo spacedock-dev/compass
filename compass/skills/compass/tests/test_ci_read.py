@@ -61,6 +61,10 @@ with open(os.path.join(folder, "calls.jsonl"), "a") as log:
 scenario = json.load(open(os.path.join(folder, "scenario.json")))
 key = "view" if args[1] == "view" else "required" if "--required" in args else "checks"
 answer = scenario[key]
+if key == "view":
+    views = sum(1 for line in open(os.path.join(folder, "calls.jsonl")) if '"view"' in line)
+    if views > 1 and "view_second" in scenario:
+        answer = scenario["view_second"]
 if answer.get("sleep"):
     import time
     time.sleep(answer["sleep"])
@@ -89,6 +93,7 @@ sys.exit(answer.get("rc", 0))
         required: list[dict[str, str]] | None = None,
         view: dict[str, Any] | None = None,
         checks_raw: dict[str, Any] | None = None,
+        head_after: str | None = None,
     ) -> None:
         scenario = {
             "view": view or {"stdout": json.dumps({"headRefOid": head, "number": number})},
@@ -96,6 +101,10 @@ sys.exit(answer.get("rc", 0))
             or {"stdout": json.dumps(GREEN if checks is None else checks), "rc": checks_rc},
             "required": {"stdout": json.dumps(required or [])},
         }
+        if head_after is not None:
+            scenario["view_second"] = {
+                "stdout": json.dumps({"headRefOid": head_after, "number": number})
+            }
         (self.folder / "scenario.json").write_text(json.dumps(scenario))
 
     @property
@@ -196,7 +205,8 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
 
     def test_the_argv_names_the_host_and_repository_and_asks_for_four_fields(self) -> None:
         read(self.stub)
-        view, checks, required = (call["args"] for call in self.stub.calls)
+        view, checks, required, after = (call["args"] for call in self.stub.calls)
+        self.assertEqual(["pr", "view", "12", "--repo", f"github.com/{REPO}"], after[:5])
         self.assertEqual(["pr", "view", "12", "--repo", f"github.com/{REPO}"], view[:5])
         self.assertEqual("headRefOid,number", view[-1])
         self.assertEqual(["pr", "checks", "12", "--repo", f"github.com/{REPO}"], checks[:5])
@@ -298,6 +308,30 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
         record = read(self.stub)
         self.assertFalse(record["head_matches"])
         self.assertEqual(OTHER_HEAD, record["head"])
+
+    def test_a_head_that_moved_while_the_checks_were_read_matches_nothing(self) -> None:
+        # The session's commit equals the head the first look saw, and the second look differs: the
+        # checks could be the new commit's, so they are reported under the new head and settle nothing.
+        self.stub.set(head=SESSION_HEAD, head_after=OTHER_HEAD)
+        record = read(self.stub)
+        self.assertFalse(record["head_matches"])
+        self.assertEqual(OTHER_HEAD, record["head"])
+
+    def test_a_second_press_inside_the_floor_reads_nothing_new(self) -> None:
+        floor = ci_read.Floor()
+        first = read(self.stub, floor=floor)
+        again = read(self.stub, floor=floor, now=1_010.0)
+        self.assertEqual(first, again)
+        self.assertEqual(4, len(self.stub.calls))
+        read(self.stub, floor=floor, now=1_000.0 + ci_read.Floor.FLOOR_SEC + 1)
+        self.assertEqual(8, len(self.stub.calls))
+
+    def test_a_failed_read_is_never_kept_by_the_floor(self) -> None:
+        floor = ci_read.Floor()
+        self.stub.set(view={"stderr": "gh auth login", "rc": 4})
+        self.assertEqual(ci_read.ERROR_SIGNED_OUT, read(self.stub, floor=floor)["error"])
+        self.stub.set()
+        self.assertEqual("", read(self.stub, floor=floor, now=1_001.0)["error"])
 
     def test_an_unknown_session_head_never_matches(self) -> None:
         self.assertFalse(read(self.stub, session_head="")["head_matches"])
@@ -607,6 +641,27 @@ class ACheckTheModelCitesCanSettleALine(base.AClaudeCodeReadingProducer):
         row = self._read(record, answer)["criteria"]["line_1"]
         self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
 
+    def test_a_read_does_not_stand_in_for_a_session_that_did_nothing_since_the_words(self) -> None:
+        # The words came at 300, the session's only entry is from before them, and the read is at
+        # the press: the reading is still withheld for want of anything in the window.
+        record = {**record_with(*GREEN), "read_at": 350.0}
+        assessment, why, spent = reading.produce(
+            self.config,  # type: ignore[arg-type]
+            {"harness": "claude", "sid": "s1", "state": "working", "ended_at": None},
+            [{"n": 1, "at": 300.0, "goal": GOAL_TEXT, "lines": ["CI is green"]}],
+            [base.WORDS_FACT],
+            now=400.0,
+            stamp_text="read at 10:00",
+            model=self._model("{}"),
+            read_lines=True,
+            read_agent_words=True,
+            ci=record,
+        )
+        self.assertIsNone(assessment)
+        self.assertEqual(reading.WITHHELD_WINDOW_EMPTY, why)
+        self.assertFalse(spent)
+        self.assertEqual([], self.prompts)
+
     def test_no_read_leaves_the_assessment_without_the_key(self) -> None:
         assessment = self._read(None, {"line_1": {"result": "unverifiable", "cites": []}})
         self.assertNotIn("ci", assessment)
@@ -811,7 +866,7 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(unittest.TestCase):
             record = self.read_ci()
         assert record is not None
         self.assertEqual("", record["error"])
-        self.assertEqual(3, len(self.stub.calls))
+        self.assertEqual(4, len(self.stub.calls))
         # No folder was recorded, so no session commit: the read happened and settles nothing.
         self.assertFalse(record["head_matches"])
 

@@ -707,6 +707,7 @@ def _bind_and_read_ci(
         session_head=identity.head if identity else "",
         caution=ci_read.changed_ci_configuration(written),
         now=application.clock(),
+        floor=ci_read.FLOOR,
     )
 
 
