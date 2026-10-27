@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2139583,
+    "bytes": 2139839,
     "file": "react.html",
-    "sha256": "2c40ce3e159bc7ad0ac8aac616f62a961082544b00d338399f6028d9eaf57234"
+    "sha256": "0d506f5e50c7c51339decd9cef38c2be5304d04aee7ec727dcbcd3cd15eb37ef"
   },
   "format": 1,
   "frontend": "react",
@@ -646,6 +646,10 @@
         "sha256": "93871c96518843fd3ebcfb44f2e5cb298a80890300004d5730d433f99e2749bb"
       },
       {
+        "file": "frontend/src/drift/claimWords.ts",
+        "sha256": "b85777aa9c5d6c51550d799e03a9fa00ce29347d7a78f67789f27e04de2d8791"
+      },
+      {
         "file": "frontend/src/drift/context.ts",
         "sha256": "4e822f331523a27f1151989194e1b551a50954c070a0d0f28088b453ac2a8237"
       },
@@ -723,7 +727,7 @@
       },
       {
         "file": "frontend/src/drift/shape.ts",
-        "sha256": "80a5e50bc6c13a0cfef2447fa8a74da5ab237faa5468bdf64dda482360c41aa2"
+        "sha256": "a9aec59c222fd6bf38612a227b61bd049680d46398b4402391f4101015314c31"
       },
       {
         "file": "frontend/src/drift/state.ts",
