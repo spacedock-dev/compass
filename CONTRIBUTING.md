@@ -331,6 +331,8 @@ The report prints the sessions each collector actually returned next to the numb
 generator that drifts from a store shape collects nothing and would otherwise report a confident
 share of an empty store.
 
+`scripts/command_coverage.py` is outside the gate as well. It runs the runtime's own transcript parser over a directory of Claude Code sessions (the drift replay corpus by default, `--dir ~/.claude/projects --days 30` for your own) and prints counts only: how many sessions ran a closed-list check or polled CI, how many check runs recorded a result and why the rest did not, and the most common command heads the checks list does not cover. It never prints an argument or an output line. Run it before changing what counts as a check, so the change is argued from a share and not from one session.
+
 `scripts/capture_hook.py` is also outside the gate. It answers the adapter-semantics question for the
 event-driven work: what a harness lifecycle event means, how many arrive per turn, and in what order.
 None of that is documented anywhere, so it has to be observed. `--report` summarises what has
