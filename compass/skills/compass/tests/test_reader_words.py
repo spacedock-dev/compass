@@ -450,8 +450,11 @@ class _Collected(_Config):
         with (
             mock.patch.object(reading, "CodexReadingModel", _Model),
             mock.patch.object(reading, "ClaudeReadingModel", _Model),
+            # git_status resolves git against the PATH it is given, so the stand-in takes `path`.
             mock.patch.object(
-                shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "codex" else None
+                shutil,
+                "which",
+                lambda name, path=None: f"/usr/local/bin/{name}" if name == "codex" else None,  # noqa: ARG005
             ),
             mock.patch.object(reading_route, "destination", lambda *_a, **_k: ""),
         ):
