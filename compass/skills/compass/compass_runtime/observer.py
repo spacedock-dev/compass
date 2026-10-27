@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from . import config as runtime_config
 from . import io as runtime_io
-from . import records, spacedock, supervise, transcripts
+from . import reading_policy, records, spacedock, supervise, transcripts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
@@ -169,8 +169,8 @@ class ModelCaller(Protocol):
     cannot produce one. None is the only failure signal: the analyzer degrades
     to the deterministic fallback rather than raising.
 
-    The project observer passes CodexGoalModel only after explicit enablement
-    and per-request disclosure consent. The deterministic analyzer needs neither.
+    The project observer passes CodexGoalModel on a reader-started focused refresh;
+    stored off still refuses it. The deterministic analyzer needs neither.
     """
 
     def __call__(self, recent_text: str, entity_stage: str) -> str | None: ...
@@ -196,6 +196,7 @@ def codex_exec(
     binary_resolver: Any = shutil.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
     timeout: float | None = None,
+    before_call: Callable[[], None] | None = None,
 ) -> tuple[str, str]:
     """One bounded, ephemeral Codex call. Returns the output and a status.
 
@@ -255,6 +256,8 @@ def codex_exec(
             output_path,
             "-",
         ]
+        if before_call is not None:
+            before_call()
         result = runner(
             command,
             input=prompt,
@@ -417,7 +420,7 @@ def claude_environment(environ: Mapping[str, str]) -> dict[str, str]:
     return env
 
 
-def claude_exec(
+def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and timeout
     config: RuntimeConfig,
     prompt: str,
     *,
@@ -425,6 +428,10 @@ def claude_exec(
     runner: Any = supervise.run,
     binary_resolver: Any = shutil.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
+    system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
+    # None, resolved at the call: a default bound to the constant at import
+    # would stop the 180 s limit following the module value.
+    timeout: float | None = None,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[str, str]:
     """One bounded, non-persistent Claude Code call. Returns the output and a status.
@@ -460,6 +467,8 @@ def claude_exec(
             binary_resolver=binary_resolver,
             on_spawn=on_spawn,
             on_diagnostic=on_diagnostic,
+            system_prompt=system_prompt,
+            timeout=timeout,
         ) as prepared:
             return prepared(prompt, output_cap_bytes=output_cap_bytes)
     except ClaudePreparationError as error:
@@ -487,9 +496,13 @@ class PreparedClaude:
         on_spawn: Callable[[supervise.Group], None] | None,
         model: str,
         *,
+        system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
+        timeout: float | None = None,
         error_path: str = "",
         error_output: Any = subprocess.DEVNULL,
         on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
+        validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
+        effort: str = "",
     ) -> None:
         self.binary = binary
         self.workdir = workdir
@@ -498,12 +511,26 @@ class PreparedClaude:
         self.runner = runner
         self.on_spawn = on_spawn
         self.model = model
+        self.system_prompt = system_prompt
+        self.timeout = timeout
         self.error_path = error_path
         self.error_output = error_output
         self.on_diagnostic = on_diagnostic
+        # The Live monitor's own model rule and effort ride the same envelope; a reading
+        # keeps the Sonnet floor and `CLAUDE_READING_EFFORT` by passing neither.
+        self.validator = validator
+        self.effort = effort
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
-        command = [self.binary, *_claude_reading_argv(self.model)]
+        command = [
+            self.binary,
+            *_claude_reading_argv(
+                self.model,
+                system_prompt=self.system_prompt,
+                validator=self.validator,
+                effort=self.effort,
+            ),
+        ]
         started = time.monotonic()
         status = "failed"
         returncode: int | None = None
@@ -521,7 +548,7 @@ class PreparedClaude:
                 env=claude_environment(os.environ),
                 text=True,
                 encoding="utf-8",
-                timeout=OBSERVER_READING_TIMEOUT_SEC,
+                timeout=OBSERVER_READING_TIMEOUT_SEC if self.timeout is None else self.timeout,
                 check=False,
                 **options,
             )
@@ -606,7 +633,13 @@ def _claude_failure_reason(path: str) -> str:
     return "unknown"
 
 
-def _claude_reading_argv(model: str) -> list[str]:
+def _claude_reading_argv(
+    model: str,
+    *,
+    system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
+    validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
+    effort: str = "",
+) -> list[str]:
     return [
         "--print",
         "--safe-mode",
@@ -626,11 +659,11 @@ def _claude_reading_argv(model: str) -> list[str]:
         "--output-format",
         "text",
         "--model",
-        runtime_config.validate_claude_reading_model(model),
+        validator(model),
         "--effort",
-        CLAUDE_READING_EFFORT,
+        effort or CLAUDE_READING_EFFORT,
         "--system-prompt",
-        CLAUDE_READING_SYSTEM_PROMPT,
+        system_prompt,
     ]
 
 
@@ -651,13 +684,18 @@ def claude_reading_provenance(config: RuntimeConfig) -> dict[str, Any]:
 
 
 @contextlib.contextmanager
-def prepare_claude_exec(
+def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller names)
     config: RuntimeConfig,
     *,
     runner: Any = supervise.run,
     binary_resolver: Any = shutil.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
+    system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
+    timeout: float | None = None,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
+    model: str | None = None,
+    validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
+    effort: str = "",
 ) -> Iterator[PreparedClaude]:
     """Prepare the private cwd and output before qualification spends a call.
 
@@ -674,9 +712,7 @@ def prepare_claude_exec(
     error_output: BinaryIO | None = None
     try:
         try:
-            selected_model = runtime_config.validate_claude_reading_model(
-                config.claude_reading_model
-            )
+            selected_model = validator(config.claude_reading_model if model is None else model)
         except ValueError as error:
             raise ClaudePreparationError("unavailable") from error
         try:
@@ -689,12 +725,12 @@ def prepare_claude_exec(
             os.makedirs(config.state_dir, mode=0o700, exist_ok=True)
             workdir = tempfile.mkdtemp(prefix="reading-claude-cwd-", dir=root)
             descriptor, output_path = tempfile.mkstemp(
-                prefix="reading-claude-", suffix=".txt", dir=config.state_dir
+                prefix=CLAUDE_SCRATCH_PREFIX, suffix=".txt", dir=config.state_dir
             )
             output = os.fdopen(descriptor, "wb")
             if on_diagnostic is not None:
                 error_descriptor, error_path = tempfile.mkstemp(
-                    prefix="reading-claude-error-", suffix=".txt", dir=config.state_dir
+                    prefix=f"{CLAUDE_SCRATCH_PREFIX}error-", suffix=".txt", dir=config.state_dir
                 )
                 error_output = os.fdopen(error_descriptor, "wb")
         except (KeyError, OSError) as error:
@@ -707,9 +743,13 @@ def prepare_claude_exec(
             runner,
             on_spawn,
             selected_model,
+            system_prompt=system_prompt,
+            timeout=timeout,
             error_path=error_path,
             error_output=error_output if error_output is not None else subprocess.DEVNULL,
             on_diagnostic=on_diagnostic,
+            validator=validator,
+            effort=effort,
         )
     finally:
         # Ownership starts at allocation, before a stream or yielded context
@@ -722,6 +762,38 @@ def prepare_claude_exec(
             finally:
                 if workdir:
                     shutil.rmtree(workdir, ignore_errors=True)
+
+
+CLAUDE_SCRATCH_PREFIX = "reading-claude-"
+
+
+def sweep_claude_scratch(config: RuntimeConfig, *, now: float | None = None) -> int:
+    """Remove the reading output and stderr files a hard kill left in `state_dir`.
+
+    `prepare_claude_exec` removes both on every path it runs to the end of; a SIGKILL or a power
+    loss runs none, and the stderr file holds the CLI's raw words. Only regular files of this
+    prefix older than `reading_scratch_stale_sec` go, so a call in flight in another instance
+    sharing the directory keeps its files. Returns how many were removed.
+    """
+    cutoff = (time.time() if now is None else now) - config.reading_scratch_stale_sec
+    removed = 0
+    try:
+        entries = list(os.scandir(config.state_dir))
+    except OSError:
+        return 0
+    for entry in entries:
+        if not (entry.name.startswith(CLAUDE_SCRATCH_PREFIX) and entry.name.endswith(".txt")):
+            continue
+        try:
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            if entry.stat(follow_symlinks=False).st_mtime >= cutoff:
+                continue
+            os.unlink(entry.path)
+        except OSError:
+            continue
+        removed += 1
+    return removed
 
 
 def _cleanup_claude_output(output: BinaryIO | None, descriptor: int, path: str) -> None:
@@ -749,19 +821,32 @@ class CodexGoalModel:
         child_assignment: bool = False,
         consent: bool = False,
         session_key: str = "",
+        resolve_destination: Callable[[], str] | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.config = config
+        # The collection's clock, so the store's prune and the notice's time
+        # follow the clock the refresh was given rather than the wall.
+        self.clock = clock
+        # Passed in rather than imported: `reading_route` imports this module, and an
+        # unnamed destination ("") is still a notice the reader is shown.
+        self.resolve_destination = resolve_destination
         self.runner = runner
         self.binary_resolver = binary_resolver
         self.child_assignment = child_assignment
         self.consent = consent
         self.session_key = session_key
-        self.status = (
-            "disabled"
-            if not config.observer_model_enabled
-            else "not-run"
-            if consent and session_key
-            else "consent-required"
+        self.notice: reading_policy.Notice | None = None
+        self.status = self._refusal() or (
+            "not-run" if consent and session_key else "consent-required"
+        )
+
+    def _refusal(self) -> str:
+        if not self.config.observer_model_enabled or self.config.model_calls_disabled:
+            return "disabled"
+        answer = reading_policy.status(self.config, now=self.clock())
+        return (
+            "" if answer["consent"] else "model-calls-paused" if answer["off"] else answer["reason"]
         )
 
     def metadata(self) -> dict[str, str]:
@@ -773,8 +858,9 @@ class CodexGoalModel:
         }
 
     def __call__(self, recent_text: str, entity_stage: str) -> str | None:
-        if not self.config.observer_model_enabled:
-            self.status = "disabled"
+        refusal = self._refusal()
+        if refusal:
+            self.status = refusal
             return None
         if not self.consent or not self.session_key:
             self.status = "consent-required"
@@ -790,6 +876,27 @@ class CodexGoalModel:
         finally:
             with _MODEL_FLIGHT_LOCK:
                 _MODEL_IN_FLIGHT.discard(key)
+
+    def _note(self) -> None:
+        answer = reading_policy.status(self.config, now=self.clock())
+        if not answer["consent"]:
+            raise reading_policy.RefusedError(answer)
+        notice = reading_policy.note(
+            self.config,
+            kind="goal",
+            provider="codex",
+            destination=self.resolve_destination() if self.resolve_destination else "",
+            # The agent's messages ride with the user's (`_model_context`), so
+            # the notice names the tier that includes them.
+            content=reading_policy.CONTENT_VERSION,
+            tool_output="",
+            now=self.clock(),
+        )
+        if notice is not None:
+            self.notice = notice
+        refusal = self._refusal()
+        if refusal:
+            raise reading_policy.RefusedError(reading_policy.status(self.config, now=self.clock()))
 
     def _invoke(self, recent_text: str, entity_stage: str) -> str | None:
         instruction = (
@@ -814,14 +921,20 @@ class CodexGoalModel:
             .encode("utf-8", "replace")[:OBSERVER_MODEL_MAX_PROMPT_BYTES]
             .decode("utf-8", "ignore")
         )
-        enhanced, status = codex_exec(
-            self.config,
-            prompt,
-            output_cap_bytes=self.config.observer_goal_cap_chars * 4,
-            runner=self.runner,
-            binary_resolver=self.binary_resolver,
-            timeout=OBSERVER_MODEL_TIMEOUT_SEC,
-        )
+        try:
+            enhanced, status = codex_exec(
+                self.config,
+                prompt,
+                output_cap_bytes=self.config.observer_goal_cap_chars * 4,
+                runner=self.runner,
+                binary_resolver=self.binary_resolver,
+                timeout=OBSERVER_MODEL_TIMEOUT_SEC,
+                before_call=self._note,
+            )
+        except reading_policy.RefusedError as exc:
+            # A stored off is named as one, though the cap outranks it in the answer.
+            self.status = "model-calls-paused" if exc.answer["off"] else exc.answer["reason"]
+            return None
         if status != "ok":
             self.status = status
             return None
@@ -892,7 +1005,9 @@ def _redacted_message_content(value: Any, depth: int = 0) -> Any:
     return None
 
 
-def _message_from(role: Any, content: Any, harness: str, cap: int) -> dict[str, str] | None:
+def _message_from(
+    role: Any, content: Any, harness: str, cap: int, *, paste_tags: bool = False
+) -> dict[str, str] | None:
     """The (role, text) pair for one already-unwrapped message, or None.
 
     The one place the injected-shape rejection is applied, so every harness arm
@@ -900,6 +1015,9 @@ def _message_from(role: Any, content: Any, harness: str, cap: int) -> dict[str, 
     would publish a harness's own machinery as the operator's goal on 51.6% of
     Codex rollouts and 62.5% of Claude sessions — a confident wrong answer where
     there is a silent sentinel today, which is the worse of the two failures.
+
+    `paste_tags` keeps the harness's paste tags in the words, for the one reader that needs the
+    text as it was before they were taken off (`project_context._instruction_event`'s fact id).
 
     `cap` is `observer_model_context_chars` and not `extract_text`'s own default,
     because the block half scans this text for an indicator ANYWHERE in it rather
@@ -920,14 +1038,17 @@ def _message_from(role: Any, content: Any, harness: str, cap: int) -> dict[str, 
         return {"role": "assistant", "text": text}
     # The operator's own words, with the harness's image markers peeled off the
     # front — `strip_prompt_wrappers` is what makes `[Image #1] fix the build`
-    # publishable as a goal rather than as a marker.
-    body = records.strip_prompt_wrappers(text)
+    # publishable as a goal rather than as a marker. A paste's tags come off first
+    # (DRC-4920), so what a direction quotes is the pasted words, never the wrapper.
+    body = records.strip_prompt_wrappers(text if paste_tags else records.strip_paste_wrapper(text))
     if not body or records.injected_prompt(text, harness):
         return None
     return {"role": "user", "text": body}
 
 
-def _claude_message(record: dict[str, Any], record_type: str, cap: int) -> dict[str, str] | None:
+def _claude_message(
+    record: dict[str, Any], record_type: str, cap: int, *, paste_tags: bool = False
+) -> dict[str, str] | None:
     """One (role, text) pair from a Claude ``user``/``assistant`` record, or None.
 
     A subagent's transcript is interleaved into its parent's file, and a
@@ -940,10 +1061,18 @@ def _claude_message(record: dict[str, Any], record_type: str, cap: int) -> dict[
     if record.get("isSidechain") or record.get("isMeta"):
         return None
     message = records.message_dict(record)
-    return _message_from(message.get("role") or record_type, message.get("content"), "claude", cap)
+    return _message_from(
+        message.get("role") or record_type,
+        message.get("content"),
+        "claude",
+        cap,
+        paste_tags=paste_tags,
+    )
 
 
-def _parse_message_record(record: Any, cap: int) -> dict[str, str] | None:
+def _parse_message_record(
+    record: Any, cap: int, *, paste_tags: bool = False
+) -> dict[str, str] | None:
     """One (role, text) pair from a JSONL message record, or None.
 
     Three record shapes, additively: ``type: "message"`` with a nested
@@ -968,15 +1097,21 @@ def _parse_message_record(record: Any, cap: int) -> dict[str, str] | None:
     if record_type == "message":
         message = records.message_dict(record)
         return _message_from(
-            message.get("role"), message.get("content"), _SHARED_MESSAGE_HARNESS, cap
+            message.get("role"),
+            message.get("content"),
+            _SHARED_MESSAGE_HARNESS,
+            cap,
+            paste_tags=paste_tags,
         )
     if record_type in ("user", "assistant"):
-        return _claude_message(record, record_type, cap)
+        return _claude_message(record, record_type, cap, paste_tags=paste_tags)
     if record_type == "response_item":
         payload = records.as_dict(record.get("payload"))
         if payload.get("type") != "message":
             return None
-        return _message_from(payload.get("role"), payload.get("content"), "codex", cap)
+        return _message_from(
+            payload.get("role"), payload.get("content"), "codex", cap, paste_tags=paste_tags
+        )
     return None
 
 
@@ -986,6 +1121,204 @@ def parse_message_record(
 ) -> dict[str, str] | None:
     """Public bounded parser used by the semantic event reader."""
     return _parse_message_record(record, cap)
+
+
+# Where the reader's words came from, for the two Claude Code records that carry them with no
+# user turn. Each is the evidence's own source label, so a reading and a reviewer can tell the
+# reader's message at the prompt from one the agent took in mid-turn.
+MID_TURN_SOURCE = "message the reader sent while the agent worked"
+ANSWER_SOURCE = "reader's answer to the agent's question"
+
+
+def _queued_prompt_text(prompt: Any) -> str:
+    """The words of a queued prompt: a string, or text blocks beside pasted images.
+
+    A pasted image rides in the same list as base64 bytes. Only its `text` blocks are the
+    reader's words, and the bytes are never read.
+    """
+    if isinstance(prompt, str):
+        return prompt
+    if not isinstance(prompt, list):
+        return ""
+    return "\n".join(
+        block["text"]
+        for block in prompt
+        if isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+    )
+
+
+def _absorbed_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
+    """The reader's message the agent took in mid-turn, from its `queued_command` attachment.
+
+    Claude Code gives a message sent while a turn runs to the model inside a tool result, so the
+    transcript holds no user turn for it. The attachment is the record that names its sender:
+    `origin.kind` is `human` for the reader and `task-notification` for a finished background
+    task, and the queue carries both. Two-thirds of the `absorbed_mid_turn` removals measured
+    were the second, so the `queue-operation` rows alone would count the harness as the reader.
+    `commandMode` must be `prompt` for the same reason: it is the reader's words, not a command.
+    """
+    if record.get("type") != "attachment" or record.get("isSidechain"):
+        return None
+    attachment = records.as_dict(record.get("attachment"))
+    if (
+        attachment.get("type") != "queued_command"
+        or attachment.get("commandMode") != "prompt"
+        or records.as_dict(attachment.get("origin")).get("kind") != "human"
+    ):
+        return None
+    message = _message_from("user", _queued_prompt_text(attachment.get("prompt")), "claude", cap)
+    return None if message is None else {**message, "source": MID_TURN_SOURCE}
+
+
+# The agent's own label on the option it preferred, appended to the option's label
+# ("Same folder in its checkout (Recommended)"). A reader who picks it gave the option, not the
+# agent's advice, so the marker comes off before the words are quoted or sent. A multiple-choice
+# answer is one comma-joined string, so the marker also ends every option before a comma.
+_RECOMMENDED_MARKER = re.compile(r"\s*\(recommended\)(?=\s*(?:,|$))", re.IGNORECASE)
+
+
+def _answer_text(answer: Any) -> str:
+    if isinstance(answer, str):
+        return _RECOMMENDED_MARKER.sub("", answer.strip()).strip(" ,")
+    if isinstance(answer, list):
+        return ", ".join(text for item in answer if (text := _answer_text(item)))
+    return ""
+
+
+def question_result(record: Any) -> dict[str, Any] | None:
+    """`toolUseResult` of the question tool's own result, or None for any other record.
+
+    `questions` and `answers` are only fields, and a record the reader typed or another tool
+    wrote can carry them. What marks the tool's result is the whole shape: a user record whose
+    content holds a successful `tool_result` block, whose questions each offer options, and whose
+    answers are keyed by the text of a question that same result asked. The record names its
+    tool nowhere (the result's own sentence differs across Claude Code versions), and the call
+    sits in an earlier record this per-record reader never holds.
+    """
+    if (
+        not isinstance(record, dict)
+        or record.get("type") != "user"
+        or record.get("isSidechain")
+        or record.get("isMeta")
+    ):
+        return None
+    content = records.message_dict(record).get("content")
+    if not isinstance(content, list) or not any(
+        isinstance(block, dict) and block.get("type") == "tool_result" and not block.get("is_error")
+        for block in content
+    ):
+        return None
+    result = record.get("toolUseResult")
+    if not isinstance(result, dict) or not isinstance(result.get("questions"), list):
+        return None
+    answers = result.get("answers")
+    asked = {
+        question["question"]
+        for question in result["questions"]
+        if isinstance(question, dict)
+        and isinstance(question.get("question"), str)
+        and isinstance(question.get("options"), list)
+    }
+    if not isinstance(answers, dict) or not asked or not set(answers) <= asked:
+        return None
+    return result
+
+
+def answer_text_chars(record: Any) -> int:
+    """The characters of the reader's words an answer record holds: each answer and each note.
+
+    The press refuses a message too long to redact, and an answer's words sit in `toolUseResult`
+    beside a `tool_result` block that carries no `text`, so a guard counting `message.content`
+    alone reads every answer as empty.
+    """
+    result = question_result(record)
+    if result is None:
+        return 0
+    annotations = records.as_dict(result.get("annotations"))
+    notes = (records.as_dict(item).get("notes") for item in annotations.values())
+    return sum(len(_answer_text(answer)) for answer in result["answers"].values()) + sum(
+        len(note.strip()) for note in notes if isinstance(note, str)
+    )
+
+
+def _answer_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
+    """The reader's answer to the agent's multiple-choice question, from the tool's result.
+
+    `toolUseResult.answers` maps each question's text to what the reader chose or typed, and is
+    empty when the question timed out or was declined, which leaves no words to read. Each
+    line is the question's `header`, the agent's one-word label for what was asked, then the
+    answer, so a bare option label such as "Defer to a follow-up" does not stand alone as an
+    instruction. The question's own text and every option's `preview` are the agent's words and
+    stay out, and so is the `(Recommended)` the agent put on an option. The reader's `notes` on
+    an answer are theirs and go in. Only the question tool's own result is read
+    (`question_result`).
+    """
+    result = question_result(record)
+    if result is None:
+        return None
+    headers = {
+        question["question"]: question["header"]
+        for question in result["questions"]
+        if isinstance(question, dict)
+        and isinstance(question.get("question"), str)
+        and isinstance(question.get("header"), str)
+    }
+    annotations = records.as_dict(result.get("annotations"))
+    lines: list[str] = []
+    for asked, given in result["answers"].items():
+        answer = _answer_text(given)
+        if not answer:
+            continue
+        header = headers.get(asked, "").strip()
+        line = f"{header}: {answer}" if header else answer
+        notes = records.as_dict(annotations.get(asked)).get("notes")
+        if isinstance(notes, str) and notes.strip():
+            line = f"{line} ({notes.strip()})"
+        lines.append(line)
+    if not lines:
+        return None
+    # The text reaches `_message_from` as a string, so its tool-result guard does not apply.
+    message = _message_from("user", "; ".join(lines), "claude", cap)
+    return None if message is None else {**message, "source": ANSWER_SOURCE}
+
+
+def parse_reader_record(
+    record: Any,
+    cap: int = records.EXTRACT_TEXT_CAP_CHARS,
+    *,
+    paste_tags: bool = False,
+) -> dict[str, str] | None:
+    """`parse_message_record`, and the two records that carry the reader's words with no turn.
+
+    A message sent mid-turn and an answer to the agent's question. Kept apart from
+    `parse_message_record` because that one also picks the session's goal, and a direction the
+    agent took in mid-turn must not move a goal the reader set at the prompt. The two extra
+    shapes carry a `source` label; an ordinary user turn carries none.
+    """
+    message = _parse_message_record(record, cap, paste_tags=paste_tags)
+    if message is not None or not isinstance(record, dict):
+        return message
+    return _absorbed_message(record, cap) or _answer_message(record, cap)
+
+
+def reader_source_content(record: Any) -> Any:
+    """What a mid-turn message or an answer holds of the reader's, for a source fingerprint.
+
+    None for any other record. The ordinary message's content is already what a fingerprint
+    reads, but these two carry theirs outside `message.content`, so one that read only that
+    would give every mid-turn message the same fingerprint.
+    """
+    if not isinstance(record, dict):
+        return None
+    attachment = records.as_dict(record.get("attachment"))
+    if attachment.get("type") == "queued_command":
+        return attachment.get("prompt")
+    result = question_result(record)
+    if result is not None:
+        return [result["answers"], result.get("annotations")]
+    return None
 
 
 def _dedup_key(record: dict[str, Any]) -> str:

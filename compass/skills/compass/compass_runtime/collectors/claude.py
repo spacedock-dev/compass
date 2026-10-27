@@ -1014,6 +1014,26 @@ def collect(
                     if info and transcript
                     else {}
                 ),
+                # The session's own `/goal`, from its record. Behind the same guard as the
+                # prompt above, so a row the transcript was not read for publishes none.
+                "session_goal": (
+                    claude_data.session_goal(config, state, transcript)
+                    if info and transcript
+                    else None
+                ),
+                # How that goal ended, from the same read of the same cache entry, so after it.
+                # Keys of their own, never the goal's: the goal stays None after either, and
+                # None here is "not seen", which is not "did not happen".
+                "session_goal_cleared": (
+                    claude_data.session_goal_cleared(state, transcript)
+                    if info and transcript
+                    else None
+                ),
+                "session_goal_gave_up": (
+                    claude_data.session_goal_gave_up(state, transcript)
+                    if info and transcript
+                    else None
+                ),
                 # Line 1 above is the session's identity — the `ai-title`, fixed
                 # before the second prompt on 200 of 204 long sessions — and this
                 # is the line that says what it is doing now. Behind the same

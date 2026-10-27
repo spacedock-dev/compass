@@ -5,7 +5,6 @@ import {
   SAVED,
   RECORD,
   POLICY,
-  UNCONSENTED,
   ROUTE,
   fact,
   freshScript,
@@ -31,7 +30,7 @@ export async function visitIntentDisplayStates(browser, root, record) {
         const script = freshScript();
         await installScript(opened.context, script);
         for (const state of width === 1280
-          ? ['live', 'stale', 'job', 'consent', 'log', 'draft']
+          ? ['live', 'stale', 'job', 'notice', 'log', 'draft']
           : ['live', 'stale']) {
           for (const key of Object.keys(script)) delete script[key];
           Object.assign(script, freshScript(), {
@@ -49,19 +48,30 @@ export async function visitIntentDisplayStates(browser, root, record) {
                 : {}),
             },
             payload: {
-              reading: state === 'consent' ? UNCONSENTED : POLICY,
+              reading: POLICY,
               reading_routes: { claude: ROUTE },
               reading_check: 'accepted',
-              reading_jobs:
-                state === 'job'
-                  ? {
-                      'claude:intent-2': {
-                        id: 'chrome-job',
-                        phase: 'read',
-                        steps: [{ phase: 'read', text: 'Reading the record' }],
-                      },
-                    }
-                  : {},
+              reading_jobs: ['job', 'notice'].includes(state)
+                ? {
+                    'claude:intent-2': {
+                      id: 'chrome-job',
+                      ...(state === 'notice'
+                        ? {
+                            notice: {
+                              kind: 'reading',
+                              provider: 'claude',
+                              destination: 'api',
+                              tool_output: 'api',
+                              content: 4,
+                              at: g,
+                            },
+                          }
+                        : {}),
+                      phase: 'read',
+                      steps: [{ phase: 'read', text: 'Reading the record' }],
+                    },
+                  }
+                : {},
             },
             facts: [fact('anchor', g - 900), ...RECORD(g)],
             work:
@@ -92,11 +102,8 @@ export async function visitIntentDisplayStates(browser, root, record) {
           if (state === 'log') await opened.page.locator('[data-next-view-body=intent]').waitFor();
           else await awaitRecordRead(opened.page);
           if (state === 'draft')
-            await opened.page.locator('[data-slot=badge][data-variant=draft-source]').waitFor();
-          if (state === 'consent') {
-            await opened.page.locator('[data-next-cockpit-action=reading-ask]').click();
-            await opened.page.locator('[data-slot=card][data-variant=reading-consent]').waitFor();
-          }
+            await opened.page.locator('[data-next-cockpit-draft-marks]').waitFor();
+          if (state === 'notice') await opened.page.locator('[data-next-reading-notice]').waitFor();
           if (state === 'live' || state === 'stale') {
             await opened.page
               .locator(state === 'live' ? '[data-next-drift-pill]' : '[data-next-result-stale]')

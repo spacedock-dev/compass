@@ -6,6 +6,9 @@ import { loadLegacyViews } from '../observed/legacy.test.helper';
 import { mountShell } from '../shell/testing';
 import { formatDuration } from '../shell/format';
 import { retractSessionCopies } from '../../test/sessionCopyDeviation';
+import { noTitleText, type Row } from '../observed';
+import { turnEndedSentence } from './detail';
+import { harnessLabels } from './rows';
 
 /* The session page, held to the legacy page by what a reader can read. `nextSessionView` runs unchanged
    over a generated payload for each of several sessions in it, and this page renders the same route in the
@@ -43,6 +46,19 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
     };
   const copy = article.cloneNode(true) as Element;
   copy.querySelector('.next-session-panel')?.remove();
+  /* The one-column page (owner, 2026-10-19; docs/design-frontend-migration.md#held-to-recorded-answers): the
+     state badge moved under the title beside a new line that restates CURRENT ACTIVITY and the turn, and the
+     activity heading became the Full activity trigger. Read back in the recorded order and words; the rest of
+     the activity, in its recorded order, is compared unchanged. */
+  const status = copy.querySelector('[data-next-session-status]');
+  if (status) {
+    const badge = status.querySelector('.next-session-state');
+    badge?.querySelector('[data-next-session-status-dot]')?.remove();
+    if (badge) copy.querySelector('.next-session-detail-title')?.prepend(badge);
+    status.remove();
+  }
+  const activityHeading = copy.querySelector('[data-next-full-activity-heading]');
+  if (activityHeading) activityHeading.textContent = 'Session activity';
   const header = copy.querySelector('.next-session-detail-header');
   if (header) copy.prepend(header);
   /* The numbered activity list and the header's drift pill and entry count belong to the Drift step: the legacy
@@ -53,7 +69,9 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
   const meta = copy.querySelector('.next-session-detail-meta');
   // Compare retained counts in the recorded header order; the viewport proof owns their new placement.
   if (meta && header && !header.contains(meta)) {
-    header.querySelector('.next-session-detail-bar')?.prepend(meta);
+    const identity = header.querySelector('.next-session-identity');
+    if (identity) identity.after(meta);
+    else header.querySelector('.next-session-detail-bar')?.prepend(meta);
   }
   if (meta) {
     meta.textContent = (meta.textContent ?? '')
@@ -106,6 +124,82 @@ function projectRecordedSessionAge(
   root.querySelector('.next-session-identity')?.append(` · Started about ${duration} ago`);
 }
 
+/* The page names the token rate's unit in the header ("44 tokens/min"), where the retired page wrote "44 /m"; the
+   recorded identity line is restated in those words before it is compared (docs/design-frontend-migration.md#held-to-recorded-answers). */
+function projectRecordedRateUnit(root: ParentNode): void {
+  const line = root.querySelector('.next-session-identity');
+  if (!line) return;
+  const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode())
+    node.nodeValue = (node.nodeValue ?? '').replace(/ \/m\b/g, ' tokens/min');
+}
+
+/* The measured line no longer opens with the harness's label ("Claude Code · ..."): the identity beside it names the
+   harness, and the design draws it once (owner, 2026-10-21; docs/design-frontend-migration.md#held-to-recorded-answers).
+   The recorded line is restated without that opening word before it is compared. */
+function projectRecordedHarnessWord(root: ParentNode, harnessLabel: string): void {
+  const meta = root.querySelector('.next-session-detail-meta');
+  if (!meta || !harnessLabel) return;
+  const parts = (meta.textContent ?? '').split(' · ');
+  if (parts[0] !== harnessLabel) return;
+  const rest = parts.slice(1).join(' · ');
+  if (rest) meta.textContent = rest;
+  else meta.remove();
+}
+
+/* A finished turn reads "Turn ended 11:00 · waiting for you" in the measured line and under CURRENT ACTIVITY, where the
+   retired page wrote the collector's words (owner, 2026-10-21; docs/design-frontend-migration.md#held-to-recorded-answers).
+   The recorded text is restated where the page now says it. */
+function projectRecordedTurnEnd(
+  root: ParentNode,
+  payload: Record<string, unknown>,
+  route: { project: string; harness?: string; session: string },
+): void {
+  const rows = Array.isArray(payload['sessions']) ? (payload['sessions'] as Row[]) : [];
+  const row = rows.find(
+    (candidate) =>
+      candidate &&
+      String(candidate['project'] ?? '') === route.project &&
+      String(candidate['sid'] ?? '') === route.session &&
+      (!route.harness || candidate['harness'] === route.harness),
+  );
+  const sentence = row ? turnEndedSentence(row) : null;
+  if (!row || !sentence) return;
+  const strong = root.querySelector('.next-session-current > strong');
+  if (strong) strong.textContent = sentence;
+  const meta = root.querySelector('.next-session-detail-meta');
+  const detail = String(row['state_detail'] ?? '');
+  if (meta) {
+    const parts = (meta.textContent ?? '').split(' · ');
+    const at = detail ? parts.indexOf(detail) : -1;
+    if (at >= 0) parts[at] = sentence;
+    else parts.unshift(sentence);
+    meta.textContent = parts.join(' · ');
+  }
+}
+
+/* A session with no title whose only prompt was a harness command reads "No name: the session opened with a
+   command", where the retired page said no title was published (docs/design-frontend-migration.md#held-to-recorded-answers).
+   The recorded heading is restated where the page now says it. */
+function projectRecordedCommandOpener(
+  root: ParentNode,
+  payload: Record<string, unknown>,
+  route: { project: string; harness?: string; session: string },
+): void {
+  const rows = Array.isArray(payload['sessions']) ? (payload['sessions'] as Row[]) : [];
+  const row = rows.find(
+    (candidate) =>
+      candidate &&
+      String(candidate['project'] ?? '') === route.project &&
+      String(candidate['sid'] ?? '') === route.session &&
+      (!route.harness || candidate['harness'] === route.harness),
+  );
+  if (!row || row['first_prompt_control'] !== true) return;
+  const heading = root.querySelector('.next-session-detail-title h1');
+  if (heading && heading.textContent === 'Title not published')
+    heading.textContent = noTitleText(row);
+}
+
 function legacySummary(
   payload: unknown,
   route: { project: string; harness?: string; session: string; from?: string },
@@ -116,6 +210,13 @@ function legacySummary(
   template.innerHTML = legacy.sessionHtml(payload, route);
   retractSessionCopies(template.content);
   projectRecordedSessionAge(template.content, payload as Record<string, unknown>, route);
+  projectRecordedRateUnit(template.content);
+  projectRecordedHarnessWord(
+    template.content,
+    harnessLabels(payload as Row).get(route.harness ?? '') ?? '',
+  );
+  projectRecordedTurnEnd(template.content, payload as Record<string, unknown>, route);
+  projectRecordedCommandOpener(template.content, payload as Record<string, unknown>, route);
 
   return summarize(template.content);
 }
@@ -184,8 +285,8 @@ describe('the session page reads as the legacy page does, over generated payload
         }
         if (failures.length >= 3) break;
       }
-      expect(compared).toBeGreaterThan(20);
       expect(failures).toEqual([]);
+      expect(compared).toBeGreaterThan(20);
     }, 240_000);
   }
 

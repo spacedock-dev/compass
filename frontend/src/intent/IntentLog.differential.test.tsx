@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { genLogCase, type LogCase } from './generate.test.helper';
 import { loadLegacyIntent } from './legacy.test.helper';
 import { json, mountIntent } from './testing';
+import { maskRevisionWords } from '../../test/revisionWordDeviation';
 
 /* The Intent log, held to the legacy page by what a reader can read. The legacy `nextIntentView` runs
    unchanged over a generated board and a generated set of retained rows; this view renders the same two
@@ -125,7 +126,7 @@ describe('the Intent log reads as the legacy log does, over generated boards', (
         }
       }
       if (
-        JSON.stringify(old) !== JSON.stringify(mine) &&
+        maskRevisionWords(JSON.stringify(old)) !== maskRevisionWords(JSON.stringify(mine)) &&
         !DEVIATIONS.some((d) => d.seed === seed)
       ) {
         const left = JSON.stringify(old);

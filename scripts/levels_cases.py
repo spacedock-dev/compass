@@ -1130,6 +1130,10 @@ def _produce(
             tool_output=tool_output,
             read_lines=True,
             admit_turn_stop=True,
+            # Not the idle admission of 2026-10-20: the owner marked these cases under the earlier
+            # rule, which withheld an idle session with no recorded finish, and re-scoping the key
+            # is the owner's decision, not this replay's.
+            admit_idle=False,
         )
     except reading_policy.RefusedError as error:
         return None, f"ledger:{error.answer['reason']}", False

@@ -7,10 +7,16 @@ Compass ships three kinds of component that touch the network. The dashboard ser
 reads local coding-agent session stores (transcripts, task
 files, SQLite databases) and serves them over HTTP. When the usage feature is on, the server also
 makes the quota poll described in Usage quota reads (the quota fetcher); it carries no session
-data. The model lane is the one path that can send session content off this machine. It is
-off unless explicitly enabled, and a call needs disclosure consent on the request that triggers it:
-a focused refresh for a goal line, or a reader's press for a reading.
-[Observer model calls](#observer-model-calls) states its bounds. The opt-in UI's Space fonts are
+data. The model lane is the one path that can send session content off this machine. A call a
+reader's action starts (a focused refresh for a goal line, a press for a reading, or the open of a
+finished session or a press for a session summary) runs without a prior question and shows a
+one-time, non-blocking notice naming what is sent and where, with its off switch beside it: Pause
+model calls for a reading or a goal line, Turn off summaries for a summary. Turning on the Live monitor
+starts a Haiku check about once a minute for as long as the session is viewed, and shows its own notice. Unasked drift checks stay off by default, and `--no-observer-model` refuses
+every model call.
+[Observer model calls](#observer-model-calls) states its bounds;
+[Light harness usage](#light-harness-usage-asking-a-harness-a-bounded-question) states the notice rule.
+The opt-in UI's Space fonts are
 packaged into its page, so
 loading either interface makes no request to a font provider. Four small forwarders ship beside it,
 each wired into a harness's own configuration by the user or by the plugin: `notify_hook.py` POSTs
@@ -63,7 +69,7 @@ The posture rests on two invariants:
    no network on Compass's own account: the hand-off request in Hand-off requests below writes one
    line to a socket on this machine, and what travels afterwards travels on the receiving session's
    own connection, which is why it is named here rather than counted above.
-2. Read-only against harness stores. They are opened read-only and never written. Thirteen endpoints
+2. Read-only against harness stores. They are opened read-only and never written. Sixteen endpoints
    mutate, and seven of them only in memory: `POST /api/notify` updates needs-input state, and
    `POST /api/usage` stores a quota figure a harness published to its own status-line command.
    `POST /api/events/<harness>` also mutates in memory only, behind the capability described under
@@ -74,7 +80,7 @@ The posture rests on two invariants:
    timestamp for the whole board, never written to disk, and a body that names a session is refused
    rather than stripped. Delivery records below is where that refusal is stated. The long
    poll that delivers an answer, `GET /api/ask/<id>`, drops that question from memory once it has,
-   which is the delivery completing rather than a change a caller asked for. Six write to disk.
+   which is the delivery completing rather than a change a caller asked for. Nine write to disk.
    `POST /api/dismiss` writes the sessions you marked handled,
    `POST /api/annotate` writes the goal you typed or explicitly adopted and the expected outcome lines you typed against a session, including a line you added from a later direction you gave and the settlement of those directions, and
    `POST /api/reading` writes a model's reading of that session back into the same annotation
@@ -130,7 +136,7 @@ The posture rests on two invariants:
    process that can change both the store and the source.
 
    Two consequences of storing it here rather than in session history, both accepted rather than
-   discovered. `--forget` deletes the session-history and session-end stores and **deletes nothing
+   discovered. `--forget` deletes the session-history, session-end and summary stores and **deletes nothing
    a reader typed and no reading of it**, so a reader who wants a model-authored reading gone
    clears that session's annotation, which deletes the reading with the words that produced it.
    The one thing that command does take out of this file is the discard records described below,
@@ -144,16 +150,63 @@ The posture rests on two invariants:
    `POST /api/reading` writes. The sixth, `POST /api/correction/copied`, records the digest of a
    correction you copied, never its text, in `compass-copied-corrections.json`; [Analyze drift,
    Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections) owns its bounds.
+   The seventh, `POST /api/summary/delete`, deletes one stored summary, and reading one writes
+   too: a focused `GET /api/project-context` records its last access time, named with the other
+   writing `GET` below.
+   The eighth, `POST /api/summary`, and the ninth, `POST /api/summary/cancel`,
+   start or stop a server-owned summary job, and the first also stores Turn off summaries or
+   Turn summaries on. The first writes the separate summary store incrementally after each part.
+   Both write identifier-only progress markers in `state_dir/summary-jobs/` before any charge;
+   startup reports a dead job as interrupted with its finished parts and never resumes it.
+   Delete summary stops a running summary before a later reply can publish. Discard everything
+   does the same for the discarded session, under the reason `discarded`, and then deletes that
+   session's stored summary; it removes no other session's. A publication lock at `state_dir/summary-jobs.lock` serializes
+   admission, save, cancel, deletion and grant changes across dashboards. The independent
+   `summary_permission` row and `summary_spends` receipt/timestamp rows live in the permission
+   SQLite file; neither reads or charges Analyze's `spends` or `spend_jobs` tables. A receipt is
+   the random job id and attempt number, never a session id or source text, and is retained for
+   30 days for restart accounting; the rolling cap reads only the newest 24 hours.
+   All three summary POST routes are loopback-only, enforce Host/Origin and fetch-site checks,
+   and refuse document navigation before parsing a body or touching a store.
+   The tenth, `POST /api/goal/find`, sends one session's own prompts to the model on a press and
+   writes nothing to disk but the rolling-cap ledger row and, the first time, the goal notice in
+   the permission file. It is guarded as `POST /api/reading` is: loopback-only, Host/Origin and
+   fetch-site checks, a document navigation refused before the body is read, and a body that must
+   assert `press` and `observer_model`. [Find goal](#find-goal) owns what it sends and what it keeps. The separate
+   **summary store**, `compass-summaries.json` under the same home, holds model-written
+   summaries keyed by harness and session, without a saved intent. Discard everything removes the
+   discarded session's entry and no other (owner's ruling, 2026-10-21; it reversed the earlier rule
+   that the summary store survives). Its versioned closed schema admits the producer's summary (lede, blocks, spans,
+   fingerprints, citations, withheld markers, cut counts, gaps, coverage and spend), made-at time,
+   model stamp, last access time and word-free source comparison metadata. Unknown schemas,
+   torn files and files above the 64 MiB aggregate read cap are unavailable, never partially read
+   or overwritten by a save. Every stored string is redacted before bounding on the way in and
+   again on the way out. Writers hold a process lock and the store filename plus `.lock` across
+   read, eviction and owner-only temp-file rename; unavailable filesystem locks refuse the write.
+   The bound allows 64 summaries at 512 KiB each (32 MiB), plus 32 MiB for comparison metadata
+   and envelopes. Eviction drops the least recently read or written summaries, never the summary
+   being saved, and cannot touch the annotation store. Delete summary removes one session; no
+   marker of the deletion is stored, so the next open of that finished session summarizes it again
+   and sends its text once more, unless summaries are turned off or model calls are paused.
+   `--forget` deletes the whole store, even when unreadable and even when the filesystem lock is
+   unsupported or unusable; only a lock another holder keeps past ten seconds refuses it.
+   `--no-annotations` does not govern it.
+   Deletion is loopback-only, same-origin and refused for document navigation before the body or
+   store is read. A local process with no fetch metadata can delete a summary; it cannot use this
+   route to remove saved intent. [Session summary calls](#session-summary-calls) owns model-call bounds;
+   the [store contract](docs/design-session-summary.md#store-contract) owns its schema and API.
    One forwarder writes too: `statusline_hook.py`'s deduplication memo under
    the same directory, which holds a normalized state name and a timestamp and nothing about the
    session's content.
    Two `POST`s store nothing of their own and are named here for what they return rather than for
    the count above: `POST /api/direction` hands back the whole text of one later direction you
-   gave, for review before it becomes an outcome line, and `POST /api/correction` hands back Steer
+   gave, which the page asks for on its own, with no press, for every open direction (up to 64)
+   when it draws the question that quotes them, so you read the words before you choose what to do
+   with them, and `POST /api/correction` hands back Steer
    back's correction, which is the goal and outcome lines you saved, each line's state and the
    times of the entries it rests on, and since 2026-10-04 the first sentence of an agent message
-   whose claim the record contradicts or does not show, the title the activity list already
-   publishes. Each runs a collection to read the session, and that
+   whose claim the record contradicts or does not show, or, since 2026-10-20, at which a departure
+   is cited, the title the activity list already publishes. Each runs a collection to read the session, and that
    collection may rewrite `semantic-work-history.json` as any collection does. [Analyze drift, Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections)
    owns the bounds of both.
    One `GET` reads wider than the rest, and is named here for that reason rather than for the
@@ -195,7 +248,15 @@ The posture rests on two invariants:
    docstring records that reasoning. The POST-route inventory in the test suite cannot see a `GET`,
    so this paragraph is the accounting for it.
 
-   One `GET` writes as well, which is why it is named here rather than left to the count above.
+   Two `GET`s write as well, which is why they are named here rather than left to the count above.
+   `GET /api/project-context` with a `session` that matches one row reads that session's stored
+   summary, and at most once an hour per summary that read records the summary's last access time,
+   which eviction orders by. It writes nothing else: the same entry with a later `accessed_at`,
+   under the summary store's process lock and `compass-summaries.json.lock`, by rewriting the whole
+   file, up to 64 MiB, through the owner-only temporary file and rename every save uses. That
+   rewrite applies the same size bound, so it can evict other summaries but never the one read, and
+   it never touches the annotation store. Under a non-default `--host` bind, a peer that can reach
+   the port can cause that hourly rewrite; it cannot choose what is written.
    `GET /api/observe` is a trigger rather than a poll: it derives one session's goal, stage and open
    block and records the answer as a sidecar under `~/.compass/observer/`, again Compass's own
    state and never a harness store. Its two components are the harness key and the session id, and
@@ -228,6 +289,34 @@ whitelist of two scoped clauses and not a general permission to execute: written
 sentence would make documented security bugs of three paths Compass already ships, the native
 notifier's `osascript`, `--daemon`'s respawn of the server, and the quota fetcher's Keychain read.
 
+## Find goal
+
+`POST /api/goal/find` reads the prompts a reader typed in one Claude Code or Codex session and
+answers a goal, or nothing. It runs only on a press of Find goal, one call per press, and a second
+press while one runs is refused with 409 rather than charged again.
+
+- It sends the session's own person-authored prompts and nothing else: not an agent message, not
+  tool output, not a correction Compass wrote and the reader copied. Each prompt is masked by named
+  form and folded as a chosen goal is, then at most 40 of them (the first five and the latest) and
+  24,000 characters go in one message, with the rules and a boundary no prompt can close.
+- The receiver is the route Analyze names for that harness. A press names the provider and, for
+  Claude Code, the model the page drew, and a mismatch answers 409 before any call.
+- Every refusal that can be known without the model comes before the prompts are read: the
+  startup off switch, the stored pause, a spent day, a lured request. The charge is taken at the
+  model seam, the same reservation Analyze pays, so a press that runs counts against the same
+  rolling cap whether or not it finds a goal. A press with no prompts, or with the CLI missing,
+  sends nothing and is not charged.
+- A goal is shown only if it passes three mechanical rules: the model quotes the prompt words it
+  comes from, each quote is verbatim (whitespace aside) in the prompt it names as Compass sent it,
+  and the model calls the goal clear, asked in end-state wording matching a reading's. A paraphrase, a quote
+  under the wrong prompt number, a goal too long for the Goal field and a reply of the wrong shape
+  are dropped.
+- The answer is held as words in the Goal field and is stored nowhere. Nothing is written into the
+  session, and nothing is saved until the reader presses Save intent.
+- The accepted limit: the third rule is the model's own judgement, carried in the same call, so a
+  goal a later analysis would call too vague can still be shown. The quotes are what the reader
+  checks it against.
+
 ## What launches and what sends
 
 [Scope](#scope) names the kinds of outbound request. This section is the other direction of the
@@ -250,11 +339,14 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 
 | Path | What it can carry | Stopped by | Fails if it leaks |
 |---|---|---|---|
-| Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. Off until the disclosure is answered. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
+| Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. On until the reader turns it off in the page. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
 | Reach nudge | Two counts, to an endpoint you configure. Nothing is sent without one. | `--no-reach` | `test_reach.ReachNudgeTest.test_no_reach_flag_never_attempts_post`, `test_reach.ReachNudgeTest.test_no_reach_switch_disables_url_resolution` |
-| A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. This is the one path that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--observer-model` and `--unasked-readings` | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
-| An optional goal summary | A Codex call, behind its own `--observer-model` and consent. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_is_opt_in_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
-| The live drift estimate | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
+| A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. With a session summary, one of the two paths that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--unasked-readings` | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
+| A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause model calls) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |
+| An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
+| A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
+| The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
+| A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
 | The git probe | One bounded `git` command, in a repository you chose. Nothing leaves the machine. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all` |
@@ -267,19 +359,14 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 
 ### The launch grant for tool output
 
-A Claude Code reading carries a check's command, its result, the last 180 characters of its output
-and the paths it wrote only to a destination Compass can name, and only after an Allow whose
-disclosure said so. [Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading)
-owns that rule. Starting the dashboard with a grant is a second writer of the same row, so its
-paths are tabled here.
-
-| Path | What it does | Stopped by | Fails if it leaks |
-|---|---|---|---|
-| `--allow-tool-output` | Writes the tool-output row for each provider whose destination Compass names. It writes no words Allow, so the first press still asks for the words. | Leave the flag off | `test_reading_policy.ALaunchTimeToolOutputGrantTest`; the Windows respawn forwards it only when given: `test_lifecycle.EveryOptOutReachesTheWindowsChildTest.test_a_windows_daemon_keeps_the_tool_output_grant_and_only_when_given` |
-| `COMPASS_ALLOW_TOOL_OUTPUT=1` | The same grant, and only the exact value `1`. | Unset it | `test_lifecycle.EveryOptOutReachesTheWindowsChildTest.test_allow_tool_output_reaches_the_config_by_flag_or_environment` |
-| Refused by the model refusal | `--no-observer-model` and `--no-harness-usage` write no grant, whatever else is set. | The refusal itself | `test_reading_policy.ALaunchTimeToolOutputGrantTest.test_it_writes_nothing_without_the_flag_or_under_the_model_refusal`; `test_lifecycle.EveryOptOutReachesTheWindowsChildTest.test_the_model_refusal_outranks_the_tool_output_grant` |
-| Withdrawn | Turn off readings and `--forget` clear every grant, and a restart without the flag leaves one in place, as it leaves an Allow. | Turn off readings, `--forget` | `test_reading_policy.ALaunchTimeToolOutputGrantTest.test_turning_readings_off_or_forgetting_withdraws_it` |
-| What the card says | "Allowed when this dashboard started" is worded from the launch flag, and the start drops the flag when the store refuses the grant, so a grant that was never written is not claimed. It does not follow the row afterwards: Turn off readings and `--forget` delete the row while the flag stays set for the run, so the card keeps that wording until the dashboard restarts, and a press without a row is refused `403 tool-output-consent-required`. | None | `test_reading_route.ALaunchGrantThatWasNotRecordedIsNotClaimed`; the default wording: `test_reading_route.AToolOutputGrantGivenAtLaunchIsDisclosedAsSuch`. None for the state after a withdrawal. |
+Tool output is included by default in a reader-pressed Claude Code reading when Compass can name
+its destination: a check's command, result, last 180 characters of output, written paths, the
+repository and number of a pull request it created, and the names of skills it used.
+[Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns the content bounds.
+`--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do nothing for one release;
+they will be removed in a later release. They write no grant and need no forwarding on respawn.
+`test_lifecycle.EveryOptOutReachesTheWindowsChildTest.test_compatibility_flags_and_environment_change_nothing`
+binds this compatibility behavior. Pause model calls and `--no-observer-model` stop the calls.
 
 ### What can reach into a session
 
@@ -942,6 +1029,14 @@ control does not render.
 
 ### Known and accepted
 
+The Claude Code CLI that Compass starts for a reading, a summary or the Live monitor is told not to
+persist a session, but it keeps its own local state under `~/.claude`, which Compass neither writes nor
+prunes and has not measured. A press passes redacted session text through it once. The Live monitor
+passes the recent window through it about once a minute for as long as the switch is on and the session
+is viewed, so the same exposure repeats at that cadence. It is accepted rather than solved, because the
+CLI's own storage is outside what Compass controls, and the switch, Pause model calls and the
+20-minute question are what bound how long it repeats. [The Live monitor](#the-live-monitor) owns the rest.
+
 A row's attribution is unverified, as the ask lane's already is. A forged registration cannot make a
 window appear, because the target comes from a collector rather than from a request, but a reader
 who clicks is trusting a row Compass measured rather than one a session proved.
@@ -1014,14 +1109,22 @@ Token handling is read-only, one way, and never expands:
   loopback endpoint must not carry it, in any form.
 - Reading the token adds no write access anywhere. Harness stores stay read-only.
 
-Consent and the off switch: the feature is disclosed before it acts, and it does not act until the
-disclosure is answered. The first time the dashboard opens with the feature available, a banner explains the token read and
-the request above, and carries the switch that turns the feature off. The setting can be changed
-later from that same switch, which sits in the capacity strip below the session groups on Session operations, and
-`--no-usage` disables the feature for a run regardless of the stored setting. With the feature off, Compass's network surface is exactly the
-three loopback-bound kinds of component described above, and nothing is fetched.
+Consent and the off switch: the feature is on until the reader turns it off, and the line saying so is
+on screen whenever it can act. Wherever the quota windows are drawn, on Session operations below the
+session groups and in the Console rail, one line says the quota is read with the Claude Code and Cursor
+logins on this machine and that no session content is sent, beside a Turn off button. Turned off, the line
+says so and offers Turn on. `--no-usage` disables the feature for a run regardless of the stored setting.
+With the feature off, Compass's network surface is exactly the three loopback-bound kinds of component
+described above, and nothing is fetched.
 
-**Answered, not assumed, and that is a change of 2026-09-04.** The mechanism is the `usage=1`
+**Amended 2026-10-27 (owner): on until turned off.** The page now adds `usage=1` to every request unless
+the stored answer is `declined`, so an unanswered page, an unrecognisable stored value and storage the
+browser will not read all fetch. The four-sentence question that used to stand before the first fetch is
+gone; the one line above replaces it. Nothing else in this section moved: what is sent, the endpoints, the
+token handling, the five-minute floor, the server's refusal of the parameter on a document navigation, and
+`--no-usage` are unchanged. The paragraph below records the rule this replaced.
+
+**Answered, not assumed, a change of 2026-09-04, replaced 2026-10-27 by the amendment above.** The mechanism is the `usage=1`
 parameter: the server fires the fetch for no request that omits it, and the page adds it only while
 the stored answer is `granted`. So an unanswered disclosure reads no credential and makes no
 request, and neither does a declined one, and an unrecognisable stored value counts as unanswered.
@@ -1077,22 +1180,48 @@ callers need their own entry.
 What makes this different from every other boundary in this document: it is the only one that sends
 the operator's own words off this machine. The quota poll carries a token and numbers. A harness
 invocation carries session-derived text, which is why invariant 1 names it separately rather than
-widening the quota exception to cover it, and why the consent below is opt-in where `--no-usage` is
-opt-out.
+widening the quota exception to cover it. The consent below is not the quota fetch's: a call a
+reader's action starts runs only on that action, and an unasked check runs only under
+`--unasked-readings` and DEC-18's preconditions. Every kind of call announces itself the first time
+it runs. Pause model calls stops readings, goal summaries and session summaries; Turn off
+summaries stops session summaries alone. `--no-observer-model` refuses all of them for the run, where `--no-usage` is a startup flag
+alone.
 
 The bounds, all of which hold together:
 
-- Opt-in, and off until answered. The feature does nothing until the operator turns it on. It
-  is disclosed the way the quota fetch is disclosed, and for a stronger reason: this one spends
-  their capacity rather than reading a number. A run with the setting unanswered makes no
-  invocation.
-- The observer uses the quota disclosure pattern: the browser supplies consent on the focused
-  refresh request, and a document navigation never authorizes a call. Quota consent alone is not
-  consent to send transcripts. This request parameter is not per-user authentication; a local
-  process can imitate it once the operator has enabled the model for this run. The startup flag
-  and the per-session in-flight gate bound that exposure. This prototype follows the cockpit's
-  consent ruling; it does not implement the earlier proposed per-run event capability for this
-  route.
+- Opt-out, with a notice, for a call a reader's action starts. Ruled 2026-10-19 by the owner
+  ([DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts));
+  this replaces the former "Opt-in, and off until answered" bound for reader-started calls.
+  - What it covers: every model call a reader's action starts, and nothing else. That is a session
+    summary (made when a finished session is opened, or on Update summary), a reader-requested
+    Analyze drift (its consent step goes), Claude Code tool output on such a reading (included by
+    default), and a Codex goal summary (on by default). Such a call runs without a prior question.
+  - What it does not cover: unasked drift checks. No reader action starts them, so they stay off by
+    default behind `--unasked-readings` and DEC-18's preconditions. Codex also requires an explicit
+    grant for the current destination; Claude Code uses the owner's acceptance without a separate grant.
+  - The notice. The first call of each kind on this machine shows a non-blocking notice naming
+    what is sent (the words, and tool output where it is included) and to which provider and
+    destination, with a one-press off switch beside it. A changed destination or a wider content tier
+    shows the notice again, naming the new destination, rather than a blocking Allow. It is disclosed this way, and
+    not left silent like the quota fetch, for a stronger reason: this one spends their capacity
+    rather than reading a number.
+  - The master switch. Pause model calls stops Analyze drift, goal summaries and session summaries
+    until Resume model calls. Compass stops sending session text to Claude Code or Codex, so it
+    uses none of your tokens, and stays paused until you resume. An answer of off already stored
+    is kept across upgrades. A running summary stops at its next part and a spawned call is cancelled.
+    Turn off summaries affects session summaries alone. While paused, that control stays visible
+    and disabled with "Model calls are paused" beside it. Pause and Resume never change the stored
+    summaries answer; resuming restores the switch exactly as the reader left it.
+    `--no-observer-model` still refuses every model call. `--allow-tool-output` and
+    `--observer-model` are accepted no-ops for one release.
+- Goal summaries are on by default. The browser still sends `observer_model=1` on the focused
+  refresh that the reader starts; a document navigation never authorizes a call. Quota consent
+  does not authorize sending transcripts. This parameter is not per-user authentication: a local
+  process can imitate it. The per-session in-flight gate and prompt and time bounds limit that
+  exposure. Pause model calls stops goal summaries too. No per-run event capability is implemented
+  on this route. Goal calls are not charged to the 100-attempt rolling cap below and have no rolling
+  cap of their own: what bounds them is one call in flight per session, the refresh guards, and a
+  focused refresh reaching only its session and up to three active child sessions.
 - The operator's own harness, never a Compass credential. Compass invokes the harness the
   operator has already installed and signed in, non-interactively. It holds no API key, reads no
   new secret, and adds no endpoint to the list in Usage quota reads. Nothing about token handling
@@ -1114,13 +1243,15 @@ The bounds, all of which hold together:
 - Visible spend. Model metadata records whether a call ran or was refused. Provider token usage
   is not measured by this prototype; it must not present a zero cost as if it had measured one.
 - Off switch. `--no-observer-model` disables calls for a run regardless of consent and overrides
-  `--observer-model`. `--no-harness-usage` is an alias for that rollback. The explicit off state
-  survives daemon respawn and is distinct from a default run without the goal-summary flag.
+  the default-on goal summaries and session summaries. `--observer-model` is an accepted no-op for one release.
+  `--no-harness-usage` is an alias for that rollback. The explicit off state
+  survives daemon respawn.
   The off switch refuses the unasked lane as well: with it set,
-  `--unasked-readings` attaches no lane, starts no Codex reading, and the page reports the lane off.
+  `--unasked-readings` attaches no lane, starts no reading, and the page reports the lane off.
 
-A violation of any of those is a security bug: an invocation with the setting off or unanswered, an
-invocation carrying unredacted text, a credential read that this section does not name, tool access
+A violation of any of those is a security bug: an invocation with the setting off, an invocation
+with the Codex grant unanswered for an unasked check, a reader-started call whose first run of its kind shows no
+notice, an invocation carrying unredacted text, a credential read that this section does not name, tool access
 beyond the documented CLI boundary, or an unbounded or untimed call.
 
 What is accepted rather than solved: the invoked harness is another program with its own logging and
@@ -1130,16 +1261,23 @@ stated here rather than implied.
 
 ### Reader-requested permission and rolling budget
 
-[DEC-21](docs/design-reading-a-session.md#dec-21-a-reading-works-the-first-time-you-ask) replaces
-the startup flag for reader-requested readings. The first "Analyze drift" presents the
-reading disclosure and "Allow and analyze" (formerly named "Check for drift" and "Allow and check").
-The disclosure renders before "Allow and analyze", so the press that gives consent
-follows the text naming the receiver. The answer lives under `COMPASS_HOME` (by default
-`~/.compass`) in `compass-reading-permission.sqlite3`, shared by tabs and respawned daemons.
-"Turn off readings" and `--forget` revoke it. Goal summaries keep `--observer-model` and their
-separate browser consent. The explicit model off switch overrides both permissions.
+The first Analyze drift press runs and shows a non-blocking notice naming the provider,
+destination and content sent, including the agent's words and tool output where included. No prior
+Allow is needed. A notice is recorded per kind and provider on this machine; a new destination, a
+wider content tier or a tool-output destination the last notice did not name shows it again, and a
+narrower press to the same destination does not. Goal summaries use the same
+notice mechanism and are on by default on a focused refresh carrying `observer_model=1`.
 
-The same SQLite store holds only that answer, model-attempt timestamps and, for 30 days, the
+The answer and notices live under `COMPASS_HOME` (by default `~/.compass`) in
+`compass-reading-permission.sqlite3`, shared by tabs and respawned daemons. Pause model calls and
+`--forget` store an explicit off, block readings, goal summaries and session summaries, and clear their notices, so after
+`--forget` they stay paused until Resume model calls. Resuming shows the notice again on the next call. An off
+saved by an older build stays off after upgrade; an old Allow reads as on, including an older
+build's Allow given after its own off, which left that off's other rows in place. `--no-observer-model` refuses every model call for the run.
+
+The same SQLite store holds the independent summary answer and ledger described under
+Session summary calls, that reading answer, notice rows (kind, provider, destination, content
+tier, tool-output destination and time), model-attempt timestamps and, for 30 days, the
 random id of the job each attempt was charged to, never session ids or content. A transaction reserves
 one of 100 reader-requested attempts in a rolling twenty-four hours before the model starts. Eligibility checks and a known missing CLI spend nothing; a failed
 or timed-out attempt keeps its reservation because the provider may already have spent capacity.
@@ -1147,49 +1285,38 @@ Concurrent processes share the transaction bound. A denied or corrupt store fail
 reports the cap, once it is spent, and the earliest time another attempt can be admitted. Turning permission off,
 back on, or forgetting it does not erase unexpired spend timestamps or refill the budget.
 
-The store is created owner-only; SQLite is required for this permission path. Deleting the file
+The store is created owner-only; SQLite is required for this permission path. Every
+reader-started model call (Analyze drift, goal summaries and session summaries) records its notice
+there, so without `sqlite3` or a writable state directory each is refused as `store-unavailable`. Deleting the file
 manually can reset its budget, as can any other modification by the owning local user. The cap
 bounds requests through the HTTP route, not a hostile owner editing their own files.
 
-The answer is kept per provider. Allowing Codex to send a reader's words to OpenAI does
-not allow Claude Code to send them to Anthropic, so each provider needs its own "Allow and analyze".
-An Allow given for a provider covers every session routed to that provider (owner, 2026-10-02): a
-Codex, Pi or other session that falls back to Claude Code on a machine without `codex` runs under a
-Claude Code Allow with no second consent step, and that route's disclosure is in the session's
-"What is sent to Claude Code" popover before the press.
+Legacy explicit Allows remain per provider, bound to the disclosed destination and content tier.
+An explicit Allow covers every session routed to that provider.
+They govern Codex unasked checks, which require a stored words-only Allow covering today's
+destination. The Drift card's "Allow Codex to run unasked checks" toggle deliberately writes or
+revokes it through a separate `unasked_grant` body on `POST /api/reading`. It requires the startup
+flag, a current provider and destination, a loopback non-navigation press, and refuses while paused
+(409 with `model-calls-paused`, the pause kept) or under `--no-observer-model` (503). It adds no route. Revocation deletes coverage without pausing requested readings.
+Analyze, an older page's `allow: true`, and Resume never write it. Pause followed by Resume clears
+it. Claude Code unasked checks use the owner's acceptance and need no separate stored grant.
+The board's `providers`, `words`, `rebind` and `tool_output` retain their explicit-coverage meaning;
+reader-started calls use the off switch and notices instead.
 
-The answer is bound to where the words go (owner, 2026-10-02,
-[the amendment](docs/design-reading-a-session.md#amended-2026-10-02-owner-the-allow-is-bound-to-where-the-words-go)).
-An Allow records the destination `reading_route.destination` named in the disclosure it answered,
-and covers a press only while that provider's destination is exactly that one; an unnamed
-destination is a value of its own. A change is detected where a named destination moves: a daemon
-restarted under a new base URL host or a cloud switch, where Anthropic or OpenAI was named before,
-asks again before anything is sent, with the server's line saying where the words go has changed.
-A change is not detected while the destination is unnamed, because two endpoints that cannot be
-named are both `""`: an Allow given then keeps covering every endpoint it cannot name. That is
-every destination on Windows, where nothing is named, and every Codex base URL, since a set
-`OPENAI_BASE_URL` or `OPENAI_API_BASE` names nothing, so a move from one Codex base URL to another
-asks nothing. The disclosure said as much when the Allow was given. The board's published
-`providers`, the press check and the job's reservation decide it from the same resolver, and the
-job asks it again at the reservation: a destination that moved after the press was admitted
-refuses the job `destination-changed` before anything is spent or sent. The CLI reads its own
-settings again when it starts, so a change landing between the reservation and that start is not
-caught. An Allow whose disclosure
-named a destination that is no longer today's is refused `409 destination-changed` and records
-nothing. An Allow that names no destination at all, which a tab left open across the upgrade sends,
-is refused `400 page-outdated` with a route that tells that page to reload, and records nothing: it
-never binds.
-The binding lives in its own table, `permission_destination`, so a row saved before it records no
-destination and covers no press: each reader is asked once more, and nothing else in the store
-changes. "Turn off readings", `--forget` and an older build's Turn off clear every recorded
-destination, and a refusal holds whatever the destination is.
-An answer saved before the split reads as the Codex answer it was. "Turn off readings" and
-`--forget` revoke every provider at once. So does an older build's Turn off, which knows only the
-legacy Codex row: triggers in the store's own schema clear every other provider's answer and every
-tool-output grant whenever that row is written as off, so a rollback and re-upgrade cannot bring a
-Claude Code answer back. The 100-attempt cap is shared between providers, so a
-second provider cannot double it, and a spent budget is reported as `daily-cap` ahead of a missing
-answer, whichever provider the status names.
+The destination is resolved again at a reading job's reservation. If it moved after the press,
+the job refuses `destination-changed` before spending or sending. The CLI reads its own settings
+again at launch, so a change between reservation and launch is not caught. A changed destination
+between presses runs with a new notice. An explicit `allow: true` press still binds the destination
+it names: a stale destination answers `409 destination-changed`, and an absent `words_destination`
+answers `400 page-outdated` without recording an Allow.
+
+An unnamed destination is `""`: two endpoints Compass cannot name are indistinguishable, so their
+move cannot trigger a new notice. This includes every Windows destination and every Codex base URL
+under `OPENAI_BASE_URL` or `OPENAI_API_BASE`. An unnamed legacy Allow keeps covering every endpoint
+it cannot name, including every destination on Windows. Tool output is not sent where its destination is
+unnamed. Pause model calls and `--forget` revoke all providers; schema triggers also clear notices,
+other provider answers and grants when an older build writes its legacy off. The 100-attempt cap
+is shared between providers and reports `daily-cap` when spent.
 
 Which provider a press reaches is decided before the press, by `reading_route.resolve`, from the
 session's harness and this machine. The page shows that route's disclosure, naming the receiver,
@@ -1207,7 +1334,7 @@ the same home made in between, or one landing between the check and the job, ans
 
 ### Observer model calls
 
-Goal summaries are off unless `--observer-model` was supplied and their disclosure accepted.
+Goal summaries are on by default unless model calls are paused or `--no-observer-model` is supplied.
 `observer.CodexGoalModel` sends a generated prompt to the installed Codex CLI, which uses its
 own authentication to reach OpenAI. `reading.CodexReadingModel` is the second caller and goes
 through the same `observer.codex_exec`, so the two share one set of sandbox flags rather than two
@@ -1215,7 +1342,9 @@ that could drift. These are the paths that can send session content off the
 machine. A reading of a Claude Code session is made by Claude Code when `claude` is on the
 server's PATH, and by Codex when it is not: Codex then spends the operator's Codex capacity and
 sends that session's evidence to OpenAI, and the disclosure before the press says which. A reader-requested reading requires the remembered answer and rolling budget above; an
-unasked reading requires `--unasked-readings`. `--no-observer-model` always wins over both.
+unasked reading requires `--unasked-readings`. `--no-observer-model` always wins over both. The Live
+monitor is a third reader-started path, to Claude Code and on to Haiku only; [The Live
+monitor](#the-live-monitor) states what it sends and every way it stops.
 
 Two requests can reach the model. A focused `/api/project-context` refresh can summarize the
 focused session and up to three active children whose assignment is unavailable.
@@ -1250,6 +1379,18 @@ a file changed since collection. A missing or unverifiable source keeps its list
 no fact id, stores no words and does not run for an unasked reading. The history and listing bounds
 still hold; this is not a whole-transcript evidence ledger. Other harnesses keep their existing
 in-tail words.
+Since 2026-10-21 the reader's own messages include two Claude Code records that carry no user turn: a
+message the reader sent while the agent worked, and the reader's answer to the agent's multiple-choice
+question ([the amendment](docs/design-reading-a-session.md#amended-2026-10-21-a-message-sent-mid-turn-and-an-answer-to-the-agents-question-are-the-readers-words)).
+Both are sent as any other reader message is: whole, redacted by `records.safe_text`, at most 1,000
+characters, inside the same 16 KiB prompt bound, and never stored or published. An answer is its
+question's one-word `header` (the agent's label), the answer and any note the reader attached. The
+question's text and every option's preview, which are the agent's words, are not read as the
+reader's. This sends more of what the reader typed than before, and sends the answer a reader
+chose from the agent's options, which is why it is said here; the disclosure's "your messages" is
+unchanged because the kind of thing sent is. A pasted image in such a message is never read, only
+its text. The queue these messages arrive through also holds background-task notifications, and
+only a record whose `origin.kind` is `human` is taken.
 A Claude Code press also reads the focused session's person and agent messages back to the reading's
 window start instead of from the 400,000-byte tail (2026-10-13, `project_context.press_message_events`,
 [the amendment](docs/design-reading-a-session.md#amended-2026-10-13-a-press-reads-the-message-record-back-to-the-window-start)).
@@ -1330,8 +1471,8 @@ A reply that does not fit, a source that moved, a
 duplicate or same-time record that disagrees, or a record the source cannot prove final keeps the
 excerpt, and the reading's cutoff says so. The agent's other messages keep their 1,000
 characters, no shell output or tool result is added, the consent tier does not widen, and the
-words are neither stored, cached, logged nor published. This changes what a message sends, so
-`reading_policy.CONTENT_VERSION` is 3 and the next press on a Claude Code session asks once more.
+words are neither stored, cached, logged nor published. This changed what a message sent and
+raised `reading_policy.CONTENT_VERSION` to 3; a changed tier now renews the notice.
 
 Amended 2026-10-06: the whole-final lookup binds a shortened Claude session key to the
 complete UUID filename through the same identity normalizer used for lifecycle events.
@@ -1346,9 +1487,10 @@ Amended 2026-10-06: an Allow records the content tier the server resolved from t
 session harness and actually disclosed. A non-Claude Allow at `WORDS_CONTENT_VERSION`
 cannot authorize a later Claude agent-message reading through the same provider. Older
 version-3 rows cannot prove which disclosure created them, so the wide consent epoch is
-now 4 and every such Claude press asks again once. This adds no transmitted content.
+now 4. Reader-started presses use a renewed notice rather than this legacy Allow bound. This adds
+no transmitted content.
 A verified wider grant survives a narrower Allow only at the same provider and destination;
-Turn off still revokes every tier and tool-output grant without refunding spend. Words-only
+Pause model calls still withdraws every tier and tool-output grant without refunding spend. Words-only
 consent remains grandfathered under the earlier ruling.
 
 An agent message, cropped or whole, is quoted as one JSON string with the menu heading neutralised, as a check's output
@@ -1369,20 +1511,16 @@ only the message's title. The title is its first line cut at sentence punctuatio
 space (`project_context._semantic_line`) and at 112 characters, so text with no such break, CJK
 prose among it, publishes up to 112 characters that can span several sentences. The agent's
 messages are not written into the session history store at all, live or whole. The route's "What
-is sent" list names them before the press, and an Allow given before that list named them does not
-cover a press that carries them: the Allow is bound to a content version and the destination it was
-given for (`reading_policy.CONTENT_VERSION`, stored in `permission_disclosure`), so the next press
-on a Claude Code session, read by Claude Code or by Codex, asks once more. A press on another
-harness, and the unasked lane, send no agent message and read at `WORDS_CONTENT_VERSION`, so an
-earlier Allow still covers them. An older build's Turn off clears the version by a trigger of its
-own, and an older build's Allow writes none, so a rollback never carries this build's answer onto
-that build's disclosure.
+is sent" list names them, and the first press shows a notice naming their content tier and
+configured destination. The notice repeats when that tier or destination changes. The legacy
+explicit Allow is still bound to its version in `permission_disclosure`; the unasked lane sends no
+agent messages and still requires explicit coverage at `WORDS_CONTENT_VERSION`. Older builds clear
+that version on Turn off and write no version on Allow, preserving the rollback boundary.
 
-Merely opening a panel does not call the model, and neither
-does rendering, polling, reconnecting, resuming, changing focus or saving a revision. The
-server also requires `observer_model=1` on either request, following the quota consent pattern;
-the page sends it only on an explicit request. A reading additionally requires its durable
-permission; summaries require their own browser-stored answer.
+Rendering, polling, reconnecting, resuming and saving a revision call no model. The server requires
+`observer_model=1` on a reading press or focused goal refresh, and the page sends it on the reader's
+act. Readings and goal summaries honor the durable off switch. Session summaries have the separate
+reader-open rule described in their own section.
 
 ### Accepted source-recovery and model-accuracy limits, 2026-10-05
 
@@ -1390,7 +1528,7 @@ The owner delegated acceptance to adversarial agent review. Source recovery may 
 already-disclosed message prose at a requested press, bound to an already-selected parent message
 and the source version the press read. A mismatch supplies no new words. Recovered prose stays
 in memory, adds no citable fact, enters no history or page response, and is not read by the
-unasked lane. The newest-final path requires renewed disclosure and consent.
+unasked lane. The newest-final path requires its content tier in the notice.
 
 The [closed-proof ruling](docs/design-reading-a-session.md#amended-2026-10-05-the-original-closed-proof-proposal-is-retired)
 retires that proposal as infeasible, with no verified clearances, and removes it as a prerequisite
@@ -1409,10 +1547,9 @@ to weekly quota. Analyze reservations, qualification allowances and engineering 
 separate ledgers; calling work a review does not replenish an exhausted or failed study.
 Only loopback peers can authorize a model call, and cross-origin Fetch Metadata is refused.
 The response publishes the disclosure and byte cap. The backend does not treat `usage=1` as
-observer consent. Console presents that disclosure for an exact session and stores the answer separately from
-quota consent. Allowing summaries sends no request: each call requires the reader to choose
-Summarize this session. Passive refreshes never carry model consent. Storage failure retains
-the answer only for the current tab, using the same fallback as quota consent.
+authorization to send transcript content. Goal summaries honor the notice and durable off switch. Console sends `observer_model=1` on an explicit focused refresh;
+no browser consent card is required. The notice names Codex and its configured destination, and
+Pause model calls or `--no-observer-model` stops the call. Passive refreshes never carry the request.
 
 Transcript message content is redacted before extraction can clip credential shapes. The complete
 generated prompt, including workflow stage, then goes through `records.redact_secrets` again
@@ -1488,8 +1625,9 @@ owner's acceptance opened the gate on 2026-10-02.** `annotations.CLAUDE_ABSTENTI
 [acceptance record](docs/abstention/claude-acceptance.json) lists each with its verdict
 ([DEC-21](docs/design-reading-a-session.md#amended-2026-10-02-claude-code-is-accepted)).
 `reading_route` selects it for a Claude Code session when an absolute `claude` is on PATH, and for
-another harness's session only when `codex` is not. The unasked lane and goal summaries never
-invoke it. Outside the runtime, only the qualification scorer and the drift replay check's
+another harness's session only when `codex` is not. The unasked lane resolves with Claude Code
+first on a harness that has no producer of its own (owner, 2026-10-20), and sends through
+`reading_policy.GuardedModel`. Goal summaries never invoke it. Outside the runtime, only the qualification scorer and the drift replay check's
 owner-authorized Analyze tier build one, both through the scorer's verified, pinned copy of the CLI,
 and a test holds that list. Set back to `not-run`, the gate is read before the CLI is looked for, so no route,
 fallback or forged request can invoke it.
@@ -1585,6 +1723,12 @@ by the OS (`score_abstention.py --probe-argv`, below):
   cannot name it), the CLI and sign-in it goes through and whose capacity it spends, these
   account details on a Claude Code route, tool output only after it is allowed, and the caveat
   ([the amendment](docs/design-reading-a-session.md#amended-2026-10-02-owner-the-disclosure-is-a-short-list)).
+  Superseded in part by
+  [DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts):
+  there is no consent step and no "Allow and analyze" before the first press. The disclosure, these
+  account details included, stays one click away under "What is sent to <receiver>" before any
+  press, the first press of each kind shows the notice naming what was sent and where, and tool
+  output is included by default rather than after it is allowed.
 
 `--exclude-dynamic-system-prompt-sections` does not help: the CLI ignores it under
 `--system-prompt`.
@@ -1618,10 +1762,19 @@ probe below can only say what reached its stub.
 
 Stdout goes to an owner-only temp file under the state directory, never a pipe, and at most `annotation_text_cap_chars * 8` bytes of
 it are read. The file's 1 MiB bound allows one 0.01 s slice of writes and a write already in flight at the kill, as
-[Observer model calls](#observer-model-calls) describes, with the measured overshoot. Stderr is
-discarded. The timeout is the reading's **180 seconds**, as on the Codex lane. The directory and the
-file are removed on every path, including a timeout or an OS error, and only once the CLI and
-anything it started have been killed and reaped. An absent or relative
+[Observer model calls](#observer-model-calls) describes, with the measured overshoot. Since
+2026-10-20 stderr goes to a second owner-only temp file beside it, under its own file-size bound,
+so a failed call can name its cause: after a nonzero exit at most the first 8 KiB of each stream is
+matched against a fixed list and only the closed label survives (`login-required`, `rate-limited`
+and the others `observer._claude_failure_reason` names, or the `timeout` category). The reader sees
+Compass's own sentence for that label, such as "Claude Code said it is not logged in"; no word of
+the CLI's output is stored, served or logged, and an unmatched failure says only that Claude Code
+returned an error. The timeout is the reading's **180 seconds**, as on the Codex lane. The
+directory and both files are removed on every path Compass itself runs to the end of, including a
+timeout or an OS error, and only once the CLI and anything it started have been killed and reaped.
+A hard kill of Compass (SIGKILL, a power loss) runs no cleanup and can leave both files behind,
+owner-only; the next start removes any such file in `state_dir` older than a day, which no live
+call reaches, so a second instance's call in flight keeps its own. An absent or relative
 `shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
 receives: redacted, then clipped to 16 KiB. The same remembered answer, now per provider, and the
 same rolling cap apply.
@@ -1637,8 +1790,8 @@ qualification run; whether another account may use it is unmeasured.
 
 Ruled 2026-09-24 by [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work). The record and its route to a model are both built:
 `project_context.claude_tool_reports` reads it into the observed record, and `reading.build_ledger`
-admits it to a reading only under a tool-output grant for a named destination, the rule below. With
-no grant, and in the unasked lane always, it drops it, and nothing in it leaves this machine. The
+admits it by default to a reader-pressed reading for a named destination, disclosed in the notice.
+With no named destination, and in the unasked lane always, it drops it. The
 named read is listed under Irreversible actions.
 
 The delegated launch summary added on 2026-10-04 reads the same bounded parent
@@ -1646,8 +1799,18 @@ and admitted child records. It publishes counts and launch, completion and
 activity times, with no command, task description or notification output. Those
 fields are held in memory and published on the session row; they do not enter
 session history. Launch facts are excluded from every Analyze ledger, including
-one with a tool-output grant. Terminal task notifications pair only within the
+one carrying tool output. Terminal task notifications pair only within the
 originating admitted stream, and their text is never published or stored.
+
+Two more kinds join it by the owner's ruling of 2026-10-23
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)): a pull
+request Claude Code recorded as created, and a skill it launched. A pull request is read from the
+structured `gitOperation.pr` on a shell call's result alone, and published as its repository, number, a
+URL rebuilt from those two and the time, only when the URL is `https://github.com/<owner>/<repo>/pull/<number>`
+with a matching number and the action is `created`. A skill is read from a `Skill` call whose result did not
+error, and published as its name alone, in a closed character set of at most 80 characters. Neither reads a
+command, an output tail or a skill's arguments. Like a check, each reaches a prompt only under the same
+grant for a named destination, and the unasked lane never receives them.
 
 The content class is what a Claude Code transcript recorded about the checks a session ran and the
 files it wrote. Since 2026-09-28 that includes the session's subagents, read from their own
@@ -1710,32 +1873,20 @@ identifier boundaries: a password `test` does not rewrite `test_a.py`, `contest`
 A shapeless value no named form masked, a masked piece shorter than four characters, or an arbitrary
 encoding of a value can still reach the prompt through the tail.
 
-The destination rule: it may go to the reading producer that reads the session, or to the fallback
-route `reading_route.resolve` selects and discloses before the press, and on either only after a
-fresh Allow whose disclosure names tool output and the receiving vendor. The page's button reads
-"Allow and analyze". A permission given before
-tool output was named does not cover it. What is built:
+The destination rule: it goes to the reading producer that reads the session, or the fallback
+route `reading_route.resolve` selects and discloses before the press. Tool output is included by
+default for a named destination, and the non-blocking reading notice names it. No separate grant
+is required; `tool-output-consent-required` is no longer a refusal. Explicit off blocks the press
+and the reservation. The unasked lane still receives no tool output.
 
-- The grant is its own table, `tool_output_permission` in the reading permission store, keyed by
-  provider and destination. No answer in the words-only tables is read as one, so an answer
-  saved before tool output was named never covers tool output. An Allow writes a grant
-  only when the press carried the destination the server computes; a press that carried another,
-  or none, is refused `409 destination-changed` before anything is written or spent. Allowed for
-  the words and not for tool output to this destination, a press is refused `403
-  tool-output-consent-required` and nothing is read. "Turn off readings" and `--forget` clear every
-  grant. The press re-reads the grant inside the reading before admitting any check.
-- A launch-time grant is available to the reader who runs the dashboard: `--allow-tool-output`, or
-  `COMPASS_ALLOW_TOOL_OUTPUT=1`. After the bind it writes the same `tool_output_permission` row an
-  Allow would, for each provider whose destination `reading_route.destination` names, and for no
-  other (`reading_policy.grant_tool_output`). It writes no words Allow, so a press still asks for
-  the words and nothing is read on it alone. The disclosure says tool output was allowed when the
-  dashboard started, in place of "only after you allow it". If the permission store cannot take the
-  write, the start prints one line saying so and drops the flag for the run, so the card asks as
-  usual instead of promising what a press would refuse (`cli.grant_tool_output_at_launch`). The
-  wording follows the flag and not the row afterwards: Turn off readings and `--forget` delete the
-  row while the flag stays set until the dashboard restarts. `--no-observer-model` refuses it, the
-  row is cleared by "Turn off readings" and `--forget`, and starting again without the flag leaves
-  it, as it leaves an Allow. The Windows daemon respawn forwards the flag.
+- The legacy `tool_output_permission` table remains keyed by provider and destination, so an older
+  build can still read its explicit grants. Old word-only answers remain distinct from those
+  grants. An explicit Allow carrying a stale tool-output destination still answers
+  `409 destination-changed` before writing or spending. Pause model calls and `--forget` clear
+  all grants and notices. A plain reader press needs no grant lookup.
+- `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted no-ops for this release and
+  will be removed in a later release. Startup writes no grant, changes no disclosure and prints
+  no grant diagnostic. The Windows respawn no longer forwards this no-op flag.
 - `reading_route.destination` names the destination as configured, or names nothing. For Claude
   Code: `Anthropic`; `Amazon Bedrock` or `Google Vertex AI` under `CLAUDE_CODE_USE_BEDROCK` or
   `CLAUDE_CODE_USE_VERTEX`; or the host and port of `ANTHROPIC_BASE_URL`, never its path, query or
@@ -1828,18 +1979,21 @@ that an allow given before the disclosure named tool output does not cover it
 ([Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading)). Keep never counts
 as the allow (owner, 2026-09-27): where the disclosure has not been allowed, it reads "Keep my
 intent", settles through `POST /api/annotate` with no `allow` and no `tool_output`, and leaves
-"Allow and analyze", with its disclosure, as the press that sends.
+"Allow and analyze", with its disclosure, as the press that sends. Superseded by
+[DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+for the consent step and the tool-output allow: the first press runs and shows the notice, and a
+stored off still refuses every press until Resume model calls.
 
-Keeping your intent and adding a later direction. "Keep my intent and
-analyze" settles every unsettled later direction before anything else in the press, so a press
-that then starts no analysis (another provider, the budget, one already in flight) has still
-settled. Where no analysis can start at all, no reader or readings turned off, or where an Allow
-is still owed, the same answer is the `settle_through` field of a `POST /api/annotate` body and
-reads nothing. Over an unsaved draft either one adopts the draft and records the settlement in one
-store write, and a refused adoption settles nothing.
+Keeping your intent and adding a later direction. "Leave it" settles every later direction the
+question quoted, as the `settle_through` field of a `POST /api/annotate` body, which reads nothing
+and starts no analysis: "Analyze drift" is its own press. Over an unsaved draft it adopts the
+draft and records the settlement in one store write, and a refused adoption settles nothing. It
+names the intent revision on screen when it is pressed, so words saved since the page was drawn
+are refused rather than settled over, and a refusal leaves the quoted words in place.
 
-"Add it to my intent" is two requests. The first, `POST /api/direction`, names a session and one
-fact id and returns that message's whole text for review, where the published record holds only
+"Add as a line" reads, then writes. The read, `POST /api/direction`, names a session and one
+fact id and returns that message's whole text, which the page already holds from drawing the
+question, where the published record holds only
 its first sentence, clipped. That is wider than any published field, so it is stated exactly. It
 returns the text of one message, masked by named form as a check line is (a `NAME=value`, the
 word after `--password`, `--token` or `-p`, an `Authorization:` or `X-Api-Key:` value, a
@@ -1937,10 +2091,12 @@ unknown session answer one `409 not-running` body, so the route says nothing abo
 exist. It writes no consent and reserves nothing.
 
 The copied-correction route. `POST /api/correction/copied` names a session
-and the exact text the reader copied, at most 2,000 characters, and the server records its digest:
+and the exact text the reader copied, at most 5,140 characters, and the server records its digest:
 a SHA-256 of the text after one normalisation, applied to both sides, which is what Claude Code
 2.1.283 was measured doing to a paste: CRLF and CR become LF, a tab becomes four spaces, and
-whitespace is trimmed at both ends. The store holds the digest, the moment of the copy and where the
+whitespace is trimmed at both ends. It also records a second digest of the same text with every run of
+whitespace folded to one space, so a paste whose only edit was whitespace still matches; a changed
+word, or a space inside a word, does not. The store holds the digests, the moment of the copy and where the
 session's transcript ended at that moment (its inode and size), and, once a message is recognised,
 that message's fact id and time. It never holds the text. It is `compass-copied-corrections.json`
 beside the annotation store, owner-only through a temp file and a rename, under an OS lock on the
@@ -1952,7 +2108,9 @@ own words again. `--forget` deletes the file, and `--no-annotations` turns it of
 waiting answers without storing anything, so registering one twice earns no second match. Only
 Claude Code sessions are read for a match. A user message written after the point the transcript
 had reached when the text was copied, whose digest computed from its raw text before any redaction
-or clipping matches exactly, is Compass-assisted, whatever either clock says. The transcript is
+or clipping matches exactly (or by the whitespace-folded digest), is Compass-assisted, whatever either
+clock says. Claude Code wraps a paste in its own `pasted_content` tags, which are taken off before
+either digest is computed; words typed around the paste are not, so they make a different message. The transcript is
 read from that point to its end, at most its newest 64 MiB plus its opening 32 MiB, matching the Intent source reads,
 under the same unchanged digest and first-paste rules; the semantic history store
 reads a source to, so a paste the bounded tail never held is still recognised. Each digest binds the
@@ -1983,8 +2141,8 @@ Steer back's correction. `POST /api/correction` names a session and nothing
 else, and answers a correction the server composes without a model from that session's published
 row and observed record: the goal and outcome lines the reader saved, each line's state re-derived
 from a stored reading of those exact words, and the time of each entry a line or sentence rests on.
-It never reads a fact's summary, a command, a check name, tool output, a reading's detail or a
-message's text, so none of them can reach the correction, with one exception since 2026-10-04: for
+It never reads a fact's summary, a command, a check name, tool output or a message's text, so
+none of them can reach the correction, with one exception since 2026-10-04: for
 a claim of the agent's that a stored reading found the record contradicts or does not show, it
 quotes that one agent message's published title, its first sentence of at most 112 characters,
 which the activity list already shows, and never the message's words. The owner amendment of
@@ -1993,10 +2151,33 @@ evidence request in their place
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-04-owner-what-the-agent-claims-is-its-own-constraint)).
 A reader who copies such a correction and edits it before sending it pastes the quoted claim back
 into the session; edited past recognition, it arrives as the reader's own words, as any edited
-correction does. Each entry travels as its time and a
-placeholder holding its fact id, which the page replaces with the number its own list draws, or
-drops. A reply is at most 2,000 characters however the page numbers it, and is never truncated: a
-longer one drops its consistent lines and then answers a refusal sentence. It stores nothing of
+correction does. A second exception since the owner's ruling of 2026-10-20: each surviving
+departure, a contradicted claim's included, carries the stored reading's own explanation, the one
+bounded `detail` sentence a model wrote, on its own line labelled "Why Compass reads this as
+drift:", so it reads as Compass's reading and never as the reader's words
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
+It is passed again through the redaction and bound every stored reading string takes (240
+characters and a closing ellipsis where cut), also behind each hyphen or underscore inside a token,
+because the shape filter misses a key joined to "x-", and neutralised so that a paste cannot become a
+command or a new instruction block: every invisible format character (Unicode category Cf, the
+byte-order mark, word joiners, bidi controls and the tag characters among them, but not the
+zero-width joiner and non-joiner) and every variation selector is dropped, control characters and
+line separators become spaces, a leading structural opener (`/`, `!`, `>`, `|`, a heading `#`, a
+list or ordered-list marker, a `~~~` or backtick fence) is removed before anything is swapped, and
+then a backtick, an angle bracket and a word-initial `@` are each replaced by one look-alike
+character. It remains model prose: a reader who pastes it hands
+the agent a sentence a model wrote about its session, and one who edits the correction past
+recognition sends that sentence as their own words. A third exception since the owner's second
+ruling of 2026-10-20: a departed goal or outcome line cited at one of the agent's messages quotes
+that message's published title, the same first sentence of at most 112 characters, passed through
+exactly the redaction and neutralising the explanation takes, so the agent can find the moment
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)).
+A command, a check name, a path and tool output are still never quoted. Each entry travels as its
+time, drawn in the zone the page sends (`utc_offset_minutes`, refused unless a whole offset within
+16 hours of UTC, and the server's own clock when absent), and a placeholder holding its fact id,
+which the page draws as nothing. A reply's lines are at most 2,000 characters, each of at most
+eight explanations has 277 more and each of at most seven quotes 132 more, so a reply is at most
+5,140 characters and is never truncated: lines over their 2,000 drop the consistent ones and then answer a refusal sentence. It stores nothing of
 its own: it reads, and the collection it runs to read the session may rewrite the semantic history
 store, as `POST /api/direction`'s does. It is guarded as `POST /api/direction` is, reads Claude Code sessions only, and answers one body for an
 unknown session, another harness, and a session with nothing to steer from alike. The reader edits
@@ -2031,6 +2212,118 @@ For a Claude Code press that read back (2026-10-13), the two message measurement
 project cap kept rather than the 400,000-byte tail: the boolean is true when the read stopped before the
 window start, left an unread region inside it, or the read or the cap dropped an in-window message of the session, and
 the time is where the record is whole from. The keys, types and exposure are unchanged.
+
+### Session summary calls
+
+Ruled 2026-10-19 by the owner ([DEC-28](docs/design-session-summary.md)). Summary jobs run on a reader's open or press and keep finished parts as they arrive.
+Opening a stored summary makes no summary call or charge.
+
+- What it is. A model-written summary of what a session did: a lede and phases with titled bullets,
+  each bullet citing at least one entry by fact id, in the
+  [closed shape](docs/design-session-summary.md#the-closed-summary-shape). Unlike a reading, which
+  stores one bounded model sentence per constraint, a summary stores model prose throughout: the
+  lede, phase titles and bullets. Every one is held to the shape's backstop at production, and a
+  string that fails it is withheld in place.
+- What is sent. Entries from the session's own record, read in order and bounded in bytes and time:
+  the person's words, the agent's words where the harness record admits them (Claude Code only
+  today), and the checks and files the record shows. Everything goes through
+  `records.redact_secrets` first and the byte bound second, as every harness invocation does. No saved intent is needed or sent. The producer sends
+  exactly these carriers, each redacted before it is clipped: the person's words and text relayed
+  in a person turn, at most 1,200 characters per entry; the agent's words, at most 700; a check's
+  masked title, at most 220, with the source's result token (`failed`, `passed` or
+  `not-recorded`); a written file's display path, at most 220; earlier phase titles the model
+  wrote for this same summary, as context only, within one sixteenth of a window; and, for the
+  lede, the menu lines the surviving phases cited, sent again within one window. No tool output is
+  sent yet: the source admits none, so an output prefix waits on that source change and the
+  tool-output grant. The [producer contract](docs/design-session-summary.md#producer-contract)
+  owns the exact shape.
+- To whom. The provider and destination the notice names, invoked as the operator's own harness,
+  under the bounds above. Summaries have a grant of their own, bound to provider, destination and
+  content tier, separate from Analyze's; turning summaries off leaves Analyze as it was. Consent,
+  destination and the tool-output grant are checked again before every part of a multi-part
+  summary, so a revoke stops the job at the next part.
+- When. A finished session is summarized when the reader opens it, unless summaries are turned
+  off, and later opens read the store without a call. A running session updates only on Update
+  summary, reading only new entries. There is no interval. These are reader-requested calls, not
+  unasked ones.
+- Ceilings. Each summary has whole-job ceilings on calls, bytes sent and seconds, and summaries have
+  a rolling cap of their own, so a summary cannot spend Analyze's 100 attempts in 24 hours. The
+  measured ceilings are 37 calls, 768 KiB sent and 600 seconds, with a separate rolling cap of
+  200 summary calls per 24 hours. The producer's plan refuses oversized jobs before the first
+  charge and reports the allowed windows, bytes, calls and seconds. Each attempted part has an
+  idempotent receipt in `summary_spends`; failed and timed-out attempts stay charged. Analyze's
+  ledger is untouched. Cancel keeps finished parts; an interrupted job reports them at restart
+  without resuming. Jobs outlive the page that started them.
+- Timeout. Every call has a 180-second subprocess timeout (`session_summary_call_timeout`). No call
+  starts unless its full timeout fits inside the remaining whole-job seconds.
+- Off switch. Turn off summaries, one press from the notice and the card, stops every summary call
+  until it is turned back on, and an answer of off already stored survives restart and upgrade.
+  It changes neither Analyze's grant nor a goal-summary answer, and it cancels a summary call
+  already running. A stored Pause model calls also refuses every summary call, with the reason
+  `model-calls-paused`. Its summary switch is disabled while paused and says "Model calls are paused";
+  its stored answer is preserved through pause and resume. The first summary shows a
+  non-blocking notice naming all the carriers above, Claude Code/Anthropic and the configured
+  destination, and the off switch. A new destination or wider content tier repeats the notice.
+  Each part rechecks grant, destination and content; this source sends no tool output and
+  cannot infer a tool-output grant. Turn off summaries, Delete summary, Discard everything and
+  Cancel bar late publication: a reply that returns after one of them is not stored. Delete summary
+  takes a second press, like Discard everything, and says what it removes before it does.
+  `--no-observer-model` refuses every summary call at startup.
+- Storage. A store of its own under `COMPASS_HOME` (by default `~/.compass`), keyed by harness and
+  session and independent of any saved intent, so a session with no saved words can have one. Discard
+  everything deletes the discarded session's summary, stopping one being written first, and only
+  after a clear that landed over words that existed; a clear over nothing typed leaves it. If that
+  delete fails the reply says so and the page names Delete summary as the way to finish. Each field
+  is named and admitted. Strings are redacted on the way in and again on the way out, because any
+  local process can rewrite the file. It has an aggregate byte bound and an eviction that can never
+  push out a reader's saved words. Delete summary removes one session's summary, which the next
+  open of that finished session makes again unless summaries are off or model calls are paused, and
+  `--forget` deletes the store. Invariant 2 names its separate file and 64 MiB aggregate bound.
+  `--no-annotations` does not govern this store: summaries need no saved intent. The model job
+  must honor `--no-observer-model`; this store only reads, writes and deletes local state.
+
+A violation is a security bug on the same terms as the bounds above, and also: a summary call made
+after Turn off summaries or under `--no-observer-model`, a part sent after consent or the
+destination changed, a job that passes its ceilings or charges Analyze's cap, a stored string that
+leaves the store unredacted, or an eviction that removes a reader's saved words.
+
+What is accepted rather than solved: the code checks that a citation names a real entry and sets a
+bullet's kind from it, but it cannot check that the cited entry is relevant to the sentence. A local
+rewrite of the store faces the limit the 2026-10-05 delegated acceptance records for a reading's
+`detail`: redaction and escaping apply, and nothing authenticates model output against a local
+process that can rewrite the file.
+
+### The Live monitor
+
+Ruled 2026-10-23 by the owner
+([DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)).
+With the switch on and the session on screen, a Haiku check of the latest turns runs about once a
+minute and produces the live drift level. It is a call the reader starts, under
+[DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
+with a `monitor` notice shown before the first charged call.
+
+- What is sent. The saved goal, and, redacted and clipped first, the person's own messages, the
+  agent's replies, the commands of checks with their result, and the paths of files written, from
+  this session's own record only. The recent window is sent again by each later check, and again each
+  time the switch is turned off and on. Where Compass cannot name the destination, checks and paths are
+  not sent, as for Analyze. No command output, file contents or other tool output is sent.
+- How it runs. A supervised `claude --print` child on an explicit Haiku id, set with `--claude-monitor-model`
+  (default `claude-haiku-5-5`; only an explicit Haiku id is accepted, and the reading model's Sonnet floor is
+  unchanged), with no tools and no session persistence, in a private working directory. It is never resumed into or injected into the watched
+  session. Nothing is written into the session.
+- What holds it. A lease in memory, one per session, held by any number of tabs. A tab beats about every
+  20 seconds, and a visible tab that stops for 50 seconds has left. A hidden tab pauses the checks and
+  keeps the lease. The lease ends when the last tab leaves, the session ends, model calls are paused,
+  nobody answers the 20-minute question within 10 minutes, or a cap is spent. A restart starts with no
+  lease and makes no check until a page starts one.
+- What caps it. At least 60 seconds between two checks of a session, 30 checks per session per window,
+  and its own rolling 24-hour cap across the board (240 checks at present), kept apart from Analyze's. A check cancelled by an
+  Analyze press is not refunded.
+- What is not known yet. The page labels its level `Live monitor · Haiku`, and its accuracy check has not
+  been run: it ships labelled and is qualified later, so read its level as an account of the latest turns,
+  not a measurement.
+- What it never does. It never feeds or triggers the unasked lane and never raises a notification.
+  The estimate stays as the level when the check is paused, capped, failed or has not run.
 
 ### The abstention check
 
@@ -2648,7 +2941,7 @@ as it sends a Claude Code, Codex or Pi session's user messages. The file is kept
 every caller of that one reads work or tool output (the observer, the gate and Spacedock boot
 scans, the working-directory read, workflow discovery), and none of them is handed this path, so
 "Compass can't read work from this harness" stays true. A direction the harness truncated is
-refused by "Add it to my intent" rather than saved as the whole of what was typed. The shapes behind
+refused by "Add as a line" rather than saved as the whole of what was typed. The shapes behind
 this are in
 [docs/captures/antigravity/transcript-shapes-1.2.11-macos.jsonl](docs/captures/antigravity/transcript-shapes-1.2.11-macos.jsonl).
 
@@ -2770,25 +3063,39 @@ model happens because somebody pressed a control and saw a disclosure first. Thi
 because the operator passed a flag, so the flag's own help text is where that disclosure lives.
 
 What it sends is less than `POST /api/reading` sends, on the same path: the goal you typed, and the
-observed record the reading is allowed to read, to a `codex` subprocess running on your own machine
-under your own capacity. That record carries your messages in the session whole, up to 1,000
+observed record the reading is allowed to read, through a supervised Claude Code or Codex CLI on
+your machine under your capacity. Claude Code reads Claude Code sessions; Codex reads Codex
+sessions. On other harnesses the lane prefers Claude Code, where a pressed reading prefers Codex.
+If the preferred provider is unavailable or unqualified on this machine, the other serves. A
+failed launch never tries a second provider. That record carries your messages in the session whole, up to 1,000
 characters each where the prompt has room, as a pressed reading's does. It never sends what the
 agent said: a pressed reading of a Claude Code session carries the agent's own messages since
 2026-10-03 (Observer model calls), and the lane leaves them out, entry and words alike. Your expected outcome lines are never sent by it, and a session with lines
 and no goal is not read by it at all (item 12 of
 [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)).
-Nothing new leaves the machine that did not already leave it when you pressed the control by hand,
-because the lane consults the same Allow binding a press does before each send (consent F5,
-ui5): with no Codex Allow on record, after "Turn off readings", or once the Codex destination is
-no longer the one the Allow was given for, the check is skipped, nothing is spent, and the skip is
-written to the dashboard's diagnostic log. It does not charge the reading budget; its own caps
-below bound it. What is new is that nobody is there at the moment it goes.
+The lane uses `reading_policy.GuardedModel`, the same guarded model seam as a requested reading.
+It sends no tool output, outcome lines or agent messages. Claude Code runs under the owner's
+2026-10-02 acceptance and needs no separate grant. Codex sends only with a stored Allow for the
+current destination, checked again at the seam. With no grant, after Pause model calls, under the
+model off switch, or after a destination change, nothing is sent and the skip is logged. The
+session's Drift card shows the grant and a toggle to allow or revoke it, with the words and
+destination disclosed beside it. Attention points to that toggle when a session with a typed goal
+is waiting for permission. The grant covers every session routed to Codex at that destination;
+Analyze and Resume cannot grant it. A revoke cancels this daemon's in-flight Codex check and
+refuses subsequent sends; Pause does the same for either provider. A call already sent cannot be
+unsent. A cancelled call that spent capacity keeps a withdrawn check row for the caps without
+publishing a finding or claiming a completed check. The lane does not charge Analyze's budget;
+its own caps below bound it.
+
+Start with `--unasked-readings` to enable the lane. Without that flag neither the toggle nor the
+Attention cue appears. The flag remains off by default; the delivery and qualification preconditions
+for changing that default are unchanged.
 
 It is bounded three ways, and the bounds are the posture rather than a preference. One reading runs
 at a time for the whole board, so a board where forty annotated sessions cross a state boundary
-together starts one subprocess and not forty. A per-session floor holds a second reading of the same
+together starts one subprocess and not forty. A fifteen-minute per-session floor holds a second reading of the same
 session off, because a session can cross a boundary repeatedly inside a minute. And two counts of CHECKS RUN, per session and rolling
-per day, stop the lane entirely once spent. Counting only what was raised was tried and is wrong: a
+per day (three per session, twelve per rolling day), stop the lane entirely once spent. Counting only what was raised was tried and is wrong: a
 board whose sessions are all healthy raises nothing, so nothing advances the count and the lane runs
 forever. Measured on that version, five sessions ran 480 subprocesses in a simulated day against a
 daily cap of 12. A spent count is stated on the board
@@ -2821,7 +3128,11 @@ and the row is marked withdrawn, so nothing quoting the words you took back surv
 row is what the two caps above count and deleting it would refund the subprocess it spent.
 
 Discarding here means the `clear` field of a `POST /api/annotate` body, which deletes every
-revision. It is reachable from the board as `discard everything`, a control under the goal and the
+revision and, after a clear that took at least one revision, the session's stored summary. The
+store counts what it took under its own lock (the reply's `removed` field, null on any other arm), so a
+save from another tab that the page had not yet seen is taken too and never leaves the summary
+standing. The reply's `summary` field says `deleted`, `absent`, `stopped` (nothing stored and a running job stopped), a
+refusal token (`unwritable`, `unavailable`), or `untouched`, and the page's sentence claims only that outcome. It is reachable from the board as `discard everything`, a control under the goal and the
 expected outcome on the session page's drift block, offered only where a revision is stored and armed by one press before a second
 performs it. The board's own `clear` control beside the goal, and `remove` beside an outcome line,
 are a different act: each empties one box or drops one line, and the save that follows appends a
@@ -2972,8 +3283,8 @@ of decisions rather than a category.
 
 The reason the ban became an allowlist is that it was stricter than the product around it and the
 asymmetry was doing no work. The dashboard already publishes prompt text. Published text below owns
-the enumeration, and the carriers that reach the page raw are these nine: `title`, `last_prompt`, `state_detail`,
-`project_key`, `project_name`, `tasks[].subject`, `tasks[].activeForm`, `subagents[].name` and
+the enumeration, and the carriers that reach the page raw are these ten: `title`, `last_prompt`, `state_detail`,
+`project_key`, `project_name`, `worktree`, `tasks[].subject`, `tasks[].activeForm`, `subagents[].name` and
 `subagents[].parent`. More reaches the page through `records.safe_text`, including the observer's
 derived goal and Codex's `title`, which is a prompt because Codex writes no generated title. And
 `GET /api/observe` already writes prompt-derived text to disk as a sidecar under
@@ -3038,7 +3349,7 @@ the revision and the reading that used it; an explicit goal save makes typed wor
 
 Amended by the owner, approving the Analyze drift plan, 2026-10-04: the menu's five choices are
 built only when the reader opens it. A listed later direction may also be explicitly chosen with
-"Use this as my goal". The server resolves its fact id in the same session's own source record,
+"Make it the goal". The server resolves its fact id in the same session's own source record,
 requires a person-authored message after the goal's direction floor, and verifies the displayed
 words, source time and saved revision again before adoption. Claude and Codex use a stable,
 bounded backward 64 MiB search so recent messages in long files and paged entries
@@ -3068,6 +3379,65 @@ a later record. A first prompt that is a harness control such as `/clear` is sti
 prompt, published with the boolean `first_prompt_control`. No goal is drafted from it, none is
 drafted from a later record in its place, and the server refuses to adopt it. Source text is at most 140 characters plus the clipping mark. The page names an
 excerpt rather than silently adopting a longer prompt. Missing source times prevent adoption.
+
+A Claude Code session that states a goal with `/goal` has it read from the transcript's own
+records, not from the prompt: the `goal_status` attachment that carries the condition, and the
+`local_command` record that prints the command's answer. The read is forward and incremental over at
+most the last 8 MiB, so a goal set before that and untouched since publishes nothing: a reader who opens
+such a session cold sees no detected goal and can type or adopt one as usual. A clear is the same
+sentinel with `met: true`, which is the only trace of one in an interactive session. A `failed: true`
+verdict, which Claude Code writes for a goal it gave up on, is not a verdict, and a measured run
+showed it ends the goal: Compass stops holding the goal, publishes the give-up as its own claim
+(`session_goal_gave_up`, `{at, reason}`) and never calls it met. The condition
+is published as `session_goal`, `{text, at}`, masked by the same prose masking a later direction
+gets and folded to one line, and a condition over 4,000 characters, the limit Claude Code itself enforces, publishes nothing. A condition longer than the Goal field holds (240 characters) also carries `offered`, the
+bounded excerpt an adoption stores, and `cut: true`, so the page marks it cut and an adoption names
+exactly the words the store keeps; a shorter one carries neither key. A subagent's record is never the session's goal. Once the evaluator has decided, the latest `met: true`
+verdict joins the goal as `verdict`, `{met, at, reason}`. The reason is the evaluator model's own
+sentence, so it gets the same prose masking, is folded to one line and is cut at 500 characters with an
+ellipsis. The page draws it quoted, as text, under the label "The harness's claim", and never as Compass's
+own words. A not-met verdict is not read: the evaluator repeats it on every iteration while the goal is open, so it
+is progress rather than an end state, and the card reports only the end state. Like a first prompt the goal is not in session history, and it is
+stored only if the reader adopts it as their goal under the source token `session-goal`.
+
+A clear and a give-up are published beside the goal and never as it: `session_goal_cleared` (`{at}`) and
+`session_goal_gave_up` (`{at, reason}`), and a goal that followed another carries `earlier`
+(`{how, at}`, with how one of replaced, met or gave-up). None of them holds the earlier goal's words. The
+give-up reason is the evaluator model's own sentence and takes the same masking, one line and 500-character
+bound as a verdict's reason; its iterations, tokens and duration are not published. Like the goal, none of it
+is in session history, and a read that starts mid-file publishes none of it, since a missing value means unknown.
+
+The verdict is a claim and Compass tests it. The test is code over the writes and checks the record already
+holds, with no model call and nothing new sent anywhere. It is stored beside a reading's criteria as
+`goal_verdict`, three closed values and a list of at most three fact ids, and a stored value outside them
+refuses the reading whole. The verdict never lowers a drift level and never counts as a passing check. A
+reason that names nothing the record can show is "unconfirmed", never "disputed", because a capped listing
+cannot prove absence.
+
+A Codex session that states a goal with `/goal` has it read from the rollout's own records the same way, into
+the same `session_goal`, `{text, at}`, with the same masking, the same 4,000-character bound, the same excerpt
+keys and the same 8 MiB forward read. The goal is the objective a `thread_goal_updated` event carries, timed by
+the goal's own `createdAt`; Codex writes that event for a set, an edit, a pause and a resume, never for a goal
+the model creates itself, so a goal the model wrote is never published as the reader's. A clear is the
+`User cleared the goal.` line Codex writes in its own `<codex_internal_context>` wrapper, published as
+`session_goal_cleared` only when a goal was held, because Codex writes the same line for a clear with no goal
+and before every new goal. An objective over 4,000 characters is stored by Codex as a sentence naming a file
+it wrote the words to; that sentence publishes nothing, and the file is not read. Codex reports a goal met
+only in `~/.codex/goals_1.sqlite`, which Compass does not read, so a Codex goal carries no `verdict` and no
+give-up. The `<codex_internal_context>` messages are Codex's own wording and are never read as a prompt the
+reader typed.
+
+An Antigravity session that states a goal with `/goal` has it read from the person's own typed input in
+`brain/<conversation>/.system_generated/logs/transcript_full.jsonl`, a file beside the `transcript.jsonl`
+the directions are already read from that holds the same records with no field cut. Only a `USER_INPUT` from
+`USER_EXPLICIT` whose request opens `/goal ` and whose metadata carries agy's fixed `/goal is a [Slash
+Command]` paragraph counts, and the condition is the request after the command. It is published as the same
+`session_goal`, with the same masking and its own 16,000-character bound (agy accepted 5,000 and refused
+nothing, so the 4,000 the other two use would drop real goals; a longer one publishes nothing), the same excerpt keys and the same 8 MiB forward read, and the same symlink
+checks guard the path. agy records no end to a goal: a met or cancelled goal is a marker in the model's own
+reply, which Compass does not read, so an Antigravity goal carries no verdict, no clear and no `earlier`, and
+the latest `/goal` stays the session's goal. The server adopts an Antigravity row's `session-goal` and still
+adopts none of its prompts.
 
 The revision number beside them, `annotation_revision`, is in the record and not on this list. It
 is an integer the board derives, not text anybody typed.
@@ -3193,8 +3563,11 @@ The operator-cockpit prototype also reads dispatch evidence:
   of its `Write`, `Edit`, `MultiEdit` and `NotebookEdit` calls (`file_path`, or `notebook_path`),
   for the checks it ran and the files it wrote, its subagents' calls included through the same
   expression. Of a file-write call it reads the path, and of its
-  result the error flag alone. [Tool output in a Claude Code
-  reading](#tool-output-in-a-claude-code-reading) states its bounds and where the result may go.
+  result the error flag alone. Since 2026-10-23 it also reads the `skill` name of a `Skill` call
+  (never its arguments), and of a `Bash` call's result only the structured
+  `toolUseResult.gitOperation.pr` (`number`, `url`, `action`), never the command or its output. Both
+  go through closed shapes and publish nothing that does not match them. [Tool output in a Claude
+  Code reading](#tool-output-in-a-claude-code-reading) states its bounds and where the result may go.
 
 These are evidence reads, not command execution. In total, eight expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.
@@ -3492,8 +3865,9 @@ The `proto/operator-cockpit` branch adds project context and an optional read-on
 under the configured state directory, and can invoke the installed Codex CLI for a derived goal.
 `GET /api/session-record` uses the same loopback and bounded project/session guards, returns the same redacted message titles as project-context, and exposes no fields or content classes the page could not already read. Each message also carries its fixed number, read from an in-memory index of every message's time and fact id in the transcript (at most 16 transcripts, never written to disk, nothing a person wrote); the index adds no field the page could not derive from the record it already reads, and a read that cannot finish inside its allowance publishes no numbers.
 This is separate from quota fetching and from the session-history switch. The prototype retains
-its own semantic-history store; `--forget` deletes the session-history and session-end stores,
-removes the discard records in the annotation store, and reaches nothing else.
+its own semantic-history store. `--forget` deletes the session-history, session-end and summary
+stores, removes annotation discard records and copied-correction digests, and withdraws model
+permission; it does not reach this semantic-history store.
 
 That store carries session text in both directions, and this document did not say so until the
 annotation work re-counted which files hold what a person typed. A fact's `summary` is bounded at
@@ -3529,8 +3903,8 @@ can read the registered terminal can see its captured text.
 
 A harness transcript records what the operator typed, verbatim, so if a key was ever pasted into a
 prompt the store holds it. The dashboard reads those stores and publishes prompt text. Named as
-fields rather than glossed, because a prose alias is a name no test can check, the carriers that reach the page raw are these nine: `title`, `last_prompt`, `state_detail`,
-`project_key`, `project_name`, `tasks[].subject`, `tasks[].activeForm`, `subagents[].name` and
+fields rather than glossed, because a prose alias is a name no test can check, the carriers that reach the page raw are these ten: `title`, `last_prompt`, `state_detail`,
+`project_key`, `project_name`, `worktree`, `tasks[].subject`, `tasks[].activeForm`, `subagents[].name` and
 `subagents[].parent`. Those are the two tables in
 `aggregate`, and the instruction line's own `text` passes the same sweep beside them. It is a list
 of carriers rather than a list of every published string that could hold what the operator typed:
@@ -3651,14 +4025,14 @@ that was.
 saying the machine's network may read the board, and there is no second gate behind it: everything
 the paragraph below grants another account on the machine, a non-default bind grants anything that
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
-project paths. Writing is the seventeen POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
+project paths. Writing is the twenty-two POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Two of the seventeen store nothing of their own: `POST /api/direction` returns the whole text
+somebody other than you. Three of the twenty-two store nothing durable of their own: `POST /api/direction` returns the whole text
 of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
 message's published title of at most 112 characters. Both answer only a loopback peer, so a non-default bind does not widen them; their
-bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on fifteen of them, for the reason the
+bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client
@@ -3667,7 +4041,7 @@ and Event ingress below is where it is stated. `POST /api/focus`'s capability bu
 injected into the served document, so anything that can load the board under a non-default bind can
 also ask for a raise, and `/api/data` names which rows would answer it. What that second gate
 actually separates is a page from a document navigation and from a local process that never fetched
-the board, which is the exposure the focus section states.
+the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session and writes nothing; it answers only a loopback peer that is not a document navigation, and `start` is the one action that begins to spend.
 
 What the non-default bind does *not* spend is the rebinding defense. The Host and Origin gate widens
 to addresses and never to names. Under `0.0.0.0`, that means any address a client could arrive on.
@@ -3715,8 +4089,8 @@ it. `POST /api/reading` carries no capability token. The precedent is the quota 
 event ingress: the harm is a side effect on the operator's Codex balance rather than a forged claim
 about a session, and what holds it is the same-origin check and the refusal of a document
 navigation, neither of which a local process sends headers for. A local process can grant the
-remembered answer too, including the tool-output grant for the destination the board names, which
-sends a Claude Code session's checks only to the reader's own configured vendor. The rolling cap of 100 attempts across tabs and processes bounds that
+remembered answer too, and can start a call without a prior Allow. A Claude Code reading
+sends checks only where Compass names the configured destination, with its notice. The rolling cap of 100 attempts across tabs and processes bounds that
 exposure. One reading per session may be in flight, and the explicit model off switch refuses all
 calls. The
 route reads nothing back to the caller beyond the job it started or found running, which the payload

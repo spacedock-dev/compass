@@ -1,4 +1,5 @@
 import { Button } from '../ui/button';
+import { Icon, type IconName } from '../ui/icons';
 import { useFocusKey } from '../controls';
 import { useDisplayed, useShell } from '../shell/context';
 
@@ -31,6 +32,10 @@ export interface ActionButtonProps {
   readonly action?: string;
   readonly arg?: string;
   readonly ariaLabel?: string;
+  /** What the control does, for a pointer to rest on; the label stays the accessible name. */
+  readonly title?: string;
+  /** A glyph drawn in place of the label. The label is then the control's accessible name. */
+  readonly icon?: IconName;
   readonly ariaPressed?: boolean;
   readonly onPress: (detail: number) => void;
 }
@@ -53,6 +58,8 @@ export function ActionButton({
   action,
   arg,
   ariaLabel,
+  title,
+  icon,
   ariaPressed,
   onPress,
 }: ActionButtonProps) {
@@ -80,8 +87,9 @@ export function ActionButton({
       {...(action ? { 'data-next-cockpit-action': action } : {})}
       {...(arg !== undefined ? { 'data-arg': arg } : {})}
       {...(reserve ? { 'data-next-reserve': '' } : {})}
-      {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
+      {...(ariaLabel || icon ? { 'aria-label': ariaLabel ?? label } : {})}
       {...(ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
+      {...(title ? { title } : {})}
       {...(hidden ? { hidden: true } : {})}
       {...(busy
         ? { 'aria-disabled': true, 'aria-busy': true, 'data-next-pending': '' }
@@ -95,7 +103,7 @@ export function ActionButton({
         onPress(event.detail);
       }}
     >
-      {label}
+      {icon ? <Icon name={icon} /> : label}
     </Button>
   );
 }

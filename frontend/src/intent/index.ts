@@ -6,14 +6,10 @@ export {
   DirectionQuestion,
   type DirectionQuestionProps,
 } from './DirectionQuestion';
-export {
-  type DirectionReading,
-  type KeepAnalyzeOutcome,
-  type KeepAnalyzeRequest,
-} from './directions';
+export {} from './directions';
 export { intentForReading, openPendingDirection } from './api';
 export { LiveMonitorSwitch } from './LiveMonitorSwitch';
-export { LIVE_HARNESSES, useLiveEstimateOn } from './liveMonitor';
+export { LIVE_HARNESSES, useLiveMonitorOn } from './liveMonitor';
 export { ActionButton, type ActionButtonProps } from './ActionButton';
 export { usePanel, type Panel } from './useIntent';
 export { workSource, entryNumbers, entryNumbering, personAuthored, workAbsence } from './work';

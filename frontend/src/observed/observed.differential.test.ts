@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
+import { projectRecordedCommandOpener } from '../../test/recordedCommandOpener';
 import {
   canonical,
   firstDifference,
@@ -44,8 +45,11 @@ describe('nextObserved and observe agree over generated payloads', () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= SEEDS; seed += 1) {
       const payload = genPayload(seed);
-      const old = instructionSourceDeviation(
-        withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
+      const old = projectRecordedCommandOpener(
+        instructionSourceDeviation(
+          withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
+        ),
+        payload,
       );
       const mine = withoutHistory(observe(payload) as unknown as Record<string, unknown>);
       const found = firstDifference(canonical(old), canonical(mine));
@@ -102,7 +106,14 @@ describe('the helpers a view calls agree with their legacy twins', () => {
           canonical(sessionStop(row)),
         ),
       ).toBeNull();
-      expect(readHint(row)).toBe(legacy.call('nextObservedReadHint', row));
+      /* Departure, 2026-10-20: the owner admitted Analyze drift on an idle Claude Code row with no recorded
+         stop or end, where the retired page said nothing (docs/design-frontend-migration.md, Held to recorded
+         answers). That row's hint is asserted in observed.test.ts; every other row is held to the recording. */
+      const admitted =
+        readHint(row) ===
+        'Reads the session up to its last recorded entry; its last turn was not recorded as finished.';
+      if (admitted) expect(legacy.call('nextObservedReadHint', row)).toBe('');
+      else expect(readHint(row)).toBe(legacy.call('nextObservedReadHint', row));
     }
   });
 
@@ -222,7 +233,10 @@ function firstSession(model: Record<string, unknown>): Record<string, unknown> {
 describe('the harness can fail: a perturbed answer is reported at the path that changed', () => {
   const payload = genPayload(richSeed());
   const old = canonical(
-    withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
+    projectRecordedCommandOpener(
+      withoutHistory(legacy.call<Record<string, unknown>>('nextObserved', payload, {})),
+      payload,
+    ),
   );
   const mine = () =>
     JSON.parse(

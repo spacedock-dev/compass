@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import contextlib
-import dataclasses
 import errno
 import hashlib
 import ipaddress
@@ -28,13 +27,20 @@ from compass_runtime import (
     departures,
     dismissals,
     entry_numbers,
+    goal_find,
     levels,
     live_estimate,
+    live_lease,
+    live_monitor,
     notifications,
     quota,
     reading_policy,
     record_pages,
     records,
+    session_outline,
+    session_source,
+    summary_jobs,
+    summary_store,
     tripwires,
 )
 from compass_runtime import events as runtime_events
@@ -50,8 +56,13 @@ from compass_runtime.frontend_dev import DevelopmentFrontend
 
 _WEBSOCKET_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
+# The Find goal presses running now, by state directory and session: one call per session at a
+# time, so a second press while one runs is refused rather than charged again.
+_GOAL_FINDING: set[tuple[str, str, str]] = set()
+_GOAL_FINDING_LOCK = threading.Lock()
+
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from compass_runtime.aggregate import Application
     from compass_runtime.interaction_prototype import InteractionPrototype
@@ -114,6 +125,8 @@ def _annotation_body_refused(payload: dict[str, Any]) -> bool:
             replace is not None
             and (isinstance(replace, bool) or not isinstance(replace, int) or replace < 0)
         )
+        # Read from now is a switch the reader pressed, so it is a bool or absent.
+        or not isinstance(payload.get("read_from_now", False), bool)
         or (
             lines is not None
             and (not isinstance(lines, list) or not all(isinstance(line, str) for line in lines))
@@ -279,6 +292,11 @@ class CompassHTTPServer(ThreadingHTTPServer):
     def server_close(self) -> None:
         if self.interaction_prototype is not None:
             self.interaction_prototype.stop()
+        # The ticker and any check in flight end with the server, whichever way it stops.
+        self.application.live_leases_closed = True
+        leases = getattr(self.application, "live_leases", None)
+        if isinstance(leases, live_lease.Leases):
+            leases.close()
         super().server_close()
 
     def server_bind(self) -> None:
@@ -401,6 +419,159 @@ def _with_message_ordinals(
         return result
     facts = entry_numbers.with_message_ordinals(index, semantic["facts"])
     return {**result, "semantic": {**semantic, "facts": facts}}
+
+
+_LEASE_ACTIONS = frozenset({"start", "beat", "confirm", "stop"})
+_TAB_ID_CAP = 128
+
+
+def _lease_request(payload: Any, identity_cap: int) -> tuple[str, str, str, str, bool] | None:
+    """A lease request's fields, or None when any is missing, mistyped or unbounded.
+
+    The last element is what the action carries: `visible` for a beat and `answer == "yes"`
+    for a confirm.
+    """
+    if not isinstance(payload, dict):
+        return None
+    harness, sid, tab, action = (payload.get(k) for k in ("harness", "sid", "tab_id", "action"))
+    if not (
+        isinstance(harness, str)
+        and isinstance(sid, str)
+        and isinstance(tab, str)
+        and isinstance(action, str)
+        and harness
+        and sid
+        and tab
+    ):
+        return None
+    if (
+        action not in _LEASE_ACTIONS
+        or len(tab) > _TAB_ID_CAP
+        or len(f"{harness}:{sid}") > identity_cap
+    ):
+        return None
+    if action == "confirm" and payload.get("answer") not in {"yes", "no"}:
+        return None
+    visible = payload.get("visible", True)
+    if action in {"start", "beat"} and not isinstance(visible, bool):
+        return None
+    extra = bool(visible) if action in {"start", "beat"} else payload.get("answer") == "yes"
+    return harness, sid, tab, action, extra
+
+
+def _lease_answer(
+    leases: live_lease.Leases, harness: str, sid: str, tab: str, action: str, extra: bool
+) -> dict[str, Any]:
+    """The lease's answer to one request already read and bounded."""
+    if action == "start":
+        return leases.start(harness, sid, tab, visible=extra)
+    if action == "beat":
+        return leases.beat(harness, sid, tab, visible=extra)
+    if action == "confirm":
+        return leases.confirm(harness, sid, tab, yes=extra)
+    return leases.stop(harness, sid, tab)
+
+
+_LEASES_LOCK = threading.Lock()
+
+
+def _lease_row(application: Any, harness: str, sid: str) -> dict[str, Any] | None:
+    """The row for a lease, or a marker where the board lists the session twice.
+
+    Which of two rows is the session is not known, so the ticker skips the check and keeps the lease
+    rather than ending it as though the session had gone.
+    """
+    for show_all in (False, True):
+        _, body = application.collect_json(show_all=show_all)
+        rows = [
+            row
+            for row in json.loads(body)["sessions"]
+            if row.get("harness") == harness and row.get("sid") == sid
+        ]
+        if rows:
+            return (
+                rows[0] if len(rows) == 1 else {"harness": harness, "sid": sid, "ambiguous": True}
+            )
+    return None
+
+
+def _published_row_of(application: Any, harness: str, sid: str) -> dict[str, Any] | None:
+    """This session's row as the board publishes it, which is after `_apply_overlays`.
+
+    The default variant first, which is warm within `collect_memo_sec`, and the all-sessions one
+    only when the default lacks the row.
+    """
+    for show_all in (False, True):
+        _, body = application.collect_json(show_all=show_all)
+        rows = [
+            row
+            for row in json.loads(body)["sessions"]
+            if row.get("harness") == harness and row.get("sid") == sid
+        ]
+        if rows:
+            return rows[0] if len(rows) == 1 else None
+    return None
+
+
+def _lease_inputs(
+    application: Any, harness: str, sid: str, row: Mapping[str, Any]
+) -> live_lease.Inputs | None:
+    """What one Live monitor check reads for a session: transcript, record, goal, estimate."""
+    config = application.config
+    if not config.annotations_enabled:
+        return None
+    transcript = runtime_observer.resolve_transcript(config, application.state, harness, sid)
+    if not transcript:
+        return None
+    entry = annotation_store.find(annotation_store.active(config, application.state), harness, sid)
+    saved = live_estimate.saved_intent(row)
+    facts = _facts_of(_session_context(application, dict(row)))
+    floor = annotation_store.direction_floor(entry, row)
+    estimate = live_estimate.for_session(
+        config, row, transcript, facts, floor=floor, now=application.clock()
+    )
+    words = " ".join(part for part in (saved.goal, *saved.lines) if part.strip())
+    return live_lease.Inputs(transcript, facts, words if saved.saved else "", estimate)
+
+
+def _live_leases(application: Any) -> live_lease.Leases:
+    """The application's lease table, made on first use."""
+    with _LEASES_LOCK:
+        if not isinstance(application.live_leases, live_lease.Leases):
+            application.live_leases = live_lease.Leases(
+                application.config,
+                clock=application.clock,
+                row_for=lambda harness, sid: _lease_row(application, harness, sid),
+                inputs_for=lambda harness, sid, row: _lease_inputs(application, harness, sid, row),
+                diagnostic_sink=application.diagnostic_sink,
+                # A table made after the server closed runs no ticker.
+                start_thread=not application.live_leases_closed,
+            )
+        leases: live_lease.Leases = application.live_leases
+        return leases
+
+
+def _with_lease(
+    application: Any, context: dict[str, Any], rows: list[dict[str, Any]], focus: tuple[str, str]
+) -> dict[str, Any]:
+    """The focused session's Live monitor lease, on `sources.work` and on no row.
+
+    Read with the row's own `ended_at`, which is after the overlay pass, so a session that has
+    ended ends its lease here as it does on the ticker's next pass.
+    """
+    harness, sid = focus
+    if harness != live_lease.HARNESS:
+        return context
+    row = next((r for r in rows if (r.get("harness"), r.get("sid")) == focus), None)
+    if row is None:
+        return context
+    published = _live_leases(application).state(harness, sid, ended=bool(row.get("ended_at")))
+    raw_sources = context.get("sources")
+    sources: dict[str, Any] = raw_sources if isinstance(raw_sources, dict) else {}
+    raw_work = sources.get("work")
+    work: dict[str, Any] = dict(raw_work) if isinstance(raw_work, dict) else {}
+    work["live_monitor"] = published
+    return {**context, "sources": {**sources, "work": work}}
 
 
 def _with_levels(
@@ -694,6 +865,9 @@ def _facts_of(context: dict[str, Any]) -> list[Any]:
 
 class _RequestHandler(BaseHTTPRequestHandler):
     server: CompassHTTPServer
+    # Set while a Find goal press holds its in-flight mark; a reply clears the mark before it is
+    # written, so a press sent the moment the answer arrives is never refused as in-flight.
+    _release_goal_finding: Callable[[], None] | None = None
 
     # Loopback-origin requests only: the Host check defeats DNS rebinding,
     # the Origin check defeats cross-site fetch()es from web pages (both
@@ -1224,13 +1398,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
             now=application.clock(),
             refresh=refresh,
             focus=focus,
-            # As with usage=1, the page sends this only after disclosure consent.
-            # Quota consent does not authorize sending transcript content.
             model_consent=(
                 refresh
                 and parse_qs(url.query).get("observer_model") == ["1"]
                 and not self._is_document_navigation()
                 and self._loopback_resource_ok()
+                and reading_policy.status(application.config, now=application.clock())["consent"]
             ),
         )
         # Marked here and in `_session_context`, the two readers the page and the
@@ -1240,6 +1413,44 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if focus is not None:
             result = _with_message_ordinals(application, result, focus)
             result = _with_levels(application, result, collected["sessions"], focus, project)
+            result = _with_lease(application, result, collected["sessions"], focus)
+            matching = [
+                row
+                for row in collected["sessions"]
+                if (row.get("harness"), row.get("sid")) == focus
+                and project
+                in {
+                    str(row.get("project_key") or row.get("project") or ""),
+                    str(row.get("project") or ""),
+                }
+            ]
+            outline, plan = (
+                session_outline.for_session_with_plan(application.config, application.state, *focus)
+                if len(matching) == 1
+                else (session_outline.unmatched(application.config, *focus), None)
+            )
+            summary: dict[str, Any] = (
+                summary_store.for_session(application.config, application.state, *focus)
+                if len(matching) == 1
+                else {
+                    "state": "unavailable",
+                    "exists": False,
+                    "reason": "session_not_matched",
+                    "job": None,
+                }
+            )
+            summary["plan"] = plan if summary["state"] == "absent" else None
+            summary["job"] = (
+                summary_jobs.published(application, *focus) if len(matching) == 1 else None
+            )
+            result = {
+                **result,
+                "sources": {
+                    **result.get("sources", {}),
+                    "outline": outline,
+                    "summary": summary,
+                },
+            }
             if parse_qs(url.query).get("prompts", ["0"])[0] == "1":
                 result = _with_prompt_choices(
                     application, result, collected["sessions"], focus, project
@@ -1910,7 +2121,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         state = application.state
         receipt: dict[str, int] = {}
-        outcome, withdrew = self._annotation_outcome(harness, sid, payload, receipt=receipt)
+        outcome, withdrew, summary = self._annotation_outcome(
+            harness, sid, payload, receipt=receipt
+        )
         # Dropped rather than waited out, for `_dismiss`'s reason: the next GET
         # would otherwise serve the pre-save payload for up to `collect_memo_sec`.
         state.snapshot.clear()
@@ -1940,6 +2153,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # withdrawal, so a reader of the wire sees one field with one
             # meaning rather than a key that appears only sometimes.
             "withdrew": withdrew,
+            # The third store's answer, for the same reason: `deleted`, `absent` or a refusal
+            # token when a discard took the session's summary, and `untouched` on every arm
+            # that owes it nothing.
+            "summary": summary,
+            # How many revisions a discard took, counted under the store's lock, so a figure of
+            # zero is a discard that found nothing and null is an arm that is not a discard.
+            "removed": receipt.get("removed_revisions"),
         }
         self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
 
@@ -1950,18 +2170,36 @@ class _RequestHandler(BaseHTTPRequestHandler):
         payload: dict[str, Any],
         *,
         receipt: dict[str, int] | None = None,
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, str]:
         application = self.server.application
         config = application.config
         state = application.state
         goal, output = payload.get("goal"), payload.get("output")
         settle_through = payload.get("settle_through")
         withdrew = True
+        summary = "untouched"
         if payload.get("clear") is True:
+            # What went is what the store counted under its lock. The cached copy this route
+            # used to read first can trail a save from another tab, and a discard decided on it
+            # left the summary standing under words that were gone (DRC-4939).
+            counted = receipt if receipt is not None else {}
             outcome = annotation_store.clear(
-                config, state, harness, sid, diagnostic_sink=application.diagnostic_sink
+                config,
+                state,
+                harness,
+                sid,
+                diagnostic_sink=application.diagnostic_sink,
+                receipt=counted,
             )
             withdrew = _withdraw_raises(application, outcome, harness, sid)
+            # Only words that were really discarded take the summary with them. A clear over
+            # nothing typed, or over a session already discarded, deleted nothing, and the
+            # summary does not depend on saved intent.
+            if outcome == annotation_store.OUTCOME_STORED and counted.get("removed_revisions"):
+                try:
+                    summary = summary_jobs.discard(application, harness, sid)
+                except (OSError, ValueError):
+                    summary = "unwritable"
         elif "add_direction" in payload:
             outcome = self._add_direction(harness, sid, payload)
         elif "not_accurate" in payload:
@@ -1979,7 +2217,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
         elif "adopt" in payload:
             # With `settle_through` beside it this is Keep where no analysis
-            # can start (no reader, or readings off): the draft is adopted and
+            # can start (no reader, or model calls paused): the draft is adopted and
             # the directions settled in one write, and nothing is read.
             outcome = self._adopt_prompt(
                 harness,
@@ -2025,9 +2263,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 origins=payload.get("origins"),
                 now=now,
                 window_start=self._typed_window_start(harness, sid, now),
+                read_from_now=payload.get("read_from_now") is True,
                 diagnostic_sink=application.diagnostic_sink,
             )
-        return outcome, withdrew
+        return outcome, withdrew, summary
 
     def _typed_window_start(self, harness: str, sid: str, saved_at: float) -> float | None:
         """Where typed words saved now start reading work, or None for the save time.
@@ -2047,7 +2286,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return None
         return runtime_reading.typed_window_start(facts, harness, sid, saved_at)
 
-    def _reading_refusal(self, payload: dict[str, Any]) -> int | None:
+    def _reading_refusal(self, payload: dict[str, Any], *, off: bool = False) -> int | None:
         """The status this press must be refused with, or None to proceed.
 
         Its own function rather than a ladder inside the handler, because
@@ -2066,21 +2305,27 @@ class _RequestHandler(BaseHTTPRequestHandler):
         poll, reconnect, resume, focus change or revision save carries it.
         """
         config = self.server.application.config
+        # Pause model calls also stops goal summaries, which need neither the
+        # annotation store nor a qualified reading provider, so an off is
+        # never refused for the absence of what Analyze needs.
+        available = off or (
+            config.annotations_enabled
+            and not config.model_calls_disabled
+            and annotation_store.any_reading_enabled()
+        )
         # A table rather than a ladder, for the reason the POST routes below
-        # are one: six conditions read as a list of what must be true, and a
+        # are one: the conditions read as a list of what must be true, and a
         # ladder of early returns puts this function over ruff's return cap
         # without making any of them clearer. Every condition is a pure read,
-        # so evaluating all six costs nothing and the order is documentation.
+        # so evaluating all of them costs nothing and the order is documentation.
         checks: tuple[tuple[bool, int], ...] = (
             # 503 rather than 404, for `_annotate`'s reason: under
             # `--no-annotations` the route exists and the store does not.
-            (not config.annotations_enabled, 503),
-            (config.model_calls_disabled, 503),
             # The button and this route read the same constants, so they agree
             # by construction and a local `curl` cannot outrun the check. Any
             # provider opens the route; which one may run is the route's
             # question, answered below from the harness.
-            (not annotation_store.any_reading_enabled(), 503),
+            (not available, 503),
             # A lured navigation reads nothing back, but it would still spend
             # the reader's capacity, which is the harm this route carries.
             (self._is_document_navigation() or not self._loopback_resource_ok(), 403),
@@ -2121,27 +2366,133 @@ class _RequestHandler(BaseHTTPRequestHandler):
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
-        refusal = self._reading_refusal(payload)
+        refusal = self._reading_refusal(payload, off=payload.get("consent") in ("off", "on"))
         if refusal is not None:
             self._reject(refusal)
             return
         if payload.get("consent") == "off":
-            answer = reading_policy.set_consent(config, False, now=application.clock())
-            # The card words the launch grant from this flag, not from the store, so a withdrawal
-            # the store took must clear it too, or the card keeps claiming a grant that was
-            # withdrawn. Only on success: a refused revoke leaves the store's grant in place,
-            # and the card should keep saying so. The route's per-request read stays off the store.
-            if answer["reason"] != "store-unavailable":
-                application.config = application.state.config = dataclasses.replace(
-                    config, tool_output_pre_grant=False
-                )
+            self._pause_model_calls()
+            return
+        if payload.get("consent") == "on":
+            answer = reading_policy.resume(config, now=application.clock())
             self._reading_permission_reply(answer, off=True)
             return
         harness, sid = payload.get("harness"), payload.get("sid")
         if not isinstance(harness, str) or not isinstance(sid, str) or not harness or not sid:
             self._reject(400)
             return
+        if "unasked_grant" in payload:
+            self._unasked_grant(harness, payload)
+            return
         self._reading_press(harness, sid, payload)
+
+    def _pause_model_calls(self) -> None:
+        application = self.server.application
+        answer = reading_policy.set_consent(application.config, False, now=application.clock())
+        # And an unasked check already running (owner, 2026-10-20).
+        if application.unasked_lane is not None:
+            application.unasked_lane.stop()
+        # And a Live monitor check in flight; its reply cannot publish.
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+        if isinstance(application.live_leases, live_lease.Leases):
+            application.live_leases.stop_all("paused")
+        else:
+            live_monitor.cancel_all(application.config, "model-calls-paused")
+        # Pause model calls also stops session summaries, including a call already running
+        # (docs/design-session-summary.md#job-and-grant-contract); a lock failure leaves
+        # the next part's recheck to refuse.
+        with contextlib.suppress(OSError, ValueError):
+            summary_jobs.stop_running(application, "model-calls-paused")
+        self._reading_permission_reply(answer, off=True)
+
+    def _unasked_grant(self, harness: str, payload: dict[str, Any]) -> None:
+        """The Drift card's "Allow Codex to run unasked checks" toggle, and its revoke.
+
+        A body variant of this route rather than a route of its own, so it is
+        held by the same navigation, origin and press refusals. Only Codex takes
+        a grant: the Claude Code producer runs unasked checks under the owner's
+        acceptance with no grant of its own (owner, 2026-10-20). The grant binds
+        to the destination the page showed, read from the lane's own route, and
+        is refused while model calls are paused rather than lifting the pause.
+        [DEC-18](docs/design-reading-a-session.md#amended-2026-10-20-unasked-checks-remain-reachable)
+        """
+        application = self.server.application
+        allowed = payload["unasked_grant"]
+        if not isinstance(allowed, bool):
+            self._reject(400)
+            return
+        if application.unasked_lane is None:
+            self._reject(503)
+            return
+        if not allowed:
+            self._unasked_revoke()
+            return
+        route = runtime_reading_route.resolve(harness, config=application.config, unasked=True)
+        reason = (
+            route["reason"]
+            if not route["provider"]
+            else "no-grant-needed"
+            if route["provider"] != runtime_reading_route.CODEX
+            else "provider-changed"
+            if payload.get("provider") != route["provider"]
+            else "destination-changed"
+            if payload.get("words_destination") != route["words_destination"]
+            else "model-changed"
+            if payload.get("model", route["model"]) != route["model"]
+            else ""
+        )
+        if reason:
+            # The page refreshes on this answer, and a memoized snapshot would
+            # redraw the stale route it pressed against.
+            application.state.snapshot.clear()
+            self._send(
+                self._reading_json({"ok": False, "produced": False, "reason": reason}),
+                "application/json",
+                409,
+            )
+            return
+        answer = reading_policy.set_unasked_grant(
+            application.config,
+            True,
+            now=application.clock(),
+            provider=route["provider"],
+            destination=route["words_destination"],
+            destinations=runtime_reading_route.destinations(),
+        )
+        self._unasked_grant_reply(answer)
+
+    def _unasked_revoke(self) -> None:
+        """Delete the stored Codex grant whatever today's route is.
+
+        The route and destination checks guard a grant only. A revoke that had to
+        match today's route could not be made once Claude Code took the route,
+        and the stored grant would take effect again the day Codex returned.
+        """
+        application = self.server.application
+        codex = runtime_reading_route.CODEX
+        destinations = runtime_reading_route.destinations()
+        answer = reading_policy.set_unasked_grant(
+            application.config,
+            False,
+            now=application.clock(),
+            provider=codex,
+            destination=destinations.get(codex, ""),
+            destinations=destinations,
+        )
+        if answer["reason"] in {"", "daily-cap"} and application.unasked_lane is not None:
+            application.unasked_lane.stop(codex)
+        self._unasked_grant_reply(answer)
+
+    def _unasked_grant_reply(self, answer: reading_policy.Status) -> None:
+        application = self.server.application
+        # The reader-requested cap is not the lane's bound, so a spent day still saves.
+        accepted = answer["reason"] in {"", "daily-cap"}
+        application.state.snapshot.clear()
+        self._send(
+            self._reading_json({"ok": accepted, "produced": False, "reading": answer}),
+            "application/json",
+            200 if accepted else 409 if answer["off"] else 503,
+        )
 
     def _reading_press(self, harness: str, sid: str, payload: dict[str, Any]) -> None:
         """An admitted press on one session: Keep's settlement, route, permission, job."""
@@ -2268,56 +2619,246 @@ class _RequestHandler(BaseHTTPRequestHandler):
             202 if accepted else 409,
         )
 
+    def _live_monitor(self) -> None:
+        """Start, beat, answer and stop the Live monitor lease for one Claude Code session.
+
+        Guarded as the reading presses are, by the navigation and loopback refusals, and answered
+        before any session is read. `start` is the call that begins to spend, so it alone carries
+        the `observer_model` assertion a press does. Every refusal that can be known without the
+        model is the lease's own, and comes back as `ok: false` with a reason.
+        """
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+        config = self.server.application.config
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= config.ask_body_cap_bytes:
+            self._reject(413)
+            return
+        try:
+            payload = json.loads(self._read_body(length) or b"{}")
+        except (ValueError, json.JSONDecodeError, RecursionError):
+            payload = None
+        parsed = _lease_request(payload, config.ask_project_cap_chars)
+        starting = parsed is not None and parsed[3] == "start"
+        if parsed is None or (starting and payload.get("observer_model") != 1):
+            self._reject(400)
+            return
+        if starting and not config.annotations_enabled:
+            self._reject(503)
+            return
+        answer = _lease_answer(_live_leases(self.server.application), *parsed)
+        self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
+
+    def _goal_find(self) -> None:
+        """Find a goal in the reader's own prompts. One press, one call, nothing stored.
+
+        Guarded as the reading route is, by `_reading_refusal`: a lured navigation, a cross-site
+        fetch and a body without the press are refused before anything is read. Every refusal
+        that can be known without the model comes before the prompts are collected, so a pause,
+        a spent day and a harness with no prompts to read send nothing and charge nothing; the
+        charge is the model seam's (`reading_policy.GuardedModel`), the same one Analyze pays at.
+        An unknown session answers as a session with no prompts does, for `_focus`'s reason.
+        """
+        config = self.server.application.config
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= config.annotation_body_cap_bytes:
+            self._reject(413)
+            return
+        try:
+            payload = json.loads(self._read_body(length) or b"{}")
+        except (ValueError, json.JSONDecodeError, RecursionError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        refusal = self._reading_refusal(payload)
+        harness, sid = payload.get("harness"), payload.get("sid")
+        if refusal is not None or not (
+            isinstance(harness, str) and isinstance(sid, str) and harness and sid
+        ):
+            self._reject(refusal or 400)
+            return
+        if harness not in annotation_store.ADOPTION_HARNESSES:
+            self._goal_found(None, goal_find.WHY_NO_PROMPTS)
+            return
+        route = self._reading_route(harness, payload)
+        permission = self._reading_permission(payload, route) if route is not None else None
+        if route is None or permission is None:
+            return
+        if permission["reason"]:
+            self._reading_permission_reply(permission, route=route)
+            return
+        self._goal_find_marked((os.path.realpath(config.state_dir), harness, sid), route)
+
+    def _goal_find_marked(
+        self, key: tuple[str, str, str], route: runtime_reading_route.Route
+    ) -> None:
+        """Run one press while it holds the session's in-flight mark, or refuse a second."""
+        _state_dir, harness, sid = key
+        with _GOAL_FINDING_LOCK:
+            running = key in _GOAL_FINDING
+            _GOAL_FINDING.add(key)
+        if running:
+            self._send(
+                json.dumps({"ok": False, "produced": False, "reason": "in-flight"}).encode(),
+                "application/json",
+                409,
+            )
+            return
+
+        def release() -> None:
+            with _GOAL_FINDING_LOCK:
+                _GOAL_FINDING.discard(key)
+
+        self._release_goal_finding = release
+        try:
+            self._goal_find_session(harness, sid, route)
+        finally:
+            release()
+            self._release_goal_finding = None
+
+    def _goal_find_session(
+        self, harness: str, sid: str, route: runtime_reading_route.Route
+    ) -> None:
+        application = self.server.application
+        config = application.config
+        row = self._published_row(harness, sid)
+        prompts = self._goal_find_prompts(row, harness, sid) if row is not None else []
+        if not prompts:
+            self._goal_found(None, goal_find.WHY_NO_PROMPTS, route=route)
+            return
+        try:
+            notice = reading_policy.note(
+                config,
+                kind="goal",
+                provider=route["provider"],
+                destination=route["words_destination"],
+                content=reading_policy.WORDS_CONTENT_VERSION,
+                tool_output="",
+                now=application.clock(),
+            )
+        except reading_policy.RefusedError as exc:
+            self._reading_permission_reply(exc.answer, route=route)
+            return
+        model = reading_policy.GuardedModel(
+            config,
+            (
+                runtime_reading.ClaudeReadingModel
+                if route["provider"] == runtime_reading_route.CLAUDE
+                else runtime_reading.CodexReadingModel
+            )(config),
+            application.clock,
+            provider=route["provider"],
+            destination=route["words_destination"],
+            resolve_destination=lambda: runtime_reading_route.destination(route["provider"]),
+            content=reading_policy.WORDS_CONTENT_VERSION,
+        )
+        try:
+            result = goal_find.find(prompts, model, goal_cap=config.annotation_text_cap_chars)
+        except reading_policy.RefusedError as exc:
+            # Another tab filled the day, or the pause landed, after this press was admitted.
+            if notice is not None:
+                reading_policy.retract(config, notice)
+            self._reading_permission_reply(exc.answer, route=route)
+            return
+        # The charge changes what the board publishes, so the memoised board is not served.
+        application.state.snapshot.clear()
+        if not result.called:
+            # Nothing was sent, so the notice is withdrawn and the next press shows it.
+            if notice is not None:
+                reading_policy.retract(config, notice)
+            self._goal_found(None, result.why, route=route, ok=False, status=503)
+            return
+        found = (
+            {**result.found, "found_at": application.clock()} if result.found is not None else None
+        )
+        self._goal_found(
+            found,
+            result.why,
+            route=route,
+            notice=notice,
+            ok=result.why != goal_find.WHY_MODEL_FAILED,
+            status=502 if result.why == goal_find.WHY_MODEL_FAILED else 200,
+        )
+
+    def _goal_find_prompts(
+        self, row: dict[str, Any], harness: str, sid: str
+    ) -> list[goal_find.Prompt]:
+        """The reader's own prompts for one session, numbered as Full activity numbers them."""
+        application = self.server.application
+        facts = _prompt_facts(application, row, self._session_facts(row))
+        path = runtime_observer.resolve_transcript(
+            application.config, application.state, harness, sid
+        )
+        index = (
+            entry_numbers.message_index(application.config, application.state, path, harness, sid)
+            if path
+            else None
+        )
+        return goal_find.prompts_from_facts(
+            facts, ordinal=lambda fact_id: index.ordinal(fact_id) if index else None
+        )
+
+    def _goal_found(
+        self,
+        found: Mapping[str, Any] | None,
+        why: str,
+        *,
+        route: runtime_reading_route.Route | None = None,
+        notice: reading_policy.Notice | None = None,
+        ok: bool = True,
+        status: int = 200,
+    ) -> None:
+        reply: dict[str, Any] = {
+            "ok": ok,
+            "produced": found is not None,
+            "found": dict(found) if found is not None else None,
+            "why": why,
+        }
+        if route is not None:
+            reply["route"] = {
+                key: route[key] for key in ("provider", "label", "vendor", "model", "harness")
+            }
+        if notice is not None:
+            reply["notice"] = notice
+        if self._release_goal_finding is not None:
+            self._release_goal_finding()
+        self._send(json.dumps(reply, separators=(",", ":")).encode(), "application/json", status)
+
     def _reading_permission(
         self, payload: dict[str, Any], route: runtime_reading_route.Route
     ) -> reading_policy.Status:
-        """The stored answer this press rests on, after any Allow it carried.
+        """The stored answer this Analyze press rests on. Analyze never writes one.
 
-        Covered only where the Allow was given for the destination the route
-        names now (owner, 2026-10-02). Every provider's is computed by the one
-        `reading_route.destination` the board publishes from, and this route's
-        own is the one its disclosure named, so the reply's `providers` is the
-        board's and the job's reservation checks the same value.
+        An `allow: true` from an older page or a local client is read as a plain
+        press: writing an Allow would lift Pause model calls without Resume model
+        calls and grant the unasked lane to the provider named. Only the explicit unasked
+        toggle grants it (owner, 2026-10-20). While a pause is stored the answer
+        carries `model-calls-paused`, so the press is refused before any charge.
+        Every provider's destination is computed by the one
+        `reading_route.destination` the board publishes from, so the reply's
+        `providers` is the board's and the job's reservation checks the same value.
         """
+        del payload
         application = self.server.application
-        config = application.config
-        provider, where = route["provider"], route["destination"]
         today = {
             **runtime_reading_route.destinations(),
-            provider: route["words_destination"],
+            route["provider"]: route["words_destination"],
         }
-        content = _press_content(route["harness"])
-        permission = (
-            reading_policy.set_consent(
-                config,
-                True,
-                now=application.clock(),
-                provider=provider,
-                tool_output=where,
-                destination=route["words_destination"],
-                destinations=today,
-                content=content,
-            )
-            if payload.get("allow") is True
-            else reading_policy.status(
-                config,
-                now=application.clock(),
-                provider=provider,
-                destinations=today,
-                content=content,
-            )
+        return reading_policy.status(
+            application.config,
+            now=application.clock(),
+            provider=route["provider"],
+            destinations=today,
+            content=_press_content(route["harness"]),
         )
-        if (
-            not permission["reason"]
-            and where
-            and not reading_policy.tool_output_allowed(permission, provider, where)
-        ):
-            # Allowed for the reader's words, and not for tool output to this
-            # destination: an answer given before tool output was named, or for
-            # an endpoint that has since moved. Asked again, and nothing read,
-            # item 7 of the ruling `reading.build_ledger` cites.
-            return {**permission, "consent": False, "reason": "tool-output-consent-required"}
-        return permission
 
     def _reading_route(
         self, harness: str, payload: dict[str, Any]
@@ -2478,6 +3019,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             expected_revision=expected if guarded else None,
             settle_through=settle_through,
             receipt=receipt,
+            read_from_now=payload.get("read_from_now") is True,
             chosen=(
                 self._chosen_prompt(rows[0], payload.get("prompt_fact"))
                 if source == runtime_reading.PROMPT_CHOSEN
@@ -2530,17 +3072,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         the row supplies only identity, paths and the prompt fields
         `direction_floor` reads. The adoption arm keeps its own clear.
         """
-        application = self.server.application
-        for show_all in (False, True):
-            _, body = application.collect_json(show_all=show_all)
-            rows = [
-                row
-                for row in json.loads(body)["sessions"]
-                if row.get("harness") == harness and row.get("sid") == sid
-            ]
-            if rows:
-                return rows[0] if len(rows) == 1 else None
-        return None
+        return _published_row_of(self.server.application, harness, sid)
 
     def _later_direction(
         self,
@@ -2800,6 +3332,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not all(isinstance(part, str) and part for part in (harness, sid)):
             self._reject(400)
             return
+        clock = correction.request_clock(payload)
+        if clock is None:
+            self._reject(400)
+            return
         row = self._session_row(str(harness), str(sid)) if harness in correction.HARNESSES else None
         # An unknown session and another harness answer what a session with nothing to steer
         # from does, so a refusal says nothing about which sessions exist.
@@ -2819,6 +3355,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             answer = correction.compose(
                 row,
                 _facts_of(context),
+                clock=clock,
                 person_at=_scan_of(context, str(harness), str(sid)).get("last_user_at"),
                 floor=annotation_store.direction_floor(entry, row),
                 line_requests=runtime_reading.line_request_floors(
@@ -2864,7 +3401,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = -1
-        if not 0 <= length <= config.annotation_body_cap_bytes:
+        if not 0 <= length <= copied_corrections.COPY_BODY_CAP_BYTES:
             self._reject(413)
             return
         try:
@@ -2941,6 +3478,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # destination moved shows the changed line over today's `To:`
             # rather than over the one it drew (regressions minor 2, ui5).
             reply["route"] = route
+        if self._release_goal_finding is not None:
+            self._release_goal_finding()
         self._send(self._reading_json(reply), "application/json", code)
 
     def _send_reading(
@@ -2988,8 +3527,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if self._press_withheld(rows[0], entry):
             return
         key = f"{harness}:{sid}"
-        job = runtime_reading.start_job(
-            config, key, provider=route["provider"], label=route["label"], now=application.clock()
+        # A press outranks a Live monitor tick holding this session's slot: the tick is
+        # cancelled and waited for, its spend is not refunded, and the press takes the slot.
+        # This is after Analyze's own route, consent and cap checks, so a refused press never
+        # costs a tick.
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+        job = live_monitor.start_with_priority(
+            config,
+            key,
+            lambda: runtime_reading.start_job(
+                config,
+                key,
+                provider=route["provider"],
+                label=route["label"],
+                now=application.clock(),
+            ),
         )
         if job is None:
             # One in flight per session, and no retry: a second press starts
@@ -3009,17 +3561,47 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 409,
             )
             return
+        self._launch_reading(job, route, rows[0], entry)
+
+    def _launch_reading(
+        self,
+        job: runtime_reading.Job,
+        route: runtime_reading_route.Route,
+        row: dict[str, Any],
+        entry: annotation_store.Annotation,
+    ) -> None:
+        application = self.server.application
+        config = application.config
+        key = f"{job.harness}:{job.sid}"
+        try:
+            notice = reading_policy.note(
+                config,
+                kind="reading",
+                provider=route["provider"],
+                destination=route["words_destination"],
+                content=_press_content(job.harness),
+                tool_output=route["destination"],
+                now=application.clock(),
+            )
+        except reading_policy.RefusedError as exc:
+            runtime_reading.end_job(config, key)
+            self._reading_permission_reply(exc.answer, route=route)
+            return
+        job.notice = notice
         # Taken before the thread starts, which may finish before this reply.
         started = runtime_reading.published_jobs(config)[key]
-        row, found = rows[0], entry
         try:
             runtime_reading_jobs.launch(
-                application, job, lambda hooks: self._compose_reading(row, found, route, hooks)
+                application, job, lambda hooks: self._compose_reading(row, entry, route, hooks)
             )
         except RuntimeError:
             # No thread to run it on; `launch` has already freed the slot, so
             # the next press can start one. Nothing was spent. A Keep press
             # has settled by now, so its reply says so rather than a bare 503.
+            # Nothing was sent either, so the notice is withdrawn and the next
+            # press shows it.
+            if notice is not None:
+                reading_policy.retract(config, notice)
             if self._keep_outcome is None:
                 self._reject(503)
             else:
@@ -3030,7 +3612,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 )
             return
         self._send(
-            self._reading_json({"ok": True, "job": started}),
+            self._reading_json(
+                {"ok": True, "job": started, **({"notice": notice} if notice else {})}
+            ),
             "application/json",
             202,
         )
@@ -3125,6 +3709,16 @@ class _RequestHandler(BaseHTTPRequestHandler):
             row,
             entry["revisions"],
             _facts_of(context),
+            settled_through=settled["through"] if (settled := entry.get("settled")) else None,
+            open_call_lookup=(
+                (
+                    lambda: runtime_project_context.claude_open_call_at(
+                        application.config, transcript
+                    )
+                )
+                if row.get("harness") == "claude" and transcript
+                else None
+            ),
             record_coverage_lookup=lambda: (
                 dict(reached)
                 if reached
@@ -3221,20 +3815,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES and not where:
             # Nothing to grant: the reading runs on the reader's words and its
             # cutoff says the checks were not sent and why (owner, Q5).
-            tool_output = runtime_reading.ToolOutput(destination="", label=route["label"])
-        elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES and (
-            reading_policy.tool_output_allowed(
-                reading_policy.status(
-                    application.config, now=application.clock(), provider=route["provider"]
-                ),
-                route["provider"],
-                where,
+            # The shell's removals are read here too: they test the harness's own verdict against
+            # the record and go to no model, so a missing grant does not blind that test.
+            press = runtime_project_context.press_checks(
+                application.config, application.state, harness, sid
             )
-        ):
-            # Re-read inside the press rather than taken from the payload: only
-            # a stored grant for exactly this provider and destination admits
-            # the checks, and their output tails are read here, at the press,
-            # never from the published record.
+            tool_output = runtime_reading.ToolOutput(
+                destination="", label=route["label"], removals=press.removals
+            )
+        elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
             press = runtime_project_context.press_checks(
                 application.config, application.state, harness, sid
             )
@@ -3245,13 +3834,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 changed_after=press.changed_after,
                 read_incomplete=press.read_incomplete,
                 passes_and_writes=press.passes_and_writes,
-            )
-        elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
-            # Named, and no grant for it when the reading ran: never given, or
-            # withdrawn in another tab after the press was admitted. The words
-            # are read and the cutoff says the checks were not sent and why.
-            tool_output = runtime_reading.ToolOutput(
-                destination="", label=route["label"], allowed=False
+                removals=press.removals,
             )
         return {
             "tool_output": tool_output,
@@ -3333,6 +3916,168 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self._send(
             json.dumps({"ok": True, "outcome": outcome}, separators=(",", ":")).encode(),
             "application/json",
+        )
+
+    def _summary_payload(self) -> dict[str, Any] | None:
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return None
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= self.server.application.config.annotation_body_cap_bytes:
+            self._reject(413)
+            return None
+        try:
+            payload = json.loads(self._read_body(length) or b"{}")
+        except (ValueError, RecursionError):
+            payload = None
+        if not isinstance(payload, dict):
+            self._reject(400)
+            return None
+        return payload
+
+    def _summary_identity(self, payload: dict[str, Any]) -> bool:
+        cap = self.server.application.config.summary_store_key_cap_chars
+        return all(
+            isinstance(payload.get(key), str) and 0 < len(payload[key]) <= cap
+            for key in ("harness", "sid")
+        )
+
+    def _summary_reply(self, code: int, answer: dict[str, Any]) -> None:
+        self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json", code)
+
+    def _summary(self) -> None:
+        payload = self._summary_payload()
+        if payload is None:
+            return
+        if set(payload) == {"consent"} and payload["consent"] in ("off", "on"):
+            self._summary_consent(payload["consent"] == "on")
+            return
+        if (
+            set(payload) != {"harness", "sid", "action", "origin"}
+            or not self._summary_identity(payload)
+            or payload["action"] not in ("start", "update", "rerun")
+            or payload["origin"] not in ("press", "open")
+            or (payload["origin"] == "open" and payload["action"] != "start")
+        ):
+            self._reject(400)
+            return
+        self._summary_start(payload)
+
+    def _summary_consent(self, allowed: bool) -> None:
+        application = self.server.application
+        try:
+            answer = summary_jobs.set_consent(application, allowed)
+            reason = answer["reason"]
+        except (OSError, ValueError):
+            reason = "store-unavailable"
+        status = summary_jobs.board(application.config, now=application.clock())
+        if reason in {"store-unavailable", "model-calls-paused"}:
+            self._summary_reply(
+                403 if reason == "model-calls-paused" else 503,
+                {
+                    "ok": False,
+                    "reason": reason,
+                    "summaries": {**status, "consent": False, "reason": reason},
+                },
+            )
+        else:
+            self._summary_reply(200, {"ok": True, "summaries": status})
+
+    def _summary_start(self, payload: dict[str, Any]) -> None:
+        application = self.server.application
+        config = application.config
+        answer = reading_policy.summary_status(config, now=application.clock())
+        if answer["reason"]:
+            code = (
+                429
+                if answer["reason"] == "daily-cap"
+                else 403
+                if answer["reason"] in {"summaries-off", "model-calls-paused"}
+                else 503
+            )
+            self._summary_reply(
+                code,
+                {
+                    "ok": False,
+                    "reason": answer["reason"],
+                    "summaries": summary_jobs.board(config, now=application.clock()),
+                },
+            )
+            return
+        harness, sid = payload["harness"], payload["sid"]
+        row = self._published_row(harness, sid)
+        reason = (
+            "session-unavailable"
+            if row is None
+            else "session-running"
+            if payload["origin"] == "open" and not row.get("ended_at")
+            else "store-unavailable"
+            if summary_store.load(config).state != "ok"
+            else "summary-exists"
+            if payload["origin"] == "open" and summary_store.get(config, harness, sid)
+            else ""
+        )
+        if reason:
+            self._summary_reply(
+                409 if reason != "store-unavailable" else 503, {"ok": False, "reason": reason}
+            )
+            return
+        running = summary_jobs.published(application, harness, sid)
+        if running is not None and running["state"] in summary_jobs.ACTIVE:
+            # Before the source read, which can take seconds on a long transcript: a second
+            # press on a running job must not pay it only to be refused at admission.
+            self._summary_reply(409, {"ok": False, "reason": "in-flight", "job": running})
+            return
+        path = runtime_observer.resolve_transcript(config, application.state, harness, sid)
+        page = (
+            session_source.read(config, path, harness, sid)
+            if path
+            else session_source.SourcePage("unavailable", harness, sid)
+        )
+        code, response = summary_jobs.start(
+            application, page, action=payload["action"], origin=payload["origin"]
+        )
+        self._summary_reply(code, response)
+
+    def _summary_cancel(self) -> None:
+        payload = self._summary_payload()
+        if payload is None:
+            return
+        if set(payload) != {"harness", "sid"} or not self._summary_identity(payload):
+            self._reject(400)
+            return
+        try:
+            accepted = summary_jobs.cancel(
+                self.server.application, payload["harness"], payload["sid"]
+            )
+        except (OSError, ValueError):
+            self._summary_reply(503, {"ok": False, "reason": "store-unavailable"})
+            return
+        self._summary_reply(
+            202 if accepted else 409,
+            {"ok": True, "cancelling": True}
+            if accepted
+            else {"ok": False, "reason": "not-running"},
+        )
+
+    def _summary_delete(self) -> None:
+        payload = self._summary_payload()
+        if payload is None:
+            return
+        if set(payload) != {"harness", "sid"} or not self._summary_identity(payload):
+            self._reject(400)
+            return
+        try:
+            outcome = summary_jobs.delete(
+                self.server.application, payload["harness"], payload["sid"]
+            )
+        except (OSError, ValueError):
+            outcome = "unwritable"
+        self._send(
+            json.dumps({"outcome": outcome}, separators=(",", ":")).encode(), "application/json"
         )
 
     def _focus(self) -> None:
@@ -3435,6 +4180,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/correction/copied": self._correction_copied,
             "/api/reading": self._reading,
             "/api/reading/cancel": self._reading_cancel,
+            "/api/goal/find": self._goal_find,
+            "/api/live-monitor": self._live_monitor,
+            "/api/summary": self._summary,
+            "/api/summary/cancel": self._summary_cancel,
+            "/api/summary/delete": self._summary_delete,
             "/api/focus": self._focus,
             "/api/ask": self._ask,
             "/api/ask/withdraw": self._withdraw,
@@ -3685,12 +4435,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(400)
             return
         label_cap = config.ask_option_cap_chars
+        # harness and session_id share the option cap: they really are short
+        # labels of the same order. `project` does not, and gets its own knob
+        # below, because it is a filesystem path.
+        harness = records.safe_text(payload.get("harness"), label_cap).strip()
+        native_sid = records.safe_text(payload.get("session_id"), label_cap).strip()
+        # The stdio server sends Claude's whole CLAUDE_CODE_SESSION_ID, and rows key
+        # on the collector's sid, so an unmapped id attached to no row: the page
+        # matches the two exactly. The event route's mapping is the one rule for
+        # both. An id it cannot map is kept as sent, which still matches nothing
+        # rather than guessing a row.
+        session_id = runtime_events.normalize_session_id(harness, native_sid) or native_sid
         ask = runtime_asks.PendingAsk(
-            # harness and session_id share the option cap: they really are short
-            # labels of the same order. `project` does not, and gets its own knob
-            # below, because it is a filesystem path.
-            harness=records.safe_text(payload.get("harness"), label_cap).strip(),
-            session_id=records.safe_text(payload.get("session_id"), label_cap).strip(),
+            harness=harness,
+            session_id=session_id,
             project=self._ask_project(payload.get("project")),
             question=question,
             options=options,

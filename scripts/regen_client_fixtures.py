@@ -54,6 +54,7 @@ VOCABULARY = FIXTURES.parent / "vocabulary.json"
 sys.path.insert(0, str(SKILL))
 from compass_runtime import aggregate as runtime_aggregate  # noqa: E402 - skill runtime path
 from compass_runtime import annotations as annotation_store  # noqa: E402 - skill runtime path
+from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
 from compass_runtime import observation as observation_module  # noqa: E402 - skill runtime path
@@ -1242,14 +1243,19 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             "An Allow given for a destination other than today's is refused 409, and records "
             "no consent.",
         )
-        consent = recorder.capture(
+        # A fresh store no longer refuses a press (DEC-28), so the refusal recorded is a
+        # stored Pause model calls, the one answer that still stops a reader-started call.
+        rig.send(post("/api/reading", {**press, "consent": "off"}))
+        off = recorder.capture(
             rig,
-            "reading-consent-required",
+            "reading-off",
             post("/api/reading", {**press, "provider": "claude", "model": model}),
-            "A resolved route with no stored permission answers 403 and names its route; "
-            "nothing is read.",
+            "With model calls paused, a resolved route answers 403 model-calls-paused and "
+            "names its route; nothing is read.",
         )
-        route = consent["body"].get("route", {})
+        route = off["body"].get("route", {})
+        # A press never lifts the pause it was refused under; Resume model calls does.
+        rig.send(post("/api/reading", {**press, "consent": "on"}))
         recorder.capture(
             rig,
             "reading-unknown-session",
@@ -1260,12 +1266,9 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
                     "sid": "00000000",
                     "provider": route.get("provider"),
                     "model": route.get("model"),
-                    "allow": True,
-                    "words_destination": route.get("words_destination"),
-                    "tool_output": route.get("destination"),
                 },
             ),
-            "With the route's own disclosure echoed back, a session that is not published "
+            "With the route's provider and model echoed back, a session that is not published "
             "answers 200 produced:false, never a 404 that would reveal which sids exist.",
         )
         recorder.capture(
@@ -1716,6 +1719,11 @@ def vocabulary() -> dict[str, Any]:
         "criterionKeys": list(reading.CRITERION_KEYS),
         "whyTokens": [token for token in reading.WHY_TOKENS if token != reading.WHY_STANDS],
         "whyStands": reading.WHY_STANDS,
+        "goalVerdictKeys": list(reading.GOAL_VERDICT_KEYS),
+        "goalVerdictChecks": list(reading.GOAL_VERDICT_CHECKS),
+        "goalVerdictWhys": list(reading.GOAL_VERDICT_WHYS),
+        "goalVerdictRemovalKeys": list(reading.GOAL_VERDICT_REMOVAL_KEYS),
+        "goalVerdictRemovalWhys": list(reading.GOAL_VERDICT_REMOVAL_WHYS),
         "workEvidenceByHarness": {
             harness: sorted(types) for harness, types in reading.WORK_EVIDENCE_BY_HARNESS.items()
         },
@@ -1727,10 +1735,14 @@ def vocabulary() -> dict[str, Any]:
         "results": list(reading.RESULTS),
         "promptSources": list(reading.PROMPT_SOURCES),
         "promptChosen": reading.PROMPT_CHOSEN,
+        "sessionGoal": reading.SESSION_GOAL,
         "maxOutcomeLines": reading.MAX_OUTCOME_LINES,
         "turnStopHarnesses": list(reading.TURN_STOP_HARNESSES),
+        "scopeTextMidFlightIdle": reading.SCOPE_TEXT_MID_FLIGHT_IDLE,
+        "correctionCapChars": runtime_copied_corrections.CORRECTION_CAP_CHARS,
         "levelReasons": list(runtime_levels.REASONS),
         "annotationFields": sorted(annotation_store.published(None)),
+        "cueWindowSeconds": annotation_store.CUE_WINDOW_SECONDS,
         "unsafeChars": {
             "pattern": runtime_records._UNSAFE_CHARS.pattern,  # noqa: SLF001 - the rule is the contract
             "codePoints": _code_point_ranges(runtime_records._UNSAFE_CHARS),  # noqa: SLF001

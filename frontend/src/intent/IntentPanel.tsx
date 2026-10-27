@@ -12,14 +12,15 @@ import { DirectionQuestion } from './DirectionQuestion';
 import { chosenIsStale, goalKey, intentDraft, type DraftInput } from './derive';
 import { reconcileDirection } from './directions';
 import { IntentSection } from './IntentSection';
-import { SessionMore } from './SessionMore';
+import { DRIFT_SUBTITLE } from './sentences';
 import { PanelContext, useHeldVersion, useIntentCtx, type Panel } from './useIntent';
 import { workSource } from './work';
 
-/* The Intent and drift panel beside the session page's activity column: the reader's own words first (the
-   goal, the expected outcome and the one save for both), then the Drift section, where the reading, its
-   control and the departures belong to the Analyze step and arrive through `drift`. Your words come first, so
-   nothing above the reading is a model's.
+/* The Intent card, the What the session has done card and the Drift card, top to bottom in the session page's
+   one column: the reader's own words first (the goal, the expected outcome and the one save for both), then
+   what the session did, then the Drift section, where the reading, its control and the departures belong to
+   the Analyze step and arrive through `drift`. Your words come first, so nothing above the reading is a
+   model's.
 
    Everything the panel sends it sends on a press: a save, a discard, an adopted prompt, a direction opened
    for review. Mounting it, mounting it twice under StrictMode, a board refresh or a reconnect sends none of
@@ -34,7 +35,13 @@ export interface IntentPanelProps {
   readonly project: string;
   /** The Drift section's body: the live estimate, the reading control, the reading and its departures. */
   readonly drift?: ReactNode;
-  /** What the session page composes beneath: the delegated-work line and the departures raised away. */
+  /** The What the session has done card, drawn between the Intent card and the Drift card. */
+  readonly summary?: ReactNode;
+  /** The Drift card header's model and when the analysis last ran, beside its title. */
+  readonly stamp?: ReactNode;
+  /** What the Drift card header holds beside its title: its settings, and Resume while calls are paused. */
+  readonly actions?: ReactNode;
+  /** What the session page composes beneath: the departures raised away. */
   readonly children?: ReactNode;
 }
 
@@ -49,7 +56,16 @@ function DriftSlotPlaceholder() {
   );
 }
 
-export function IntentPanel({ session, payload, project, drift, children }: IntentPanelProps) {
+export function IntentPanel({
+  session,
+  payload,
+  project,
+  drift,
+  summary,
+  stamp,
+  actions,
+  children,
+}: IntentPanelProps) {
   const shell = useShell();
   const { runtime, controls } = shell;
   const ctx = useIntentCtx();
@@ -139,13 +155,14 @@ export function IntentPanel({ session, payload, project, drift, children }: Inte
   };
   return (
     <PanelContext value={panel}>
-      <aside
-        className="next-session-panel max-[760px]:gap-1 min-[1101px]:col-start-2 min-[1101px]:row-start-1"
+      <div
+        className="next-session-panel max-[760px]:gap-1"
         data-next-session-drift
         data-next-session-panel="intent"
-        aria-label="Intent and drift"
       >
         {annotating ? <IntentSection /> : null}
+        {/* The design's order is Intent, what the session has done, Drift: the work reads before the verdict on it. */}
+        {summary}
         <Card
           variant="drift-panel"
           as="section"
@@ -153,11 +170,22 @@ export function IntentPanel({ session, payload, project, drift, children }: Inte
           id="next-session-drift"
           aria-labelledby="next-session-drift-heading"
         >
-          <header className="next-session-drift-head max-[760px]:py-0">
-            <div className="next-session-drift-titles flex flex-wrap items-baseline gap-x-2">
-              <h2 id="next-session-drift-heading" className="next-session-drift-heading">
-                Drift
-              </h2>
+          <header className="next-session-drift-head flex-col items-stretch max-[760px]:py-0">
+            <div className="next-session-drift-titles flex flex-col">
+              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                <h2 id="next-session-drift-heading" className="next-session-drift-heading">
+                  Drift
+                </h2>
+                {stamp}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                <p className="next-session-drift-sub text-body">{DRIFT_SUBTITLE}</p>
+                {/* Drift settings (the live monitor and Pause model calls) and, while calls are paused, Resume:
+                    one place in the head of the card they control, never in its body. Placement only: the
+                    switch's value and default are unchanged.
+                    [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */}
+                {actions}
+              </div>
             </div>
           </header>
           {drift ?? (
@@ -168,8 +196,7 @@ export function IntentPanel({ session, payload, project, drift, children }: Inte
           )}
           {children}
         </Card>
-        <SessionMore />
-      </aside>
+      </div>
     </PanelContext>
   );
 }

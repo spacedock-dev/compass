@@ -124,6 +124,33 @@ SUPPORTED = a_reading(
 )
 
 
+def done_fact(fid: str, subject: str, summary: str, at: float) -> dict[str, Any]:
+    """A created pull request or a used skill, as layer 1 publishes it."""
+    return {
+        "fact_id": fid,
+        "type": "tool_report",
+        "subject": subject,
+        "summary": summary,
+        "at": at,
+        "source_session": {"harness": "claude", "sid": "s"},
+        "evidence": {"source": "Claude Bash call result", "confidence": "exact"},
+    }
+
+
+RECORDED_DONE = evidence(
+    [
+        done_fact("skill1", "skill", "linear-deep-dive", SAVE + 10),
+        done_fact("pr1", "pr", "example-org/example-repo#7", SAVE + 20),
+        *PASSING.facts[2:],
+    ],
+    scan(),
+)
+RECORDED_DONE_READING = a_reading(
+    goal=criterion(reading.RESULT_CONSISTENT, "skill1", "pr1"),
+    line_1=criterion(reading.RESULT_CONSISTENT, "pr1"),
+)
+
+
 class AnIncompletePassIsCautionTest(unittest.TestCase):
     def test_it_does_not_meet_the_live_floor(self) -> None:
         facts = evidence(
@@ -383,10 +410,80 @@ class FloorTest(unittest.TestCase):
         self.assertEqual(got.level, levels.NOT_ENOUGH)
         self.assertIn(levels.REASON_NO_PASSING_CHECK, got.reasons)
 
-    def test_an_intent_with_no_outcome_line_is_too_little_for_an_analysis(self) -> None:
+    def test_a_goal_alone_can_read_none_or_low_when_a_passing_check_shows_it(self) -> None:
         got = analyze(a_reading(goal=criterion(reading.RESULT_CONSISTENT, "c1")), PASSING)
+        self.assertEqual(got.level, levels.NONE_OR_LOW)
+        self.assertNotIn(levels.REASON_NO_OUTCOME_LINE, got.reasons)
+
+    def test_recorded_harness_facts_show_a_goal_and_its_line_with_no_passing_check(self) -> None:
+        # DEC-26's 2026-10-24 amendment: a created pull request or a used skill is a recorded
+        # harness fact, so a consistent line that cites one reaches the floor without a pass.
+        got = analyze(RECORDED_DONE_READING, RECORDED_DONE)
+        self.assertEqual(levels.NONE_OR_LOW, got.level)
+        self.assertEqual((levels.REASON_FLOOR_MET,), got.reasons)
+        self.assertEqual({"pr1"}, set(got.cites))
+
+    def test_the_same_shape_citing_only_the_agents_words_draws_no_level(self) -> None:
+        row = a_reading(
+            goal=criterion(reading.RESULT_CONSISTENT, "m1"),
+            line_1=criterion(reading.RESULT_CONSISTENT, "m1"),
+        )
+        got = analyze(row, RECORDED_DONE)
+        self.assertEqual(levels.NOT_ENOUGH, got.level)
+        self.assertIn(levels.REASON_LINE_NOT_SHOWN, got.reasons)
+
+    def test_one_line_resting_on_words_alone_still_keeps_the_floor_off(self) -> None:
+        row = a_reading(
+            goal=criterion(reading.RESULT_CONSISTENT, "skill1", "pr1"),
+            line_1=criterion(reading.RESULT_CONSISTENT, "m1"),
+        )
+        self.assertEqual(levels.NOT_ENOUGH, analyze(row, RECORDED_DONE).level)
+
+    def test_a_failed_check_or_a_later_direction_still_blocks_recorded_facts(self) -> None:
+        failing = evidence([*RECORDED_DONE.facts, check("f1", SAVE + 40, "failed")], scan(failed=1))
+        self.assertNotEqual(levels.NONE_OR_LOW, analyze(RECORDED_DONE_READING, failing).level)
+        later = evidence(list(RECORDED_DONE.facts), dict(RECORDED_DONE.scan), directions=1)
+        got = analyze(RECORDED_DONE_READING, later)
+        self.assertEqual(levels.NOT_ENOUGH, got.level)
+        self.assertIn(levels.REASON_LATER_DIRECTION, got.reasons)
+
+    def test_a_recorded_fact_outside_the_reading_window_does_not_show_a_line(self) -> None:
+        early = evidence(
+            [
+                {**f, "at": SAVE - 50} if f["fact_id"] in ("skill1", "pr1") else f
+                for f in RECORDED_DONE.facts
+            ],
+            dict(RECORDED_DONE.scan),
+        )
+        self.assertEqual(levels.NOT_ENOUGH, analyze(RECORDED_DONE_READING, early).level)
+
+    def test_a_goal_alone_the_agents_word_only_supports_is_not_none_or_low(self) -> None:
+        got = analyze(a_reading(goal=criterion(reading.RESULT_CONSISTENT, "m1")), PASSING)
         self.assertEqual(got.level, levels.NOT_ENOUGH)
-        self.assertIn(levels.REASON_NO_OUTCOME_LINE, got.reasons)
+        self.assertIn(levels.REASON_LINE_NOT_SHOWN, got.reasons)
+        self.assertNotIn(levels.REASON_NO_OUTCOME_LINE, got.reasons)
+
+    def test_a_goal_alone_the_model_could_not_settle_is_not_none_or_low(self) -> None:
+        got = analyze(a_reading(goal=criterion(reading.RESULT_UNVERIFIABLE)), PASSING)
+        self.assertEqual(got.level, levels.NOT_ENOUGH)
+        self.assertNotIn(levels.REASON_NO_OUTCOME_LINE, got.reasons)
+
+    def test_a_goal_unclear_reading_has_no_level_whatever_the_record_holds(self) -> None:
+        failing = evidence([check("f1", SAVE + 20, "failed")], scan(failed=1))
+        for lines in (0, 1):
+            with self.subTest(lines=lines):
+                row = a_reading(goal=criterion(reading.RESULT_GOAL_UNCLEAR))
+                if lines:
+                    row["criteria"]["line_1"] = criterion(
+                        reading.RESULT_UNVERIFIABLE, why=reading.WHY_NOT_ASKED
+                    )
+                got = analyze(row, failing)
+                self.assertEqual(got.level, levels.NOT_ENOUGH)
+                self.assertEqual(got.reasons, (levels.REASON_GOAL_UNCLEAR,))
+
+    def test_the_retired_reason_stays_a_known_token_for_readings_stored_before(self) -> None:
+        self.assertIn(levels.REASON_NO_OUTCOME_LINE, levels.REASONS)
+        self.assertIn(levels.REASON_GOAL_UNCLEAR, levels.REASONS)
 
     def test_a_later_direction_blocks_the_floor_and_is_never_drift(self) -> None:
         with_direction = evidence(list(PASSING.facts), dict(PASSING.scan), directions=1)
@@ -709,10 +806,16 @@ class CorrectionRoundTest(unittest.TestCase):
         facts = evidence(list(PASSING.facts), {"passed": 1})
         self.assertEqual(analyze(SUPPORTED, facts).level, levels.NOT_ENOUGH)
 
-    def test_l7_a_goal_departure_with_no_outcome_line_is_too_little(self) -> None:
+    def test_l7_is_retired_a_goal_departure_with_no_outcome_line_reads_medium(self) -> None:
         got = analyze(a_reading(goal=criterion(reading.RESULT_DEPARTURE, "m1")), PASSING)
-        self.assertEqual(got.level, levels.NOT_ENOUGH)
-        self.assertIn(levels.REASON_NO_OUTCOME_LINE, got.reasons)
+        self.assertEqual(got.level, levels.MEDIUM)
+        self.assertIn(levels.REASON_DEPARTURE, got.reasons)
+        self.assertNotIn(levels.REASON_NO_OUTCOME_LINE, got.reasons)
+
+    def test_l7_is_retired_a_goal_alone_with_a_fresh_failure_reads_high(self) -> None:
+        failing = evidence([check("f1", SAVE + 20, "failed")], scan(failed=1))
+        got = analyze(a_reading(goal=criterion(reading.RESULT_CONSISTENT, "f1")), failing)
+        self.assertEqual(got.level, levels.HIGH)
 
     def test_l8_a_file_path_no_longer_widens_to_prose(self) -> None:
         with mock.patch("compass_runtime.levels.os.path.isdir", return_value=True):

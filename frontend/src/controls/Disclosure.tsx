@@ -4,9 +4,11 @@ import {
   createContext,
   useContext,
   useCallback,
+  useLayoutEffect,
   useRef,
   useState,
   useId,
+  type ComponentProps,
   type MouseEvent,
   type FocusEvent,
   type ReactNode,
@@ -29,6 +31,18 @@ export interface DisclosureProps {
   readonly summaryLabel?: string;
   /** Registers the summary with the focus lane. */
   readonly focusKey?: string;
+  /** Marks drawn on the summary's row, right-aligned and outside the trigger, so they stay in view while the
+   * panel is closed and may hold controls of their own. Accordion only. */
+  readonly aside?: ReactNode;
+  /** The heading drawn around the trigger, for a summary that is a heading of the page. Accordion only. */
+  readonly headerProps?: ComponentProps<typeof AccordionTrigger>['headerProps'];
+  /** Opens the first time this key is drawn, and never again: a reader who closes it keeps it closed, because
+   * the write that opened it is the store's own and the reader's close is the next one. Accordion only. */
+  readonly openByDefault?: boolean;
+  /** Opens the panel when something the reader must not miss is in it: on the first draw of a key nothing has
+   * written yet, and again each time this turns from false to true. A reader's own close holds while it stays
+   * true, because the opening is an edge and not a state. Accordion only. */
+  readonly openWhen?: boolean;
   readonly children: ReactNode;
 }
 
@@ -48,10 +62,30 @@ function AccordionDisclosure({
   className,
   summaryLabel,
   focusKey,
+  aside,
+  headerProps,
+  openByDefault = false,
+  openWhen = false,
   children,
 }: DisclosureProps) {
   const controls = useControls();
   const open = useControlledDisclosureState(controls.disclosures, disclosureKey);
+  const wasWhen = useRef<boolean | null>(null);
+  /* `version` is zero until some write names the key, so a key the reader has opened or closed is never opened
+     again, and one never touched opens exactly once. */
+  useLayoutEffect(() => {
+    if (openByDefault && controls.disclosures.version(disclosureKey) === 0)
+      controls.disclosures.set(disclosureKey, true);
+  }, [openByDefault, controls.disclosures, disclosureKey]);
+  /* A first draw honours a reader's earlier close (the key has a version), and a later rise does not: it is a
+     new fact the reader has not yet seen the panel hold. */
+  useLayoutEffect(() => {
+    const before = wasWhen.current;
+    wasWhen.current = openWhen;
+    if (!openWhen || before === true) return;
+    if (before === null && controls.disclosures.version(disclosureKey) !== 0) return;
+    controls.disclosures.set(disclosureKey, true);
+  }, [openWhen, controls.disclosures, disclosureKey]);
   const triggerRef = useFocusKey<HTMLButtonElement>(controls.focusLane, focusKey ?? null);
   const panelRef = useRevealFragment(disclosureKey);
   return (
@@ -66,12 +100,28 @@ function AccordionDisclosure({
       }}
     >
       <AccordionItem value={disclosureKey}>
-        <AccordionTrigger
-          ref={triggerRef}
-          {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
-        >
-          {summary}
-        </AccordionTrigger>
+        {aside ? (
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <div className="min-w-0 flex-1">
+              <AccordionTrigger
+                ref={triggerRef}
+                {...(headerProps ? { headerProps } : {})}
+                {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
+              >
+                {summary}
+              </AccordionTrigger>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">{aside}</div>
+          </div>
+        ) : (
+          <AccordionTrigger
+            ref={triggerRef}
+            {...(headerProps ? { headerProps } : {})}
+            {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
+          >
+            {summary}
+          </AccordionTrigger>
+        )}
         <AccordionContent ref={panelRef} hiddenUntilFound>
           {children}
         </AccordionContent>

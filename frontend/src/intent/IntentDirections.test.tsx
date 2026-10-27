@@ -1,6 +1,7 @@
 import { openSelect, chooseSelect } from '../../test/select';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { clock } from '../observed';
 import { openPendingDirection } from './api';
 import { json } from './testing';
 import {
@@ -43,25 +44,30 @@ const record =
   () =>
     json({ semantic: { facts } });
 
+/* What the reader's presses sent: the read of every open direction's words that starts when the question is
+   drawn is not a press. */
+const presses = (page: {
+  allPosts: () => { path: string; body?: Record<string, unknown> | null }[];
+}) => page.allPosts().filter((p) => !(p.path === '/api/direction' && p.body?.['fact_ids']));
+
 const SAVED = { goal: 'Ship the worker', revision: 1 };
 const SAVED_AT = { annotation_goal_saved_at: 500, annotation_at: 500 };
 const ONE = [fact('f1', 600, 'Do it the careful way')];
 
 describe('the question before the press', () => {
-  it('asks about a later direction in the Analyze control’s place, naming the number it draws', async () => {
+  it('quotes a later direction under the time it was said, in the Analyze control’s place', async () => {
     const page = mountSession({
       store: SAVED,
       session: SAVED_AT,
       routes: { '/api/project-context': record(...ONE) },
     });
     await settle(page);
-    expect(text('.next-cockpit-direction-said')).toBe(
-      '1 later direction since saving your intent.',
-    );
+    expect(text('.next-cockpit-direction-said')).toBe(`Your ${clock(600)} message adds:`);
+    expect(text('[data-next-cockpit-direction-whole]')).toContain('Do it the careful way');
     expect(
       [...document.querySelectorAll('.next-cockpit-reading-ask button')].map((b) => b.textContent),
-    ).toEqual(['Keep my intent', 'Add it to my intent', 'Use this as my goal']);
-    expect(page.posts()).toBe(0);
+    ).toEqual(['Add as a line', 'Make it the goal', 'Leave it', 'Analyze drift']);
+    expect(page.posts('/api/annotate')).toBe(0);
   });
 
   it('asks nothing of a direction that was said before the words were saved, or already settled', async () => {
@@ -109,21 +115,24 @@ describe('the question before the press', () => {
       },
     });
     await settle(page);
-    expect(text('.next-cockpit-direction-said')).toBe(
-      '2 later directions since saving your intent.',
-    );
+    expect(text('.next-cockpit-direction-said')).toBe('2 later directions:');
     const pick = document.querySelector('[data-next-direction-select]') as HTMLButtonElement;
     await openSelect(pick);
-    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
-      '#1 · First one.',
-      '#2 · Second one.',
-    ]);
+    const labels = screen.getAllByRole('option').map((o) => o.textContent ?? '');
+    expect(labels).toHaveLength(2);
+    expect(labels[0]).toMatch(/^\d\d:\d\d · First one\.$/);
+    expect(labels[1]).toMatch(/^\d\d:\d\d · Second one\.$/);
+    for (const label of labels) expect(label).not.toMatch(/#\d/);
     await chooseSelect(pick, 'f1');
-    expect(text('.next-cockpit-direction-said')).toBe(
-      '2 later directions since saving your intent.',
+    const marked = [...document.querySelectorAll('.next-cockpit-direction-whole-item')].filter(
+      (item) => item.getAttribute('aria-current') === 'true',
     );
+    expect(marked).toHaveLength(1);
+    expect(marked[0]?.textContent).toContain('First one.');
+    expect(marked[0]?.textContent).toContain('the one the buttons below use');
+    expect(text('.next-cockpit-direction-said')).toBe('2 later directions:');
     expect(pick.textContent).toContain('First');
-    expect(page.posts()).toBe(0);
+    expect(page.posts('/api/annotate')).toBe(0);
   });
 
   it('says the record could not be read rather than saying there was no direction', async () => {
@@ -139,7 +148,7 @@ describe('the question before the press', () => {
   });
 });
 
-describe('Add it to my intent', () => {
+describe('Add as a line', () => {
   it('reads the direction whole, opens it as one pending line that is not saved, and saves only on Save', async () => {
     const page = mountSession({
       store: SAVED,
@@ -154,17 +163,17 @@ describe('Add it to my intent', () => {
     await settle(page);
     await press(control('direction-add'));
     await settle(page);
-    expect(page.allPosts().map((p) => p.path)).toEqual(['/api/direction']);
-    expect(page.allPosts()[0]?.body).toEqual({ harness: 'claude', sid: 's1', fact_id: 'f1' });
+    expect(presses(page).map((p) => p.path)).toEqual(['/api/direction']);
+    expect(presses(page)[0]?.body).toEqual({ harness: 'claude', sid: 's1', fact_id: 'f1' });
     const line = document.querySelector('[data-next-cockpit-direction-key]') as HTMLTextAreaElement;
     expect(line.value).toBe('Do it the careful way, with a flag');
     expect(text('.next-cockpit-direction-line .next-cockpit-held-source')).toBe(
-      'from #1 · not saved',
+      `from your ${clock(600)} message · not saved`,
     );
     expect(document.activeElement).toBe(line);
-    await press(control('direction-save'));
+    await press(control('held-save'));
     await settle(page);
-    expect(page.allPosts()[1]?.body).toEqual({
+    expect(presses(page)[1]?.body).toEqual({
       harness: 'claude',
       sid: 's1',
       add_direction: 'f1',
@@ -173,7 +182,7 @@ describe('Add it to my intent', () => {
     });
     expect(document.querySelector('[data-next-cockpit-direction-key]')).toBeNull();
     // The saved line is said once in the polite region, as the legacy page says it.
-    expect(text('#next-cockpit-cue-status')).toBe('Saved as a new revision.');
+    expect(text('#next-cockpit-cue-status')).toBe('Saved.');
   });
 
   it('sends a second press to the line already pending and reads nothing again', async () => {
@@ -192,7 +201,7 @@ describe('Add it to my intent', () => {
     type(line, 'My own edit');
     (document.activeElement as HTMLElement).blur();
     await press(control('direction-add'));
-    expect(page.allPosts()).toHaveLength(1);
+    expect(presses(page)).toHaveLength(1);
     expect(line.value).toBe('My own edit');
     expect(document.activeElement).toBe(line);
   });
@@ -214,15 +223,15 @@ describe('Add it to my intent', () => {
     const line = document.querySelector('[data-next-cockpit-direction-key]') as HTMLTextAreaElement;
     expect(line.value).toHaveLength(300);
     expect(line.hasAttribute('maxlength')).toBe(false);
-    expect(text('[data-next-cockpit-direction-count]')).toBe('300/240');
+    expect(text('[data-next-cockpit-direction-count]')).toBe('300 / 240');
     expect(text('#next-cockpit-direction-why')).toBe(
       'A line holds 240 characters. Shorten this one to add it.',
     );
-    expect(inert(control('direction-save'))).toBe(true);
-    await press(control('direction-save'));
-    expect(page.allPosts()).toHaveLength(1);
+    expect(inert(control('held-save'))).toBe(true);
+    await press(control('held-save'));
+    expect(presses(page)).toHaveLength(1);
     type(line, 'short enough');
-    expect(inert(control('direction-save'))).toBe(false);
+    expect(inert(control('held-save'))).toBe(false);
     expect(text('#next-cockpit-direction-why')).toBe('');
   });
 
@@ -233,7 +242,8 @@ describe('Add it to my intent', () => {
       session: SAVED_AT,
       routes: {
         '/api/project-context': record(...ONE),
-        '/api/direction': () => {
+        '/api/direction': (request) => {
+          if (request.body?.['fact_ids']) return json({ results: [] });
           answers += 1;
           return answers === 1
             ? json({ ok: false, why: 'That entry is no longer in the record.' })
@@ -268,7 +278,7 @@ describe('Add it to my intent', () => {
     await settle(page);
     await press(control('direction-add'));
     await settle(page);
-    await press(control('direction-save'));
+    await press(control('held-save'));
     await settle(page);
     expect(
       (document.querySelector('[data-next-cockpit-direction-key]') as HTMLTextAreaElement).value,
@@ -278,25 +288,28 @@ describe('Add it to my intent', () => {
     );
   });
 
-  it('refuses the save over an unsaved edit, beside the line, and sends nothing', async () => {
+  it('saves an unsaved goal edit first and then the line, from the card’s one Save intent', async () => {
     const page = mountSession({
       store: SAVED,
       session: SAVED_AT,
       routes: {
         '/api/project-context': record(...ONE),
         '/api/direction': () => json({ ok: true, text: 'A line', clipped: false }),
+        '/api/annotate': () => stored(2),
       },
     });
     await settle(page);
     await press(control('direction-add'));
     await settle(page);
     type(goalBox(), 'Edited goal');
-    expect(text('#next-cockpit-direction-why')).toBe(
-      'Save your intent, or undo your edit, to add this direction.',
-    );
-    expect(inert(control('direction-save'))).toBe(true);
-    await press(control('direction-save'));
-    expect(page.allPosts()).toHaveLength(1);
+    // No "save first" refusal beside the line: the one Save intent carries both.
+    expect(text('#next-cockpit-direction-why')).toBe('');
+    expect(inert(control('held-save'))).toBe(false);
+    await press(control('held-save'));
+    await settle(page);
+    const sent = presses(page).filter((p) => p.path === '/api/annotate');
+    expect(sent[0]?.body).toMatchObject({ goal: 'Edited goal' });
+    expect(sent[1]?.body).toMatchObject({ add_direction: 'f1', text: 'A line' });
   });
 
   it('names the line to replace when the list is full, counting from zero for the server', async () => {
@@ -316,13 +329,13 @@ describe('Add it to my intent', () => {
     expect(text('#next-cockpit-direction-why')).toBe(
       'An expected outcome holds six lines. Replace or merge a line to add another.',
     );
-    expect(inert(control('direction-save'))).toBe(true);
+    expect(inert(control('held-save'))).toBe(true);
     await press(control('direction-replace', '2'));
     expect(control('direction-replace', '2')?.getAttribute('aria-pressed')).toBe('true');
-    expect(inert(control('direction-save'))).toBe(false);
-    await press(control('direction-save'));
+    expect(inert(control('held-save'))).toBe(false);
+    await press(control('held-save'));
     await settle(page);
-    expect(page.allPosts()[1]?.body).toMatchObject({
+    expect(presses(page)[1]?.body).toMatchObject({
       add_direction: 'f1',
       replace: 2,
       expected_revision: 2,
@@ -343,16 +356,16 @@ describe('Add it to my intent', () => {
       await openPendingDirection(page.shell, { harness: 'claude', sid: 's1' }, 'f1');
     });
     await settle(page);
-    expect(page.allPosts()).toHaveLength(1);
+    expect(presses(page)).toHaveLength(1);
     expect(
       (document.querySelector('[data-next-cockpit-direction-key]') as HTMLTextAreaElement).value,
     ).toBe('From the result card');
     expect(text('.next-cockpit-direction-line .next-cockpit-held-source')).toBe(
-      'from #1 · not saved',
+      `from your ${clock(600)} message · not saved`,
     );
   });
 
-  it('opens an empty line when there is no direction to offer', async () => {
+  it('goes to the empty line already drawn when there is no direction to offer', async () => {
     const page = mountSession({
       store: SAVED,
       session: SAVED_AT,
@@ -362,12 +375,13 @@ describe('Add it to my intent', () => {
     await act(async () => {
       await openPendingDirection(page.shell, { harness: 'claude', sid: 's1' }, null);
     });
-    expect(lineBoxes()).toHaveLength(2);
+    expect(lineBoxes()).toHaveLength(1);
+    expect(document.activeElement).toBe(lineBoxes()[0]);
     expect(page.posts()).toBe(0);
   });
 });
 
-describe('Keep my intent', () => {
+describe('Leave it', () => {
   it('a reader with twenty later directions on a week-long session sees them all in about the time of one', async () => {
     const facts = Array.from({ length: 20 }, (_, n) =>
       fact(`slow${String(n)}`, 600 + n, `Synthetic direction ${String(n)}.`),
@@ -383,7 +397,7 @@ describe('Keep my intent', () => {
       },
     });
     await settle(page);
-    await press(control('direction-keep'));
+    // One request reads all twenty, started by drawing the question and not by a press.
     expect(page.posts('/api/direction')).toBe(1);
     expect(page.allPosts()[0]?.body?.['fact_ids']).toHaveLength(20);
     await page.advance(singleCost);
@@ -411,7 +425,7 @@ describe('Keep my intent', () => {
     );
   });
 
-  it('shows the directions it could open in a partial batch, refuses settlement, and asks for another review after retry', async () => {
+  it('settles what the reader was shown on the first press, and asks again for what arrived unread', async () => {
     let retry = false;
     const page = mountSession({
       store: SAVED,
@@ -439,25 +453,26 @@ describe('Keep my intent', () => {
       },
     });
     await settle(page);
-    await press(control('direction-keep'));
-    await settle(page);
+    // The partial read quotes what it could open, and Leave it refuses to settle words it could not show.
     expect(text('.next-cockpit-direction-whole')).toContain('First complete.');
-    expect(text('.next-cockpit-direction-question')).toContain(
-      'Nothing was settled and no analysis was started.',
-    );
     await press(control('direction-keep'));
     await settle(page);
+    expect(text('.next-cockpit-direction-question')).toContain(
+      'Nothing was settled and no analysis was started',
+    );
     expect(page.posts('/api/annotate')).toBe(0);
     retry = true;
     await press(control('direction-keep'));
     await settle(page);
     expect(page.allPosts().at(-1)?.body?.['fact_ids']).toEqual(['f2', 'f3']);
     expect(document.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(3);
+    // Words the press just drew were not on screen when it was made, so they are read first.
     expect(page.posts('/api/annotate')).toBe(0);
     await press(control('direction-keep'));
     await settle(page);
     expect(page.posts('/api/annotate')).toBe(1);
   });
+
   it('tells a reader how many of their several later directions were settled', async () => {
     const page = mountSession({
       store: SAVED,
@@ -467,12 +482,16 @@ describe('Keep my intent', () => {
           fact('f1', 600, 'First direction.'),
           fact('f2', 700, 'Second direction.'),
         ),
-        '/api/direction': () => json({ ok: true, text: 'Synthetic direction.', clipped: false }),
+        '/api/direction': () =>
+          json({
+            results: [
+              { ok: true, text: 'Synthetic direction.', clipped: false },
+              { ok: true, text: 'Another synthetic direction.', clipped: false },
+            ],
+          }),
         '/api/annotate': () => stored(1, { outcome: 'unchanged' }),
       },
     });
-    await settle(page);
-    await press(control('direction-keep'));
     await settle(page);
     await press(control('direction-keep'));
     await settle(page);
@@ -480,49 +499,26 @@ describe('Keep my intent', () => {
       'Kept your intent and settled all 2 directions. No analysis was started.',
     );
   });
-  const routes = (page: () => ReturnType<typeof mountSession>) => ({
-    '/api/project-context': record(
-      fact('f1', 600, 'Do it the careful way, and then verify it on a clean checkout.'),
-    ),
+
+  const WHOLE_WORDS = 'Do it the careful way, and then verify it on a clean checkout.';
+  const oneDirection = {
+    '/api/project-context': record(fact('f1', 600, 'Do it the careful way, and then verify it')),
     '/api/direction': () =>
       json({
+        results: [{ ok: true, text: WHOLE_WORDS, clipped: false }],
         ok: true,
-        text: 'Do it the careful way, and then verify it on a clean checkout.',
+        text: WHOLE_WORDS,
         clipped: false,
       }),
-    '/api/annotate': () => {
-      void page;
-      return stored(1, { outcome: 'unchanged' });
-    },
-  });
+    '/api/annotate': () => stored(1, { outcome: 'unchanged' }),
+  };
 
-  it('draws the whole direction first and settles nothing, then settles on the next press naming the revision it drew', async () => {
-    const holder: { page?: ReturnType<typeof mountSession> } = {};
-    const page = mountSession({
-      store: SAVED,
-      session: SAVED_AT,
-      routes: {
-        ...routes(() => holder.page as never),
-        '/api/project-context': record(
-          fact('f1', 600, 'Do it the careful way, and then verify it'),
-        ),
-      },
-    });
-    holder.page = page;
+  it('quotes the whole direction before any press and settles on the first, naming the revision it drew', async () => {
+    const page = mountSession({ store: SAVED, session: SAVED_AT, routes: oneDirection });
     await settle(page);
-    await press(control('direction-keep'));
-    await settle(page);
-    // The question quoted only its first words, so the whole text is drawn and the press stops.
-    expect(text('.next-cockpit-direction-whole')).toContain(
-      'Do it the careful way, and then verify it on a clean checkout.',
-    );
+    // The summary quoted only its first words; the whole text is already drawn, so nothing waits on a second press.
+    expect(text('.next-cockpit-direction-whole')).toContain(WHOLE_WORDS);
     expect(page.allPosts().map((p) => p.path)).toEqual(['/api/direction']);
-    expect(text('.next-cockpit-direction-question')).toContain(
-      'Nothing was settled yet. Each direction Keep settles is now shown whole. Read it, then press again.',
-    );
-    expect(document.activeElement).toBe(
-      document.querySelector('[data-next-cockpit-direction-whole]'),
-    );
     await press(control('direction-keep'));
     await settle(page);
     expect(page.allPosts().map((p) => p.path)).toEqual(['/api/direction', '/api/annotate']);
@@ -537,27 +533,7 @@ describe('Keep my intent', () => {
     );
   });
 
-  it('draws a sole short direction on the first press and settles it on the second', async () => {
-    const page = mountSession({
-      store: SAVED,
-      session: SAVED_AT,
-      routes: {
-        '/api/project-context': record(fact('f1', 600, 'Short.')),
-        '/api/direction': () => json({ ok: true, text: 'Short.', clipped: false }),
-        '/api/annotate': () => stored(1, { outcome: 'unchanged' }),
-      },
-    });
-    await settle(page);
-    await press(control('direction-keep'));
-    await settle(page);
-    expect(page.allPosts().map((p) => p.path)).toEqual(['/api/direction']);
-    expect(text('[data-next-cockpit-direction-whole]')).toContain('Short.');
-    await press(control('direction-keep'));
-    await settle(page);
-    expect(page.allPosts().map((p) => p.path)).toEqual(['/api/direction', '/api/annotate']);
-  });
-
-  it('refuses over an unsaved edit with the one sentence, sending nothing', async () => {
+  it('refuses over an unsaved edit with the one sentence, settling nothing', async () => {
     const page = mountSession({
       store: SAVED,
       session: SAVED_AT,
@@ -566,13 +542,13 @@ describe('Keep my intent', () => {
     await settle(page);
     type(goalBox(), 'Edited goal');
     await press(control('direction-keep'));
-    expect(page.posts()).toBe(0);
+    expect(presses(page)).toEqual([]);
     expect(text('#next-cockpit-cue-status')).toBe(
       'Save your intent, or undo your edit, to analyze drift.',
     );
   });
 
-  it('says nothing was settled when a direction cannot be opened, and a direction that arrived since is unread', async () => {
+  it('says nothing was settled when a direction cannot be opened, and reads again before it settles', async () => {
     let first = true;
     const page = mountSession({
       store: SAVED,
@@ -582,7 +558,9 @@ describe('Keep my intent', () => {
         '/api/direction': () =>
           first
             ? json({ ok: false })
-            : json({ ok: true, text: 'Do it the careful way', clipped: false }),
+            : json({
+                results: [{ ok: true, text: 'Do it the careful way', clipped: false }],
+              }),
         '/api/annotate': () => stored(1, { outcome: 'unchanged' }),
       },
     });
@@ -592,18 +570,15 @@ describe('Keep my intent', () => {
     expect(text('.next-cockpit-direction-question')).toContain(
       'Compass could not open that direction. Nothing was settled and no analysis was started.',
     );
-    expect(page.allPosts().map((p) => p.path)).toEqual(['/api/direction']);
+    expect(presses(page).filter((p) => p.path === '/api/annotate')).toHaveLength(0);
     first = false;
     await press(control('direction-keep'));
     await settle(page);
-    expect(page.allPosts().filter((p) => p.path === '/api/annotate')).toHaveLength(0);
+    // Read now, so drawn only now: it is shown before it is settled.
+    expect(presses(page).filter((p) => p.path === '/api/annotate')).toHaveLength(0);
     await press(control('direction-keep'));
     await settle(page);
-    expect(page.allPosts().map((p) => p.path)).toEqual([
-      '/api/direction',
-      '/api/direction',
-      '/api/annotate',
-    ]);
+    expect(presses(page).filter((p) => p.path === '/api/annotate')).toHaveLength(1);
   });
 
   it('names the revision it drew, so words saved since are refused rather than settled over', async () => {
@@ -611,20 +586,10 @@ describe('Keep my intent', () => {
       store: SAVED,
       session: SAVED_AT,
       routes: {
-        '/api/project-context': record(
-          fact('f1', 600, 'A much longer direction than its quoted summary shows.'),
-        ),
-        '/api/direction': () =>
-          json({
-            ok: true,
-            text: 'A much longer direction than its quoted summary shows, whole.',
-            clipped: false,
-          }),
+        ...oneDirection,
         '/api/annotate': () => json({ ok: true, outcome: 'refused', persisted: false }),
       },
     });
-    await settle(page);
-    await press(control('direction-keep'));
     await settle(page);
     await press(control('direction-keep'));
     await settle(page);
@@ -632,9 +597,8 @@ describe('Keep my intent', () => {
     expect(text('.next-cockpit-direction-question')).toContain(
       'Nothing was settled and no analysis was started: your intent changed since this page was drawn, or the store refused the mark.',
     );
-    // A refused Keep draws its directions again against the revision now on screen.
-    expect(document.querySelector('[data-next-cockpit-direction-whole]')).toBeNull();
-    void board;
+    // A refused Leave it keeps the words it drew, so the next press acts on what is still on screen.
+    expect(text('[data-next-cockpit-direction-whole]')).toContain('verify it on a clean');
   });
 });
 
@@ -657,7 +621,7 @@ describe('Use this as my goal', () => {
     await press(control('direction-goal'));
     await settle(page);
     expect(goalBox().value).toBe('Do it the careful way');
-    expect(page.posts()).toBe(1);
+    expect(presses(page)).toHaveLength(1);
     expect(inert(control('held-save'))).toBe(true);
     expect(text('.next-cockpit-held-field[data-next-cockpit-held-field="goal"]')).toContain(
       'Keep your standing outcome lines with this goal?',
@@ -676,7 +640,8 @@ describe('a direction press that cannot finish', () => {
       session: SAVED_AT,
       routes: {
         '/api/project-context': record(...ONE),
-        '/api/direction': () => {
+        '/api/direction': (request) => {
+          if (request.body?.['fact_ids']) return json({ results: [] });
           if (opened) return json({ ok: false, reason: 'out_of_reach' });
           opened = true;
           return json({ ok: true, text: 'A synthetic pending outcome', clipped: true });
@@ -730,12 +695,10 @@ describe('a direction press that cannot finish', () => {
       routes: {
         '/api/project-context': record(...ONE),
         '/api/direction': () =>
-          json({ ok: true, text: 'Synthetic later direction', clipped: false }),
+          json({ results: [{ ok: true, text: 'Synthetic later direction', clipped: false }] }),
         '/api/annotate': () => json({ ok: true, outcome: 'refused', persisted: false }),
       },
     });
-    await settle(page);
-    await press(control('direction-keep'));
     await settle(page);
     const button = control('direction-keep') as HTMLButtonElement;
     button.focus();
@@ -800,4 +763,61 @@ describe('a direction press that cannot finish', () => {
       });
     }
   }
+});
+
+/* Claude Code wraps a paste as `<pasted_content id="N">` and `</pasted_content>` around the pasted words. A
+   server that predates the strip, or a direction history republished from before it, still sends them, and
+   the quote, the pending line and a goal the direction became must never show the tags. */
+const WRAPPED =
+  '\n\n<pasted_content id="3">\nBack to my goal: Ship the worker\n</pasted_content>\n';
+const UNWRAPPED = 'Back to my goal: Ship the worker';
+
+describe('a harness paste wrapper around a direction', () => {
+  it('is never drawn in the whole direction Keep shows before it settles', async () => {
+    const page = mountSession({
+      store: SAVED,
+      session: SAVED_AT,
+      routes: {
+        '/api/project-context': record(fact('f1', 600, 'Back to my goal')),
+        '/api/direction': () => json({ ok: true, text: WRAPPED, clipped: false }),
+        '/api/annotate': () => stored(1, { outcome: 'unchanged' }),
+      },
+    });
+    await settle(page);
+    await press(control('direction-keep'));
+    await settle(page);
+    expect(text('[data-next-cockpit-direction-whole]')).toContain(UNWRAPPED);
+    expect(text('[data-next-cockpit-direction-whole]')).not.toContain('pasted_content');
+  });
+
+  it('is never put in the pending line Add opens', async () => {
+    const page = mountSession({
+      store: SAVED,
+      session: SAVED_AT,
+      routes: {
+        '/api/project-context': record(fact('f1', 600, 'Back to my goal')),
+        '/api/direction': () => json({ ok: true, text: WRAPPED, clipped: false }),
+      },
+    });
+    await settle(page);
+    await press(control('direction-add'));
+    await settle(page);
+    const line = document.querySelector('[data-next-cockpit-direction-key]') as HTMLTextAreaElement;
+    expect(line.value).toBe(UNWRAPPED);
+  });
+
+  it('is never drawn in the quoted summary beside the question', async () => {
+    const page = mountSession({
+      store: SAVED,
+      session: SAVED_AT,
+      routes: {
+        '/api/project-context': record(
+          fact('f1', 600, '<pasted_content id="3"> Back to my goal: Ship the worker'),
+          fact('f2', 610, 'Do it the careful way'),
+        ),
+      },
+    });
+    await settle(page);
+    expect(text('.next-cockpit-direction-question')).not.toContain('pasted_content');
+  });
 });

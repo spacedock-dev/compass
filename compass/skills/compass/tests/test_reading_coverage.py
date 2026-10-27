@@ -303,6 +303,40 @@ class TheReadingCarriesMeasuredCoverage(producer.AClaudeCodeReadingProducer):
         assert got["coverage"] is not None
         self.assertEqual("whole", got["coverage"]["goal_source"])
 
+    def _session_goal_coverage(self, goal: str) -> str:
+        got, _, _ = reading.produce(
+            cast("Any", self.config),
+            {"harness": "claude", "sid": "s1", "state": "working"},
+            [
+                {
+                    "n": 1,
+                    "at": 50.0,
+                    "goal": goal,
+                    "output": "Tests pass",
+                    "goal_source": reading.SESSION_GOAL,
+                    "goal_source_at": 40.0,
+                }
+            ],
+            [producer.fact(at=110.0, source_session={"harness": "claude", "sid": "s1"})],
+            now=200.0,
+            stamp_text="read",
+            model=self._model(),
+            read_lines=True,
+            goal_source_lookup=list,
+        )
+        assert got is not None
+        assert got["coverage"] is not None
+        return cast("str", got["coverage"]["goal_source"])
+
+    def test_a_slash_goal_that_was_not_cut_is_whole(self) -> None:
+        # A /goal has no prompt behind it to find, so "no source found" is not a cut.
+        self.assertEqual(
+            "whole", self._session_goal_coverage("docs/e2e/notes.md exists and contains ready")
+        )
+
+    def test_a_slash_goal_cut_to_the_excerpt_is_still_an_excerpt(self) -> None:
+        self.assertEqual("excerpt", self._session_goal_coverage("A long condition cut here\u2026"))
+
     def test_unlisted_work_after_the_stop_is_not_counted_inside_the_read_window(self) -> None:
         output = reading.ToolOutput(
             destination="local",

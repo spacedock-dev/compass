@@ -46,6 +46,35 @@ off hides the level and the pill; it does not stop the server computing the leve
 reaches a row, a total, a notification or the unasked lane. The overlay is still a reading the
 reader asks for, and a verdict on whether the work met the request is still refused.
 
+### Amended 2026-10-23 (owner): the Live monitor may evaluate on a cadence while the session is viewed
+
+The owner ruled on 2026-10-23, in these words:
+
+> I actually disagree and believe tha the Live monitor should use model calls. Specifically (lets focus
+> on Claude for the moment), when the Live Monitor is on and a user is viewing the session, a sidecar
+> with the latest Haiku model should check and keep an eye on the session. The estimate should only run
+> once per minute, and if the session has ended, the "Live monitor" should turn off (if it is on) and
+> the toggle should be disabled (because there is nothing "live" to monitor). Also, if a user navigates
+> away from the session, the Live monitor should not continue to run. We can also add a, "Do you still
+> want to monitor this session?" banner that shows up after 20 minutes that will stay active in the UI
+> for 10 minutes. If the user does not respond to the banner, the Live monitor will turn off with a note
+> (so as to not drain a users tokens accidentally). If they do respond to the banner, if they
+> responded, "yes", the TTL will reset and the live monitor will continue. If they respond "no", the
+> live monitor will turn off.
+
+This section's refusal of "evaluation on a cadence" and the 2026-09-24 amendment's "it uses no model"
+are amended for one case and no other: the Live monitor, for Claude Code sessions, while the reader
+is viewing the session. Everything else on a cadence stays refused. There is still no always-on drift
+indicator and nothing evaluates in the background: a session nobody is viewing is never checked, and a
+check never runs for a session the reader has navigated away from. Other harnesses are unchanged for now.
+[The DEC-26 amendment of the same date](#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)
+holds the rulings and the remaining decisions.
+
+[DEC-16](#dec-16-compass-does-not-write-into-a-session) still applies, unamended: the check runs as a
+supervised child, is never resumed into the watched session and is never injected into it. The overlay
+the reader asks for, and the refusal of a verdict on whether the work met the request, are also
+unchanged.
+
 ## DEC-15b: an assessment may be stored
 
 An outcome assessment and the annotation revision it read persist in session history, so both
@@ -183,6 +212,17 @@ outcome lines, so a reader stepping back meets that refusal once. A withheld rea
 session publishes `annotation_window_start`, a scalar time, and it is not admitted to
 `history.OBSERVATION_FIELDS`: nothing in history reads it yet, so it stays out, as `settled_at`
 does.
+
+### Amended 2026-10-19 (owner): summaries get a store of their own
+
+[DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) amends this section's "No
+new store", by name and for summaries only. A model-written summary of a session must exist without
+a saved intent and must not go with Discard everything, so it cannot live in the annotation store.
+It gets a store of its own under the Compass home, with its own SECURITY.md invariant 2 row, its own
+aggregate byte bound and an eviction that cannot push out a reader's saved words, redaction on the
+way in and out, a Delete summary control and a place in `--forget`. Every field in it is still named
+and admitted; "no field admitted by implication" stands. Readings stay in the annotation store as
+the 2026-09-10 amendment above says.
 
 ## DEC-16: Compass does not write into a session
 
@@ -1101,6 +1141,80 @@ and whether it should be is filed separately. The parser digest the abstention
 packets are stamped with moves with this change, so a packet frozen before it is refused as
 `frozen-on-another-parser` and is frozen again.
 
+#### Amended 2026-10-21: a message sent mid-turn, and an answer to the agent's question, are the reader's words
+
+A reader who corrects a running agent, or answers the question it asks, gave a direction, and
+before this the page said it did not exist: `Later directions: none`, no outline phase, and a reading
+that named the agent's compliance as its departure. Two session walks measured it. Claude Code gives a
+message sent while a turn runs to the model inside a tool result, so the transcript holds no user turn
+for it, and the answer to the agent's multiple-choice question is a tool result too. The reader read
+only user turns, so neither reached a later direction, an outline phase or the reading's evidence. The
+[recorded shapes](captures/README.md) are the evidence for what follows.
+
+1. A message the agent took in mid-turn is read from its `queued_command` attachment, when
+   `origin.kind` is `human` and `commandMode` is `prompt`. Not from the `queue-operation` rows: the
+   same queue carries a finished background task's notification, 280 of the 297 `absorbed_mid_turn`
+   removals measured on 2026-10-21 over this machine's 331 Claude Code transcripts, and counting those would make the harness the reader. The direction is dated
+   by the attachment's own `timestamp`, which is when the reader typed it. The removal can come
+   minutes later, so a reading that dated it there would put the reader's correction after work it
+   had already shaped. Only the attachment's `text` blocks are read, never a pasted image's bytes.
+2. The answer is read from `toolUseResult.answers`, one line per answered question: the question's
+   `header` (the agent's one-word label for what was asked), a colon, the answer, and the note the
+   reader attached in parentheses. A `(Recommended)` that ends the answer, or ends one choice of a comma-joined multiple-choice answer, comes off first: it is the
+   agent's own label on the option it preferred, so quoting it, or sending it to a reading, would put
+   the agent's advice in the reader's mouth (seen live as `Ruling: (b) Same folder in its checkout
+   (Recommended)`). A marker before a comma is the agent's. A reader who typed the word inside their own sentence keeps it. The header keeps a bare option such as "Defer to a follow-up" from
+   standing alone as an instruction. The question's text and every option's `preview` are the
+   agent's words and are never put in the reader's mouth. A question that timed out or was declined
+   has no answer and gives no direction. Only the question tool's own result is read: a user record
+   whose message holds a successful `tool_result` block, whose questions each carry options, and
+   whose answers are keyed by the text of a question that same result asked. The record names its
+   tool nowhere, and the result's own sentence differs across Claude Code versions, so the shape is
+   what is checked; a typed turn or another tool's result that happens to carry `questions` and
+   `answers` is read as what it is. The answer's characters count toward the press's text guard with
+   the notes beside them, since they sit in `toolUseResult` and not in the `tool_result` block's
+   text, and a record too long to redact is an unread region as a long message is.
+3. Both are user-role steers from the one reader every consumer already shares, so each is a later
+   direction the reader settles with Keep or adds to their words, starts an outline phase titled with
+   its words, and reaches the reading's ledger as a person's entry under the same 1,000-character
+   words cap and redaction as a message typed at the prompt. The fact's `evidence.source` says which
+   it is. Neither is a copied correction, so neither is Compass's text. The answer opens its own outline
+   phase: the reader's choice shapes the work after it, and folding it into the phase that asked would
+   need the outline to carry a source label it does not. It is not promoted to the project's intent on
+   its own (`intent_promoted` is false), because "Provenance: Defer to a follow-up" names no work a
+   later session could act on alone. The reader's own `Use this as my goal` press still takes it. Each
+   fact's `actor_claim` says which record stands behind it, a `queued_command` attachment with a human
+   origin or the question tool's result, not the "user-role record" an ordinary turn is.
+4. `observer.parse_message_record` is unchanged and still picks the session's goal. A direction the
+   agent took in mid-turn does not move a goal the reader set at the prompt: the reader decides
+   that with `Use this as my goal`, as for any later direction. The two shapes arrive through
+   `observer.parse_reader_record`, which adds them to that parser's output.
+5. What is sent to a model changes in amount and not in kind. These are the reader's own words,
+   inside the cap, redaction and 16 KiB bound above, so [SECURITY.md](../SECURITY.md#observer-model-calls)
+   says so and the short disclosure before the press keeps "your messages", which already means
+   what the reader sent into the session. Rewording it would move the recorded client contract
+   fixtures and the sample session's stored disclosure for no change in what is sent.
+6. Claude Code 2.1.181 and older write no `origin` on a `queued_command` attachment, and a prompt-mode
+   one there has no attachment `timestamp` either. Nothing in such a record says the reader sent it, so
+   none is read: a message sent mid-turn on those versions stays absent from the page, as it was before
+   this amendment, rather than being guessed at. On 2026-10-21, over 5,761 transcripts, 111 prompt-mode
+   attachments had no `origin` against 189 with a human one
+   ([recorded shapes](captures/README.md)). A later version is read as items 1 to 3 describe.
+7. Codex has no queue record in the 1,082 rollouts read on 2026-10-21; a message sent while a call is pending is
+   an ordinary user message there, which its reader already takes. Its `request_user_input` answer
+   is unmeasured and is left as it was, as are the other harnesses.
+8. An answer an earlier build already read changes when this one reads it again, in two fields. Its
+   `fact_id` moves where the option carried the agent's `(Recommended)`, because the id hashes the title
+   and the title no longer ends in the marker, and its `intent_promoted` is false where it was true, because
+   an answer is no longer promotable on its own (item 3). A stored reading that cited the old id loses
+   that citation to the page's missing-entry rule, and session history, which dedupes on the id, holds the
+   answer under both ids for its fourteen days. Nothing maps the old id to the new: the paste amendment
+   rejected the same repair for the reason it gives, and an answer a reading cited is rare and recent.
+   A mid-turn message is unaffected, since its words never carried a marker.
+
+The parser digest the abstention packets are stamped with moves with this change, as the
+2026-10-01 amendment above allows for: `project_context.py` is one of its files.
+
 #### Amended 2026-10-02: the owner accepts the Claude Code producer without a pass
 
 Every scored Claude Code run failed this check: four runs, the last two each with one false
@@ -1115,6 +1229,75 @@ so the record cannot drop a failure or round one up. The results, their grants a
 ledger stay exactly as they were: nothing rewrites, rescores or deletes them. The scorer keeps its
 verdicts for any later run, and a later pass would be recorded as `passed` in its own change.
 Which sessions Claude Code reads is [DEC-21](#amended-2026-10-02-claude-code-is-accepted)'s.
+
+### Amended 2026-10-21: the record settles a line
+
+Six walks of the session page found a reading and the card beside it contradicting each other. "No
+file under frontend/e2e is edited" came back `Can't tell` while the same card listed `Where the work
+went: frontend/e2e · 1 file` and the outline counted 13 files written there. A finished session with
+passing tests and a printed pull request got `Can't tell` on every line. Lines read `Consistent with
+what the agent said at [6]` with no check cited, though the checks that ran are in the record. And
+every unsettled line read the same `Can't tell: what was read does not settle this`, with a claims row
+that never quoted the claim. This amendment changes two guards and the words of three rows. The
+prompt, what the reading sends and the shape contract's seven rules are unchanged.
+
+1. **A recorded write settles a line that names a folder.** `reading.folder_rules` reads a clause of
+   an outcome line only when it names a path with a slash in it, speaks of changing files, and says
+   which way: negated ("no file under X is edited", "X is left untouched") rules the folder out, and
+   limiting ("only files under X change", "nothing outside X is changed") allows only those folders.
+   A clause that mixes the two, says neither, or names no folder is left to the reading. A write the
+   record holds inside a ruled-out folder, or outside the only folders allowed, inside the reading's
+   window and after the line's own request, makes the line a departure whatever the reply said, even
+   for a line the prompt never put to the model. `reading._settled_by_record` stores it with the
+   fact ids of the first three such writes, a `detail` Compass composes from the count and the
+   reader's own folder words, and `why` `recorded-write`.
+2. **Only a departure.** No write found inside a folder says nothing: the listing is capped and the
+   window can be partial, so a line is never read as holding from a record's silence. This is the same
+   rule the claims row keeps for "not shown".
+3. **The token is what lets a write carry a verdict.** A written path shows a write and no result, so
+   item 8 of [DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) drops it
+   from a departure a model cited, and still does. `check_supports` takes it as a departure's
+   evidence only for a row stored `recorded-write`, which the producer sets and the model cannot, and
+   every reader of a stored reading passes the flag: the page, the level, the correction. `why`
+   otherwise names a rule that left a row without a verdict; this one token is on a verdict that
+   stands, and the closed set says so. A page that does not hold the write withdraws the row with a
+   sentence of its own.
+4. **A recorded pass is cited ahead of the agent's message.** A `consistent` that cites no check
+   gains the latest recorded passes that carry a `consistent` (`check_supports`) and plainly cover
+   the line: where the line names a path or a file, a check whose command names it too; where it names
+   none, a check of a kind whose result the line claims ("the tests pass", "lint is clean", "no
+   type errors"). A line that only shares the keyword ("the lint config is left alone", "tests are
+   not deleted") claims no result and is covered by nothing, and the claim and the keyword must be in
+   one clause. A pass of the same kind on another target does not cover a line about this one. The check leads the citations and the
+   message stays, so the page reads `Consistent with #8, as the tool reported; not inspected` rather
+   than only what the agent said. A line about what the agent tells the reader keeps its message
+   alone, because a run does not show a report. The checks are read from the facts, so the guard works
+   where no grant sent them; nothing is added to what a reading sends.
+5. **Every `Can't tell` says its own reason, in view.** The design's form is `Can't tell · <line>` and
+   the reason under it. The reason is the rule that withdrew the row where one did, a limit of the
+   harness where that is the cause, the entries the reading read and found silent where it cited any,
+   and otherwise that no write, check or message it read speaks to the line. The generic "what was
+   read does not settle this" is gone. This supersedes the 2026-10-14 ruling that kept the reason
+   inside Evidence: the reader found it by opening a disclosure on each line, and Evidence now keeps
+   the entries and not the reason. Opening Evidence does not say it twice.
+6. **The claims row quotes the claim.** `What the agent claimed · "<claim>" is not shown by the
+   record`, as the design has it, where the claim is the title of the cited agent message, the way a
+   correction quotes it (`reading.claim_title`, its closing stop dropped). Under a claim the record
+   does not show the row says where the agent made it and that the record read is the board's recent
+   tail. "Claim to check at #13 · 4m ago" is gone from beside Steer back: it read as an instruction,
+   and the claims row already says which claim and where.
+7. **The how-to says it.** It had said a reading cannot settle a folder limit. It now says a recorded
+   write breaking one also departs, in no more words, since the popup is held to 150.
+
+What this cannot see. A write made by a shell command, such as a build, has no entry, as the live
+estimate's line already says, so a folder the line rules out can still be written without this
+guard noticing. The guards read a folder from a line's own words and nothing else: a folder a person
+means by a name with no slash in it is left to the reading. A path word such as "and/or" is read as a
+path only if it is not one of a short list of ordinary slash pairs, and a limiting line is the only
+kind a misread path can hurt, because a forbidden-folder rule needs a write under that exact path.
+The guards are held by `test_reading_record_guards.py` and the stories `A recorded write settles a
+line that rules out its folder`, `A model's departure on a write alone is still withdrawn` and `Every
+Can't tell line says its own reason`.
 
 ### Repeated calls
 
@@ -1190,6 +1373,55 @@ raise that does not carry its own baseline cannot be understood on return.
 The cumulative cap is per session and per day, and exhaustion is visible on the board. The reader is
 by construction not present, so "nothing departed" and "nothing was checked" must never render
 alike.
+
+### Amended 2026-10-20: unasked checks remain reachable
+
+Owner, 2026-10-20: the lane stays reachable under `--unasked-readings`, and Claude Code is its
+provider by default. Claude Code checks Claude Code sessions and Codex checks Codex sessions. On a
+harness with no producer of its own the lane prefers Claude Code, and Codex serves only when Claude
+Code is unavailable or unqualified on this machine. This is `reading_route.resolve(unasked=True)`,
+with no fallback after a failed launch. A pressed Analyze drift keeps its own rule, Codex first on
+such a harness: the ruling named the unasked lane, and changing who a press sends to was not asked
+for. The board publishes the lane's routes as `unasked_routes`, beside `reading_routes`, only while
+the lane is attached. It replaces the Codex-only restriction in DEC-21's earlier amendments, not the
+default-off ruling.
+
+Claude Code uses the owner's 2026-10-02 producer acceptance, never described as a passed check,
+through `reading_policy.GuardedModel`, the same guarded seam as Codex and requested readings.
+The prompt remains words-only: typed goal and bounded reader messages, no agent messages, expected
+outcome lines or tool output. All eligibility gates, observed state-change trigger, quiet hours,
+delivery records, one-flight slot, fifteen-minute floor and caps (three per session, twelve per rolling
+day) remain. Only departures are raised. The preconditions for changing the default remain unmet.
+
+Codex requires a deliberate provider grant bound to the current destination. With the flag on,
+the session's Drift card shows "Allow Codex to run unasked checks", or the opposite to revoke it,
+and Attention names sessions with typed goals waiting for that permission and links to their Drift
+cards. The disclosure names the words, provider, destination and capacity used; the grant covers
+all sessions routed to that provider at that destination. Claude Code needs no separate toggle,
+but its Drift card names it and lists what each check sends: a reader who turned the flag on when
+only a Codex grant could start a check would otherwise begin sending words to Anthropic with no
+sign of it. A stored Codex grant keeps its revoke switch on every session page, whichever provider
+checks that session today. The cue's "none of them has been checked yet" is derived from each
+listed session's `departure_checked`. With the flag off, or under `--no-annotations` (which turns
+the flag off), neither control nor cue is shown.
+
+`reading_policy.set_unasked_grant` writes only this explicit words-only coverage. It is a separate
+`unasked_grant: bool` body on the existing reading POST, with session identity, provider, model,
+words destination and the normal explicit-press guards. It starts no analysis. It refuses paused
+or disabled runs, non-loopback clients and document navigations. A grant is also refused for a
+stale provider, model or destination and for a session Claude Code would check
+(`no-grant-needed`); a revoke is not, and deletes the Codex grant whatever today's route is, since
+a grant that could be revoked only while Codex held the route would return with it. Pause followed by Resume
+clears the grant, so a reader who paused grants it again on purpose. Analyze,
+legacy `allow: true` presses and Resume never grant it. Revocation cancels this daemon's running
+call and refuses the next send; Pause stops both providers, and `--no-observer-model` still wins.
+Already-sent words cannot be recalled. A cancelled call, or one that started and failed, keeps a
+withdrawn check row for the caps, without a finding or a completed-check claim; without it a
+signed-out Claude Code CLI was started again on every state change. A withdrawn row is no later
+check for a standing raise's follow-up. The cancel test and the departure write share one lock, so
+a revoke lands before the write or after it, and a revoke after the write still suppresses the
+notification. A revoke removes the grant rather than writing the zero
+that older stores interpret as the master pause.
 
 ### The alternative that was rejected
 
@@ -1469,7 +1701,7 @@ doing a different job: it was one of the three things that stop a local process,
 fetch metadata, from spending readings through a route with no capability token. Removing it is
 allowed only with something that does that job instead.
 
-1. The first press of "Check for drift" shows the reading disclosure with "Allow and check". The
+1. **Superseded by [DEC-28](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts).** The first press of "Check for drift" shows the reading disclosure with "Allow and check". The
    answer is kept in `~/.compass`, so every tab and a respawned daemon agree; `--forget` clears it,
    and the session page carries the off switch. The startup flag is no longer needed for
    reader-requested readings. It still governs goal summaries, which keep their own consent.
@@ -1488,8 +1720,9 @@ allowed only with something that does that job instead.
 5. The unasked check stays off by default for this milestone.
 
 This amends DEC-17's 2026-09-14 amendment, which keeps the `--observer-model` opt-in on each
-request. The press, remembered answer and daily cap now supply that opt-in. The cap is twelve
-actual or reserved attempts per rolling twenty-four hours, admitted atomically before launch.
+request. The press, remembered answer and daily cap now supply that opt-in. The cap was twelve
+actual or reserved attempts per rolling twenty-four hours, admitted atomically before launch; it is
+100 since [the 2026-10-16 amendment](#amended-2026-10-16-owner-the-budget-the-mark-and-what-it-read).
 Off/on and `--forget` revoke consent without erasing unexpired spend; otherwise either would be
 a way to refill the budget. A known missing Codex CLI is refused before admission.
 
@@ -1520,8 +1753,8 @@ harness. The reading route resolves the route again from the payload's harness a
 press that named a different provider, before it writes consent or reserves an attempt.
 Permission is kept per provider, because allowing Codex to send a reader's words to OpenAI is not
 allowing Claude Code to send them to Anthropic. An answer saved before the split reads as Codex's.
-Turning readings off and `--forget` revoke every provider, and the twelve-attempt rolling cap is
-shared, so a second provider cannot double it. If the CLI is missing at launch, or a call fails,
+Pausing model calls and `--forget` revoke every provider, and the rolling cap (twelve attempts
+then, 100 since 2026-10-16) is shared, so a second provider cannot double it. If the CLI is missing at launch, or a call fails,
 nothing else is tried: a fresh press is the only retry. The flags the Claude Code call runs with,
 and the fact that they are CLI restrictions rather than an OS sandbox, are in
 [the light harness usage bounds](../SECURITY.md#claude-code-reading-calls).
@@ -1536,6 +1769,10 @@ owns admission, provenance and the limit of the text-only model receipt. This op
 qualification claim: each comparison remains bound to its own selected model and envelope.
 
 ### Amended 2026-09-24: Analyze drift and Allow and analyze
+
+**Superseded by DEC-28:** the prior Allow step and destination/content re-authorization below are replaced by
+[opt-out with a notice](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+for reader-started calls. Explicit coverage still governs unasked checks.
 
 [DEC-24](#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
 renames item 1's labels: the first press of "Analyze drift" shows the reading disclosure with "Allow
@@ -1570,8 +1807,9 @@ item 1 of the 2026-09-23 amendment and leaves items 2 and 3 as they apply once t
    session's "What is sent to Claude Code" popover beside Analyze drift, before the press.
    Allowing Codex does not allow Claude Code, so the first press routed to a provider with no
    Allow opens that provider's consent step.
-4. The unasked lane and goal summaries stay on Codex, as item 3 of the 2026-09-23 amendment
-   ruled, and the twelve-attempt rolling cap stays shared between providers.
+4. Superseded for the unasked lane by the [2026-10-20 amendment](#amended-2026-10-20-unasked-checks-remain-reachable). At this date the unasked lane and goal summaries stayed on Codex, as item 3 of the 2026-09-23 amendment
+   ruled, and the rolling cap (twelve attempts then, 100 since 2026-10-16) stays shared between
+   providers.
 
 `resolve` still reads each gate before it looks for that provider's CLI, so setting the constant
 back to `not-run` closes the producer with no other change, and the "not qualified on this build"
@@ -1597,6 +1835,10 @@ qualification tool changes.
 
 ### Amended 2026-10-02 (owner): the Allow is bound to where the words go
 
+**Superseded by DEC-28:** the prior Allow step and destination/content re-authorization below are replaced by
+[opt-out with a notice](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+for reader-started calls. Explicit coverage still governs unasked checks.
+
 The owner, 2026-10-02: "bind the allow to the destination". The tool-output grant was already
 keyed by destination (item 7 of DEC-23). The Allow for the reader's words was not, so a dashboard
 restarted under a new `ANTHROPIC_BASE_URL` or `CLAUDE_CODE_USE_BEDROCK` sent the goal and messages
@@ -1619,7 +1861,7 @@ The binding catches that move only where the destination was named, as item 5 sa
    is asked once more. When an Allow on record does not cover today's destination, for that reason
    or because the destination moved, the consent step opens with the server's line "Where your
    words go has changed since you allowed this, so allow it again." A refusal is never asked
-   about that way: "Turn off readings" and `--forget` hold whatever the destination.
+   about that way: "Turn off readings" (renamed Pause model calls on 2026-10-19) and `--forget` hold whatever the destination.
 4. The binding is a table of its own in the store, `permission_destination`, created in place
    inside the store's existing transaction. No column is added to an older table, so an older
    build's two-value writes still succeed against a migrated store, and an older build's Turn off
@@ -1648,6 +1890,16 @@ The binding catches that move only where the destination was named, as item 5 sa
 
 This stays per provider, as item 3 of the acceptance above says: an Allow given for a provider
 covers every session routed to that provider, at the destination it was given for.
+
+#### Amended 2026-10-19 (owner): a changed destination shows the notice again
+
+[DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) supersedes this amendment
+as a blocking step. A reading the reader starts no longer waits on an Allow, so a destination that is
+no longer the one recorded shows the notice again, naming the new destination, before or beside the
+result, rather than opening a consent step. What the binding detects and cannot detect, in item 5,
+is unchanged, and so is the rule that a refusal holds whatever the destination: an answer of off
+already stored is kept. The unasked lane, item 6, is not a call a reader starts and is not covered.
+This is in force once the consent change ships.
 
 ### Where the unasked default stands
 
@@ -1693,7 +1945,7 @@ join on newlines where the typed fields are one line each.
    silently, and adopting on an ended session would have withheld the reading with a false reason.
    Codex now publishes the timestamp paired with its latest and first prompts. A missing or
    invalid source time still refuses adoption with a sentence saying why.
-4. The mark, "from your prompt", shows in the goal's source line, in the reading's evidence line and
+4. The mark, "from your prompt" (since 2026-10-23 the source line reads "Drafted from your first prompt"), shows in the goal's source line, in the reading's evidence line and
    in one sentence of the board-wide disclosure. Editing adopted words makes an ordinary typed
    revision, because the reader has then typed them.
 5. Adopted words do not make a session eligible for the unasked lane, so one press on many rows
@@ -1867,7 +2119,8 @@ in one session cut off the instruction that mattered and in another kept only pl
   box is now "Excerpt. Analyze reads up to 1,000 characters.", in the draft's marks and in the saved
   goal's source line alike, true past 1,000 characters and on the fallback alike. Short, because
   that row holds one control's height; the 375px layout was not re-measured in a browser for this
-  change. "Use your prompt" still names an excerpt "· excerpt" in its option.
+  change. "Use your prompt" still names an excerpt "· excerpt" in its option. (Since 2026-10-23 the cue
+  reads "Shortened here; Analyze reads the whole prompt" and sits on the source line above the box.)
 
 What is sent does not change in kind: the reader's own messages already go whole up to 1,000
 characters ([the 2026-10-01 amendment](#amended-2026-10-01-a-reading-sees-the-readers-whole-message)),
@@ -2157,7 +2410,7 @@ qualifies the producer against it.
    kept out of the semantic history store and out of every session row field, and it is named in
    `history.PROMPT_DERIVED_CARRIERS`. SECURITY.md adds it to the named reads, moving the count
    `test_documentation` pins, and scopes the irreversible-actions sentence about tool output.
-7. Where it may go: to the reading producer that reads the session, or to the fallback route
+7. **The prior Allow requirement is superseded by [DEC-28](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts); the destination and content bounds remain.** Where it may go: to the reading producer that reads the session, or to the fallback route
    `reading_route.resolve` selects and discloses before the press, and on either only after a fresh
    "Allow and analyze" (DEC-21's "Allow and check" as DEC-24 item 5 renames it) whose disclosure
    names tool output and the receiving vendor. An answer given before tool output was named does not
@@ -2709,9 +2962,9 @@ allow it". When the permission store cannot take the write, the start
 prints one line and drops the flag for the run, so the card asks as usual. The server was safe
 either way, since a press without the row is refused `403 tool-output-consent-required`; the page
 was the part that overstated, and it was reading the flag where it should have read the outcome.
-The wording still follows the flag afterwards: Turn off readings and `--forget` delete the row while
+The wording still follows the flag afterwards: Pause model calls and `--forget` delete the row while
 the flag stays set until a restart, so the card can keep saying it after a withdrawal.
-`--no-observer-model` refuses it, "Turn off readings" and `--forget` clear it, and the Windows
+`--no-observer-model` refuses it, "Turn off readings" (renamed Pause model calls on 2026-10-19) and `--forget` clear it, and the Windows
 respawn forwards it.
 
 Why a launch flag. A reader who found on a first walk that most lines read "Can't tell" had tool
@@ -2815,7 +3068,61 @@ back into a session. And the Claude reader's accuracy check has not passed
 so Compass does not add a second, weaker route to a correction. DEC-24 item 7's list of triggers
 stays as it is: a surviving model departure, a contradicted or unshown claim, a failed check.
 
+### Amended 2026-10-23 (owner): pnpm shorthand for a closed runner is a check
+
+[The closed lists](#the-closed-lists) name `pnpm exec` as a wrapper and no other pnpm form. The owner
+ruled on 2026-10-23 that `pnpm <runner>` counts as a check whenever `<runner>` is on the closed list,
+the same as `pnpm exec <runner>`: `pnpm vitest run X`, `pnpm tsc --noEmit`, `pnpm eslint .`. A pnpm
+word that is not a closed runner (`pnpm install`, `pnpm dev`, `pnpm playwright`) stays unread, and
+`pnpm test` and `pnpm build` keep the pairs they already had. `poetry run` and `pipenv run` already
+are the shorthand of their package managers, so no other manager gains a form.
+
+Found on a real session whose agent proved a fix with `pnpm vitest run` on a regression test that
+went red and then green; neither run was counted. The attribution rule is unchanged: a shorthand
+call piped beside other `&&` segments still reads `piped_beside_other_commands`, and a lone one
+piped only to an output filter reads its summary line as the `exec` form does.
+
+### Amended 2026-10-23 (owner): PR and skill facts
+
+Two things become evidence on Claude Code, each a closed fact kind added to [the closed lists](#the-closed-lists)
+and neither read from shell text.
+
+- **A pull request created.** The source is Claude Code's own structured record of creating it: the shell
+  call's result carries `toolUseResult.gitOperation.pr` with `action: created`, and the same pull request is
+  written again as a top-level `pr-link` record
+  ([the capture](captures/claude/pr-and-skill-shapes-2.1.309-macos.jsonl), taken against a stub `gh` in a
+  scratch repository). Compass reads the result alone, because the `pr-link` record repeats what the result
+  holds and is written twice per pull request. A call that errored, an action other than `created`, and any URL
+  that is not `https://github.com/<owner>/<repo>/pull/<number>` with a number matching the record publish
+  nothing. The fact carries the repository, the number, the URL rebuilt from those parts, and the time the
+  result was recorded (`pr_repository`, `pr_number`, `pr_url`, `at`). The command line and the output are not
+  read: `gh pr create` is still not a check, and DEC-23 items 3 and 5 keep the rest of the command and its
+  output out of every prompt. One pull request is one fact however many records name it.
+- **A skill used.** The source is a `Skill` tool call whose result did not error, and only the skill's name is
+  read, held to `[A-Za-z0-9][A-Za-z0-9_.:-]` up to 80 characters. The call's arguments are never read. One
+  fact per name, at its first use.
+
+Both are `tool_report` facts (subjects `pr` and `skill`), so they ride the existing admission: a reading is sent
+them only under the tool-output grant for a named destination, beside checks and written paths, and the
+unasked lane never receives them. The consent sentence says so: "the repository and number of a pull request
+it created, and the names of skills it used", and because the sentence changed, a reader who allowed tool output
+before is asked again. A pull request ranks with the passes and is listed beside the twelve-entry cap when newer
+entries would push it out (up to twelve more), because the verdict check reads the listing. A skill ranks after
+every other entry, so it can never push out a written path; a dropped path would be counted as outside the named
+folders and raise the live level. Under the prompt's byte bound a pull request is reserved like a pass and a
+skill after a write. A reading may cite either as `consistent` for a line the fact
+shows done, inside the evidence window. Neither can carry a departure, since neither has a result that can fail.
+
+The owner also ruled that `git commit` and `git push` keep counting as commands that may change files. That rule
+is unchanged: a pull request created is a fact beside them and not a reason to read their text.
+
+Found on a real session whose goal was to use a skill and create a pull request: the agent did both, Claude
+Code recorded its own goal as met with a reason naming the pull request, and the analysis said Can't tell,
+because neither the pull request nor the skill was anywhere in what a reading is sent.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
+
+Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
 
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): item 3's Expected outcome is one optional empty line by default, and the Direction question's summary shrinks to one line while Keep keeps its two presses.
 
@@ -2866,7 +3173,7 @@ the later-direction floor (item 9).
      when it cannot fit even alone, nothing is written and the save answers `unwritable`.
    - The history copy is one flat field per line, at most 256 characters each, with a closed
      source token beside it and no entry id.
-   - The goal and the lines take at most 9,216 of 16,384 bytes of the prompt. Over that share,
+   - The goal and the lines take at most 9,728 of 16,384 bytes of the prompt. Over that share,
      every line is dropped together as not asked, never some of them.
    - The reply cap is 8,192 bytes, and a reply cut at the cap keeps each answer that arrived
      whole.
@@ -2935,6 +3242,8 @@ the later-direction floor (item 9).
    list)" ([the wording](#amended-2026-10-14-owner-the-correction-names-the-entry)), and a write
    outside a named folder is not a trigger
    ([the ruling](#amended-2026-10-14-owner-a-write-outside-a-named-folder-does-not-settle-a-line)).
+   Amended 2026-10-20 (owner): each departure also carries the stored reading's explanation, and
+   the cap changes to fit ([the amendment](#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
 8. Update intent instead. It opens Intent for editing and offers the later direction as a new
    outcome line under item 4's rules. It never replaces the goal.
 9. A copied correction coming back. The server records a digest of the exact text the reader
@@ -2953,7 +3262,9 @@ the later-direction floor (item 9).
    moves on, up to 32 per session, apart from the eight waiting digests. Adoption and every
    surface that shows a prompt as the reader's words (the stated goal, the assignment, an exact
    direction) compare fact ids, so a prompt typed in the same second as a paste stays the
-   reader's while the tail holds it.
+   reader's while the tail holds it. Amended 2026-10-21: the harness's paste tags are taken off before
+   the digest is computed, and a paste edited only in whitespace is also recognised
+   ([the amendment](#amended-2026-10-21-a-pasted-correction-is-compasss-words-and-a-kept-direction-is-no-evidence)).
 10. Not accurate. A token the reader can set on a reading, stored with the annotation entry and
     removed with it. `--forget` does not reach it. It is never sent, never counted and never entered
     into abstention marks, and SECURITY.md notes it. The
@@ -2961,7 +3272,9 @@ the later-direction floor (item 9).
     that reading from the derived level and correction until the mark is cleared.
 11. Numbering. The activity list numbers entries in the evidence window, and a citation says
     "#<n>". It says "turn" only where the harness supplies a stable turn identity. Stored readings
-    cite fact ids, so a number is recomputed, never stored.
+    cite fact ids, so a number is recomputed, never stored. Amended 2026-10-20 (owner): a
+    departure's explanation travels as text, never as a placeholder, and the page renumbers nothing
+    inside it ([the amendment](#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
 12. The unasked lane receives none of this: no outcome lines, no work evidence, no drafted or
     confirmed goal, no correction, no digest and no Not accurate token. None of them makes a
     session eligible for the lane, or triggers, orders or gates it.
@@ -3051,7 +3364,7 @@ within the milestone's scope and recorded on the issue.
   evidence.
 - Amended by the owner, approving the Analyze drift plan, 2026-10-04: unchanged typed goal words
   carry their existing window through a lines-only save or an added direction. New goal words
-  recompute the window. For those typed words it is
+  recomputed the window until the owner's ruling of 2026-10-21 below. For those typed words it is
   the latest `user_message` of this session at or before the save, read on the server from the
   session's record, found in the all-sessions collection so a save from that view on an aged session
   still finds it. A permission approval is not a message, so it never moves the window. A record
@@ -3074,7 +3387,8 @@ within the milestone's scope and recorded on the issue.
   where the cutoff is now, its end, or its last turn, from the same end kind HOW IT LANDED shows. It
   shows only where a press could read: a provider, no refusal beside it, saved words, and words
   given before any observed end. The background job (DRC-4686) added "Runs in the background."
-  after it.
+  after it; the Drift card dropped that second sentence on 2026-10-21, since the job box already says
+  where the work runs.
 - The later-direction floor stays at the save time. By construction no message of the reader's lies
   between the window start and the save, so moving it would change nothing on consistent data and
   would, on a fetch the server missed, turn a message into a later direction.
@@ -3117,6 +3431,57 @@ it: off by default, at most three readings per session, twelve a day, and 900 se
 (`unasked_session_cap`, `unasked_daily_cap`, `unasked_session_floor_sec`). The final assistant message's `stop_reason` is not read: no capture records
 it. This does not change the scorer's rule of 2026-10-01, which vouches for a recorded case
 only at a matched stamp, and it infers nothing from the last assistant message.
+
+#### Amended 2026-10-20 (owner): an idle session with no recorded finish is read up to its last entry
+
+A fresh-eyes usability review found that a Claude Code session whose last turn had no recorded
+finish (an interrupted turn, or one that went quiet mid-turn) could never be analyzed once it was
+idle, and the only reason the page gave, "Analyze opens while this session runs.", would never come
+true for a session nobody resumes. The owner ruled on 2026-10-20 that Analyze drift is allowed on
+such a session: it is read up to its last recorded entry, the way a running session is.
+
+- `reading.eligibility` admits an idle row with no observed stop and no observed end
+  (`reading.IDLE_PRESS_KINDS`: `idle-unknown`, and `unobservable` for a scan-only row) on the same
+  reader's press that admits a turn stop, for a harness in `TURN_STOP_HARNESSES` only. The scope is
+  `mid-flight`, never `last-turn` or `final`: nothing in the record says the turn ended, so no
+  verdict on how it ended may rest on it, and a goal saved later does not withhold it. No entry is
+  cut, because there is no stop to cut at.
+- The stored sentence is `reading.SCOPE_TEXT_MID_FLIGHT_IDLE`, admitted on read-back beside the
+  running one, and the page draws it in the result as "Read up to the last recorded entry at HH:MM;
+  the last turn was not recorded as finished.", the time being the reading's `evidence_through` in
+  the reader's own zone. The answer still leads with "So far:".
+- The unasked lane is unchanged: it never sets `admit_turn_stop`, so it withholds an idle row as it
+  did. A running session, a turn stop, a session end and every other harness keep their rules.
+- The Claude Code press line and Why sentence for an idle row are gone, since the board no longer
+  refuses one. Every line the board can still publish states the condition that holds, a press on a
+  refused Analyze opens its disclosure, and the disclosure is named "Why Analyze is off".
+
+#### Amended 2026-10-21 (owner): editing the goal keeps the reading's start
+
+The bullet above that says new goal words "recompute the window" is replaced. The owner's walk found
+that rewriting a goal to widen it moved `reads from 10:57` to `reads from 11:05`, so the next reading
+read only the entries after the edit and a line the earlier work had satisfied went from Consistent
+to Can't tell. Editing the goal says the work already done still counts.
+
+- A revision keeps the window of the revision before it. Saving new goal words, saving a line, and
+  adopting a prompt or a later direction as the goal with Use this as my goal all leave the start
+  where it was, so the next reading reads from the original start. Only the first save of a session,
+  and the first save after a discard, open a window of their own, by the rules above.
+  The first save that carries a goal opens the window, so a line saved before any goal does not
+  count as the start: adopting a prompt over a revision holding lines alone opens at the prompt's
+  own time, and typed goal words open at their own window.
+- Reading from the edit onwards is the reader's explicit choice, offered beside Save (labelled Read from my latest message since 2026-10-21; see the amendment at the end of the Intent card's section)
+  intent. `POST /api/annotate` takes `read_from_now: true` on a typed save or an adoption, and the
+  save then opens the window as a first save would: the reader's latest message at or before the save
+  for typed words, the source's own time for an adopted prompt. It is the reader's latest message and
+  not the save instant because the turn that message started is still the work being read. The page
+  says so beside the save in the same moment, with that time. Unchanged words saved this way still
+  mint a revision, since the window is the thing the reader asked to move.
+- A window start is still never later than its own save, and one that is stored without a window
+  opens at its save, as above.
+- A reading or a raise that predates a change of the goal says so in times the reader has seen (when
+  it was made, and when the intent changed) and never by revision number. Revision numbers stay
+  inside the store and the wire.
 
 ### What the background build decided, 2026-09-24
 
@@ -3182,6 +3547,24 @@ issue, and the rest were made within them.
 - A finished step is a filled mark and never a check mark. Item 6's rule is about results, but a
   check shape beside a reading is close enough to its reason that the design's check circle was
   not copied.
+
+#### Amended 2026-10-20: a failed analysis names its cause
+
+The usability review's first press failed because the Claude Code CLI was signed out, and the page
+said only "The reading did not complete. Nothing was produced, and a fresh press is the only retry."
+A failed Claude Code call now records the closed label `observer._claude_failure_reason` already
+reads from at most 8 KiB of the CLI's output after a nonzero exit, or its `timeout` category, and
+stores one sentence per label (`reading.CLAUDE_FAILURES`), such as "Analyze failed: Claude Code said
+it is not logged in. Nothing was saved. Fix that, then press Analyze drift again." A call with no
+label, or an unknown one, stores "Analyze failed: Claude Code returned an error. Nothing was saved;
+press Analyze drift to try again." Codex discards its stderr and has its own unlabelled sentence, and
+a job that failed inside Compass keeps `model-failed`, reworded the same way. That includes a
+Claude Code job that failed before the CLI started, such as no private working directory, which
+records no diagnostic (`reading.claude_failure` reads its absence as `model-failed`). No word of the CLI's
+output is stored or shown: quoting a first line of stderr, as the review suggested, would carry text
+SECURITY.md keeps off every surface, and a closed label says the same thing for every cause the list
+knows. The sentence stored before this change maps to `model-failed` on read-back
+(`reading.LEGACY_WITHHELD`). Each failure still counts as the spent attempt it was.
 
 #### Amended 2026-10-01: a press the board says cannot read starts no job
 
@@ -3295,6 +3678,10 @@ throughout (arbiter spec, `ui3`).
 
 #### Amended 2026-10-01: the first press is a consent step
 
+**Superseded by DEC-28:** the prior Allow step and destination/content re-authorization below are replaced by
+[opt-out with a notice](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+for reader-started calls. Explicit coverage still governs unasked checks.
+
 Owner ruling Q1, 2026-10-01 (DRC-4758 slice B). The first press asked its question by relabelling the
 button "Allow and analyze" and moving it below the whole ~180-word disclosure, so the owner's walk
 read it as a press that did nothing.
@@ -3314,6 +3701,14 @@ read it as a press that did nothing.
   with the server's line saying so
   ([the binding](#amended-2026-10-02-owner-the-allow-is-bound-to-where-the-words-go)).
 
+##### Amended 2026-10-19 (owner): the first press runs and shows a notice
+
+[DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) supersedes this amendment.
+The first press of Analyze drift runs the reading without a consent step and shows, once per kind of
+call on this machine, a non-blocking notice naming what is sent and to which provider, with Turn off
+readings beside it. "Turn off readings" (renamed Pause model calls on 2026-10-19) stays the off switch, and a reader who paused model calls is
+not opted back in. This is in force once the consent change ships.
+
 #### Amended 2026-10-01: idle, the disclosure is one worded click away
 
 Owner ruling Q1, 2026-10-01 (DRC-4758 slice B). This supersedes the panel build's "Idle, the button
@@ -3323,7 +3718,7 @@ comes first and the DEC-21 disclosure follows it with the hint" for the idle sta
   whole "0 model requests recorded for this session." to a screen reader), any account of a press,
   the one hint line, then the DEC-21 disclosure under a closed summary: "What is sent to
   <receiver>" until that receiver is allowed, and always while the route is a fallback, then "What
-  is sent". The button stays described by the disclosure's paragraph. Turn off readings sits inside
+  is sent". The button stays described by the disclosure's paragraph. Pause model calls sits inside
   the summary, still on the page. Amended 2026-10-02 (NU-9): the count is a line of its own directly
   under the button row, ahead of any account of a press, because on the row it pushed "Analyze
   again" onto a second one beside Steer back and Update intent instead, which are now one row of
@@ -3395,7 +3790,7 @@ reading is.
 Idle, "What is sent to <receiver>" (or "What is sent") opens the same list as a popover, the
 system the header's "Why" uses ([NUI-19](design-next-ui.md#nui-19-a-caveat-has-three-tiers)), in
 place of the accordion the [idle amendment](#amended-2026-10-01-idle-the-disclosure-is-one-worded-click-away)
-drew. Analyze drift stays described by the list, and Turn off readings stays inside it.
+drew. Analyze drift stays described by the list, and Pause model calls stays inside it.
 
 ### What the Cancel build decided, 2026-09-24
 
@@ -3454,7 +3849,7 @@ new strings on the issue; the other calls were made within them.
   reload draws the same. A lost answer says "Could not confirm the cancel. The analysis may still be
   running; refresh to check." The design goes straight back to idle with no sentence; the stored
   sentence is the ruling's addition.
-- "Turn off readings" does not cancel a running job in this layer: a withdrawal after the spawn does
+- "Turn off readings" (renamed Pause model calls on 2026-10-19) does not cancel a running job in this layer: a withdrawal after the spawn does
   not stop a call already sent, and that is a separate decision.
 
 ### What the accounting build decided, 2026-09-27
@@ -4585,6 +4980,169 @@ The reading definition and the long scope paragraph left this panel, since the p
 elsewhere. The cutoff is reworded at the producer in plain sentences with the same counts
 (see [what the window build decided](#what-the-window-build-decided-2026-09-27)). A reading stored before the change keeps the sentence it was stored with.
 
+### Amended 2026-10-20 (owner): the correction carries the explanation
+
+Item 7 fixed the correction as exact text with no model prose. A walk of the session page found
+what that cost: the correction named what departed and at which entry, never why, so a reader
+pasting it handed the agent a verdict it could not act on, and the Drift card beside it already
+showed the reason. The owner amended item 7 on 2026-10-20: each departure in the correction also
+carries its stored explanation, the reading's one bounded `detail` sentence, so the reader and the
+agent can see why it is drift. The explanation is the reading's own text, redacted and bounded like
+every stored reading string, labelled as Compass's reading, and never presented as the reader's
+words. This supersedes, for the explanation only, item 7's "no model prose" and the sentence of
+the [2026-10-14 amendment](#amended-2026-10-14-owner-the-correction-names-the-entry) that keeps
+model prose out; every other field and sentence of the approved template stands.
+
+The text. Under each surviving departure the correction adds one indented line:
+
+```text
+Back to my goal: Ship the retry queue (entry #1 in Compass's activity list)
+The session departed from my goal at 14:05 (entry #9 in Compass's activity list).
+  Why Compass reads this as drift: The agent rewrote the scheduler instead of the queue.
+Where it stands against what I expect:
+- The retry tests pass: departed at 14:06 (entry #10 in Compass's activity list)
+  Why Compass reads this as drift: The retry tests failed after the last change.
+- Lint is clean: consistent with 14:07 (entry #11 in Compass's activity list), as the tool reported
+Please continue from here.
+```
+
+- The label is the Drift card's own heading, "Why Compass reads this as drift:", so the line says
+  whose reading it is in the reader's words and the agent's. The line is indented under the line it
+  explains, which keeps a bullet one item in Markdown and keeps the sentence out of the reader's
+  first person ("Back to my goal", "what I expect").
+- What carries one: a departed goal, a departed outcome line, and a claim the record contradicts
+  (the claims row's own departure), each only while the line the correction writes for it stands. A
+  line the page has demoted (an older revision, an unsettled later direction, Mark as inaccurate,
+  a citation outside the window) takes its explanation with it. A consistent line, a line not
+  reached at this stop, a can't-tell line and an unshown claim carry none: the producer keeps no
+  detail for the last two, and the first is not drift.
+- Missing or withheld, the line is the approved line unchanged. A detail that is empty, or empty
+  once neutralised, adds nothing.
+- The path, in this order (the order was corrected on review, 2026-10-20, because each earlier
+  step had hidden something from a later one). First every invisible character is dropped: each
+  Unicode format character (category Cf, which holds the byte-order mark, U+2060 to U+2064, U+180E,
+  the bidi controls and the tag characters U+E0000 to U+E007F) except the zero-width joiner and
+  non-joiner some scripts spell words with, and the variation selectors U+FE00 to U+FE0F and
+  U+E0100 to U+E01EF. C0 and C1 controls, NEL and the Unicode line and paragraph separators become
+  spaces, so it is always one line. Then a leading structural opener is removed, repeatedly, even
+  where the reader edits the label away: `/`, `!`, `>` or `|` at the start, `#` before a space, a
+  `-`, `*` or `+` list marker before a space, an ordered marker (digits then `.` or `)` then a
+  space), and a `~~~` or ```` ``` ```` fence. A word that only starts like one keeps its first
+  character: "-3 tests regressed" and "#1234 still open" are unchanged. Then the text is redacted,
+  by the shape filter and again behind each hyphen or underscore inside a token, because the filter
+  anchors most shapes at a word boundary and a key joined to "x-" or "-" published whole; and then
+  bounded through `records.safe_text`, the redaction and bound every stored reading string takes
+  (240 characters, `RuntimeConfig.annotation_text_cap_chars`'s default, with one closing "…" where
+  cut, as the producer cuts; the store loads a detail at one character over that cap so the mark
+  survives a reload). A redaction marker that would finish past that bound withholds the
+  explanation rather than pass its room. Last come the swaps, after the opener strip so a swapped
+  character can never shield an opener: a backtick becomes `'` (no code span or fence); `<` and `>`
+  become `‹` and `›` (no tag an agent may read as an instruction block); and a word-initial `@`
+  becomes `＠` (no file mention Claude Code reads in). Each swap is one character for one, so
+  neutralising never lengthens it. A detail with nothing visible left adds nothing. What it cannot
+  remove is what a model sentence says: SECURITY.md carries that residual.
+
+The cap. The lines keep item 7's 2,000 characters, counted as before without the explanations,
+with every placeholder at its widest; over it the consistent lines drop, last first, and then the
+correction is refused with a sentence. The explanations get a fixed room on top, so adding
+them never drops a line and never refuses a correction that composed before. The worst case is
+every explanation a correction can carry, each at its widest: the goal, six outcome lines and a
+contradicted claim make eight; each is the label's 36 characters (a line break, two spaces and
+"Why Compass reads this as drift: "), 240 of detail and the "…", 277 in all; so
+2,000 + 8 × 277 = 4,216. That is the hard bound: the page's editor, its counter, the copy route and
+the composer all hold 4,216 (`copied_corrections.CORRECTION_CAP_CHARS`, the page's
+`CORRECTION_CAP`), and `test_correction` composes that worst case to exactly 4,216 and refuses it at
+one more character of lines. The refusal names what is bounded: "Your goal and lines would be
+longer than 2,000 characters. Shorten a line of your intent.", since the counter beside it counts
+the whole text to 4,216. The copy route reads a body of up to `copied_corrections.COPY_BODY_CAP_BYTES`
+(twelve bytes a character for the text and both identity fields, the widest JSON spells a code
+point, and 256 for the object), not the 12,288 the other annotation routes share: at that bound
+4,216 CJK characters were refused, the page still said Copied, and the paste then counted as the
+reader's words. Recompose and the stale rules are unchanged but for one addition: the stamp is still
+the saved words' revision, the settlement, the reading's `read_at` and the cited entries, and marking
+the reading Not accurate now adds a fourth element, since marking moves none of the others and a
+held correction would otherwise still carry the withdrawn departure and its explanation. An
+explanation comes from the stored reading those already stamp, so it can change only when one of
+them does.
+
+The box. With an explanation under each departure, a correction with two departures ran past the
+six rows the box opened with, and its closing request sat below the fold in the first walk at
+1400 px. The box now opens with one row per line of the composed text and one more, from 6 to 16,
+counted once when it opens so typing never resizes it; a longer text, or one wrapped at 400 px,
+scrolls inside the box.
+
+The placeholder contract (item 11). An explanation is a text part, never a placeholder. The page
+fills only `{"entry": fact_id}` parts and renumbers nothing inside an explanation, so a number a
+model wrote there is the model's own and is not one of the activity list's. The fields are now the
+goal, each outcome line with its state, the cited entry numbers and times, a contradicted or unshown
+claim's published title, and each departure's neutralised explanation; still no command, tool
+output, check name or summary.
+
+A copied correction coming back (item 9) is unchanged. An exact paste is Compass-assisted, so the
+explanation in it is never the reader's evidence or a later direction. An edited paste is the
+reader's own words, and the model sentence inside it travels with them, as the quoted claim already
+did.
+
+### Amended 2026-10-20 (owner): local time and quoted words
+
+The usability review pasted a correction and found three things an agent could not use: it cited
+"entry #5 in Compass's activity list", a list the agent never saw; its times were the server's clock
+(01:15) while the page showed the reader's (09:15); and nothing in it let the agent find the moment
+it was being steered from. The owner ruled on 2026-10-20: the correction uses the reader's local
+time, drops "(entry #N in Compass's activity list)", and quotes the agent's own words. The rest of the
+approved template, and the explanation line of the
+[earlier amendment that day](#amended-2026-10-20-owner-the-correction-carries-the-explanation),
+stay as they are.
+
+- **Local time.** The page sends `time_zone`, the reader's IANA zone name from `Intl`, and
+  `utc_offset_minutes`, the reader's zone in minutes east of UTC, with `POST /api/correction`, and
+  the composer draws every time in that zone (`correction.zone_clock`), with a date where the moment
+  is not the reader's today. A name in `zoneinfo.available_timezones()` is preferred, so each time
+  takes the zone's own rules as the page's `clock()` does, and a daylight-saving change between two
+  cited times no longer draws one an hour off (review, 2026-10-20). A name this machine does not
+  know, or a Python without a time zone database, falls back to the offset, which is one for every
+  time in the text and keeps that one-hour gap across a change. A `time_zone` that is not text, or an
+  offset that is not a whole number of minutes within 16 hours of UTC, is refused with 400. With
+  neither the server's own clock is used, as before, so an older page still composes. The page's
+  labels beside Steer back ("from the check at") and on an idle reading ("Read up to the last
+  recorded entry at") name the date on the same rule (`datedClock`), so they and the copied text
+  name the same moment.
+- **No entry numbers.** A placeholder is drawn as nothing. It stays in the parts, because the page
+  reads the cited ids from it to tell when a held correction is stale (item 11 is otherwise
+  unchanged), and it adds no width.
+- **The agent's own words.** Where a departed goal or a departed outcome line is cited at one of
+  the agent's messages, the line quotes that message's published title, the first sentence the
+  activity list shows: `The session departed from my goal at 09:15, where you said "Done: the
+  billing rate is now 0.25 in src/billing/invoice.ts".` The title is neutralised exactly as the
+  explanation is (`correction.neutralised`: invisible characters, openers, redaction behind joints,
+  `records.safe_text`, the look-alike swaps), bounded at the title's own 112 characters and one
+  "…", and its closing stop is dropped as the claim line drops it. A check, a write or the reader's
+  own message is never quoted: a command is not the agent's words, and the planted-command tests
+  keep it out. The claim line already quotes its title, and a consistent line stands on a tool's
+  report, so neither carries a quote.
+- **The cap.** The quotes get a budget of their own on the explanations' terms, so no correction that
+  composed before is refused or loses a line: the lines are measured without the quotes and with
+  each placeholder at nothing. A quote is the label `, where you said "` (18 characters), 112 of
+  title, the "…" and the closing quotation mark, 132 in all, and seven can appear (the goal and six
+  outcome lines). The cap is 2,000 + 8 × 277 + 7 × 132 = 5,140, held in one place
+  (`copied_corrections.CORRECTION_CAP_CHARS`) and mirrored by the page's `CORRECTION_CAP` and the
+  vocabulary fixture; `test_correction` composes the worst case to exactly 5,140 and refuses it at
+  one more character of lines.
+- **Where Steer back stands.** While departures are listed, Steer back stays beside them, labelled
+  "from the check at HH:MM" with the reading's `read_at` in the reader's zone, including when the
+  session has gone idle and while a later direction's question stands (the question keeps the
+  primary press, and Update intent instead is not offered there, since the question's Add is the
+  same act). Copying sends nothing. Two withholds stay: a reading marked inaccurate, and one of an
+  earlier version of the intent. There the departures say so in one line instead of the button
+  going missing. Those two are the implementer's reading of the earlier rules (`steerOffer` and
+  `steerWithheld` in `frontend/src/drift/correction.ts`, and `correction._current_rows` on the
+  server), not part of the owner's ruling of 2026-10-20, which reads unqualified: "Steer back stays
+  available while departures are listed." They are kept as the cautious side, because a correction
+  pasted into the agent would then argue from a reading the reader has rejected or from words
+  they have since replaced. The owner is asked to confirm them. If the owner does not, Steer back is
+  offered there too, with that one line beside it, and the server compose stops demoting those
+  rows.
+
 ### What the result build decided, 2026-09-28
 
 DRC-4695 built items 6, 10 and 14 on the session page, with the analysis-derived level of
@@ -4608,7 +5166,9 @@ and each was settled on the withholding side.
   panel draws is not a consistent it can word, the level reads "Not enough recorded yet". The
   validated function counts a departure the page has demoted (an unsettled later direction, say),
   so the level can read Medium beside an answer of "Can't tell". That is the cautious direction and
-  was left as validated rather than re-ruled here.
+  was left as validated rather than re-ruled here. Re-ruled 2026-10-21: the page draws a level
+  above None or low only beside a departure it shows
+  ([the amendment](#amended-2026-10-21-a-level-needs-a-departure)).
 - Each line reads "Departs at #n", "Consistent with #n, as the tool reported; not inspected" for a
   Claude Code tool report or any harness's check, "Consistent with what the session said at #n; not
   a check" otherwise, or "Can't tell". In the Drift card the qualifier is said in the line's Evidence rather than
@@ -4790,6 +5350,8 @@ types one.
 
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): the live monitor switch moves into More (placement only), and an intent with no outcome line is stated in the how-to as a valid "Not enough recorded yet".
 
+Amended 2026-10-22 by [the amendment at the end of this decision](#amended-2026-10-22-a-goal-alone-is-read-or-refused): an analysis no longer needs an outcome line, so item 1's "zero is too little" and rule L7 hold for the live estimate only, and a goal too vague to read against is refused.
+
 Decided 2026-09-24 (DRC-4691). DRC-4692 defines and validates the levels on recorded Claude Code
 sessions. DRC-4696 builds the live estimate in the panel and the header, and amends the skill body's
 sentence "Nothing here evaluates on a cadence" when it ships, not before, because the skill body
@@ -4875,6 +5437,305 @@ check's latest passing run, blocks the live estimate's "None or low" and is neve
 3; the read-only list is in DEC-23's closed lists). The analysis level has its own source line, and
 the line "reads checks and file paths, not what the intent says" is the live estimate's alone (items
 1 and 6).
+
+### What reading a `/goal` decided, 2026-10-22
+
+DRC-4946, built against the shapes recorded in `docs/captures/claude/goal-2.1.308-macos.jsonl`. A
+reader who gave Claude Code a goal with `/goal` has said what done looks like, and the command is a
+local one, so the first-prompt read classes it as a control and drafts nothing from it.
+
+- The goal is read from the transcript's own records and not from the command's prompt text. The set
+  record is a `goal_status` attachment with `sentinel: true` that carries the condition and the
+  instant the command ran, which is also the instant of the command's `user` record. The evaluator's
+  verdict is a second attachment with `met: true` and no sentinel.
+- The latest set wins. A `Goal cleared:` answer publishes nothing. A met goal keeps its condition,
+  because the harness clears a met goal from itself and the session was still for it; the capture's
+  `/goal clear` after a met goal printed `No goal set`, and that changes nothing. A verdict with no
+  set record behind it in the bytes read has no known set time, and a time is never taken from the
+  verdict instead, so it publishes nothing.
+- A condition that cannot be held whole publishes nothing, as the first-prompt read refuses a cut
+  prompt: over 2,000 characters here, though the harness accepts 4,000, because the longer words
+  could only be offered as an excerpt.
+- The published field is one mapping, `session_goal`, `{text, at}`. The harness verdict (met, when,
+  the evaluator's reason) joins it as keys later, and nothing is renamed.
+- The source token is `session-goal`, in `reading.PROMPT_SOURCES`. The reader typed the command, so it
+  is adopted words keyed on their own time like the other sources, and every place that branches on
+  the closed list reads it that way: the window baseline is the command's instant and a saved one is
+  "saved" and not "typed". It is not a person's message in the observed record, so a reading finds no
+  source fact for it and reads the goal box's words, with the existing sentence saying so.
+- Rejected: reading the condition out of the command record's `<command-args>`. The record reader cuts a
+  message at 2,000 characters and drops the closing tag, and the attachment is not cut.
+- Not decided here: how the page offers the goal, which the next section records.
+
+### What the measured `/goal` shapes changed, 2026-10-23
+
+Amends the section above, built against `docs/captures/claude/goal-clear-replace-verdicts-2.1.309-macos.jsonl`.
+
+- A clear is the set sentinel with `met: true` and no reason. The section above read every `met: true`
+  attachment as the evaluator's verdict, so an interactive clear, which writes nothing else, showed the
+  cleared goal as marked met. The `Goal cleared:` answer is kept as a second signal; `claude -p` writes both.
+- The length limit is 4,000 characters, from the harness: 4,001 is refused with a printed sentence and
+  no record. The 2,000 above was the record reader's own cap and had no basis in the command, so a
+  3,000-character goal, accepted by Claude Code, published nothing. The cap is now 4,000, and the Goal
+  field's own excerpt (`offered`, `cut`) carries the words it cannot hold. The reader-side message cap is
+  unchanged, which is why the condition is still never read from `<command-args>`.
+- An impossible verdict is `met: false` with `failed: true`. It joins no verdict, as a not-met one does,
+  so the card never says the harness marked it met. Whether the goal still stands afterwards was not
+  measured; it stays published. Superseded by the amendment of
+  2026-10-23 below: it was measured, the goal is ended, and the give-up is published as its own claim.
+- Left as they were, now measured: a replacement is a second set, the latest wins; a resume writes no
+  goal record, so an active goal survives it; an untimed set publishes nothing, because every captured
+  record carries a time and one without cannot be given a guessed one.
+- A goal set before the 8 MiB the cold read covers publishes nothing, so the Goal field offers no
+  detected goal and the reader types or adopts one. Reading the head of the file instead was rejected:
+  it would make every collection of a large transcript read it end to end.
+
+### What offering a `/goal` decided, 2026-10-22
+
+DRC-4947, owner rulings of the same date. The page uses a detected goal and does not hold it back for a save.
+
+- A `/goal` is the working goal until the reader edits it. With no goal saved it is the draft, ahead of
+  the first and latest prompt and ahead of the harness-control check, because a session that opened with
+  `/goal` has no first prompt to draft and still has this goal. The box, Save intent and Analyze drift all
+  read it through `intentDraft`, so Analyze adopts it by name (`adopt: session-goal`, its words and its time)
+  as it does a drafted prompt. The server's later-direction floor takes the same draft time
+  (`annotations.direction_floor`), so the page and the store agree on which directions are later.
+- The page marks it "Goal detected" and the line under the box reads "From /goal", with the time. Typing
+  replaces it and the line says "From /goal, edited" or "Typed"; choosing a prompt replaces it and the line
+  names the prompt. The prompt list leads with it. (Wording since 2026-10-23, and the line sits above the box:
+  "From your /goal at 11:53 · not saved", "Your edit of your /goal · not saved", "You typed this · not saved",
+  "Drafted from the prompt you chose · not saved".)
+- A `/goal` that appears after the reader saved a goal never replaces their words. The page offers it
+  beside the field, naming the condition and its time, with Use this goal and Keep my goal. "After" is the
+  moment the saved words stand at, as `direction_floor` reads it: an adopted goal by its source's time, typed
+  words by when they were saved. Use this goal fills the box as a pending adoption, so Save intent records the
+  new source and time; Keep my goal declines that `/goal` and any older one, and a later one asks again.
+- A condition over the Goal field's 240 characters is offered as the server's excerpt with a note that it
+  was cut. The row carries `offered` and `cut` only for such a goal, and `prompt_candidate` resolves `offered`,
+  so the words on screen, the words an adoption names and the words the store keeps are one string. The page
+  never clips on its own, and an adoption naming the whole words is refused.
+- Rejected: saving the detected goal on open. Nothing in Compass writes the reader's words without a press.
+- Rejected: Use this goal as an immediate write. A pick from the prompt list fills the box and saves
+  nothing, and a second kind of pick that saves would make the list inconsistent with itself.
+
+### Amended 2026-10-22: Find goal reads your prompts
+
+DRC-4953, owner rulings of the same date. A session with no `/goal` and no saved goal can still state its
+goal across the prompts the reader typed. A button beside "Use your prompt", Find goal, reads those prompts
+and offers the goal when it can tie it to the reader's own words.
+
+- The call is the reader's. It runs only on a press, one call per press, and never on a render, a poll, a
+  focus change or a revision save. It is refused with the pause and counted against the same rolling cap as a
+  reading, at the same model seam (`reading_policy.GuardedModel`), so a press that finds nothing is charged
+  because the call was made. A press that sends nothing (no prompts, a missing CLI, a refusal known beforehand)
+  is not.
+- It reads the reader's prompts and nothing else: the person-authored messages `_prompt_facts` already
+  verifies, minus a correction the reader copied from Compass, masked and folded as a chosen goal is.
+  Agent messages, tool output and pasted content Compass strips are never sent. A session over 40 prompts
+  keeps the first five and the latest.
+- High confidence is three mechanical rules and not a score. The model must quote the words the goal comes
+  from. Each quote must be verbatim, whitespace aside, in the prompt it names, in the text Compass sent
+  (masked and clipped as sent); one paraphrased quote drops the goal, and so does a quote filed under another
+  prompt's number. The model must also call the goal clear. The prompt carries the same end-state
+  wording as a reading's `reading.GOAL_UNCLEAR_RULE`, without importing it; a test holds the shared phrase. A goal over the Goal field's 240 characters is dropped and never cut.
+- The vague-goal test is the model's judgement made in the same call. No keyword or length rule makes it,
+  as for a saved goal, and a second model call over the same words would double the cost of a press. The
+  limit is accepted and written in SECURITY.md: a finder more lenient than a later analysis can show a goal
+  that analysis would call unclear, and the quotes are what the reader checks it against.
+- The found goal cites the prompts it quotes by the entry numbers Full activity shows (`entry_numbers`), drawn
+  as the Drift card draws a cited entry, beside the source line, which since 2026-10-23 reads "Found in your prompts at" the time it was found. Pressing
+  one opens Full activity at that entry and reads older pages for it when the page does not hold it.
+  The checked quotes sit under that line, each led by its entry number, because the hover shows the entry as
+  the activity list abbreviates it and the quote is what ties the goal's wording to the prompt.
+- Precedence is the reader's saved goal, a `/goal`, a found goal, then the first or latest prompt drafts. A
+  found goal stands only while the box holds its words, so an edit replaces it, and a result that arrives after
+  a saved goal, a `/goal` or the reader's own typing does not touch the box.
+- Nothing is stored. The answer is held in the page as the box's pending words and saved, if at all, as typed
+  words by Save intent, so the store never holds a model's sentence the reader did not keep.
+- Rejected: a new adoption source resolved by the server, as `session-goal` is. The server would have to keep
+  the found goal between the press and the save, which is storing an assessment of the session before the
+  reader has kept it, or call the model again at save time. Rejected: a keyword or length rule for "vague",
+  for the reason the amendment above gives. Rejected: running it unasked on open. The owner ruled a reader-started
+  call, like Analyze drift.
+
+### Amended 2026-10-22: a goal met verdict is a claim
+
+DRC-4948, owner ruling of the same date. When a Claude Code session ran with `/goal`, its evaluator can write a
+`met` verdict. Compass shows that verdict and checks it, and relies on its own reading.
+
+- The row publishes the latest `met: true` verdict on the goal it belongs to, as `session_goal.verdict`
+  (`{met, at, reason}`). The key is absent before the evaluator decides, so no goal carries an empty one, and a
+  later `/goal` or a clear takes it away with the goal it was about. The reason is the evaluator model's own
+  sentence, masked, folded to one line and cut at 500 characters with an ellipsis. A not-met verdict is not
+  published (a give-up is, as its own claim: see the amendment of 2026-10-23 below): the evaluator repeats it on every iteration while the goal is open (a real session holds
+  more than twenty), so it is progress rather than an end state, and the card reports only the end state.
+- The card says it as the harness's claim, in the reader's words: "Claude Code marked this goal met at 16:44",
+  under the label "The harness's claim", with the reason quoted. It is drawn from the row alone, so a verdict
+  with no analysis yet reads as the claim with a line saying nothing has checked it and no level is implied.
+- The analysis tests the claim the way it tests an agent saying a task is done. The test is code over the
+  recorded writes and checks (`reading.check_goal_verdict`), never a model call, and it reads only the record
+  from the goal's own set time. The facts the reason cites are the files it names and the kinds of check it says
+  passed. A cited file recorded as written, or a claimed kind of check that passed, at or before the verdict
+  **agrees**, and a recorded fact that undoes it **disputes**: a cited file written again after the verdict, or
+  a check of a claimed kind whose latest run failed and that no later whole-suite run before the verdict
+  superseded. A dispute outweighs what agrees. Nothing found, or a reason that names nothing checkable, is
+  **unconfirmed**, and never disputed, because the listing is capped and absence of a write is not
+  contradiction (rule 3).
+- The result is stored beside the criteria as `goal_verdict` (`{at, check, why, cites}`), not among them. `at`
+  is the verdict's own time, so a reading that predates a verdict, or carries no test, leaves it unchecked and
+  the card says to analyze again. `check` and `why` are closed tokens; the page owns the sentences, as it does
+  for a criterion's `why`, and a stored value outside the tokens refuses the reading whole.
+- The verdict never lowers a level and never counts as a passing check. The producer builds the criteria
+  without reading it, and the check is not in `Recorded`, so nothing that cites a check can cite it. Where
+  Compass disagrees the card says "Compass disputes it", and "Compass's own reading stands": the level shown is
+  the analysis's and nothing else's.
+- Rejected: a model call to judge the reason. The reason is already a small model's summary, and a second
+  model reading it would add a reading of a reading. Rejected: reading an absent cited fact as a dispute. It
+  would turn a capped listing, or a file that existed before the session, into an accusation. Rejected:
+  letting a disputed verdict raise the level. A level rests on departures the record shows, and a claim the
+  record contradicts is a caution on the claim, as a contradicted agent claim is.
+
+Amended 2026-10-23 (owner feedback, DRC-4948): a file taken away disputes the claim too. A real session
+had the evaluator say met over a file a later turn removed with `rm`, and the card said only that Compass
+could not confirm it, because a deletion was nowhere in the record the test read. The scan of the
+transcript's shell calls now notes each file `rm`, `unlink`, `rmdir` or `mv` took away (a `mv` removes its
+sources, not its destination; globs, unplaceable targets, a `-t` move and `git rm` are not read), skipping
+a call whose own output reports that command failing. The notes are read at the press and go to no model.
+They are not facts: a published fact is a closed kind, and the removal exists only to test this claim.
+Where a file the reason or the goal's condition names, or a folder holding it, was taken away after the
+verdict and not written again after that, the test **disputes** it with `deleted-after` or `moved-after`,
+stored with the one file and the moment (`{at, check, why, cites, path, changed_at}`, the two extra keys
+together and only beside those tokens), so the card can say "Compass disputes it: docs/e2e/notes.md was
+deleted at 22:59, after the verdict." A file written again after its removal stays the `written-after`
+dispute. "Could not confirm it" remains the answer where nothing in the record supports or contradicts the
+claim, and Compass's own level stands either way.
+
+
+### Amended 2026-10-24: the words that report a created pull request or a used skill
+
+A live walk of the owner's session showed a goal line that asked for a skill and a pull request still read Can't
+tell, though the reading cited both facts and the verdict check agreed: the reading's explanation carried a word
+of [the success list](#amended-2026-09-24-a-checks-own-result-word-is-not-a-verdict-owner-ruling) and the backstop
+withdrew the result as a stated verdict. The stored reading does not keep a withdrawn explanation, so the words
+were reproduced on a synthetic goal, where "successfully created" and "the record confirmed" tripped it.
+Where every entry a consistent cites is one of those two facts inside the window, `successfully` and
+`confirmed` are now set aside, as a check's own result words are for a check; `delivered`, `works`, `completed`
+and the rest of the list still withdraw it, and a pull request cited beside a check keeps the check's rule.
+"Created" and "opened" were never on the list. Not done: a sentence in the trusted instructions telling the model
+to describe only what a pull request or skill entry shows. The header's bytes are pinned for final readings and
+its budget is tight, so that costs a re-pin and a requalification for a rule the set-aside already covers.
+
+### Amended 2026-10-23: a verdict may name a pull request
+
+[The 2026-10-22 amendment](#amended-2026-10-22-a-goal-met-verdict-is-a-claim) lists the facts a verdict's reason
+may cite as the files it names and the kinds of check it says passed. A third is added by
+[the pull request and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts) to DEC-23: a pull request
+the reason names, as `PR #7`, `PR 7`, `PR (#7)`, `pull request #7`, a list (`PRs #6 and #7`, `PRs #7, #8`), `pull/7` or a `github.com/<owner>/<repo>/pull/7` URL (a bare `#7` is not read, because it is as often an issue), which
+agrees when the record holds a created-pull-request fact for that number (and that repository, where the reason
+gives one) at or before the verdict and no earlier than the goal's own set time. The stored `why` for it is
+`pr-created-before`. A written file the reason names still agrees first, and a failed check of a claimed kind
+still disputes before either. Without the fact the result stays **unconfirmed** with `not-found`, never
+disputed: absence is not contradiction (rule 3). A reason that names none of a file, a check kind or a pull
+request number is still `nothing-checkable`.
+
+A pull request cannot be disputed by a later record, because the record holds no event that undoes a creation.
+
+### Amended 2026-10-23: a goal that ended is said to have ended
+
+DRC-4956, owner ruling of the same date, built on a measured run recorded in
+`docs/captures/claude/goal-give-up-ends-goal-2.1.309-macos.jsonl`. It amends the paragraph above that says a
+not-met verdict is not published, and the rulings elsewhere that call a `failed: true` verdict "neither a
+verdict nor an end". That was written before the later state was measured. After Claude Code writes the
+failed record the goal is **ended**: a bare `/goal` prints "No goal set" and a clear prints the same, and
+neither writes a goal record.
+
+- A give-up is published as `session_goal_gave_up` (`{at, reason}`), a top-level per-session field of its own
+  and never under `verdict`, because every reader of a met goal keys on that. The goal itself becomes None, so
+  naming, drafting and adoption read as they do for any session with no goal. The reason goes through the same
+  masking as a verdict's: one line, cut at 500 characters. No iterations, tokens or duration are published.
+- A clear is published as `session_goal_cleared` (`{at}`), also top level. The goal is None after it. Where
+  `claude -p` writes two clear signals, the sentinel and then the printed line, the first time wins.
+- A goal that follows another carries `earlier` (`{how, at}`) on `session_goal`: `replaced` only when the
+  earlier goal was still active when the next `/goal` arrived, at that moment; `met` at the verdict's time;
+  `gave-up` at the give-up's time. Never the earlier goal's words. A set with the same words at the same
+  millisecond is a duplicate record, not a replacement, and a later set takes the clear and the give-up away.
+- All of it lives in the same cache entry as the goal, so an incremental read keeps it. A cold read that starts
+  mid-file publishes none of it: absent means unknown, never "did not happen". The two new fields are declared
+  by hand where `AGENTS.md` names, and are in neither `PATCHABLE` nor session history.
+- The Drift card says a give-up as the harness's claim, "Claude Code gave up on this goal at 16:44", with the
+  reason quoted and a line that Compass has not checked it and the level does not change. It is never "met",
+  never "Analyze again to check it", never a level or a check, and never model-judged. Compass's own reading
+  stands, as it does for a met claim.
+- The Intent card says under the Goal field what became of an earlier goal ("Replaced an earlier /goal at
+  14:05", "An earlier /goal was met at 14:05", "Claude Code gave up on an earlier /goal at 14:05") and, where a
+  clear left no goal, "Your /goal was cleared at 14:05". Over a Goal field that still holds a prompt draft, the
+  clear names it ("...; the draft below is your first prompt", "your latest prompt", "a prompt you chose", "a
+  goal found in your prompts"), so the note is not read as a caption for the draft; typed words and an empty
+  box need no name. (Superseded 2026-10-23: the note reads "Your /goal was cleared at 14:05" alone, and the
+  source line directly under it names the draft; the "; the draft below is ..." clause is gone.) Where the session opened with `/goal`, the existing
+  "This session opened with /goal" sentence takes the clear instead, so it is said once. None of these shows
+  while the update offer ("Your /goal changed at") is on screen.
+- Rejected: holding a given-up goal and adding the note. The run showed the goal ended, and a held goal would
+  keep naming the session, being drafted and offering an update for a goal the harness had stopped. Rejected:
+  publishing the earlier goal's words. A replaced goal's text is not the reader's to be shown a second time,
+  and nothing needs it.
+
+### What reading a Codex `/goal` decided, 2026-10-27
+
+Built against `docs/captures/codex/goal-0.164.0-macos.jsonl`. Codex 0.164.0 has a `/goal` with edit,
+pause, resume and clear, and the reader typed it, so it is the same source as a Claude Code `/goal`: the
+same `session_goal` field, the same `session-goal` adoption token, and the same page.
+
+- The set is the `thread_goal_updated` event, not the `user.goal` message beside it. The message is Codex's
+  restatement and drops any objective of 699 characters or more; the event keeps it whole to 4,000. The time
+  is the goal's `createdAt`, so an edit (which keeps it) is the same goal in new words and says nothing about
+  an earlier goal, while a pause and a resume change nothing the row publishes.
+- A goal the model creates with `create_goal`, including every `codex exec "/goal ..."`, writes no event and
+  is not read: its objective is the model's wording, not the reader's.
+- A clear is the `User cleared the goal.` line and counts only over a held goal. Codex writes the same line
+  for a clear with no goal and before every goal set over a completed one (20 of 20 measured), so on its own
+  it does not mean a reader dropped a goal. A replace writes that line and then the new set, so a Codex goal
+  never carries `earlier: replaced`.
+- An objective over 4,000 characters is stored as "Read the Codex goal objective file at ...". That sentence
+  is the harness's, and it publishes nothing.
+- The `<codex_internal_context>` wrapper joins the Codex injected-tag list. All 83 leading occurrences
+  measured on one machine were Codex's own (55 goal actions, 27 goal continuation instructions, 1 daemon
+  recovery notice); before this they were read as the reader's prompts, and a goal-only session drafted
+  "User set the goal: ..." as its goal.
+- A Codex session started with `/goal` and never prompted since has no prompt to name it, so its goal does.
+- Rejected for now: reading `~/.codex/goals_1.sqlite` for the met state. Completion never reaches the rollout
+  (21 of 21 measured), and the working model marks its own goal complete, so a met state there is a weaker
+  claim than Claude Code's separate evaluator. Reading it means a new file outside the rollout, which needs
+  its own entry in `SECURITY.md`; it is left for a later change rather than folded into this one.
+
+### What reading an Antigravity `/goal` decided, 2026-10-27
+
+Built against `docs/captures/antigravity/goal-1.4.7-macos.jsonl`. agy 1.4.7 has a `/goal` slash command that
+keeps the model working through a stop hook until the model writes `<!-- GOAL_COMPLETE -->` or
+`<!-- GOAL_CANCELLED -->`. The person typed it, so it is the same source as the other two: `session_goal`,
+`session-goal` and the same page.
+
+- The goal is the person's `USER_INPUT` whose request opens `/goal ` and whose metadata carries the fixed
+  `/goal is a [Slash Command]` paragraph (9 of 9 goal inputs carried it, print and interactive). The paragraph
+  is required, so a request that only starts with the word is not a goal, and `/edit_goal`, which is not a
+  command in 1.4.7, never is.
+- It is read from `transcript_full.jsonl`, not the `transcript.jsonl` the directions come from. The short
+  file keeps the first and last 2,048 characters of a long input, so a long condition would lose its middle
+  while the marker in the tail still matched.
+- The latest `/goal` wins and the row publishes no `earlier`, no clear and no verdict. Nothing on the record
+  ends a goal: a replace writes only the next set, and met or cancelled is the model's own marker, which the
+  2026-09-27 ruling keeps unread. Saying "Replaced an earlier /goal" would be wrong whenever the earlier one
+  had been met.
+- Amended the same day (owner): Antigravity has its own 16,000-character bound
+  (`ANTIGRAVITY_GOAL_CAP_CHARS`). The 4,000 the other two use is their own harness's limit; agy accepted 5,000
+  and refused nothing, so a shared 4,000 published nothing for a real goal. 16,000 is well above anything
+  measured and still keeps a pasted document from riding every board payload. A longer condition publishes
+  nothing, and anything over the Goal field's 240 is offered as its excerpt, as for the other two.
+- The server adopts `session-goal` from an Antigravity row and nothing else from it: its prompts were never
+  adoptable, and this does not change that.
+- Rejected: reading the `GOAL_COMPLETE` marker as a verdict. It is the working model's own claim, and one
+  reply wrote it again a turn after its goal was already met, so the marker alone does not even show a goal
+  was active.
 
 ### The starting definitions
 
@@ -4962,7 +5823,9 @@ High. The Analyze nudge needs a cited signal after that same person boundary.
 
 The zero-outcome-line gate remains first: a goal-only reading answers Can't tell before a failed
 check can become its answer. An analysis level of Not enough recorded yet does not replace a
-measured live pill. A departure leads the analysis reasons. Its short source line is "Analysis
+measured live pill (changed 2026-10-21: a stored reading that stands owns the level slot, with a
+level or with none; see [the amendment](#amended-2026-10-21-a-level-needs-a-departure)). A
+departure leads the analysis reasons. Its short source line is "Analysis
 at <time>, intent against cited checks and messages".
 
 A broader recorded pass retires a narrower failure only where explicit Python unittest or pytest
@@ -5023,7 +5886,9 @@ had stopped after a true running claim. A background launch followed by thirty
 quiet minutes occurred at five stops, including both stalls and two development
 servers deliberately left running. The parser cannot distinguish those uses.
 
-The page shows Delegated work only for recorded launches, with counts and clocks. Partial or
+The page names recorded launches, with counts and clocks, only inside the At-risk item below; the
+Drift card no longer draws a Delegated work line
+([the amendment](#where-everything-in-more-went)). Partial or
 unavailable attribution is named; an unknown count stays unknown. Unpaired and quiet counts
 concern this session's own launches, while launch totals can include admitted children. Thirty
 quiet minutes after an unpaired launch in the last turn adds an At-risk item and a generic
@@ -5091,8 +5956,9 @@ detects semantic drift.
 Live reasons admit only the thirteen native check, path and coverage tokens the live producer
 can emit. Model-assessment reasons and blockers, including an absent outcome line, and unknown
 tokens supply no live explanation. Limits of this estimate separates coverage gaps from recorded events.
-At Not enough recorded yet, every known reason stays once in the existing closed Why not
-None or low disclosure, except the visible limit that the intent names no folder. Cited entries
+At a live estimate's Not enough recorded yet, every known reason stays once in the existing closed
+Why not None or low disclosure, except the visible limit that the intent names no folder. An
+analysis draws no such level since 2026-10-21, and says its reasons in the answer sentence. Cited entries
 remain visible even when no event sentence is needed. An unresolved citation stays unlisted,
 never replaced with another entry. A named failed check retains its age and whether files
 changed after it. Recorded UTC times retain the complete date and seconds; an absent check
@@ -5109,6 +5975,171 @@ what was agreed then; this amendment does not rewrite them. These are regression
 those two canonical examples, not universal reading budgets or runtime citation limits. A
 valid reading with two or more citations keeps every surviving support and its recorded times,
 even when its explanation needs more words than the one-citation example.
+
+### Amended 2026-10-22: a goal alone is read or refused
+
+Decided by the owner on 2026-10-22. A goal almost always carries its expected outcome, so a reader
+who saves only a Goal and presses Analyze drift gets a drift level. This retires rule L7 for the
+analysis: `levels.analysis_level` no longer returns "Not enough recorded yet" with `no-outcome-line`
+when the intent read holds no outcome line, and item 1's "an analysis needs at least one outcome
+line" no longer holds. The live estimate is unchanged (it never read the lines). The other rules
+stand: a level needs a departure or a failed check ([2026-10-21](#amended-2026-10-21-a-level-needs-a-departure)),
+the evidence floor, and the stored-reading checks.
+
+- **The Goal stands as the one line.** With no outcome line the producer's prompt says so ("No outcome
+  lines are given. Read the goal's own stated end state as the outcome, and answer the goal against
+  it."), and the level rules treat the Goal row as the one line: `None or low` still needs a
+  `consistent` that cites a passing check, so the agent's word alone, or a verdict the model could not
+  settle, leaves "Not enough recorded yet" with `line-not-shown-by-a-check`. A departure reads Medium
+  and a fresh failed check High, as with a line. No analysis is ever Extreme; that was never changed.
+  An outcome line, where one is saved, is read as before and the Goal is not also treated as a line.
+- **The reading says which it read.** The cutoff gains "Read against your goal." when the revision
+  read holds none. Amended 2026-10-23 (owner): it first read "Read against your goal; no expected
+  outcome lines were saved.", and the second half was dropped because noting the absence of an
+  optional field tells a reader nothing. A goal-only reading stored before that change keeps the
+  longer sentence it was stored with. It is keyed on the revision and not on what the
+  press sent, because the unasked lane reads the goal alone while lines are saved, and that is not the
+  same statement.
+- **`no-outcome-line` stays a known token.** A reading's level is recomputed from the stored reading
+  on every collection and never stored, so a level published before this change is recomputed
+  under the new rule. The token stays in `levels.REASONS` and the page keeps its sentence ("No
+  expected outcome line was saved."), so a stored or older payload that carries it still renders its
+  original sentence and not a blank.
+- **A fifth result, `goal_unclear`, on the Goal row alone.** Where the shape contract's rule 1 holds
+  three results per constraint and the claims row adds a fourth, the Goal row may now answer
+  "goal too vague to analyze against" (`reading.RESULT_GOAL_UNCLEAR`, the token `goal_unclear`). It is
+  the model's judgement of the words alone, made before it reads the entries, from the Goal and the
+  outcome lines if there are any: no keyword and no length rule makes it, and the resolver cannot tell
+  a vague goal from a clear one. Like `unsupported` on claims, the token means nothing on an outcome
+  line or the claims row, and the store refuses a reading that carries it elsewhere.
+- **It stands in place of everything else.** The row takes no citation and no prose. Every other row
+  of that reading is published as `not verifiable` with the reason `not-asked`, whatever the reply held,
+  so no departure, level, claim or Steer back is drawn for that run. `levels.analysis_level` returns
+  "Not enough recorded yet" with the reason `goal-unclear` before any tally.
+- **The page says it under the Goal field**, in Compass's voice: "This goal is too vague to analyze
+  against. Rewrite it with what should be true when the work is done, then try again." It is read from
+  the stored reading, so it stays while the saved goal is the one read and clears the moment the goal
+  box is edited or a new revision is saved. A refused run is stored like any reading and counts against
+  the daily cap, because the model call was made and the reader's capacity spent.
+- **What it cost the prompt.** The trusted header gained two instructions, so the worst header
+  measures 9,475 bytes of the share. `INTENT_SHARE_BYTES` rises from 9,216 to 9,728 and the record keeps
+  at least 6,656 bytes where it kept 7,168. The final-scope header digests the suite pins changed
+  with it and were re-pinned.
+- **Not changed.** The abstention study tooling (`mark_abstention.py`, `score_abstention.py`) still
+  freezes cases with no outcome line as having no analysis question: it measures a frozen method, and
+  amending it is a separate decision.
+
+Amended 2026-10-23 (owner, DRC-4950): the evidence floor stays. A goal-only reading that finds nothing
+still draws no level until a passing check shows the goal done, and the card now says so plainly and
+says what would let a level be drawn: "Nothing departs from your goal, but no check shows it done, so no
+level is drawn. Run a check that shows the goal is done (a test, lint or build), then analyze again."
+The sentence is the verdict line's own for the goal-only blocker; where outcome lines exist the existing
+wording ("Nothing found against what it read, but no level is drawn: a line of your intent is not shown
+by any check.") is unchanged.
+
+### Amended 2026-10-23 (owner): the live level comes from a Haiku check
+
+Amends items 2, 4 and 5 for Claude Code, and [DEC-15's amendment of the same date](#amended-2026-10-23-owner-the-live-monitor-may-evaluate-on-a-cadence-while-the-session-is-viewed)
+carries the owner's words. Items 1, 3 and 6 stand, and so does item 5's other half: the monitor never
+makes a session eligible for the unasked lane, never feeds, triggers, orders or gates it, and raises no
+notification, desktop or page.
+
+**The owner's four follow-up rulings, the same day.**
+
+1. The Haiku check produces the live drift level. It replaces the checks-and-paths estimate as the level
+   on the Drift card and in the header pill, in this decision's four levels. An Analyze reading outranks
+   it. It never makes a verdict on whether the work met the goal. The model-free estimate stays as the
+   fallback when the check is paused, capped, failed or has not run.
+2. It ships labelled "Live monitor · Haiku" and is qualified later. The qualification run (an abstention
+   check bound to the explicit Haiku id, with an AGY reviewer at `gemini-3.8-flash-medium` or
+   `gemini-3.8-flash-high`) is its own piece of work. It blocks nothing, and the Verification issue does
+   not wait on it. [DEC-21's 2026-09-23 amendment](#amended-2026-09-23-claude-code-is-built-and-gated)
+   is the rule a new producer falls under; this ruling ships ahead of it, on the owner's word.
+3. An exact Haiku id is pinned in a separate monitor model setting, defaulting to the newest released
+   Haiku id at merge, and a release checklist item names the bump. Floating aliases stay refused, and the
+   Sonnet floor for readings is unchanged: the reading validator still refuses Haiku.
+4. "Viewing" means the session route is mounted and the tab is visible. A hidden tab pauses ticks, and they
+   resume when the tab is visible again within the TTL.
+
+**What changes in the items.** Item 2's "computed without a model" now describes the fallback only. Item 4's
+"browser-only, never sent to the server, no new route" is superseded: the switch drives a server lease and
+adds routes. An "on" is not remembered across reloads, so a reload shows the switch off until it is pressed.
+Item 5's "calls no model" is superseded and its "raises nothing" holds. The source line for the level reads
+"Live monitor · Haiku", and says it read the latest turns of the transcript, not that it judged the goal met.
+
+**The remaining decisions.** The lane, cap, TTL, stops, `ended_at` and reload decisions are the
+recommendations, taken as given. The ruling on Analyze against a tick is the owner's own, and the
+level's floor is ruled in [its own amendment](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor)
+below, which supersedes the floor bullet here.
+
+- **Lane.** A call the reader starts, under [DEC-28's widening](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
+  with its own notice kind `monitor` and a one-press off beside it. It is kept out of the unasked lane,
+  which is off by default and whose 900 s per-session floor cannot meet a once-a-minute cadence. The
+  20-minute banner is the re-consent.
+- **Cap.** The monitor's own caps, apart from Analyze's `DAILY_CAP`: at most 30 ticks per session per TTL
+  window, and a rolling 24 h cap across the board. Spending either leaves the other untouched. A tick
+  skipped because the transcript did not change makes no call and costs nothing. Reservation follows
+  `reading_policy`: charge before launch, never refund uncertain spend.
+- **Analyze against a tick.** A press of Analyze while a tick holds the `reading.claim` slot cancels the
+  tick, and the press then takes the slot. The tick's reserved spend is not refunded, because it is
+  uncertain. The owner decided this on 2026-10-23; it is no longer a recommendation.
+- **TTL.** The clock is held on the server. The banner is due 20 minutes after the start or after the last
+  Yes, and the deadline is 10 minutes after that. No answer by the deadline turns the monitor off with a
+  note saying why, Yes resets the clock and No turns it off.
+- **Stops.** Pause model calls and `--no-observer-model` both stop the monitor and refuse to start it.
+  Pause cancels a tick in flight. Under DEC-28's opt-out, consent means "not paused": the monitor has
+  no grant of its own for a reader to give, the `monitor` notice is recorded with the first charged
+  call, and a store that cannot say whether the reader paused refuses the call.
+- **Sessions with no `ended_at` stamp.** The TTL banner is what stops the monitor. Idleness is not read as
+  an end. A session that has an end turns the monitor off and disables the switch.
+- **The level's floor.** Superseded by [the owner's floor amendment](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor).
+  The level is held to [DEC-17's shape contract](#dec-17-the-shape-contract) and carries no verdict.
+  The model level is absent, not low, until a tick completes.
+
+### Amended 2026-10-23 (owner): the Haiku level's own None or low floor
+
+The owner ruled on 2026-10-23 that the Haiku level has a floor of its own for "None or low", apart from
+item 1's floor for the model-free estimate, which asks for a passing check. A model "None or low" stands
+when Haiku cites at least one turn it was sent and the estimate shows neither of the blockers item 1
+shares across both sources: **no failed check, and no unsettled later direction**. "Too little recorded",
+including no passing check, does not block it, so a pull request created with no check run, read by Haiku
+as None or low, is published as None or low.
+
+- **The live-only shell blocker is not included.** Item 1 names a shell command that is neither a check
+  nor read-only, run after a check's latest pass, as a blocker "for the live estimate" and not for both
+  sources, so it binds the estimate alone. The estimate's other blockers (a check not recorded, a
+  background run, an incomplete scan, entries not listed) are not item 1's shared two and do not block it
+  either.
+- **Where a blocker holds**, the estimate's own answer stands in place of the model's None or low: its
+  raised level, or "Not enough recorded yet", never None or low.
+- **The floor works both ways.** A raised estimate (Medium, High or Extreme) above what the model said is
+  published over it, because a model reading a window of turns cannot clear a failed check it was never
+  shown. A model that says Not enough over an estimate of None or low keeps its abstention.
+- **The model level is published beside the estimate** as the fallback it replaces, with the estimate's
+  reasons, so a page can say which one decided.
+
+### Amended 2026-10-24 (owner): an Analyze reading's None or low may rest on recorded harness facts
+
+This extends [the 2026-10-23 ruling on the Haiku level's own floor](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor),
+which let the monitor's None or low stand with no passing check, to the stored reading's analysis level, more
+strictly. It was taken under the owner's standing instruction to act on the lead's recommendations, after a
+live walk where a session that used a skill and created a pull request read Consistent on its goal line and
+still drew no level, because no check had run.
+
+An analysis level may be None or low with no passing check when all of these hold:
+
+- every goal line, and every outcome line, is Consistent, and none carries a `why`;
+- every outcome line that is Consistent cites at least one recorded harness fact: a pull request created, a
+  skill used (item 3's amendment of 2026-10-23), or a passing check as before, and not only the agent's or
+  the reader's messages. A goal that stands alone as the one outcome line is read the same way;
+- there is no failed check, no unsettled later direction, no departure and no unsettled claim, which is the
+  floor's own blockers and unchanged;
+- the scan is complete enough that the existing abstention rules do not already block it.
+
+The agent's words alone still never lift the level, and a line resting on words beside one resting on a fact
+keeps the floor off. A pull request or a skill does not age: it is a record that something was done, so a
+later file write does not turn it into a pass followed by a change. The live estimate's floor (item 1) is not
+touched; it still asks for a passing check.
 
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
@@ -5135,13 +6166,13 @@ sentence about work the page cannot see stay reachable.
 | 2 | The resume command after the Copy buttons go | It lives on Attention, the waiting panel and the project rail only, not on the session page. | The promise map's P2 "way back" clause and its line beside departures, NUI-5, NUI-8 |
 | 3 | "Analyze again" | One run control per state. A second press appears only when new work was recorded or the intent changed after the result, and it names which. | The 2026-10-01 amendment "the result takes the button's place" (Q3) |
 | 4 | The Direction question | Its summary shrinks to one line with the count. Keep still draws every direction whole before settling, so it keeps its two presses. | Nothing; the 2026-09-28 ruling stands and is part of the click budget |
-| 5 | A typed goal on an ended session | The goal box says before the reader types that words saved now cannot be read against an ended session; intent saved before the end and the goal drafted from their prompt remain eligible. Amended 2026-10-14: a confirmed save repeats the same caveat beside "Saved as a new revision." | The 2026-10-01 note on what a press says beside the button |
+| 5 | A typed goal on an ended session | The goal box says before the reader types that what they save now is kept but Analyze will not check the session against it; intent saved before the end and the goal taken from their prompt remain eligible (reworded 2026-10-23 so a new reader can parse it). Amended 2026-10-14: a confirmed save repeats the same caveat beside "Saved as a new revision." | The 2026-10-01 note on what a press says beside the button |
 | 6a | Use your prompt | Stays visible beside the goal. It is the only way to choose a different goal on an ended session. | Nothing |
 | 6b | Live monitor | Moves into More. It is off by default and needs no model. | DEC-26 item 4 (placement only) |
 | 6c | Discard everything | Moves into More and stays reachable. | Nothing; SECURITY.md still describes it |
 | 6d | What analysis does | Replaced by the "How Intent and drift works" popup. One explainer, not two. | Nothing |
-| 6e | Delegated work | Moves into More and stays reachable from Analyze drift. It is an honest limit. | Nothing |
-| 6f | Turn off readings | Moves into More. The promise map's off switch stays. | Nothing |
+| 6e | Delegated work | Moved into More and stayed reachable from Analyze drift. Amended 2026-10-21: the Drift card no longer draws the line, and the launches surface only in the At-risk item ([where it went](#where-everything-in-more-went)). It is an honest limit. | Nothing |
+| 6f | Pause model calls | Moves into More. The promise map's off switch stays. | Nothing |
 | 6g | Add to my intent on each activity row | Always visible on a row that holds a later direction. Amended 2026-10-12: a control that appears only on hover is one a reader never learns is there. DEC-24 item 3 needs it. | Nothing |
 | 6h | "No terminal to raise" and its "Why" | Shown only when the session is blocked on the reader. | DEC-20 (the raise is primary when a session is blocked) |
 
@@ -5162,14 +6193,15 @@ Four sentences, each at the place a reader relies on it. None adds a control.
 
 - The how-to popup says which lines a reading can settle and which it cannot. A command whose latest
   run, not piped into another command, fails settles a departure, and one that passes with nothing
-  written after it settles a consistent. A statement about the whole tree, such as a folder limit, is
-  not settled by a reading; the live estimate weighs it instead. The popup also carries the Claude
+  written after it settles a consistent. A statement about the whole tree, such as a folder limit, was
+  not settled by a reading and the live estimate weighed it; a recorded write that breaks one now
+  also departs ([the 2026-10-21 amendment](#amended-2026-10-21-the-record-settles-a-line)). The popup also carries the Claude
   reader's limit
   ([the DEC-21 amendment](#amended-2026-10-14-owner-the-page-says-the-claude-readers-accuracy-check-has-not-passed)).
   The 150-word ceiling above holds: the opened body now measures 146 words on Claude Code and Pi and
   150 on a harness with no reader, and the two additions were written to fit it.
 - The reason for "Can't tell" stays inside Evidence, as this design keeps evidence one click away
-  (owner, 2026-10-14). Its sentence for `check-does-not-show-it` no longer says "The check it cited":
+  (owner, 2026-10-14; superseded: [the reason is now in view](#amended-2026-10-21-the-record-settles-a-line)). Its sentence for `check-does-not-show-it` no longer says "The check it cited":
   the producer empties a reading's published cites whenever it withdraws a verdict, so the page
   cannot tell a check that does not show the line from a write, or nothing, that was cited. It reads
   "What it cited does not show this: a departure needs its latest run failing, and a consistent its
@@ -5208,8 +6240,10 @@ verification walk.
 ### What it costs
 
 A reader who adds no outcome line never sees a level on the pill: the analysis answers the Goal
-only. The how-to says so, and says that one line gives a level. "Not enough recorded yet" is a
-valid result, not an error. A goal typed and saved after the end is still refused; a typed goal
+only. The how-to says so, and says that one line gives a level. The result then reads "Can't tell"
+unless the goal departs, which is a valid result and not an error (amended 2026-10-21: the card no
+longer draws "Not enough recorded yet" for a reading, see
+[a level needs a departure](#amended-2026-10-21-a-level-needs-a-departure)). A goal typed and saved after the end is still refused; a typed goal
 saved before the end remains eligible. The note in row 5 says so before the reader types. Removing
 the departure rows' Copy command retracts a clause of the
 promise map, and this ruling authorises it. The click budget that follows from the rows is in the
@@ -5219,9 +6253,10 @@ typed goal.
 ### Session first-view build, 2026-10-12
 
 The unblocked session header follows the goal and analysis panel, before Session activity; a blocked
-session retains its header raise and waiting panel above the goal. More has six groups at most:
-Live monitor with its explanation, saved-word caveats and Discard everything, Delegated work,
-Turn off readings, Saved with Clear, and settled or unread later directions. The privacy disclosure,
+session retains its header raise and waiting panel above the goal. More had six groups at most
+(amended 2026-10-21: Delegated work left, so five, and the groups themselves moved out of More, see
+[where everything in More went](#where-everything-in-more-went)):
+Live monitor with its explanation, saved-word caveats and Discard everything, Pause model calls, Saved with Clear, and settled or unread later directions. The privacy disclosure,
 model-request count and daily cap stay beside Analyze. The goal and primary fit at 1280 by 800 and
 375 by 667; 320 px and the 640 px layout representing 200% zoom retain wrapping and document scroll.
 
@@ -5233,20 +6268,21 @@ bodies, has a 90-word ceiling. The opened how-to retains its separate 150-word c
 The fresh Claude Code fixture inventory below includes the session's project link and the Sessions
 breadcrumb. Before: 19 controls across the page, 13 in the 1280 by 800 viewport. After: 14 across
 the page, eight in that viewport. The activity disclosures remain below the first view in one column; none of
-their sentences or controls are removed. (Beside the panel from 1101px wide, three of them show in
-that viewport; see the 2026-10-12 amendment above.) The switch's accessible name is Live monitor.
+their sentences or controls are removed. (Beside the panel from 1101px wide, three of them showed in
+that viewport under the 2026-10-12 amendment above; the 2026-10-19 reversal to one column supersedes
+that, and Full activity is collapsed at the foot of the page.) The switch's accessible name is Live monitor.
 
 | Button, link or disclosure | Before | After |
 | -- | -- | -- |
 | Sessions breadcrumb | First view | First view |
 | Project link | First view | First view |
 | No terminal to raise: Why | First view | Blocked only |
-| How Intent and drift works | First view | First view |
+| How Intent and drift works | First view | The Intent card's More menu |
 | Use your prompt | First view | First view |
-| Clear | First view | More |
-| Remove line 1 | First view | After outcome use |
-| + Add a line | First view | After outcome use |
-| Undo changes | First view | After a goal edit |
+| Clear | First view | The Intent card's More menu |
+| Remove line 1 | First view | First view |
+| + Add a line | First view | First view |
+| Undo changes | First view | First view, inert until there is something to undo |
 | Save intent | First view | First view |
 | Live monitor | Below fold | More |
 | Analyze drift | Below fold | First view |
@@ -5273,3 +6309,665 @@ is not a new measurement of this addition.
 The first-view proof covers stored results, one and four
 unsettled directions, short and wrapped blocked headers, and touch activity actions at desktop
 and phone sizes; each placement and the touch fallback have a rejecting mutation.
+
+### Amended 2026-10-19 (owner): one column again
+
+The owner reversed the 2026-10-12 layout amendment above for the session page in the milestone that
+adds a session summary. From top to bottom the page is the header, the answer block when the session
+needs input, the Intent card, the What the session has done card, the Drift card, and a collapsed
+Full activity section, at every width. The session page's More disclosure is retired, and every
+control, sentence and limit in it gets a new home, so the principle above, that a privacy promise or
+an honest limit moves and is never deleted, still holds. The record is
+[DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept).
+
+The owner signed this reversal on 2026-10-19 in the milestone "Session page: what the session did,
+and where it left your intent"; that sign-off supersedes the 2026-10-12 layout amendment above.
+
+#### Where everything in More went
+
+The written inventory of the retired session More, by group in its order, with the new home of each
+part. Nothing in it was dropped. The stories under `Sessions/One-column page` assert each row by role,
+name or text in its new home, with three exceptions no fixture there reaches: What became of discarded
+words, the armed confirmation of Discard everything (its offer is asserted), and Pause model calls
+under the control where no popover is drawn (its place in the popover is asserted).
+
+| More held | Kind | New home |
+| -- | -- | -- |
+| Live monitor switch | Control | Drift settings in the Drift card's heading ([the one-state amendment](#amended-2026-10-21-the-drift-card-has-one-state-at-a-time)) |
+| "How far the session has moved from the goal" | Sentence | The Drift card's heading, under the title |
+| "Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in the header." (Claude Code, annotations on) | Limit | Drift settings, under the switch, as its description |
+| About these saved words (the ended-session note and the binding sentence) | Disclosure and limits | The Intent card, under the save |
+| What became of discarded words | Sentences | The Intent card, under the save |
+| Discard everything, and its armed confirmation | Control and warning | The Intent card, under the save |
+| Delegated work, and the "still running?" check | Limit | Not on the Drift card (amended 2026-10-21): it was a bookkeeping fact about subagents tied to no line of the reading, and the reader had no action to take on it |
+| Pause model calls | Control | Drift settings, and the "What is sent" disclosure beside what it stops; Resume model calls beside Drift settings while paused; under the control where no disclosure is drawn (a running analysis, no reader, the consent step, a route with no disclosure) |
+| Saved · reads from, with its revision line, "Each save is a revision." and the binding key | Disclosure | The Intent card, beside its More menu |
+| "Drift is measured against these. Edit anything that is off." | Sentence | The Intent card, under the save |
+| Clear | Control | The Intent card's More menu |
+| Later directions: unknown, none or settled, with "Nothing here decides…" | Disclosure and limit | The Intent card, last |
+
+The activity column becomes **Full activity**, collapsed at the foot of the page. It keeps CURRENT
+ACTIVITY, the numbered list newest first, subagents, session facts, the current task, health,
+tasks, command-shape reports, notifications and How it landed, in that order, and a blocked
+session's measured line. The header gains a status dot beside the state word, which now leads the
+measured line ("working · running Bash · turn started 3m ago"); the raise control, the drift pill
+and the reading cap banner stay where they were. A finding's citation, drawn as "Show cited entries in
+Full activity" when this amendment was written and since replaced by each cited entry's own number
+(see the departure-card amendment below), opens the section, reads older record pages until every cited entry is held, the
+record's start or the page cap, and moves focus to the first cited row. It is offered while any cited
+entry is unloaded and the record has older pages, whatever the intent's current window, so a retained
+reading that cites an entry from before that window keeps its way there. An entry no page returns is
+named in a status sentence, which takes focus instead. The sentence says the record does not list the
+entry only when the read reached the record's start; a read the page cap or a failed page ended says
+it stopped short and that Show more may load it. Where every cited entry is held but the reading's own
+window, request or limit sets them aside, the sentence says that. The sentence answers one press on one
+reading: a later press, a new reading or another session takes it down, and a read that ends after a
+later press began publishes nothing. Escape on the row, the sentence or "Back to the finding" returns
+focus to the citation without leaving the session page, and both moves scroll without animation when
+the reader prefers reduced motion.
+
+### Amended 2026-10-19 (owner): each departure is a card
+
+The 2026-10-15 feedback read "2 departures" above two "Model assessment" blocks as something it did
+not know how to read, and read "Analysis at 22:27" as a time inside the session. The Drift card's
+result is now drawn as the design file draws it. Nothing about the reading changes: the producer,
+what it stores and the page's evidence rules are as before.
+
+- The card header names the model, from the stored stamp's `<model> · read at` shape and nothing
+  else, and "Analysis last run HH:MM" from `read_at`. The header is the one place on the card that says the
+  read time: the level's analysis line and What the analysis read leave it out (amended 2026-10-21).
+  A refused or malformed reading draws no header line.
+- Under a departure the answer reads "Departs from your intent" with its count, then one card per
+  departure in the reading's order. A card's label names the constraint ("Departure · Goal",
+  "Departure · Expected outcome 2", numbered only where more than one line was read). Its headline is
+  the constraint's own saved words, because no model writes one
+  ([DEC-28](design-session-summary.md#the-ruling), answer 7). What is the cited entries, each as its
+  activity number and the kind of entry Compass names ("failed check", "Agent message", "Your message"),
+  never the entry's own summary: for a message that is the agent's or the person's text, and an agent's
+  "Done" would then stand inside the result. Why, under "Why Compass reads this as
+  drift", is the stored `detail`, the one string the model wrote. The ruled status ("Departs;
+  evidence #n") follows, and the line's label, full status, limit and each entry's recorded time and
+  source stay one press away under Evidence. "Model assessment" and "Read intent:" are gone; the
+  headline carries the read words.
+- The shape already guarantees that a departure holds at least one cited entry: a row with no resolved
+  citation is demoted to can't tell, so no card stands on nothing a reader can reach.
+- Every other line follows a divider as one quiet row, in the words `resultStatus` and `claimStatus`
+  already used: not reached at this stop, consistent with a check, the agent or the session, can't
+  tell, nothing shown, and the claim states. The reason for can't tell stayed inside Evidence, as the
+  2026-10-14 ruling kept it; [the 2026-10-21 amendment](#amended-2026-10-21-the-record-settles-a-line)
+  supersedes that. A contradicted claim keeps its
+  explanation in view, or "No explanation was retained for this assessment." where none was stored,
+  and its cited entries' records under Evidence. A claims row the shape withdraws is not
+  drawn, as before, so a claim the page cannot place has no row of its own.
+- Each number replaces "Show cited entries". It opens Full activity at that entry, with every entry
+  the finding cites marked, and "Back to the finding" returns to the number. Where no cited entry is
+  held yet, "Load the cited entries" keeps the press that reads older pages.
+- Steer back follows the rows, and its weight is unchanged: primary under a departure, or under a
+  failed check with no reader, never for a claim alone, and not while the session waits on the
+  reader. Update intent instead stays beside it, and the correction still opens in place.
+- Mark as inaccurate and What the analysis read share one footer row, with their effects and Undo.
+- The question before a later direction, a missing reader, a refused or malformed reading and the
+  departures raised while you were away keep their behavior and their place.
+
+This supersedes the layout of [the 2026-10-06 amendment](#amended-2026-10-06-owner-assessment-explanations-and-recorded-signals)
+for a departure's explanation and citations, not what it shows.
+
+### Amended 2026-10-20: the answer first, and What quotes the entry
+
+A fresh-eyes usability review of the built page found that the Drift card buried its answer: the
+monitor's description, a range line, a goal-source note and a status line stood between the heading
+and the departures, and What gave "#5 Agent message" while the line the departure is about sat
+behind Evidence. Nothing about the reading changes; these are placement and wording.
+
+- One plain sentence leads the card: the analysis level's word, the count of departures and what
+  and when they rest on ("Medium: 2 departures, both at the agent's message at 09:15."), derived
+  from the stored reading and the entries it cites. "Can't tell" and "Not reached" carry no level
+  word, so the sentence never reassures where the reading could not settle. It is not drawn over a
+  running analysis, an unreadable reading or one marked inaccurate.
+- The level meter follows it in every state, including while a later direction's question stands.
+- What on a departure card gives each cited entry's own words, attributed and quoted ('Agent said:
+  "…"', 'You said: "…"', "Failed check: …"), bounded and on one line, with a check glyph said as
+  "[check mark]". This amends the 2026-10-19 amendment's "never the entry's own summary" for
+  departure cards only, on the strength of the attributed-speech ruling: quoted and attributed, an
+  agent's "Done" reads as the agent's. Quiet rows keep the entry's kind, so a line read as consistent
+  never stands beside the agent's own "Done". The owner may reverse this; the switch is one
+  argument (`CitedEntries` `quote`).
+- "Departs; evidence #n" is said once, inside Evidence. The analysis level's entry range and reason,
+  and the goal-source note ("The adopted source was found…"), are under What the analysis read. The
+  Live monitor's description is the switch's helper text.
+- Evidence heads with the line's label in a sentence's case, then "#n · Agent message · HH:MM", with
+  the record-type tag under Source and recorded times in the reader's local zone.
+- The count beside the control reads "N drift checks requested": the store counts readings alone,
+  and "model requests" read 2 beside four model calls once summaries also ran.
+- Pause model calls, or Resume model calls while paused, stands in the card's head in every state.
+  A press on the copy inside What is sent closes that popover. While paused, Analyze stays in its
+  place, refused, rather than becoming a second Resume.
+- A stale result's banner names the reader's message it predates ("This check is from before your
+  09:20 message."), and its one run control reads "Check again". A later direction's question still
+  owns the only run path while it stands, as DEC-27 rules.
+
+### Amended 2026-10-21: a level needs a departure
+
+Three walks of the session page (a finished session, a mid-turn reading, a consistent reading)
+found the Drift level reported where the reading found nothing to report: Medium in the bar and
+the header with "Can't tell" on every line; Medium left standing after a later reading cleared the
+departure it rested on; and, on the other side, "Not enough recorded yet" behind "Why not None or
+low" over a reading whose every line was Consistent. This is the repository's "structurally
+present default" invariant: a level was a field every reading carried, so it said something about
+the schema and not about the session.
+
+The rule: the page draws a level above None or low only beside a departure the reading it shows
+carries, counted after the page's own rules (a departure whose citation the record does not hold is
+not one). It reads the departures from the same shape the departure cards and the answer read, so
+the level, the count and the cards cannot disagree.
+
+- `levels.analysis_level` is unchanged. It still reads Medium from a contradicted claim or a pass
+  followed by a change and High from a failed check, and publishes the reasons; those stay data. The
+  page withholds the level in `analysisLevel` (`frontend/src/drift/level.ts`), the way it already held
+  "None or low" to its own rows. A failed check is still said: the answer reads "A check failed at
+  11:03." beside the level's absence, and a contradicted claim keeps its row. This re-rules the
+  2026-10-20 amendment's wording that a Medium with no departure "says why the level stands", and
+  the sentence of the levels build that a level could read Medium beside "Can't tell".
+- A stored reading that stands owns the level slot, with a level or with none. With none, the
+  live estimate does not draw in its place: it reads checks and file paths and never the intent, so a
+  Medium from it beside a reading that found no departure is the same claim in another source's
+  voice. The live estimate draws when no reading stands for the saved words, and keeps its own source
+  line there. This reverses the 2026-10-04 sentence that an analysis of "Not enough recorded yet"
+  does not replace a measured live pill.
+- With no level, the card draws no bar. The one answer sentence says what the reading did find, and
+  where every line is Consistent and the level is held back it says why in the same sentence ("Nothing
+  found against what it read, but no level is drawn: a line of your intent is not shown by any
+  check."). The "Why not None or low" disclosure is a live estimate's alone. When the page itself
+  holds a server None or low back, it adds the row that held it as a reason.
+- The header pill says "so far" while the session runs, and when the reading it shows read a running
+  turn, because a running session's level can still move and a mid-flight reading covers only the work up
+  to it. A state the board does not publish claims neither.
+- A departure that clears is named once, on the reading that no longer finds it ("The departure from
+  the 11:02 reading no longer holds."), with the count where there were several, and where a reading
+  departs less often than the one before it, with the difference: two departures that become one name
+  the one that went. A departure that only moved (the same count, worded or cited differently, with no
+  correction pasted between) was no clear, because a model words one finding differently each time it
+  reads; amended 2026-10-21 (the edges of recognising a pasted correction, item 3), a departure replaced
+  by one that shares neither its reason nor a cited entry is named. Without a correction the count is
+  the larger of the fall and the departures replaced one for one, never more than were no longer found
+  or than now stand, so a reworded survivor never overstates what the tab watched. A correction pasted between the two readings keeps
+  its own rule: each departure it named that no longer stands is named, with another standing or not.
+  The page holds the
+  earlier reading's departure count in the tab and says nothing it did not watch, so a reload
+  names nothing. Storing the earlier departures with the reading was rejected: it is a new published
+  field declared in five places (the invariant above), it would name the clear for as long as the
+  record lasts, and the owner's complaint was a silent change between two readings the reader watched.
+  The line does not say why the departure cleared, because nothing the page holds says.
+
+What this does not claim. The withheld level is a correction of what the page draws and not a
+measurement: a session with a failed check and no departure draws no level at all. The owner may
+prefer the live estimate to keep drawing beside such a reading; that is one expression in
+`buildModel` and `DriftLevelView` (`analysis ?? estimate`), and the four behaviours above are
+asserted by `LevelNeedsDeparture.test.tsx`, `ClearedDeparture.test.tsx`, `verdict.test.ts` and the
+stories under "Drift / A level needs a departure".
+
+#### Clarified 2026-10-21: the edges of the departure-backed level
+
+Three cases the main rule left open, each said only where the page can show it is true.
+
+- A reading that stands with no level owns the level slot, so a live estimate the reader switched
+  on, with a level to draw, is hidden behind it. The card says so under the verdict ("The live
+  estimate is not drawn while this reading stands: it reads checks and file paths, never your
+  intent."), without naming the hidden level, because naming it would draw the Medium the rule
+  withholds. It says nothing with the switch off, with no live level to hide, or over a reading that
+  draws its own level.
+- An empty verdict early in a session says it is early. The answer must be the empty one ("Can't
+  tell from what was read.") over a line that names an expected outcome, the reading must not be of a
+  finished session, and the record must have been read from its start, because a start the page cannot
+  see would make "early" a default (the invariant `AGENTS.md` calls a structurally present default).
+  The span is the first entry the page holds to the end of what the reading read, and it is early
+  under ten minutes: a judgement, not a measurement, set where a session has usually not yet run a
+  check. It names that span ("Early: this reading covers only the first 8m of the session. Read again
+  once it has run its checks.").
+- The how-to, the skill and the promise map said "Not enough recorded yet" is normal until an expected
+  outcome line is added. The card no longer draws that level for a reading, so the sentence now says
+  what a reader sees: with no expected outcome line, no level, and "Can't tell" unless your goal departs.
+  "Not enough recorded yet" stays the live estimate's word.
+
+A departure that moved is named as replaced even where no correction was pasted, as the amendment on the
+edges of recognising a pasted correction records; the decision that stood here was reversed there.
+
+### Amended 2026-10-21: a running turn is unfinished
+
+A reading taken mid-turn reported a departure because "the session ends with the probe still
+showing wrong output, no rerun and no push", while the agent was running that rerun. The reading
+was read at the mid-flight scope, which the prompt already tells the model covers the work so far
+and gives it `not_reached` for; it answered in the shape of a final reading anyway.
+
+Decision: a guard in the resolver, not a change to the prompt. The non-final header has 27 of 9,216
+bytes spare, a changed header needs a fresh qualification before a scored result stands (the
+2026-10-06 clarification), and no number of added words makes a model reliable. The producer already
+applies every other rule that way, so a departure that does not hold never reaches storage.
+
+The guard (`reading._while_running`, applied by `reading.resolve` after each constraint's own rules):
+at the mid-flight scope, a departure on an intent line whose every citation is words (the person's
+or the agent's own messages) is stored as `not reached at this stop`, with its explanation kept as
+what the record shows it waiting on, when work is going on after the latest of those words. Work is
+going on in two ways:
+
+- A call is still in flight, in a Claude Code session only. A call has no entry until its result
+  arrives, so the press reads the transcript itself for the newest call it has no result for (`project_context.claude_open_call_at`)
+  and passes its time to `resolve`. A question put to the reader is not work going on, and a message
+  the reader sent after a call closes it: an interrupted call is never answered, and nothing is
+  running then. Nothing is stored; the call is read at press time and used once.
+- A check or a write recorded after the words **bears on the line**. A goal has no narrower meaning
+  than the whole session, so any later check or write bears on it. An outcome line that names a path or
+  claims the result of a kind of check ("the tests pass") is borne on only by a check that covers it
+  (`covers_line`) or by a write to a path it names; a line that does neither cannot tell one piece of
+  work from another, so any later work bears on it. A lint pass beside "the tests pass", or a write to
+  a docs file beside a line about `src/probe.py`, leaves the departure standing.
+
+Everything the 2026-10-04 amendment says unfinished work does not excuse stands:
+
+- A citation that shows work, a failed check or a write, is what the departure rests on and the
+  guard leaves it. A failed relevant check is still a departure, with a call in flight or not.
+- A stall stands: with nothing in flight and no check or write that bears on the line recorded after
+  the cited words, nothing kept going.
+- The claims row is untouched; a contradicted claim is not unfinished work.
+- A last-turn or final reading is untouched: the turn is over.
+- The idle press that reads mid-flight (an idle session with no recorded finish) is covered by the
+  recorded half of the guard, as a running session is, because both are read up to their last
+  recorded entry. It is not covered by the in-flight half: the session is not running, so an
+  unanswered call there is an interruption, and `produce` asks for the call only of a running
+  session.
+
+What it cannot see. The in-flight half is Claude Code's alone: the press passes `produce` the lookup
+only for a Claude Code row with a transcript (`http_api`), and every other harness is held by the recorded
+half. Extending it was not done: each harness records an unanswered call differently or not at all, and a
+lookup that reads one wrongly would excuse a real departure. A call in flight is read from the tail of the transcript the press reads, so a
+call older than that tail, or one a subagent runs in a transcript of its own, is not seen; the
+subagent's launching call in the parent is. It is an assembly control, not a measurement of model
+accuracy: the case is a recorded shape (the agent said what it would do, kept working, and the model
+read the missing end as a departure), held by
+`AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture` in `test_reading.py` and by
+`test_running_turn_guard.py`, which builds a mid-call transcript in the recorded field shapes and
+reads it through `produce`. Eleven negative controls hold the other side: nine in the first class
+and two in the second. A message-only departure that is real still returns at the next reading, and
+at the session's end as a final one. A `not_reached` line raises no level and no Steer back (the
+2026-10-04 amendment), so the demotion errs the cautious way.
+
+### Amended 2026-10-21: a pasted correction is Compass's words, and a kept direction is no evidence
+
+A reader who pasted a Steer back correction into the session and read it again saw `1 later
+direction` with `Use this as my goal` offered for it, the direction quoted inside the harness's
+`<pasted_content id=…>` tags, a departure whose What led with `You said: "Back to my goal…"`, and a
+rebuilt correction that dated the departure to the moment of the steer. Two session walks measured it
+(the recorded shape is in [the captures](captures/README.md)). Claude Code 2.1.305 stores a paste as
+the content string `\n\n<pasted_content id="N">\nTEXT\n</pasted_content>\n`, so the digest of the
+pasted message never equalled the digest of the text the reader copied, and item 9 of
+[DEC-24](#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
+never recognised it. The same walks showed a direction the reader had just kept with `Keep my intent`
+as the first quote under a later departure.
+
+1. The two tags are the harness's, and the words between them are the reader's or, for a correction
+   pasted back, Compass's. `records.strip_paste_wrapper` takes the tags off, and nothing else: a
+   tag that only begins the same is another tag. It runs where a user message becomes the words the
+   page quotes (`observer._message_from`, so the fact's `reader_words`, the direction a press opens
+   and the draft of `Use this as my goal` never carry the wrapper) and before the digest of a
+   message is taken (`copied_corrections`). The page strips the same tags from a direction an older
+   server or a republished history still sends with them. Words typed around a paste stay in the
+   message, so a correction with a sentence before or after it is the reader's own.
+2. Item 9's normalisation is exact, by the owner's ruling of 2026-09-28, and stays what the first
+   digest computes. A second digest of the text with every run of whitespace folded to one space
+   forgives a reader who reflowed lines or widened a gap, as this issue's scope asked ("unedited, or
+   edited only in whitespace"). It is stored beside the first, `folded` on each waiting copy, and a
+   copy stored before it existed keeps matching on the first alone. A changed word, or a space
+   inside a word, is still the reader's own message. This departs from item 9's "any edit is a
+   different digest" for whitespace alone.
+3. A departure never stands on the reader's words that settled nothing. `reading.settled_reader_words`
+   names the user messages that are a correction Compass built (`copied`) or a later direction the
+   reader kept (after the intent's floor, up to what Keep settled through), and `resolve` drops
+   them from a departure's citations, whatever the model cited. A departure that rested only on them
+   is stored as uncited, which is `not verifiable`. Every other verdict keeps its citations. The
+   producer applies the rule, so a stored reading is never wrong that way; a reading stored before it
+   still cites what it cited, and the page does not second-guess a stored shape. Steer back's rebuilt
+   correction reads the stored reading through the same rule, so the moment it names is the agent's
+   work and never the paste.
+4. The card says when a steer worked. The page already names a departure that clears
+   ([the level amendment](#amended-2026-10-21-a-level-needs-a-departure)); where a correction the
+   server recognised as Compass's own words sits in the session between the two readings, the line
+   reads "The departure your correction named, from the 11:02 reading, no longer holds." That is the
+   page's inference from two facts it holds (a recognised paste, and the reading the tab drew before),
+   not a stored link between a correction and its departure. Storing the earlier departure itself
+   stays with the open question under DEC-15b.
+
+Rejected: matching the wrapped message by prefix or by the longest common run, which would let a
+correction with a sentence typed around it read as Compass's; and folding the first digest's
+whitespace, which would have moved every stored copy. The parser digest the abstention packets are
+stamped with moves with this change, because `reading.py` is one of its files.
+
+### Amended 2026-10-21: the edges of recognising a pasted correction
+
+The rule above shipped with four edges left, found in review and in the walk of a session whose reading,
+stored before the strip, lost its departure.
+
+1. A message's fact id keeps the value it had. The id hashes the title, and the strip changed the title of
+   a paste whose tag shares a line with the reader's typed words, so a reading stored before it cited an id
+   that no longer existed and the page demoted the citation. The event now carries the title as it was hashed
+   (`ID_TITLE_FIELD`, server-only and stripped by `for_page`) and only where the strip changed it, so the id
+   is the one the earlier build gave and the published title is clean. The tag is looked for in a string
+   content and in the text blocks of a list content (a message that carries an image), because the strip
+   reads both. Mapping old ids to new on every read
+   was rejected: it needs the stored reading to carry a second id per message, and the history store, which
+   dedupes on the id, would hold the same message under both. A paste whose tag stands alone on its own
+   line never moved, because a title skips a line that opens with `<`; the walked session was that shape,
+   so what its reading lost was the citation that [amendment's third item](#amended-2026-10-21-a-pasted-correction-is-compasss-words-and-a-kept-direction-is-no-evidence) removes for a
+   recognised paste, not an id. `AWrappedPastesFactIdIsTheOneItAlreadyHadTest`
+   holds a stored reading that cites a wrapped paste through the strip.
+2. The page draws a message's words from one entry list, so the tags come off where the list is made
+   (`workEntries`, for a user message only: an agent's words are its own text). The direction select's
+   title, the quote of a cited message and the work list read it, and a story holds each.
+3. The cleared line names the departure a correction addressed, whether or not another stands. Between two
+   readings with a correction pasted (`copied`, after the first reading and no later than the second), a
+   departure of the first that the second no longer finds is cleared, though the second departs on
+   something else. A departure is the same one when it is on the same line and either gives the same reason
+   or cites an entry the first cited; a model words one finding differently each time, so the reason alone
+   would call every re-read a replacement. With no correction between, the line is also said for a departure replaced one for
+   one by another that shares neither its reason nor a cited entry (amended 2026-10-21: it was said only when the
+   reading carried none), and counts no more than the departures that stand or went. It reads "your correction" for one pasted between the two readings and
+   "your corrections" for more; a correction pasted before the first reading or after the second is not
+   counted.
+4. The copied-flag test beside the kept-direction one now has a control that departs on the same words
+   without the flag and with nothing kept, so the flag is the only thing that can drop the citation.
+
+### Amended 2026-10-21: the Drift card has one state at a time
+
+Four walks of the session page (a running session, a finished one, a re-run, a later direction) read
+the card as parts that each said something true and together said too much: before any analysis it
+held Pause model calls, the Live monitor and its sentence, Analyze drift, "0 drift checks requested",
+What is sent, an empty four-step bar and Steer back; while it ran, "Not checked yet" and the empty
+bar stood above the progress and the old result vanished; the first analysis's notice stood open over
+the result for good; the answer was said three times; "New work since this analysis" and "Your intent
+changed after this analysis" were amber boxes between the level and the lines; and, after a reading,
+the only way to read again was one of those boxes. The design's Drift card is a heading, the model and
+the time it was read at, and the result. This amendment gives the card the controls each moment needs
+and no more. It changes what the page draws and where; the reading, its level rules
+([a level needs a departure](#amended-2026-10-21-a-level-needs-a-departure)) and its wording are
+unchanged.
+
+1. **Before an analysis the card is a heading, one sentence and Analyze drift.** "Not checked yet" and
+   its bar are not drawn: a level of nothing labelled four ways measured nothing. The count is drawn
+   only once a check was made, and as one node, so a screen reader hears it once; "0 drift checks
+   requested" counted something that had not happened. What is sent stays one press from the button,
+   because consent is read before the press.
+2. **Drift settings is one control in the heading.** The Live monitor switch with its sentence, and
+   Pause model calls with its explanation, sit behind it, in every state. While model calls are paused
+   Resume model calls stands beside it and not behind it: a paused card has to say how to resume
+   without a second press. This supersedes the 2026-10-20 ruling that Pause stood in the heading
+   beside the switch, which put four controls and two sentences in the card's first view.
+3. **A run replaces the card's body, and over a reading it keeps that reading in view.** While an
+   analysis runs the progress and Cancel are the card's state, with no level or counter beside them.
+   A run over a stored reading draws "Reading again" above that reading, dimmed, busy and inert, until
+   the new one lands; the verdict, level and result stay in the tree so the page does not jump. Focus
+   goes from the title to the verdict, as it went to the result's heading.
+4. **A one-time notice is open only while the request it came with runs.** After that it is the same
+   words inside What is sent, with Pause model calls, and What is sent is drawn once per card state: under
+   Analyze drift before a reading, in the footer after one. The notice stays a card above a running
+   analysis, where it is what the reader is waiting beside. The summary card draws its own notice and
+   keeps it until that card is reworked; `NoticeBody` is shared so it can take the same rule.
+5. **The answer is said once.** The verdict sentence under the heading is the only statement of what the
+   reading found. The "Departs from your intent" heading, the count and the "Can't tell" line under the
+   level are not drawn beside it; over a reading the reader marked inaccurate, where the sentence is not
+   drawn, the heading still is. Amended 2026-10-21: the level word is said once too. Where the sentence names
+   an analysis level, the level view's head leaves its own word out and keeps the source, the meter and
+   its scale; where the sentence names none (can't tell, not reached) no level is drawn at all.
+6. **The header says what has happened since the reading, and holds the way to read again.** The model and
+   "Analysis last run HH:MM", then "New work since this analysis" or "Your intent changed after this
+   analysis", then the re-run control, on one line. The control is Check again over a reading new work or
+   changed words left behind, Analyze again over a current one, and it is there in every state a reading
+   can be in: inert while calls are paused, while another press is in flight, while an analysis runs
+   (Cancel is that state's control), over an unsaved edit and while a later direction's question stands,
+   which owns the run path and is named in the control's description. Not drawn where no reader exists on
+   this machine, where the reason already stands in the control's place. A refusal, a held closing and
+   what the last press came to stay under the result, where the reader looks.
+7. **Steer back is offered with a departure.** A failed check, or a claim the record does not show, with
+   no departure from the intent, offered a correction over "Not checked yet" and over readings that found
+   nothing, with nothing for it to steer from. The page no longer offers it; the server still composes a
+   correction from either, and `steerOffer` keeps the legacy page's rule so the differential tests still
+   bind it. `DriftBody` takes the departure as the page's gate.
+8. **The footer is quiet.** Mark as inaccurate, What the analysis read, What is sent and the count, on
+   one line. What Mark as inaccurate does is its description and no longer a second line of the card;
+   marked, the state is said beside the way back. Where the work went moved under What the analysis read,
+   drawn once there is a reading to describe.
+9. **An opening of Analyze is said to the polite region and not drawn.** "Analyze is open: the session's
+   last turn finished." was a gate's own words for a control standing pressable beside it. A closing keeps
+   its line, because it explains a control that went inert.
+10. **Each verdict and the read time are said once (amended 2026-10-21).** The header's "Analysis last run
+    HH:MM" is the card's one read time: the level's line says only what the analysis was made against, and
+    What the analysis read names the model alone. The delegated-work limit left the result altogether: it
+    was moved under Not read and was still a fact about subagents with nothing for the reader to do.
+11. **A claim the record does not show says why for that claim.** A claim that names a kind of check (tests,
+    lint, types, build) is explained from what the record read holds of that kind: none recorded, a run with
+    no recorded result, or a run the analysis did not tie to the claim. A claim that names no kind
+    says where the agent made it and that the record read is the board's recent tail, then how many checks
+    that record held in the window ("No check was recorded in what was read." or "2 checks were recorded in
+    what was read, and the analysis tied none to this claim."; amended 2026-10-21), so no two read the same
+    unless they sit beside the same record.
+12. **A fixed red test is not a failed check.** A failed run that a later pass of the same check followed,
+    the same check being the server's own identity for it (the directory it ran in and its command line,
+    published on each check as `check_id`), is a red test written first and fixed. The command line alone is
+    not the identity: `pytest -q` passing in one package says nothing of it failing in another, and a check
+    that carries no identity is never matched. It raises neither the failed-check verdict
+    nor Steer back's offer, which is made only with a departure, the rule the session outline already holds
+    for its phases. The server's list is one run per check and never holds a fixed one; the page keeps the entries
+    of earlier loads, so it can.
+
+Rejected: a banner above the result for new work and a changed intent, which is what the walk objected to
+and what a header line replaces; a settings dialog for the monitor, whose switch would then be
+unreachable while a popover is the page's one floating layer; drawing the re-run control only after new
+work, which left a reader with an unchanged finished session no way to read again; collapsing the
+notice by a stored "seen" flag, a new published field declared in five places for a fact the job's
+ending already states; and removing `steerOffer`'s claim and failed-check offers, which the server and
+the legacy oracle still hold.
+
+### Amended 2026-10-23 (owner): the Live monitor row and its switch describe a Haiku check
+
+Row 6b's "off by default and needs no model" no longer holds for Claude Code: with the switch on, a Haiku
+check of the latest turns runs about once a minute while the session is viewed, under
+[the DEC-26 amendment of this date](#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check). The
+switch is still off by default and its placement in row 6b, in Drift settings, is unchanged. Its state is
+the server's lease, so a reload shows it off, and it is disabled with a reason once the session has ended.
+
+The copy table's switch description, "Shows a level after every turn, from checks and file paths, with no
+model call. The level shows here and in the header.", now reads, for Claude Code with annotations on: "Asks Haiku, through your Claude Code, where the latest turns are heading, about once a minute while this session is on screen. Until a check returns, the level comes from checks and file paths. The level shows here and in the header." Other harnesses keep the earlier sentence. A banner after 20 minutes
+asks "Do you still want to monitor this session?" and stays for 10 minutes; its answers, and the note left
+when it goes unanswered, are in the DEC-26 amendment.
+
+## DEC-28: a model may summarize a session, and the summary is kept
+
+Decided by the owner on 2026-10-19. The ruling, what it amends, the alternatives it rejected, the
+closed summary shape and the harness table are in
+[the session summary record](design-session-summary.md). In short:
+
+1. A model may author stored text that describes a session, in a closed shape: a lede and phases with
+   titled bullets, each bullet citing at least one entry by fact id. The code sets each bullet's kind
+   (`did`, `said`, `asked`, `failed`) from its citations. No string may state completion, a check's
+   result is quoted only as the tool's report, a bullet that breaks a rule is withheld in place, and a
+   part that could not be summarized shows as a gap. The code cannot check that a citation is relevant
+   to its sentence, and the record says so.
+2. A summary needs no saved intent.
+3. Summaries get a new store, which amends
+   [DEC-15b](#dec-15b-an-assessment-may-be-stored)'s "No new store" by name.
+4. Consent is opt-out with a notice, for every model call a reader's action starts: summaries,
+   Analyze drift, Claude Code tool output and Codex goal summaries. Unasked drift checks are not
+   covered and stay off by default behind `--unasked-readings` and
+   [DEC-18](#dec-18-an-unasked-reading-is-permitted-and-gated-on-delivery-first).
+   `--no-observer-model` still refuses every call, and a stored off is kept. This supersedes
+   [the consent step](#amended-2026-10-01-the-first-press-is-a-consent-step) and
+   [the destination binding](#amended-2026-10-02-owner-the-allow-is-bound-to-where-the-words-go) as
+   blocking steps.
+5. A finished session is summarized when the reader opens it, unless summaries are off; a running
+   session updates only on Update summary. This is reader-requested, so DEC-18 is not engaged.
+6. Each summary has whole-job ceilings and summaries have their own rolling cap, set by measurement.
+7. No model-written departure headline in this milestone.
+
+The owner also reversed [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)'s
+two-column layout for this milestone; see the amendment directly above.
+
+### Amended 2026-10-21: the Intent card follows the design
+
+The card the 2026-10-12 build left was a one-line goal, a select whose label changed, Undo and
+Add a line that appeared only after typing, a status of two sentences and a meta row of six
+parts. It now matches the design's form, and a save no longer shows the draft while it settles.
+
+- **A save keeps the reader's words on screen.** The held goal and lines are dropped after the
+  board refresh that follows the reply, not before it. Dropped first, the boxes read the drafted
+  prompt and empty outcome lines until the row arrived, about two seconds. The same order holds for
+  an adopted prompt. A story with a held refresh asserts it.
+- **The form.** The goal is a three-row box. `Use your prompt` is one button with one label that
+  opens "Your prompts in this session"; it no longer becomes `Replace with your prompt` or shows the
+  chosen prompt. `+ Add a line`, `Save intent` and `Undo changes` sit together on the left and are
+  drawn from the first view, the last two inert until there is something to write or undo, and each
+  line's `×` is drawn before the reader types.
+- **Status is a word.** `Saved`, `Unsaved changes`, `Draft` over a goal drafted from a prompt or detected from a `/goal`, and
+  the refusals `Not saved` and `Not confirmed`. Which prompt a draft came from is the goal's source
+  line, and `How Intent and drift works` is in the menu below.
+- **The goal's hint** no longer carries the prompt-length sentence. "Analyze reads at most the
+  first 1,000 characters of any prompt" is in What is sent, beside the parts a reading sends.
+- **The meta row** keeps the reading's start (`Saved · reads from 10:57`) and one quiet `More`
+  menu holding the measured sentence, `Clear`, `About these saved words`, `Discard everything`,
+  `Later directions` and the how-to. What became of discarded words stays on the card, because it
+  says what became of the reader's words.
+
+No differential test over the recorded answers changed. The on-demand browser proofs under
+`frontend/e2e` still carry the old card's text and were not run for this change.
+
+### Amended 2026-10-21: the edges of the Intent card
+
+What the first pass left, finished.
+
+- **`Use your prompt` is a button.** It opens a popover list headed "Your prompts in this session",
+  and holds no value, so its accessible role is button (not combobox) and its options are the list's
+  buttons. The popup still opens before the read, and the same popup shows loading, the prompts or
+  a stated absence.
+- **An armed Discard everything stays where it was drawn.** The offer stays in More. The arming
+  press moves the question into the card: the warning, Confirm discard and a Keep my words button
+  are drawn in the card's quiet row, outside the menu, until the reader confirms, keeps (the
+  button, or Escape) or the 30 second offer lapses. In the menu the warning was hidden whenever the
+  menu was closed, and the menu moved between the first press and the second.
+- **No lone `More`.** The menu is left out while the store and the boxes hold no words, because it
+  held only the how-to there. That includes a discarded form with nothing typed since: the account
+  of the discard is drawn in the card, and the menu has nothing to act on.
+- **`Save intent` looks inert when it is.** The accent border and text belong to a Save that would
+  write something.
+- **No revision in a sentence the page words.** "Saved as a new revision." is "Saved."; the
+  unchanged answer is "Already saved. These words match what is stored, so nothing new was saved."
+  and the saved disclosure says "Each save is kept on its own." Revision stays the store's
+  bookkeeping, and that includes the discard sentences the server composes
+  (`annotations.DISCARD_SENTENCES`): they say "everything you asked of this session" and "your
+  earlier saves" in place of a revision.
+- **A direction is named by its time**, never `#n`: the picker reads `10:57 · the words`. When
+  several are listed, the one `Add as a line` and `Make it the goal` act on is marked in the list
+  ("the one the buttons below use") and carries `aria-current`.
+- **`Read from now` is `Read from my latest message`.** The start it opens is the reader's latest
+  message, and for a lines-only save over an adopted goal that is the typed message too: the
+  adopted prompt's own time is used only when a save adopts one. The label and tooltip now say so.
+- **Held-refresh coverage.** A story holds the board refresh after saving an adopted prompt,
+  the slow-save story releases its held fetch on failure, and a story asserts the 1,000-character
+  sentence in What is sent. `IntentVocabulary.test.tsx` holds the page's own sentences, the recorded discard
+  sentences, and the card as drawn (menu open, discard armed, discard landed), to no revision or entry
+  number.
+
+The on-demand browser proofs were brought forward to the new names and the card-level armed
+question; they were not run for this change.
+
+### Amended 2026-10-21: a later direction is quoted where it is settled
+
+The question over a later direction used to name the number of an entry the reader had not been shown,
+quote only its first sentence, and offer `Keep my intent and analyze`, `Add it to my intent` and
+`Use this as my goal`. Its first press only revealed the whole message, so every choice took two
+presses, and two of the three edited a card above it.
+
+- **Quoted first.** "Your 11:05 message adds:" is followed by the message whole, under the time the
+  reader sent it; of several, each is quoted under its own time. Compass reads those words when the
+  question is drawn, one read of every open direction, because the reader must see what each choice
+  acts on before it acts ([DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)'s
+  rule that Keep settles only words it has drawn is kept). The read adds no session or store state of its own and starts no model,
+  and a read that fails leaves the entry's first sentence quoted and Leave it to read again on its press.
+- **One press.** `Add as a line`, `Make it the goal` and `Leave it` each act on their first press. Add and
+  Make start from the rule in the message (its first sentence), not the whole of it, and both say "Write the
+  rule, not the moment." The rule is only where the reader starts: they edit it before anything is saved.
+- **Analyze drift stays.** `Keep my intent and analyze` is gone, so settling never starts a model. `Analyze
+  drift` sits beside the choices (and `Analyze again` stays in the card head over a stored reading)
+  and leaves the directions pending.
+- **One save.** The pending line draws no Save. The card's `Save intent` saves it, after any unsaved goal or
+  line words, in a second write that settles through that direction only. The two outcome-lines answers
+  after `Make it the goal` are buttons beside the question.
+- **A source is a time.** A saved line reads "added from your 11:05 message", where it read "added from
+  #7", a number the reader may never have been shown.
+
+### Amended 2026-10-21: departure cards and Steer back read as the design does
+
+A departure titled itself with the whole goal sentence, listed `You said` and `Agent said` quotes cut mid-word
+that often did not show the departure, and Steer back was an inline button beside a dashed twin over a box
+titled "Correction to copy". The correction joined a line ending in a stop to its state with a colon.
+
+- **The headline is what happened.** The stored reading keeps a `detail` and no headline, and no model is asked
+  for one, so the title is derived from the entry the departure cites: "It changed `<path>`" for a recorded
+  write, "A check failed" for a failed check, and for the agent's own message "What the agent said departs from
+  this". A write or a check outranks a message, which only reports on one. Where no cited entry is held the card
+  keeps the constraint's own words, as before. The title does not claim the entry is the departure; Why still
+  carries the reading's explanation.
+  *Refined the same day, review notes.* Two cards on two agent messages, or two failed checks, both read "What
+  the agent said departs from this" or "A check failed" (seen on the sample session). Still with no model call,
+  the title now carries the entry's time and the constraint it departs from, both of which the card already
+  holds: "What the agent said at 11:25 departs from the goal", "A check failed at 11:26 against expected outcome
+  2", "It changed `<path>` against the goal". A time that was not recorded is left out, not drawn as zero. A
+  written path too long for the title keeps its end, the file name, and gives up the directories in front of
+  it; a long unbroken URL or path in What is cut after its last "/" rather than inside a name. The
+  correction dates and quotes the same entry the card titles (`correction._headline`, a write or a check before
+  a message), where it took the first cite.
+- **What is one sentence.** "At 11:25 the agent changed `<path>`." or "At 11:25 the agent said “…”.", about the
+  same entry, with each cited entry's number after it. A quote ends on a whole word before its ellipsis wherever
+  the cut falls; a single unbroken word longer than the bound, a URL, is still cut where it stands.
+- **Steer back is a section.** It follows the departures and the quiet rows: a heading, "Compass writes a
+  correction for you to paste into the session. It never types into the session itself.", the press with
+  Update intent instead as a quiet secondary, and the correction under them. The box is labelled "Correction to
+  paste" and says "Built from your saved intent and the reading at HH:MM", where it said "from the check at"
+  beside the button, because the correction is built from the reading and not from a check. This replaces the
+  wording of the earlier rulings above; copy, never send, is unchanged.
+- **The correction.** A saved line's own closing stop is dropped where its state is joined to it, so
+  "…is edited.: the session says this is done" reads "…is edited: the session says this is done"
+  (`correction._label`), and so does a closing question or exclamation mark, while an ellipsis, written "…" or
+  "...", is kept because it marks a cut. The departure's time and, at the agent's own message, its words were already named.
+- **The counter follows the text.** The count belongs to the box it was typed in; a rebuilt correction draws its
+  own length rather than the previous box's.
+
+
+### Amended 2026-10-23 (owner): the citations are the source
+
+An owner walk of the Sample session on the draft pull request found the Drift card repeating itself. "What
+the agent claimed" listed "Agent message [43]", "Your message [80]", which told a reader nothing. Its Evidence
+fold then gave each entry's words again with the harness name and an "Evidence recorded at" line, and each
+entry's Source fold repeated the one record-type list ("agent_message · timestamped top-level assistant text
+record · exact"), once per entry. A departure card had the same Evidence fold under a What that already quoted
+the agent. Nothing about the reading changes; this is placement and wording on the card.
+
+- Each cited entry on a departure card, on the claims row and on every quiet goal or outcome row is one line
+  in its own words, then its number, which still opens Full activity at that entry and lights every entry the
+  finding cites, then a muted time of day: `Agent said: “…” [43] 18:47`, `You said: “…” [80]`,
+  `Failed check: <command> [81]`, `File write: <path> [n]`, the wording `citedLine` gives the citation card,
+  clipped the way the card clips it. A departure's titled entry takes the same form, so every line on the card
+  reads alike; What no longer opens with "At 18:43 the agent said". This amends the 2026-10-20 amendment, which
+  kept a quiet row to the entry's kind so that a line read as consistent never stood beside the agent's own
+  "Done": the owner ruled that a cited message is the agent's words, attributed, wherever it is cited, and the
+  check mark is still said as "[check mark]" and never drawn.
+- The Evidence fold and every Source fold are gone from the result: a departure card, the claims row and the
+  quiet rows. What only they held either moved inline or was dropped. Moved: the status qualifier a
+  consistent line carries ("as the tool reported; not inspected", "not a check"), the stored `why`, the detail of
+  a line never reached, the harness's limit and the reason for Can't tell now draw in view under the line
+  (`StatusQualifier`, `Qualifiers`). Dropped: the label repeated as a heading, the "Departs; evidence #n"
+  status (the label and What say it), the harness and worker lines, the long-form time ("Evidence recorded at",
+  "Call recorded at"), a check's "Result recorded at" time and the record-type tags ("agent_message · …"),
+  which were the same for every entry of a kind. A person who needs the raw record opens the entry in Full
+  activity, whose Source toggle is unchanged. The 2026-10-14 ruling that kept the reason for Can't tell inside
+  Evidence was already superseded by the 2026-10-21 amendment; this removes the fold itself.
+- The live level's recorded signals keep their own evidence list, which is not a card or a line of the result.
+- The how-to and `HOW_TO_USE.md` say nothing about these folds and are unchanged. This change updates the
+  sample tour (`frontend/src/sample/tour.ts`), the shipped skill body (`SKILL.md`) and the pointer in
+  [the frontend migration record](design-frontend-migration.md).

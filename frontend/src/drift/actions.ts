@@ -1,3 +1,4 @@
+import { resumeModelCalls, turnOffReadings } from '../api/readings';
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
 import type { ReadingRequest, SessionIdentity } from '../api/types';
@@ -13,8 +14,8 @@ import {
   readInput,
   refresh,
 } from '../intent/context';
-import { goalKey, intentKey } from '../intent/derive';
-import type { KeepAnalyzeOutcome, KeepAnalyzeRequest } from '../intent/directions';
+import { foundGoal, intentKey } from '../intent/derive';
+import { saveFoundGoal } from '../intent/save';
 import { intentForReading } from '../intent/api';
 import { KEEP_REFUSED } from '../intent/sentences';
 import { isRecord, type Row } from '../observed';
@@ -22,7 +23,6 @@ import { acknowledgeFlip } from './flip';
 import { requestFocus } from './focus';
 import { currentPayload, showJob, showReading, showRoute } from './overlay';
 import {
-  needsAllow,
   policyReason,
   pressRefusal,
   promptReadingRefusal,
@@ -35,9 +35,11 @@ import {
   DESTINATION_CHANGED,
   PROVIDER_CHANGED,
   RESULT_MARK_UNSAVED,
+  PAGE_OUTDATED,
 } from './sentences';
 import type { DriftCtx } from './state';
 import { pressLine } from './route';
+import { noticeAnnouncement } from './notice';
 
 /* Every request the Drift section sends, each from one explicit press of one control. A mount, a second
    mount under StrictMode, a board refresh, a poll, a reconnect or a retry reaches none of them, and a lost
@@ -45,8 +47,8 @@ import { pressLine } from './route';
 
    `press: true` is the shape contract's "asserted rather than assumed" made mechanical: the literal appears
    in this one place, inside a handler a click reaches, and the route refuses a body without it.
-   `observer_model: 1` preserves the route's explicit-request guard; the separate allow field records a
-   first-press answer, and the server checks its durable permission and budget again at the model seam. */
+   `observer_model: 1` preserves the route's explicit-request guard, and the server checks its durable pause and
+   budget again at the model seam. */
 
 function pressDetails(ctx: DriftCtx, identity: SessionIdentity) {
   const session = liveRow(ctx.intent, identity);
@@ -65,14 +67,12 @@ export interface Drawn {
 }
 
 /* The sentence for a receiver that moved between the draw and the press, or nothing where it did not. The
-   provider and the model say who reads it; the two destinations say where it goes, and an Allow is bound to
-   both. */
+   provider and the model say who reads it. */
 function movedSince(drawn: Row | null, live: Row | null): string {
   if (!drawn || !live) return drawn === live ? '' : PROVIDER_CHANGED;
   const differs = (field: string): boolean =>
     String(drawn[field] || '') !== String(live[field] || '');
   if (differs('provider') || differs('model') || differs('harness')) return PROVIDER_CHANGED;
-  if (differs('destination') || differs('words_destination')) return DESTINATION_CHANGED;
   return '';
 }
 
@@ -80,7 +80,6 @@ function movedSince(drawn: Row | null, live: Row | null): string {
 export async function askForReading(
   ctx: DriftCtx,
   identity: SessionIdentity,
-  allow: boolean,
   drawn: Drawn,
 ): Promise<void> {
   const { intent, shell } = ctx;
@@ -92,13 +91,11 @@ export async function askForReading(
   /* A press in flight, or a running job, is the answer to a second press: nothing is sent. */
   if (
     pendingHas(intent, `reading:${key}`) ||
-    pendingHas(intent, `reading-allow:${key}`) ||
     held.requests.get(key)?.pending ||
     readingJob(payload, session)
   ) {
     return;
   }
-  /* Keep's "Press Allow and analyze" is answered by this press, so the region stops holding it. */
   shell.announcer.forget(`keep:${key}`);
   /* This press arrives from states the browser used to swallow, and an ungated one spends the reader's own
      model capacity from a state the page calls unavailable. Answered rather than dropped, because a
@@ -114,7 +111,7 @@ export async function askForReading(
   if (refusal) {
     // A press during a held close learns the board's state; the card shows it now.
     if (refusal === pressRefusal(session, request, now)) acknowledgeFlip(ctx, session, false);
-    held.requests.set(key, { pending: false, message: refusal, refusal: true });
+    held.requests.set(key, { ...request, pending: false, message: refusal, refusal: true });
     held.notify();
     return;
   }
@@ -127,58 +124,51 @@ export async function askForReading(
   const liveRevision = nextNumber(annotationOf(session)?.['revision']) || 0;
   const moved = movedSince(route, live) || (liveRevision !== drawn.revision ? KEEP_REFUSED : '');
   if (moved) {
-    held.requests.set(key, { pending: false, message: moved, consent: false });
+    held.requests.set(key, { ...request, pending: false, message: moved });
     if (moved === KEEP_REFUSED) {
       /* Said once, by the persistent region, as the server's own revision refusal is. */
-      held.requests.set(key, { pending: false, message: moved, consent: false, announced: true });
+      held.requests.set(key, { ...request, pending: false, message: moved, announced: true });
       announce(intent, `keep:${key}`, moved);
     }
     held.notify();
     return;
   }
   const provider = String(route['provider']);
-  /* The destinations the disclosure named, sent with an Allow so the server can refuse one given about an
-     endpoint that has since moved: where tool output goes, and where the words go, which the Allow is
-     bound to. "" is sent as itself, since an unnamed one is its own value. */
-  const destination = String(route['destination'] || '');
-  const wordsTo = String(route['words_destination'] || '');
-  const reading = intentForReading(shell, identity);
-  const chosenNow = held.chosen.get(goalKey(session)) ?? null;
-  if (needsAllow(payload, route) && !allow) {
-    held.requests.set(key, {
-      consent: true,
-      adoption: reading?.adoption ?? {},
-      chosen: chosenNow,
-    });
-    held.notify();
-    return;
-  }
-  /* Allow sends the prompt the card was opened over, so a record that moved underneath is refused by the
-     server rather than read unseen. A choice the reader made or undid while the card was up is theirs, so it
-     is what the box holds now that Allow sends. */
-  const confirmation = held.requests.get(key);
-  const adoption =
-    allow &&
-    confirmation?.consent &&
-    isRecord(confirmation['adoption']) &&
-    confirmation['chosen'] === chosenNow
-      ? confirmation['adoption']
-      : (reading?.adoption ?? {});
   /* The revision this panel drew, so a press from a page another tab has since moved on is refused before
      anything starts: the model would otherwise read words this reader never saw. */
-  const expected = drawn.revision;
-  const control = allow ? `reading-allow:${key}` : `reading:${key}`;
+  let expected = drawn.revision;
+  const control = `reading:${key}`;
   const press = pendingStart(intent, control, 'Starting…', 'Starting the analysis.');
   if (!press) return;
+  /* A found goal is the working goal until edited, but the server reads only a stored goal and adopts only a
+     prompt's own words, so the press stores it as typed words first and reads against the revision that
+     minted. A save that did not land starts nothing. */
+  if (foundGoal(input)) {
+    const saved = await saveFoundGoal(intent, identity, session, press.signal);
+    const fresh = saved ? pressDetails(ctx, identity) : null;
+    if (!fresh) {
+      pendingEnd(intent, control, press);
+      held.requests.set(key, {
+        ...request,
+        pending: false,
+        message: 'Your found goal could not be saved, so nothing was analyzed. Try again.',
+        refusal: true,
+      });
+      held.notify();
+      return;
+    }
+    expected = nextNumber(annotationOf(fresh.session)?.['revision']) || 0;
+  }
+  const reading = intentForReading(shell, identity);
+  const adoption = reading?.adoption ?? {};
   const note: Record<string, unknown> & { pending: boolean; message: string } = {
+    ...(request?.notice !== undefined ? { notice: request.notice } : {}),
     pending: true,
     message: '',
     adoption,
-    chosen: chosenNow,
   };
   held.requests.set(key, note);
   held.notify();
-  let settled = false;
   try {
     const body: Record<string, unknown> = {
       harness: identity.harness,
@@ -189,13 +179,6 @@ export async function askForReading(
       ...adoption,
       expected_revision: expected,
       ...(provider === 'claude' ? { model: String(route['model'] || '') } : {}),
-      ...(allow
-        ? {
-            allow: true,
-            words_destination: wordsTo,
-            ...(destination ? { tool_output: destination } : {}),
-          }
-        : {}),
     };
     const reply = answered(
       await shell.runtime.client.postReading(body as unknown as ReadingRequest, press.signal),
@@ -218,10 +201,7 @@ export async function askForReading(
       return;
     }
     if (status === 409 && answer?.['reason'] === 'provider-changed') {
-      /* Nothing was sent or saved. The next press starts again, and asks for the new receiver's own Allow if
-         it has none. */
       note.message = PROVIDER_CHANGED;
-      note['consent'] = false;
       await refresh(intent);
       return;
     }
@@ -229,7 +209,6 @@ export async function askForReading(
       /* Nothing was started, adopted or allowed. The owner's stale sentence, shared with Keep: the next press
          is the reader's, against the words the refresh now draws. */
       note.message = KEEP_REFUSED;
-      note['consent'] = false;
       /* Said once, by the persistent region, as Keep's is and under Keep's key, which the next press
          empties: a status paragraph inside the page was re-inserted and re-read on every render. */
       note['announced'] = true;
@@ -237,9 +216,12 @@ export async function askForReading(
       await refresh(intent);
       return;
     }
+    if (status === 400 && answer?.['reason'] === 'page-outdated') {
+      note.message = PAGE_OUTDATED;
+      return;
+    }
     if (status === 409 && answer?.['reason'] === 'destination-changed') {
       note.message = DESTINATION_CHANGED;
-      note['consent'] = false;
       await refresh(intent);
       return;
     }
@@ -268,7 +250,6 @@ export async function askForReading(
       note.message = pressLine(session, eligibility);
       acknowledgeFlip(ctx, session, false);
       note['refusal'] = true;
-      note['consent'] = false;
       await refresh(intent);
       return;
     }
@@ -282,9 +263,6 @@ export async function askForReading(
       showReading(ctx, answer['reading']);
       note.message = policyReason(answer['reading']);
       note['refusal'] = Boolean(note.message);
-      note['consent'] = ['consent-required', 'tool-output-consent-required'].includes(
-        String(answer['reading']['reason']),
-      );
       return;
     }
     if (!reply.ok) throw new Error(`HTTP ${String(status)}`);
@@ -292,32 +270,8 @@ export async function askForReading(
     if (!started && (answer?.['ok'] !== true || typeof answer['produced'] !== 'boolean')) {
       throw new Error('reading not confirmed');
     }
-    if (allow) {
-      const policy = (currentPayload(ctx) ?? payload)['reading'];
-      if (isRecord(policy)) {
-        const providers = isRecord(policy['providers']) ? policy['providers'] : {};
-        const words = isRecord(policy['words']) ? policy['words'] : {};
-        const rebind = { ...(isRecord(policy['rebind']) ? policy['rebind'] : {}) };
-        delete rebind[provider];
-        const output = isRecord(policy['tool_output']) ? policy['tool_output'] : {};
-        const granted = Array.isArray(output[provider]) ? (output[provider] as unknown[]) : [];
-        showReading(ctx, {
-          ...policy,
-          consent: true,
-          providers: { ...providers, [provider]: true },
-          words: { ...words, [provider]: true },
-          rebind,
-          ...(destination
-            ? {
-                tool_output: {
-                  ...output,
-                  [provider]: granted.includes(destination) ? granted : [...granted, destination],
-                },
-              }
-            : {}),
-        });
-      }
-    }
+    note['notice'] = isRecord(answer?.['notice']) ? answer['notice'] : null;
+    sayNotice(shell, note['notice']);
     if (started && answer && isRecord(answer['job'])) {
       /* Drawn now from the reply, then replaced by the board: a job can end before its own reply arrives,
          and a merged job the board has dropped would stand until the next poll and swallow every press.
@@ -336,116 +290,11 @@ export async function askForReading(
     /* A lost response does not establish that the model never ran. */
     note.message =
       'Could not confirm the reading. The request has not been retried. Refresh to check for a result before asking again.';
-    note['consent'] = false;
   } finally {
     note.pending = false;
     pendingEnd(intent, control, press);
     requestFocus(ctx, `reading:${key}`);
-    settled = true;
   }
-  void settled;
-}
-
-/* "Not now" on the consent step: nothing is sent, allowed or recorded, and the idle button comes back. The
-   adoption the step held goes with it. */
-export function readingNotNow(ctx: DriftCtx, identity: SessionIdentity): void {
-  const { intent } = ctx;
-  const session = liveRow(intent, identity);
-  if (!session) return;
-  const key = compatSessKey(session);
-  const request = intent.held.requests.get(key);
-  // Not while Allow is being answered: that press is already the consent.
-  if (pendingHas(intent, `reading-allow:${key}`)) return;
-  if (request?.consent && !request.pending) intent.held.requests.delete(key);
-  intent.held.notify();
-}
-
-/* What Keep's analysis asks of Analyze: one request, sent once, with the adoption and settlement a Keep
-   names, and never an Allow. `settle_through` is the newest direction the reader was shown, and the
-   revision is the one the list was drawn against. */
-export async function keepReading(
-  ctx: DriftCtx,
-  identity: SessionIdentity,
-  request: KeepAnalyzeRequest,
-): Promise<KeepAnalyzeOutcome> {
-  const { shell, intent } = ctx;
-  const read = pressDetails(ctx, identity);
-  if (!read) return { kind: 'refused' };
-  const { session, payload, input } = read;
-  const route = readingRoute(payload, session);
-  if (!route || !route['provider']) return { kind: 'refused' };
-  /* The card may still draw Analyze live while the board's close is held, and then Keep carries the Analyze
-     label. A press is answered by what is true now: where the board says no reading can start, Keep settles
-     and reads nothing, through the same route a Keep with no reading uses, and learns the board's state as
-     an Analyze press during a held close does. */
-  const now = shell.clock.now();
-  const note = intent.held.requests.get(compatSessKey(session));
-  const refusal = promptReadingRefusal({
-    input,
-    saving: pendingHas(intent, `${intentKey(session)}:save`),
-    answered: note,
-    nowMs: now,
-  });
-  if (refusal || readingJob(payload, session)) {
-    if (refusal && refusal === pressRefusal(session, note, now))
-      acknowledgeFlip(ctx, session, false);
-    const settle = answered(
-      await shell.runtime.client.postAnnotate(
-        {
-          ...identity,
-          ...request.adoption,
-          settle_through: request.through,
-          expected_revision: request.expected,
-        },
-        request.signal,
-      ),
-    );
-    const done = settle.kind === 'answered' && settle.ok ? (settle.body as Row | null) : null;
-    if (!done || done['ok'] !== true) throw new Error('not kept');
-    const outcome = String(done['outcome'] || '');
-    return ['stored', 'unchanged'].includes(outcome) && done['persisted'] !== false
-      ? { kind: 'ended', settled: true, why: '' }
-      : { kind: 'refused' };
-  }
-  const provider = String(route['provider']);
-  const body: Record<string, unknown> = {
-    harness: identity.harness,
-    sid: identity.sid,
-    provider,
-    press: true,
-    observer_model: 1,
-    ...request.adoption,
-    settle_through: request.through,
-    expected_revision: request.expected,
-    ...(provider === 'claude' ? { model: String(route['model'] || '') } : {}),
-  };
-  const reply = answered(
-    await shell.runtime.client.postReading(body as unknown as ReadingRequest, request.signal),
-  );
-  if (reply.kind === 'lost' || !reply.body) throw new Error('not confirmed');
-  const answer = reply.body as Row;
-  if (answer['adoption_refused'] || reply.status === 422) return { kind: 'refused' };
-  const key = compatSessKey(session);
-  const settledOutcome = ['stored', 'unchanged'].includes(String(answer['settled'] || ''));
-  if (isRecord(answer['route'])) showRoute(ctx, String(session['harness'] || ''), answer['route']);
-  if (isRecord(answer['reading'])) showReading(ctx, answer['reading']);
-  if (reply.ok && answer['ok'] === true && isRecord(answer['job'])) {
-    showJob(ctx, key, answer['job']);
-    return { kind: 'started' };
-  }
-  if (reply.status === 409 && isRecord(answer['job'])) showJob(ctx, key, answer['job']);
-  const latest = currentPayload(ctx) ?? payload;
-  const why =
-    answer['reason'] === 'provider-changed'
-      ? PROVIDER_CHANGED
-      : answer['reason'] === 'destination-changed'
-        ? DESTINATION_CHANGED
-        : isRecord(answer['reading'])
-          ? policyReason(answer['reading'])
-          : isRecord(answer['route']) && !answer['route']['provider']
-            ? routeRefusal(latest, session)
-            : '';
-  return { kind: 'ended', settled: settledOutcome, why };
 }
 
 /* Cancel the running analysis this box shows. The job id goes with it, so a stale tab cannot cancel a newer
@@ -501,21 +350,43 @@ export async function cancelReading(ctx: DriftCtx, identity: SessionIdentity): P
   }
 }
 
-/* "Turn off readings": withdraws every provider's permission. The one request in this section that names no
+/* "Pause model calls": withdraws every provider's permission. The one request in this section that names no
    session, so the control is keyed on the session the reader is looking at. */
+/* The notice card is not focused, so a reply that carries a new one is said once through the polite region. */
+function sayNotice(shell: DriftCtx['shell'], notice: unknown): void {
+  if (!isRecord(notice)) return;
+  const { key, sentence } = noticeAnnouncement(notice);
+  shell.announcer.announce(key, sentence);
+}
+
 export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null): Promise<void> {
+  return setModelPause(ctx, identity, true);
+}
+
+export async function readingOn(ctx: DriftCtx, identity: SessionIdentity | null): Promise<void> {
+  return setModelPause(ctx, identity, false);
+}
+
+async function setModelPause(
+  ctx: DriftCtx,
+  identity: SessionIdentity | null,
+  paused: boolean,
+): Promise<void> {
   const { intent, shell } = ctx;
   const key = identity ? compatSessKey(identity) : '';
-  const control = key ? `reading-off:${key}` : 'reading-off';
-  const press = pendingStart(intent, control, 'Turning off…', 'Turning off readings.');
+  const action = paused ? 'reading-off' : 'reading-on';
+  const control = key ? `${action}:${key}` : action;
+  const press = pendingStart(
+    intent,
+    control,
+    paused ? 'Pausing…' : 'Resuming…',
+    paused ? 'Pausing model calls.' : 'Resuming model calls.',
+  );
   if (!press) return;
   intent.held.notify();
   try {
     const reply = answered(
-      await shell.runtime.client.postReading(
-        { consent: 'off', press: true, observer_model: 1 } as unknown as ReadingRequest,
-        press.signal,
-      ),
+      await (paused ? turnOffReadings : resumeModelCalls)(shell.runtime.client, press.signal),
     );
     const answer = reply.kind === 'answered' && reply.ok ? (reply.body as Row | null) : null;
     if (!answer || answer['ok'] !== true || !isRecord(answer['reading'])) {
@@ -529,7 +400,10 @@ export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null
   } catch {
     if (key) {
       intent.held.requests.set(key, {
-        message: 'Could not confirm readings are off. Try turning them off again.',
+        ...intent.held.requests.get(key),
+        message: paused
+          ? 'Could not confirm model calls are paused. Try pausing again.'
+          : 'Could not confirm model calls resumed. Try resuming again.',
       });
     }
   } finally {

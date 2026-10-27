@@ -2,7 +2,7 @@ import { nextNumber, payloadSessions } from '../api/bootstrap';
 import { compatSessKey, contextKey, stableProjectKey } from '../api/identity';
 import type { SessionIdentity } from '../api/types';
 import type { Row } from '../observed';
-import { annotationOf, heldCap, scrub } from './annotation';
+import { annotationOf, heldCap, scrub, stripPasteWrapper, trimToRule } from './annotation';
 import { markAndSay } from './cues';
 import {
   announce,
@@ -18,10 +18,12 @@ import {
 } from './context';
 import {
   adoption,
+  directionLinesQuestion,
   directionsOpen,
   directionWhy,
   editedRefusal,
   goalKey,
+  intentChanges,
   intentDraft,
   intentKey,
   intentUnsaved,
@@ -32,7 +34,7 @@ import {
   type DraftInput,
 } from './derive';
 import type { DirectionLine } from './held';
-import { forgetAdopted, outcomeKind } from './save';
+import { forgetAdopted, outcomeKind, saveIntent } from './save';
 import {
   DIRECTION_UNOPENED,
   directionFailure,
@@ -164,7 +166,7 @@ export async function openDirection(
         factId,
         n,
         later,
-        text: scrub(body.text),
+        text: trimToRule(scrub(stripPasteWrapper(body.text))),
         clipped: body.clipped === true,
         replace: null,
       };
@@ -270,14 +272,14 @@ export async function saveDirection(ctx: Ctx, row: Row): Promise<void> {
   if (why || !held.text.trim()) {
     if (why) {
       announce(ctx, `direction:${key}`, why);
-      ctx.held.requestFocus(`direction-save:${key}`);
+      ctx.held.requestFocus(`${intentKey(row)}:save`);
     }
     return;
   }
   // Over a draft the one write adopts it, as the owner ruled.
   const draft = intentDraft(input);
   const linesFor = linesKey(row);
-  const control = `direction-save:${key}`;
+  const control = `${intentKey(row)}:save`;
   const press = pendingStart(ctx, control, 'Saving…', 'Saving the line.');
   if (!press) return;
   held.pending = true;
@@ -398,13 +400,19 @@ export async function adoptDirectionAsGoal(
     filled = true;
     ctx.held.chosen.set(key, {
       factId,
-      text: record['text'],
+      text: stripPasteWrapper(record['text']),
       at: nextNumber(record['at']),
       cut: record['cut'] === true,
       direction: true,
       linesAnswer: savedLines(first.annotation).length ? null : 'keep',
     });
+    ctx.held.cleared.delete(key);
     ctx.held.goals.delete(key);
+    /* The box starts at the rule, not the whole message. The choice keeps the whole words so Undo returns to
+       them, and the trimmed start is a typed edit over them, which Save intent saves as typed words. */
+    const rule = trimToRule(stripPasteWrapper(record['text']));
+    if (rule && rule !== stripPasteWrapper(record['text'])) ctx.held.goals.set(key, rule);
+    ctx.held.drop(intentKey(row));
     ctx.held.directions.delete(compat(row));
     announce(ctx, `${key}:chosen`, INTENT_CHOSEN_SAID);
   } catch {
@@ -436,8 +444,8 @@ export type WholeResult = {
   readonly message?: string;
 };
 
-// The count-only summary shows no direction text. Every Keep first draws all words,
-// including a sole short direction, before a later press may settle them (DEC-27).
+// Reads the words of the open directions the page has not yet held, so they are drawn before a press may
+// settle them (DEC-27). The question loads them on mount; this press reads again only when that failed.
 async function readWhole(
   ctx: Ctx,
   identity: SessionIdentity,
@@ -482,7 +490,10 @@ async function readWhole(
           const body = results[index];
           const id = String(entry.id || '');
           if (body?.ok === true && typeof body.text === 'string') {
-            held.texts.set(id, { text: body.text, clipped: body.clipped === true });
+            held.texts.set(id, {
+              text: stripPasteWrapper(body.text),
+              clipped: body.clipped === true,
+            });
             if (body.clipped === true) refused = true;
           } else {
             if (!refused && body?.ok === false) refusal = directionFailure('keep', body.reason);
@@ -510,31 +521,67 @@ async function readWhole(
   return { kind: 'shown' };
 }
 
-/* What a reading, once B's Analyze exists, is asked to do for a Keep that may analyze. It is the Analyze
-   step's: this file settles and sends nothing to a model, and a Keep with no reading here only settles. */
-export interface KeepAnalyzeRequest {
-  readonly adoption: Record<string, unknown>;
-  readonly through: number | null;
-  readonly expected: number;
-  readonly signal: AbortSignal;
+/* The words of every open direction, read once they are drawn and not on a press, so the question quotes
+   what each choice acts on and the first press of Leave it settles words already on screen. It adds no session or
+   store state of its own. A failed read leaves the quote at the entry's first sentence
+   and Leave it's own press reads again, as it did. One read per set of directions at a time. */
+const loading = new Set<string>();
+
+export async function loadWholes(ctx: Ctx, row: Row, projectKey: string): Promise<void> {
+  const identity = identityOf(row);
+  if (!identity) return;
+  const input = readInput(ctx, identity, row);
+  if (!input) return;
+  const pending = directionsOpen(input, sourceOf(ctx, input, projectKey));
+  if (!pending.length) return;
+  const key = compat(row);
+  const ids = pending.map((entry) => String(entry.id || ''));
+  const held = ctx.held.wholes.get(key);
+  if (ids.every((id) => held?.texts.has(id) && !held.texts.get(id)?.clipped)) {
+    if (held && !ids.every((id) => held.drawn.has(id))) {
+      held.drawn = new Set(ids);
+      ctx.held.notify();
+    }
+    return;
+  }
+  const guard = `${key}:${ids.join(',')}`;
+  if (loading.has(guard)) return;
+  loading.add(guard);
+  try {
+    await readWhole(
+      ctx,
+      identity,
+      row,
+      pending,
+      nextNumber(input.annotation?.['revision']) || 0,
+      new AbortController().signal,
+    );
+  } finally {
+    loading.delete(guard);
+    ctx.held.notify();
+  }
 }
 
-export type KeepAnalyzeOutcome =
-  | { readonly kind: 'started' }
-  | { readonly kind: 'refused' }
-  | { readonly kind: 'ended'; readonly settled: boolean; readonly why: string };
-
-export interface DirectionReading {
-  /** Why an analysis cannot start from here, ranked after an unsaved edit; empty where it can. */
-  readonly reason: string;
-  /** An analysis is already running for this session. */
-  readonly job: boolean;
-  /** A consent is still owed, so Keep settles only and the Allow beside its disclosure does the sending. */
-  readonly owed: boolean;
-  /** The element that discloses the receiver, which describes Keep while an analysis may start. */
-  readonly disclosureId?: string;
-  /** One request, sent once, with the adoption and settlement a Keep names. */
-  readonly start: (request: KeepAnalyzeRequest) => Promise<KeepAnalyzeOutcome>;
+/* Save intent, over a pending direction line: the one save for the card. Words typed in the boxes, or a
+   prompt adopted, are saved first, because the line is added against the revision they mint; the line then
+   goes in its own write, and only if the first left nothing unsaved. */
+export async function saveIntentAndLine(ctx: Ctx, row: Row): Promise<void> {
+  const identity = identityOf(row);
+  const key = compat(row);
+  const line = ctx.held.directions.get(key);
+  if (!identity || !line || typeof line.text !== 'string') {
+    await saveIntent(ctx, row);
+    return;
+  }
+  const input = readInput(ctx, identity, row);
+  if (!input) return;
+  const changes = intentChanges(input);
+  if (changes.any || changes.chosen) {
+    await saveIntent(ctx, row);
+    const after = readInput(ctx, identity, liveRow(ctx, identity) ?? row);
+    if (!after || intentUnsaved(after) || directionLinesQuestion(ctx.held, row)) return;
+  }
+  await saveDirection(ctx, liveRow(ctx, identity) ?? row);
 }
 
 /* Each Keep press is a new outcome to announce, even the same sentence again: its guard goes, and a region
@@ -544,16 +591,11 @@ function keepUnsay(ctx: Ctx, key: string): void {
   ctx.shell.announcer.forget(`keep:${key}`);
 }
 
-/* Keep my intent: settle every later direction the reader was shown, adopting the draft in the same write,
-   and start the analysis where the Analyze step says one can start. Every Keep names the revision it was
-   drawn against. Where no analysis can start, or an Allow is still owed, it goes to `/api/annotate`, which
-   settles and reads nothing: Keep never carries Allow. */
-export async function keepIntent(
-  ctx: Ctx,
-  row: Row,
-  projectKey: string,
-  reading: DirectionReading | null,
-): Promise<void> {
+/* Leave it: settle every later direction the reader was shown, adopting the draft in the same write. Every
+   press names the revision the list was drawn against, and goes to `/api/annotate`, which settles and reads
+   nothing: it never carries Allow. Analyze drift is its own press beside it, so a model is never started by
+   settling. */
+export async function keepIntent(ctx: Ctx, row: Row, projectKey: string): Promise<void> {
   const identity = identityOf(row);
   if (!identity) return;
   const key = compat(row);
@@ -567,14 +609,18 @@ export async function keepIntent(
   startFeedback(ctx, control);
   if (intentUnsaved(input)) {
     const edited = editedRefusal(pendingHas(ctx, `${intentKey(row)}:save`));
-    ctx.held.requests.set(key, { pending: false, message: edited, refusal: true, announced: true });
+    ctx.held.requests.set(key, {
+      ...ctx.held.requests.get(key),
+      pending: false,
+      message: edited,
+      refusal: true,
+      announced: true,
+    });
     announce(ctx, `keep:${key}`, edited);
     ctx.held.notify();
     return;
   }
   const draft = intentDraft(input);
-  const owed = Boolean(reading) && !reading?.reason && !reading?.job && Boolean(reading?.owed);
-  const analyze = Boolean(reading) && !reading?.reason && !reading?.job && !reading?.owed;
   const last = pending[pending.length - 1];
   const through = nextNumber(last?.at);
   const adopt = adoption(draft);
@@ -582,12 +628,19 @@ export async function keepIntent(
   const drawnAt = nextNumber(annotation?.['revision']) || 0;
   const press = pendingStart(ctx, control, 'Keeping…', 'Keeping your intent.');
   if (!press) return;
-  const request = { pending: true, message: '', adoption: adopt, announced: true } as {
+  const previousNotice = ctx.held.requests.get(key)?.notice;
+  const request = {
+    ...(previousNotice !== undefined ? { notice: previousNotice } : {}),
+    pending: true,
+    message: '',
+    adoption: adopt,
+    announced: true,
+  } as {
     pending: boolean;
     message: string;
     adoption: Record<string, unknown>;
     announced: boolean;
-    consent?: boolean;
+    notice?: Readonly<Record<string, unknown>> | null;
   };
   ctx.held.requests.set(key, request);
   ctx.held.notify();
@@ -599,55 +652,22 @@ export async function keepIntent(
     }
     /* A press after the list was drawn names the revision it was drawn against, so words saved since then
        are refused rather than settled over. `pending` is every drawn direction here, so `through` is too. */
-    const whole = ctx.held.wholes.get(key);
-    const expected =
-      whole && whole.drawn.size && whole.revision !== null ? whole.revision : drawnAt;
-    if (!analyze || !reading) {
-      const reply = answered(
-        await ctx.shell.runtime.client.postAnnotate(
-          { ...identity, ...adopt, settle_through: through, expected_revision: expected },
-          press.signal,
-        ),
-      );
-      const body = reply.kind === 'answered' && reply.ok ? reply.body : null;
-      if (!body || body.ok !== true) throw new Error('not kept');
-      const outcome = String(body.outcome || '');
-      const settled = ['stored', 'unchanged'].includes(outcome) && body.persisted !== false;
-      request.message = settled
-        ? keptDirections(pending.length, owed)
-        : outcome === 'untrusted'
-          ? (HELD_CUES['settle-untrusted'] ?? KEEP_REFUSED)
-          : KEEP_REFUSED;
-      /* A refused Keep draws its directions again against the revision now on screen: the one held was what
-         the store just refused. */
-      if (!settled) ctx.held.wholes.delete(key);
-      if (settled) {
-        forgetAdopted(ctx, row, draft);
-        /* The confirming step the idle control draws: its Allow, beside the disclosure naming the receiver,
-           is the press that sends. The draft is saved now, so that press finds nothing to adopt. */
-        if (owed) request.consent = true;
-      }
-      await refresh(ctx);
-      return;
-    }
-    const outcome = await reading.start({
-      adoption: adopt,
-      through,
-      expected,
-      signal: press.signal,
-    });
-    if (outcome.kind === 'refused') {
-      request.message = KEEP_REFUSED;
-      ctx.held.wholes.delete(key);
-      await refresh(ctx);
-      return;
-    }
-    if (outcome.kind === 'ended') {
-      if (outcome.settled) forgetAdopted(ctx, row, draft);
-      request.message = outcome.settled
-        ? [keptDirections(pending.length), outcome.why].filter(Boolean).join(' ')
-        : KEEP_UNCONFIRMED;
-    } else {
+    const reply = answered(
+      await ctx.shell.runtime.client.postAnnotate(
+        { ...identity, ...adopt, settle_through: through, expected_revision: drawnAt },
+        press.signal,
+      ),
+    );
+    const body = reply.kind === 'answered' && reply.ok ? reply.body : null;
+    if (!body || body.ok !== true) throw new Error('not kept');
+    const outcome = String(body.outcome || '');
+    const settled = ['stored', 'unchanged'].includes(outcome) && body.persisted !== false;
+    request.message = settled
+      ? keptDirections(pending.length)
+      : outcome === 'untrusted'
+        ? (HELD_CUES['settle-untrusted'] ?? KEEP_REFUSED)
+        : KEEP_REFUSED;
+    if (settled) {
       forgetAdopted(ctx, row, draft);
     }
     await refresh(ctx);

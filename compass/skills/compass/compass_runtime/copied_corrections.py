@@ -22,7 +22,7 @@ import json
 import os
 import re
 import threading
-from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
+from typing import TYPE_CHECKING, Any, NamedTuple, NotRequired, TypedDict
 
 from compass_runtime.config import (
     remove_state_file,
@@ -40,8 +40,13 @@ if TYPE_CHECKING:
 
 SCHEMA_VERSION = 1
 
-# The most a correction may hold, which is the most item 7 of that ruling lets the box compose.
-CORRECTION_CAP_CHARS = 2000
+# The most a correction may hold, which is the most item 7 of that ruling lets the box compose:
+# its lines' own 2,000, and since the owner's ruling of 2026-10-20 room for eight explanations (the
+# goal, six outcome lines and a contradicted claim) of 277 each, the label's 36 and a stored
+# detail's 240 and its "…", and since the owner's second ruling of that day room for seven quotes
+# of the agent's own words (the goal and six outcome lines) of 132 each: 2,000 + 8 * 277 + 7 * 132.
+# `correction.py` holds the parts and `test_correction` the sum.
+CORRECTION_CAP_CHARS = 5140
 # The owner's bound, 2026-09-28: eight per session, the oldest dropped. It counts copies still
 # waiting for their message; a recognised message moves to `matches` and leaves this count.
 COPIES_PER_SESSION = 8
@@ -62,6 +67,12 @@ _OPENING_SCAN_CAP_BYTES = project_context.SEMANTIC_BACKFILL_MAX_BYTES
 # sessions of eight copies and 32 matches write 1,180,437 bytes, which overran the old 1 MiB.
 _READ_CAP_BYTES = 2 << 20
 _KEY_CAP_CHARS = 64
+# The copy route's own body bound, derived so no correction the box composes is refused for its
+# bytes (review, 2026-10-20): the shared 12,288 refused 4,216 CJK characters, the page still said
+# Copied, and the paste then counted as the reader's words. Twelve bytes a character is the widest
+# any JSON encoding spells one code point (an escaped surrogate pair), for the text and for both
+# identity fields at the widest this store keeps them, with room for the object around them.
+COPY_BODY_CAP_BYTES = 12 * (CORRECTION_CAP_CHARS + 2 * _KEY_CAP_CHARS) + 256
 _LOCK_WAIT_SECONDS = 10.0
 # Only Claude Code's messages are read for a digest, which is what item 9 rules.
 HARNESSES = frozenset({"claude"})
@@ -83,6 +94,10 @@ class Copy(TypedDict):
     copied_at: float
     ino: int
     offset: int
+    # The same text with every run of whitespace folded to one space, so a paste whose only edit
+    # was whitespace still comes back as the correction (DRC-4920). Absent on a copy stored before
+    # it existed, which keeps matching on `digest` alone.
+    folded: NotRequired[str]
 
 
 class Match(TypedDict):
@@ -103,6 +118,7 @@ class _Message(NamedTuple):
     fact_id: str
     at: float
     digest: str | None
+    folded: str | None
     # What the row's `instruction` and `first_prompt` would carry for this message, each built
     # as its producer builds it, so the row's field can be placed on the message it quotes.
     line: str
@@ -122,6 +138,17 @@ def normalise(text: str) -> str:
 
 def digest(text: str) -> str:
     return hashlib.sha256(normalise(text).encode("utf-8", "surrogatepass")).hexdigest()
+
+
+def folded_digest(text: str) -> str:
+    """`digest` after every run of whitespace, inside a line as well as at its ends, is one space.
+
+    A second, looser reading beside the exact one (DRC-4920): the owner's 2026-09-28 normalisation
+    stays what `digest` computes, and is what a pasted correction matches first. This one only
+    forgives the reader reflowing lines or widening a gap; a changed word, or a space inside a
+    word, is still a different text.
+    """
+    return hashlib.sha256(" ".join(text.split()).encode("utf-8", "surrogatepass")).hexdigest()
 
 
 def store_path(config: RuntimeConfig) -> str:
@@ -154,7 +181,11 @@ def _copy(value: Any) -> Copy | None:
         return None
     if moment is None or ino is None or offset is None:
         return None
-    return {"digest": found, "copied_at": moment, "ino": ino, "offset": offset}
+    copy: Copy = {"digest": found, "copied_at": moment, "ino": ino, "offset": offset}
+    folded = value.get("folded")
+    if isinstance(folded, str) and _DIGEST.fullmatch(folded):
+        copy["folded"] = folded
+    return copy
 
 
 def _match(value: Any) -> Match | None:
@@ -307,6 +338,7 @@ def register(
         "copied_at": moment,
         "ino": position[0],
         "offset": position[1],
+        "folded": folded_digest(text),
     }
 
     def change(stored: dict[tuple[str, str], Held]) -> dict[tuple[str, str], Held] | None:
@@ -417,6 +449,9 @@ def _scan(
                 records.message_dict(record).get("content"), cap=_MESSAGE_READ_CAP
             )
             whole = len(text) < _MESSAGE_READ_CAP
+            # What was copied is the correction, and Claude Code wraps a paste in its own tags
+            # (DRC-4920), so the digest reads the words between them.
+            pasted = records.strip_paste_wrapper(text)
             cap = records.INSTRUCTION_CAP_CHARS
             # `claude_data.latest_instruction`'s line, and `transcripts.first_prompt`'s.
             line = records.instruction_line(
@@ -428,7 +463,8 @@ def _scan(
                     here,
                     str(fact["fact_id"]),
                     float(event["at"]),
-                    digest(text) if whole else None,
+                    digest(pasted) if whole else None,
+                    folded_digest(pasted) if whole else None,
                     str(line["text"]) if line else "",
                     records.safe_text(first, cap + 1) if first else "",
                 )
@@ -511,6 +547,14 @@ def _messages(
     return messages, info.st_ino, info.st_size
 
 
+def _same(message: _Message, copy: Copy) -> bool:
+    """Whether this message is the copied text: exactly, or with only its whitespace reflowed."""
+    if message.digest is None:
+        return False
+    folded = copy.get("folded")
+    return message.digest == copy["digest"] or (folded is not None and message.folded == folded)
+
+
 def _recognise(
     config: RuntimeConfig, state: RuntimeState, key: tuple[str, str], held: Held
 ) -> tuple[tuple[Match, ...], list[_Message]]:
@@ -540,7 +584,7 @@ def _recognise(
         for message in messages:
             if (
                 message.position >= copy["offset"]
-                and message.digest == copy["digest"]
+                and _same(message, copy)
                 and message.fact_id not in taken
             ):
                 taken.add(message.fact_id)

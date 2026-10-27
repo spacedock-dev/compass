@@ -1,23 +1,19 @@
-import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { useFocusKey } from '../controls/useFocusKey';
 import { useShell } from '../shell/context';
 import { heldFor, useConsent, useUsageOffered } from './held';
 
-/* The disclosure that gates the quota fetch, and the switch that changes the answer. SECURITY.md's "Usage
-   quota reads" section is the contract and its "Consent and the off switch" paragraph is the promise this
-   file keeps: the vendor numbers are asked for only after the reader has answered YES on this origin, and
-   unanswered is not yes. `usage=1` rides a poll only when the transport reads `granted` from the same
-   storage lane this writes (`transport/runtime`), so nothing here builds a request, and nothing here runs
-   before a press: mounting, StrictMode's second effect, a poll and a reconnect read the answer and write
-   nothing. */
+/* The quota fetch and its off switch. SECURITY.md's "Usage quota reads" section is the contract and its
+   "Consent and the off switch" paragraph is the promise this file keeps: the vendor numbers are read unless
+   the reader turned them off on this origin, and the line saying so is on screen whenever the fetch is
+   offered. `usage=1` rides a poll unless the transport reads `declined` from the same storage lane this
+   writes (`transport/runtime`), so nothing here builds a request, and nothing here writes before a press. */
 
 const SWITCH_KEY = 'usage:switch';
 
 /* Records the answer the reader pressed, then asks for the board again so the answer is visibly acted on:
-   granting has to reach the server as a parameter on the next request, and without this refresh the first
-   fetch would wait out the ordinary poll and the reader would think the answer did nothing. The refresh is a
-   manual one, as the legacy page's was, so the header says it is reading. */
+   without this refresh the change would wait out the ordinary poll and the reader would think the press did
+   nothing. The refresh is a manual one, so the header says it is reading. */
 function useAnswer() {
   const { runtime } = useShell();
   return (value: 'granted' | 'declined') => {
@@ -26,103 +22,36 @@ function useAnswer() {
   };
 }
 
-/** In flow, never a modal: the board stays fully readable behind the question. Nothing while it is answered or not offered. */
-export function UsageDisclosure() {
-  const offered = useUsageOffered();
-  const consent = useConsent('usage');
-  const answer = useAnswer();
-  const { controls } = useShell();
-  const grantRef = useFocusKey<HTMLButtonElement>(controls.focusLane, 'usage:answer-granted', {
-    fallback: SWITCH_KEY,
-  });
-  const declineRef = useFocusKey<HTMLButtonElement>(controls.focusLane, 'usage:answer-declined', {
-    fallback: SWITCH_KEY,
-  });
-  if (!offered || consent !== null) return null;
-  return (
-    <Card
-      as="section"
-      variant="quota-consent"
-      className="next-usage-consent"
-      data-next-usage-consent=""
-      role="region"
-      aria-label="Quota fetch disclosure"
-    >
-      <p>
-        <strong>Read your quota from the vendor?</strong> Compass can show your Claude Code and
-        Cursor windows. Doing it means reading the credential that harness already stored on this
-        machine and sending it to that vendor, at most once every five minutes, to ask for your
-        usage numbers and nothing else. The credential is never written, logged, or served, and no
-        session content is sent.
-      </p>
-      <div className="next-usage-consent-actions">
-        <Button
-          ref={grantRef}
-          type="button"
-          size="consent"
-          accentBorder
-          data-next-usage-answer="granted"
-          onClick={() => answer('granted')}
-        >
-          Read my quota
-        </Button>
-        <Button
-          ref={declineRef}
-          type="button"
-          size="consent"
-          data-next-usage-answer="declined"
-          onClick={() => answer('declined')}
-        >
-          No thanks
-        </Button>
-      </div>
-      <p className="next-usage-consent-note">
-        Changeable later from this strip. <code>--no-usage</code> refuses it for a whole run
-        whatever is stored here.
-      </p>
-    </Card>
-  );
-}
-
-/* The "changed later" half of the promise. Drawn only once the question has been answered, so the
-   disclosure above and this control are never both on screen claiming the same decision. */
+/* On until turned off: an unanswered origin reads as on, as `transport/runtime` sends it. */
 export function UsageSwitch() {
   const offered = useUsageOffered();
   const consent = useConsent('usage');
   const answer = useAnswer();
   const { controls } = useShell();
   const buttonRef = useFocusKey<HTMLButtonElement>(controls.focusLane, SWITCH_KEY);
-  if (!offered || consent === null) return null;
-  const granted = consent === 'granted';
+  if (!offered) return null;
+  const on = consent !== 'declined';
   return (
-    <p className="next-usage-switch">
+    <p className="next-usage-switch" data-next-usage-switch={on ? 'on' : 'off'}>
       <span>
-        Vendor quota fetch: <strong>{granted ? 'on' : 'off'}</strong>
+        {on
+          ? 'Quota is read with the Claude Code and Cursor logins on this machine. No session content is sent.'
+          : 'Quota reading is off. Windows above are the last cached read and will lapse.'}
       </span>
       <Button
         ref={buttonRef}
         type="button"
         tone="muted"
-        data-next-usage-answer={granted ? 'declined' : 'granted'}
-        onClick={() => answer(granted ? 'declined' : 'granted')}
+        data-next-usage-answer={on ? 'declined' : 'granted'}
+        onClick={() => answer(on ? 'declined' : 'granted')}
       >
-        {`Turn ${granted ? 'off' : 'on'}`}
+        {`Turn ${on ? 'off' : 'on'}`}
       </Button>
-      {granted ? null : (
-        <span className="next-usage-lapse">
-          Windows above are the last cached read and will lapse.
-        </span>
-      )}
     </p>
   );
 }
 
-/** What the Console rail draws under its windows: the question until it is answered, the switch after. */
+/** What the Console rail draws under its windows. */
 export function RailUsage() {
-  return (
-    <>
-      <UsageDisclosure />
-      <UsageSwitch />
-    </>
-  );
+  return <UsageSwitch />;
 }

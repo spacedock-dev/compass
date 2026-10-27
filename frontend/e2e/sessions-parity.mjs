@@ -159,6 +159,9 @@ const summarizeDetail = () => {
   // The Intent panel and its pill are the Intent step's, and a stated slot on the React page.
   clone.querySelector('.next-session-panel')?.remove();
   clone.querySelectorAll('[data-next-drift-pill]').forEach((node) => node.remove());
+  /* Predates the one-column page (2026-10-19): the two-column next-session-columns and next-session-activity
+     layout is gone, so this fails when the proof is run on demand until it is brought forward to Intent,
+     What the session has done, Drift and the collapsed Full activity. */
   // The activity column, child by child, for the parts this step owns. The activity list the panel feeds is not one.
   const own = [
     '.next-session-activity-heading',

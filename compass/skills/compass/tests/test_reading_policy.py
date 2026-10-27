@@ -34,8 +34,482 @@ class ReadingPolicyTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def test_pausing_preserves_the_summary_answer_and_refuses_switch_presses(self) -> None:
+        for allowed in (False, True):
+            with self.subTest(allowed=allowed):
+                reading_policy.set_consent(self.config, True, now=100.0)
+                before = reading_policy.set_summary_consent(self.config, allowed, now=100.0)
+                reading_policy.set_consent(self.config, False, now=101.0)
+                for press in (True, False):
+                    paused = reading_policy.set_summary_consent(self.config, press, now=102.0)
+                    self.assertEqual("model-calls-paused", paused["reason"])
+                    self.assertEqual(not allowed, paused["off"])
+                    self.assertEqual(before["generation"], paused["generation"])
+                self.assertEqual(
+                    "model-calls-paused",
+                    reading_policy.reserve_summary(self.config, now=103.0, receipt="paused")[
+                        "reason"
+                    ],
+                )
+                reading_policy.set_consent(self.config, True, now=104.0)
+                self.assertEqual(before, reading_policy.summary_status(self.config, now=100.0))
+
+    def test_resume_lifts_the_pause_and_grants_no_provider(self) -> None:
+        reading_policy.set_consent(self.config, False, now=100.0)
+        self.assertEqual(
+            "model-calls-paused", reading_policy.reserve(self.config, now=100.0)["reason"]
+        )
+        answer = reading_policy.resume(self.config, now=101.0)
+        self.assertFalse(answer["off"])
+        self.assertTrue(answer["consent"])
+        self.assertEqual(dict.fromkeys(reading_policy.PROVIDERS, False), answer["providers"])
+        self.assertEqual("", reading_policy.reserve(self.config, now=102.0)["reason"])
+        self.assertEqual("", reading_policy.summary_status(self.config, now=102.0)["reason"])
+
+    def test_forget_stores_summaries_off_through_a_later_resume(self) -> None:
+        for paused_first in (False, True):
+            with self.subTest(paused_first=paused_first):
+                reading_policy.set_consent(self.config, True, now=100.0)
+                reading_policy.set_summary_consent(self.config, True, now=100.0)
+                reading_policy.note(
+                    self.config,
+                    kind="summary",
+                    provider="claude",
+                    destination="Anthropic",
+                    content=1,
+                    tool_output="",
+                    now=100.0,
+                )
+                if paused_first:
+                    reading_policy.set_consent(self.config, False, now=100.5)
+                self.assertTrue(reading_policy.forget(self.config, now=101.0))
+                reading_policy.resume(self.config, now=102.0)
+                answer = reading_policy.summary_status(self.config, now=103.0)
+                self.assertTrue(answer["off"])
+                self.assertEqual("summaries-off", answer["reason"])
+                self.assertNotIn("summary", answer["notices"])
+                self.assertEqual(
+                    "summaries-off",
+                    reading_policy.reserve_summary(self.config, now=103.0, receipt="forgot")[
+                        "reason"
+                    ],
+                )
+
+    def test_the_pause_outranks_a_spent_day(self) -> None:
+        reading_policy.set_consent(self.config, True, now=100.0)
+        for _ in range(reading_policy.DAILY_CAP):
+            reading_policy.reserve(self.config, now=100.0)
+        reading_policy.set_consent(self.config, False, now=101.0)
+        for answer in (
+            reading_policy.status(self.config, now=102.0),
+            reading_policy.reserve(self.config, now=102.0),
+        ):
+            self.assertTrue(answer["off"])
+            self.assertEqual("model-calls-paused", answer["reason"])
+        resumed = reading_policy.resume(self.config, now=103.0)
+        self.assertFalse(resumed["off"])
+        self.assertEqual("daily-cap", resumed["reason"])
+
+    def test_resume_under_a_disabled_run_keeps_the_stored_pause(self) -> None:
+        reading_policy.set_consent(self.config, False, now=100.0)
+        disabled, _ = make_runtime(state_dir=self.config.state_dir, model_calls_disabled=True)
+        answer = reading_policy.resume(disabled, now=101.0)
+        self.assertEqual("run-disabled", answer["reason"])
+        self.assertFalse(answer["consent"])
+        after = reading_policy.status(self.config, now=102.0)
+        self.assertTrue(after["off"])
+        self.assertEqual("model-calls-paused", after["reason"])
+
+    def test_resume_lifts_a_pause_held_in_one_legacy_table_on_the_first_press(self) -> None:
+        assert runtime_io.sqlite_module is not None
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+        ) as db:
+            db.execute("CREATE TABLE permission (id INTEGER PRIMARY KEY, allowed INTEGER)")
+            db.execute("INSERT INTO permission VALUES (1, 0)")
+            db.commit()
+        self.assertEqual(
+            "model-calls-paused", reading_policy.summary_status(self.config, now=100.0)["reason"]
+        )
+        answer = reading_policy.resume(self.config, now=101.0)
+        self.assertFalse(answer["off"])
+        self.assertEqual("", answer["reason"])
+        self.assertEqual("", reading_policy.reserve(self.config, now=102.0)["reason"])
+
+    def test_summary_switch_leaves_analyze_coverage_and_goal_notice_unchanged(self) -> None:
+        reading_policy.set_consent(
+            self.config,
+            True,
+            now=100.0,
+            provider="claude",
+            destination="Anthropic",
+            tool_output="Anthropic",
+        )
+        reading_policy.note(
+            self.config,
+            kind="goal",
+            provider="codex",
+            destination="OpenAI",
+            content=4,
+            tool_output="",
+            now=100.0,
+        )
+        before = reading_policy.status(self.config, now=100.0)
+        for allowed in (False, True):
+            reading_policy.set_summary_consent(self.config, allowed, now=101.0)
+            self.assertEqual(before, reading_policy.status(self.config, now=100.0))
+
+    def test_summary_status_reads_without_a_write_lock_or_schema_writes(self) -> None:
+        reading_policy.status(self.config, now=100.0)
+        assert runtime_io.sqlite_module is not None
+        path = reading_policy.store_path(self.config)
+        with contextlib.closing(runtime_io.sqlite_module.connect(path)) as db:
+            before = sorted(row[0] for row in db.execute("SELECT name FROM sqlite_master"))
+        self.assertNotIn("summary_spends", before)
+        answer = reading_policy.summary_status(self.config, now=100.0)
+        self.assertEqual(("", 0, True), (answer["reason"], answer["used"], answer["consent"]))
+        with contextlib.closing(runtime_io.sqlite_module.connect(path)) as db:
+            after = sorted(row[0] for row in db.execute("SELECT name FROM sqlite_master"))
+        self.assertEqual(before, after)
+        # Another dashboard holding the write lock does not hold up a board read.
+        reading_policy.reserve_summary(self.config, now=100.0, receipt="one")
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(path, isolation_level=None, timeout=0)
+        ) as writer:
+            writer.execute("BEGIN IMMEDIATE")
+            answer = reading_policy.summary_status(self.config, now=100.0)
+            writer.execute("ROLLBACK")
+        self.assertEqual(("", 1), (answer["reason"], answer["used"]))
+        # The window is the read's own filter; pruning stays on the write paths.
+        self.assertEqual(0, reading_policy.summary_status(self.config, now=100.0 + 86_401)["used"])
+
+    def test_pause_then_resume_shows_the_summary_notice_again(self) -> None:
+        # SECURITY.md: Pause model calls clears the notices and Resume shows each again on the
+        # next call, the summary's included. An earlier trigger of this branch that kept the
+        # summary's notice is replaced on the next open.
+        reading_policy.set_consent(self.config, True, now=100.0)
+        assert runtime_io.sqlite_module is not None
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+        ) as db:
+            for event in ("insert", "update"):
+                for table in ("permission", "provider_permission"):
+                    db.execute(f"DROP TRIGGER IF EXISTS notice_off_{table}_{event}")
+                    db.execute(
+                        f"CREATE TRIGGER reading_notice_off_{table}_{event} AFTER "  # noqa: S608
+                        f"{event.upper()} ON {table} WHEN NEW.allowed=0 BEGIN "
+                        "DELETE FROM notice WHERE kind != 'summary'; END"
+                    )
+            db.commit()
+        args: dict[str, Any] = {
+            "kind": "summary",
+            "provider": "claude",
+            "destination": "Anthropic",
+            "content": 1,
+            "tool_output": "",
+        }
+        self.assertIsNotNone(reading_policy.note(self.config, **args, now=100.0))
+        reading_policy.note(
+            self.config,
+            kind="reading",
+            provider="claude",
+            destination="Anthropic",
+            content=reading_policy.CONTENT_VERSION,
+            tool_output="",
+            now=100.0,
+        )
+        reading_policy.set_consent(self.config, False, now=101.0)
+        self.assertEqual({}, reading_policy.summary_status(self.config, now=102.0)["notices"])
+        answer = reading_policy.resume(self.config, now=103.0)
+        self.assertEqual({}, answer["notices"])
+        self.assertTrue(
+            reading_policy.notice_due(reading_policy.summary_status(self.config, now=104.0), **args)
+        )
+
+    def test_fresh_store_is_on_without_explicit_unasked_coverage(self) -> None:
+        answer = reading_policy.status(self.config, now=100.0)
+        self.assertTrue(answer["consent"])
+        self.assertFalse(answer["off"])
+        self.assertEqual("", answer["reason"])
+        self.assertEqual({"codex": False, "claude": False}, answer["providers"])
+        self.assertEqual("", reading_policy.reserve(self.config, now=100.0)["reason"])
+
+    def test_legacy_off_survives_upgrade_and_allow_turns_every_reader_call_on(self) -> None:
+        # Frozen pre-rename schemas rather than ones the new writer defines: the
+        # strict one, and the loose one an older build wrote with no CHECKs.
+        schemas = {
+            "strict": (
+                (
+                    "CREATE TABLE permission (id INTEGER PRIMARY KEY CHECK(id=1), "
+                    "allowed INTEGER NOT NULL CHECK(allowed IN (0,1)))"
+                ),
+                (
+                    "CREATE TABLE provider_permission (provider TEXT PRIMARY KEY, "
+                    "allowed INTEGER NOT NULL CHECK(allowed IN (0,1)))"
+                ),
+            ),
+            "loose": (
+                "CREATE TABLE permission (id INTEGER PRIMARY KEY, allowed INTEGER)",
+                "CREATE TABLE provider_permission (provider TEXT PRIMARY KEY, allowed INTEGER)",
+            ),
+        }
+        assert runtime_io.sqlite_module is not None
+        for name, (permission, provider_permission) in schemas.items():
+            with self.subTest(schema=name):
+                reading_policy.store_path(self.config).unlink(missing_ok=True)
+                with contextlib.closing(
+                    runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+                ) as db:
+                    db.execute(permission)
+                    db.execute("INSERT OR REPLACE INTO permission VALUES (1, 0)")
+                    db.execute(provider_permission)
+                    db.execute("INSERT OR REPLACE INTO provider_permission VALUES ('claude', 0)")
+                    db.commit()
+                answer = reading_policy.status(self.config, now=100.0)
+                self.assertTrue(answer["off"])
+                self.assertFalse(answer["consent"])
+                self.assertEqual(
+                    "model-calls-paused", reading_policy.reserve(self.config, now=100.0)["reason"]
+                )
+                self.assertEqual(
+                    "model-calls-paused",
+                    reading_policy.reserve_summary(self.config, now=100.0, receipt="upgrade")[
+                        "reason"
+                    ],
+                )
+                self.assertTrue(reading_policy.set_consent(self.config, True, now=101.0)["consent"])
+                self.assertEqual(
+                    "", reading_policy.reserve(self.config, provider="claude", now=102.0)["reason"]
+                )
+
+    def test_notice_repeats_only_for_a_changed_disclosure_or_after_off(self) -> None:
+        def note(**changes: Any) -> Any:
+            args = {
+                "kind": "reading",
+                "provider": "claude",
+                "destination": "Anthropic",
+                "content": reading_policy.CONTENT_VERSION,
+                "tool_output": "Anthropic",
+                "now": 100.0,
+            }
+            return reading_policy.note(self.config, **{**args, **changes})
+
+        first = note()
+        self.assertEqual("Anthropic", first["destination"])
+        self.assertEqual(
+            first, reading_policy.status(self.config, now=100.0)["notices"]["reading"]["claude"]
+        )
+        self.assertIsNone(note())
+        self.assertIsNotNone(note(destination="gateway.example"))
+        self.assertIsNotNone(note(kind="goal"))
+        self.assertIsNotNone(note(content=reading_policy.CONTENT_VERSION + 1))
+        # A narrower press is covered by the wider record; a new tool-output
+        # destination is not.
+        self.assertIsNone(note(tool_output=""))
+        self.assertIsNone(note(content=reading_policy.WORDS_CONTENT_VERSION))
+        self.assertIsNotNone(note(tool_output="gateway.example"))
+        reading_policy.set_consent(self.config, False, now=101.0)
+        self.assertEqual({}, reading_policy.status(self.config, now=101.0)["notices"])
+        self.assertIsNone(note())
+        reading_policy.set_consent(self.config, True, now=102.0)
+        self.assertIsNotNone(note())
+
+    def test_notice_store_failure_refuses_and_disabled_run_records_nothing(self) -> None:
+        args: dict[str, Any] = {
+            "kind": "reading",
+            "provider": "codex",
+            "destination": "OpenAI",
+            "content": reading_policy.WORDS_CONTENT_VERSION,
+            "tool_output": "",
+            "now": 100.0,
+        }
+        reading_policy.store_path(self.config).write_bytes(b"not sqlite")
+        with self.assertRaises(reading_policy.RefusedError) as caught:
+            reading_policy.note(self.config, **args)
+        self.assertEqual("store-unavailable", caught.exception.answer["reason"])
+        reading_policy.store_path(self.config).unlink()
+        config, _ = make_runtime(state_dir=self.config.state_dir, model_calls_disabled=True)
+        self.assertIsNone(reading_policy.note(config, **args))
+        self.assertFalse(reading_policy.store_path(config).exists())
+
+    def test_either_legacy_or_provider_off_alone_blocks_reader_calls(self) -> None:
+        assert runtime_io.sqlite_module is not None
+        for table, schema, values in (
+            ("permission", "id INTEGER PRIMARY KEY, allowed INTEGER", "1, 0"),
+            ("provider_permission", "provider TEXT PRIMARY KEY, allowed INTEGER", "'claude', 0"),
+        ):
+            with self.subTest(table=table):
+                with contextlib.closing(
+                    runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+                ) as db:
+                    db.execute(f"CREATE TABLE {table} ({schema})")
+                    db.execute(f"INSERT INTO {table} VALUES ({values})")  # noqa: S608 - fixed schema fixtures
+                    db.commit()
+                answer = reading_policy.status(self.config, now=100.0)
+                self.assertTrue(answer["off"])
+                self.assertEqual("model-calls-paused", answer["reason"])
+                self.assertEqual(
+                    "model-calls-paused", reading_policy.reserve(self.config, now=100.0)["reason"]
+                )
+                reading_policy.store_path(self.config).unlink()
+
+    def test_old_build_turn_off_also_clears_the_notice_rows(self) -> None:
+        reading_policy.note(
+            self.config,
+            kind="reading",
+            provider="codex",
+            destination="OpenAI",
+            content=1,
+            tool_output="",
+            now=100.0,
+        )
+        assert runtime_io.sqlite_module is not None
+        for table, statement in (
+            ("permission", "INSERT OR REPLACE INTO permission VALUES (1, 0)"),
+            (
+                "provider_permission",
+                "INSERT OR REPLACE INTO provider_permission VALUES ('claude', 0)",
+            ),
+        ):
+            with self.subTest(table=table):
+                reading_policy.set_consent(self.config, True, now=101.0)
+                reading_policy.note(
+                    self.config,
+                    kind="goal",
+                    provider="codex",
+                    destination="OpenAI",
+                    content=1,
+                    tool_output="",
+                    now=101.0,
+                )
+                with contextlib.closing(
+                    runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+                ) as db:
+                    db.execute(statement)
+                    db.commit()
+                answer = reading_policy.status(self.config, now=102.0)
+                # Alone beside this build's Allow, a provider row's zero is not
+                # an off (an older build's off always writes the legacy row too),
+                # but the notices go either way.
+                self.assertEqual(table == "permission", answer["off"])
+                self.assertEqual({}, answer["notices"])
+
+    def test_an_older_builds_allow_after_its_off_reads_as_on(self) -> None:
+        # That build's Turn off wrote 0 for every provider and its Allow rewrote
+        # only the provider allowed, so the reader's last answer was Allow.
+        reading_policy.set_consent(self.config, False, now=100.0)
+        assert runtime_io.sqlite_module is not None
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+        ) as db:
+            db.execute("INSERT OR REPLACE INTO provider_permission VALUES ('claude', 1)")
+            db.execute("INSERT OR REPLACE INTO permission_destination VALUES ('claude', 'A')")
+            db.execute("INSERT OR REPLACE INTO permission_disclosure VALUES ('claude', 4, 'A')")
+            db.commit()
+        answer = reading_policy.status(
+            self.config, now=101.0, provider="claude", destinations={"claude": "A"}
+        )
+        self.assertFalse(answer["off"])
+        self.assertTrue(answer["consent"])
+        self.assertEqual("", answer["reason"])
+        self.assertEqual({"codex": False, "claude": True}, answer["providers"])
+        self.assertEqual(
+            "",
+            reading_policy.reserve(self.config, now=102.0, provider="claude", destination="A")[
+                "reason"
+            ],
+        )
+        # And this build's off still stores off over it.
+        self.assertTrue(reading_policy.set_consent(self.config, False, now=103.0)["off"])
+
+    def test_alternating_routes_show_the_reading_notice_once(self) -> None:
+        # Fallback routing: Claude Code reads its own sessions with tool output
+        # and another harness's at the words tier, under one provider record.
+        presses = (
+            (reading_policy.CONTENT_VERSION, "Anthropic"),
+            (reading_policy.WORDS_CONTENT_VERSION, ""),
+        ) * 2
+        shown = [
+            reading_policy.note(
+                self.config,
+                kind="reading",
+                provider="claude",
+                destination="Anthropic",
+                content=content,
+                tool_output=tool_output,
+                now=100.0 + index,
+            )
+            is not None
+            for index, (content, tool_output) in enumerate(presses)
+        ]
+        self.assertEqual([True, False, False, False], shown)
+        narrow_first = make_runtime(
+            state_dir=Path(self.home.name) / "narrow", state_home=self.home.name
+        )[0]
+        shown = [
+            reading_policy.note(
+                narrow_first,
+                kind="reading",
+                provider="claude",
+                destination="Anthropic",
+                content=content,
+                tool_output=tool_output,
+                now=100.0 + index,
+            )
+            is not None
+            for index, (content, tool_output) in enumerate(presses[1:])
+        ]
+        self.assertEqual([True, True, False], shown)
+
+    def test_a_tampered_notice_row_is_not_published(self) -> None:
+        reading_policy.note(
+            self.config,
+            kind="goal",
+            provider="codex",
+            destination="OpenAI",
+            content=reading_policy.CONTENT_VERSION,
+            tool_output="",
+            now=100.0,
+        )
+        assert runtime_io.sqlite_module is not None
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(reading_policy.store_path(self.config))
+        ) as db:
+            # Values the columns' affinity cannot coerce back to the right type.
+            for row in (
+                ("reading", "codex", b"OpenAI", 1, "", 100.0),
+                ("reading", "claude", "Anthropic", "four", "", 100.0),
+                ("summary", "codex", "OpenAI", 1, b"OpenAI", 100.0),
+                ("summary", "claude", "Anthropic", 1, "", "soon"),
+                ("goal", "claude", "Anthropic", 1, "", float("inf")),
+            ):
+                db.execute("INSERT OR REPLACE INTO notice VALUES (?, ?, ?, ?, ?, ?)", row)
+            db.commit()
+        notices = reading_policy.status(self.config, now=101.0)["notices"]
+        self.assertEqual(["goal"], list(notices))
+        self.assertEqual("OpenAI", notices["goal"]["codex"]["destination"])
+
+    def test_retract_removes_only_the_notice_it_names(self) -> None:
+        args: dict[str, Any] = {
+            "kind": "reading",
+            "provider": "codex",
+            "destination": "OpenAI",
+            "content": reading_policy.WORDS_CONTENT_VERSION,
+            "tool_output": "",
+        }
+        first = reading_policy.note(self.config, **args, now=100.0)
+        assert first is not None
+        reading_policy.retract(self.config, first)
+        self.assertEqual({}, reading_policy.status(self.config, now=101.0)["notices"])
+        again = reading_policy.note(self.config, **args, now=102.0)
+        self.assertIsNotNone(again)
+        reading_policy.retract(self.config, first)
+        self.assertEqual(
+            again, reading_policy.status(self.config, now=103.0)["notices"]["reading"]["codex"]
+        )
+
     def test_answer_survives_a_new_client_and_forget_preserves_spend(self) -> None:
-        self.assertFalse(reading_policy.status(self.config, now=100.0)["consent"])
+        self.assertTrue(reading_policy.status(self.config, now=100.0)["consent"])
         self.assertTrue(reading_policy.set_consent(self.config, True, now=100.0)["consent"])
         self.assertEqual("", reading_policy.reserve(self.config, now=100.0)["reason"])
         self.assertEqual(1, reading_policy.status(self.config, now=101.0)["used"])
@@ -71,9 +545,9 @@ class ReadingPolicyTest(unittest.TestCase):
             content=reading_policy.WORDS_CONTENT_VERSION,
         )
         refused = reading_policy.reserve(self.config, now=103.0, destination="changed.example")
-        self.assertEqual("consent-required", refused["reason"])
+        self.assertEqual("", refused["reason"])
         self.assertEqual(reading_policy.CONTENT_CHANGED, refused["rebind"]["codex"])
-        self.assertEqual(0, refused["used"])
+        self.assertEqual(1, refused["used"])
 
     def test_a_pre_fix_version_three_row_cannot_prove_its_disclosed_tier(self) -> None:
         assert runtime_io.sqlite_module is not None
@@ -93,9 +567,9 @@ class ReadingPolicyTest(unittest.TestCase):
             db.execute("INSERT INTO permission_disclosure VALUES ('codex', 3, 'OpenAI')")
             db.commit()
         refused = reading_policy.reserve(self.config, now=100.0, destination="OpenAI")
-        self.assertEqual("consent-required", refused["reason"])
+        self.assertEqual("", refused["reason"])
         self.assertEqual(reading_policy.CONTENT_CHANGED, refused["rebind"]["codex"])
-        self.assertEqual(0, refused["used"])
+        self.assertEqual(1, refused["used"])
         self.assertTrue(refused["words"]["codex"])
         reading_policy.set_consent(
             self.config, True, now=101.0, provider="codex", destination="OpenAI"
@@ -135,7 +609,7 @@ class ReadingPolicyTest(unittest.TestCase):
                     destination=destination,
                     content=content,
                 )
-                self.assertEqual("consent-required", refused["reason"])
+                self.assertEqual("model-calls-paused", refused["reason"])
                 self.assertEqual(1, refused["used"])
                 self.assertEqual({}, refused["tool_output"])
 
@@ -202,6 +676,7 @@ class ReadingPolicyTest(unittest.TestCase):
         guarded = reading_policy.GuardedModel(
             self.config, model, lambda: 100.0, on_reserved=reserved
         )
+        reading_policy.set_consent(self.config, False, now=100.0)
         with self.assertRaises(reading_policy.RefusedError):
             guarded("prompt", output_cap_bytes=100)
         self.assertEqual([], used_when_told)
@@ -297,15 +772,17 @@ class PermissionIsPerProviderTest(unittest.TestCase):
         self.config, _ = make_runtime(state_dir=Path(self.home.name), state_home=self.home.name)
 
     def _consent(self, provider: str) -> bool:
-        return reading_policy.status(self.config, now=100.0, provider=provider)["consent"]
+        return reading_policy.status(self.config, now=100.0, provider=provider)["providers"][
+            provider
+        ]
 
     def test_a_reader_who_allowed_codex_has_not_allowed_claude_code(self) -> None:
         reading_policy.set_consent(self.config, True, now=100.0, provider="codex")
         self.assertTrue(self._consent("codex"))
         self.assertFalse(self._consent("claude"))
         refused = reading_policy.reserve(self.config, now=100.0, provider="claude")
-        self.assertEqual("consent-required", refused["reason"])
-        self.assertEqual(0, reading_policy.status(self.config, now=100.0)["used"])
+        self.assertEqual("", refused["reason"])
+        self.assertEqual(1, reading_policy.status(self.config, now=100.0)["used"])
 
     def test_allowing_claude_code_allows_only_claude_code(self) -> None:
         reading_policy.set_consent(self.config, True, now=100.0, provider="claude")
@@ -376,11 +853,7 @@ class PermissionIsPerProviderTest(unittest.TestCase):
         for name in ("", "gemini", "openai"):
             with self.subTest(name=name):
                 answer = reading_policy.set_consent(self.config, True, now=100.0, provider=name)
-                self.assertFalse(answer["consent"])
-                self.assertEqual(
-                    "consent-required",
-                    reading_policy.reserve(self.config, now=100.0, provider=name)["reason"],
-                )
+                self.assertFalse(any(answer["providers"].values()))
         self.assertEqual(
             {"codex": False, "claude": False},
             reading_policy.status(self.config, now=100.0)["providers"],
@@ -398,14 +871,11 @@ class PermissionIsPerProviderTest(unittest.TestCase):
             "run-disabled", reading_policy.reserve(config, now=100.0, provider="claude")["reason"]
         )
 
-    def test_a_guarded_claude_code_model_needs_claude_code_permission(self) -> None:
-        reading_policy.set_consent(self.config, True, now=100.0, provider="codex")
+    def test_a_guarded_claude_code_model_runs_without_explicit_permission(self) -> None:
         model = mock.Mock(return_value=("{}", "ok"))
         guarded = reading_policy.GuardedModel(self.config, model, lambda: 100.0, provider="claude")
-        with self.assertRaises(reading_policy.RefusedError) as caught:
-            guarded("prompt", output_cap_bytes=100)
-        self.assertEqual("consent-required", caught.exception.answer["reason"])
-        model.assert_not_called()
+        self.assertEqual(("{}", "ok"), guarded("prompt", output_cap_bytes=100))
+        self.assertEqual(1, model.call_count)
 
     def test_a_known_missing_claude_code_reserves_nothing(self) -> None:
         reading_policy.set_consent(self.config, True, now=100.0, provider="claude")
@@ -479,81 +949,6 @@ class AnAllowGivenBeforeToolOutputWasNamedDoesNotCoverIt(unittest.TestCase):
         self.assertFalse(reading_policy.tool_output_allowed(answer, "codex", "OpenAI"))
 
 
-class ALaunchTimeToolOutputGrantTest(unittest.TestCase):
-    """`--allow-tool-output` is the reader's consent to tool output, given at launch.
-
-    It writes the same row an Allow would, to the destinations Compass names, and
-    nothing else: the words still need an Allow, so no reading runs on it alone.
-    """
-
-    NAMED: ClassVar[dict[str, str]] = {"claude": "Anthropic", "codex": "OpenAI"}
-
-    def _config(self, **changes: Any) -> Any:
-        home = tempfile.TemporaryDirectory()
-        self.addCleanup(home.cleanup)
-        config, _ = make_runtime(state_dir=Path(home.name), state_home=home.name, **changes)
-        return config
-
-    def test_it_grants_each_named_destination_and_no_words_allow(self) -> None:
-        config = self._config(tool_output_pre_grant=True)
-        self.assertTrue(reading_policy.grant_tool_output(config, self.NAMED))
-        answer = reading_policy.status(config, now=100.0, provider="claude")
-        self.assertTrue(reading_policy.tool_output_allowed(answer, "claude", "Anthropic"))
-        self.assertTrue(reading_policy.tool_output_allowed(answer, "codex", "OpenAI"))
-        self.assertFalse(reading_policy.tool_output_allowed(answer, "claude", "OpenAI"))
-        # The words are still the reader's to allow, so the reading is not yet covered.
-        self.assertFalse(answer["consent"])
-        self.assertEqual("consent-required", answer["reason"])
-
-    def test_a_destination_compass_cannot_name_gets_no_grant(self) -> None:
-        config = self._config(tool_output_pre_grant=True)
-        self.assertTrue(reading_policy.grant_tool_output(config, {"claude": "", "codex": "OpenAI"}))
-        granted = reading_policy.status(config, now=100.0)["tool_output"]
-        self.assertEqual({"codex": ["OpenAI"]}, granted)
-
-    def test_it_writes_nothing_without_the_flag_or_under_the_model_refusal(self) -> None:
-        for changes in (
-            {"tool_output_pre_grant": False},
-            {"tool_output_pre_grant": True, "model_calls_disabled": True},
-        ):
-            with self.subTest(**changes):
-                config = self._config(**changes)
-                self.assertFalse(reading_policy.grant_tool_output(config, self.NAMED))
-                self.assertFalse(reading_policy.store_path(config).exists())
-
-    def test_turning_readings_off_or_forgetting_withdraws_it(self) -> None:
-        for revoke in ("off", "forget"):
-            with self.subTest(revoke=revoke):
-                config = self._config(tool_output_pre_grant=True)
-                reading_policy.grant_tool_output(config, self.NAMED)
-                if revoke == "off":
-                    reading_policy.set_consent(config, False, now=100.0)
-                else:
-                    reading_policy.forget(config, now=100.0)
-                self.assertEqual({}, reading_policy.status(config, now=100.0)["tool_output"])
-
-    def test_granting_again_is_idempotent_and_a_later_allow_still_needs_its_destination(
-        self,
-    ) -> None:
-        config = self._config(tool_output_pre_grant=True)
-        self.assertTrue(reading_policy.grant_tool_output(config, self.NAMED))
-        self.assertTrue(reading_policy.grant_tool_output(config, self.NAMED))
-        self.assertEqual(
-            {"claude": ["Anthropic"], "codex": ["OpenAI"]},
-            reading_policy.status(config, now=100.0)["tool_output"],
-        )
-        # An Allow for the words alone, at a destination that has since moved, covers no grant.
-        answer = reading_policy.set_consent(
-            config, True, now=100.0, provider="claude", destination="gw.corp.example"
-        )
-        self.assertFalse(reading_policy.tool_output_allowed(answer, "claude", "gw.corp.example"))
-
-    def test_a_store_that_cannot_be_read_takes_no_grant(self) -> None:
-        config = self._config(tool_output_pre_grant=True)
-        reading_policy.store_path(config).write_bytes(b"not a database")
-        self.assertFalse(reading_policy.grant_tool_output(config, self.NAMED))
-
-
 def reading_route_vendor(provider: str) -> str:
     return {"codex": "OpenAI", "claude": "Anthropic"}[provider]
 
@@ -622,7 +1017,7 @@ class TheCapOutranksConsentTest(unittest.TestCase):
                     reading_policy.reserve(config, now=100.0 + offset, provider="claude")["reason"],
                 )
             published = reading_policy.status(config, now=200.0)
-            self.assertFalse(published["consent"])
+            self.assertTrue(published["consent"])
             self.assertEqual("daily-cap", published["reason"])
             self.assertEqual(
                 "daily-cap", reading_policy.reserve(config, now=200.0, provider="codex")["reason"]
@@ -811,7 +1206,7 @@ class TheJobLedgerTest(unittest.TestCase):
     def test_a_refused_reservation_records_no_job(self) -> None:
         reading_policy.set_consent(self.config, False, now=100.0)
         self.assertEqual(
-            "consent-required",
+            "model-calls-paused",
             reading_policy.reserve(self.config, now=100.0, job_id="j1")["reason"],
         )
         self.assertIs(False, self._charged("j1"))
@@ -914,13 +1309,13 @@ class TheAllowForTheWordsIsBoundToItsDestination(unittest.TestCase):
                 answer = reading_policy.status(
                     self.config, now=100.0, provider="claude", destinations=destinations
                 )
-                self.assertFalse(answer["consent"])
+                self.assertFalse(answer["providers"]["claude"])
                 self.assertFalse(answer["providers"]["claude"])
                 self.assertEqual(reading_policy.DESTINATION_CHANGED, answer["rebind"]["claude"])
         # And the reservation, which hands status only its own provider.
         refused = reading_policy.reserve(self.config, now=100.0, provider="claude")
-        self.assertEqual("consent-required", refused["reason"])
-        self.assertEqual(0, refused["used"])
+        self.assertEqual("", refused["reason"])
+        self.assertEqual(1, refused["used"])
 
     def test_an_unnamed_allow_keeps_covering_a_move_it_cannot_see(self) -> None:
         """Consent F2 (ui5): what SECURITY.md and the amendment's item 5 now
@@ -961,8 +1356,8 @@ class TheAllowForTheWordsIsBoundToItsDestination(unittest.TestCase):
 
     def test_an_allow_covers_the_destination_it_was_given_for(self) -> None:
         answer = self._allow("Anthropic")
-        self.assertTrue(answer["consent"])
-        self.assertTrue(self._status("Anthropic")["consent"])
+        self.assertTrue(answer["providers"]["claude"])
+        self.assertTrue(self._status("Anthropic")["providers"]["claude"])
         self.assertEqual({"codex": False, "claude": True}, self._status("Anthropic")["providers"])
         self.assertEqual({}, self._status("Anthropic")["rebind"])
 
@@ -971,22 +1366,22 @@ class TheAllowForTheWordsIsBoundToItsDestination(unittest.TestCase):
         for today in ("gw.corp.example", "Amazon Bedrock", ""):
             with self.subTest(today=today):
                 answer = self._status(today)
-                self.assertFalse(answer["consent"])
-                self.assertEqual("consent-required", answer["reason"])
+                self.assertFalse(answer["providers"]["claude"])
+                self.assertEqual("", answer["reason"])
                 self.assertFalse(answer["providers"]["claude"])
                 self.assertEqual({"claude": reading_policy.DESTINATION_CHANGED}, answer["rebind"])
                 refused = reading_policy.reserve(
                     self.config, now=100.0, provider="claude", destination=today
                 )
-                self.assertEqual("consent-required", refused["reason"])
-        self.assertEqual(0, self._status("Anthropic")["used"])
+                self.assertEqual("", refused["reason"])
+        self.assertEqual(3, self._status("Anthropic")["used"])
 
     def test_an_unnamed_destination_is_its_own_value(self) -> None:
         self._allow("")
         self.assertTrue(self._status("")["consent"])
         for today in ("Anthropic", "gw.corp.example"):
             with self.subTest(today=today):
-                self.assertFalse(self._status(today)["consent"])
+                self.assertFalse(self._status(today)["providers"]["claude"])
                 self.assertIn("claude", self._status(today)["rebind"])
         self.assertEqual(
             "", reading_policy.reserve(self.config, now=100.0, provider="claude")["reason"]
@@ -996,23 +1391,15 @@ class TheAllowForTheWordsIsBoundToItsDestination(unittest.TestCase):
         self._allow("Anthropic")
         self._allow("gw.corp.example")
         self.assertTrue(self._status("gw.corp.example")["consent"])
-        self.assertFalse(self._status("Anthropic")["consent"])
+        self.assertFalse(self._status("Anthropic")["providers"]["claude"])
 
-    def test_the_job_refuses_a_destination_the_allow_was_not_given_for(self) -> None:
+    def test_the_job_admits_a_new_destination_without_an_allow(self) -> None:
         self._allow("Anthropic")
         model = mock.Mock(return_value=("{}", "ok"))
-        for where, refused in (("gw.corp.example", True), ("Anthropic", False)):
-            with self.subTest(where=where):
-                guarded = reading_policy.GuardedModel(
-                    self.config, model, lambda: 100.0, provider="claude", destination=where
-                )
-                if refused:
-                    with self.assertRaises(reading_policy.RefusedError) as caught:
-                        guarded("prompt", output_cap_bytes=100)
-                    self.assertEqual("consent-required", caught.exception.answer["reason"])
-                    model.assert_not_called()
-                else:
-                    self.assertEqual(("{}", "ok"), guarded("prompt", output_cap_bytes=100))
+        guarded = reading_policy.GuardedModel(
+            self.config, model, lambda: 100.0, provider="claude", destination="gw.corp.example"
+        )
+        self.assertEqual(("{}", "ok"), guarded("prompt", output_cap_bytes=100))
         self.assertEqual(1, self._status("Anthropic")["used"])
 
     def test_the_job_asks_where_the_words_go_again_at_its_reservation(self) -> None:
@@ -1050,7 +1437,7 @@ class TheAllowForTheWordsIsBoundToItsDestination(unittest.TestCase):
         answer = reading_policy.status(
             config, now=100.0, provider="claude", destinations=self.ANTHROPIC
         )
-        self.assertTrue(answer["consent"])
+        self.assertTrue(answer["providers"]["claude"])
 
     def test_a_decline_still_holds_across_a_destination_change(self) -> None:
         self._allow("Anthropic")
@@ -1058,7 +1445,7 @@ class TheAllowForTheWordsIsBoundToItsDestination(unittest.TestCase):
         for today in ("Anthropic", "gw.corp.example", ""):
             with self.subTest(today=today):
                 answer = self._status(today)
-                self.assertFalse(answer["consent"])
+                self.assertFalse(answer["providers"]["claude"])
                 # A refusal is never asked about as though the endpoint moved.
                 self.assertEqual({}, answer["rebind"])
 
@@ -1074,7 +1461,7 @@ class TheAllowForTheWordsIsBoundToItsDestination(unittest.TestCase):
         db.commit()
         db.close()
         answer = self._status("Anthropic")
-        self.assertFalse(answer["consent"])
+        self.assertFalse(answer["providers"]["claude"])
         self.assertIn("claude", answer["rebind"])
 
     def test_an_old_builds_turn_off_forgets_the_bound_destination(self) -> None:
@@ -1087,7 +1474,7 @@ class TheAllowForTheWordsIsBoundToItsDestination(unittest.TestCase):
         db.execute("INSERT OR REPLACE INTO provider_permission VALUES (?, ?)", ("claude", 1))
         db.commit()
         db.close()
-        self.assertFalse(self._status("Anthropic")["consent"])
+        self.assertFalse(self._status("Anthropic")["providers"]["claude"])
 
     def test_the_tool_output_grants_rule_is_unchanged(self) -> None:
         answer = reading_policy.set_consent(
@@ -1170,14 +1557,15 @@ class AStoreWrittenBeforeTheBindingIsMigratedInPlace(unittest.TestCase):
         finally:
             db.close()
 
-    def test_every_old_allow_asks_once_more_and_says_why(self) -> None:
+    def test_every_old_allow_is_on_but_explicit_coverage_still_needs_a_binding(self) -> None:
         answer = reading_policy.status(self.config, now=100.0, destinations=self.TODAY)
         self.assertEqual({"codex": False, "claude": False}, answer["providers"])
         self.assertEqual(
             dict.fromkeys(("codex", "claude"), reading_policy.DESTINATION_CHANGED),
             answer["rebind"],
         )
-        self.assertEqual("consent-required", answer["reason"])
+        self.assertEqual("", answer["reason"])
+        self.assertTrue(answer["consent"])
 
     def test_nothing_else_in_the_store_is_lost(self) -> None:
         answer = reading_policy.status(self.config, now=100.0, destinations=self.TODAY)

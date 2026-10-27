@@ -8,7 +8,7 @@ import {
   HARNESS,
   SID,
   ROUTE,
-  UNCONSENTED,
+  FIRST_PRESS,
   RECORD,
   fact,
   freshScript,
@@ -21,6 +21,9 @@ import { copyProofPath } from './support/proof-copy.mjs';
 import { awaitRecordRead } from './support/record.mjs';
 
 const mutation = process.env.JOURNEY_MUTATION || '';
+/* Predates the one-column page (2026-10-19): the confirm-step mutation targets the retired Allow and analyze
+   label, so this fails when the proof is run on demand until it is brought forward to the Analyze drift
+   label. */
 const MUTATIONS = {
   'confirm-step': [
     'drift/ReadingControl.tsx',
@@ -123,7 +126,7 @@ try {
         ...(fixture.noDraft ? { first_prompt: '', instruction: null } : {}),
       };
       script.payload = {
-        reading: structuredClone(UNCONSENTED),
+        reading: structuredClone(FIRST_PRESS),
         reading_routes: { claude: ROUTE },
         reading_check: 'accepted',
         reading_jobs: {},
@@ -252,9 +255,7 @@ try {
       const action = (name) => page.getByRole('button', { name, exact: true });
       if (fixture.chosen) {
         const before = await page.evaluate(() => globalThis.__journey.clicks.length);
-        await page
-          .getByRole('combobox', { name: 'Fill the goal from one of your prompts' })
-          .click();
+        await page.getByRole('button', { name: 'Use your prompt' }).click();
         await page.getByRole('option').first().click();
         assert.equal(
           await page.evaluate(() => globalThis.__journey.clicks.length),
@@ -267,7 +268,7 @@ try {
         if (fixture.state === 'ended') {
           assert.match(
             await page.locator('[data-next-ended-goal]').innerText(),
-            /Words you save now cannot be read against it/,
+            /What you save now is kept, but Analyze will not check the session against it/,
           );
           assert.notEqual(await goal.inputValue(), 'Ship the typed queue worker');
         }
@@ -279,7 +280,7 @@ try {
         await action('Save intent').press('Enter');
         await page.waitForFunction(
           () =>
-            /Saved as a new revision/.test(
+            /Saved\./.test(
               document.querySelector('.next-cockpit-held-footer')?.textContent || '',
             ) &&
             document
@@ -341,6 +342,9 @@ try {
         assert.equal(postsTo(script, '/api/reading').length, 0, 'consent was skipped');
         // Follow an inserted confirmation so the regression fails on its measured cost, not a missing label.
         if (await action('Confirm analysis').count()) await action('Confirm analysis').click();
+        /* Predates the one-column page (2026-10-19): the Allow and analyze step is retired, so this fails
+           when the proof is run on demand until it is brought forward to the first Analyze drift press and
+           its notice. */
         await action('Allow and analyze').press('Enter');
         await page.locator('[data-next-analyzing="journey-job"]').waitFor();
         const readAt = Math.max(Date.now() / 1000, saved.annotation_goal_saved_at || 0);
@@ -408,13 +412,13 @@ try {
           assert.equal(await evidence.isVisible(), true, 'cited record requires another press');
           assert.equal(await page.locator('[data-next-result-state="departure"]').count(), 0);
         } else {
-          const account = page.locator('[data-next-result] .next-cockpit-assessment-account');
+          const account = page.locator('[data-next-result] [data-next-departure="goal"]');
           assert.equal(await account.isVisible(), true, 'finding requires another press');
           assert.match(await account.innerText(), /It stopped running the tests/);
-          const evidence = account.locator('.next-cockpit-assessment-evidence');
+          // What: the cited entries by number and kind; each one's recorded time is under Evidence.
+          const evidence = account.locator('[data-next-departure-what]');
           assert.equal(await evidence.isVisible(), true, 'evidence requires another press');
-          assert.match(await evidence.innerText(), /pytest -q/);
-          assert.match(await evidence.innerText(), /\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC/);
+          assert.match(await evidence.innerText(), /#\d+\s+failed check · pytest -q/);
         }
         assert.equal(postsTo(script, '/api/reading').length, 1);
         assert.ok(readingBody);

@@ -194,7 +194,11 @@ def _project_identity_key(prefix: str, path: str) -> str:
     return f"{prefix}{digest.hexdigest()}"
 
 
-def _git_identity_root(cwd: str) -> str | None:
+def _git_checkout(cwd: str) -> tuple[str | None, str | None]:
+    """The checkout holding ``cwd`` and the main repository root it belongs to.
+
+    The two differ only in a linked worktree, which is how a caller tells one.
+    """
     cursor = os.path.realpath(cwd)
     repo_root: str | None = None
     git_dir: str | None = None
@@ -219,7 +223,7 @@ def _git_identity_root(cwd: str) -> str | None:
             break
         cursor = parent
     if not git_dir:
-        return repo_root
+        return repo_root, repo_root
     common_file = os.path.join(git_dir, "commondir")
     try:
         with open(common_file, encoding="utf-8", errors="replace") as handle:
@@ -227,9 +231,14 @@ def _git_identity_root(cwd: str) -> str | None:
     except OSError:
         common = ""
     if not common:
-        return repo_root
+        return repo_root, repo_root
     common_dir = os.path.realpath(os.path.join(git_dir, common))
-    return os.path.dirname(common_dir) if os.path.basename(common_dir) == ".git" else repo_root
+    main = os.path.dirname(common_dir) if os.path.basename(common_dir) == ".git" else repo_root
+    return repo_root, main
+
+
+def _git_identity_root(cwd: str) -> str | None:
+    return _git_checkout(cwd)[1]
 
 
 def project_root(cwd: str) -> str | None:
@@ -258,9 +267,12 @@ def project_identity(config: RuntimeConfig, cwd: str) -> dict[str, str]:
     """
     if not cwd or not os.path.isabs(cwd):
         return {}
+    return _identity_from_root(config, cwd, _git_identity_root(cwd))
+
+
+def _identity_from_root(config: RuntimeConfig, cwd: str, repo_root: str | None) -> dict[str, str]:
     if not os.path.isdir(os.path.realpath(cwd)):
         return {}
-    repo_root = _git_identity_root(cwd)
     root = repo_root or os.path.realpath(cwd)
     name = os.path.basename(root.rstrip(os.sep)) or project_from_cwd(config, root)
     return {
@@ -270,14 +282,57 @@ def project_identity(config: RuntimeConfig, cwd: str) -> dict[str, str]:
     }
 
 
+def _removed_worktree(cwd: str) -> tuple[str, str] | None:
+    """``(repository root, worktree name)`` for a path under a deleted linked worktree.
+
+    The ``.git`` pointers are gone with the directory, so the only evidence is the
+    ``<root>/.claude/worktrees/<name>`` layout Claude Code creates, and it counts
+    only when ``<root>`` still holds a ``.git`` directory. Other harnesses' layouts
+    are not guessed at, per
+    [D-7](docs/design-session-identity.md#d-7-a-session-in-a-linked-worktree-files-under-its-repository).
+    """
+    parts = cwd.split(os.sep)
+    for index in range(len(parts) - 3, 0, -1):
+        if parts[index : index + 2] == [".claude", "worktrees"] and parts[index + 2]:
+            root = os.sep.join(parts[:index]) or os.sep
+            if os.path.isdir(os.path.join(root, ".git")):
+                return os.path.realpath(root), parts[index + 2]
+            return None
+    return None
+
+
 def apply_project_identity(config: RuntimeConfig, session: Session, cwd: str) -> None:
     """Attach a measured hidden key and short name without replacing legacy display data."""
-    identity = project_identity(config, cwd)
+    if not cwd or not os.path.isabs(cwd):
+        return
+    # One read serves the key, the label and the worktree name, per
+    # [D-7](docs/design-session-identity.md#d-7-a-session-in-a-linked-worktree-files-under-its-repository).  # noqa: E501
+    checkout, main = _git_checkout(cwd)
+    identity = _identity_from_root(config, cwd, main)
     if not identity:
+        removed = _removed_worktree(cwd)
+        if removed:
+            root, name = removed
+            label = project_from_cwd(config, root)
+            if label:
+                session["project"] = label
+                session["project_key"] = _project_identity_key("git:", root)
+                session["project_name"] = os.path.basename(root) or label
+                session["project_identity_source"] = "git common directory"
+                session["worktree"] = name
         return
     session["project_key"] = identity["key"]
     session["project_name"] = identity["name"]
     session["project_identity_source"] = identity["source"]
+    if checkout and main and checkout != main:
+        # The label is what the board groups on, so a linked worktree files under
+        # its repository and the checkout's own name moves to `worktree`, which
+        # keeps two sessions on one repository distinguishable (DRC-4932).
+        label = project_from_cwd(config, main)
+        if label:
+            session["project"] = label
+            session["project_key"] = identity["key"]
+        session["worktree"] = os.path.basename(checkout.rstrip(os.sep)) or None
 
 
 def fmt_duration(seconds: float | None) -> str:
@@ -526,6 +581,9 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         "project_key": project,
         "project_name": project.rsplit("/", 1)[-1] or project,
         "project_identity_source": "collector project label",
+        # The linked worktree's directory name; None for a main checkout, so a
+        # reader of the row can tell "not a worktree" from an empty name.
+        "worktree": None,
         "provider": None,
         "model": None,
         "consumption": None,
@@ -536,6 +594,14 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         "first_prompt": "",
         "first_prompt_at": None,
         "first_prompt_control": False,
+        # The `/goal` a Claude Code session holds, `{"text", "at"}`, or None. None is also what a
+        # session from before `/goal` publishes, so absence reads the same as "never set one".
+        "session_goal": None,
+        # How the goal above ended, when the transcript showed it: `{"at"}` for a clear and
+        # `{"at", "reason"}` for the harness giving up. None is "not seen", never "did not
+        # happen", and the goal stays None either way.
+        "session_goal_cleared": None,
+        "session_goal_gave_up": None,
         "last_output": None,
         # The second line beneath the title. A mapping of label, text and at, or
         # None. The label is one of "asked", "agent" or "earlier", and the page
@@ -598,6 +664,7 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         # the one place the two are read together. None means no such record
         # stands, never "did not finish".
         "turn_end_at": None,
+        "summary": None,
         "delegated_launches": None,
         "delegated_unpaired": None,
         "delegated_latest_launch_at": None,

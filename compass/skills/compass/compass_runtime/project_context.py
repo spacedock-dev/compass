@@ -24,6 +24,7 @@ from . import (
     entry_numbers,
     events,
     observer,
+    reading_route,
     records,
     semantic_history,
     spacedock,
@@ -58,10 +59,14 @@ READER_WORDS_FIELD = "reader_words"
 AGENT_WORDS_CAP_CHARS = 1_000
 AGENT_WORDS_FIELD = "agent_words"
 AGENT_WORDS_TOTAL_FIELD = "agent_words_total"
+# The title a message's fact id was hashed from, on an event whose published title is not it. Only a
+# paste whose tag shares a line with typed words has one, and it still carries the tag.
+ID_TITLE_FIELD = "id_title"
 # Every server-side-only words field, which no page route may publish.
 _SERVER_ONLY_FIELDS = frozenset(
     {
         READER_WORDS_FIELD,
+        ID_TITLE_FIELD,
         AGENT_WORDS_FIELD,
         AGENT_WORDS_TOTAL_FIELD,
         records.GOAL_SOURCE_CUT_FIELD,
@@ -139,6 +144,10 @@ _SEMANTIC_FACT_TYPES = {
     "check_run": "tool_report",
     "path_written": "tool_report",
     "background_launch": "tool_report",
+    # Two more subjects of the same type (owner, 2026-10-23):
+    # [DEC-23](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)
+    "pr_created": "tool_report",
+    "skill_used": "tool_report",
 }
 _DISPATCH_BUILD_RE = re.compile(r"^\s*spacedock\s+dispatch\s+build(?:\s+(.*))?$", re.IGNORECASE)
 # This is transcript grammar from the dispatch contract, not a location we create or write.
@@ -446,6 +455,8 @@ def _observe_session(
         child_assignment=child_activity_fallback,
         consent=model_consent,
         session_key=f"{harness}:{sid}",
+        resolve_destination=lambda: reading_route.destination(reading_route.CODEX),
+        clock=lambda: now,
     )
     model = caller if config.observer_model_enabled and model_consent else None
     result = observer.analyze(
@@ -476,6 +487,7 @@ def _observe_session(
         "model": model_metadata,
         "observed_at": now,
         "snapshot_status": "refreshed",
+        **({"notice": caller.notice} if caller.notice is not None else {}),
     }
 
 
@@ -490,26 +502,30 @@ def _instruction_event(
         return None
     if harness in observer.DIRECTION_HARNESSES:
         return _direction_event(config, record, harness, sid)
-    message = observer.parse_message_record(record)
+    message = observer.parse_reader_record(record)
     if message is None or message.get("role") != "user":
         return None
-    at = records.parse_ts(record.get("timestamp") or "")
+    at = records.parse_ts(_reader_stamp(record) or record.get("timestamp") or "")
     text = message["text"].strip()
     if at is None or not text:
         return None
     title = _message_title(config, text, harness)
     if not title:
         return None
+    hashed = _unstripped_title(config, record, harness, title)
     event: dict[str, Any] = {
         "at": at,
         "kind": "steer",
         "phase": "user-role instruction",
         "title": title,
+        **({ID_TITLE_FIELD: hashed} if hashed else {}),
         READER_WORDS_FIELD: _message_words(config, text, harness),
-        "source": "timestamped non-meta user-role record",
+        "source": message.get("source") or "timestamped non-meta user-role record",
         "harness": harness,
         "sid": sid,
-        "intent_promotable": _intent_promotable(text, title),
+        # An answer is the reader's choice among the agent's options and names no work alone.
+        "intent_promotable": message.get("source") != observer.ANSWER_SOURCE
+        and _intent_promotable(text, title),
     }
     record_id = record.get("id")
     if isinstance(record_id, str) and record_id:
@@ -526,6 +542,56 @@ def _instruction_event(
             event["tag_source"] = "explicit user-role wording"
             break
     return event
+
+
+def _unstripped_title(
+    config: RuntimeConfig, record: dict[str, Any], harness: str, title: str
+) -> str:
+    """The title the message had before its paste tags came off, when that is not `title`, else "".
+
+    A fact id hashes the title (`_semantic_fact_from_event`), so a title the strip changed would
+    move the id a stored reading cites. A message with no paste tag costs one failed substring
+    test per text and never reaches the second parse. The tag is looked for in a string content
+    (the shape recorded in docs/captures/claude/paste-wrapper-shape-2.1.305-macos.jsonl) and in
+    the text blocks of a list content, which the strip reads the same way.
+    """
+    if not _carries_paste_tag(record):
+        return ""
+    held = observer.parse_reader_record(record, paste_tags=True)
+    if held is None:
+        return ""
+    before = _message_title(config, held["text"].strip(), harness)
+    return before if before and before != title else ""
+
+
+def _carries_paste_tag(record: dict[str, Any]) -> bool:
+    """Whether a message's content, or one of its text blocks, names a paste tag."""
+    content = records.message_dict(record).get("content")
+    if content is None:
+        content = records.as_dict(record.get("payload")).get("content")
+    if isinstance(content, str):
+        return "pasted_content" in content
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(block, dict)
+        and isinstance(block.get("text"), str)
+        and "pasted_content" in block["text"]
+        for block in content
+    )
+
+
+def _reader_stamp(record: dict[str, Any]) -> Any:
+    """When the reader typed a message the agent took in mid-turn, from the attachment itself.
+
+    The queue records the message when it is absorbed, which can be minutes after it was sent
+    (measured: 2 m 44 s on one session). The reader's direction dates from the typing, and the
+    attachment carries that time under its own `timestamp`.
+    """
+    attachment = record.get("attachment")
+    if isinstance(attachment, dict) and attachment.get("type") == "queued_command":
+        return attachment.get("timestamp")
+    return None
 
 
 def _message_title(config: RuntimeConfig, text: str, harness: str) -> str:
@@ -549,6 +615,16 @@ def _message_words(config: RuntimeConfig, text: str, harness: str) -> str:
     """
     command = transcripts.command_direction(config, text) if harness == "claude" else None
     return records.safe_text(" ".join((command or text).split()), READER_WORDS_CAP_CHARS)
+
+
+def whole_message_words(
+    config: RuntimeConfig, record: dict[str, Any], harness: str, cap: int
+) -> str:
+    """Source words use the same parser and slash-command normalization, without a prompt cap."""
+    message = observer.parse_reader_record(record, cap=cap)
+    text = str(message["text"]) if message else ""
+    command = transcripts.command_direction(config, text) if harness == "claude" else None
+    return records.safe_text(" ".join(records.mask_prose(command or text).split()), cap)
 
 
 def _agent_message_event(
@@ -695,13 +771,18 @@ class PressWindow(NamedTuple):
 
 def _message_text_chars(record: Mapping[str, Any]) -> int:
     """The characters of text a transcript record carries, which is what a reading would redact."""
+    answered = observer.answer_text_chars(record)
     message = record.get("message")
     content = message.get("content") if isinstance(message, dict) else None
+    if content is None:
+        # A mid-turn message holds its words in the attachment, beside any pasted image's bytes.
+        attachment = record.get("attachment")
+        content = attachment.get("prompt") if isinstance(attachment, dict) else None
     if isinstance(content, str):
-        return len(content)
+        return answered + len(content)
     if not isinstance(content, list):
-        return 0
-    return sum(
+        return answered
+    return answered + sum(
         len(block["text"])
         for block in content
         if isinstance(block, dict) and isinstance(block.get("text"), str)
@@ -1064,7 +1145,7 @@ def _task_assignment(text: str, artifact: str) -> str:
 def _record_timestamp(record: dict[str, Any]) -> float | None:
     message = record.get("message")
     message_ts = message.get("timestamp") if isinstance(message, dict) else None
-    return records.parse_ts(record.get("timestamp") or message_ts or "")
+    return records.parse_ts(record.get("timestamp") or message_ts or _reader_stamp(record) or "")
 
 
 def _dispatch_identity(command_line: str) -> tuple[str, str, str] | None:
@@ -1957,7 +2038,9 @@ def work_events(
 # Called from `collect` only, never from `_semantic_history_source_events`, so
 # the history store never sees these facts; `semantic_history._FACT_EVENT_TYPES`
 # not naming the type is the second wall (item 6).
-_TOOL_REPORT_KINDS = frozenset({"check_run", "path_written", "background_launch"})
+_TOOL_REPORT_KINDS = frozenset(
+    {"check_run", "path_written", "background_launch", "pr_created", "skill_used"}
+)
 TOOL_REPORT_MAX_ENTRIES = 12
 TOOL_REPORT_LINE_CHARS = 120
 # The existing ledger cap (`reading.LEDGER_SUMMARY_CAP_CHARS`), which item 5 names.
@@ -2080,6 +2163,18 @@ _GO_OK = re.compile(r"^ok\s", re.MULTILINE)
 # [DEC-23](docs/design-reading-a-session.md#amended-2026-10-04-no-recorded-result-is-listed-last)
 _RESULT_ORDER = {"failed": 0, "passed": 1, "not-recorded": 3}
 _WRITE_RANK = 2
+# A created pull request ranks with the passes: it is the outcome a goal such as "create a PR" asks
+# for, so a cap of twelve may not drop it behind written paths. A skill ranks with the paths.
+_PR_RANK = 1
+# After the launches and every counted entry: `_folder_share` counts a written path the cap dropped
+# as outside the named folders, so a skill ranked with the writes could raise the live level.
+_SKILL_RANK = 5
+# Closed shapes: the only text of a PR or a skill that reaches a record. The URL is rebuilt from
+# the matched parts, so nothing past the number (a line break, an instruction) is ever kept.
+_PR_URL_RE = re.compile(
+    r"https://github\.com/(?P<repo>[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100})/pull/(?P<number>[1-9][0-9]{0,8})"
+)
+_SKILL_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}")
 # A true error flag is a run that exited nonzero only when Claude Code says so;
 # any other flagged result is a call that never ran: a rejection, a cancelled
 # parallel call, a sibling error, a hook block or an input error (measured:
@@ -2119,6 +2214,12 @@ _CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
 _WRITE_OPERATORS = frozenset({"&>>", "&>", ">>", ">&", ">|", "<>", ">"})
 
 
+def _is_pnpm_shorthand(words: list[str]) -> bool:
+    """`pnpm vitest` is `pnpm exec vitest` for a closed runner (owner, 2026-10-23;
+    [DEC-23](docs/design-reading-a-session.md#amended-2026-10-23-owner-pnpm-shorthand-for-a-closed-runner-is-a-check))."""
+    return words[:1] == ["pnpm"] and words[1:2] != [] and words[1] in _CHECK_WORDS
+
+
 def _skip_options(words: list[str], takes_value: frozenset[str]) -> list[str]:
     while words and words[0].startswith("-"):
         words = words[2:] if words[0] in takes_value else words[1:]
@@ -2137,7 +2238,7 @@ def _stripped(words: list[str]) -> tuple[list[str], bool]:
             words = _skip_options(words[2:], _UV_VALUE_OPTIONS)
         elif words[:2] in _WRAPPER_PAIRS:
             words = words[2:]
-        elif words[0] in ("npx", "bunx", "time"):
+        elif words[0] in ("npx", "bunx", "time") or _is_pnpm_shorthand(words):
             words = words[1:]
         elif os.path.basename(words[0]) == "env":
             command = _env_command(words[1:])
@@ -2967,6 +3068,8 @@ def _names_a_test_file(word: str) -> bool:
 
 def _runner_words(words: list[str]) -> list[str]:
     """The words with an interpreter or runner path shed to its name."""
+    if _is_pnpm_shorthand(words):
+        words = words[1:]
     name = os.path.basename(words[0])
     if "/" in words[0] and (
         _PYTHON_RE.match(name) or name in _INTERPRETERS or name in _CHECK_WORDS
@@ -3266,6 +3369,8 @@ class _Result(NamedTuple):
 
     block: dict[str, Any]
     at: float | None
+    # The record's own `toolUseResult`, read for `gitOperation.pr` and nothing else.
+    meta: dict[str, Any] | None = None
 
 
 def _tool_result_blocks(
@@ -3283,7 +3388,8 @@ def _tool_result_blocks(
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 call_id = block.get("tool_use_id")
                 if isinstance(call_id, str) and call_id:
-                    results[call_id] = _Result(block, at)
+                    meta = record.get("toolUseResult")
+                    results[call_id] = _Result(block, at, meta if isinstance(meta, dict) else None)
     return results
 
 
@@ -3439,6 +3545,46 @@ def _written_path(raw: object, cwd: str, session_dir: str = "") -> str | None:
     return relative.replace(os.sep, "/")
 
 
+# The commands that take a file away from where it was, for the press alone: the record a harness's
+# "goal met" verdict is tested against. A file a command removes cannot be read back from the
+# writes the facts carry, and no write is published for it.
+_REMOVING_COMMANDS = {"rm": "deleted", "unlink": "deleted", "rmdir": "deleted", "mv": "moved"}
+_GLOB_MARKS = ("*", "?", "[", "{")
+
+
+def _removed_targets(words: list[str]) -> list[tuple[str, str]]:
+    """The operands one segment deletes or moves away, each with `deleted` or `moved`.
+
+    A `mv` removes its sources and not its destination, and one that names its destination with a
+    flag (`-t`) is not read, because which operands are sources is then the shell's. A glob is a
+    set of files this scan cannot name. `git rm` is not read either: a shipped source names the
+    git program only in the one probe the invocation oracle in `test_git_status` permits.
+    """
+    if not words:
+        return []
+    head, rest = words[0], words[1:]
+    kind = _REMOVING_COMMANDS.get(head)
+    if kind is None:
+        return []
+    operands: list[str] = []
+    options_end = False
+    for word in rest:
+        if not options_end and word == "--":
+            options_end = True
+        elif not options_end and word.startswith("-"):
+            if head == "mv" and (word == "-t" or word.startswith("--target")):
+                return []
+        else:
+            operands.append(word)
+    if kind == "moved":
+        operands = operands[:-1]
+    return [
+        (operand, kind)
+        for operand in operands
+        if _placeable(operand) and not any(mark in operand for mark in _GLOB_MARKS)
+    ]
+
+
 def _is_fixer(words: list[str]) -> bool:
     """A formatter or fixer run: a change that ages every pass (verifier,
     2026-09-24), whether or not it is also a check."""
@@ -3509,6 +3655,11 @@ class _ShellCall:
         # A changing substitution runs even in a check's own arguments or an
         # assignment-only segment (review, 2026-09-27; DRC-4724).
         self.substituted = [i for i, part in enumerate(self.parts) if part.hides_change]
+        self.removals = [
+            (i, target, kind)
+            for i in self.meaningful
+            for target, kind in _removed_targets(self.words[i][0])
+        ]
         # `> build/output` alone truncates the file: no words, but a write.
         self.substituted += [
             i
@@ -3653,6 +3804,12 @@ class _ToolReportTally:
         # invalidates the whole private, bounded candidate cache.
         self._entry_cache: dict[str, dict[str, Any]] = {}
         self.writes: dict[str, dict[str, Any]] = {}
+        # Pull requests Claude Code recorded as created, by repository and number, and the skills
+        # a Skill call launched, by name. The first of each is kept: it is when the work was done.
+        self.prs: dict[str, dict[str, Any]] = {}
+        self.skills: dict[str, dict[str, Any]] = {}
+        # The latest delete or move away of each path, for the press alone (`removals`).
+        self.removed: dict[str, dict[str, Any]] = {}
         # (time, call id) of every recorded write and fixer run. A pass is aged
         # by one from another call at or after its own time, since recorded
         # time cannot order two calls that share it (DRC-4709); its own call is
@@ -3678,6 +3835,7 @@ class _ToolReportTally:
                     "outside_paths", "write_attempts", "not_run", "failed", "passed",
                     "not_recorded",
                     "listed", "more", "subagent_transcripts", "subagent_transcripts_unread",
+                    "pull_requests", "skills_used",
                 ),
                 0,
             ),
@@ -3702,12 +3860,66 @@ class _ToolReportTally:
             self._add_write(at, cwd, call_id, name, tool_input, worker)
         elif name == "Bash":
             self._add_shell(at, cwd, call_id, tool_input, worker, stream)
+            self._add_pull_request(at, call_id, worker)
+        elif name == "Skill":
+            self._add_skill(at, call_id, tool_input, worker)
         elif name in {"Agent", "Task", "Monitor"} and tool_input.get("run_in_background") is True:
             found = self.results.get(_launch_record_id(call_id, stream or "parent"))
             if found is None or found.block.get("is_error") is not True:
                 self._add_launch(at, call_id, name, 1, worker, stream)
         if changes_before != (len(self.write_calls), len(self.changing_seqs)):
             self._entry_cache.clear()
+
+    def _add_pull_request(self, at: float, call_id: str, worker: str) -> None:
+        """A pull request Claude Code says a ran Bash call created.
+
+        Read from the result's structured `gitOperation.pr` alone, never the command or its output.
+        """
+        found = self.results.get(call_id)
+        if found is None or found.block.get("is_error") is True or found.meta is None:
+            return
+        operation = found.meta.get("gitOperation")
+        pr = operation.get("pr") if isinstance(operation, dict) else None
+        if not isinstance(pr, dict):
+            return
+        url = pr.get("url")
+        matched = _PR_URL_RE.fullmatch(url) if isinstance(url, str) else None
+        if (
+            matched is None
+            or pr.get("action") != "created"
+            or pr.get("number") != int(matched["number"])
+            # `.` and `..` are path steps, not names: nothing is built from them.
+            or any(set(part) == {"."} for part in matched["repo"].split("/"))
+        ):
+            return
+        key = f"{matched['repo']}#{matched['number']}"
+        self.prs.setdefault(
+            key,
+            {
+                "at": found.at if found.at is not None else at,
+                "record_id": call_id,
+                "title": key,
+                "repository": matched["repo"],
+                "number": int(matched["number"]),
+                "url": f"https://github.com/{matched['repo']}/pull/{matched['number']}",
+                "worker": worker,
+            },
+        )
+
+    def _add_skill(self, at: float, call_id: str, tool_input: dict[str, Any], worker: str) -> None:
+        """A skill a Skill call launched: its name, never its arguments."""
+        found = self.results.get(call_id)
+        name = tool_input.get("skill")
+        if (
+            found is None
+            or found.block.get("is_error") is True
+            or not isinstance(name, str)
+            or _SKILL_NAME_RE.fullmatch(name) is None
+        ):
+            return
+        self.skills.setdefault(
+            name, {"at": at, "record_id": call_id, "title": name, "worker": worker}
+        )
 
     def _add_launch(
         self, at: float, call_id: str, tool: str, count: int, worker: str, stream: str
@@ -3821,6 +4033,7 @@ class _ToolReportTally:
         self.scan["shell_calls"] += 1
         if call.fixers:
             self.write_calls.append((at, call_id))
+        self._record_removals(call, at, cwd, call_id, text, result)
         for _index, target, start in call.redirect_writes:
             # Owner, 2026-09-27: published only inside the working directory;
             # a target outside it, or one the shell decides, counts as outside.
@@ -3832,6 +4045,43 @@ class _ToolReportTally:
             self.scan["other_commands"] += 1
             self.scan["read_only_commands"] += not call.changes()
         self._add_runs(call, call_id, result, text, found.at if found is not None else None, worker)
+
+    def _record_removals(
+        self,
+        call: _ShellCall,
+        at: float,
+        cwd: str,
+        call_id: str,
+        text: str,
+        result: dict[str, Any] | None,
+    ) -> None:
+        """Each path a segment that ran deleted or moved away.
+
+        A call's error flag is its last command's, so an `ls` of the folder just removed marks a
+        call whose `rm` worked. The command's own failure is what shows it did not remove: a line
+        of the output that begins with its name.
+        """
+        errored = result is not None and result.get("is_error") is True
+        for index, target, kind in call.removals:
+            head = call.words[index][0][0]
+            if (
+                call.background(index)
+                or call.unestablished(index)
+                or (errored and re.search(rf"(?m)^(?:{re.escape(head)}|fatal|error): ", text))
+            ):
+                continue
+            path = call.written_path(target, index, cwd, self.session_dir)
+            if path is not None:
+                self.removed[path] = {"at": at, "record_id": call_id, "kind": kind}
+
+    def removals(self) -> tuple[tuple[str, float, str], ...]:
+        """(path, time, `deleted` or `moved`) of the latest removal of each path."""
+        return tuple(
+            sorted(
+                ((path, float(row["at"]), str(row["kind"])) for path, row in self.removed.items()),
+                key=lambda row: (row[1], row[0]),
+            )
+        )
 
     def _add_runs(
         self,
@@ -3894,6 +4144,7 @@ class _ToolReportTally:
                     "at": call.at,
                     "record_id": call_id,
                     "title": _check_line(words),
+                    "segment": index,
                     "result": outcome,
                     "result_source": source,
                     "result_reason": reason,
@@ -4040,11 +4291,21 @@ class _ToolReportTally:
             if entry["subject"] == "check":
                 self.scan[str(entry["result"]).replace("-", "_")] += 1
         listed = candidates[:TOOL_REPORT_MAX_ENTRIES]
+        # A created pull request is what a goal such as "create a PR" rests on, and the verdict
+        # check reads the listing, so newer checks may not evict it: the newest of those the cap
+        # dropped are listed beside it, up to the cap again (owner review, 2026-10-23).
+        kept = [row for row in candidates[TOOL_REPORT_MAX_ENTRIES:] if row["subject"] == "pr"]
+        listed += kept[:TOOL_REPORT_MAX_ENTRIES]
         self.scan.update(
             distinct_checks=len(histories),
             written_paths=len(self.writes),
+            pull_requests=len(self.prs),
+            skills_used=len(self.skills),
             listed=len(listed),
-            more=sum(row["subject"] != "launch" for row in candidates[TOOL_REPORT_MAX_ENTRIES:]),
+            more=sum(
+                row["subject"] != "launch" and row not in listed
+                for row in candidates[TOOL_REPORT_MAX_ENTRIES:]
+            ),
             background_unpaired=sum(
                 row["count"] for row in self.launches.values() if row["completed_at"] is None
             ),
@@ -4067,6 +4328,14 @@ class _ToolReportTally:
                 **{k: v for k, v in row.items() if k not in {"rank", "_key", "_first_at"}},
                 "harness": "claude",
                 "sid": sid,
+                # The check's own identity, directory included, hashed as the source does. The page
+                # matches a failed run to a later pass by it; the command line alone would let a
+                # pass of `pytest -q` in one directory hide a failure of it in another.
+                **(
+                    {"check_id": _semantic_id("check", row["_key"].removeprefix("check:"))}
+                    if row["_key"].startswith("check:")
+                    else {}
+                ),
                 **(
                     {"ordinal": position[0], "ordinal_sub": position[1]}
                     if (position := positions.get(row["_key"])) is not None
@@ -4075,6 +4344,56 @@ class _ToolReportTally:
             }
             for row in listed
         ]
+
+    @staticmethod
+    def _write_entry(path: str, write: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "kind": "path_written",
+            "subject": "write",
+            "at": write["at"],
+            "record_id": write["record_id"],
+            "title": records.safe_text(path, TOOL_REPORT_PATH_CHARS),
+            "source": f"Claude {'subagent ' if write['worker'] else ''}{write['tool']} call",
+            "rank": _WRITE_RANK,
+            "_key": f"write:{path}",
+            "_first_at": write["first_at"],
+            **({"worker_kind": write["worker"]} if write["worker"] else {}),
+        }
+
+    @staticmethod
+    def _pr_entry(key: str, pr: dict[str, Any]) -> dict[str, Any]:
+        who = "Claude subagent" if pr["worker"] else "Claude"
+        return {
+            "kind": "pr_created",
+            "subject": "pr",
+            "at": pr["at"],
+            "record_id": pr["record_id"],
+            "title": pr["title"],
+            "pr_repository": pr["repository"],
+            "pr_number": pr["number"],
+            "pr_url": pr["url"],
+            "source": f"{who} Bash call result's structured pull request record",
+            "rank": _PR_RANK,
+            "_key": f"pr:{key}",
+            "_first_at": pr["at"],
+            **({"worker_kind": pr["worker"]} if pr["worker"] else {}),
+        }
+
+    @staticmethod
+    def _skill_entry(name: str, skill: dict[str, Any]) -> dict[str, Any]:
+        who = "Claude subagent" if skill["worker"] else "Claude"
+        return {
+            "kind": "skill_used",
+            "subject": "skill",
+            "at": skill["at"],
+            "record_id": skill["record_id"],
+            "title": skill["title"],
+            "source": f"{who} Skill call",
+            "rank": _SKILL_RANK,
+            "_key": f"skill:{name}",
+            "_first_at": skill["at"],
+            **({"worker_kind": skill["worker"]} if skill["worker"] else {}),
+        }
 
     def _ranked(self, histories: list[tuple[str, list[dict[str, Any]]]]) -> list[dict[str, Any]]:
         """Every check's entry and every written path, in the order item 4 keeps them."""
@@ -4094,21 +4413,9 @@ class _ToolReportTally:
                     "_first_at": min(run["at"] for run in self.runs[identity]),
                 }
             )
-        candidates.extend(
-            {
-                "kind": "path_written",
-                "subject": "write",
-                "at": write["at"],
-                "record_id": write["record_id"],
-                "title": records.safe_text(path, TOOL_REPORT_PATH_CHARS),
-                "source": f"Claude {'subagent ' if write['worker'] else ''}{write['tool']} call",
-                "rank": _WRITE_RANK,
-                "_key": f"write:{path}",
-                "_first_at": write["first_at"],
-                **({"worker_kind": write["worker"]} if write["worker"] else {}),
-            }
-            for path, write in self.writes.items()
-        )
+        candidates.extend(self._write_entry(path, write) for path, write in self.writes.items())
+        candidates.extend(self._pr_entry(key, pr) for key, pr in self.prs.items())
+        candidates.extend(self._skill_entry(name, skill) for name, skill in self.skills.items())
         candidates.extend(
             {**launch, "rank": 4, "_key": f"launch:{call_id}", "_first_at": launch["at"]}
             for call_id, launch in self.launches.items()
@@ -4192,6 +4499,9 @@ class PressChecks(NamedTuple):
     # (record id, title, time) of each latest pass and each write
     # (`_ToolReportTally.passes_and_writes`): the same titles the facts carry.
     passes_and_writes: tuple[tuple[str, str, float], ...] = ()
+    # (path, time, "deleted" or "moved") of the latest removal of each path
+    # (`_ToolReportTally.removals`), for testing a harness verdict against.
+    removals: tuple[tuple[str, float, str], ...] = ()
 
 
 def claude_check_press(
@@ -4213,7 +4523,11 @@ def claude_check_press(
 
 def _press(tally: _ToolReportTally) -> PressChecks:
     return PressChecks(
-        tally.tails(), tally.changed_after(), tally.read_incomplete(), tally.passes_and_writes()
+        tally.tails(),
+        tally.changed_after(),
+        tally.read_incomplete(),
+        tally.passes_and_writes(),
+        tally.removals(),
     )
 
 
@@ -4846,6 +5160,51 @@ def claude_tool_reports(
     return entries, tally.scan
 
 
+def claude_open_call_at(config: RuntimeConfig, transcript_path: str) -> float | None:
+    """When the newest tool call the transcript's tail has no result for was made, or None.
+
+    Nothing records a call in flight until its result arrives, so a running turn's next step is
+    invisible to the checks and writes the observed record lists. This reads it from the transcript
+    itself, for the running-turn guard
+    (`docs/design-reading-a-session.md#amended-2026-10-21-a-running-turn-is-unfinished`).
+    A question put to the reader is not work going on, and a message the reader sent after a call
+    closes it: an interrupted call is never answered, and nothing is running then. Read at press
+    time and never stored.
+    """
+    open_calls: dict[str, float] = {}
+    for line in runtime_io.read_tail(config, transcript_path):
+        if not line.startswith("{"):
+            continue
+        record = _json_dict(line.encode("utf-8", "replace"))
+        if record is None or record.get("isSidechain") is True:
+            continue
+        kind = record.get("type")
+        blocks = records.as_list(records.message_dict(record).get("content"))
+        if kind == "assistant":
+            at = _record_timestamp(record)
+            for block in blocks:
+                if (
+                    at is not None
+                    and isinstance(block, dict)
+                    and block.get("type") == "tool_use"
+                    and block.get("name") not in claude_data.INPUT_TOOLS
+                ):
+                    open_calls[str(block.get("id"))] = at
+        elif kind == "user":
+            answered = [
+                block.get("tool_use_id")
+                for block in blocks
+                if isinstance(block, dict) and block.get("type") == "tool_result"
+            ]
+            for call_id in answered:
+                open_calls.pop(str(call_id), None)
+            if len(answered) < len(blocks) or isinstance(
+                records.message_dict(record).get("content"), str
+            ):
+                open_calls.clear()
+    return max(open_calls.values(), default=None)
+
+
 def _json_dict(raw: bytes) -> dict[str, Any] | None:
     try:
         record = json.loads(raw)
@@ -5087,7 +5446,7 @@ def transcript_window_words(
             key = (fact["fact_id"], fact["at"])
             if key not in identities:
                 continue
-            message = observer.parse_message_record(record, cap=len(raw))
+            message = observer.parse_reader_record(record, cap=len(raw))
             if message is None:
                 continue
             text = message["text"]
@@ -5097,7 +5456,8 @@ def transcript_window_words(
             content = (
                 records.as_dict(record.get("payload")).get("content")
                 if record is not None and record.get("type") == "response_item"
-                else records.message_dict(record).get("content")
+                else observer.reader_source_content(record)
+                or records.message_dict(record).get("content")
             )
             signature = hashlib.sha256(
                 json.dumps(content, sort_keys=True, ensure_ascii=False).encode("utf-8", "replace")
@@ -5748,7 +6108,7 @@ def _assessment_window_start(session: Mapping[str, Any]) -> float | None:
         return opened
     fallback = (
         assessment.get("goal_source_at")
-        if assessment.get("goal_source") in {"latest-prompt", "first-prompt", "chosen-prompt"}
+        if assessment.get("goal_source") in records.PROMPT_SOURCES
         else assessment.get("revision_read_at")
     )
     return _window_start(fallback)
@@ -5875,9 +6235,10 @@ def _could_be_instruction(raw: bytes, harness: str) -> bool:
     if b"\\u" in raw:
         return True
     if harness == "claude":
-        return bool(re.search(rb'"type"\s*:\s*"user"', raw)) and (
-            b'"tool_result"' not in raw or b'"text"' in raw
-        )
+        return (
+            bool(re.search(rb'"type"\s*:\s*"user"', raw))
+            and (b'"tool_result"' not in raw or b'"text"' in raw or b'"answers"' in raw)
+        ) or (b'"queued_command"' in raw and b'"human"' in raw)
     if harness == "codex":
         return bool(re.search(rb'"role"\s*:\s*"user"', raw))
     return True
@@ -6032,7 +6393,8 @@ def _direction_signature(record: Any, harness: str) -> bytes:
         message = records.as_dict(
             records.as_dict(record).get("payload" if harness == "codex" else "message")
         )
-        return records.record_fingerprint(message.get("content"))
+        source = observer.reader_source_content(record) if harness == "claude" else None
+        return records.record_fingerprint(source if source is not None else message.get("content"))
     return records.record_fingerprint(record)
 
 
@@ -6040,7 +6402,7 @@ def _direction_words(config: RuntimeConfig, record: Any, harness: str) -> Direct
     if harness in observer.DIRECTION_HARNESSES:
         direction = transcripts.antigravity_direction(record)
         return DirectionText(direction.text if direction and not direction.truncated else "")
-    message = observer.parse_message_record(record)
+    message = observer.parse_reader_record(record)
     if not message:
         return DirectionText("")
     text = str(message["text"])
@@ -6888,9 +7250,20 @@ def _semantic_work_identity(
     )
 
 
+_STEER_ACTOR_CLAIMS = {
+    observer.MID_TURN_SOURCE: "queued-command attachment with a human origin",
+    observer.ANSWER_SOURCE: "question tool result holding the reader's answers",
+}
+
+
 def _semantic_actor_claim(source_event: dict[str, Any], raw_kind: str) -> str:
     if raw_kind == "steer":
-        return "timestamped non-meta user-role record"
+        # Said by source: the two records that carry the reader's words with no user turn are not
+        # the "user-role record" the ordinary claim names, and a reader of the fact should not
+        # have to infer which shape stands behind it.
+        return _STEER_ACTOR_CLAIMS.get(
+            str(source_event.get("source") or ""), "timestamped non-meta user-role record"
+        )
     if raw_kind == _AGENT_SAY:
         return "timestamped top-level assistant text record"
     if raw_kind in {"prepared_dispatch", "task_started", "task_result", "outcome"}:
@@ -6919,6 +7292,11 @@ def _semantic_fact_from_event(
     # hashed as `safe_text` left it, and the `cued` redaction shape added that
     # day masks values it did not before, so a fact whose title held one (a
     # `DB_PASSWORD=…` in a prompt) gets a new id. The hash input is unchanged.
+    #
+    # Not moved by DRC-4920's paste-wrapper strip: a paste whose tag shares a line with typed
+    # words had a title that carried the tag, the strip took it off, and every reading stored
+    # before it cited an id that no longer existed (DRC-4935). `ID_TITLE_FIELD` holds the title
+    # as it was hashed, so those ids stay what they were while the published title is clean.
     record_id = source_event.get("record_id")
     fact_id = _semantic_id(
         "fact",
@@ -6929,7 +7307,7 @@ def _semantic_fact_from_event(
         source_event.get("workflow_binding"),
         source_event.get("entity"),
         source_event.get("lineage"),
-        source_event.get("title"),
+        source_event.get(ID_TITLE_FIELD) or source_event.get("title"),
         *((record_id,) if record_id not in (None, "") else ()),
     )
     fact: dict[str, Any] = {
@@ -6952,6 +7330,7 @@ def _semantic_fact_from_event(
         "assignment",
         "worker_kind",
         "subject",
+        "check_id",
         "result",
         "result_source",
         "result_reason",
@@ -6960,6 +7339,9 @@ def _semantic_fact_from_event(
         "changed_after",
         "read_incomplete",
         "result_at",
+        "pr_repository",
+        "pr_number",
+        "pr_url",
         "count",
         "completed_at",
         "last_activity_at",
@@ -8081,6 +8463,29 @@ def _with_command_attention(
     return semantic
 
 
+def _child_workflow(child: Mapping[str, Any]) -> dict[str, Any]:
+    workflow_entity = child.get("workflow_entity")
+    workflow_stage = child.get("workflow_stage")
+    workflow_binding = child.get("workflow_binding")
+    if not isinstance(workflow_entity, str) or not isinstance(workflow_stage, str):
+        return {}
+    bound = isinstance(workflow_binding, str) and bool(workflow_binding)
+    return {
+        "workflow_entity": workflow_entity,
+        "workflow_stage": workflow_stage,
+        **({"workflow_binding": workflow_binding} if bound else {}),
+        **(
+            {
+                "work_item_id": semantic_history.workflow_work_item_id(
+                    str(workflow_binding), workflow_entity
+                )
+            }
+            if bound
+            else {}
+        ),
+    }
+
+
 def _active_child_assignments(
     config: RuntimeConfig,
     state: RuntimeState,
@@ -8089,7 +8494,15 @@ def _active_child_assignments(
     now: float,
     refresh: bool,
     model_consent: bool = False,
+    notices: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
+    """The focused session's active children and what each is doing.
+
+    A child's goal call records the goal notice before the parent's call can,
+    so every notice a child records is appended to `notices` whatever its
+    assignment came to: dropped here, the parent finds none due and the reader
+    is never told what left the machine.
+    """
     hierarchy = session.get("subagent_hierarchy")
     if not isinstance(hierarchy, list):
         return []
@@ -8110,30 +8523,7 @@ def _active_child_assignments(
             "observer_sid": child.get("observer_sid"),
             **({"parent_session": parent_session} if parent_session else {}),
         }
-        workflow_entity = child.get("workflow_entity")
-        workflow_stage = child.get("workflow_stage")
-        workflow_binding = child.get("workflow_binding")
-        if isinstance(workflow_entity, str) and isinstance(workflow_stage, str):
-            row.update(
-                {
-                    "workflow_entity": workflow_entity,
-                    "workflow_stage": workflow_stage,
-                    **(
-                        {"workflow_binding": workflow_binding}
-                        if isinstance(workflow_binding, str) and workflow_binding
-                        else {}
-                    ),
-                    **(
-                        {
-                            "work_item_id": semantic_history.workflow_work_item_id(
-                                workflow_binding, workflow_entity
-                            )
-                        }
-                        if isinstance(workflow_binding, str) and workflow_binding
-                        else {}
-                    ),
-                }
-            )
+        row.update(_child_workflow(child))
         exact = child.get("assignment")
         if isinstance(exact, str) and exact:
             assignments.append(
@@ -8166,6 +8556,8 @@ def _active_child_assignments(
         if observed is None:
             assignments.append({**row, "assignment": None, "confidence": "unavailable"})
             continue
+        if notices is not None and observed.get("notice") is not None:
+            notices.append(observed["notice"])
         goal = observed.get("goal")
         if not isinstance(goal, str) or not goal or goal == observer.NO_GOAL:
             assignments.append({**row, "assignment": None, "confidence": "unavailable"})
@@ -8313,7 +8705,7 @@ def _kept_message_reach(
     return {"tail_truncated": not reached.reach.reached, "tail_start": reached.reach.earliest}
 
 
-def collect(  # noqa: PLR0913 - the press's window rides beside the focus it belongs to
+def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the focus it belongs to
     config: RuntimeConfig,
     state: RuntimeState,
     sessions: Sequence[Mapping[str, Any]],
@@ -8353,6 +8745,7 @@ def collect(  # noqa: PLR0913 - the press's window rides beside the focus it bel
     unavailable: list[dict[str, str]] = []
     briefings = 0
     child_assignments: list[dict[str, Any]] = []
+    child_notices: list[Any] = []
     support_totals = {
         "tool_calls": 0,
         "dispatch_builds": 0,
@@ -8382,6 +8775,7 @@ def collect(  # noqa: PLR0913 - the press's window rides beside the focus it bel
                 now=now,
                 refresh=refresh,
                 model_consent=model_consent,
+                notices=child_notices,
             )
         if (
             harness in observer.DIRECTION_HARNESSES
@@ -8486,13 +8880,27 @@ def collect(  # noqa: PLR0913 - the press's window rides beside the focus it bel
     )
     return {
         "observer_model": {
-            "enabled": config.observer_model_enabled,
+            "enabled": config.observer_model_enabled and not config.model_calls_disabled,
+            # Children are observed before the parent, so a child's call is the
+            # one that records the notice when both are due.
+            **next(
+                (
+                    {"notice": notice}
+                    for notice in (
+                        *child_notices,
+                        *(row["notice"] for row in observers if "notice" in row),
+                    )
+                ),
+                {},
+            ),
             "max_prompt_bytes": observer.OBSERVER_MODEL_MAX_PROMPT_BYTES,
             "disclosure": (
-                "Send redacted transcript excerpts and workflow stage to OpenAI through Codex "
-                "for a goal summary? Each prompt is capped at 16 KiB, with a 60-second timeout "
+                "A focused refresh sends redacted transcript excerpts and workflow stage through "
+                f"Codex to {reading_route.destination('codex') or 'an unnamed destination'} "
+                "for a goal summary. Each prompt is capped "
+                "at 16 KiB, with a 60-second timeout "
                 "and one call in flight per session. A focused refresh can include up to three "
-                "active child sessions. --no-observer-model refuses calls for this run."
+                "active child sessions. Pause model calls or --no-observer-model stops these calls."
             ),
         },
         "project": project,

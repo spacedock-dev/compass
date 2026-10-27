@@ -119,6 +119,25 @@ class FullProductionFreezeTest(unittest.TestCase):
         )
         self.assertEqual([], mark_abstention.content_refusal(self.config, case, str(self.path)))
 
+    def test_an_idle_case_with_no_recorded_finish_is_withheld_by_freeze_and_score(self) -> None:
+        # The press admits this row since 2026-10-20; the abstention cases keep the earlier rule,
+        # and the freeze and the scorer must agree on it, or a frozen prompt is never scored.
+        self.entry["row"] = {"state": "idle"}
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "production-prompt-unavailable"):
+            self.freeze()
+        row = {"harness": "claude", "sid": "synthetic-session", "state": "idle"}
+        self.assertEqual(
+            ("", "idle-unknown"),
+            reading.eligibility(
+                row,
+                latest_revision_at=self.start,
+                now=self.start + 30,
+                settle_sec=self.config.reading_settle_sec,
+                admit_turn_stop=True,
+                admit_idle=False,
+            ),
+        )
+
     def test_actual_selection_callbacks_refuse_changed_identity_before_model(self) -> None:
         case = self.freeze()
         for helper, key in (

@@ -2,7 +2,14 @@ import { act, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BOARD, mountShell } from '../shell/testing';
 import { SAMPLE_FRAGMENT } from './ids';
+import fixture from './session.fixture.json';
 import { TOUR } from './tour';
+
+const row = fixture.board.sessions[0] as Record<string, unknown> & {
+  annotation_goal: string;
+  annotation_line_1: string;
+  annotation_assessment: unknown;
+};
 
 /* The sample session as a new reader meets it: opened by its link, in the page's own Session view, over
    its own shell. The board the page itself is polling has nothing to do with it. */
@@ -27,12 +34,49 @@ describe('the sample session', () => {
     );
   });
 
-  it('draws the real Session page over the stored session: its entries, its intent and its reading', async () => {
+  it('says what the sample shows, then the steps that reach the same page with your own session, in order', async () => {
+    await mountSample();
+    const banner = document.querySelector('[data-sample-banner]') as HTMLElement;
+    const steps = [...banner.querySelectorAll('[data-sample-steps] li')].map(
+      (li) => li.textContent ?? '',
+    );
+    expect(steps).toHaveLength(4);
+    expect(steps[0]).toContain('Open a session from Sessions');
+    expect(steps[1]).toMatch(/Set its goal/);
+    for (const way of ['type', 'one of your prompts', 'Find goal', '/goal']) {
+      expect(steps[1]).toContain(way);
+    }
+    expect(steps[2]).toContain('Analyze drift');
+    expect(steps[3]).toContain('Steer back');
+  });
+
+  it('names no expected outcome on any surface the sample adds or stores', async () => {
+    await mountSample();
+    const banner = document.querySelector('[data-sample-banner]') as HTMLElement;
+    const added = [banner.textContent ?? '', ...TOUR.map((note) => `${note.title} ${note.body}`)];
+    for (const text of added) expect(text).not.toMatch(/outcome|expected/i);
+    // The stored intent, reading and correction are what the Intent and Drift cards draw.
+    const stored = JSON.stringify([
+      row.annotation_goal,
+      row.annotation_line_1,
+      row.annotation_assessment,
+      fixture.correction,
+    ]);
+    expect(stored).not.toMatch(/outcome/i);
+    expect(row.annotation_line_1).toBe('');
+  });
+
+  it('draws the real Session page over the stored session: its entries, its intent, its summary and its reading', async () => {
     await mountSample();
     expect(document.querySelectorAll('[data-next-entry-id]').length).toBeGreaterThanOrEqual(18);
-    expect(document.body.textContent).toContain('Resolve the merge conflicts on PR 56');
-    expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain('High');
+    expect(document.body.textContent).toContain('Every issue in the');
+    expect(document.querySelector('[data-next-drift-level]')?.textContent).toContain('Medium');
     expect(document.querySelector('[data-next-finding]')).not.toBeNull();
+    await waitFor(() => expect(document.querySelector('[data-next-summary]')).not.toBeNull());
+    expect(document.querySelectorAll('[data-next-summary-phase]').length).toBeGreaterThanOrEqual(4);
+    expect(document.querySelectorAll('[data-next-summary-marked]').length).toBeGreaterThanOrEqual(
+      1,
+    );
   });
 
   it('numbers an entry by the message it follows, and keeps the number', async () => {
@@ -40,8 +84,9 @@ describe('the sample session', () => {
     const numbers = [...document.querySelectorAll('[data-next-entry]')].map((row) =>
       row.getAttribute('data-next-entry'),
     );
-    expect(numbers).toContain('1');
-    expect(numbers).toContain('18');
+    // The newest page is numbered from the record's start, so its last entry is #81, not #1.
+    expect(numbers).toContain('81');
+    expect(numbers).toContain('50.1');
     expect(numbers.some((n) => /^\d+\.\d+$/.test(n ?? ''))).toBe(true);
   });
 
@@ -62,8 +107,8 @@ describe('the sample session', () => {
 
   it('opens the words of a note from its mark, and the same words are in the text legend', async () => {
     await mountSample();
-    const note = TOUR[2];
-    const mark = document.querySelector('[data-sample-mark="level"]') as HTMLElement;
+    const note = TOUR.find((each) => each.id === 'summary');
+    const mark = document.querySelector('[data-sample-mark="summary"]') as HTMLElement;
     await act(async () => {
       fireEvent.click(mark);
     });
@@ -78,7 +123,7 @@ describe('the sample session', () => {
   it('holds every press that would edit, save or run, and says why', async () => {
     await mountSample();
     const remove = [...document.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Remove',
+      (button) => button.getAttribute('aria-label')?.startsWith('Remove') === true,
     ) as HTMLElement;
     const lines = () => document.querySelectorAll('[data-next-cockpit-held-line]').length;
     const before = lines();
@@ -100,14 +145,9 @@ describe('the sample session', () => {
     expect(box.value).toBe(text);
   });
 
-  it('holds a press inside the Intent popover, and lets the grouped checks open', async () => {
+  it('holds a press on Clear in the Intent card, and lets the outline open', async () => {
     await mountSample();
-    const more = [...document.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'More',
-    ) as HTMLElement;
-    await act(async () => {
-      fireEvent.click(more);
-    });
+    expect(document.querySelector('[data-next-session-more]')).toBeNull();
     const clear = document.querySelector(
       '[data-next-cockpit-action="held-clear"]',
     ) as HTMLElement | null;
@@ -120,15 +160,33 @@ describe('the sample session', () => {
     });
     expect(goal.value).toBe(before);
     expect(held()).toBe('View only: this sample cannot be edited, saved or run.');
-    const checks = document.querySelector('[data-check-run] button') as HTMLElement;
-    expect(checks.getAttribute('aria-expanded')).toBe('false');
+    const outline = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === "Compass's outline of this session",
+    ) as HTMLElement;
+    expect(outline.getAttribute('aria-expanded')).toBe('false');
     await act(async () => {
-      fireEvent.click(checks);
+      fireEvent.click(outline);
     });
-    expect(checks.getAttribute('aria-expanded')).toBe('true');
+    expect(outline.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('lights up the entries a finding cites when Show cited entries is pressed', async () => {
+  it.each([
+    ['Delete summary', 'summary-delete'],
+    ['Turn off summaries', 'summary-off'],
+    ['Pause model calls', 'reading-off'],
+  ])('holds %s and keeps the summary', async (_name, action) => {
+    const page = await mountSample();
+    await waitFor(() => expect(document.querySelector('[data-next-summary]')).not.toBeNull());
+    const press = document.querySelector(`[data-next-cockpit-action="${action}"]`) as HTMLElement;
+    await act(async () => {
+      fireEvent.click(press);
+    });
+    expect(held()).toBe('View only: this sample cannot be edited, saved or run.');
+    expect(document.querySelector('[data-next-summary]')).not.toBeNull();
+    expect(page.posts()).toBe(0);
+  });
+
+  it('lights up the entries a finding cites when one of its numbers is pressed, and goes back', async () => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     await mountSample();
@@ -137,10 +195,22 @@ describe('the sample session', () => {
     await act(async () => {
       fireEvent.click(jump);
     });
+    await act(async () => {
+      fireEvent.click(document.querySelector('[data-next-citation-context]') as HTMLElement);
+    });
     expect(held()).toBe('');
     const cited = [...document.querySelectorAll('[data-next-cited]')];
     expect(cited.length).toBeGreaterThanOrEqual(2);
     for (const row of cited) expect(row.className).toContain('var(--accent)');
+    // The row it named has focus, and Back to the finding returns it to the number, held by nothing.
+    expect(document.activeElement?.getAttribute('data-next-entry-id')).toBe(
+      jump.getAttribute('data-next-cite'),
+    );
+    await act(async () => {
+      fireEvent.click(document.querySelector('[data-next-jump-back]') as HTMLElement);
+    });
+    expect(held()).toBe('');
+    expect(document.activeElement).toBe(jump);
   });
 
   it('composes the stored correction when Steer back is pressed, without sending anything', async () => {

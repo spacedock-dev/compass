@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isHeld } from './held';
+import { heldPosition, isHeld } from './held';
 
 const html = (markup: string): Element => {
   document.body.innerHTML = markup;
@@ -14,8 +14,8 @@ describe('which controls the view-only sample holds', () => {
       '<div><button data-target data-next-cockpit-action="save">Save intent</button></div>',
     ],
     [
-      'an allow',
-      '<div><button data-target data-next-cockpit-action="reading-ask">Allow</button></div>',
+      'a turn on',
+      '<div><button data-target data-next-cockpit-action="reading-on">Resume model calls</button></div>',
     ],
     [
       'a keep',
@@ -27,7 +27,39 @@ describe('which controls the view-only sample holds', () => {
     ],
     [
       'a control inside a disclosure panel',
-      '<div class="ctl-disclosure"><div data-slot="accordion-content"><button data-target>Turn off readings</button></div></div>',
+      '<div class="ctl-disclosure"><div data-slot="accordion-content"><button data-target>Pause model calls</button></div></div>',
+    ],
+    [
+      'a turn off',
+      '<div><button data-target data-next-cockpit-action="reading-off">Pause model calls</button></div>',
+    ],
+    [
+      'Summarize',
+      '<div><button data-target data-next-cockpit-action="summary-start">Summarize</button></div>',
+    ],
+    [
+      'Update summary',
+      '<div><button data-target data-next-cockpit-action="summary-update">Update summary</button></div>',
+    ],
+    [
+      'Summarize again',
+      '<div><button data-target data-next-cockpit-action="summary-rerun">Summarize again</button></div>',
+    ],
+    [
+      'Cancel a summary',
+      '<div><button data-target data-next-cockpit-action="summary-cancel">Cancel</button></div>',
+    ],
+    [
+      'Delete summary',
+      '<div><button data-target data-next-cockpit-action="summary-delete">Delete summary</button></div>',
+    ],
+    [
+      'Turn off summaries',
+      '<div><button data-target data-next-cockpit-action="summary-off">Turn off summaries</button></div>',
+    ],
+    [
+      'Turn summaries on',
+      '<div><button data-target data-next-cockpit-action="summary-on">Turn summaries on</button></div>',
     ],
     ['a text box', '<div><textarea data-target></textarea></div>'],
     ['an input', '<div><input data-target /></div>'],
@@ -69,5 +101,19 @@ describe('which controls the view-only sample holds', () => {
     ['plain text', '<div><p data-target>Words</p></div>'],
   ])('lets %s work', (_name, markup) => {
     expect(isHeld(html(markup))).toBe(false);
+  });
+});
+
+describe('where the view-only sentence is drawn', () => {
+  const rect = (top: number, height: number, left = 0, width = 800) =>
+    ({ top, bottom: top + height, left, width, height, right: left + width }) as DOMRect;
+  it('sits under a control with room below it', () => {
+    expect(heldPosition(rect(100, 30, 40), rect(0, 2000), 900)).toEqual({ top: 136, left: 40 });
+  });
+  it('flips above a control at the foot of the viewport, so it is seen before it lapses', () => {
+    expect(heldPosition(rect(860, 30, 40), rect(0, 2000), 900)).toEqual({
+      bottom: 2000 - 860 + 6,
+      left: 40,
+    });
   });
 });

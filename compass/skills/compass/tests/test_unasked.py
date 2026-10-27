@@ -8,6 +8,7 @@ while it runs, which is why most of what is asserted here is a refusal.
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 import threading
 import unittest
@@ -15,7 +16,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from unittest import mock
 
-from compass_runtime import departures, diagnostics, reading, unasked
+from compass_runtime import (
+    departures,
+    diagnostics,
+    reading,
+    reading_policy,
+    supervise,
+    unasked,
+)
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -34,6 +42,18 @@ def _config(root: Path, **changes: Any) -> Any:
     import dataclasses  # noqa: PLC0415
 
     return dataclasses.replace(config, **changes) if changes else config
+
+
+def _installed_providers(case: unittest.TestCase) -> None:
+    """Both provider binaries found, so a lane test never depends on the machine it runs on.
+
+    The reading route asks `shutil.which` whether `claude` or `codex` is installed. These
+    tests drive `Lane.consider` directly, so a machine with neither (CI) refused every
+    reading and counted none, while a desk with both passed.
+    """
+    patcher = mock.patch.object(shutil, "which", side_effect=lambda name, **_: f"/bin/{name}")
+    patcher.start()
+    case.addCleanup(patcher.stop)
 
 
 def _taking(seen: list[str]) -> Any:
@@ -99,7 +119,9 @@ class _Harness:
 
         def produce(_config: Any, row: Any, *_args: Any, **_kwargs: Any) -> Any:
             self.readings.append(str(row.get("sid")))
-            return (self.assessment, "", True)
+            # A withheld reading spent nothing, as `reading.produce` answers;
+            # a spent failure is `AFailedCallStillSpendsTheCapsTest`'s case.
+            return (self.assessment, "", self.assessment is not None)
 
         def popup(title: str, message: str) -> str:
             self.popups.append((title, message))
@@ -119,7 +141,12 @@ class _Harness:
         )
 
     def consider(self, rows: list[dict[str, Any]], *, now: float = 5_000.0) -> None:
-        self.lane.consider(self.state, rows, [_annotation()], now=now)
+        with mock.patch.object(
+            shutil,
+            "which",
+            side_effect=lambda name: f"/bin/{name}" if name == "codex" else None,
+        ):
+            self.lane.consider(self.state, rows, [_annotation()], now=now)
 
 
 class TheSwitchIsTheWholeGateTest(unittest.TestCase):
@@ -219,7 +246,20 @@ class TheSwitchIsTheWholeGateTest(unittest.TestCase):
                 self.assertFalse(application.config.unasked_enabled)
                 # The page draws the lane-off sentence from this key's absence.
                 self.assertNotIn("unasked", payload)
+                # And no toggle or cue can be drawn: the page reads who the lane
+                # would reach from this key alone.
+                self.assertNotIn("unasked_routes", payload)
                 self.assertIs(False, diagnostics.diagnose(application)["unasked"]["enabled"])
+
+    def test_no_annotations_turns_the_lane_off(self) -> None:
+        # The lane reads typed goals and the Codex toggle is refused without
+        # annotations, so publishing either would draw a control that never works.
+        application = self._serving("--unasked-readings", "--no-annotations")
+        self.assertIsNone(application.unasked_lane)
+        self.assertFalse(application.config.unasked_enabled)
+        payload = application.collect(show_all=False)
+        self.assertNotIn("unasked", payload)
+        self.assertNotIn("unasked_routes", payload)
 
     def test_the_switch_alone_still_attaches_the_lane(self) -> None:
         # The control for the test above, so its refusal is the off switch's
@@ -227,7 +267,9 @@ class TheSwitchIsTheWholeGateTest(unittest.TestCase):
         application = self._serving("--unasked-readings")
 
         self.assertIsNotNone(application.unasked_lane)
-        self.assertIs(True, application.collect(show_all=False).get("unasked"))
+        payload = application.collect(show_all=False)
+        self.assertIs(True, payload.get("unasked"))
+        self.assertIsInstance(payload.get("unasked_routes"), dict)
         self.assertIs(True, diagnostics.diagnose(application)["unasked"]["enabled"])
 
 
@@ -235,6 +277,7 @@ class ItEvaluatesOnAChangeAndNotPerCollectionTest(unittest.TestCase):
     """AC2. A working session generates nothing until something changes."""
 
     def setUp(self) -> None:
+        _installed_providers(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.harness = _Harness(_config(Path(self.temp.name)), _assessment("departure"))
@@ -1034,6 +1077,7 @@ class TheCapsBoundSpendAndNotFindingsTest(unittest.TestCase):
     """
 
     def setUp(self) -> None:
+        _installed_providers(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -1220,49 +1264,127 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class TheUnaskedLaneNeverReachesClaudeCodeTest(unittest.TestCase):
-    """DRC-4650, owner ruling 3: the unasked lane stays Codex-backed.
+class AFailedCallStillSpendsTheCapsTest(unittest.TestCase):
+    """A model call that started and failed is charged like any other.
 
-    Even with the Claude Code gate forced open and a Claude Code row, the lane
-    hands `produce` a Codex model and no Claude Code call is ever made. The
-    reader is not at the desk while this runs, so a second receiver here would
-    be one nobody named before the words were sent.
+    Before Claude Code could run the lane without a grant, a call could not
+    start without a Codex Allow this build does not write, so this was
+    unreachable. A signed-out or rate-limited CLI then started again on every
+    state change: reproduced at 199 calls with 0 recorded against a session cap
+    of 3 and a day cap of 12.
     """
 
     def setUp(self) -> None:
+        _installed_providers(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
-    def test_a_claude_code_session_is_checked_unasked_only_by_codex(self) -> None:
-        from compass_runtime import annotations as annotation_store  # noqa: PLC0415
-        from compass_runtime import observer  # noqa: PLC0415
+    def _failing(self, **changes: Any) -> _Harness:
+        harness = _Harness(
+            _config(self.root, unasked_session_floor_sec=0.0, **changes),
+            None,
+        )
 
-        models: list[Any] = []
-        harness = _Harness(_config(self.root), _assessment(reading.RESULT_CONSISTENT))
-
-        def produce(_config: Any, _row: Any, *_args: Any, **kwargs: Any) -> Any:
-            models.append(kwargs["model"])
-            return (harness.assessment, "", True)
+        def produce(_config: Any, row: Any, *_args: Any, **_kwargs: Any) -> Any:
+            harness.readings.append(str(row.get("sid")))
+            return None, reading.WITHHELD_MODEL_FAILED, True
 
         harness.lane.produce = produce
-        with (
-            mock.patch.object(
-                annotation_store,
-                "CLAUDE_ABSTENTION_CHECK",
-                annotation_store.ABSTENTION_CHECK_PASSED,
-            ),
-            mock.patch.object(observer, "claude_exec", side_effect=AssertionError("claude ran")),
-            mock.patch.object(
-                reading, "ClaudeReadingModel", side_effect=AssertionError("claude built")
-            ),
-        ):
+        return harness
+
+    def _flip(self, harness: _Harness, sid: str, *, at: float) -> None:
+        entries = [_annotation(sid)]
+        harness.lane.consider(harness.state, [_row(sid, "working")], entries, now=at)
+        harness.lane.consider(harness.state, [_row(sid, "idle")], entries, now=at)
+
+    def test_the_session_cap_stops_a_model_that_keeps_failing(self) -> None:
+        harness = self._failing(unasked_session_cap=3)
+        for n in range(20):
+            self._flip(harness, "s-1", at=5_000.0 + n)
+        self.assertEqual(3, len(harness.readings))
+        stored = departures.load(harness.config)
+        self.assertEqual(3, departures.counts(stored, "claude", "s-1", since=0)[0])
+        # Charged, and not a check: nothing claims the session was read.
+        self.assertFalse(departures.checked(stored, "claude", "s-1", has_words=True))
+        self.assertEqual([], harness.popups)
+
+    def test_the_day_cap_stops_a_model_that_keeps_failing(self) -> None:
+        harness = self._failing(unasked_daily_cap=4)
+        for n in range(20):
+            self._flip(harness, f"s-{n}", at=5_000.0 + n)
+        self.assertEqual(4, len(harness.readings))
+
+    def test_a_withheld_call_that_spent_nothing_is_still_not_charged(self) -> None:
+        # The control: only a spent call is charged.
+        harness = self._failing(unasked_session_cap=3)
+        harness.lane.produce = lambda *_a, **_k: (None, reading.WITHHELD_MODEL_UNAVAILABLE, False)
+        self._flip(harness, "s-1", at=5_000.0)
+        self.assertEqual((), departures.load(harness.config))
+
+
+class TheUnaskedLaneUsesTheSessionProviderTest(unittest.TestCase):
+    def test_a_claude_session_uses_its_accepted_producer_through_the_guarded_seam(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            config = _config(Path(home))
+            harness = _Harness(config, _assessment(reading.RESULT_CONSISTENT))
+            models: list[Any] = []
+
+            def produce(_config: Any, _row: Any, *_args: Any, **kwargs: Any) -> Any:
+                models.append(kwargs["model"])
+                return harness.assessment, "", True
+
+            harness.lane.produce = produce
+            with mock.patch.object(shutil, "which", side_effect=lambda name: f"/bin/{name}"):
+                harness.lane.consider(
+                    harness.state, [_row(state="working")], [_annotation()], now=5000.0
+                )
+                harness.lane.consider(
+                    harness.state, [_row(state="idle")], [_annotation()], now=5000.0
+                )
+            self.assertEqual(1, len(models))
+            self.assertIsInstance(models[0], reading_policy.GuardedModel)
+            self.assertIsInstance(models[0].model, reading.ClaudeReadingModel)
+
+    def test_revoking_cancels_the_running_child_and_keeps_its_result_from_raising(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            harness = _Harness(_config(Path(home)), _assessment(reading.RESULT_DEPARTURE))
+            group = mock.Mock()
+
+            def produce(_config: Any, _row: Any, *_args: Any, **kwargs: Any) -> Any:
+                kwargs["model"].model.on_spawn(group)
+                harness.lane.stop("codex")
+                return harness.assessment, "", True
+
+            harness.lane.produce = produce
             harness.consider([_row(state="working")])
             harness.consider([_row(state="idle")])
-        self.assertEqual(1, len(models), "the lane did not read, so this proves nothing")
-        # Wrapped in the Allow binding the lane sends under (consent F5).
-        self.assertIsInstance(models[0], unasked._Bound)
-        self.assertIsInstance(models[0].model, reading.CodexReadingModel)
+            group.cancel.assert_called_once_with()
+            self.assertEqual([], harness.popups)
+            stored = departures.load(harness.config)
+            self.assertEqual((1, 1), departures.counts(stored, "claude", "s-1", since=0))
+            self.assertFalse(departures.checked(stored, "claude", "s-1", has_words=True))
+            self.assertEqual([], departures.published(stored, "claude", "s-1"))
+
+    def test_a_revoke_after_the_reading_returns_still_publishes_nothing(self) -> None:
+        # `stop` landing between the model's answer and the write: the write
+        # and the cancel test share the lock, so only the spend is kept.
+        with tempfile.TemporaryDirectory() as home:
+            harness = _Harness(_config(Path(home)), _assessment(reading.RESULT_DEPARTURE))
+            departures_of = harness.lane._departures
+
+            def revoked_between(*args: Any) -> Any:
+                found = departures_of(*args)
+                harness.lane.stop()
+                return found
+
+            with mock.patch.object(harness.lane, "_departures", side_effect=revoked_between):
+                harness.consider([_row(state="working")])
+                harness.consider([_row(state="idle")])
+            self.assertEqual([], harness.popups)
+            stored = departures.load(harness.config)
+            self.assertEqual((1, 1), departures.counts(stored, "claude", "s-1", since=0))
+            self.assertEqual([], departures.published(stored, "claude", "s-1"))
 
 
 class TheUnaskedLaneNeverSendsACheckTest(unittest.TestCase):
@@ -1314,9 +1436,14 @@ class TheUnaskedLaneNeverSendsACheckTest(unittest.TestCase):
             return "{}", "ok"
 
         harness = _Harness(config, None)
+        self.enterContext(mock.patch.object(supervise, "_SHUTDOWN", threading.Event()))
         harness.lane.produce = reading.produce
         harness.lane.facts_for = lambda _state, _row, _now: [self.WORDS, self.CHECK]
-        with named_machine(), mock.patch.object(reading.CodexReadingModel, "__call__", call):
+        with (
+            named_machine(),
+            mock.patch.object(reading.CodexReadingModel, "__call__", call),
+            mock.patch.object(reading.CodexReadingModel, "available", return_value=True),
+        ):
             # A change to a running row, which a mid-flight reading may read.
             harness.consider([_row(state="idle")])
             harness.consider([_row(state="working")])
@@ -1332,12 +1459,11 @@ class TheUnaskedLaneNeverSendsACheckTest(unittest.TestCase):
                 self.assertNotIn(name, source)
 
 
-class OnlyTheReaderRequestedRouteKnowsTheClaudeCodeProducerTest(unittest.TestCase):
-    """Structural half of ruling 3: no summary, lane or context module names it.
+class TheGuardedReadingCallersKnowTheClaudeCodeProducerTest(unittest.TestCase):
+    """Admitting the unasked lane does not admit an arbitrary new model caller.
 
-    The behavioural test above covers the lane as it runs today; this covers
-    the next caller someone adds, which must come through `http_api` and so
-    through the route resolver and the gate.
+    Each additional caller needs its own permission and spend boundary rather
+    than inheriting the lane's opt-in by importing the producer.
     """
 
     SKILL = Path(__file__).resolve().parents[1]
@@ -1368,11 +1494,12 @@ class OnlyTheReaderRequestedRouteKnowsTheClaudeCodeProducerTest(unittest.TestCas
             if name in path.read_text(encoding="utf-8")
         }
 
-    def test_only_the_reading_route_builds_a_claude_code_model(self) -> None:
+    def test_the_reading_route_and_unasked_lane_build_a_claude_code_model(self) -> None:
         self.assertEqual(
             {
                 "compass/skills/compass/compass_runtime/reading.py",
                 "compass/skills/compass/compass_runtime/http_api.py",
+                "compass/skills/compass/compass_runtime/unasked.py",
                 self.SCORER,
                 self.REPLAY,
             },
@@ -1384,6 +1511,12 @@ class OnlyTheReaderRequestedRouteKnowsTheClaudeCodeProducerTest(unittest.TestCas
             {
                 "compass/skills/compass/compass_runtime/observer.py",
                 "compass/skills/compass/compass_runtime/reading.py",
+                # A reader-requested session summary job runs its own multi-part
+                # calls through the same exec under its own grant and ledger.
+                "compass/skills/compass/compass_runtime/summary_jobs.py",
+                # The Live monitor's once-a-minute Haiku check enters `prepare_claude_exec` on its
+                # own pinned model, under its own ledger; it builds no Claude reading model.
+                "compass/skills/compass/compass_runtime/live_monitor.py",
                 # `argv_digest` only: it hands the exec a runner that raises
                 # before any process starts.
                 self.SCORER,
@@ -1438,9 +1571,14 @@ class TheLaneSendsOnlyWhereAPressWouldNotAskAgainTest(unittest.TestCase):
             sent.append(prompt)
             return "{}", "ok"
 
+        self.enterContext(mock.patch.object(supervise, "_SHUTDOWN", threading.Event()))
         harness.lane.produce = produce
         harness.lane.diagnostic_sink = lines.append
-        with named_machine(environ), mock.patch.object(reading.CodexReadingModel, "__call__", call):
+        with (
+            named_machine(environ),
+            mock.patch.object(reading.CodexReadingModel, "__call__", call),
+            mock.patch.object(reading.CodexReadingModel, "available", return_value=True),
+        ):
             harness.consider([_row(state="working")])
             harness.consider([_row(state="idle")])
         return sent, lines, departures.load(config), harness

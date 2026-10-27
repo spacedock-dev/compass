@@ -35,21 +35,19 @@ import { readingShape } from './shape';
 /* The correction's pure half, run next to the legacy page: the edit arithmetic that decides what an
    over-the-cap paste keeps, the text composed from the server's parts and the list's numbers, whether it is
    stale, and whether there is anything to steer from. */
-/* The one deliberate departure from what the retired page said (owner, 2026-10-14): every number reads
-   "(entry #n in Compass's activity list)" where it read "(#n in Compass)" on the first and "(#n)" after.
-   The recorded answer is compared through this projection, which turns the new wording back into the old
-   so the rest of the text, the placeholders dropped and the order stay held to the recording. See
+/* The one deliberate departure from what the retired page said: every number it drew, " (#n in Compass)" on
+   the first and " (#n)" after, became " (entry #n in Compass's activity list)" (owner, 2026-10-14) and is now
+   drawn as nothing (owner, 2026-10-20), because the agent the text is pasted into never saw that list. The
+   recorded answer is compared through this projection, which removes the old numbers, so the rest of the
+   text, the placeholders dropped and the order stay held to the recording. See
    docs/design-frontend-migration.md#held-to-recorded-answers. */
-function recordedNumbering(text: string): string {
-  let first = true;
-  return text.replace(/ \(entry #(\d+) in Compass's activity list\)/g, (_all, n: string) => {
-    const said = first ? ` (#${n} in Compass)` : ` (#${n})`;
-    first = false;
-    return said;
-  });
+function recordedWithoutNumbers(text: string): string {
+  return text.replace(/ \(#\d+(?: in Compass)?\)/g, '');
 }
 
 const legacy = loadLegacyDrift();
+/* The cap the retired page was recorded at; the page's own is `CORRECTION_CAP`. */
+const RECORDED_CAP = 2000;
 
 /* The retired page numbered with whole numbers and was recorded that way; the page now reads a label. */
 const labels = (numbers: ReadonlyMap<string, number>): ReadonlyMap<string, string> =>
@@ -160,10 +158,13 @@ describe('the correction edit arithmetic matches the legacy page', () => {
       if (legacy.call('nextCockpitCorrectionWhole', run, room) !== correctionWhole(run, room)) {
         failures.push(`seed ${String(seed)} whole`);
       }
-      // A cap this small makes the fit reachable from short strings; the legacy cap is 2,000.
+      // A cap this small makes the fit reachable from short strings; the legacy cap is 2,000. The page's cap
+      // rose to 4,216 for the explanations and to 5,140 for the agent's quoted words (owner, 2026-10-20), so
+      // the arithmetic is held to the recording at the recorded cap: see
+      // docs/design-frontend-migration.md#held-to-recorded-answers.
       const long = genText(rnd, 5) + 'x'.repeat(rnd() < 0.5 ? 1995 : 10);
       const typedLong = long.slice(0, cut) + insert + long.slice(cut);
-      const fit = correctionFit(long, typedLong, cut + insert.length);
+      const fit = correctionFit(long, typedLong, cut + insert.length, RECORDED_CAP);
       const fitA = legacy.call('nextCockpitCorrectionFit', long, typedLong, cut + insert.length);
       const found = firstDifference(canonical(fitA), canonical(fit));
       if (found) failures.push(`seed ${String(seed)} fit: ${found}`);
@@ -234,8 +235,8 @@ describe('the correction text, staleness and offer match the legacy page', () =>
         ]),
       );
       if (
-        legacy.call('nextCockpitCorrectionText', parts, numbers) !==
-        recordedNumbering(correctionText(parts as never, labels(numbers)))
+        recordedWithoutNumbers(legacy.call<string>('nextCockpitCorrectionText', parts, numbers)) !==
+        correctionText(parts as never)
       ) {
         failures.push(`seed ${String(seed)} text`);
       }
@@ -306,33 +307,49 @@ describe('the correction text, staleness and offer match the legacy page', () =>
       const dirB = offeredDirection(ann, entries, session as never, shape, intentDraft(input));
       if (dirA !== dirB) failures.push(`seed ${String(seed)} direction: ${String(dirA)} / ${dirB}`);
       if (offerB) {
+        /* Two deviations (2026-10-20 and 2026-10-21, docs/design-frontend-migration.md#the-drift-card-analyze-and-steer-back):
+           a departure's trigger names its first cited entry, as its result row does, and a claim alone draws
+           no trigger line, so the recorded side is asked with the claim taken out of the offer. A failed
+           check without a departure is asked of the recorded page, whose answers are keyed by call order, and
+           not compared: the page offers Steer back only with a departure. The recorded side is given the same
+           shape and wording. */
+        const recorded = legacyShape as { departures: { citedIds?: unknown[] }[] } | null;
+        const firstCited = recorded && {
+          ...recorded,
+          departures: recorded.departures.map((row) => ({
+            ...row,
+            citedIds: (row.citedIds || []).slice(0, 1),
+          })),
+        };
         const triggerA = text(
           legacy.call<string>(
             'nextCockpitSteerTrigger',
-            offerA,
-            legacyShape,
+            offerA && { ...offerA, claimed: false },
+            firstCited,
             session,
             entries,
             numbers,
             source.scan,
           ),
         );
-        const triggerB = steerTrigger({
-          offer: offerB,
-          shape,
-          session: session as never,
-          entries,
-          numbers: labels(numbers),
-          scan: source.scan,
-          generated: 1000,
-        });
-        if (triggerA !== triggerB)
-          failures.push(`seed ${String(seed)} trigger: ${triggerA} / ${triggerB}`);
-        if (triggerB) note('trigger');
+        if (offerB.departed) {
+          const triggerB = steerTrigger({
+            offer: offerB,
+            shape,
+            entries,
+            numbers: labels(numbers),
+            generated: 1000,
+          });
+          if (triggerA !== triggerB)
+            failures.push(`seed ${String(seed)} trigger: ${triggerA} / ${triggerB}`);
+          if (triggerB) note('trigger');
+        }
       }
     }
     expect(failures).toEqual([]);
-    for (const name of ['stale:true', 'stale:false', 'trigger']) {
+    /* No generated session offers a departure with a cited entry, so the trigger line is held to the
+       recorded answer only where one is made; steerTrigger.test.ts asks for the departure's line itself. */
+    for (const name of ['stale:true', 'stale:false']) {
       expect(seen[name] ?? 0, name).toBeGreaterThan(0);
     }
   });

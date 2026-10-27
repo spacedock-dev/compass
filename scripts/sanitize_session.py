@@ -6,8 +6,8 @@ local mapping file (`--mapping`), written outside the repository because it cont
 originals. The shape of that file is documented in
 [sample-session/README.md](sample-session/README.md).
 
-    sanitize_session.py --mapping M.json --input session.jsonl --output example-session.jsonl
-    sanitize_session.py --mapping M.json --input session.jsonl --output example-session.jsonl \
+    sanitize_session.py --mapping M.json --input session.jsonl --output milestone-session.jsonl
+    sanitize_session.py --mapping M.json --input session.jsonl --output milestone-session.jsonl \
         --verify
 
 What it does, by walking every string value (and every key) of every record:
@@ -16,7 +16,8 @@ What it does, by walking every string value (and every key) of every record:
   rewritten by a later rule. An entry may be `"word": true` to match only whole words.
 - Ids regenerated through one consistent mapping, so parent and child chains and tool_use and
   tool_result pairs stay linked: UUIDs, `toolu_`, `msg_` and `req_` ids, the commit hashes and long
-  numbers the mapping lists, and any 40-hex hash.
+  numbers the mapping lists, any 40-hex hash, and, when the mapping names the source repository
+  (`commit_repo`), every 7 to 40 character hex token that resolves as a commit there.
 - Dates shifted by a whole number of days (`day_shift`), so order, gaps and times of day survive
   and a date in a filename still agrees with the timestamps.
 - Thinking blocks dropped, images replaced by a placeholder, secrets by `<REDACTED_TOKEN>`, any
@@ -47,6 +48,10 @@ from urllib.parse import quote
 UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
 PREFIXED = re.compile(r"\b(toolu|msg|req)_([A-Za-z0-9]{8,})\b")
 LONG_HASH = re.compile(r"\b[0-9a-f]{40}\b")
+# A short commit hash is any hex run git accepts as an abbreviation. Only the ones that resolve in
+# the source repository are replaced: a mapping cannot list them by hand, because a session quotes
+# hashes from `git log`, CI output and pasted text that nobody reads closely enough to collect.
+HEX_TOKEN = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])")
 DATE = re.compile(r"\b(20\d\d)-(\d\d)-(\d\d)(?:T(\d\d):(\d\d):(\d\d)(\.\d+)?Z)?")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+")
 OTHER_HOME = re.compile(r"(/Users/|/home/|C:\\\\?Users\\\\?)(?!dev\b)[A-Za-z0-9._-]+")
@@ -68,13 +73,42 @@ SWEEPS = {
     "home directory": re.compile(
         r"/Users/(?!dev\b|u\b)[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|C:\\\\?Users"
     ),
+    # `sk-` only at the start of a token: "task-notification" is not an API key.
     "secret shape": re.compile(
-        r"sk-[A-Za-z0-9]|ghp_|gho_|github_pat_|AKIA|ASIA|xox[bpasr]-|eyJ[A-Za-z0-9_-]{6}|-----BEGIN"
+        r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]|ghp_|gho_|github_pat_|AKIA|ASIA|xox[bpasr]-|eyJ[A-Za-z0-9_-]{6}|-----BEGIN"
     ),
     # A 40-hex commit hash is regenerated, so only a longer run (a digest, a token) is a leak.
     "long hex run": re.compile(r"\b[0-9a-f]{41,}\b"),
     "long base64 run": re.compile(r"[A-Za-z0-9+/=]{120,}"),
+    # The sample ships inside the page, which carries no tracker brand, host or issue key.
+    "tracker reference": re.compile(r"\bLinear\b|linear\.app|\bDRC-\d+|claude_ai_"),
+    # A home directory as Claude Code encodes it in a project folder or scratch path.
+    "encoded home directory": re.compile(r"-Users-(?!dev\b)[A-Za-z0-9._]+"),
+    "machine temp directory": re.compile(r"/var/folders/"),
+    # A link to the person's own remote-controlled session; a placeholder starts `01Example`.
+    "remote session link": re.compile(r"claude\.ai/code/session_(?!01Example)"),
 }
+# Times written as text rather than as timestamps, shifted with the timestamps when the mapping asks
+# (`shift_bare_times`): a tool's output and a monitor's log carry the real time, often in the local
+# time zone, which the timestamps' shift would otherwise leave readable beside them.
+# A Unix time in seconds (2023 to 2033, optionally with a fraction) or in milliseconds.
+EPOCH = re.compile(r"(?<![\d.])(1[789]\d{8})(\.\d{1,6})?(?![\d])|(?<![\d.])(1[789]\d{11})(?![\d.])")
+# A time of day with seconds, outside an ISO timestamp (which DATE already moved). A `ps` duration
+# has the same shape and moves too; it said nothing private and still says nothing.
+CLOCK = re.compile(r"(?<![\dT:.])([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?!\d|:\d)")
+# A time of day without seconds only where the text says it is one, because the bare shape is also a
+# slice, a ratio or a `ps` duration: after "at" ("failed at 13:58", "Status at 13:13:"), and as the
+# clock that opens an `uptime` line ("12:47  up 16:10", whose "16:10" is a duration and stays).
+CLOCK_AT = re.compile(r"(?<=\bat )([01]\d|2[0-3]):([0-5]\d)(?!\d|:\d)")
+UPTIME = re.compile(r"(?<![\d:])([01]\d|2[0-3]):([0-5]\d)(?= +up\b)")
+# A `ls -l` style month and day, with its time of day when it has one.
+MONTH_DAY = re.compile(
+    r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}(\d{1,2})"
+    r"(?: ([01]\d|2[0-3]):([0-5]\d))?\b"
+)
+# Vitest's "Start at" line is UTC in this repository: its config sets TZ=UTC for the suite.
+UTC_CLOCK_PREFIXES = ("Start at  ",)
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 # Fields that name another record by uuid; one that names a record the cut removed becomes null.
 REFERENCE_KEYS = (
     "parentUuid",
@@ -82,6 +116,44 @@ REFERENCE_KEYS = (
     "messageId",
     "snapshotMessageId",
     "sourceToolAssistantUUID",
+)
+# Keys whose integers Claude Code writes as counts, sizes, durations or positions, never as an id,
+# so one that happens to equal a listed run or issue number is not that number.
+COUNT_KEYS = frozenset(
+    {
+        "apiBlockIndex",
+        "coordinate",
+        "cumulativeDroppedTokens",
+        "duration",
+        "durationMs",
+        "exitCode",
+        "itemCount",
+        "limit",
+        "max_results",
+        "messageCount",
+        "newLines",
+        "newStart",
+        "numLines",
+        "offset",
+        "oldLines",
+        "oldStart",
+        "pendingBackgroundAgentCount",
+        "postTokens",
+        "preTokens",
+        "promptIndex",
+        "scroll_amount",
+        "startLine",
+        "thinkingDurationMs",
+        "timeout",
+        "timeoutMs",
+        "timeout_ms",
+        "tokens",
+        "total_deferred_tools",
+        "totalLines",
+        "turnIndex",
+        "web_fetch_requests",
+        "web_search_requests",
+    }
 )
 PLACEHOLDER_TOKEN = "<REDACTED_TOKEN>"  # noqa: S105 - a placeholder, not a credential
 
@@ -100,6 +172,15 @@ class Mapping:
     hashes: list[str] = field(default_factory=list)
     numbers: list[str] = field(default_factory=list)
     drop_blocks: list[str] = field(default_factory=lambda: ["thinking", "redacted_thinking"])
+    # Off by default so the first sample regenerates byte for byte; its record holds no bare times.
+    shift_bare_times: bool = False
+    # How far the machine's local clock ran ahead of UTC. A bare time of day is local unless it
+    # says UTC, and the timestamps are UTC, so leaving the difference would let a reader subtract
+    # one from the other and recover the time zone. Removing it makes a local time read as UTC.
+    local_clock_offset_seconds: int = 0
+    # The repository the session worked in, read only by `git cat-file`, so every quoted hash that
+    # names one of its commits is regenerated and verified absent, not only the listed ones.
+    commit_repo: str = ""
 
     @classmethod
     def load(cls, path: Path) -> Mapping:
@@ -113,6 +194,9 @@ class Mapping:
             hashes=list(raw.get("hashes", [])),
             numbers=list(raw.get("numbers", [])),
             drop_blocks=list(raw.get("drop_blocks", ["thinking", "redacted_thinking"])),
+            shift_bare_times=bool(raw.get("shift_bare_times", False)),
+            local_clock_offset_seconds=int(raw.get("local_clock_offset_seconds", 0)),
+            commit_repo=str(raw.get("commit_repo", "")),
         )
 
 
@@ -141,6 +225,49 @@ class Sanitizer:
             if mapping.numbers
             else None
         )
+        self.short_ids: dict[str, str] = {}
+        self.short_re: re.Pattern[str] | None = None
+        self.commits: dict[str, str] = {}
+        self.commit_re: re.Pattern[str] | None = None
+
+    def learn_commits(self, raw: str) -> None:
+        """Map every hex token in the source that names a commit in `commit_repo` to its full hash.
+
+        The replacement is taken from the full hash, so a short form still reads as the prefix of
+        the full form's replacement wherever the session quotes both.
+        """
+        if not self.mapping.commit_repo:
+            return
+        # A full hash is left to LONG_HASH, which gives it the same replacement; replacing it here
+        # as well would hand LONG_HASH a fresh 40-hex run to replace a second time.
+        self.commits = {
+            token: full
+            for token, full in resolving_commits(raw, Path(self.mapping.commit_repo)).items()
+            if not LONG_HASH.fullmatch(token)
+        }
+        if self.commits:
+            self.commit_re = re.compile(
+                r"(?<![0-9A-Za-z])(?:"
+                + "|".join(sorted(self.commits, key=len, reverse=True))
+                + r")(?![0-9A-Za-z])"
+            )
+
+    def learn_short_ids(self, raw: str) -> None:
+        """Map the eight-character short form of every session or record id in the source.
+
+        Compass and its URLs name a session by the first eight characters of its id, so the short
+        form appears on its own in commands and links. It must become the short form of the id's
+        replacement, or the replaced session would still be named by its original.
+        """
+        self.short_ids = {u[:8]: self._uuid_text(u)[:8] for u in set(UUID.findall(raw))}
+        if self.short_ids:
+            self.short_re = re.compile(
+                r"(?<![0-9A-Za-z])(?:" + "|".join(sorted(self.short_ids)) + r")(?![0-9A-Za-z])"
+            )
+
+    def _uuid_text(self, original: str) -> str:
+        h = self._digest(original)
+        return f"{h[:8]}-{h[8:12]}-4{h[13:16]}-{'89ab'[int(h[16], 16) % 4]}{h[17:20]}-{h[20:32]}"
 
     def _digest(self, original: str) -> str:
         return hashlib.sha256(f"{self.mapping.salt}|{original}".encode()).hexdigest()
@@ -153,9 +280,7 @@ class Sanitizer:
 
     def _uuid(self, match: re.Match[str]) -> str:
         original = match.group(0)
-        h = self._digest(original)
-        new = f"{h[:8]}-{h[8:12]}-4{h[13:16]}-{'89ab'[int(h[16], 16) % 4]}{h[17:20]}-{h[20:32]}"
-        return self._note(original, new, "id: uuid")
+        return self._note(original, self._uuid_text(original), "id: uuid")
 
     def _prefixed(self, match: re.Match[str]) -> str:
         original = match.group(0)
@@ -167,6 +292,11 @@ class Sanitizer:
             digits, index = divmod(digits, len(alphabet))
             chars.append(alphabet[index])
         return self._note(original, f"{kind}_{''.join(chars)}", f"id: {kind}")
+
+    def _commit(self, match: re.Match[str]) -> str:
+        original = match.group(0)
+        text = (self._digest(self.commits[original]) * 2)[: len(original)]
+        return self._note(original, text, "id: commit hash")
 
     def _hash(self, match: re.Match[str]) -> str:
         original = match.group(0)
@@ -197,6 +327,43 @@ class Sanitizer:
         self.categories["timestamp (shifted)"] += 1
         return stamp.strftime("%Y-%m-%dT%H:%M:%S") + (match.group(7) or "") + "Z"
 
+    def _epoch(self, match: re.Match[str]) -> str:
+        shift = self.mapping.day_shift * 86400 + self.mapping.time_shift_seconds
+        self.categories["unix time (shifted)"] += 1
+        if match.group(3):
+            return str(int(match.group(3)) + shift * 1000)
+        return str(int(match.group(1)) + shift) + (match.group(2) or "")
+
+    def _clock_shift(self, match: re.Match[str]) -> int:
+        """The timestamps' shift, less the local offset for a time that is not already UTC."""
+        utc = match.string[match.end() : match.end() + 4] == " UTC" or match.string[
+            : match.start()
+        ].endswith(UTC_CLOCK_PREFIXES)
+        local = 0 if utc else self.mapping.local_clock_offset_seconds
+        return self.mapping.time_shift_seconds - local
+
+    def _clock(self, match: re.Match[str]) -> str:
+        seconds = int(match.group(1)) * 3600 + int(match.group(2)) * 60
+        has_seconds = match.re is CLOCK
+        if has_seconds:
+            seconds += int(match.group(3))
+        moved = (seconds + self._clock_shift(match)) % 86400
+        self.categories["clock time (shifted)"] += 1
+        text = f"{moved // 3600:02d}:{moved % 3600 // 60:02d}"
+        return f"{text}:{moved % 60:02d}" if has_seconds else text
+
+    def _month_day(self, match: re.Match[str]) -> str:
+        # The year is not written, so a fixed common year stands in: a shift across a leap day can
+        # land one day off, which moves an illustration's date and reveals nothing.
+        month = MONTHS.index(match.group(1)) + 1
+        stamp = datetime(2001, month, int(match.group(2)), int(match.group(3) or 0))
+        stamp += timedelta(days=self.mapping.day_shift, minutes=int(match.group(4) or 0))
+        if match.group(3) is not None:
+            stamp += timedelta(seconds=self._clock_shift(match))
+        self.categories["month and day (shifted)"] += 1
+        text = f"{MONTHS[stamp.month - 1]} {stamp.day:2d}"
+        return f"{text} {stamp:%H:%M}" if match.group(3) is not None else text
+
     def _literal(self, match: re.Match[str]) -> str:
         entry = self.by_text[match.group(0)]
         return self._note(entry["from"], entry["to"], entry.get("category", "literal"))
@@ -204,13 +371,26 @@ class Sanitizer:
     def text(self, value: str) -> str:
         value = self.literal.sub(self._literal, value)
         value = UUID.sub(self._uuid, value)
+        if self.short_re:
+            value = self.short_re.sub(
+                lambda m: self._note(m.group(0), self.short_ids[m.group(0)], "id: short form"),
+                value,
+            )
         value = PREFIXED.sub(self._prefixed, value)
+        if self.commit_re:
+            value = self.commit_re.sub(self._commit, value)
         if self.hash_re:
             value = self.hash_re.sub(self._hash, value)
         value = LONG_HASH.sub(self._hash, value)
         if self.number_re:
             value = self.number_re.sub(self._number, value)
         value = DATE.sub(self._date, value)
+        if self.mapping.shift_bare_times:
+            value = EPOCH.sub(self._epoch, value)
+            value = MONTH_DAY.sub(self._month_day, value)
+            value = CLOCK.sub(self._clock, value)
+            value = CLOCK_AT.sub(self._clock, value)
+            value = UPTIME.sub(self._clock, value)
         value = SECRET.sub(lambda m: self._note(m.group(0), PLACEHOLDER_TOKEN, "secret"), value)
         value = EMAIL.sub(
             lambda m: (
@@ -227,9 +407,24 @@ class Sanitizer:
     def value(self, node: Any) -> Any:
         if isinstance(node, str):
             return self.text(node)
+        # A pull-request link record carries its number as a JSON integer, beside the same number
+        # in its URL; left alone it would undo the URL's replacement. A token count that happens to
+        # equal a listed number moves too, which says nothing about the session.
+        if type(node) is int and self.number_re and (whole := self.number_re.fullmatch(str(node))):
+            return int(self._number(whole))
         if isinstance(node, list):
             return [self.value(item) for item in node]
         if isinstance(node, dict):
+            # A screenshot inside a tool's result, and its copy in `toolUseResult`, sit below the
+            # message's own blocks, so the top-level image rule in `record` never sees them.
+            source = node.get("source")
+            if (
+                node.get("type") == "image"
+                and isinstance(source, dict)
+                and source.get("type") != "text"
+            ):
+                self.categories["image replaced"] += 1
+                node = {**node, "source": {"type": "text", "data": "[image omitted]"}}
             return {self.text(key): self.value(item) for key, item in node.items()}
         return node
 
@@ -262,9 +457,10 @@ def _alternative(entry: dict[str, Any]) -> str:
 
 def sanitize(mapping: Mapping, source: Path, target: Path) -> tuple[Sanitizer, dict[str, int]]:
     cleaner = Sanitizer(mapping)
-    records = [
-        json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
+    raw = source.read_text(encoding="utf-8")
+    cleaner.learn_short_ids(raw)
+    cleaner.learn_commits(raw)
+    records = [json.loads(line) for line in raw.splitlines() if line.strip()]
     out = [cleaner.record(record) for record in records]
     known = {record.get("uuid") for record in out if record.get("uuid")}
     orphans = 0
@@ -285,6 +481,27 @@ def sanitize(mapping: Mapping, source: Path, target: Path) -> tuple[Sanitizer, d
     return cleaner, {"dangling_references_nulled": orphans, "lines": len(out)}
 
 
+def resolving_commits(text: str, repo: Path) -> dict[str, str]:
+    """Every hex token in `text` that `repo` resolves as a commit, with the commit's full hash."""
+    tokens = sorted(set(HEX_TOKEN.findall(text)))
+    if not tokens:
+        return {}
+    result = subprocess.run(  # noqa: S603 - fixed arguments; the tokens go to stdin
+        ["git", "-C", str(repo), "cat-file", "--batch-check=%(objectname) %(objecttype)"],  # noqa: S607
+        input="".join(f"{token}^{{commit}}\n" for token in tokens),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    # One output line per input line, in order; a token that names nothing reads "<token> missing".
+    found: dict[str, str] = {}
+    for token, line in zip(tokens, result.stdout.splitlines(), strict=True):
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == "commit":
+            found[token] = parts[0]
+    return found
+
+
 def originals(mapping: Mapping, source: Path) -> set[str]:
     """Everything that must not appear: the mapping's originals and every original id."""
     found = (
@@ -295,6 +512,8 @@ def originals(mapping: Mapping, source: Path) -> set[str]:
         found.update(pattern.findall(raw))
     found.update(match.group(0) for match in PREFIXED.finditer(raw))
     found.update(u[:8] for u in UUID.findall(raw))
+    if mapping.commit_repo:
+        found.update(resolving_commits(raw, Path(mapping.commit_repo)))
     return {item for item in found if len(item) >= 4}
 
 
@@ -329,14 +548,66 @@ def _structure_problems(records: list[dict[str, Any]]) -> list[str]:
     return problems
 
 
+def _parsed(line: str) -> Any:
+    try:
+        return json.loads(line)
+    except ValueError:
+        return line  # an unparseable line is reported elsewhere; search it as text
+
+
+def _strings(node: Any) -> list[str]:
+    if isinstance(node, str):
+        return [node]
+    if isinstance(node, list):
+        return [text for item in node for text in _strings(item)]
+    if isinstance(node, dict):
+        return [text for key, item in node.items() for text in (key, *_strings(item))]
+    return []
+
+
+def _integers(node: Any, key: str = "") -> list[tuple[str, int]]:
+    if type(node) is int:
+        return [(key, node)]
+    if isinstance(node, list):
+        return [pair for item in node for pair in _integers(item, key)]
+    if isinstance(node, dict):
+        return [pair for name, item in node.items() for pair in _integers(item, str(name))]
+    return []
+
+
+def _is_count(key: str) -> bool:
+    return key in COUNT_KEYS or key.endswith("_tokens")
+
+
 def _leak_problems(mapping: Mapping, source: Path, out_text: str) -> list[str]:
     problems: list[str] = []
     lowered = out_text.lower()
+    # A run or issue number is replaced only where it stands alone in text, so it is a leak only
+    # there: "4647" inside a token count of 146475 is a different number.
+    parsed = [_parsed(line) for line in out_text.splitlines() if line.strip()]
+    texts = "\n".join(text for node in parsed for text in _strings(node))
+    # A JSON integer is a leak when it equals a listed number, unless it sits under a key that only
+    # ever holds a count: a pull-request link's `prNumber` once carried the real number past a
+    # check that read text alone.
+    integers = {
+        str(value) for node in parsed for key, value in _integers(node) if not _is_count(key)
+    }
     for original in sorted(originals(mapping, source)):
+        if original.isdigit():
+            if re.search(rf"(?<!\d){original}(?!\d)", texts) or original in integers:
+                problems.append(f"original still present: {original!r}")
+            continue
         for form in _forms(original):
             if form.lower() in lowered:
                 problems.append(f"original still present: {original!r} (as {form!r})")
                 break
+    if mapping.commit_repo:
+        # A replacement is random hex of the original's length, so a short one can land on another
+        # real commit; that names the repository's history as surely as the original did.
+        resolving = resolving_commits(out_text, Path(mapping.commit_repo))
+        if resolving:
+            example = min(resolving)
+            problems.append(f"{len(resolving)} hex token(s) name a commit, e.g. {example!r}")
     for label, pattern in SWEEPS.items():
         hits = Counter(match.group(0) for match in pattern.finditer(out_text))
         if hits:

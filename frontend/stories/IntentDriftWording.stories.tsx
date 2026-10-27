@@ -189,12 +189,13 @@ const REASON =
 
 async function evidenceOf(canvasElement: HTMLElement) {
   await waitFor(() =>
-    expect(canvasElement.querySelector('.next-cockpit-result-line')).toHaveTextContent(
+    expect(canvasElement.querySelector('[data-next-drift-verdict]')).toHaveTextContent(
       "Can't tell",
     ),
   );
   const goal = canvasElement.querySelector('[data-next-result-goal]') as HTMLElement;
-  await userEvent.click(within(goal).getByRole('button', { name: 'Evidence' }));
+  // The reason is in view under the line; no Evidence fold holds it (owner, 2026-10-23).
+  await expect(within(goal).queryByRole('button', { name: /^(Evidence|Source)/ })).toBeNull();
   return goal;
 }
 
@@ -220,6 +221,7 @@ export const HowToSaysWhatAReadingCanSettleAndHowFarToTrustIt: Story = {
   args: { cites: [] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'More about these words' }));
     await userEvent.click(
       await canvas.findByRole('button', { name: 'How Intent and drift works' }),
     );
@@ -229,8 +231,7 @@ export const HowToSaysWhatAReadingCanSettleAndHowFarToTrustIt: Story = {
     const settle = popup.querySelector('[data-next-intent-howto-settle]') as HTMLElement;
     await expect(settle).toHaveTextContent("Readings settle a command's latest unpiped run");
     await expect(settle).toHaveTextContent('nothing written after it');
-    await expect(settle).toHaveTextContent('cannot settle a folder limit');
-    await expect(settle).toHaveTextContent('the live estimate weighs that');
+    await expect(settle).toHaveTextContent('A recorded write breaking a folder limit also departs');
     await expect(popup.querySelector('[data-next-intent-howto-accuracy]')).toHaveTextContent(
       "The Claude reader's accuracy check has not passed, and its latest correction is unmeasured, so read a level as an account of the evidence, not a measurement.",
     );
@@ -244,7 +245,7 @@ async function saveTyped(canvasElement: HTMLElement) {
   await userEvent.type(goal, 'Land the worker behind a flag');
   await userEvent.click(canvas.getByRole('button', { name: 'Save intent' }));
   const footer = canvasElement.querySelector('.next-cockpit-held-footer') as HTMLElement;
-  await waitFor(() => expect(footer).toHaveTextContent('Saved as a new revision.'));
+  await waitFor(() => expect(footer).toHaveTextContent('Saved.'));
   return footer;
 }
 
@@ -253,7 +254,7 @@ export const SavingOnAnEndedSessionRepeatsTheCaveat: Story = {
   play: async ({ canvasElement }) => {
     const footer = await saveTyped(canvasElement);
     await expect(footer.querySelector('.next-cockpit-held-cue')).toHaveTextContent(
-      'Saved as a new revision. This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.',
+      'Saved. This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.',
     );
   },
 };
@@ -261,8 +262,6 @@ export const SavingOnAnEndedSessionRepeatsTheCaveat: Story = {
 export const SavingOnALiveSessionSaysOnlyThatItSaved: Story = {
   play: async ({ canvasElement }) => {
     const footer = await saveTyped(canvasElement);
-    await expect(footer.querySelector('.next-cockpit-held-cue')).toHaveTextContent(
-      /^Saved as a new revision\.$/,
-    );
+    await expect(footer.querySelector('.next-cockpit-held-cue')).toHaveTextContent(/^Saved\.$/);
   },
 };

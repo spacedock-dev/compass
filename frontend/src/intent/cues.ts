@@ -1,6 +1,6 @@
 import type { Row } from '../observed';
 import type { Ctx } from './context';
-import { DISCARD_UNCONFIRMED, HELD_CUES } from './sentences';
+import { DISCARD_UNCONFIRMED, HELD_CUES, isReadsFrom, readsFromSentence } from './sentences';
 
 /* The sentence a marked kind earns, for the element that draws it and the region that carries it. Two
    derivations of one cue is how a region comes to say something the block never printed, and the discard
@@ -9,6 +9,7 @@ import { DISCARD_UNCONFIRMED, HELD_CUES } from './sentences';
 export function heldSentence(kind: string, published: Row | null | undefined): string {
   if (!kind) return '';
   if (kind === 'discard-unconfirmed') return DISCARD_UNCONFIRMED;
+  if (isReadsFrom(kind)) return readsFromSentence(kind);
   if (kind.startsWith('discard-')) return String(published?.[kind.slice('discard-'.length)] || '');
   return HELD_CUES[kind] ?? '';
 }

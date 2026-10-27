@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parents[4]
 SKILL = (ROOT / "compass/skills/compass/SKILL.md").read_text(encoding="utf-8")
@@ -106,6 +107,48 @@ class OnlyTheTerminalScrollsTest(unittest.TestCase):
         for form in sorted(forms):
             with self.subTest(form=form):
                 self.assertIn(f"`{form}`", STATE_DOC)
+
+
+class TheDriftCardControlsTheDocsDescribeAreTheOnesTheCardDrawsTest(unittest.TestCase):
+    """The card draws its re-run control once a reading exists and offers Steer back with a departure only.
+
+    Three user-facing documents once said a current result has no re-run control and that a claim alone
+    offers Steer back; the card stopped doing either, and no other check compares them to it.
+    """
+
+    DOCS: ClassVar[dict[str, str]] = {
+        "README.md": (ROOT / "README.md").read_text(encoding="utf-8"),
+        "docs/promise-map.md": (ROOT / "docs/promise-map.md").read_text(encoding="utf-8"),
+        "SKILL.md": SKILL,
+    }
+
+    def _flat(self, text: str) -> str:
+        return re.sub(r"\s+", " ", text)
+
+    def test_no_document_says_a_current_result_has_no_rerun_control(self) -> None:
+        for name, text in self.DOCS.items():
+            flat = self._flat(text)
+            for stale in (
+                "has no rerun button",
+                "offers no rerun button",
+                "offers no second run control",
+            ):
+                with self.subTest(document=name, stale=stale):
+                    self.assertNotIn(stale, flat)
+
+    def test_no_document_says_a_claim_alone_offers_steer_back(self) -> None:
+        for name, text in self.DOCS.items():
+            with self.subTest(document=name):
+                self.assertNotIn("A claim alone offers Steer back", self._flat(text))
+
+    def test_each_document_names_both_header_controls(self) -> None:
+        sentences = (SRC / "drift/sentences.ts").read_text(encoding="utf-8")
+        self.assertIn("RERUN_STALE = 'Check again'", sentences)
+        for name, text in self.DOCS.items():
+            flat = self._flat(text)
+            with self.subTest(document=name):
+                self.assertIn("Check again", flat)
+                self.assertIn("Analyze again", flat)
 
 
 if __name__ == "__main__":

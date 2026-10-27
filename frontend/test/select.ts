@@ -5,8 +5,11 @@ import { userEvent } from 'storybook/test';
 
 export async function openSelect(trigger: HTMLElement) {
   if (trigger.getAttribute('aria-expanded') !== 'true') {
-    trigger.focus();
-    await userEvent.setup().keyboard('{ArrowDown}');
+    /* A Select opens on a key; a button that opens a list (the prompt control) opens on a press. */
+    if (trigger.getAttribute('role') === 'combobox') {
+      trigger.focus();
+      await userEvent.setup().keyboard('{ArrowDown}');
+    } else await userEvent.setup().click(trigger);
   }
   await waitFor(() => {
     if (trigger.getAttribute('aria-expanded') !== 'true')

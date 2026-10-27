@@ -65,6 +65,17 @@ describe('the "Use your prompt" menu', () => {
     expect(page.posts()).toBe(0);
   });
 
+  it('keeps one label on the button whatever the box holds', async () => {
+    const page = mountSession({
+      store: { goal: 'Saved', revision: 1 },
+      routes: { '/api/project-context': menu },
+    });
+    await settle(page);
+    expect(text('[data-next-cockpit-goal-source]')).toMatch(/^You typed this · saved/);
+    expect(select().textContent).toBe('Use your prompt');
+    expect(select().getAttribute('aria-label')).toBe('Use your prompt');
+  });
+
   it('names each prompt by its place and time, marks an excerpt, and cuts the line at a word', async () => {
     const page = mountSession({
       store: { goal: 'Saved', revision: 1 },
@@ -73,13 +84,13 @@ describe('the "Use your prompt" menu', () => {
     await settle(page);
     await open(page);
     const labels = screen.getAllByRole('option').map((option) => option.textContent ?? '');
-    expect(labels[0]).toMatch(/^First prompt · \d\d:\d\d — Fix the login redirect$/);
+    expect(labels[0]).toMatch(/^First prompt · \d\d:\d\d Fix the login redirect$/);
     expect(labels[1]).toMatch(
-      /^Latest prompt · \d\d:\d\d · excerpt — Then ship the queue worker behind a flag$/,
+      /^Latest prompt · \d\d:\d\d · excerpt Then ship the queue worker behind a flag$/,
     );
   });
 
-  it('fills the box and says so, saves nothing, and puts the face back once the reader types over it', async () => {
+  it('fills the box and says so, saves nothing, and keeps its one label when the reader types over it', async () => {
     const page = mountSession({
       store: { goal: 'Saved goal', revision: 1 },
       routes: { '/api/project-context': menu },
@@ -87,7 +98,6 @@ describe('the "Use your prompt" menu', () => {
     await settle(page);
     await choose(page, 'p1');
     expect(goalBox().value).toBe('Fix the login redirect');
-    expect(select().textContent).toContain('Fix the login redirect');
     expect(text('#next-cockpit-cue-status')).toBe('Goal filled from your prompt. Not saved.');
     expect(page.posts()).toBe(0);
     expect(inert(control('held-save'))).toBe(false);
@@ -167,7 +177,7 @@ describe('Save intent over an adopted prompt', () => {
     });
     expect(goalBox().value).toBe('Fix the login redirect');
     expect(text('.next-cockpit-held-field[data-next-cockpit-held-field="goal"] small')).toMatch(
-      /^from your prompt · \d\d:\d\d\.$/,
+      /^From the prompt you chose · saved$/,
     );
   });
 

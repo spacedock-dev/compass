@@ -57,6 +57,15 @@ export function detailState(
     : null;
 }
 
+/* What a finished turn says in place of the collector's "awaiting your message": when it ended and that the
+   session now waits on the reader. Only an idle, unended session with a published stop time says it; any other
+   session keeps its own words, and a missing stamp claims nothing. */
+export function turnEndedSentence(session: Row): string | null {
+  if (session['state'] !== 'idle' || endedAt(session) !== null) return null;
+  const at = nextNumber(session['finished_at']);
+  return at !== null && at > 0 ? `Turn ended ${clock(at)} · waiting for you` : null;
+}
+
 /* The measured line under the title. An observed end supersedes the present-tense activity and duration
    phrases, since an ended session must not describe itself as awaiting input. The last two clauses are
    unconditional: every clause above is a reading, and these say what the readings cannot cover, so they
@@ -64,18 +73,21 @@ export function detailState(
    nothing where the record was not read. */
 export function sessionMeta(
   session: Row,
-  labels: ReadonlyMap<string, string>,
   generated: number | null,
   entries: number | null,
+  /** The entries since the intent's window opened, where entries before it are also held. */
+  since: number | null = null,
+  /** Only the newest pages of the record are held, so `entries` is a floor. */
+  partial = false,
 ): string {
   const parts: string[] = [];
-  const harness = registryLabel(labels, session);
-  if (harness) parts.push(harness);
   const ended = durationSince(generated, endedAt(session));
   if (ended !== null) {
     parts.push(`ended ${ended} ago`);
   } else {
-    if (session['state_detail']) parts.push(String(session['state_detail']));
+    const turnEnd = turnEndedSentence(session);
+    if (turnEnd) parts.push(turnEnd);
+    else if (session['state_detail']) parts.push(String(session['state_detail']));
     const state = session['state'];
     if (state === 'needs_input') {
       const blocked = durationSince(generated, session['blocked_since']);
@@ -91,7 +103,10 @@ export function sessionMeta(
       if (started !== null) parts.push(`session started ${started} ago`);
     }
   }
-  if (entries !== null) parts.push(`${String(entries)} ${entries === 1 ? 'entry' : 'entries'}`);
+  if (entries !== null)
+    parts.push(
+      `${partial ? 'at least ' : ''}${String(entries)} ${entries === 1 ? 'entry' : 'entries'}${since === null ? '' : `, ${String(since)} since your intent’s start`}`,
+    );
   if (isScanOnly(session)) parts.push('read by scanning: no turn end can be observed here');
   const gaps = gapNames(session);
   if (gaps.length) parts.push(`source not fully read: ${gaps.join(', ')}`);
@@ -430,19 +445,23 @@ export interface DepartureRow {
   readonly followUp: string;
 }
 
-/* One raised departure, with the baseline it rested on. The revision and the cutoff are printed rather
-   than implied: by the time this is read the annotation may be at a later revision and the evidence
-   window has moved, so a row that does not say which words it read and where its evidence stopped cannot
-   be checked by the person it was raised to. A raise whose revision did not survive says so rather than
-   borrowing today's. */
-export function departureRow(row: Row, current: number | null): DepartureRow {
+/* One raised departure, with the baseline it rested on. The baseline and the cutoff are printed rather
+   than implied: by the time this is read the intent may have changed and the evidence window has moved, so
+   a row that does not say which words it read and where its evidence stopped cannot be checked by the
+   person it was raised to. A raise whose baseline did not survive says so rather than borrowing today's.
+   The stale line names times; the revision number only decides whether it shows. */
+export function departureRow(
+  row: Row,
+  current: number | null,
+  changedAt: number | null = null,
+): DepartureRow {
   const text = (key: string): string => published(row[key]);
   const revision = Number(row['revision']);
   const read = Number.isFinite(revision) && revision > 0 ? revision : null;
   const baseline =
     read !== null
-      ? `read against revision ${String(read)}`
-      : 'the revision it read is not on record';
+      ? 'read against the intent as it stood then'
+      : 'the intent it read is not on record';
   const cutoff = Number(row['cutoff']);
   const window =
     Number.isFinite(cutoff) && cutoff > 0
@@ -459,7 +478,7 @@ export function departureRow(row: Row, current: number | null): DepartureRow {
       window +
       (text('cutoff_text') ? ` · ${text('cutoff_text')}` : '') +
       (text('evidence') ? ` · ${text('evidence')}` : ''),
-    stale: revisionSuperseded('This raise', read, current),
+    stale: revisionSuperseded('This raise', read, current, nextNumber(row['at']), changedAt),
     followUp: text('follow_up'),
   };
 }
@@ -495,7 +514,9 @@ export function unaskedDepartures(session: Row): Departures | null {
       raised.length === 1
         ? 'One departure was raised'
         : `${String(raised.length)} departures were raised`,
-    rows: raised.map((row) => departureRow(isRecord(row) ? row : {}, current)),
+    rows: raised.map((row) =>
+      departureRow(isRecord(row) ? row : {}, current, nextNumber(session['annotation_at'])),
+    ),
     why,
     absence: deliveryAbsence(session, raised.length > 0),
   };

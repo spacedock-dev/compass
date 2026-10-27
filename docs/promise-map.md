@@ -24,8 +24,8 @@ Four steps, and only the first two are required.
    harness it finds on the machine regardless of which one launched it. No account, no cloud
    service, no repository token. The server binds IPv4 loopback and nothing else.
 3. Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
-   goal and press `Analyze drift`. The `How Intent and drift works` button explains the steps, the
-   reading's limits and why an expected outcome line is needed for a drift level.
+   goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
+   reading's limits and what a goal with no expected outcome line is read against.
 
    Sessions separates active work from recent history and gives each active
    session its goal beside what it is doing now, plus where it is, what it does next, and whether
@@ -68,23 +68,32 @@ disabled rather than silently missing.
 **We promise:** for each live session, what it is doing now, what it plans next, how far into the
 current turn it is, and an estimate of when that turn ends. It tells you when that changes instead
 of making you poll. The first screen sets your goal or a permitted prompt beside current activity
-and brings recorded departures forward. The session page asks once before a reading, remembers
-your answer, and offers an off switch, without steering it for you. Open a session, set a goal and
-press Analyze drift. The How Intent and drift works button beside Intent explains the steps and
-the limits; Not enough recorded yet is normal until you add an expected outcome line.
-On Claude Code sessions, you can turn on a live drift estimate in the panel and header after every
-turn, based on recorded checks and file paths rather than the meaning of your intent. An analysis
-shows its level, each outcome line against the recorded work and what the agent said with its
-source, where files were written, and why a result is stale. Recorded checks and file paths include subagent work, labelled
-as such.
-Reader-requested readings are capped at 100 attempts per rolling twenty-four hours. With no saved
-goal, a check adopts the goal drafted from your first Claude Code or Codex prompt (your latest
-where no first one with a time is published); the goal field also offers your latest prompt.
-Adopted words are marked, and missing source times refuse adoption.
-Claude Code and Codex hooks also report matched destructive command shapes; a match does not
-prove success. Compass saves a stage you choose for a Spacedock workflow and alerts once when
-it observes an entity enter that stage; gaps and unavailable sources are stated, and a
-notification request does not prove a banner appeared.
+and brings recorded departures forward. The session page tells you once what a reading sends and
+where, without steering it for you. Pause model calls stops Analyze drift, goal summaries, session
+summaries and the Live monitor until Resume model calls. Turn off summaries stops session summaries
+only; while paused it stays disabled and keeps its saved answer. Open a session, set a goal and
+press Analyze drift. The How Intent and drift works entry in the Intent card's More menu explains
+the steps and the limits; with no outcome line, Compass reads your goal's end state; a goal too
+vague to read is refused under the Goal field, with no level for that run. On Claude Code sessions,
+you can turn on the Live monitor: about once a minute while you view the session, a Haiku check
+through your own Claude Code gives the level shown in the panel and header, labelled Live monitor ·
+Haiku, and its accuracy check has not been run yet. Until a check returns, or when it is paused,
+capped or fails, the level is the estimate from recorded checks and file paths rather than the
+meaning of your intent. An analysis shows its level, each outcome line against the recorded work and
+what the agent said with its source, where files were written, and why a result is stale. Recorded
+checks and file paths include subagent work, labelled as such. On Claude Code sessions, What the
+session has done tells the session as a short story in phases, each line citing the entries it rests
+on, written by a model through your own Claude Code. A finished session is summarized when you open
+it and a running one when you press Summarize or Update summary; the first summary says what is sent
+and where, with Turn off summaries beside it. A summary does not say in its own voice that the work
+is done, and a citation shows where a line came from, not that the line is right. Reader-requested
+readings are capped at 100 attempts per rolling twenty-four hours. With no saved goal, a check
+adopts the goal drafted from your first Claude Code or Codex prompt (your latest where no first one
+with a time is published); the goal field also offers your latest prompt. Adopted words are marked,
+and missing source times refuse adoption. Claude Code and Codex hooks also report matched
+destructive command shapes; a match does not prove success. Compass saves a stage you choose for a
+Spacedock workflow and alerts once when it observes an entity enter that stage; gaps and unavailable
+sources are stated, and a notification request does not prove a banner appeared.
 
 Backed by the current-turn elapsed and ETA estimate with its progress bar, the warning that fires
 when a request runs or is projected to run past fifteen minutes, a pill per subagent carrying its
@@ -98,13 +107,18 @@ the source disappears. The first qualifying entity trips it once until Rearm; fi
 establish a baseline, skipped stages imply nothing, and notification service acceptance does not
 prove a banner appeared. See [workflow stage conditions](design-tripwires.md).
 
-The Claude Code live monitor is off by default and remembered for the session in your browser.
-It calls no model and raises no notification. An analysis result keeps the source beside each
-outcome line, groups written paths by folder, and states whether your words changed or new work
+The Claude Code live monitor is off by default and is not remembered across reloads. It calls Haiku
+only while you view the session with its tab visible, asks whether you still want it after 20
+minutes, and raises no notification. Its checks have limits of their own, 30 per session in a window
+and a rolling 24-hour limit across the board, apart from Analyze's 100 attempts. An analysis result
+keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.
-A current result offers no rerun button; new work or changed intent gives one `Analyze again`
-control with that reason. A finding's `Show cited entries in Session activity` button jumps to
-its resolved entries, marked with the finding's words and their current numbers. Departure
+Once a reading exists the card header carries a re-run control: `Check again` when new work or
+changed words came after the reading, `Analyze again` when it is current. It is inert, not gone,
+where a press cannot run. Each departure is a card naming the constraint, quoting your words for
+it, listing the cited entries by number, and giving the analysis's reason. A cited entry's number
+opens Full activity at that entry, loading older record pages for one not yet listed, with every
+entry the finding cites marked with the finding's words and their current numbers. Departure
 citations keep the neutral `Cited` tag.
 
 The Intent log brings every board session and retained annotation/discard record into one list,
@@ -131,8 +145,8 @@ boundary in part on 2026-09-02 rather than confirming it, and SECURITY.md is whe
 is drawn.
 An ETA is an estimate, and it says so.
 
-Your words are yours. You can ask for a model reading against them after you allow it on the
-session page, unless model calls are off for this run. Claude Code reads a Claude Code session when
+Your words are yours. You can ask for a model reading against them from the session page, unless
+model calls are paused or off for this run; the first press says what is sent and where. Claude Code reads a Claude Code session when
 it is installed, and Codex reads it when not; both are enabled by an acceptance, not by a passed
 check: the captain's of Codex on 2026-09-14 and the owner's of Claude Code on 2026-10-02. The reading
 states the evidence it read and its limits;
@@ -147,10 +161,14 @@ the work record read cannot reassure, and incompleteness alone establishes no de
 estimate reads checks and file paths, not the meaning of your intent; too little evidence reads
 "Not enough recorded yet"
 ([DEC-26](design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
-A reading reads them only after you allow tool output for the destination the page names, and
-where Compass cannot name that destination it sends none and says so. A recorded pass is what the
+A reading includes them by default and names them, with their destination, in the notice its
+first press shows; Pause model calls or `--no-observer-model` stops them. Where Compass cannot name
+that destination it sends none and says so. A recorded pass is what the
 tool reported, never an inspection of the work, and a reading labels it that way; a result the
 record does not carry reads as not recorded rather than as a pass.
+Session summaries are Claude Code only, and the outline beside them covers Claude Code and Codex.
+A summary has its own cap of 200 model calls in a rolling twenty-four hours, so it never spends
+Analyze's 100, and each one stops at 37 calls, 768 KiB sent and ten minutes.
 
 ### P3. Is anything waiting on me?
 
@@ -186,11 +204,16 @@ answering, as the [ask lane design](design-ask-lane.md) describes.
 
 Compass can now check a session against your words while you are away and raise a departure
 without being asked, which is off by default and the only thing here that spends your model capacity
-with nobody watching. Where it stops is the part worth reading: it raises a departure and never a
+with nobody watching. The Live monitor does not: it calls a model only while a reader is viewing the
+session. Where it stops is the part worth reading: it raises a departure and never a
 reassurance, because an unasked "this looks fine" is the output the evidence-floor ruling called
 most damaging and it is worth nothing to someone who is not at the desk. It sends a check only
-under your Codex "Allow and analyze" for where the words go now, so it never sends where a press
-would ask you first. It stops at a per-session
+with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and other
+harnesses prefer Claude Code, falling back only when the preferred provider is unavailable or
+unqualified. Codex needs permission for the current destination from "Allow Codex to run unasked
+checks" in the session's Drift card; Attention points to it when saved typed goals are waiting.
+Claude Code needs no separate grant. Revoking Codex permission, Pause model calls and
+`--no-observer-model` stop checks; Analyze and Resume never grant them. It stops at a per-session
 and a per-day limit, and a spent limit is stated rather than passed over, because a session nobody
 checked and a session checked and found clean are the two things you cannot tell apart from an empty
 board. The sentence is about your words rather than about the machine's history, so a check whose
@@ -252,7 +275,7 @@ fetching is macOS only, and Cursor's cycle has no published start, so its row sh
 clock. There is no per-session cost figure anywhere on the board, and no ranking of which session is
 burning fastest right now: every rate the board publishes is a mean over one ten-minute window, and
 it names that window rather than claiming an immediacy the arithmetic does not have.
-Credential-backed fetching happens only once the disclosure is answered, `--no-usage` refuses it for
+Credential-backed fetching is on until you turn it off in the page, `--no-usage` refuses it for
 a run, and the token is never written, logged, or served. Quota that is expired, rejected, missing,
 or stale is withheld rather than rendered as zero.
 
@@ -276,7 +299,7 @@ end-of-session git probe that shipped in 0.19. And, since the annotation store l
 typed the session should achieve and produce: the words are kept beside the two end axes, so a
 session that ended can be read against what was asked of it rather than only against whether it
 stopped. The Intent log keeps them after the row leaves the board. Taking them back is one act
-and it is on the board: `discard everything` deletes every revision, deletes any reading of them,
+and it is on the board: `discard everything` deletes every revision, deletes any reading of them and the session's summary,
 and withdraws the quotations from anything raised against them. What it leaves is the fact that a
 check ran and a record of the act itself, carrying no text: the moment you discarded, and the last
 revision number that went. That record is why the Intent log still lists the session afterwards,
@@ -284,13 +307,13 @@ and why the board can tell a session you discarded from one nobody ever typed ag
 
 Where it stops: nothing reads your words for you at the end. The two axes say what ended and who
 claims it finished, drawn separately because neither implies the other, and the comparison against
-what you asked for is yours to make. You can allow a model reading from the session page unless
-model calls are off for this run;
+what you asked for is yours to make. You can ask for a model reading from the session page unless
+model calls are paused or off for this run;
 an acceptance of each provider's checks enables that control (the captain's of Codex, the owner's of
 Claude Code). A reading is an account of the evidence, never
 verification that the work was done. The words are kept under a
 session count rather than a date, so an old enough annotation is evicted rather than expired. The
-goal's Clear in More empties that box; outcome lines have Remove after use. Neither is Discard
+goal's Clear in the Intent card empties that box; outcome lines have Remove after use. Neither is Discard
 everything: the save after a clear or removal keeps every earlier revision, so anything raised
 against those words goes on quoting them. The board says which is which where the two controls
 sit. And both of those

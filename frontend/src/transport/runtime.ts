@@ -75,7 +75,8 @@ export function createBoardRuntime(options: RuntimeOptions) {
       async fetchData(signal): Promise<DataOutcome> {
         const result = await client.getData({
           showAll: bootstrap.showAll,
-          usage: storage.usageConsent() === 'granted',
+          // On until turned off: only a stored `declined` withholds the parameter (SECURITY.md, Usage quota reads).
+          usage: storage.usageConsent() !== 'declined',
           signal,
         });
         switch (result.kind) {

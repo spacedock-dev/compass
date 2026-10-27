@@ -1,9 +1,19 @@
 import { compatSessKey } from '../api/identity';
 import { type Row } from '../observed';
-import { heldCap, scrub } from './annotation';
+import { annotationDiscarded, heldCap, scrub } from './annotation';
 import { pendingHas, type Ctx, announce } from './context';
-import { goalKey, intentKey, linesDraft, linesKey, linesOrigins, type DraftInput } from './derive';
-import { INTENT_CHOSEN_SAID, LINES_FULL } from './sentences';
+import {
+  goalBaseline,
+  goalKey,
+  intentKey,
+  linesDraft,
+  linesKey,
+  linesOrigins,
+  SESSION_GOAL,
+  type DraftInput,
+} from './derive';
+import { sessionGoalCandidate } from '../sessions/intent';
+import { INTENT_CHOSEN_SAID, INTENT_DETECTED_SAID, LINES_FULL } from './sentences';
 import { OUTCOME_LINES_MAX } from './annotation';
 
 /* The reader's own edits, one function each. Every one changes only what is held, saves nothing and sends
@@ -25,6 +35,14 @@ export function typeGoal(ctx: Ctx, input: DraftInput, raw: string): string {
   const key = goalKey(input.session);
   const value = bounded(raw, input);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
+  if (value === '') ctx.held.cleared.add(key);
+  else if (value === goalBaseline(input)) ctx.held.cleared.delete(key);
+  /* The stored goal typed back over a choice is no change at all; a kept choice would leave Undo hidden and
+     Save inert beside a box that still read as edited. */
+  const stored = annotationDiscarded(input.annotation)
+    ? ''
+    : String(input.annotation?.['goal'] || '');
+  if (stored.trim() && value === stored) ctx.held.chosen.delete(key);
   ctx.held.goals.set(key, value);
   ctx.held.drop(key);
   ctx.held.drop(intentKey(input.session));
@@ -59,9 +77,11 @@ export function typeLine(input: DraftInput, index: number, raw: string): string 
 export function clearGoal(ctx: Ctx, input: DraftInput): void {
   const key = goalKey(input.session);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
+  ctx.held.cleared.add(key);
   ctx.held.goals.set(key, '');
   ctx.held.chosen.delete(key);
   ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
   ctx.held.requestFocus(key);
 }
 
@@ -72,9 +92,11 @@ export function escapeGoal(ctx: Ctx, input: DraftInput): boolean {
   if (pendingHas(ctx, `${intentKey(input.session)}:save`)) return false;
   const key = goalKey(input.session);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
+  ctx.held.cleared.delete(key);
   ctx.held.goals.delete(key);
   ctx.held.chosen.delete(key);
   ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
   ctx.held.requestFocus(key);
   return true;
 }
@@ -88,6 +110,7 @@ export function escapeLines(ctx: Ctx, input: DraftInput): boolean {
   ctx.held.lines.delete(key);
   ctx.held.origins.delete(key);
   ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
   ctx.held.requestFocus(`${key}:0`);
   return true;
 }
@@ -105,16 +128,19 @@ export function addLine(ctx: Ctx, input: DraftInput): void {
     announce(ctx, key, LINES_FULL);
     return;
   }
-  // An empty list is drawn as one empty box, so adding to it adds the second.
-  if (!draft.length) {
-    draft.push('');
-    origins.push(null);
+  /* An empty list is drawn as one empty box, and a last row nobody has typed in is a box already waiting:
+     adding goes to that box rather than stacking a blank above the text the reader is about to type. */
+  const last = Math.max(0, draft.length - 1);
+  if (!draft.length || !String(draft[last] ?? '').trim()) {
+    held.requestFocus(`${key}:${String(last)}`);
+    return;
   }
   draft.push('');
   origins.push(null);
   held.lines.set(key, draft);
   held.origins.set(key, origins);
   held.drop(key);
+  held.drop(intentKey(session));
   held.requestFocus(`${key}:${String(Math.max(0, draft.length - 1))}`);
 }
 
@@ -129,6 +155,7 @@ export function removeLine(input: DraftInput, index: number): void {
   held.lines.set(key, draft);
   held.origins.set(key, origins);
   held.drop(key);
+  held.drop(intentKey(session));
   held.requestFocus(`${key}:${String(Math.max(0, draft.length - 1))}`);
 }
 
@@ -138,6 +165,7 @@ export function undoChanges(ctx: Ctx, input: DraftInput): void {
   const { held, session } = input;
   held.clearActionFeedback(compatSessKey(session));
   if (pendingHas(ctx, `${intentKey(session)}:save`)) return;
+  held.cleared.delete(goalKey(session));
   held.chosen.delete(goalKey(session));
   held.goals.delete(goalKey(session));
   held.drop(goalKey(session));
@@ -161,15 +189,52 @@ export function choosePrompt(
     readonly at: number | null;
   }[],
 ): void {
+  if (factId === SESSION_GOAL) {
+    takeDetectedGoal(ctx, input);
+    return;
+  }
   const found = choices.find((choice) => choice.factId === factId);
   if (!found) return;
   const key = goalKey(input.session);
   ctx.held.clearActionFeedback(compatSessKey(input.session));
+  ctx.held.cleared.delete(key);
   ctx.held.chosen.set(key, { factId: found.factId, text: found.text, at: found.at });
   ctx.held.goals.delete(key);
   ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
   announce(ctx, `${key}:chosen`, INTENT_CHOSEN_SAID);
   ctx.held.requestFocus(`${key}:prompt`);
+}
+
+/* The goal the session set with /goal, put in the box as a pending adoption: from the prompt list, or from the
+   offer a later /goal earns over saved words. Like a chosen prompt it saves nothing; Save intent records its
+   source and time. */
+export function takeDetectedGoal(ctx: Ctx, input: DraftInput): void {
+  const found = sessionGoalCandidate(input.session);
+  if (!found || found.at === null) return;
+  const key = goalKey(input.session);
+  ctx.held.clearActionFeedback(compatSessKey(input.session));
+  ctx.held.cleared.delete(key);
+  ctx.held.chosen.set(key, {
+    factId: '',
+    text: found.text,
+    at: found.at,
+    cut: found.cut,
+    source: SESSION_GOAL,
+  });
+  ctx.held.goals.delete(key);
+  ctx.held.drop(key);
+  ctx.held.drop(intentKey(input.session));
+  announce(ctx, `${key}:chosen`, INTENT_DETECTED_SAID);
+  ctx.held.requestFocus(key);
+}
+
+/* "Keep my goal": the offer for this /goal and any older one is declined, and a later /goal asks again. */
+export function keepSavedGoal(ctx: Ctx, input: DraftInput): void {
+  const found = sessionGoalCandidate(input.session);
+  if (!found || found.at === null) return;
+  ctx.held.kept.set(goalKey(input.session), found.at);
+  ctx.held.requestFocus(goalKey(input.session));
 }
 
 /* The selected later direction, kept for the life of the tab. */

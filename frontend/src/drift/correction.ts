@@ -2,7 +2,18 @@ import { nextNumber } from '../api/bootstrap';
 import { annotationLines, type Annotation } from '../intent/annotation';
 import { laterDirections, type WorkEntry, type WorkSource } from '../intent/work';
 import type { Row } from '../observed';
-import { CORRECTION_CAP, CLAIMS, DEPARTURE, STEER_HARNESSES, UNSUPPORTED } from './sentences';
+import {
+  CORRECTION_CAP,
+  CLAIMS,
+  DEPARTURE,
+  GOAL_UNCLEAR_RESULT,
+  STEER_HARNESSES,
+  STEER_LEAVES_MARKED,
+  STEER_LEAVES_OLDER,
+  STEER_OFF_MARKED,
+  STEER_OFF_OLDER,
+  UNSUPPORTED,
+} from './sentences';
 import { failedChecksAfterPerson } from './result';
 import { fmtDur } from './route';
 import { evidenceAt, type Shape } from './shape';
@@ -91,30 +102,42 @@ export function correctionFit(
   before: string,
   typed: string,
   caret?: number | null,
+  cap: number = CORRECTION_CAP,
 ): { readonly value: string; readonly caret: number } | null {
-  if (correctionLength(typed) <= CORRECTION_CAP) return null;
+  if (correctionLength(typed) <= cap) return null;
   const edit = correctionEdit(before, typed, caret);
   const kept = correctionLength(edit.head) + correctionLength(edit.tail);
-  const run = correctionWhole(edit.run, CORRECTION_CAP - kept);
+  const run = correctionWhole(edit.run, cap - kept);
   return { value: edit.head + run + edit.tail, caret: edit.head.length + run.length };
 }
 
-/* The parts with "#n" filled from the list's own numbers: every number drawn reads "(entry #n in Compass's
-   activity list)", and an entry the list does not number keeps only its time, which the server already
-   wrote. The server counts every placeholder at its widest, so the text stays within the cap. The first
-   number alone used to carry "in Compass" and the rest were a bare "(#n)", which an agent that had never seen
-   Compass could not place (owner, 2026-10-14). */
-export function correctionText(
-  parts: readonly CorrectionPart[] | null | undefined,
-  numbers: ReadonlyMap<string, string>,
-): string {
-  return (parts || [])
-    .map((part) => {
-      if (typeof part === 'string') return part;
-      const n = numbers.get(String(part?.entry || ''));
-      return n === undefined ? '' : ` (entry #${String(n)} in Compass's activity list)`;
-    })
-    .join('');
+/* The parts as text: a placeholder is drawn as nothing. It read "(entry #n in Compass's activity list)" until
+   the owner's ruling of 2026-10-20, which dropped it because the agent the text is pasted into never saw that
+   list; the server now writes the reader's local time and, at the agent's own message, its words
+   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)).
+   Placeholders stay in the parts, where `correctionStale` reads the cited ids. */
+export function correctionText(parts: readonly CorrectionPart[] | null | undefined): string {
+  return (parts || []).map((part) => (typeof part === 'string' ? part : '')).join('');
+}
+
+/* The reader's zone, minutes east of UTC, which the server draws the correction's times in rather than its own
+   clock's: the page shows every other time in this zone. */
+export function readerUtcOffset(at: Date = new Date()): number {
+  return 0 - at.getTimezoneOffset() || 0;
+}
+
+/* The reader's named zone, sent beside the offset so the server draws each time by that zone's own rules, as
+   `clock()` does, and a daylight-saving change between two cited times leaves the correction and the page
+   agreeing. Undefined where the browser names none; the offset is then the server's fallback. */
+export function readerTimeZone(
+  resolve: () => string | undefined = () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string | undefined {
+  try {
+    const zone = resolve();
+    return typeof zone === 'string' && zone ? zone : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function correctionParts(parts: unknown): CorrectionPart[] | null {
@@ -130,7 +153,9 @@ export function correctionParts(parts: unknown): CorrectionPart[] | null {
 
 /* What composition read, as this page holds it at the press: the saved words' revision, how far a Keep
    settled, and when the stored reading was read. A change in any of them means the text may claim what the
-   panel no longer does. */
+   panel no longer does. A reading marked Not accurate adds a fourth element, since marking changes none of
+   the three and a held correction would still carry the withdrawn departure and its explanation (review,
+   2026-10-20); it is added only when marked, so every other stamp is the legacy page's. */
 export function correctionStamp(annotation: Annotation | null | undefined): string {
   const assessment = annotation?.['assessment'];
   return JSON.stringify([
@@ -139,6 +164,7 @@ export function correctionStamp(annotation: Annotation | null | undefined): stri
     assessment && typeof assessment === 'object'
       ? nextNumber((assessment as Row)['read_at'])
       : null,
+    ...(annotation?.['not_accurate'] === true ? [true] : []),
   ]);
 }
 
@@ -255,6 +281,15 @@ export function steerOffer(input: {
       shape.revisionRead !== null &&
       shape.revisionRead === nextNumber(annotation['revision']),
   );
+  /* A refused goal gives no Steer back for that run: with no end state to read the work against there is
+     nothing the reading can steer from, and a failed check on its own would steer from nothing the reader
+     asked for. It clears with the goal, as the refusal itself does. */
+  if (
+    current &&
+    shape?.criteria.some((row) => row.key === 'goal' && row.result === GOAL_UNCLEAR_RESULT)
+  ) {
+    return null;
+  }
   const departed = current && Boolean(shape) && (shape?.departures.length ?? 0) > 0;
   /* A claim the record contradicts or does not show is something to steer from too (`correction._claim_line`),
      read from the claims row itself: it is not a departure from the intent, so it never offers "Update
@@ -268,6 +303,27 @@ export function steerOffer(input: {
     );
   const failed = failedChecks(session, entries, source.scan).length > 0;
   return departed || claimed || failed ? { departed, claimed, failed } : null;
+}
+
+/* Why Steer back does not carry the departures the result lists, or "" where it does or the harness never
+   offers it: the reading was marked inaccurate, or it read an earlier version of the intent. `steerOffer`
+   keeps both rules; this only says them where the reader is looking. */
+export function steerWithheld(input: {
+  readonly session: Row;
+  readonly annotation: Annotation | null | undefined;
+  readonly shape: Shape | null;
+  readonly offer: SteerOffer | null;
+}): string {
+  const { session, annotation, shape, offer } = input;
+  if (!STEER_HARNESSES.includes(String(session['harness'] || ''))) return '';
+  if (!annotation || !shape || shape.malformed || !shape.departures.length) return '';
+  if (offer?.departed) return '';
+  const marked = annotation['not_accurate'] === true;
+  const older =
+    shape.revisionRead !== null && shape.revisionRead !== nextNumber(annotation['revision']);
+  if (!marked && !older) return '';
+  if (offer) return marked ? STEER_LEAVES_MARKED : STEER_LEAVES_OLDER;
+  return marked ? STEER_OFF_MARKED : STEER_OFF_OLDER;
 }
 
 /* The direction Update intent instead offers: the later direction a surviving departure cites, else the
@@ -297,28 +353,24 @@ export function offeredDirection(
   return last ? String(last.id || '') : '';
 }
 
-/* What put Steer back on offer, in one line: the entry, its number and its age. */
+/* What put Steer back on offer, in one line: the entry, its number and its age. A claim alone puts no line
+   here: "Claim to check at #13 · 4m ago" sat under Steer back with no explanation and read as an instruction
+   to the reader, and the claims row says which claim and where (redesign walk, 2026-10-21). A failed check
+   alone draws none either: the page offers Steer back only with a departure, so that line was unreachable
+   (the page's rule: docs/design-frontend-migration.md#the-drift-card-analyze-and-steer-back). */
 export function steerTrigger(input: {
   readonly offer: SteerOffer | null;
   readonly shape: Shape | null;
-  readonly session: Row;
   readonly entries: readonly WorkEntry[];
   readonly numbers: ReadonlyMap<string, string>;
-  readonly scan: Row | null | undefined;
   readonly generated: number;
 }): string {
-  const { offer, shape, session, entries, numbers, scan } = input;
-  if (!offer) return '';
-  const ids =
-    offer.departed && shape
-      ? shape.departures.flatMap((row) => row.citedIds || [])
-      : offer.claimed && shape
-        ? shape.criteria.filter((row) => row.key === CLAIMS).flatMap((row) => row.citedIds || [])
-        : [];
-  const candidates =
-    offer.failed && !ids.length
-      ? failedChecks(session, entries, scan)
-      : entries.filter((entry) => ids.includes(String(entry.id || '')));
+  const { offer, shape, entries, numbers } = input;
+  if (!offer?.departed) return '';
+  /* A departure's first cited entry, which its result row and its reason line name: taking the latest of all
+     its citations named "#4" here beside "Departs; evidence #3" on the same card. */
+  const ids = shape ? shape.departures.flatMap((row) => (row.citedIds || []).slice(0, 1)) : [];
+  const candidates = entries.filter((entry) => ids.includes(String(entry.id || '')));
   const fact = candidates.reduce<WorkEntry | null>(
     (last, entry) => (!last || (evidenceAt(entry) || 0) > (evidenceAt(last) || 0) ? entry : last),
     null,
@@ -327,10 +379,5 @@ export function steerTrigger(input: {
   const at = evidenceAt(fact) || 0;
   const n = numbers.get(String(fact.id || ''));
   const age = at > 0 ? `${fmtDur(Math.max(0, input.generated - at))} ago` : 'time not recorded';
-  const trigger = offer.departed
-    ? 'Departure evidence'
-    : offer.claimed
-      ? 'Claim to check'
-      : 'Check failed';
-  return `${trigger}${n !== undefined ? ` at #${String(n)}` : ''} · ${age}`;
+  return `Departure evidence${n !== undefined ? ` at #${String(n)}` : ''} · ${age}`;
 }

@@ -4,6 +4,9 @@ import { act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { REGION_IDS } from './announcer';
 import { BOARD, mountShell } from './testing';
+import { SAMPLE_FIXTURE } from '../sample/fixture';
+import { SAMPLE_FRAGMENT, SAMPLE_HARNESS, SAMPLE_PROJECT, SAMPLE_SID } from '../sample/ids';
+import { findSession, sessionTitle } from './derive';
 
 const primary = () => within(screen.getByRole('navigation', { name: 'Primary' }));
 const crumb = () =>
@@ -150,6 +153,22 @@ describe('the breadcrumb', () => {
     const page = mountShell({ hash: '#n=session:alpha%2Fapp:claude:shared-sid' });
     await page.settle();
     expect(crumb()).toBe('Sessions › Session');
+  });
+
+  it('names the sample session by its title, read from the sample’s own board, in the crumb and the tab', async () => {
+    const page = mountShell({ hash: SAMPLE_FRAGMENT, data: BOARD });
+    await page.settle();
+    const title = sessionTitle(
+      findSession(
+        SAMPLE_FIXTURE.board as never,
+        SAMPLE_PROJECT,
+        SAMPLE_HARNESS,
+        SAMPLE_SID,
+      ) as never,
+    );
+    expect(title).not.toBe('');
+    expect(crumb()).toBe(`Sessions › ${title}`);
+    expect(document.title.startsWith(`${title} — `)).toBe(true);
   });
 });
 
@@ -414,7 +433,8 @@ describe('the page is React’s alone and starts nothing on its own', () => {
     expect(page.env.streamOpens()).toBe(1);
     expect(page.env.openStreams()).toBe(1);
     expect(page.posts()).toBe(0);
-    expect(page.backend.requests.filter((r) => r.url !== '/api/data')).toEqual([]);
+    // The board read carries `usage=1`, since the quota fetch is on until turned off; nothing else is asked.
+    expect(page.backend.requests.filter((r) => r.url.split('?')[0] !== '/api/data')).toEqual([]);
   });
 
   it('stops the board’s resources when the page unmounts', async () => {
@@ -445,11 +465,11 @@ describe('the page is React’s alone and starts nothing on its own', () => {
     const page = mountShell({ data: BOARD });
     await page.settle();
     const cue = document.getElementById(REGION_IDS.cue);
-    act(() => page.shell.announcer.announce('save:goal', 'Saved as a new revision.'));
+    act(() => page.shell.announcer.announce('save:goal', 'Saved.'));
     await page.go('#n=attention');
     await page.go('#n=project:alpha%2Fapp');
     expect(document.getElementById(REGION_IDS.cue)).toBe(cue);
-    expect(cue?.textContent).toBe('Saved as a new revision.');
+    expect(cue?.textContent).toBe('Saved.');
   });
 
   it('never builds a text selection or a range of its own: selection is the browser’s, and nothing restores one', () => {

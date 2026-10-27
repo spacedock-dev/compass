@@ -1,18 +1,20 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { use, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ControlsProvider } from '../controls/ControlsProvider';
 import { Card } from '../ui/card';
 import { RouteLink } from '../shell/RouteLink';
 import { ShellContext, useShell } from '../shell/context';
 import { useBoardRuntime } from '../transport/hooks';
+import { SampleFixtureContext } from './fixture';
 import { TourContext } from './tourContext';
 import { createSampleShell } from './sampleShell';
 import { TOUR } from './tour';
 import { ViewOnly } from './ViewOnly';
+import { heldPosition, type HeldAt } from './held';
 
 const HELD_SENTENCE = 'View only: this sample cannot be edited, saved or run.';
 const HELD_MS = 5000;
 
-function Banner({ held }: { readonly held: boolean }) {
+function Banner() {
   return (
     <Card
       as="section"
@@ -28,10 +30,30 @@ function Banner({ held }: { readonly held: boolean }) {
         </RouteLink>
       </p>
       <p className="m-0 text-muted-foreground">
-        An anonymized Claude Code session with a real stored reading, so you can see what the
-        Session page and Intent and drift show. Nothing here is saved, sent or run. Hover or press
-        the numbered (i) marks for a short tour.
+        This is a real Claude Code session, anonymized and cut to about ninety minutes: an agent
+        working through a milestone. It shows the goal that was set, the summary of what the agent
+        did, and the one place it departed from that goal. Nothing here is saved, sent or run. Hover
+        or press the numbered (i) marks for a short tour.
       </p>
+      <div className="flex flex-col gap-1">
+        <p className="m-0 text-foreground">To get this page for your own session:</p>
+        <ol
+          className="m-0 flex list-decimal flex-col gap-1 pl-[22px] text-muted-foreground"
+          data-sample-steps
+        >
+          <li>Open a session from Sessions.</li>
+          <li>
+            Set its goal: type what should be true when the work is done, use one of your prompts,
+            press Find goal, or let Compass pick up a goal you set with /goal in Claude Code, Codex
+            or Antigravity.
+          </li>
+          <li>Press Analyze drift.</li>
+          <li>
+            Read where the session departed from the goal. Press Steer back if you want a correction
+            to paste into the session.
+          </li>
+        </ol>
+      </div>
       <details data-sample-tour>
         <summary className="cursor-pointer text-muted-foreground">Read the tour as text</summary>
         <ol className="my-2 flex list-none flex-col gap-2 p-0">
@@ -43,10 +65,29 @@ function Banner({ held }: { readonly held: boolean }) {
           ))}
         </ol>
       </details>
-      <p role="status" className="m-0 min-h-[1.5em] text-[var(--amber)]" data-sample-held>
-        {held ? HELD_SENTENCE : ''}
-      </p>
     </Card>
+  );
+}
+
+/* Why a press did nothing, drawn where the reader pressed. It sat in the banner once, about 3,000 px above
+   Delete summary, so a held press there looked dead; then at the foot of the viewport, where it covered the
+   Copy button beside the press (usability review, 2026-10-20). It is drawn just under the refused control,
+   inside the sample's own box, and only while held. */
+
+function Held({ at }: { readonly at: HeldAt | null }) {
+  return (
+    <p
+      role="status"
+      className={
+        at
+          ? 'absolute z-10 m-0 max-w-[min(28rem,calc(100%-16px))] rounded-card border border-solid border-[var(--amber)] bg-card px-[12px] py-[8px] text-[var(--amber)]'
+          : 'm-0'
+      }
+      style={at ?? undefined}
+      data-sample-held
+    >
+      {at ? HELD_SENTENCE : ''}
+    </p>
   );
 }
 
@@ -54,25 +95,37 @@ function Banner({ held }: { readonly held: boolean }) {
    and its record come from the fixture and nothing it does is written anywhere. */
 export function SampleSession({ children }: { readonly children: ReactNode }) {
   const page = useShell();
-  const [shell] = useState(() => createSampleShell(page));
-  const [held, setHeld] = useState(false);
+  const fixture = use(SampleFixtureContext);
+  const [shell] = useState(() => createSampleShell(page, fixture));
+  const [held, setHeld] = useState<HeldAt | null>(null);
+  const box = useRef<HTMLElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useBoardRuntime(shell.runtime);
   // `useBoardRuntime` releases the runtime on unmount and tolerates a second mount, so the shell is not
   // disposed here: StrictMode's simulated unmount would otherwise end it before it ever read.
   useEffect(() => () => clearTimeout(timer.current), []);
-  const onHeld = () => {
-    setHeld(true);
+  const onHeld = (control: Element) => {
+    const node = box.current;
+    setHeld(
+      node
+        ? heldPosition(
+            control.getBoundingClientRect(),
+            node.getBoundingClientRect(),
+            window.innerHeight,
+          )
+        : { top: 0, left: 8 },
+    );
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setHeld(false), HELD_MS);
+    timer.current = setTimeout(() => setHeld(null), HELD_MS);
   };
   return (
     <ShellContext value={shell}>
       <ControlsProvider controls={shell.controls}>
         <TourContext value>
-          <section data-sample-session>
-            <Banner held={held} />
+          <section ref={box} className="relative" data-sample-session>
+            <Banner />
             <ViewOnly onHeld={onHeld}>{children}</ViewOnly>
+            <Held at={held} />
           </section>
         </TourContext>
       </ControlsProvider>

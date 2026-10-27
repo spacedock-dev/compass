@@ -1,3 +1,4 @@
+import { clock } from '../observed';
 /* The sentences the Intent panel prints more than once, spelt once. Each is the legacy page's own wording,
    because the same fact worded two ways is two promises, and a refusal always names the step that
    resolves it. */
@@ -42,14 +43,44 @@ export const INTENT_SAVING = 'Saving your intent…';
 export const INTENT_EDITED_ADD = 'Save your intent, or undo your edit, to add this direction.';
 export const INTENT_CHOSEN_SAID = 'Goal filled from your prompt. Not saved.';
 export const INTENT_MEASURED = 'Drift is measured against these. Edit anything that is off.';
-export const EXCERPT_READ_WHOLE = 'Excerpt. Analyze looks up the source when pressed.';
+export const INTENT_DETECTED_SAID = 'Goal filled from your /goal. Not saved.';
+/* A goal found in the reader's prompts is a draft like a /goal, and says where it came from in its own words. */
+export const INTENT_FOUND_SAID = 'Goal found in your prompts. Not saved.';
+export const FIND_GOAL_NOTHING = 'No clear goal in your prompts. Type one or use a prompt.';
+export const FIND_GOAL_NO_PROMPTS =
+  'Compass found no prompts of yours in this session to read. Type a goal.';
+export const FIND_GOAL_LEFT =
+  'A goal was found, but you had started typing one, so the box was left as it is.';
+export const FIND_GOAL_OUTRANKED =
+  'A goal was found, but this session already has one, so it was not used.';
+export const FIND_GOAL_LOST =
+  'Could not confirm the search for a goal. It has not been retried and nothing was changed.';
+export const FIND_GOAL_REFUSED = 'Compass could not look for a goal just now. Nothing was changed.';
+export const FIND_GOAL_RUNNING = 'A search for a goal is already running for this session.';
+export const FIND_GOAL_FAILED = (label: string): string =>
+  `${label} did not answer, so no goal was found. Nothing was changed. Press Find goal to try again.`;
+export const FIND_GOAL_UNAVAILABLE = (label: string): string =>
+  `${label} is not available here, so nothing was sent.`;
+export const FIND_GOAL_TITLE = (label: string): string =>
+  `Sends the prompts you typed in this session to ${label} to look for a goal. Nothing is sent until you press.`;
+/* Appended to a source line whose words were cut; `cap` is the box's own limit, never a literal. */
+export const goalCut = (cap: number): string =>
+  ` · Shortened to fit ${String(cap)} characters; Analyze reads this shortened goal`;
+export const EXCERPT_READ_WHOLE = ' · Shortened here; Analyze reads the whole prompt';
+/* `reading.LEDGER_WORDS_CAP_CHARS`, copied rather than fetched; `test_reader_words.py` holds the two equal.
+   The ruled wording (docs/design-frontend-migration.md, 2026-10-13 departures): "up to" read as a limit that
+   had bitten, so the sentence says it is how every prompt is read. */
+export const ANALYZE_PROMPT_CAP_CHARS = 1_000;
+export const ANALYZE_READS_PROMPT = `Analyze reads at most the first ${ANALYZE_PROMPT_CAP_CHARS.toLocaleString('en-US')} characters of any prompt.`;
+export const GOAL_HINT =
+  "Write what should be true when this session is done. Compass checks the session's work against it and never writes into the session.";
 
 /* The ended-session caveat the goal box already carries, repeated where the save is confirmed: a reader who
-   saved late read "Saved as a new revision." and had no sign that Analyze would still read the drafted goal
+   saved late read "Saved." and had no sign that Analyze would still read the drafted goal
    instead. Said only beside a confirmed save on an ended session. The goal box shows the same sentence, so
    the short form, which reads as "nothing can be read", is not used. */
 export const ENDED_CAVEAT =
-  'This session has ended. Words you save now cannot be read against it; your saved intent and the goal drafted from your prompt still can.';
+  'This session has ended. What you save now is kept, but Analyze will not check the session against it. Analyze still uses the intent you saved before the session ended, or a goal taken from one of your prompts.';
 
 /* What the last save attempt is still worth saying. `persisted:false` is its own cue and not a success: the
    annotation is then held only in this process, and the next collection reloads the store from disk and
@@ -59,12 +90,12 @@ export const HELD_CUES: Readonly<Record<string, string>> = {
   error: 'Not saved. The server refused the write, and your words are still in the box.',
   unpersisted:
     'Not stored. The store could not be written, so the refresh has already dropped these words, and they are still in the box.',
-  saved: 'Saved as a new revision.',
+  saved: 'Saved.',
   /* The request was lost, aborted at the bound, or answered with something unreadable: not a refusal, so
      never "Not saved". */
   unconfirmed:
     'Compass did not answer, so this page cannot tell whether your intent was saved. Your words are still in the box.',
-  unchanged: 'Already stored. These words match the saved revision, so no new revision was minted.',
+  unchanged: 'Already saved. These words match what is stored, so nothing new was saved.',
   /* The store exists and the server could not read it, so it wrote nothing: writing would keep only what
      it can read and lose every other session's words. The remedy is the file, not a retry. */
   untrusted:
@@ -75,6 +106,24 @@ export const HELD_CUES: Readonly<Record<string, string>> = {
   unreadable:
     "Not saved. This session's words were saved by a build of Compass that can read more than this one, so nothing was saved over them, and what you typed is still in the box. Save from that build, or remove this session's entry from compass-annotations.json.",
 };
+
+/* The cue Read from my latest message earns carries the time it moved the start to, so its kind does too. A static table
+   cannot hold a time; the page reads it back from the refreshed row and stamps it here, in the one moment
+   the save is drawn. */
+export const READS_FROM_KIND = 'reads-from:';
+export const readsFromKind = (at: number): string => `${READS_FROM_KIND}${String(at)}`;
+export const isReadsFrom = (kind: string): boolean => kind.startsWith(READS_FROM_KIND);
+export function readsFromSentence(kind: string): string {
+  const at = Number(kind.slice(READS_FROM_KIND.length));
+  return Number.isFinite(at) && at > 0
+    ? `Saved. Compass now reads from ${clock(at)}. Work before that is not read.`
+    : '';
+}
+
+/* What Read from my latest message does, said where the reader chooses it. Saving alone keeps the start the first reading
+   had, so the work already done toward earlier words stays read. */
+export const READ_FROM_NOW_WHY =
+  'Saves your intent and reads the session from your latest message on. Work before that message is not read. Save intent alone keeps reading from where it started.';
 
 /* The reply's `outcome` token to the cue it earns. An unknown token, from a server newer than this page,
    falls back on `persisted`, which keeps its meaning across builds. */
@@ -108,18 +157,14 @@ export const ADOPT_REFUSED: Readonly<Record<string, string>> = {
 export const ADOPT_CHANGED =
   'The prompt or saved goal changed, or could not be saved. Review the goal before trying again.';
 
-export const KEEP_ANALYZE = 'Keep my intent and analyze';
-export const KEEP = 'Keep my intent';
-export const ADD_DIRECTION = 'Add it to my intent';
+export const KEEP = 'Leave it';
+export const ADD_DIRECTION = 'Add as a line';
+export const GOAL_DIRECTION = 'Make it the goal';
+export const RULE_HINT = 'Write the rule, not the moment.';
 export const KEEP_NO_ANALYSIS =
   'Kept your intent and settled the direction. No analysis was started.';
-/* Keep never grants consent: where none is given it only settles, and the Allow and analyze beside its
-   disclosure does the sending. */
-export const KEEP_ALLOW =
-  'Kept your intent and settled the direction. Press Allow and analyze to send it for a reading.';
-
-export function keptDirections(count: number, owed = false): string {
-  const sentence = owed ? KEEP_ALLOW : KEEP_NO_ANALYSIS;
+export function keptDirections(count: number): string {
+  const sentence = KEEP_NO_ANALYSIS;
   return count === 1
     ? sentence
     : sentence.replace('the direction.', `all ${String(count)} directions.`);
@@ -148,7 +193,7 @@ const FEEDBACK_SHORT: readonly (readonly [RegExp, string])[] = [
   /* Only the bare settlement is "Intent kept". The same sentence with a reason after it (the reader changed,
      the daily limit, a store that could not be reached) says the reading did not start, and the line says so. */
   [
-    /^Kept your intent and settled (?:the direction|all \d+ directions)\.(?: No analysis was started\.| Press Allow and analyze to send it for a reading\.)$/,
+    /^Kept your intent and settled (?:the direction|all \d+ directions)\. No analysis was started\.$/,
     'Intent kept',
   ],
   [/^Kept your intent/, 'Kept, not analyzed'],

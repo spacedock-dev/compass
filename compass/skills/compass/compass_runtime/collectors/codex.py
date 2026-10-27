@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 # Absolute on the canonical top-level package: a sub-package cannot use
 # parent-relative imports without tripping the repository's own TID252 rule.
+from compass_runtime import claude_data, records, sessions, spacedock, transcripts, turns
 from compass_runtime import io as runtime_io
-from compass_runtime import records, sessions, spacedock, transcripts, turns
 
 if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
@@ -607,6 +607,10 @@ def collect(
         )
 
         cwd = transcripts.codex_meta(config, state, fp).get("cwd") or ""
+        # The session's own `/goal`, behind the same guard as the first prompt below, so a row
+        # the rollout was not read for publishes none. Read before the clear, which comes from
+        # the same cache entry.
+        goal = claude_data.session_goal(config, state, fp, "codex") if info else None
         s = sessions.base_session(
             "codex",
             sid,
@@ -627,10 +631,17 @@ def collect(
                 if active
                 else None,
                 "resume_id": sessions.resume_token(s["sid"]),
-                "title": asked["title"],
+                # A session started with `/goal` and never prompted since has no prompt to name
+                # it, because the goal's own message is Codex's wrapper; its goal names it.
+                "title": asked["title"]
+                or (transcripts.prompt_title(config, goal["text"]) if goal else None),
                 "prompt_states_work": asked.get("prompt_states_work", False),
                 "prompt_at": asked.get("prompt_at"),
                 **(transcripts.first_prompt(config, state, fp, "codex") if info else {}),
+                "session_goal": goal,
+                "session_goal_cleared": (
+                    claude_data.session_goal_cleared(state, fp) if info else None
+                ),
                 "last_prompt": asked["last_prompt"],
                 "instruction": asked["instruction"],
                 "last_output": (info or {}).get("last_output"),

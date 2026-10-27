@@ -248,6 +248,12 @@ class AnAdoptedGoalIsReadWholeTest(_Producer):
         self.assertEqual(CLIP, self.goal_block())
         self.assertIn(reading.GOAL_SOURCE_GONE.strip(), assessment["cutoff"])
 
+    def test_a_goal_from_the_goal_command_has_no_prompt_to_be_missing(self) -> None:
+        stated = {**ADOPTED, "goal_source": reading.SESSION_GOAL}
+        assessment, _, _ = self.produce([_agent("a1", 90.0, "I wired it.")], revision=stated)
+        self.assertEqual(CLIP, self.goal_block())
+        self.assertNotIn("prompt your goal came from", assessment["cutoff"])
+
     def test_a_typed_goal_is_never_replaced(self) -> None:
         typed = {k: v for k, v in ADOPTED.items() if not k.startswith("goal_source")}
         typed["at"] = 60.0
@@ -277,7 +283,7 @@ class AnAdoptedGoalIsReadWholeTest(_Producer):
 
     def test_with_no_room_the_clip_is_read_and_the_cutoff_says_so(self) -> None:
         facts = [_person("p1", 60.0, WHOLE), _agent("a1", 90.0, "I wired it.")]
-        with mock.patch.object(observer, "OBSERVER_MODEL_MAX_PROMPT_BYTES", 2_400):
+        with mock.patch.object(observer, "OBSERVER_MODEL_MAX_PROMPT_BYTES", 2_900):
             assessment, why, _ = self.produce(facts, revision=ADOPTED)
         self.assertEqual("", why)
         self.assertEqual(CLIP, self.goal_block())
@@ -873,6 +879,23 @@ class TheStoreKnowsTheQuestionAndItsResultTest(unittest.TestCase):
                 criteria[name] = self.row(reading.RESULT_UNSUPPORTED)
                 self.assertIsNone(annotation_store._assessment(self.assessment(criteria), 240))
 
+    def test_a_goal_unclear_reading_is_stored_and_read_back_like_any_other(self) -> None:
+        stored = annotation_store._assessment(
+            self.assessment({"goal": self.row(reading.RESULT_GOAL_UNCLEAR, ())}), 240
+        )
+        assert stored is not None
+        self.assertEqual(reading.RESULT_GOAL_UNCLEAR, stored["criteria"]["goal"]["result"])
+
+    def test_goal_unclear_anywhere_but_the_goal_refuses_the_reading_whole(self) -> None:
+        for name in ("line_1", "claims"):
+            with self.subTest(name=name):
+                criteria = {
+                    "goal": self.row(reading.RESULT_UNVERIFIABLE, ()),
+                    "line_1": self.row(reading.RESULT_UNVERIFIABLE, ()),
+                }
+                criteria[name] = self.row(reading.RESULT_GOAL_UNCLEAR, ())
+                self.assertIsNone(annotation_store._assessment(self.assessment(criteria), 240))
+
     def test_the_new_reason_is_in_the_closed_set(self) -> None:
         criteria = {
             "goal": self.row(reading.RESULT_UNVERIFIABLE, ()),
@@ -1037,6 +1060,7 @@ class SteerBackSaysWhatTheRecordDoesNotShowTest(unittest.TestCase):
         lines_judged: bool = True,
         **row: Any,
     ) -> str:
+        detail = row.pop("detail", "")
         published = {
             **SID,
             "annotation_goal": "Ship the retry",
@@ -1047,7 +1071,7 @@ class SteerBackSaysWhatTheRecordDoesNotShowTest(unittest.TestCase):
                 "window_start": 50.0,
                 "read_at": 500.0,
                 "criteria": {
-                    "claims": {"result": result, "cites": cites, "detail": "", "why": ""},
+                    "claims": {"result": result, "cites": cites, "detail": detail, "why": ""},
                 },
             },
             **row,
@@ -1074,6 +1098,21 @@ class SteerBackSaysWhatTheRecordDoesNotShowTest(unittest.TestCase):
             'You said "All tests pass" at T90{a1}; the record shows otherwise at T95{c1}.', text
         )
         self.assertNotIn("A check failed", text)
+
+    def test_a_contradicted_claim_carries_its_explanation(self) -> None:
+        # Owner, 2026-10-20: a departure carries the reading's explanation, a claim's included.
+        why = "The agent said the tests pass; the check after it failed."
+        text = self.compose(reading.RESULT_DEPARTURE, ["a1", "c1"], [SAID, FAILED], detail=why)
+        self.assertIn(
+            "the record shows otherwise at T95{c1}.\n  Why Compass reads this as drift: " + why,
+            text,
+        )
+
+    def test_an_unshown_claim_is_a_question_and_carries_no_explanation(self) -> None:
+        text = self.compose(
+            reading.RESULT_UNSUPPORTED, ["a1"], [SAID], detail="Nothing shows the tests ran."
+        )
+        self.assertNotIn("Why Compass", text)
 
     def test_a_shown_claim_adds_nothing_and_alone_is_nothing_to_steer_from(self) -> None:
         self.assertEqual("", self.compose(reading.RESULT_CONSISTENT, ["a1", "c1"], [SAID, PASSED]))
@@ -1116,7 +1155,11 @@ class TheClaimsResultsAreTheOrdinaryResultsPlusUnsupportedTest(unittest.TestCase
             },
             reading.CLAIMS_RESULT_BY_TOKEN,
         )
-        self.assertEqual(5, len(reading.RESULTS))
+        self.assertEqual(
+            {**reading.RESULT_BY_TOKEN, "goal_unclear": reading.RESULT_GOAL_UNCLEAR},
+            reading.GOAL_RESULT_BY_TOKEN,
+        )
+        self.assertEqual(6, len(reading.RESULTS))
 
 
 class TheScorerKnowsTheQuestionTest(unittest.TestCase):

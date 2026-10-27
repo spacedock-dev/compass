@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { compatSessKey } from '../api/identity';
 import type { AnnotateReceipt, SessionIdentity } from '../api/types';
 import type { Row } from '../observed';
 import { annotateOn, annotationLines } from './annotation';
@@ -26,13 +27,20 @@ import {
   linesOrigins,
   linesToSend,
   PROMPT_CHOSEN,
+  SESSION_GOAL,
   type Changes,
   type Draft,
   type DraftInput,
 } from './derive';
-import { promptCandidate } from '../sessions/intent';
+import { promptCandidate, sessionGoalCandidate } from '../sessions/intent';
 import { intentLogFor } from './logContext';
-import { ADOPT_CHANGED, ADOPT_REFUSED, DISCARD_DWELL_MS, HELD_OUTCOME_CUES } from './sentences';
+import {
+  ADOPT_CHANGED,
+  ADOPT_REFUSED,
+  DISCARD_DWELL_MS,
+  HELD_OUTCOME_CUES,
+  readsFromKind,
+} from './sentences';
 
 /* Save intent, the prompt adoption it chains, and Discard everything: every write of the reader's own
    words. Each is one explicit press. Nothing here is retried, and nothing starts from a mount, a poll or a
@@ -78,6 +86,7 @@ export function freezeLines(input: DraftInput): FrozenLines {
 export function forgetAdopted(ctx: Ctx, session: Row, draft: Draft | null): void {
   const key = goalKey(session);
   if (draft && ctx.held.goals.get(key) === draft.text) {
+    ctx.held.cleared.delete(key);
     ctx.held.goals.delete(key);
     ctx.held.notify();
   }
@@ -91,12 +100,14 @@ export function forgetChosen(ctx: Ctx, session: Row, adopted: Draft | null): voi
   const held = ctx.held.chosen.get(key);
   if (
     adopted &&
-    adopted.source === PROMPT_CHOSEN &&
+    (adopted.source === PROMPT_CHOSEN ||
+      (adopted.source === SESSION_GOAL && held?.source === SESSION_GOAL)) &&
     held &&
-    held.factId === adopted.factId &&
+    held.factId === (adopted.factId ?? '') &&
     held.text === adopted.text &&
     held.at === adopted.at
   ) {
+    ctx.held.cleared.delete(key);
     ctx.held.chosen.delete(key);
     ctx.held.notify();
   }
@@ -104,6 +115,13 @@ export function forgetChosen(ctx: Ctx, session: Row, adopted: Draft | null): voi
 
 function candidateFor(ctx: Ctx, input: DraftInput, source: string): Draft | null {
   if (source === PROMPT_CHOSEN) return chosenCandidate(ctx.held, input.contexts, input.session);
+  if (source === SESSION_GOAL) {
+    /* The reader's own pick of it, or the draft itself: one set of words either way. */
+    return (
+      chosenCandidate(ctx.held, input.contexts, input.session) ??
+      sessionGoalCandidate(input.session)
+    );
+  }
   if (source === 'first-prompt' || source === 'latest-prompt') {
     return promptCandidate(input.session, source);
   }
@@ -122,6 +140,7 @@ export async function adoptPrompt(
   source: string,
   signal: AbortSignal,
   minted: { revision: number } | null,
+  fromNow = false,
 ): Promise<Adopted> {
   const input = readInput(ctx, identity, row);
   if (!input) return false;
@@ -130,7 +149,12 @@ export async function adoptPrompt(
   const expected = nextNumber(row['annotation_revision']) || 0;
   const reply = answered(
     await ctx.shell.runtime.client.postAnnotate(
-      { ...identity, ...adoption(candidate), expected_revision: expected },
+      {
+        ...identity,
+        ...adoption(candidate),
+        expected_revision: expected,
+        ...(fromNow ? { read_from_now: true } : {}),
+      },
       signal,
     ),
   );
@@ -145,7 +169,10 @@ export async function adoptPrompt(
     if (reply.ok && body && ['untrusted', 'unreadable'].includes(String(body.outcome || ''))) {
       /* Not a changed prompt: the store could not take the save at all, and saying the prompt changed would
          send the reader to the wrong place. */
-      ctx.held.requests.set(compat(row), { message: ADOPT_REFUSED[String(body.outcome)] ?? '' });
+      ctx.held.requests.set(compat(row), {
+        ...ctx.held.requests.get(compat(row)),
+        message: ADOPT_REFUSED[String(body.outcome)] ?? '',
+      });
       return false;
     }
     if (!reply.ok || !body || !body.persisted) throw new Error('adoption not saved');
@@ -168,12 +195,22 @@ export async function adoptPrompt(
     /* Only what this press adopted goes, and only while it is still what the box holds: the reply can arrive
        after the reader typed other words or picked another prompt, and the adoption's words are then the
        saved goal beneath a newer edit that is still theirs. */
-    forgetAdopted(ctx, row, candidate);
-    forgetChosen(ctx, row, candidate);
-    await refresh(ctx);
+    // An earlier press's "changed" or "refused" no longer stands once this one landed.
+    const request = ctx.held.requests.get(compat(row));
+    if (request && !request.pending) request.message = '';
+    /* After the refresh, so the box keeps showing the adopted words until the row that holds them is drawn. */
+    try {
+      await refresh(ctx);
+    } finally {
+      forgetAdopted(ctx, row, candidate);
+      forgetChosen(ctx, row, candidate);
+    }
     return true;
   } catch {
-    ctx.held.requests.set(compat(row), { message: ADOPT_CHANGED });
+    ctx.held.requests.set(compat(row), {
+      ...ctx.held.requests.get(compat(row)),
+      message: ADOPT_CHANGED,
+    });
     return false;
   } finally {
     ctx.held.notify();
@@ -213,7 +250,12 @@ function forgetSent(
   const lines = linesKey(row);
   if (changes.goal && ctx.held.goals.get(goal) === body['goal']) ctx.held.goals.delete(goal);
   // Typed words replaced the choice in the store, so it no longer stands in the box.
-  if (changes.goal) ctx.held.chosen.delete(goal);
+  if (changes.goal) {
+    ctx.held.cleared.delete(goal);
+    ctx.held.chosen.delete(goal);
+    // A found goal that was saved is the reader's saved words, and no longer a found one.
+    ctx.held.found.delete(compatSessKey(row));
+  }
   const held = ctx.held.lines.get(lines);
   if (sent && held && JSON.stringify(linesToSend(held)) === JSON.stringify(sent)) {
     ctx.held.lines.delete(lines);
@@ -248,6 +290,7 @@ async function saveWork(
   row: Row,
   signal: AbortSignal,
   chain: Chain | null,
+  fromNow = false,
 ): Promise<string | null> {
   const input = readInput(ctx, identity, row);
   if (!input) return null;
@@ -259,9 +302,11 @@ async function saveWork(
        receipt. `/api/annotate` takes an adoption or typed words in one request, so changed lines must not
        leave the displayed draft unsaved. */
     const source =
-      changes.chosen || changes.pending ? PROMPT_CHOSEN : (intentDraft(input)?.source ?? '');
+      changes.chosen || changes.pending
+        ? (chosenCandidate(ctx.held, input.contexts, input.session)?.source ?? PROMPT_CHOSEN)
+        : (intentDraft(input)?.source ?? '');
     const minted = { revision: 0 };
-    const adopted = await adoptPrompt(ctx, identity, row, source, signal, minted);
+    const adopted = await adoptPrompt(ctx, identity, row, source, signal, minted, fromNow);
     if (adopted === true && frozen) {
       /* Only the lines the press held, with no goal, and against the revision the adoption minted rather
          than the refreshed row's, so a newer revision another tab saved in between is refused instead of
@@ -280,8 +325,10 @@ async function saveWork(
     /* The goal back at the draft adopts it, never a typed save of an excerpt. */
     const drafted = intentDraft(input);
     if (drafted && changes.typed === drafted.text) {
-      const adopted = await adoptPrompt(ctx, identity, row, drafted.source, signal, null);
-      return adopted === 'unconfirmed' ? 'unconfirmed' : null;
+      const adopted = await adoptPrompt(ctx, identity, row, drafted.source, signal, null, fromNow);
+      // Marked as the chained adoption marks it, so an earlier "Not confirmed" does not outlive this save.
+      if (adopted === true) ctx.held.mark(key, 'saved');
+      return adopted === true ? 'saved' : adopted === 'unconfirmed' ? 'unconfirmed' : null;
     }
     return null;
   }
@@ -296,6 +343,7 @@ async function saveWork(
   body['expected_revision'] = chain
     ? chain.revision
     : nextNumber(input.annotation?.['revision']) || 0;
+  if (fromNow) body['read_from_now'] = true;
   const reply = answered(
     await ctx.shell.runtime.client.postAnnotate(
       body as { harness: string; sid: string; expected_revision: number },
@@ -334,9 +382,38 @@ async function saveWork(
     void refresh(ctx);
     return kind;
   }
-  forgetSent(ctx, row, changes, body, sent);
-  await refresh(ctx);
+  /* Forgotten after the refresh, not before: with the draft gone and the row not yet redrawn, the boxes showed
+     the drafted prompt and emptied outcome lines for as long as the board took to answer. */
+  try {
+    await refresh(ctx);
+  } finally {
+    forgetSent(ctx, row, changes, body, sent);
+  }
   return kind;
+}
+
+/* After Read from my latest message landed: the time the refreshed row says the reading now starts, as the cue's kind, so the
+   page says it in the moment the save is drawn and with the time. Null where the row publishes none, which
+   leaves the plain "Saved" cue rather than a time nobody confirmed. */
+function sayReadsFrom(ctx: Ctx, identity: SessionIdentity, key: string): string | null {
+  const at = nextNumber(readInput(ctx, identity)?.annotation?.['window_start']);
+  if (at === null || !(at > 0)) return null;
+  const kind = readsFromKind(at);
+  ctx.held.mark(key, kind);
+  return kind;
+}
+
+/* Saves the goal a "Find goal" press found as typed words, for the press that reads against it, and answers
+   whether it landed. The found source is not one the server adopts from (its words are a model's, not a prompt's
+   own), so it is stored as the reader's typed goal, which is what a saved found goal is. */
+export async function saveFoundGoal(
+  ctx: Ctx,
+  identity: SessionIdentity,
+  row: Row,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const kind = await saveWork(ctx, identity, row, signal, null);
+  return kind === 'saved';
 }
 
 /* Save intent: both fields in one write. The typed arm of `/api/annotate` takes `goal` and `lines` together,
@@ -344,7 +421,7 @@ async function saveWork(
    draft of one field cannot overwrite a save of the other. One request rather than two chained ones, so
    there is one revision and one outcome to report. It names the revision both boxes were drawn against, so a
    save from a tab another tab has moved on is refused and the typed words stay in the boxes. */
-export async function saveIntent(ctx: Ctx, row: Row): Promise<void> {
+export async function saveIntent(ctx: Ctx, row: Row, fromNow = false): Promise<void> {
   const identity = identityOf(row);
   if (!identity) return;
   const input = readInput(ctx, identity, row);
@@ -362,7 +439,8 @@ export async function saveIntent(ctx: Ctx, row: Row): Promise<void> {
   ctx.held.notify();
   let said: string | null = null;
   try {
-    said = await saveWork(ctx, identity, row, press.signal, null);
+    said = await saveWork(ctx, identity, row, press.signal, null, fromNow);
+    if (fromNow && said === 'saved') said = sayReadsFrom(ctx, identity, key) ?? said;
   } finally {
     pendingEnd(ctx, control, press);
     ctx.held.requestFocus(control);
@@ -394,6 +472,24 @@ export function pressDiscard(ctx: Ctx, row: Row, detail: number): void {
   }
   void discardAnnotation(ctx, row, identity);
 }
+
+/* The kinds that mean words were removed and the drafts over them must go. */
+const DISCARD_LANDED: ReadonlySet<string> = new Set([
+  'discard-stored',
+  'discard-already',
+  'discard-stored_no_summary',
+  'discard-unwithdrawn',
+  'discard-unwithdrawn_deleted',
+  'discard-unwithdrawn_absent',
+  'discard-unwithdrawn_stopped',
+  'discard-unwithdrawn_kept',
+  'discard-unwithdrawn_unavailable',
+  'discard-unwithdrawn_unknown',
+  'discard-summary_kept',
+  'discard-summary_unavailable',
+  'discard-summary_stopped',
+  'discard-summary_unknown',
+]);
 
 async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity): Promise<void> {
   const key = discardKey(row);
@@ -428,15 +524,58 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
     /* A discard is one act over two stores and the second half fails on its own. `withdrew` is the departure
        store's answer, so the categorical sentence is not printed over rows this page is about to redraw
        with the discarded words still in them. `=== false` and not falsiness: a server that predates the
-       field omits it, and an absent answer must leave the sentence it had. */
+       field omits it, and an absent answer must leave the sentence it had. `removed` is the store's own count
+       under its lock, so zero is a discard that found nothing and says so rather than "gone". Two zeros differ:
+       a null `discarded` stamp is words never typed, and a set one is a repeat over a discard record, which
+       says so and, unlike the first, drops the drafts that a stale tab still holds over the discarded words.
+
+       The summary is a third store and says what happened to it, so the sentence names only that: gone, never
+       there, never there and a job stopped, kept because the store could not be written, unreadable, or not
+       known. A server that predates the field leaves the plain sentence. When the departure store fails too,
+       its sentence leads, because it is the one that stops a reader believing the quotations went, and
+       the summary's own words follow it. */
+    /* What the summary store answered, as the suffix of the server's own sentence: a refusal is a delete that
+       was not written, so a summary may still stand; a token this page does not know is said as unknown and
+       never as gone, which was the sentence it fell through to. An absent field is an older server's, which
+       leaves the plain sentence. */
+    const summaryAnswer = body.summary === undefined ? '' : String(body.summary);
+    const summarySuffix =
+      summaryAnswer === ''
+        ? ''
+        : ((
+            {
+              deleted: 'deleted',
+              absent: 'absent',
+              stopped: 'stopped',
+              unwritable: 'kept',
+              refused: 'kept',
+              unavailable: 'unavailable',
+            } as Record<string, string>
+          )[summaryAnswer] ?? 'unknown');
+    const summaryKind: Record<string, string> = {
+      absent: 'discard-stored_no_summary',
+      stopped: 'discard-summary_stopped',
+      kept: 'discard-summary_kept',
+      unavailable: 'discard-summary_unavailable',
+      unknown: 'discard-summary_unknown',
+    };
     const kind =
-      result === 'discard-stored' && body.withdrew === false ? 'discard-unwithdrawn' : result;
-    if (kind === 'discard-stored' || kind === 'discard-unwithdrawn') {
+      result === 'discard-stored' && body.removed === 0
+        ? body.discarded == null
+          ? 'discard-nothing'
+          : 'discard-already'
+        : result === 'discard-stored' && body.withdrew === false
+          ? `discard-unwithdrawn${summarySuffix ? `_${summarySuffix}` : ''}`
+          : result === 'discard-stored'
+            ? (summaryKind[summarySuffix] ?? result)
+            : result;
+    if (DISCARD_LANDED.has(kind)) {
       // The independent log may already hold these words, even if the next dashboard fetch fails.
       intentLogFor(ctx.shell).invalidate();
       /* The drafts go with the annotation. They are an independent lane, so a half-typed box would otherwise
          sit over an empty store and the next save would mint revision 1 of what the reader just
          discarded. */
+      ctx.held.cleared.delete(goalKey(row));
       ctx.held.goals.delete(goalKey(row));
       ctx.held.lines.delete(linesKey(row));
       ctx.held.origins.delete(linesKey(row));

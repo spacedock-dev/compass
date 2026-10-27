@@ -18,8 +18,10 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, ClassVar
+from types import SimpleNamespace
+from typing import Any, ClassVar, cast
 from unittest import mock
+from urllib.parse import urlparse
 
 from compass_runtime import (
     aggregate,
@@ -29,6 +31,10 @@ from compass_runtime import (
     lifecycle,
     notifications,
     reading_policy,
+    session_source,
+    session_summary,
+    summary_jobs,
+    summary_store,
 )
 from compass_runtime import annotations as annotation_store
 from compass_runtime import asks as runtime_asks
@@ -62,6 +68,9 @@ from .support import (
     store_patch,
     without_focus_meta,
 )
+from .test_claude_checks import Transcript
+from .test_session_summary import Replies
+from .test_summary_jobs import wait_job
 
 
 def _application(os_name: str) -> Any:
@@ -1066,6 +1075,25 @@ class AskEndpointTest(RuntimeTestCase):
         )
         self.assertEqual(404, gone_status)
         self.assertEqual(0, state.asks.count)
+
+    def test_a_whole_claude_session_id_is_keyed_on_the_rows_sid(self) -> None:
+        # The stdio server sends CLAUDE_CODE_SESSION_ID whole; rows key on its
+        # first eight characters, and the page matches the two exactly. Every ask
+        # test before this one sent the short form, which is how a real ask came
+        # to attach to no session.
+        config, state = self._runtime()
+        whole = "a5a5a5a5-4444-4555-8666-777788889999"
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            claude_id = self._register(port, session_id=whole)
+            other_id = self._register(port, harness="codex", session_id=whole)
+            unmapped_id = self._register(port, harness="unknown", session_id=whole)
+            claude = state.asks.get(claude_id)
+            other = state.asks.get(other_id)
+            unmapped = state.asks.get(unmapped_id)
+        assert claude is not None and other is not None and unmapped is not None
+        self.assertEqual("a5a5a5a5", claude.session_id)
+        self.assertEqual(whole, other.session_id, "Codex keys on the whole id")
+        self.assertEqual(whole, unmapped.session_id, "an unmapped id is kept as sent")
 
     def test_registering_and_answering_both_drop_the_published_body(self) -> None:
         config, state = self._runtime()
@@ -2168,7 +2196,7 @@ class ReviewFixTest(RuntimeTestCase):
             thread.join(timeout=2)
 
     def test_shutdown_still_runs_when_the_client_drops_during_the_reply(self) -> None:
-        handler = object.__new__(http_api._RequestHandler)
+        handler: Any = object.__new__(http_api._RequestHandler)
         handler.server = mock.Mock()
         handler.wfile = mock.Mock()
         stopped = threading.Event()
@@ -2976,7 +3004,55 @@ class ReadingRouteTest(unittest.TestCase):
         reading_policy.set_consent(config, True, now=1_700_000_100.0)
         return config, state
 
-    def test_default_run_requires_an_answer_then_checks_without_startup_opt_in(self) -> None:
+    def test_fresh_press_runs_with_notice_then_off_blocks_until_resume(self) -> None:
+        config, state = self._runtime()
+        reading_policy.store_path(config).unlink()
+        application = self._app(config, state)
+        with self._counting_model() as calls, self._serving(application) as port:
+            _, board = application.collect_json(show_all=False)
+            self.assertTrue(json.loads(board)["reading_routes"]["pi"]["notice_due"])
+            status, body = self._post(port, self._press())
+            self.assertEqual(202, status, body)
+            answer = json.loads(body)
+            self.assertEqual("reading", answer["notice"]["kind"])
+            self.assertEqual("codex", answer["notice"]["provider"])
+            self.assertEqual(answer["notice"], answer["job"]["notice"])
+            _, board = application.collect_json(show_all=False)
+            self.assertFalse(json.loads(board)["reading_routes"]["pi"]["notice_due"])
+            self.assertEqual(
+                answer["notice"], json.loads(board)["reading"]["notices"]["reading"]["codex"]
+            )
+            status, body = self._post(port, self._press())
+            self.assertEqual(202, status, body)
+            self.assertNotIn("notice", json.loads(body))
+            self._post(port, {"consent": "off", "press": True, "observer_model": 1})
+            status, body = self._post(port, self._press())
+            self.assertEqual(403, status, body)
+            self.assertEqual("model-calls-paused", json.loads(body)["reading"]["reason"])
+            self.assertFalse(json.loads(body)["reading"]["consent"])
+            self.assertEqual(2, len(calls))
+            # An Allow from an older page or a local client lifts nothing: only Resume model
+            # calls does, and neither grants the unasked lane (owner, 2026-10-19).
+            status, body = self._post(port, self._press(allow=True, words_destination=""))
+            self.assertEqual(403, status, body)
+            self.assertEqual("model-calls-paused", json.loads(body)["reading"]["reason"])
+            self.assertEqual(2, len(calls))
+            self.assertEqual(
+                {"codex": False, "claude": False},
+                reading_policy.status(config, now=1_700_000_100.0)["providers"],
+            )
+            status, _ = self._post(port, {"consent": "on", "press": True, "observer_model": 1})
+            self.assertEqual(200, status)
+            status, body = self._post(port, self._press(allow=True, words_destination=""))
+            self.assertEqual(202, status, body)
+            self.assertIn("notice", json.loads(body))
+            self.assertEqual(3, len(calls))
+            self.assertEqual(
+                {"codex": False, "claude": False},
+                reading_policy.status(config, now=1_700_000_100.0)["providers"],
+            )
+
+    def test_stored_off_requires_resume_then_checks_without_startup_opt_in(self) -> None:
         config, state = self._runtime(observer_model_enabled=False)
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
         with self._counting_model() as calls, self._serving(self._app(config, state)) as port:
@@ -2984,6 +3060,11 @@ class ReadingRouteTest(unittest.TestCase):
             self.assertEqual(403, status)
             self.assertEqual([], calls)
             status, _ = self._post(port, self._press(allow=True, words_destination=""))
+            self.assertEqual(403, status)
+            self.assertEqual([], calls)
+            status, _ = self._post(port, {"consent": "on", "press": True, "observer_model": 1})
+            self.assertEqual(200, status)
+            status, _ = self._post(port, self._press())
             self.assertEqual(202, status)
             self.assertEqual(1, len(calls))
             status, _ = self._post(port, self._press())
@@ -2997,13 +3078,13 @@ class ReadingRouteTest(unittest.TestCase):
 
     def test_lured_requests_cannot_change_remembered_permission(self) -> None:
         config, state = self._runtime()
-        for granted in (False, True):
+        resume = {"consent": "on", "press": True, "observer_model": 1}
+        for granted, body in (
+            (False, self._press(allow=True, words_destination="")),
+            (False, resume),
+            (True, {"consent": "off", "press": True, "observer_model": 1}),
+        ):
             reading_policy.set_consent(config, granted, now=1_700_000_100.0)
-            body = (
-                {"consent": "off", "press": True, "observer_model": 1}
-                if granted
-                else self._press(allow=True, words_destination="")
-            )
             with self._counting_model() as calls, self._serving(self._app(config, state)) as port:
                 for headers in (
                     {"Sec-Fetch-Site": "same-site"},
@@ -3011,9 +3092,9 @@ class ReadingRouteTest(unittest.TestCase):
                 ):
                     status, _ = self._post(port, body, headers=headers)
                     self.assertEqual(403, status)
-                    self.assertEqual(
-                        granted, reading_policy.status(config, now=1_700_000_100.0)["consent"]
-                    )
+                    stored = reading_policy.status(config, now=1_700_000_100.0)
+                    self.assertEqual(granted, stored["consent"])
+                    self.assertEqual(not granted, stored["off"])
                 self.assertEqual([], calls)
 
     def test_daily_limit_refuses_before_call_and_reports_the_release_time(self) -> None:
@@ -3716,6 +3797,86 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(202, status)
         self.assertEqual(1, len(calls))
 
+    def test_a_press_whose_thread_cannot_start_leaves_the_notice_for_the_next(self) -> None:
+        config, state = self._runtime()
+        reading_policy.store_path(config).unlink()
+        real_start = threading.Thread.start
+        failing = [True]
+
+        def start(thread: threading.Thread) -> None:
+            if failing[0] and thread.name.startswith(runtime_reading_jobs.THREAD_PREFIX):
+                raise RuntimeError("can't start new thread")
+            real_start(thread)
+
+        with (
+            mock.patch.object(
+                annotation_store, "ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_PASSED
+            ),
+            self._counting_model() as calls,
+            self._serving(self._app(config, state)) as port,
+            mock.patch.object(threading.Thread, "start", start),
+        ):
+            status, _ = self._post(port, self._press())
+            self.assertEqual(503, status)
+            self.assertEqual({}, reading_policy.status(config, now=1_700_000_100.0)["notices"])
+            failing[0] = False
+            status, body = self._post(port, self._press())
+        self.assertEqual(202, status, body)
+        self.assertEqual("reading", json.loads(body)["notice"]["kind"])
+        self.assertEqual(1, len(calls))
+
+    def test_turning_readings_off_is_accepted_where_analyze_is_unavailable(self) -> None:
+        # Goal summaries need neither the annotation store nor a qualified
+        # reading provider, so their off switch must not depend on them.
+        cases: tuple[tuple[str, dict[str, Any], bool], ...] = (
+            ("annotations off", {"annotations_enabled": False}, True),
+            ("reading gates closed", {}, False),
+            ("model calls refused for the run", {"model_calls_disabled": True}, True),
+        )
+        for label, runtime_changes, any_enabled in cases:
+            with self.subTest(gate=label):
+                config, state = self._runtime(**runtime_changes)
+                with (
+                    mock.patch.object(
+                        annotation_store, "any_reading_enabled", return_value=any_enabled
+                    ),
+                    self._serving(self._app(config, state)) as port,
+                ):
+                    status, body = self._post(
+                        port, {"consent": "off", "press": True, "observer_model": 1}
+                    )
+                    lured, _ = self._post(
+                        port,
+                        {"consent": "off", "press": True, "observer_model": 1},
+                        headers={"Sec-Fetch-Site": "same-site"},
+                    )
+                self.assertEqual(200, status, body)
+                self.assertEqual(403, lured)
+                stored = dataclasses.replace(config, model_calls_disabled=False)
+                self.assertTrue(reading_policy.status(stored, now=1_700_000_100.0)["off"])
+
+    def test_readings_turned_off_mid_press_and_left_off_send_nothing(self) -> None:
+        config, state = self._runtime()
+
+        def turn_off() -> None:
+            reading_policy.set_consent(config, False, now=1_700_000_100.0)
+
+        with (
+            mock.patch.object(
+                annotation_store, "ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_PASSED
+            ),
+            self._counting_model(on_collect=turn_off) as calls,
+            self._serving(self._app(config, state)) as port,
+        ):
+            status, _ = self._post(port, self._press())
+            payload = self._data(port)
+        self.assertEqual(202, status)
+        self.assertEqual([], calls)
+        self.assertEqual([], self.outcomes, "a refused press wrote an outcome")
+        self.assertEqual({}, payload["reading_jobs"])
+        self.assertEqual("model-calls-paused", payload["reading"]["reason"])
+        self.assertFalse(payload["reading"]["consent"])
+
     def _phase(self, config: Any, harness: str) -> str | None:
         job = runtime_reading.job(config, f"{harness}:s1")
         return job.phase if job else None
@@ -3765,9 +3926,17 @@ class ReadingRouteTest(unittest.TestCase):
         assert entry is not None
         return str(entry.get("assessment", {}).get("stamp", ""))
 
-    def test_a_non_claude_allow_cannot_authorize_a_claude_sessions_agent_words(self) -> None:
+    def test_a_claude_reading_notices_its_wider_content_without_renewing_allow(self) -> None:
         config, state = self._runtime()
+        # A Codex Allow an earlier build stored under the narrower, words-only disclosure.
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
+        reading_policy.set_consent(
+            config,
+            True,
+            now=1_700_000_100.0,
+            provider="codex",
+            content=reading_policy.WORDS_CONTENT_VERSION,
+        )
         with self._counting_model(harness="pi") as calls:
             with self._serving(self._app(config, state, "pi")) as port:
                 status, body = self._post(
@@ -3791,25 +3960,34 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude")) as port,
         ):
             status, body = self._post(port, self._claude_press())
-            self.assertEqual(403, status, body)
+            self.assertEqual(202, status, body)
             answer = json.loads(body)
-            self.assertEqual("consent-required", answer["reading"]["reason"])
-            self.assertEqual(reading_policy.CONTENT_CHANGED, answer["reading"]["rebind"]["codex"])
-            self.assertIn("the agent's messages", answer["route"]["disclosure"])
-            self.assertIn("newest final reply", answer["route"]["disclosure"])
-            self.assertEqual([], calls)
-            self.assertEqual(1, answer["reading"]["used"])
+            self.assertEqual(reading_policy.CONTENT_VERSION, answer["notice"]["content"])
+            self.assertEqual(
+                reading_policy.CONTENT_CHANGED,
+                reading_policy.status(config, now=1_700_000_100.0)["rebind"]["codex"],
+            )
+            self.assertIn(
+                "the agent's messages",
+                runtime_reading_route.resolve("claude", config=config)["disclosure"],
+            )
+            self.assertIn(
+                "newest final reply",
+                runtime_reading_route.resolve("claude", config=config)["disclosure"],
+            )
+            self.assertEqual(1, len(calls))
+            self.assertEqual(2, reading_policy.status(config, now=1_700_000_100.0)["used"])
             status, body = self._post(
                 port,
                 self._claude_press(allow=True, words_destination=""),
             )
             self.assertEqual(202, status, body)
-            self.assertEqual(1, len(calls))
+            self.assertEqual(2, len(calls))
             status, body = self._post(port, self._claude_press())
             self.assertEqual(202, status, body)
-            self.assertEqual(2, len(calls))
+            self.assertEqual(3, len(calls))
 
-    def test_prior_claude_content_versions_ask_again_without_charging(self) -> None:
+    def test_prior_claude_content_versions_run_with_a_notice(self) -> None:
         for version in (2, 3):
             with self.subTest(version=version):
                 config, state = self._runtime()
@@ -3832,13 +4010,18 @@ class ReadingRouteTest(unittest.TestCase):
                     self._serving(self._app(config, state, "claude")) as port,
                 ):
                     status, body = self._post(port, self._claude_press())
-                    self.assertEqual(403, status, body)
-                    answer = json.loads(body)
+                    self.assertEqual(202, status, body)
                     self.assertEqual(
-                        reading_policy.CONTENT_CHANGED, answer["reading"]["rebind"]["codex"]
+                        reading_policy.CONTENT_VERSION, json.loads(body)["notice"]["content"]
                     )
-                    self.assertEqual(0, answer["reading"]["used"])
-                    self.assertEqual([], calls)
+                    self.assertEqual(
+                        reading_policy.CONTENT_CHANGED,
+                        reading_policy.status(
+                            config, now=1_700_000_100.0, destinations={"codex": "OpenAI"}
+                        )["rebind"]["codex"],
+                    )
+                    self.assertEqual(1, reading_policy.status(config, now=1_700_000_100.0)["used"])
+                    self.assertEqual(1, len(calls))
                     status, body = self._post(
                         port,
                         self._claude_press(
@@ -3846,10 +4029,10 @@ class ReadingRouteTest(unittest.TestCase):
                         ),
                     )
                     self.assertEqual(202, status, body)
-                    self.assertEqual(1, len(calls))
+                    self.assertEqual(2, len(calls))
                     status, body = self._post(port, self._claude_press())
                     self.assertEqual(202, status, body)
-                    self.assertEqual(2, len(calls))
+                    self.assertEqual(3, len(calls))
 
     def test_a_claude_code_session_on_this_build_is_read_by_claude_code_when_it_is_installed(
         self,
@@ -3988,35 +4171,40 @@ class ReadingRouteTest(unittest.TestCase):
         "acquisition": "event",
     }
 
-    def test_a_saved_claude_goal_with_no_recorded_turn_stop_stays_withheld_without_a_job_or_charge(
+    def test_a_saved_claude_goal_with_no_recorded_turn_stop_is_read_up_to_its_last_entry(
         self,
     ) -> None:
+        # Owner, 2026-10-20: an idle session whose last turn has no recorded finish is read the
+        # way a running one is, at the mid-flight scope, and says it was idle.
         config, state = self._runtime()
         with (
             self._counting_model(("codex",), harness="claude") as calls,
             self._serving(self._app(config, state, "claude", row=self.IDLE_UNKNOWN)) as port,
         ):
             before = self._published_row(port, "claude")
-            status, body = self._post(port, self._claude_press(allow=True, words_destination=""))
-            after = self._published_row(port, "claude")
-        answer = json.loads(body)
+            status, body = self._post(port, self._claude_press())
         self.assertEqual("ship the parser", before["annotation_goal"])
-        self.assertFalse(before["reading_eligibility"]["ok"])
-        self.assertEqual(200, status, answer)
-        self.assertEqual(runtime_reading.WITHHELD_IDLE_UNKNOWN, answer["withheld"])
-        self.assertEqual(before["reading_eligibility"], after["reading_eligibility"])
-        self.assertEqual(before["reading_eligibility"]["sentence"], answer["sentence"])
-        self.assertFalse(answer["produced"])
-        self.assertEqual([], calls)
-        self.assertEqual([], self.outcomes)
-        self.assertEqual({}, runtime_reading.published_jobs(config))
-        self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
+        self.assertEqual(
+            {"ok": True, "reason": None, "until": None, "sentence": None},
+            before["reading_eligibility"],
+        )
+        self.assertEqual(202, status, body)
+        self.assertTrue(self.outcomes[-1]["produced"], body)
+        self.assertEqual(1, len(calls))
+        entry = annotation_store.find(annotation_store.load(config), "claude", "s1")
+        assert entry is not None
+        self.assertEqual(runtime_reading.SCOPE_MID_FLIGHT, entry["assessment"]["scope"])
+        self.assertEqual(
+            runtime_reading.SCOPE_TEXT_MID_FLIGHT_IDLE, entry["assessment"]["scope_text"]
+        )
 
     def test_a_press_the_board_says_cannot_read_starts_no_job_and_counts_no_attempt(
         self,
     ) -> None:
         config, state = self._runtime()
+        # Paused, then resumed: model calls on, and no provider holds an Allow.
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
+        reading_policy.resume(config, now=1_700_000_100.0)
         started: list[str] = []
         start_job = runtime_reading.start_job
 
@@ -4055,9 +4243,9 @@ class ReadingRouteTest(unittest.TestCase):
         assert entry is not None
         self.assertEqual(0, entry.get("readings", 0), "an attempt was counted")
         self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
-        # The narrow Allow carried by the press remains the reader's answer.
-        self.assertTrue(reading_policy.status(config, now=1_700_000_100.0)["words"]["codex"])
-        self.assertFalse(self._consents(config)["codex"], "narrow Allow widened the grant")
+        # The legacy Allow the press carried records nothing, narrow or wide.
+        self.assertFalse(reading_policy.status(config, now=1_700_000_100.0)["words"]["codex"])
+        self.assertFalse(self._consents(config)["codex"], "a press granted the unasked lane")
 
     def _published_row(self, port: int, harness: str) -> dict[str, Any]:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
@@ -4103,12 +4291,73 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude", row=self.WAITING)) as port,
         ):
             status, body = self._save(
-                port, {"harness": "claude", "sid": "s1", "goal": "add retry to the webhook"}
+                port,
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "goal": "add retry to the webhook",
+                    "read_from_now": True,
+                },
             )
         self.assertEqual(200, status, body)
         revision = self._saved_revision(config)
         self.assertEqual(1_700_000_100.0, revision["at"])
         self.assertEqual(1_700_000_040.0, revision["window_start"])
+
+    def _two_saves(self, first: dict[str, Any], second: dict[str, Any]) -> Any:
+        """Save `first` with one message of the reader's on record, then `second` with two.
+
+        One server for both, so the second save meets the first's revision on a
+        clock that does not step back, as it would not in life.
+        """
+        config, state = self._runtime()
+        facts: list[dict[str, Any]] = []
+
+        def message(index: int, moment: float) -> dict[str, Any]:
+            return {
+                **self.FACT,
+                "fact_id": f"f{index}",
+                "at": moment,
+                "source_session": {"harness": "claude", "sid": "s1"},
+            }
+
+        with (
+            self._counting_model(harness="claude", extra_facts=cast("Any", facts)),
+            self._serving(self._app(config, state, "claude", row=self.WAITING)) as port,
+        ):
+            facts.append(message(2, 1_700_000_040.0))
+            status, body = self._save(port, {"harness": "claude", "sid": "s1", **first})
+            self.assertEqual(200, status, body)
+            opened = self._saved_revision(config)["window_start"]
+            facts.append(message(3, 1_700_000_090.0))
+            status, body = self._save(port, {"harness": "claude", "sid": "s1", **second})
+            self.assertEqual(200, status, body)
+        return opened, self._saved_revision(config)
+
+    def test_editing_the_goal_keeps_the_original_reading_start(self) -> None:
+        opened, revision = self._two_saves(
+            {"goal": "add retry to the webhook", "read_from_now": True},
+            {"goal": "add retry to the webhook and record the ruling"},
+        )
+        self.assertEqual(1_700_000_040.0, opened)
+        self.assertEqual("add retry to the webhook and record the ruling", revision["goal"])
+        self.assertEqual(1_700_000_040.0, revision["window_start"])
+
+    def test_read_from_now_moves_the_reading_start_to_the_latest_message(self) -> None:
+        _, revision = self._two_saves(
+            {"goal": "add retry to the webhook", "read_from_now": True},
+            {"goal": "add retry to the webhook and record the ruling", "read_from_now": True},
+        )
+        self.assertEqual(1_700_000_090.0, revision["window_start"])
+
+    def test_read_from_now_must_be_a_boolean(self) -> None:
+        config, state = self._runtime()
+        with self._serving(self._app(config, state, "claude", row=self.WAITING)) as port:
+            status, _ = self._save(
+                port,
+                {"harness": "claude", "sid": "s1", "goal": "add retry", "read_from_now": "yes"},
+            )
+        self.assertEqual(400, status)
 
     def test_words_typed_from_the_all_sessions_view_read_from_your_latest_message(self) -> None:
         config, state = self._runtime()
@@ -4123,7 +4372,13 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude", row=self.WAITING, aged=True)) as port,
         ):
             status, body = self._save(
-                port, {"harness": "claude", "sid": "s1", "goal": "add retry to the webhook"}
+                port,
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "goal": "add retry to the webhook",
+                    "read_from_now": True,
+                },
             )
         self.assertEqual(200, status, body)
         self.assertEqual(1_700_000_040.0, self._saved_revision(config)["window_start"])
@@ -4162,7 +4417,13 @@ class ReadingRouteTest(unittest.TestCase):
             self._published_row(port, "claude")
             before, collected_before = len(variants), len(collections)
             status, body = self._save(
-                port, {"harness": "claude", "sid": "s1", "goal": "add retry to the webhook"}
+                port,
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "goal": "add retry to the webhook",
+                    "read_from_now": True,
+                },
             )
         self.assertEqual(200, status, body)
         self.assertNotIn(True, variants[before:], "the save collected every session")
@@ -4185,7 +4446,13 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude", row=self.WAITING)) as port,
         ):
             status, body = self._save(
-                port, {"harness": "claude", "sid": "s1", "goal": "add retry to the webhook"}
+                port,
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "goal": "add retry to the webhook",
+                    "read_from_now": True,
+                },
             )
         self.assertEqual(200, status, body)
         self.assertEqual("stored", json.loads(body)["outcome"])
@@ -4202,7 +4469,7 @@ class ReadingRouteTest(unittest.TestCase):
             annotation_store, "CLAUDE_ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_NOT_RUN
         )
 
-    def test_a_codex_answer_does_not_let_claude_code_read_a_session(self) -> None:
+    def test_claude_readings_need_no_second_provider_allow(self) -> None:
         config, state = self._runtime()
         self.assertEqual({"codex": True, "claude": False}, self._consents(config))
         with (
@@ -4211,15 +4478,16 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state, "claude")) as port,
         ):
             status, body = self._post(port, self._claude_press(provider="claude"))
-            self.assertEqual(403, status)
-            self.assertEqual("consent-required", json.loads(body)["reading"]["reason"])
-            self.assertEqual([], calls)
+            self.assertEqual(202, status, body)
+            self.assertEqual("claude", json.loads(body)["notice"]["provider"])
+            self.assertEqual(1, len(calls))
             status, _ = self._post(
                 port, self._claude_press(provider="claude", allow=True, words_destination="")
             )
         self.assertEqual(202, status)
-        self.assertEqual(["claude"], self.providers)
-        self.assertEqual({"codex": True, "claude": True}, self._consents(config))
+        self.assertEqual(["claude", "claude"], self.providers)
+        # The legacy `allow` field is a plain press: it records no Claude Code Allow.
+        self.assertEqual({"codex": True, "claude": False}, self._consents(config))
         self.assertIn(runtime_observer.CLAUDE_READING_MODEL, self._stamp(config, "claude"))
 
     def test_a_claude_code_allow_covers_a_pi_session_that_falls_back_to_it(self) -> None:
@@ -4236,15 +4504,15 @@ class ReadingRouteTest(unittest.TestCase):
             self._serving(self._app(config, state)) as port,
         ):
             status, body = self._post(port, self._press(provider="claude"))
-            self.assertEqual(403, status)
-            self.assertEqual("consent-required", json.loads(body)["reading"]["reason"])
-            self.assertEqual([], calls)
+            self.assertEqual(202, status, body)
+            self.assertEqual("claude", json.loads(body)["notice"]["provider"])
+            self.assertEqual(1, len(calls))
             reading_policy.set_consent(config, True, now=1_700_000_100.0, provider="claude")
             status, body = self._post(port, self._press(provider="claude"))
         self.assertEqual(202, status, body)
-        self.assertEqual(["claude"], self.providers)
+        self.assertEqual(["claude", "claude"], self.providers)
 
-    def test_an_anthropic_allow_does_not_cover_a_press_once_the_words_go_elsewhere(
+    def test_changed_claude_destination_runs_and_preserves_legacy_coverage(
         self,
     ) -> None:
         """Owner, 2026-10-02: the Allow for the words is bound to their destination.
@@ -4253,14 +4521,16 @@ class ReadingRouteTest(unittest.TestCase):
         and the words' own binding is the only thing that can refuse.
         """
         config, state = self._runtime()
+        # An Allow an earlier build stored; no press writes one now.
+        reading_policy.set_consent(
+            config, True, now=1_700_000_100.0, provider="claude", destination="Anthropic"
+        )
         with (
             self._open_claude(),
             self._counting_model(("claude",), destination="Anthropic") as calls,
             self._serving(self._app(config, state)) as port,
         ):
-            status, body = self._post(
-                port, self._press(provider="claude", allow=True, words_destination="Anthropic")
-            )
+            status, body = self._post(port, self._press(provider="claude"))
         self.assertEqual(202, status, body)
         self.assertEqual(1, len(calls))
         for moved in ("gw.corp.example", "Amazon Bedrock"):
@@ -4271,12 +4541,14 @@ class ReadingRouteTest(unittest.TestCase):
                 self._serving(self._app(config, state)) as port,
             ):
                 status, body = self._post(port, self._press(provider="claude"))
-                self.assertEqual(403, status)
-                answer = json.loads(body)["reading"]
-                self.assertEqual("consent-required", answer["reason"])
+                self.assertEqual(202, status, body)
+                answer = reading_policy.status(
+                    config, now=1_700_000_100.0, destinations={"claude": moved}
+                )
+                self.assertEqual(moved, json.loads(body)["notice"]["destination"])
                 self.assertFalse(answer["providers"]["claude"])
                 self.assertEqual(reading_policy.DESTINATION_CHANGED, answer["rebind"]["claude"])
-                self.assertEqual([], calls, "the words were sent before a fresh Allow")
+                self.assertEqual(1, len(calls))
 
     def test_a_destination_that_moves_after_the_press_refuses_the_job_unspent(self) -> None:
         """Consent F4 (ui5): the job re-resolves the destination at its
@@ -4285,14 +4557,16 @@ class ReadingRouteTest(unittest.TestCase):
         one; the reservation is refused `destination-changed` and nothing is
         spent or sent, and the board then says the Allow no longer covers."""
         config, state = self._runtime()
+        # An Allow an earlier build stored; no press writes one now.
+        reading_policy.set_consent(
+            config, True, now=1_700_000_100.0, provider="claude", destination="Anthropic"
+        )
         with (
             self._open_claude(),
             self._counting_model(("claude",), destination="Anthropic") as calls,
             self._serving(self._app(config, state)) as port,
         ):
-            status, body = self._post(
-                port, self._press(provider="claude", allow=True, words_destination="Anthropic")
-            )
+            status, body = self._post(port, self._press(provider="claude"))
         self.assertEqual(202, status, body)
         self.assertEqual(1, len(calls))
         used = reading_policy.status(config, now=1_700_000_100.0, provider="claude")["used"]
@@ -4464,31 +4738,6 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual({"codex": False, "claude": False}, self._consents(config))
         self.assertEqual([], calls)
 
-    def test_turning_readings_off_withdraws_the_launch_grant_the_card_words(self) -> None:
-        # The card says "allowed when this dashboard started" from the flag, so the flag must
-        # go with the stored grant, on the config the next route and board read.
-        config, state = self._runtime(tool_output_pre_grant=True)
-        reading_policy.set_consent(config, True, now=1_700_000_100.0, provider="claude")
-        application = self._app(config, state, "claude")
-        with self._serving(application) as port:
-            status, _ = self._post(port, {"consent": "off", "press": True, "observer_model": 1})
-        self.assertEqual(200, status)
-        self.assertFalse(application.config.tool_output_pre_grant)
-        self.assertFalse(application.state.config.tool_output_pre_grant)
-
-    def test_a_revoke_the_store_refused_keeps_the_launch_grant_the_card_words(self) -> None:
-        # The store still holds the grant when the revoke fails, so the card must keep saying so.
-        config, state = self._runtime(tool_output_pre_grant=True)
-        application = self._app(config, state, "claude")
-        refused = {"reason": "store-unavailable"}
-        with (
-            mock.patch.object(reading_policy, "set_consent", return_value=refused),
-            self._serving(application) as port,
-        ):
-            self._post(port, {"consent": "off", "press": True, "observer_model": 1})
-        self.assertTrue(application.config.tool_output_pre_grant)
-        self.assertTrue(application.state.config.tool_output_pre_grant)
-
     CHECKS: ClassVar[tuple[dict[str, Any], ...]] = tuple(
         {
             "fact_id": f"check-{index}",
@@ -4536,21 +4785,18 @@ class ReadingRouteTest(unittest.TestCase):
     def _checks_sent(prompt: str) -> int:
         return prompt.count("python3 -m pytest tests/test_")
 
-    def test_a_reader_who_allowed_codex_before_tool_output_was_named_is_asked_again(
-        self,
-    ) -> None:
+    def test_a_fresh_claude_reading_includes_tool_output_without_a_grant(self) -> None:
         config, state = self._runtime()
-        # The words allowed for where they go, so tool output is all that is missing.
-        reading_policy.set_consent(
-            config, True, now=1_700_000_100.0, provider="codex", destination="OpenAI"
-        )
+        reading_policy.store_path(config).unlink()
         status, answer, calls = self._checks_press(config, state, self._claude_press())
-        self.assertEqual(403, status)
-        self.assertEqual("tool-output-consent-required", answer["reading"]["reason"])
-        self.assertEqual([], calls)
-        self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
+        self.assertEqual(202, status, answer)
+        self.assertEqual(2, self._checks_sent(calls[0]))
+        self.assertEqual("OpenAI", answer["notice"]["tool_output"])
+        self.assertEqual("OpenAI", answer["notice"]["destination"])
+        self.assertEqual({}, reading_policy.status(config, now=1_700_000_100.0)["tool_output"])
+        self.assertEqual(1, reading_policy.status(config, now=1_700_000_100.0)["used"])
 
-    def test_an_allow_naming_where_the_checks_go_sends_them_to_codex(self) -> None:
+    def test_an_allow_naming_where_the_checks_go_sends_them_and_records_nothing(self) -> None:
         config, state = self._runtime()
         status, answer, calls = self._checks_press(
             config,
@@ -4561,9 +4807,9 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(["codex"], self.providers)
         self.assertEqual(2, self._checks_sent(calls[0]))
         self.assertIn(json.dumps(self.TAILS["call-0"]), calls[0])
+        # A press writes no Allow, so no grant is recorded; none is needed to send them.
         granted = reading_policy.status(config, now=1_700_000_100.0, provider="codex")
-        self.assertTrue(reading_policy.tool_output_allowed(granted, "codex", "OpenAI"))
-        # The grant is remembered: the next press needs no second Allow.
+        self.assertFalse(reading_policy.tool_output_allowed(granted, "codex", "OpenAI"))
         status, _answer, calls = self._checks_press(config, state, self._claude_press())
         self.assertEqual(202, status)
         self.assertEqual(2, self._checks_sent(calls[0]))
@@ -4587,27 +4833,21 @@ class ReadingRouteTest(unittest.TestCase):
             before, reading_policy.status(config, now=1_700_000_100.0, provider="codex")
         )
 
-    def test_a_grant_for_one_destination_does_not_cover_another(self) -> None:
+    def test_a_changed_destination_runs_with_a_new_notice(self) -> None:
         config, state = self._runtime()
-        reading_policy.set_consent(
-            config,
-            True,
-            now=1_700_000_100.0,
-            provider="codex",
-            tool_output="OpenAI",
-            destination="OpenAI",
+        status, answer, calls = self._checks_press(
+            config, state, self._claude_press(), destination="OpenAI"
         )
-        # The words allowed again for where they go now, so only the
-        # tool-output grant, still keyed to OpenAI, can refuse.
-        reading_policy.set_consent(
-            config, True, now=1_700_000_100.0, provider="codex", destination="gw.corp.example"
-        )
+        self.assertEqual(202, status, answer)
+        self.assertEqual("OpenAI", answer["notice"]["destination"])
+        self.assertEqual(1, len(calls))
         status, answer, calls = self._checks_press(
             config, state, self._claude_press(), destination="gw.corp.example"
         )
-        self.assertEqual(403, status)
-        self.assertEqual("tool-output-consent-required", answer["reading"]["reason"])
-        self.assertEqual([], calls)
+        self.assertEqual(202, status, answer)
+        self.assertEqual("gw.corp.example", answer["notice"]["destination"])
+        self.assertEqual("gw.corp.example", answer["notice"]["tool_output"])
+        self.assertEqual(2, self._checks_sent(calls[0]))
 
     def test_where_the_destination_cannot_be_named_the_codex_prompt_holds_no_check(
         self,
@@ -4628,7 +4868,7 @@ class ReadingRouteTest(unittest.TestCase):
             entry["assessment"]["cutoff"],
         )
 
-    def test_turning_readings_off_withdraws_the_tool_output_grant(self) -> None:
+    def test_turning_readings_back_on_repeats_the_tool_output_notice(self) -> None:
         config, state = self._runtime()
         reading_policy.set_consent(
             config,
@@ -4643,11 +4883,11 @@ class ReadingRouteTest(unittest.TestCase):
             config, True, now=1_700_000_100.0, provider="codex", destination="OpenAI"
         )
         status, answer, calls = self._checks_press(config, state, self._claude_press())
-        self.assertEqual(403, status)
-        self.assertEqual("tool-output-consent-required", answer["reading"]["reason"])
-        self.assertEqual([], calls)
+        self.assertEqual(202, status, answer)
+        self.assertEqual("OpenAI", answer["notice"]["tool_output"])
+        self.assertEqual(2, self._checks_sent(calls[0]))
 
-    def test_a_grant_withdrawn_while_the_press_is_in_flight_sends_no_check(self) -> None:
+    def test_turning_readings_off_then_on_mid_press_still_includes_checks(self) -> None:
         config, state = self._runtime()
         reading_policy.set_consent(
             config,
@@ -4659,7 +4899,7 @@ class ReadingRouteTest(unittest.TestCase):
         )
 
         def withdraw() -> None:
-            # Another tab turns readings off and allows the words alone again.
+            # Another tab pauses model calls and allows the words alone again.
             reading_policy.set_consent(config, False, now=1_700_000_100.0)
             reading_policy.set_consent(
                 config, True, now=1_700_000_100.0, provider="codex", destination="OpenAI"
@@ -4669,12 +4909,10 @@ class ReadingRouteTest(unittest.TestCase):
             config, state, self._claude_press(), on_collect=withdraw
         )
         self.assertEqual(202, status, answer)
-        self.assertEqual(0, self._checks_sent(calls[0]))
+        self.assertEqual(2, self._checks_sent(calls[0]))
         entry = annotation_store.find(annotation_store.load(config), "claude", "s1")
         assert entry is not None
-        self.assertIn(
-            "tool output was not allowed when the reading ran", entry["assessment"]["cutoff"]
-        )
+        self.assertNotIn("tool output was not allowed", entry["assessment"]["cutoff"])
 
     def test_the_press_hands_the_reading_the_passes_a_later_command_may_have_changed(
         self,
@@ -5790,3 +6028,703 @@ class ASaveDuringACollectionTest(RuntimeTestCase):
         after = answers["refresh"]["sessions"][0]
         self.assertEqual("Second words", after["annotation_goal"])
         self.assertEqual(saved["revision"], after["annotation_revision"])
+
+
+class ConsentNoticeHandlerTest(unittest.TestCase):
+    """Exercise real press admission and jobs without binding a listening socket."""
+
+    def _exercise(self, name: str) -> None:
+        fixture = ReadingRouteTest(name)
+        self.addCleanup(fixture.doCleanups)
+        application: Any = None
+
+        @contextlib.contextmanager
+        def serving(app: Any) -> Any:
+            nonlocal application
+            application = app
+            fixture.outcomes = []
+            record_reading = annotation_store.record_reading
+            record_withheld = annotation_store.record_withheld
+
+            def written(*args: Any, **kwargs: Any) -> Any:
+                fixture.outcomes.append({"produced": True, "reason": ""})
+                return record_reading(*args, **kwargs)
+
+            def withheld(*args: Any, **kwargs: Any) -> Any:
+                fixture.outcomes.append(
+                    {"produced": False, "reason": kwargs["reason"], "spent": kwargs["spent"]}
+                )
+                return record_withheld(*args, **kwargs)
+
+            with (
+                mock.patch.object(annotation_store, "record_reading", written),
+                mock.patch.object(annotation_store, "record_withheld", withheld),
+            ):
+                yield 4601
+                fixture._settle()
+
+        def post(
+            port: int, payload: Any, *, settle: bool = True, **kwargs: Any
+        ) -> tuple[int, bytes]:
+            handler: Any = object.__new__(http_api._RequestHandler)
+            handler.server = SimpleNamespace(application=application, server_port=port)
+            handler.client_address = ("127.0.0.1", port)
+            handler.headers = email.message.Message()
+            body = json.dumps(payload).encode()
+            handler.headers["Host"] = f"127.0.0.1:{port}"
+            handler.headers["Content-Length"] = str(len(body))
+            for key, value in kwargs.get("headers", {}).items():
+                handler.headers[key] = value
+            handler.rfile = io.BytesIO(body)
+            responses: list[tuple[int, bytes]] = []
+            with mock.patch.object(
+                handler,
+                "_send",
+                side_effect=lambda body, _type, code=200: responses.append((code, body)),
+            ):
+                handler._reading()
+            if settle and responses[0][0] == 202:
+                fixture._settle()
+            return responses[0]
+
+        with (
+            mock.patch.object(fixture, "_serving", serving),
+            mock.patch.object(fixture, "_post", post),
+            mock.patch.object(
+                fixture,
+                "_data",
+                lambda _port: json.loads(application.collect_json(show_all=False)[1]),
+            ),
+        ):
+            getattr(fixture, name)()
+
+    def test_fresh_press_notice_off_and_turn_on(self) -> None:
+        self._exercise("test_fresh_press_runs_with_notice_then_off_blocks_until_resume")
+
+    def test_pause_during_analyze_admission_sends_nothing(self) -> None:
+        self._exercise("test_readings_turned_off_mid_press_and_left_off_send_nothing")
+
+    def test_claude_tool_output_defaults_on(self) -> None:
+        self._exercise("test_a_fresh_claude_reading_includes_tool_output_without_a_grant")
+
+    def test_changed_destination_runs_with_new_notice(self) -> None:
+        self._exercise("test_a_changed_destination_runs_with_a_new_notice")
+
+    def test_content_tier_migration_runs_with_a_notice(self) -> None:
+        self._exercise("test_prior_claude_content_versions_run_with_a_notice")
+
+
+class SummaryStoreHTTPTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.store = summary_store
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.config, self.state = make_runtime(
+            state_home=self.temp.name,
+            state_dir=Path(self.temp.name),
+            model_calls_disabled=True,
+            annotations_enabled=False,
+        )
+        self.path = Path(self.temp.name) / "session.jsonl"
+        transcript = Transcript(Path(self.temp.name))
+        transcript.prompt("Inspect the parser")
+        transcript.save(self.path)
+        page = session_source.read(self.config, str(self.path), "claude", "root")
+        assert page.coverage is not None and page.snapshot is not None
+        summary = session_summary.summarize(
+            page.entries,
+            page.coverage,
+            "claude",
+            config=self.config,
+            model=Replies(),
+            clock=lambda: 0.0,
+        )
+        self.assertEqual(
+            "stored",
+            summary_store.put(
+                self.config,
+                "claude",
+                "root",
+                summary,
+                page.snapshot,
+                made_at=100.0,
+                model_stamp="synthetic-model",
+            ),
+        )
+        self.application: Any = aggregate.Application(
+            self.config,
+            self.state,
+            (),
+            native_notifier=lambda _: "",
+            popup_notifier=lambda *_: None,
+            diagnostic_sink=lambda _: None,
+        )
+        self.row = {"harness": "claude", "sid": "root", "project": "synthetic", "ended_at": 90.0}
+        patcher = mock.patch.object(
+            self.application,
+            "collect_json",
+            return_value=(
+                (1.0, 1),
+                json.dumps({"sessions": [self.row]}).encode(),
+            ),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @contextlib.contextmanager
+    def serving(self) -> Any:
+        try:
+            server = make_server(application=self.application)
+        except PermissionError:
+            self.skipTest("sandbox denies loopback socket binding")
+        thread = threading.Thread(target=poll_fast(server), daemon=True)
+        thread.start()
+        try:
+            yield server.server_port
+        finally:
+            server.shutdown()
+            thread.join(3)
+            server.server_close()
+
+    @staticmethod
+    def request(
+        port: int,
+        method: str,
+        path: str,
+        body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request(method, path, body=body, headers=headers or {})
+            response = conn.getresponse()
+            raw = response.read()
+            return response.status, json.loads(raw) if response.status == 200 else raw
+        finally:
+            conn.close()
+
+    def test_focused_reopen_serves_a_stored_summary_without_a_model_call(self) -> None:
+        """Serving only: generating on first open and its summary ledger belong to the job lane.
+
+        Models are off and the summary is saved before the first open, so this cannot catch an
+        open that starts a summary job; the ledger asserted is the Analyze reading ledger.
+        """
+        with (
+            self.serving() as port,
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(runtime_observer, "prepare_claude_exec") as claude,
+            mock.patch.object(runtime_observer, "codex_exec") as codex,
+            mock.patch.object(session_summary, "summarize") as model_seam,
+        ):
+            for _ in range(2):
+                status, answer = self.request(
+                    port, "GET", "/api/project-context?project=synthetic&session=claude:root"
+                )
+                self.assertEqual(200, status)
+                summary = answer["sources"]["summary"]
+                self.assertTrue(summary["exists"])
+                self.assertEqual("synthetic-model", summary["model_stamp"])
+                self.assertEqual("unchanged", summary["out_of_date"]["kind"])
+                self.assertEqual(1, len(summary["blocks"]))
+            self.assertEqual(0, claude.call_count + codex.call_count + model_seam.call_count)
+            status, answer = self.request(port, "GET", "/api/project-context?project=synthetic")
+            self.assertNotIn("summary", answer["sources"])
+        self.assertEqual(0, reading_policy.status(self.config, now=time.time())["used"])
+
+    def test_delete_route_works_with_annotations_and_models_off(self) -> None:
+        with self.serving() as port:
+            status, answer = self.request(
+                port, "POST", "/api/summary/delete", b'{"harness":"claude","sid":"root"}'
+            )
+        self.assertEqual(200, status)
+        self.assertEqual("deleted", answer["outcome"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+
+    def test_delete_refuses_navigation_cross_site_and_host_before_store_or_body(self) -> None:
+        with self.serving() as port, mock.patch.object(self.store, "delete") as delete:
+            for headers in (
+                {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"},
+                {"Sec-Fetch-Site": "cross-site"},
+                {"Sec-Fetch-Site": "same-site"},
+                {"Host": "example.com"},
+                {"Origin": "https://example.com"},
+            ):
+                with self.subTest(headers=headers):
+                    status, _answer = self.request(
+                        port, "POST", "/api/summary/delete", b"invalid JSON", headers
+                    )
+                    self.assertEqual(403, status)
+            delete.assert_not_called()
+        self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
+
+    def handler(
+        self, path: str = "/api/summary/delete", body: bytes = b'{"harness":"claude","sid":"root"}'
+    ) -> Any:
+        handler: Any = object.__new__(http_api._RequestHandler)
+        handler.server = SimpleNamespace(application=self.application, server_port=12345)
+        handler.path = path
+        handler.headers = {"Content-Length": str(len(body)), "Host": "127.0.0.1:12345"}
+        handler.client_address = ("127.0.0.1", 10000)
+        handler.rfile = io.BytesIO(body)
+        handler._send = mock.Mock()
+        handler._reject = mock.Mock()
+        handler.send_error = mock.Mock()
+        return handler
+
+    def test_focused_handler_serves_second_open_without_a_model(self) -> None:
+        handler = self.handler()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(runtime_observer, "prepare_claude_exec") as claude,
+            mock.patch.object(runtime_observer, "codex_exec") as codex,
+            mock.patch.object(session_summary, "summarize") as model_seam,
+        ):
+            for _ in range(2):
+                handler._project_context(
+                    urlparse("/api/project-context?project=synthetic&session=claude:root")
+                )
+                answer = json.loads(handler._send.call_args.args[0])
+                self.assertEqual("unchanged", answer["sources"]["summary"]["out_of_date"]["kind"])
+                self.assertEqual("synthetic-model", answer["sources"]["summary"]["model_stamp"])
+                self.assertIsNone(answer["sources"]["summary"]["plan"])
+            self.assertEqual(0, claude.call_count + codex.call_count + model_seam.call_count)
+        self.assertEqual(0, reading_policy.status(self.config, now=time.time())["used"])
+
+    def test_delete_handler_removes_only_the_summary(self) -> None:
+        handler = self.handler()
+        handler.do_POST()
+        handler._reject.assert_not_called()
+        self.assertEqual("deleted", json.loads(handler._send.call_args.args[0])["outcome"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+
+    def test_delete_handler_guards_run_before_reading_body_or_store(self) -> None:
+        for headers in (
+            {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"},
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Sec-Fetch-Site": "same-site"},
+            {"Host": "example.com"},
+            {"Origin": "https://example.com"},
+        ):
+            with self.subTest(headers=headers):
+                handler = self.handler(body=b"invalid JSON")
+                handler.headers.update(headers)
+                with mock.patch.object(self.store, "delete") as delete:
+                    handler.do_POST()
+                    handler._reject.assert_called_once_with(403)
+                    delete.assert_not_called()
+                    self.assertEqual(0, handler.rfile.tell())
+
+
+class SummaryJobHTTPTest(unittest.TestCase):
+    temp: Any
+    config: Any
+    state: Any
+    store: Any
+    path: Path
+    application: Any
+    row: dict[str, Any]
+
+    def handler(self, path: str = "/api/summary", body: bytes = b"{}") -> Any:
+        factory: Any = SummaryStoreHTTPTest.handler
+        return factory(self, path, body)
+
+    def setUp(self) -> None:
+        setup: Any = SummaryStoreHTTPTest.setUp
+        setup(self)
+        self.jobs = summary_jobs
+        self.config = dataclasses.replace(self.config, model_calls_disabled=False)
+        self.application.config = self.config
+        row_patcher = mock.patch.object(
+            http_api._RequestHandler, "_published_row", return_value=self.row
+        )
+        row_patcher.start()
+        self.addCleanup(row_patcher.stop)
+        self.store.delete(self.config, "claude", "root")
+        patcher = mock.patch.object(runtime_supervise, "_SHUTDOWN", threading.Event())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def request_summary(self, **changes: Any) -> Any:
+        body = json.dumps(
+            {"harness": "claude", "sid": "root", "action": "start", "origin": "open", **changes}
+        ).encode()
+        handler = self.handler("/api/summary", body)
+        handler.do_POST()
+        return handler
+
+    def test_second_open_with_models_enabled_makes_no_call_and_no_summary_charge(self) -> None:
+        model = Replies()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            first = self.request_summary()
+            self.assertEqual(202, first._send.call_args.args[2])
+            wait_job(self.application, "claude", "root", timeout=5)
+            calls = len(model.prompts)
+            used = reading_policy.summary_status(self.config, now=self.application.clock())["used"]
+            second = self.request_summary()
+            self.assertEqual("summary-exists", json.loads(second._send.call_args.args[0])["reason"])
+            focused = self.handler()
+            focused._project_context(
+                urlparse("/api/project-context?project=synthetic&session=claude:root")
+            )
+            saved = json.loads(focused._send.call_args.args[0])["sources"]["summary"]
+            self.assertTrue(saved["exists"])
+            self.assertEqual("unchanged", saved["out_of_date"]["kind"])
+            self.assertEqual(1, len(saved["blocks"]))
+            self.assertEqual(calls, len(model.prompts))
+            self.assertEqual(
+                used,
+                reading_policy.summary_status(self.config, now=self.application.clock())["used"],
+            )
+            self.assertEqual(2, used)
+
+    def test_open_refuses_running_session_and_stored_summary(self) -> None:
+        self.row["ended_at"] = None
+        self.assertEqual(
+            "session-running", json.loads(self.request_summary()._send.call_args.args[0])["reason"]
+        )
+
+    def test_plan_refusal_reports_largest_read_before_first_call(self) -> None:
+        self.application.config = dataclasses.replace(self.config, session_summary_max_calls=1)
+        with mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)):
+            answer = json.loads(self.request_summary()._send.call_args.args[0])
+        self.assertEqual("planned_calls", answer["reason"])
+        self.assertEqual(1, answer["largest_read"]["calls"])
+        self.assertEqual(
+            0, reading_policy.summary_status(self.config, now=self.application.clock())["used"]
+        )
+
+    def test_summary_routes_refuse_before_reading_body_or_store(self) -> None:
+        for path in ("/api/summary", "/api/summary/cancel", "/api/summary/delete"):
+            for headers in (
+                {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"},
+                {"Sec-Fetch-Site": "cross-site"},
+                {"Origin": "https://evil.example"},
+                {"Host": "evil.example"},
+            ):
+                handler = self.handler(path, b"invalid")
+                handler.headers.update(headers)
+                with (
+                    mock.patch.object(
+                        handler, "_read_body", side_effect=AssertionError("body read")
+                    ),
+                    mock.patch.object(self.store, "load", side_effect=AssertionError("store read")),
+                ):
+                    handler.do_POST()
+                handler._reject.assert_called_once_with(403)
+            handler = self.handler(path)
+            handler.client_address = ("192.0.2.1", 9999)
+            with mock.patch.object(handler, "_read_body", side_effect=AssertionError("body read")):
+                handler.do_POST()
+            handler._reject.assert_called_once_with(403)
+
+    def discard(self) -> dict[str, Any]:
+        handler = self.handler("/api/annotate", b'{"harness":"claude","sid":"root","clear":true}')
+        handler.do_POST()
+        answer: dict[str, Any] = json.loads(handler._send.call_args.args[0])
+        return answer
+
+    def summarize_to_the_end(self) -> None:
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=Replies()),
+        ):
+            self.request_summary()
+            wait_job(self.application, "claude", "root", timeout=5)
+        self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
+
+    def test_discard_everything_stops_a_running_summary_and_deletes_the_store_entry(self) -> None:
+        # The owner's ruling of 2026-10-21 reverses the earlier rule that the summary survives:
+        # a discard stops the job as Delete summary does, then removes the saved summary, so the
+        # reply returning from the model cannot bring the text back.
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        entered, release = threading.Event(), threading.Event()
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return Replies()(prompt, output_cap_bytes=output_cap_bytes)
+
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            self.request_summary()
+            self.assertTrue(entered.wait(5))
+            try:
+                answer = self.discard()
+            finally:
+                release.set()
+            wait_job(self.application, "claude", "root", timeout=5)
+        # Nothing was stored and a job was: the reply says the job was stopped, which `absent` cannot.
+        self.assertEqual("stopped", answer["summary"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+        self.assertEqual("discarded", self.state.summary_jobs["claude:root"].reason)
+        self.assertEqual("cancelled", self.state.summary_jobs["claude:root"].state)
+
+    def test_discard_everything_deletes_a_saved_summary_and_says_so(self) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        self.summarize_to_the_end()
+        answer = self.discard()
+        self.assertEqual("deleted", answer["summary"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+
+    def test_a_discard_that_removed_no_words_leaves_the_summary_alone(self) -> None:
+        # Nothing typed means nothing was discarded, and a summary does not depend on saved intent,
+        # so a hand-made request must not take it.
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        self.summarize_to_the_end()
+        answer = self.discard()
+        self.assertEqual("untouched", answer["summary"])
+        self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
+
+    def test_a_discard_names_how_many_revisions_it_took_and_no_more(self) -> None:
+        # DRC-4939. The count is the store's, read under its lock, and null where the arm is not
+        # a discard, so a figure of zero is a discard that found nothing.
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="First", output="", now=100.0
+        )
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Second", output="", now=101.0
+        )
+        self.assertEqual(2, self.discard()["removed"])
+        self.assertEqual(0, self.discard()["removed"])
+
+    def test_a_second_discard_over_a_discarded_session_says_a_record_stands(self) -> None:
+        # A repeat press removes nothing, as a press over words never typed does, but a discard
+        # record exists. The reply carries the stamp that tells the page which zero it is, and the
+        # server owns a sentence that is true of it rather than "nothing was typed".
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        never = self.discard()
+        self.assertEqual(0, never["removed"])
+        self.assertIsNone(never["discarded"])
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Words", output="", now=100.0
+        )
+        first = self.discard()
+        again = self.discard()
+        self.assertEqual(1, first["removed"])
+        self.assertEqual(0, again["removed"])
+        self.assertIsNotNone(again["discarded"])
+        said = annotation_store.DISCARD_SENTENCES
+        self.assertIn("already", said)
+        self.assertNotIn("Nothing was typed", said["already"])
+        self.assertNotIn("no record", said["already"])
+        self.assertIn("earlier", said["already"])
+
+    def test_a_discard_without_a_stored_summary_says_none_existed(self) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        answer = self.discard()
+        self.assertEqual("absent", answer["summary"])
+        self.assertEqual(1, answer["removed"])
+
+    def test_a_discard_takes_the_summary_when_this_dashboards_copy_is_stale(self) -> None:
+        # DRC-4939. The words were saved from another tab after this dashboard last read the
+        # store, so its cached copy holds nothing. The summary was left standing under words that
+        # had gone, because the route decided on that copy.
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        self.summarize_to_the_end()
+        self.state.annotations = ()
+        self.assertIsNone(
+            annotation_store.find(
+                annotation_store.active(self.config, self.state), "claude", "root"
+            )
+        )
+        answer = self.discard()
+        self.assertEqual("deleted", answer["summary"])
+        self.assertEqual(1, answer["removed"])
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+
+    def test_a_discard_says_the_summary_store_was_unavailable_and_does_not_claim_it_gone(
+        self,
+    ) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        Path(self.store.store_path(self.config)).write_text("not json", encoding="utf-8")
+        answer = self.discard()
+        self.assertEqual("unavailable", answer["summary"])
+        self.assertEqual(1, answer["removed"])
+
+    def test_the_discard_sentences_say_only_what_happened_to_the_summary(self) -> None:
+        said = annotation_store.DISCARD_SENTENCES
+        # A summary that went, one that never existed, one that is still stored, and one the
+        # store could not be read to tell: four sentences, each claiming only its own case.
+        self.assertIn("its summary", said["stored"])
+        self.assertIn("no stored summary", said["stored_no_summary"])
+        self.assertIn("still stored", said["summary_kept"])
+        self.assertNotIn("still stored", said["summary_unavailable"])
+        self.assertNotIn("Delete summary removes it", said["summary_unavailable"])
+        # A job stopped with nothing stored, and a token this build does not know, each say only that.
+        self.assertIn("was stopped", said["summary_stopped"])
+        self.assertNotIn("still stored", said["summary_stopped"])
+        self.assertIn("may still be stored", said["summary_unknown"])
+        self.assertNotIn(
+            "its summary", said["summary_unknown"].replace("this session's summary", "")
+        )
+        # Reopening writes a new summary unless summaries are off: said wherever the store was
+        # read and no summary stands, and not where one may still stand or the store is unreadable.
+        for name in ("stored", "stored_no_summary", "summary_stopped"):
+            with self.subTest(name=name):
+                self.assertIn("unless summaries are turned off", said[name])
+        for name in ("summary_kept", "summary_unavailable", "summary_unknown"):
+            with self.subTest(name=name):
+                self.assertNotIn("unless summaries are turned off", said[name])
+
+    def test_the_armed_discard_derives_its_lapse_from_the_cue_window(self) -> None:
+        self.assertIn(
+            f"lapses in {annotation_store.CUE_WINDOW_SECONDS} seconds",
+            annotation_store.DISCARD_ARMED,
+        )
+
+    def test_a_discard_keeps_the_record_that_a_check_ran(self) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=True)
+        self.application.config = self.config
+        annotation_store.annotate(
+            self.config, self.state, "claude", "root", goal="Inspect parser", output="", now=100.0
+        )
+        answer = self.discard()
+        self.assertIsNotNone(answer["discarded"])
+        entry = annotation_store.find(
+            annotation_store.active(self.config, self.state), "claude", "root"
+        )
+        self.assertTrue(annotation_store.is_discarded(entry))
+
+    def test_consent_route_does_not_touch_reading_or_goal_and_off_survives_restart(self) -> None:
+        reading_policy.note(
+            self.config,
+            kind="goal",
+            provider="codex",
+            destination="OpenAI",
+            content=4,
+            tool_output="",
+            now=100.0,
+        )
+        before = reading_policy.status(self.config, now=100.0)
+        for consent in ("off", "on", "off"):
+            handler = self.handler("/api/summary", json.dumps({"consent": consent}).encode())
+            handler.do_POST()
+            self.assertEqual(200, handler._send.call_args.args[2])
+            self.assertEqual(before, reading_policy.status(self.config, now=100.0))
+        config, _ = make_runtime(state_home=self.temp.name, state_dir=Path(self.temp.name))
+        self.assertEqual(
+            "summaries-off", reading_policy.summary_status(config, now=100.0)["reason"]
+        )
+
+    def test_pause_and_resume_leave_the_summary_switch_exactly_as_stored(self) -> None:
+        for allowed in (False, True):
+            reading_policy.set_consent(self.config, True, now=100.0)
+            original = reading_policy.set_summary_consent(self.config, allowed, now=100.0)
+            pause = self.handler(
+                "/api/reading",
+                b'{"consent":"off","press":true,"observer_model":1}',
+            )
+            pause.do_POST()
+            self.assertEqual(200, pause._send.call_args.args[2])
+            for consent in ("off", "on"):
+                switch = self.handler("/api/summary", json.dumps({"consent": consent}).encode())
+                switch.do_POST()
+                self.assertEqual(403, switch._send.call_args.args[2])
+                self.assertEqual(
+                    "model-calls-paused",
+                    json.loads(switch._send.call_args.args[0])["reason"],
+                )
+            for origin in ("open", "press"):
+                refused = self.request_summary(origin=origin)
+                self.assertEqual(403, refused._send.call_args.args[2])
+                self.assertEqual(
+                    "model-calls-paused",
+                    json.loads(refused._send.call_args.args[0])["reason"],
+                )
+            resume = self.handler(
+                "/api/reading",
+                b'{"consent":"on","press":true,"observer_model":1}',
+            )
+            resume.do_POST()
+            self.assertEqual(200, resume._send.call_args.args[2])
+            self.assertEqual({}, self.state.summary_jobs)
+            self.assertEqual(original, reading_policy.summary_status(self.config, now=100.0))
+
+    def test_malformed_summary_values_are_refused_without_model_work(self) -> None:
+        payload: dict[str, Any]
+        for payload in (
+            {"consent": []},
+            {"consent": {}},
+            {"consent": True},
+            {"harness": "claude", "sid": "root", "action": [], "origin": "press"},
+        ):
+            handler = self.handler("/api/summary", json.dumps(payload).encode())
+            handler.do_POST()
+            handler._reject.assert_called_once_with(400)
+
+    def test_summary_mutations_report_publication_lock_failure(self) -> None:
+        for path, payload in (
+            ("/api/summary", {"consent": "off"}),
+            ("/api/summary/cancel", {"harness": "claude", "sid": "root"}),
+            ("/api/summary/delete", {"harness": "claude", "sid": "root"}),
+        ):
+            handler = self.handler(path, json.dumps(payload).encode())
+            with mock.patch.object(
+                summary_jobs, "_locked", side_effect=OSError("lock unavailable")
+            ):
+                handler.do_POST()
+            reply = json.loads(handler._send.call_args.args[0])
+            self.assertIn(
+                reply.get("reason") or reply.get("outcome"), ("store-unavailable", "unwritable")
+            )
+
+    def test_turn_off_readings_refuses_and_stops_session_summaries(self) -> None:
+        # After Pause model calls no session summary call is made until Resume model calls.
+        entered, release = threading.Event(), threading.Event()
+        replies = Replies()
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return replies(prompt, output_cap_bytes=output_cap_bytes)
+
+        off = json.dumps({"consent": "off", "press": True, "observer_model": 1}).encode()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            self.request_summary(origin="press")
+            self.assertTrue(entered.wait(5))
+            try:
+                self.handler("/api/reading", off).do_POST()
+            finally:
+                release.set()
+            wait_job(self.application, "claude", "root", timeout=5)
+            self.assertEqual("model-calls-paused", self.state.summary_jobs["claude:root"].reason)
+            self.assertEqual(1, len(replies.prompts))
+            self.assertIsNone(self.store.get(self.config, "claude", "root"))
+            refused = self.request_summary(origin="press")
+            self.assertEqual(403, refused._send.call_args.args[2])
+            answer = json.loads(refused._send.call_args.args[0])
+            self.assertEqual("model-calls-paused", answer["reason"])
+            self.assertFalse(answer["summaries"]["consent"])
+            self.assertEqual(1, len(replies.prompts))

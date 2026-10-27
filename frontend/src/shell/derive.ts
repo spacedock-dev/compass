@@ -1,7 +1,7 @@
 import { payloadSessions } from '../api/bootstrap';
 import type { PayloadData, PayloadSession } from '../api/types';
+import { noTitleText, pageTitleOf } from '../observed/session';
 import { observedFor } from '../observed/select';
-import { trimmed } from '../observed/values';
 import type { BoardSnapshot } from '../store/board';
 
 /* The few figures the page's chrome reads, taken from the observed model of the rows the views render
@@ -80,9 +80,11 @@ export function findSession(
   return matches.length === 1 ? (matches[0] ?? null) : null;
 }
 
-/* The published title, or a sentence saying there is none. Never an invented one. */
+/* The published title, or a sentence saying there is none. Never an invented one. The tab and the crumb take
+   the same stand-in for an identifier-only title as the session heading does, so the three agree. */
 export function sessionTitle(session: PayloadSession | null): string {
-  return trimmed(session?.title) || TITLE_NOT_PUBLISHED;
+  const row = session ? (session as unknown as Record<string, unknown>) : null;
+  return (row ? pageTitleOf(row) : '') || (row ? noTitleText(row) : TITLE_NOT_PUBLISHED);
 }
 
 /* The two reasons the history store publishes, and nothing else: the field arrives from a file any

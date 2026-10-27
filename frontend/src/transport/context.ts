@@ -3,6 +3,7 @@ import type { ApiClient } from '../api/client';
 import { compatSessKey, contextKey } from '../api/identity';
 import type { ApiFailure, SessionIdentity } from '../api/types';
 import type { BoardStore, DataFailure } from '../store/board';
+import { selectObserverOff } from '../store/selectors';
 import type { TransportStorage } from './ports';
 
 export interface ContextScope {
@@ -15,6 +16,7 @@ export interface ContextScope {
 export interface ContextLoaderDeps {
   readonly client: Pick<ApiClient, 'getProjectContext'>;
   readonly store: BoardStore;
+  /** Read only for a stored decline, which the upgrade keeps: see `requestObserverSummary`. */
   readonly storage: Pick<TransportStorage, 'observerConsent'>;
 }
 
@@ -32,7 +34,7 @@ function failureOf(result: ApiFailure): DataFailure | null {
 }
 
 /* Passive reads are source reading and spend nothing. The summary request is
-   the one explicit action here: it needs separate consent, an enabled offer and
+   the one explicit action here: it needs an enabled offer and
    a published disclosure, and it never runs from a load, a reconnect or a
    disposal. A failed read keeps the previous data beside the new error rather
    than replacing it, which is why an entry carries both. */
@@ -87,7 +89,10 @@ export function createContextLoader(deps: ContextLoaderDeps) {
       if (
         disposed ||
         !focus ||
-        storage.observerConsent() !== 'granted' ||
+        selectObserverOff(store.getSnapshot(), key, focus) ||
+        /* A summary off this browser stored before the widening is kept: the upgrade opts nobody back in.
+           [The widening](../../../docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts) */
+        storage.observerConsent() === 'declined' ||
         model?.enabled !== true ||
         !model.disclosure ||
         observerRequests.has(key)
@@ -100,7 +105,6 @@ export function createContextLoader(deps: ContextLoaderDeps) {
       passive.delete(key);
       const owned = controller();
       try {
-        // Consent is scoped to this explicit focused refresh, never a passive poll.
         const result = await client.getProjectContext({
           project: scope.projectKey,
           session: compatSessKey(focus),
@@ -115,6 +119,7 @@ export function createContextLoader(deps: ContextLoaderDeps) {
             revision: nextFiniteNumber(store.getSnapshot().data?.generated),
             error: null,
           });
+          store.setObserverNotice(key, result.body.observer_model?.notice ?? null);
           store.setObserverState(key, 'ready');
         } else {
           store.setObserverState(key, 'error');

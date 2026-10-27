@@ -15,12 +15,14 @@
 @source '../ui/**/*.{ts,tsx}';
 @source '../lib/**/*.{ts,tsx}';
 @source '../terminal/TerminalSurface.tsx';
-@source '../intent/{DirectionQuestion,GoalField,IntentPanel,OutcomeLines,SessionMore}.tsx';
-@source '../sessions/SessionDetail.tsx';
+@source '../intent/{DirectionQuestion,GoalField,IntentPanel,IntentSection,OutcomeLines,DirectionActionButton}.tsx';
+@source '../sessions/{SessionDetail,FullActivity,WhatItDid,SummaryParts,DepartureParts}.tsx';
 @source '../steering/StageConditions.tsx';
 @source '../intent/PromptSelect.tsx';
 @source '../sample/**/*.{ts,tsx}';
-@source '../drift/{ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore}.tsx';
+@source '../shell/Header.tsx';
+@source '../controls/Disclosure.tsx';
+@source '../drift/{CitationLink,CitedText,DriftStamp,ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore,SteerBack,DriftBody}.tsx';
 @source not '../**/*.test.*';
 @source not '../controls/{gallery,GalleryBoard,galleryWorld}.*';
 @source not '../**/*.css';
@@ -62,6 +64,7 @@
   --color-border: var(--line);
   --color-input: var(--line);
   --color-ring: var(--accent);
+  --color-cite: var(--cite);
 }
 
 /* The page palette and five type steps stay present even when no utility names them. Semantic colours
@@ -88,6 +91,8 @@
   /* colour is observation; absence has none */
   --accent: #cfe884;
   --accent-dim: #93a757;
+  /* a citation link in running text: not the lime of an action, not the ink of the words around it */
+  --cite: #8fb8e6;
   --amber: #f0b95e;
   --clay: #e4886a;
   /* type: five steps, floor 13px, sentences 15px */

@@ -146,7 +146,7 @@ const summarizeEditor = () => {
           said: norm(question.querySelector('.next-cockpit-direction-said')),
           buttons: [...question.querySelectorAll('.next-cockpit-reading-ask button')]
             .map(norm)
-            .filter((label) => label !== 'Turn off readings'),
+            .filter((label) => label !== 'Pause model calls'),
         }
       : null,
   };
@@ -345,7 +345,7 @@ try {
     async () => {
       const drafted = await compareEditor('drafted', 'intent-2');
       assert.equal(drafted.fields[0].boxes[0], 'Ship the queue worker behind a flag.');
-      assert.match(drafted.fields[0].marks, /from your prompt/);
+      assert.match(drafted.fields[0].marks, /Drafted from your first prompt/);
       const typed = await compareEditor('typed', 'intent-2', async (o) => {
         const box = o.page.locator('textarea[data-next-cockpit-held-kind="goal"]');
         await box.click();
@@ -375,7 +375,7 @@ try {
       await react.page.waitForFunction(
         () =>
           document.querySelectorAll(
-            '[data-slot=select-content] [role=option]:not([aria-disabled=true])',
+            '[data-slot=popover-content] [role=option]:not([aria-disabled=true])',
           ).length > 0,
       );
       const offeredPrompts = await react.page.getByRole('option').count();
@@ -411,6 +411,8 @@ try {
         'the editor differs from the recorded editor over a pending line',
       );
       // An armed discard.
+      /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+         proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       await react.page.getByRole('button', { name: 'More', exact: true }).click();
       await react.page
         .locator(
@@ -707,7 +709,7 @@ try {
           assert.equal(pending.loading, 'Loading your prompts', 'the open popup must show loading');
           assert.equal(pending.busy, 'true');
           assert.equal(await react.page.getByRole('listbox').isVisible(), true);
-          await mark(react, '[data-slot=select-content]', 'prompt-popup');
+          await mark(react, '[data-slot=popover-content]', 'prompt-popup');
           await react.page.screenshot({
             path: `${SHOTS}select-prompt-loading-${width}.png`,
             fullPage: true,
@@ -727,14 +729,14 @@ try {
             loading: document.querySelector('[role=option][aria-disabled=true]')?.textContent,
           }));
           assert.equal(loaded.text, 'Use your prompt');
-          assert.equal(await same(react, '[data-slot=select-content]', 'prompt-popup'), true);
+          assert.equal(await same(react, '[data-slot=popover-content]', 'prompt-popup'), true);
           assert.equal(await select.getAttribute('aria-expanded'), 'true');
           await react.page.screenshot({
             path: `${SHOTS}select-prompt-loaded-${width}.png`,
             fullPage: true,
           });
           const popupBounds = await react.page.getByRole('listbox').evaluate((node) => {
-            const popup = node.closest('[data-slot=select-content]').getBoundingClientRect();
+            const popup = node.closest('[data-slot=popover-content]').getBoundingClientRect();
             const trigger = document
               .querySelector('[data-next-cockpit-prompt-select]')
               .getBoundingClientRect();
@@ -785,7 +787,7 @@ try {
   );
 
   await step(
-    'the Base UI Select reads the prompts once per opening, fills the box, and Save adopts it naming the fact',
+    'the prompt popup reads the prompts once per opening, fills the box, and Save adopts it naming the fact',
     async () => {
       await load(react, fragmentOf('intent-2'));
       await readEditor(react);
@@ -795,7 +797,7 @@ try {
       await react.page.waitForFunction(
         () =>
           document.querySelectorAll(
-            '[data-slot=select-content] [role=option]:not([aria-disabled=true])',
+            '[data-slot=popover-content] [role=option]:not([aria-disabled=true])',
           ).length > 0,
       );
       const prompts = react.log.requests.filter((r) => r.path.includes('prompts=1'));
@@ -817,9 +819,7 @@ try {
       assert.deepEqual(react.log.nonGet, [], 'choosing a prompt wrote');
       await react.page.locator('[data-next-cockpit-action="held-save"]').click();
       await react.page.waitForFunction(
-        () =>
-          document.querySelector('.next-cockpit-held-footer small')?.textContent ===
-          'Saved as a new revision.',
+        () => document.querySelector('.next-cockpit-held-footer small')?.textContent === 'Saved.',
       );
       assert.equal(react.log.nonGet.length, 1);
       const stored = (await call(board.react.origin, 'GET', '/api/data')).body.sessions.find(
@@ -895,6 +895,8 @@ try {
       const discard = react.page.locator('[data-next-cockpit-action="held-discard"]');
       react.reset();
       // Behind its own summary, as a reader finds it.
+      /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+         proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       const more = react.page.getByRole('button', { name: 'More', exact: true });
       if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
       await react.page
@@ -930,6 +932,8 @@ try {
     await load(react, fragmentOf('intent-2'));
     await readEditor(react);
     const discard = react.page.locator('[data-next-cockpit-action="held-discard"]');
+    /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+       proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
     const more = react.page.getByRole('button', { name: 'More', exact: true });
     if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
     await react.page
@@ -938,8 +942,10 @@ try {
       )
       .click();
     await discard.click();
+    // Armed, the question is the card's own (outside the menu) and stays drawn with the menu closed.
+    assert.equal(await react.page.locator('[data-next-intent-armed-discard]').count(), 1);
     await react.page.keyboard.press('Escape');
-    assert.equal(await discard.innerText(), 'Discard everything');
+    assert.equal(await react.page.locator('[data-next-intent-armed-discard]').count(), 0);
     assert.match(await react.page.evaluate(() => globalThis.location.hash), /^#n=session:/);
   });
 
@@ -1009,6 +1015,8 @@ try {
     async () => {
       await load(react, fragmentOf('intent-2'));
       await readEditor(react);
+      /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+         proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       const more = react.page.getByRole('button', { name: 'More', exact: true });
       if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
       const key = 'compass.next.live-estimate:claude:intent-2';
@@ -1019,6 +1027,8 @@ try {
       assert.equal(await sw.getAttribute('aria-checked'), 'true');
       assert.equal(await react.page.evaluate((k) => globalThis.localStorage.getItem(k), key), '1');
       await react.page.reload();
+      /* Predates the one-column page (2026-10-19): the session More button is gone, so this fails when the
+         proof is run on demand until it is brought forward to the Intent card that now holds these parts. */
       await react.page.getByRole('button', { name: 'More', exact: true }).click();
       await react.page.waitForSelector('.next-session-drift-switch');
       assert.equal(

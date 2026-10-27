@@ -1,4 +1,10 @@
-import type { PayloadData, ProjectContext, SemanticFact, SessionRecord } from '../api/types';
+import type {
+  ModelNoticeRecord,
+  PayloadData,
+  ProjectContext,
+  SemanticFact,
+  SessionRecord,
+} from '../api/types';
 
 export type DataFailure =
   | { readonly kind: 'http-error'; readonly status: number }
@@ -56,6 +62,9 @@ export interface BoardSnapshot {
   readonly observer: {
     readonly requests: readonly string[];
     readonly states: ReadonlyMap<string, 'ready' | 'error'>;
+    /** The goal notice the last explicit Summarize reply carried, per context key. Held outside the context
+        entry because the server sends it only on that reply, and the next passive read replaces the entry. */
+    readonly notices: ReadonlyMap<string, ModelNoticeRecord>;
   };
   readonly pending: readonly string[];
 }
@@ -74,7 +83,7 @@ const INITIAL: BoardSnapshot = Object.freeze({
   firstBuild: '',
   contexts: new Map(),
   records: new Map(),
-  observer: { requests: [], states: new Map() },
+  observer: { requests: [], states: new Map(), notices: new Map() },
   pending: [],
 });
 
@@ -199,6 +208,21 @@ export function createBoardStore(deps: {
       const states = new Map(snapshot.observer.states);
       states.set(key, state);
       publish({ ...snapshot, observer: { ...snapshot.observer, states } });
+    },
+
+    /** Kept until the next explicit Summarize reply replaces it or a turn-off clears it (`null`). */
+    setObserverNotice(key: string, notice: ModelNoticeRecord | null): void {
+      const had = snapshot.observer.notices.get(key);
+      if (had === notice || (!had && !notice)) return;
+      const notices = new Map(snapshot.observer.notices);
+      if (notice) notices.set(key, notice);
+      else notices.delete(key);
+      publish({ ...snapshot, observer: { ...snapshot.observer, notices } });
+    },
+
+    clearObserverNotices(): void {
+      if (snapshot.observer.notices.size === 0) return;
+      publish({ ...snapshot, observer: { ...snapshot.observer, notices: new Map() } });
     },
 
     setPending(keys: readonly string[]): void {

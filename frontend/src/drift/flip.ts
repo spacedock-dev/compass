@@ -8,7 +8,6 @@ import { eligibility, pressLine } from './route';
 import {
   FLIP_CLOSED,
   FLIP_CLOSED_REVISION,
-  FLIP_CLOSED_UNANSWERED,
   FLIP_HOLD_MS,
   FLIP_OPEN_ENDED,
   FLIP_OPEN_LAST_TURN,
@@ -28,12 +27,9 @@ import type { DriftCtx, Flip } from './state';
 /* Whether a press on this session is still being answered: flips wait for it. */
 function frozen(ctx: DriftCtx, session: Row): boolean {
   const key = compatSessKey(session);
-  return [
-    `reading:${key}`,
-    `reading-allow:${key}`,
-    `direction-keep:${key}`,
-    `${intentKey(session)}:save`,
-  ].some((name) => ctx.shell.runtime.pending.has(name));
+  return [`reading:${key}`, `direction-keep:${key}`, `${intentKey(session)}:save`].some((name) =>
+    ctx.shell.runtime.pending.has(name),
+  );
 }
 
 function opened(session: Row): string {
@@ -54,9 +50,12 @@ function announceFlip(ctx: DriftCtx, session: Row, flip: Flip, sentence: string)
 /* In view every time; to the region at most once a minute per session, so a session that flaps is not read
    out on every turn. A flip inside the minute is held, never dropped: the newest is said when the minute is
    up, so the region's last word is never a state that has gone. */
-function say(ctx: DriftCtx, session: Row, flip: Flip, sentence: string): void {
+function say(ctx: DriftCtx, session: Row, flip: Flip, sentence: string, shown = true): void {
   const now = ctx.shell.clock.now();
-  flip.line = sentence;
+  /* An opening is said to the region and not drawn: the control standing pressable beside it says it, and
+     "Analyze is open: the session's last turn finished." was a gate's own language for "you can analyze now"
+     (walk 70d59c47, item 5). A closing keeps its line, because it explains a control that went inert. */
+  flip.line = shown ? sentence : '';
   flip.lineAt = now;
   if (flip.saidAt !== null && now - flip.saidAt < FLIP_SAY_EVERY_MS) {
     flip.owed = sentence;
@@ -102,7 +101,7 @@ export interface FlipInput {
 /* Whether the drawn card shows Analyze pressable, given whether the board says it is. Also says a committed
    change and records the hold's re-render for the commit to arm. */
 export function readingFlip(ctx: DriftCtx, input: FlipInput): Flip {
-  const { session, pressable, held, quiet, payload, epoch, request } = input;
+  const { session, pressable, held, quiet, payload, epoch } = input;
   const { drift } = ctx;
   const key = compatSessKey(session);
   const now = ctx.shell.clock.now();
@@ -135,7 +134,7 @@ export function readingFlip(ctx: DriftCtx, input: FlipInput): Flip {
     flip.shown = true;
     flip.candidate = null;
     drift.want('hold', null);
-    if (!quiet) say(ctx, session, flip, opened(session));
+    if (!quiet) say(ctx, session, flip, opened(session), false);
     return flip;
   }
   if (flip.candidate !== false) {
@@ -154,12 +153,6 @@ export function readingFlip(ctx: DriftCtx, input: FlipInput): Flip {
   flip.candidate = null;
   drift.want('hold', null);
   if (quiet) return flip;
-  if (request && request.consent && !request.pending) {
-    /* The question was the consent, and it is gone: never raised again without a press. */
-    ctx.intent.held.requests.delete(key);
-    say(ctx, session, flip, FLIP_CLOSED_UNANSWERED);
-    return flip;
-  }
   say(
     ctx,
     session,

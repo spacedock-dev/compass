@@ -9,39 +9,39 @@ export interface TourNote {
 
 export const TOUR: readonly TourNote[] = [
   {
-    id: 'activity',
-    title: 'Everything the session did',
-    body: 'Every message the agent wrote, every check it ran and every file it wrote, numbered from #1 for the oldest. A number never moves, so a correction that names an entry still points at it later. A check or file takes the number of the message it follows, such as #12.1.',
-  },
-  {
     id: 'intent',
     title: 'Your intent',
-    body: 'The goal and the outcomes you expect, in your own words. Compass compares the session with these and never writes into the session. Here the goal says to leave the pull request’s code alone, so changing it is what drift looks like.',
+    body: 'The goal for the session, written as what should be true when the work is done. Here the person set it once: “Every issue in the milestone is closed.” For your own session you can type it, choose one of your prompts, press Find goal, or let Compass pick up a goal you set with /goal in Claude Code. Compass checks the session against it and never writes into the session.',
   },
   {
-    id: 'level',
-    title: 'The drift level',
-    body: 'None or low, Medium, High or Extreme. Here it is High. A live estimate reads only recorded checks and file paths, with no model involved (it is High because a check failed after the last message and nothing has fixed it), and the analysis below adds a stored reading of your goal against the record.',
+    id: 'summary',
+    title: 'What the session has done',
+    body: 'A summary a model wrote from the record when the finished session was opened. Its phases start closed: press a phase to read its lines, each citing the entries it rests on. A line that claims in its own voice that work was done is held back and says so. Compass checks that a cited entry exists, not that it supports the line. The outline below the summary is Compass’s own grouping, made with no model.',
   },
   {
-    id: 'analysis',
-    title: 'What the analysis found',
-    body: 'One reading asks a model to compare your goal with what is on record. It found a departure: after a clean rebase the agent added a test and started changing code, when only history was meant to change. It is an account of the evidence, never a verification that the work was done.',
+    id: 'phase',
+    title: 'A phase that holds a departure',
+    body: 'A phase whose entries are evidence for a departure says so, and links to its card. Here three phases hold the one departure from the goal: the agent’s readback that the milestone stands at 97.3%, the walk finding a blocker so the milestone can’t close yet, and at the end the person replying that the open issue stays and is to be finished while a pull request is still behind main.',
   },
   {
-    id: 'cited',
-    title: 'Check the evidence yourself',
-    body: 'Every finding names the entries it rests on. Press Show cited entries and those entries light up in the list, with the words of the finding beside them, so you can see what the claim stands on.',
+    id: 'departure',
+    title: 'A departure, and its evidence',
+    body: 'Analyze drift compares your goal with the record. Each departure shows what it rests on under What, every cited entry in its own words with its entry number, and says why in one sentence. Press a number and Full activity opens on that entry, with every cited entry lit up. It is an account of the evidence, never a verification that the work was done.',
   },
   {
     id: 'steer',
     title: 'Steer back',
-    body: 'A correction written from your own goal and expected outcomes, naming the entries by number. Copy it and paste it into the session yourself. Compass never sends anything into a session.',
+    body: 'A correction written from your goal. For each departure it gives the time on your clock, the agent’s own words at that moment so the agent can find it, and why Compass reads it as drift. Copy it and paste it into the session yourself. Compass never sends anything into a session.',
   },
   {
     id: 'sent',
-    title: 'What is sent',
-    body: 'Before a reading runs you see exactly what would leave your machine and where it goes, and you allow it. A reading is one request, counted against a daily limit, and you can switch readings off.',
+    title: 'What is sent, and Pause model calls',
+    body: 'A summary or an analysis runs when you press its button, through your own Claude Code. The first of each kind says once what leaves your machine and where, and Pause model calls stops every one of them in one press. Each counts against a daily limit.',
+  },
+  {
+    id: 'activity',
+    title: 'Full activity: everything the session did',
+    body: 'Collapsed at the foot of the page. Every message the agent wrote, every check it ran and every file it wrote since your intent’s start, numbered from #1 for the session’s oldest entry. A number never moves, so an entry a summary line or a correction cites still points at it later; one from before your intent’s start keeps its number, muted, because Analyze does not read it. A check or file takes the number of the message it follows, such as #50.1.',
   },
 ];
 

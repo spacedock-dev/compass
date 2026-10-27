@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { clock, datedClock } from '../observed/values';
 import { SAMPLE_FIXTURE } from './fixture';
-import { createSampleFetch } from './sampleFetch';
+import { createSampleFetch, drawCorrection } from './sampleFetch';
 
 const fetcher = createSampleFetch(SAMPLE_FIXTURE);
 const read = async (url: string, init?: RequestInit) => {
@@ -16,23 +17,48 @@ describe('the sample session server', () => {
     expect(rows.map((row) => `${row.harness}:${row.sid}`)).toEqual(['claude:sample']);
   });
 
-  it('answers its context, its prompts and its one page of record', async () => {
+  it('answers its context, its prompts and every page of its record, to its start', async () => {
     const context = await read(
       '/api/project-context?project=acme%2Fdashboard&session=claude%3Asample',
     );
     const prompts = await read(
       '/api/project-context?project=acme%2Fdashboard&session=claude%3Asample&prompts=1',
     );
-    const page = await read(
-      '/api/session-record?project=acme%2Fdashboard&session=claude%3Asample&limit=50',
-    );
-    const older = await read(
-      '/api/session-record?project=acme%2Fdashboard&session=claude%3Asample&limit=50&before=x',
-    );
+    const stem = '/api/session-record?project=acme%2Fdashboard&session=claude%3Asample&limit=50';
+    const newest = await read(stem);
     expect(context.body['semantic']).toBeDefined();
     expect(prompts.body['prompt_choices']).toBeDefined();
-    expect((page.body['entries'] as unknown[]).length).toBeGreaterThan(10);
-    expect(older.body).toMatchObject({ entries: [], next: null, reached_start: true });
+    expect((newest.body['entries'] as unknown[]).length).toBe(50);
+    expect(newest.body).toMatchObject({ next: 'older-1', reached_start: false });
+    const older = await read(`${stem}&before=older-1`);
+    expect((older.body['entries'] as unknown[]).length).toBeGreaterThan(10);
+    expect(older.body).toMatchObject({ next: null, reached_start: true });
+    // A cursor the capture never issued is answered as unreadable, never as an empty start that would say
+    // the cited entries do not exist.
+    for (const cursor of ['x', 'toString', 'older-2'])
+      expect((await read(`${stem}&before=${cursor}`)).body).toMatchObject({
+        entries: [],
+        state: 'stale',
+        reached_start: false,
+      });
+  });
+
+  it('answers every older page in order by the cursor the page before names', async () => {
+    const stem = '/api/session-record?project=acme%2Fdashboard&session=claude%3Asample&limit=50';
+    const seen: string[] = [];
+    let url = stem;
+    for (let step = 0; step < 5; step += 1) {
+      const { body } = await read(url);
+      seen.push(...(body['entries'] as { fact_id: string }[]).map((fact) => fact.fact_id));
+      if (body['reached_start'] === true) break;
+      url = `${stem}&before=${encodeURIComponent(String(body['next']))}`;
+    }
+    const pages = [SAMPLE_FIXTURE.record, ...Object.values(SAMPLE_FIXTURE.older ?? {})];
+    const all = pages.flatMap((page) =>
+      (page['entries'] as { fact_id: string }[]).map((fact) => fact.fact_id),
+    );
+    expect(seen).toEqual(all);
+    expect(new Set(seen).size).toBe(seen.length);
   });
 
   it('composes the correction the real server composed, and accepts a copy', async () => {
@@ -40,15 +66,46 @@ describe('the sample session server', () => {
     const copied = await read('/api/correction/copied', { method: 'POST', body: '{}' });
     expect(composed.body['ok']).toBe(true);
     expect(composed.body['parts']).toBeInstanceOf(Array);
+    // Each departure carries Compass's explanation on its own labelled line (owner, 2026-10-20).
+    const text = (composed.body['parts'] as unknown[])
+      .filter((part): part is string => typeof part === 'string')
+      .join('');
+    expect(text.match(/\n {2}Why Compass reads this as drift: /g)).toHaveLength(2);
     expect(copied.body).toEqual({ ok: true });
   });
 
-  it.each(['/api/annotate', '/api/reading', '/api/direction', '/api/reading/cancel', '/api/focus'])(
-    'refuses a write to %s and says why',
-    async (path) => {
-      const { status, body } = await read(path, { method: 'POST', body: '{}' });
-      expect(status).toBe(403);
-      expect(body).toMatchObject({ ok: false, reason: 'sample' });
-    },
-  );
+  it('draws the correction’s times on the reader’s clock, as the route does, and keeps no mark', async () => {
+    const stored = (SAMPLE_FIXTURE.correction['parts'] as unknown[]).find(
+      (part): part is string => typeof part === 'string' && part.includes('{{clock:'),
+    );
+    const at = Number(/\{\{clock:([\d.]+)\}\}/.exec(stored ?? '')?.[1]);
+    const composed = await read('/api/correction', { method: 'POST', body: '{}' });
+    const text = (composed.body['parts'] as unknown[])
+      .filter((part): part is string => typeof part === 'string')
+      .join('');
+    expect(text).not.toContain('{{clock:');
+    expect(text).toContain(
+      `departed from my goal at ${datedClock(at, Number(SAMPLE_FIXTURE.board['generated']))}`,
+    );
+    // Same day as the frozen moment in the reader's zone draws hours and minutes only.
+    expect(drawCorrection({ parts: ['at {{clock:1000.5}}.'] }, 1060)).toEqual({
+      parts: [`at ${clock(1000.5)}.`],
+    });
+  });
+
+  it.each([
+    '/api/annotate',
+    '/api/reading',
+    '/api/direction',
+    '/api/reading/cancel',
+    '/api/goal/find',
+    '/api/focus',
+    '/api/summary',
+    '/api/summary/cancel',
+    '/api/summary/delete',
+  ])('refuses a write to %s and says why', async (path) => {
+    const { status, body } = await read(path, { method: 'POST', body: '{}' });
+    expect(status).toBe(403);
+    expect(body).toMatchObject({ ok: false, reason: 'sample' });
+  });
 });

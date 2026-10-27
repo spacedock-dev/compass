@@ -60,6 +60,7 @@ from .config import validate_claude_reading_model
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
+    from . import reading_policy
     from .config import RuntimeConfig
 
     # Given the selected agent rows' identities, names the newest recorded final reply.
@@ -78,12 +79,19 @@ RESULT_UNSUPPORTED = "not shown by the record"
 # [Non-final readings](docs/design-reading-a-session.md#amended-2026-10-04-unfinished-work)
 # carry unfinished work separately from uncertainty and from departures.
 RESULT_NOT_REACHED = "not reached at this stop"
+# The fifth, and only ever on `CONSTRAINT_GOAL`: the model read the goal (and the outcome lines, if
+# any) before the session and found no end state to read the work against. It stands in place of
+# a level, so it takes no citation and carries no prose, and no word or length rule makes it (owner,
+# 2026-10-22):
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-22-a-goal-alone-is-read-or-refused)
+RESULT_GOAL_UNCLEAR = "goal too vague to analyze against"
 RESULTS = (
     RESULT_DEPARTURE,
     RESULT_CONSISTENT,
     RESULT_UNVERIFIABLE,
     RESULT_UNSUPPORTED,
     RESULT_NOT_REACHED,
+    RESULT_GOAL_UNCLEAR,
 )
 
 # What the model may say, and what each token becomes. A token outside this
@@ -103,6 +111,8 @@ CLAIMS_RESULT_BY_TOKEN = {
     **{key: result for key, result in RESULT_BY_TOKEN.items() if key != "not_reached"},
     "unsupported": RESULT_UNSUPPORTED,
 }
+# The Goal's: the shared set and `goal_unclear`, a token no outcome line or claims answer holds.
+GOAL_RESULT_BY_TOKEN = {**RESULT_BY_TOKEN, "goal_unclear": RESULT_GOAL_UNCLEAR}
 
 # Rule 6: the goal and each outcome line, each naming itself, never blended.
 # The reply schema is keyed on these, so there is no field a blended judgement
@@ -124,13 +134,13 @@ _OUTCOME_LINE = re.compile(r"line_([1-9][0-9]*)")
 # Two of the figures item 3 left to this layer, and they are written there. The
 # intent's share of `observer.OBSERVER_MODEL_MAX_PROMPT_BYTES`: the worst goal
 # and six lines at four bytes a character, with the claims question, measure
-# 9,189 bytes with the non-final scope, so this leaves at least 7,168 for the record.
+# 9,6xx bytes with the non-final scope, so this leaves at least 6,656 for the record.
 # The reply cap: eight answers with twelve four-digit citations and a
 # 240-character detail each measure 4,751 bytes compact and 5,664 indented in
 # raw two-byte UTF-8, and a
 # cut reply keeps every complete answer (`_members`), so the headroom is not
 # the only guard.
-INTENT_SHARE_BYTES = 9_216
+INTENT_SHARE_BYTES = 9_728
 REPLY_CAP_BYTES = 8_192
 # How far under the cap a reply may come back and still count as cut: the
 # exec layer strips trailing whitespace, and an indented reply cut inside its
@@ -173,14 +183,21 @@ def claim_title(fact: Mapping[str, Any]) -> str:
 
 def result_for(name: str, token: str) -> str | None:
     """The result a reply's token names on this constraint, or None outside its set."""
-    table = CLAIMS_RESULT_BY_TOKEN if name == CONSTRAINT_CLAIMS else RESULT_BY_TOKEN
+    table = (
+        CLAIMS_RESULT_BY_TOKEN
+        if name == CONSTRAINT_CLAIMS
+        else GOAL_RESULT_BY_TOKEN
+        if name == CONSTRAINT_GOAL
+        else RESULT_BY_TOKEN
+    )
     return table.get(token.strip().casefold())
 
 
 def token_for(result: Any) -> str:
     """The reply token a stored result reads back as, or "" for none."""
     return next(
-        (t for t, r in {**RESULT_BY_TOKEN, **CLAIMS_RESULT_BY_TOKEN}.items() if r == result), ""
+        (t for t, r in {**GOAL_RESULT_BY_TOKEN, **CLAIMS_RESULT_BY_TOKEN}.items() if r == result),
+        "",
     )
 
 
@@ -213,8 +230,17 @@ def outcome_lines(revision: Mapping[str, Any]) -> tuple[str, ...]:
 # record (`annotations.prompt_choices`, owner ruling Q7, 2026-10-01): adopted
 # words like the other two, keyed on their own time. The page spells the same
 # three, held equal to this tuple by the same vocabulary fixture.
-PROMPT_CHOSEN = "chosen-prompt"
-PROMPT_SOURCES = ("latest-prompt", "first-prompt", PROMPT_CHOSEN)
+PROMPT_CHOSEN = records.PROMPT_CHOSEN
+# `session-goal` is the goal a Claude Code session states itself with `/goal`
+# (`claude_data.session_goal`). The reader typed that command, so it is adopted words like the
+# others, keyed on the moment the command ran; it is not a person's message in the observed
+# record, so `adopted_prompt` finds no source fact and the reading falls back to the clip it
+# already reads for any prompt it cannot find (`GOAL_SOURCE_GONE`).
+SESSION_GOAL = records.SESSION_GOAL
+# Spelt once in `records`, which `history` and `project_context` already import, because
+# neither may import `reading` (the reviewed import allowlist). A literal copy of this tuple
+# in each is how a new source would stay missing from a window baseline.
+PROMPT_SOURCES = records.PROMPT_SOURCES
 
 ASSESSMENT_KEYS = (
     "goal_source",
@@ -230,6 +256,7 @@ ASSESSMENT_KEYS = (
     "ended_at_read",
     "evidence_through",
     "coverage",
+    "goal_verdict",
     "criteria",
 )
 CRITERION_KEYS = ("result", "cites", "detail", "clause", "why")
@@ -288,6 +315,12 @@ WHY_CLAIM_UNCITED = "claim-uncited"
 # An `unsupported` withdrawn because the session's checks were not all read:
 # no grant or destination sent them, or the prompt had no room (review, PR C).
 WHY_CLAIM_RECORD_UNREAD = "claim-record-unread"
+# The one token on a verdict that stands rather than one withdrawn: an outcome line settled as a
+# departure by a file write the record holds, in or out of a folder the line names. It is a token
+# because the written paths it cites carry no result, so `check_supports` drops them from a
+# departure unless the row says the code, not the model, settled it.
+# [DEC-17](docs/design-reading-a-session.md#amended-2026-10-21-the-record-settles-a-line)
+WHY_RECORDED_WRITE = "recorded-write"
 WHY_TOKENS = (
     WHY_STANDS,
     WHY_NOT_ASKED,
@@ -306,6 +339,7 @@ WHY_TOKENS = (
     WHY_FAILED_CHECK_ON_RECORD,
     WHY_CLAIM_UNCITED,
     WHY_CLAIM_RECORD_UNREAD,
+    WHY_RECORDED_WRITE,
 )
 
 # Rule 7 turns on who wrote an evidence entry, so the answer is a closed
@@ -388,6 +422,13 @@ CHECK_EARLIER_FAILED = "an earlier run failed"
 CHECK_REPORT_WORDS = frozenset({"passed", "passes", "passing"})
 CHECK_BEFORE_LAST_CHANGE = "before the last change"
 PATH_WRITTEN = "file written"
+# Two more subjects of a tool report, read from Claude Code's structured records only (owner,
+# 2026-10-23):
+# [DEC-23](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)
+PR_SUBJECT = "pr"
+SKILL_SUBJECT = "skill"
+PR_CREATED = "pull request created"
+SKILL_USED = "skill used"
 # Priority inside the byte bound, after the reader's own messages: the tool
 # report ruling's item 4 order as amended on 2026-10-04, so a pass is never
 # chosen over a failure, and a run with no recorded result, which carries no
@@ -424,6 +465,10 @@ class ToolOutput:
     # read at the press and never sent or stored; `produce` keeps those its
     # prompt did not carry.
     passes_and_writes: tuple[tuple[str, str, float], ...] = ()
+    # (path, time, "deleted" or "moved") of the latest removal of each path the
+    # shell took away, read at the press for testing a harness verdict. Never
+    # sent to a model and never stored except as the one file a dispute names.
+    removals: tuple[tuple[str, float, str], ...] = ()
 
 
 SCOPE_MID_FLIGHT = "mid-flight"
@@ -474,10 +519,23 @@ SCOPE_TEXT_LAST_TURN_TRANSCRIPT = (
 )
 
 
+# The mid-flight sentence for a reader's press on an idle Claude Code session whose last turn has
+# no recorded finish (owner, 2026-10-20, ruling 3 on the usability review): read up to its last
+# recorded entry as a running one is, and never called running, finished or final. Chosen at
+# production, as the transcript sentence above is, and admitted on read-back only beside
+# `SCOPE_MID_FLIGHT`. The page adds the local time of the last entry read beside it.
+SCOPE_TEXT_MID_FLIGHT_IDLE = (
+    "The session was idle and its last turn was not recorded as finished, so this covers the "
+    "work up to the last recorded entry. It is not a reading of how the turn or the session ended."
+)
+
+
 def scope_texts(scope: str) -> tuple[str, ...]:
     """Every sentence a stored reading of `scope` may carry, the default first."""
     if scope == SCOPE_LAST_TURN:
         return (SCOPE_TEXT[scope], SCOPE_TEXT_LAST_TURN_TRANSCRIPT)
+    if scope == SCOPE_MID_FLIGHT:
+        return (SCOPE_TEXT[scope], SCOPE_TEXT_MID_FLIGHT_IDLE)
     return (SCOPE_TEXT[scope],)
 
 
@@ -506,6 +564,20 @@ WITHHELD_NO_RECORD_READER = "no-record-reader"
 WITHHELD_MODEL_UNAVAILABLE = "model-unavailable"
 WITHHELD_CLAUDE_UNAVAILABLE = "claude-unavailable"
 WITHHELD_MODEL_FAILED = "model-failed"
+# A failed call that names its cause (owner's guiding rule, 2026-10-20: the reader must be able to
+# act on it). One token per closed label `observer._claude_failure_reason` gives, never the CLI's
+# own words: SECURITY.md keeps raw stderr off every surface, so each sentence is Compass's account
+# of a label. `WITHHELD_CLAUDE_FAILED` is a Claude Code call with no label; Codex has no
+# diagnostic, so its failure has one unlabelled sentence of its own.
+WITHHELD_CLAUDE_FAILED = "claude-failed"
+WITHHELD_CODEX_FAILED = "codex-failed"
+WITHHELD_CLAUDE_TIMED_OUT = "claude-timed-out"
+WITHHELD_CLAUDE_LOGIN = "claude-not-logged-in"
+WITHHELD_CLAUDE_AUTH = "claude-auth-rejected"
+WITHHELD_CLAUDE_LIMIT = "claude-rate-limited"
+WITHHELD_CLAUDE_MODEL = "claude-model-unavailable"
+WITHHELD_CLAUDE_NETWORK = "claude-network-error"
+WITHHELD_CLAUDE_OPTION = "claude-option-refused"
 WITHHELD_NOTHING_TYPED = "nothing-typed"
 WITHHELD_DISCARDED = "discarded"
 WITHHELD_INTERRUPTED = "interrupted"
@@ -594,8 +666,49 @@ WITHHELD = {
         "The Claude Code CLI was not found on this machine when the check started, so no "
         "reading was made and nothing was spent."
     ),
+    # The job's own failure, with no model answer to name: an exception inside the job. A call
+    # that returned an error says whose it was, below.
     WITHHELD_MODEL_FAILED: (
-        "The reading did not complete. Nothing was produced, and a fresh press is the only retry."
+        "Analyze failed before it returned a result. Nothing was saved; press Analyze drift to "
+        "try again."
+    ),
+    WITHHELD_CLAUDE_FAILED: (
+        "Analyze failed: Claude Code returned an error. Nothing was saved; press Analyze drift to "
+        "try again."
+    ),
+    WITHHELD_CODEX_FAILED: (
+        "Analyze failed: Codex returned an error. Nothing was saved; press Analyze drift to try "
+        "again."
+    ),
+    WITHHELD_CLAUDE_TIMED_OUT: (
+        "Analyze failed: Claude Code did not answer within "
+        f"{observer.OBSERVER_READING_TIMEOUT_SEC} seconds. Nothing was saved; press Analyze drift "
+        "to try again."
+    ),
+    WITHHELD_CLAUDE_LOGIN: (
+        "Analyze failed: Claude Code said it is not logged in. Nothing was saved. Fix that, then "
+        "press Analyze drift again."
+    ),
+    WITHHELD_CLAUDE_AUTH: (
+        "Analyze failed: Claude Code said its authentication was rejected. Nothing was saved. Fix "
+        "that, then press Analyze drift again."
+    ),
+    WITHHELD_CLAUDE_LIMIT: (
+        "Analyze failed: Claude Code said a usage or rate limit was reached. Nothing was saved. "
+        "Press Analyze drift again once the limit lifts."
+    ),
+    WITHHELD_CLAUDE_MODEL: (
+        "Analyze failed: Claude Code said the model Compass asked for is not available. Nothing "
+        "was saved. Fix that, then press Analyze drift again."
+    ),
+    WITHHELD_CLAUDE_NETWORK: (
+        "Analyze failed: Claude Code said it could not reach the network. Nothing was saved. Fix "
+        "that, then press Analyze drift again."
+    ),
+    WITHHELD_CLAUDE_OPTION: (
+        "Analyze failed: Claude Code did not accept an option Compass passed it, which usually "
+        "means Claude Code needs updating. Nothing was saved. Fix that, then press Analyze drift "
+        "again."
     ),
     # Recorded at the next start for a job whose spend was committed when the
     # dashboard stopped (DRC-4686, Q2). The attempt counts because it was
@@ -671,7 +784,39 @@ LEGACY_WITHHELD = {
         "The Codex CLI was not found on this machine, so no reading was made. A reading "
         "is produced by a codex subprocess whatever harness the session runs on."
     ): WITHHELD_MODEL_UNAVAILABLE,
+    # Before 2026-10-20 every failed call stored this one sentence, which hid its cause. The cause
+    # was not recorded, so it reads as the job's own failure.
+    (
+        "The reading did not complete. Nothing was produced, and a fresh press is the only retry."
+    ): WITHHELD_MODEL_FAILED,
 }
+
+# `observer._claude_failure_reason`'s labels, and its timeout category, to the sentence each
+# names. An unknown label, or none, is `WITHHELD_CLAUDE_FAILED`; no diagnostic at all is
+# `WITHHELD_MODEL_FAILED`, because every call that started the CLI records one, so its absence is a
+# failure inside Compass before the CLI ran (the design record's 2026-10-20 amendment keeps
+# `model-failed` for that).
+CLAUDE_FAILURES = {
+    "login-required": WITHHELD_CLAUDE_LOGIN,
+    "authentication-rejected": WITHHELD_CLAUDE_AUTH,
+    "rate-limited": WITHHELD_CLAUDE_LIMIT,
+    "model-unavailable": WITHHELD_CLAUDE_MODEL,
+    "network-error": WITHHELD_CLAUDE_NETWORK,
+    "cli-option-error": WITHHELD_CLAUDE_OPTION,
+    "timeout": WITHHELD_CLAUDE_TIMED_OUT,
+}
+
+
+def claude_failure(diagnostic: Mapping[str, Any] | None) -> str:
+    """The withheld token a failed Claude Code call's diagnostic names."""
+    if not isinstance(diagnostic, dict):
+        return WITHHELD_MODEL_FAILED
+    for key in ("reason", "exception_kind"):
+        token = CLAUDE_FAILURES.get(str(diagnostic.get(key) or ""))
+        if token:
+            return token
+    return WITHHELD_CLAUDE_FAILED
+
 
 # Two sentences that must never read alike, and the reason they are constants
 # rather than inline strings is that the assertion comparing them needs
@@ -795,6 +940,10 @@ def _words(text: str) -> set[str]:
 # and "no tests passed" are failure statements (verifier, 2026-09-24). A
 # negated "work" or "expected" says the output is not what was asked.
 _PASS_FORMS = frozenset({"pass", *CHECK_REPORT_WORDS})
+# The words that report a created pull request or a used skill ("successfully created", "the record
+# confirmed it was opened"). Set aside only where every entry a consistent cites is one of those two
+# facts (owner, 2026-10-23, from a live walk); "delivered", "works" and the rest still withdraw it.
+RECORDED_DONE_WORDS = frozenset({"successfully", "confirmed"})
 _OUTCOME_FORMS = frozenset({"work", "expected"})
 
 
@@ -962,6 +1111,22 @@ class Criterion(TypedDict):
     why: str
 
 
+class GoalVerdictCheck(TypedDict):
+    """What the record said to the harness's claim that a `/goal` is met.
+
+    `at` is the verdict's own time, so the page can tell a check of the verdict it shows from one
+    of an earlier verdict. `check` and `why` are closed tokens the page maps to its own sentences,
+    as `Criterion.why` is: no producer prose reaches the card through this field.
+    """
+
+    at: float
+    check: str
+    why: str
+    cites: tuple[str, ...]
+    path: NotRequired[str]
+    changed_at: NotRequired[float]
+
+
 class Assessment(TypedDict):
     """A whole reading, as published.
 
@@ -1001,6 +1166,9 @@ class Assessment(TypedDict):
     # usable time (item 6 of the ruling `MAX_OUTCOME_LINES` cites).
     evidence_through: float | None
     coverage: NotRequired[dict[str, Any] | None]
+    # Compass's test of the harness's own "goal met" verdict, present only where the session holds
+    # one. Beside the criteria and never among them, so it cannot move a level.
+    goal_verdict: NotRequired[GoalVerdictCheck]
     criteria: dict[str, Criterion]
 
 
@@ -1069,6 +1237,7 @@ class Job:
     # Set just before the outcome is written. A Cancel after it is refused,
     # because the result it would discard is already being stored.
     sealed: bool = False
+    notice: reading_policy.Notice | None = None
 
 
 # Beside `_IN_FLIGHT` and under its lock rather than in a registry of its own:
@@ -1198,6 +1367,7 @@ def published_jobs(config: RuntimeConfig) -> dict[str, dict[str, Any]]:
                 "phase_at": found.phase_at,
                 "started_at": found.started_at,
                 "provider": found.provider,
+                **({"notice": dict(found.notice)} if found.notice else {}),
                 # A Cancel was accepted and the job is finishing: the page keeps
                 # the box and disables its Cancel, and a reload draws the same.
                 "cancelling": found.cancelled_at is not None,
@@ -1572,6 +1742,10 @@ def _tool_report_summary(
         if read_incomplete or fact.get("read_incomplete") is True:
             words.append("part of the work record was not read")
         suffix = f" ({'; '.join(words)})"
+    elif fact.get("subject") == PR_SUBJECT:
+        suffix = f" ({PR_CREATED})"
+    elif fact.get("subject") == SKILL_SUBJECT:
+        suffix = f" ({SKILL_USED})"
     else:
         suffix = f" ({PATH_WRITTEN})"
     room = max(0, cap_chars - len(suffix))
@@ -1825,13 +1999,20 @@ def end_kind(row: Mapping[str, Any]) -> str:
     return "unobservable" if row.get("acquisition") == "scan-only" else "idle-unknown"
 
 
-def eligibility(
+# The idle endings a reader's press on a `TURN_STOP_HARNESSES` session reads mid-flight (owner,
+# 2026-10-20, ruling 3): no recorded finish, no observed end, so the record up to its last entry is
+# all there is, and refusing left a finished-looking session that could never be checked.
+IDLE_PRESS_KINDS = ("idle-unknown", "unobservable")
+
+
+def eligibility(  # noqa: PLR0911 - one return per ending it can read
     row: Mapping[str, Any],
     *,
     latest_revision_at: float,
     now: float,
     settle_sec: float,
     admit_turn_stop: bool = False,
+    admit_idle: bool | None = None,
 ) -> tuple[str, str]:
     """(scope, withheld reason), exactly one of which is set.
 
@@ -1852,12 +2033,21 @@ def eligibility(
     through the last turn and a goal saved after the stop does not withhold it,
     so `latest_revision_at` is not compared here. It still is for a session
     end: words typed after an end stay hindsight.
+
+    The same press admits an idle row with no observed stop or end
+    (`IDLE_PRESS_KINDS`): an interrupted turn, or one that went quiet mid-turn,
+    is read up to its last recorded entry at the mid-flight scope, the way a
+    running one is (owner, 2026-10-20). Never final, so a goal saved later does
+    not withhold it either. `admit_idle` None follows `admit_turn_stop`; only a
+    replay of cases recorded under the earlier rule passes False.
     """
     kind = end_kind(row)
     if kind == "running":
         return SCOPE_MID_FLIGHT, ""
     if kind == "turn-stop" and admit_turn_stop:
         return _last_turn(row, now=now, settle_sec=settle_sec)
+    if kind in IDLE_PRESS_KINDS and (admit_turn_stop if admit_idle is None else admit_idle):
+        return SCOPE_MID_FLIGHT, ""
     if kind != "session-end":
         return "", kind
     ended = _number(row.get("ended_at"))
@@ -1894,19 +2084,12 @@ PRESS_WITHHELD = (
 )
 
 
-# The press-time "Why it can't read" sentences that differ from the job-time
+# The press-time "Why Analyze is off" sentences that differ from the job-time
 # `WITHHELD` default (owner, 2026-10-02): each says what opens a reading, or
 # what the reader can do, and none promises an end Compass may never see. The
 # page cannot link `HOW_TO_USE.md`, which the installed plugin does not ship,
 # so a sentence names its section in words.
 _HOW_TO_LIVE = 'How to use: "Make the board live rather than polled"'
-_IDLE_CLAUDE = (
-    "Claude Code records a turn as finished when its Stop hooks run, and this session's "
-    "transcript has no such record after its last message. The turn may still be running a "
-    "long tool, waiting on a permission, or interrupted, or Claude Code has no Stop hooks "
-    f"registered ({_HOW_TO_LIVE}). Analyze opens while the session works, and once a finished "
-    "turn is recorded."
-)
 _IDLE_CODEX = (
     "This Codex session is idle. Compass reads a Codex session only while a turn runs, "
     "because no Codex session end is observed for a final reading to rest on. Analyze opens "
@@ -1950,8 +2133,6 @@ def withheld_sentence(reason: str, row: Mapping[str, Any]) -> str:
     """
     if reason == WITHHELD_IDLE_UNKNOWN:
         harness = str(row.get("harness") or "")
-        if harness == "claude":
-            return _IDLE_CLAUDE
         if harness == "codex":
             return _IDLE_CODEX
         if harness:
@@ -2173,7 +2354,17 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
                     else "check with no recorded result"
                 )
                 if subject == CHECK_SUBJECT
-                else ("file write" if subject == WRITE_SUBJECT else "launch")
+                else (
+                    "file write"
+                    if subject == WRITE_SUBJECT
+                    else (
+                        "created pull request"
+                        if subject == PR_SUBJECT
+                        else "used skill"
+                        if subject == SKILL_SUBJECT
+                        else "launch"
+                    )
+                )
             )
         elif row["author"] == AUTHOR_PERSON:
             name = "from you"
@@ -2189,6 +2380,8 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
         "failed check": "failed checks",
         "check with no recorded result": "checks with no recorded result",
         "file write": "file writes",
+        "created pull request": "created pull requests",
+        "used skill": "used skills",
         "launch": "launches",
     }
     return ", ".join(
@@ -2272,7 +2465,7 @@ NONFINAL_CLAIMS_RULE = (
 )
 
 
-def _priority(entry: LedgerEntry) -> int:
+def _priority(entry: LedgerEntry) -> int:  # noqa: PLR0911 - one return per kind of entry
     """Which entries the byte bound reserves first (lower is earlier)."""
     if entry["author"] == AUTHOR_PERSON:
         return 0
@@ -2284,6 +2477,12 @@ def _priority(entry: LedgerEntry) -> int:
         return _CHECK_PRIORITY.get(entry.get("result", ""), _CHECK_PRIORITY["not-recorded"])
     if entry.get("subject") == WRITE_SUBJECT:
         return _WRITE_PRIORITY
+    # A created pull request is reserved like a pass, so no write outlasts it; a skill after a write
+    # (owner review, 2026-10-23), as the collector's own cap ranks them.
+    if entry.get("subject") == PR_SUBJECT:
+        return _CHECK_PRIORITY[RESULT_PASSED]
+    if entry.get("subject") == SKILL_SUBJECT:
+        return _WRITE_PRIORITY + 1
     # The agent's messages last, below a write: a long session says far more
     # than it does, and a hundred newer messages dropped the older write that
     # showed what it did (review, 2026-10-03).
@@ -2336,6 +2535,20 @@ def _row_body(row: LedgerEntry) -> str:
     return row["summary"]
 
 
+# The refusal is decided from the words alone, before the record is read, and is the one answer that
+# takes no citation and no detail. The zero-line sentence is what makes a goal alone readable: its
+# own end state stands as the outcome, so the model has something to read the work against.
+GOAL_UNCLEAR_RULE = (
+    "Decide first, before reading the entries below, whether the goal and any outcome lines "
+    'state an end state the work can be read against. If none does, answer the goal "goal_unclear" '
+    "with no cites and no detail, and nothing else.\n"
+)
+NO_LINES_RULE = (
+    "No outcome lines are given. Read the goal's own stated end state as the outcome, "
+    "and answer the goal against it.\n"
+)
+
+
 def _header(
     goal_text: str,
     line_texts: Sequence[str],
@@ -2343,6 +2556,7 @@ def _header(
     tool_note: bool,
     claims: bool = False,
     scope: str = SCOPE_LAST_TURN,
+    no_lines: bool = False,
 ) -> str:
     ask_goal = asks_goal(goal_text)
     # The answer's shape is spelt once and named, where it was spelt per
@@ -2369,7 +2583,10 @@ def _header(
             else ""
         )
         + ('; "unsupported" for claims only' if claims else "")
+        + ('; "goal_unclear" for the goal only' if ask_goal else "")
         + ". "
+        + (GOAL_UNCLEAR_RULE if ask_goal else "")
+        + (NO_LINES_RULE if ask_goal and no_lines else "")
         + 'Use "unverifiable" whenever the entries below do not settle the question. '
         "Every <int> is an entry number from the list below; never cite a number that "
         "is not listed, and never name an entry any other way.\n"
@@ -2439,7 +2656,10 @@ def _wider_goal(
     words = _field_text(goal_words, LEDGER_WORDS_CAP_CHARS).strip() if goal_words else ""
     if not words or words == goal_text.strip() or not asks_goal(goal_text):
         return None
-    return _header(words, lines, tool_note=tool_note, claims=claims, scope=scope), words
+    return (
+        _header(words, lines, tool_note=tool_note, claims=claims, scope=scope, no_lines=not lines),
+        words,
+    )
 
 
 def _read_whole(  # noqa: C901 - reader-first lanes and one selected replacement share the budget
@@ -2656,8 +2876,19 @@ def build_prompt(
     )
     tool_note = any(entry["type"] == TOOL_REPORT_TYPE for entry in ledger)
     claims = any(entry["type"] == AGENT_MESSAGE_TYPE for entry in ledger)
-    without = _header(goal_text, (), tool_note=tool_note, claims=claims, scope=scope)
-    header = _header(goal_text, line_texts, tool_note=tool_note, claims=claims, scope=scope)
+    # Said only where no line was saved or read at all: a line the budget later sets aside is not
+    # "none given", and the rule's bytes were never in what that fallback header was sized with.
+    without = _header(
+        goal_text, (), tool_note=tool_note, claims=claims, scope=scope, no_lines=not line_texts
+    )
+    header = _header(
+        goal_text,
+        line_texts,
+        tool_note=tool_note,
+        claims=claims,
+        scope=scope,
+        no_lines=not line_texts,
+    )
     posed = bool(line_texts)
     if len(header.encode("utf-8", "replace")) > min(INTENT_SHARE_BYTES, budget):
         header, posed = without, False
@@ -2748,6 +2979,7 @@ def build_prompt(
             tool_note=tool_note,
             claims=asked_claims,
             scope=scope,
+            no_lines=not line_texts,
         )
     body = "".join(
         row_text(index, restored.get(id(row), row), whole=id(row) in whole)
@@ -2887,7 +3119,12 @@ def _indices(value: Any) -> tuple[int, ...]:
 
 
 def _states_a_verdict(
-    detail: str, result: str, *, reported: bool = False, earlier_failed: bool = False
+    detail: str,
+    result: str,
+    *,
+    reported: bool = False,
+    earlier_failed: bool = False,
+    recorded_done: bool = False,
 ) -> bool:
     """Whether this prose states a verdict the model is not allowed to state.
 
@@ -2909,6 +3146,8 @@ def _states_a_verdict(
         if _negated(ordered, _PASS_FORMS, 2) or _negated(ordered, _OUTCOME_FORMS, 3):
             return True
     words = _words(detail)
+    if recorded_done:
+        words -= RECORDED_DONE_WORDS
     if reported:
         words -= CHECK_REPORT_WORDS
         if earlier_failed:
@@ -2923,6 +3162,43 @@ def _states_a_verdict(
     if claims_success or claims_failure:
         return result == RESULT_CONSISTENT
     return False
+
+
+def settled_reader_words(
+    facts: Iterable[Mapping[str, Any]],
+    harness: str,
+    sid: str,
+    *,
+    floor: float | None,
+    settled_through: Any,
+) -> frozenset[str]:
+    """Fact ids of this session's user messages that no departure may stand on.
+
+    A correction Compass built and the reader pasted back (`COPIED_FLAG`) is Compass's words. A
+    later direction the reader kept (`Keep my intent`, settled through `settled_through`) was
+    answered by keeping the intent, so the agent following it is not the reader's evidence against
+    the agent. Neither says what the work did, and a departure that cites either blames the
+    reader's own sentence for the drift and dates it to the steer (DRC-4920). The first prompt
+    and anything before `floor` are the words themselves, not a later direction, and stay out.
+    """
+    through = valid_prompt_time(settled_through)
+    found: set[str] = set()
+    for fact in facts:
+        session = fact.get("source_session")
+        if (
+            fact.get("type") != "user_message"
+            or not isinstance(session, dict)
+            or (session.get("harness"), session.get("sid")) != (harness, sid)
+        ):
+            continue
+        fact_id = records.safe_text(fact.get("fact_id"), 160).strip()
+        at = valid_prompt_time(fact.get("at"))
+        kept = (
+            floor is not None and through is not None and at is not None and floor < at <= through
+        )
+        if fact_id and (fact.get(COPIED_FLAG) is True or kept):
+            found.add(fact_id)
+    return frozenset(found)
 
 
 def latest_person_at(facts: Iterable[Mapping[str, Any]]) -> float | None:
@@ -2983,7 +3259,13 @@ def failure_followed_by_write(
     )
 
 
-def check_supports(entry: Mapping[str, Any], result: str, window_start: float) -> bool:
+def check_supports(  # noqa: PLR0911 - one return per kind of entry
+    entry: Mapping[str, Any],
+    result: str,
+    window_start: float,
+    *,
+    recorded_write: bool = False,
+) -> bool:
     """Whether one cited entry may carry this verdict, per the ruling's item 8.
 
     Any entry that is neither a tool report nor a check passes through to the
@@ -2995,12 +3277,32 @@ def check_supports(entry: Mapping[str, Any], result: str, window_start: float) -
     predicate per constraint, so the per-line checklist applies it line by line.
     Inside the window is read by `evidence_at`, so a check whose result
     landed after the words counts though its call began before them.
+
+    `recorded_write` is true only for a row stored with `WHY_RECORDED_WRITE`: the
+    code found the write inside or outside a folder the line names, so the write
+    itself carries that one departure, and no other verdict.
     """
     is_report = str(entry.get("type") or "") == TOOL_REPORT_TYPE
     if not is_report and entry.get("subject") != CHECK_SUBJECT:
         return not _subjectless_pi_check(entry)
+    if entry.get("subject") in (PR_SUBJECT, SKILL_SUBJECT):
+        # What the record shows was done, with no result to be failed: it carries a consistent
+        # inside the window and nothing else (owner, 2026-10-23).
+        return (
+            result == RESULT_CONSISTENT
+            and is_report
+            and (evidence_at(entry) or 0.0) > 0
+            and not _before_window(entry, window_start)
+        )
     if entry.get("subject") != CHECK_SUBJECT:
-        return False
+        return (
+            recorded_write
+            and result == RESULT_DEPARTURE
+            and is_report
+            and entry.get("subject") == WRITE_SUBJECT
+            and (evidence_at(entry) or 0.0) > 0
+            and not _before_window(entry, window_start)
+        )
     at = evidence_at(entry) or 0.0
     if at <= 0 or at < window_start:
         return False
@@ -3361,6 +3663,7 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     latest_check_at: float = 0.0,
     checks_unread: bool = False,
     carried: Sequence[LedgerEntry] = (),
+    recorded_write: bool = False,
 ) -> tuple[list[LedgerEntry], str]:
     """The entries a verdict rests on, and which rule it fails, as its `why` token.
 
@@ -3381,7 +3684,11 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     of a grant. An outcome line's `consistent` resting on no work does not
     stand beside one (review, 2026-10-03).
     """
-    supporting = [entry for entry in cited if check_supports(entry, result, window_start)]
+    supporting = [
+        entry
+        for entry in cited
+        if check_supports(entry, result, window_start, recorded_write=recorded_write)
+    ]
     dropped = len(supporting) < len(cited)
     if name == CONSTRAINT_CLAIMS:
         why = _claims_rule(
@@ -3454,6 +3761,81 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     return ([] if withdrawn else supporting), why
 
 
+def _bears_on(line: str, entry: LedgerEntry) -> bool:
+    """Whether a later check or write plainly bears on an outcome line.
+
+    A line that names a path, or claims the result of a kind of check, is borne on only by a check
+    that covers it (`covers_line`) or a write to a path it names. A line that does neither gives
+    no way to tell one piece of work from another, so any later work bears on it.
+    """
+    named = _path_tokens(line, files=True)
+    if not named and not any(_claims_result(line, kind) for kind in _LINE_KINDS):
+        return True
+    if entry.get("subject") == CHECK_SUBJECT:
+        return covers_line(line, _check_text(entry))
+    path = _check_text(entry).removeprefix("./")
+    return any(_same_path(path, folder) or _within(path, (folder,)) for folder in named)
+
+
+def _while_running(
+    criterion: Criterion,
+    name: str,
+    by_id: Mapping[str, LedgerEntry],
+    *,
+    scope: str,
+    work: Sequence[LedgerEntry],
+    open_call_at: float | None,
+    line_text: str,
+) -> Criterion:
+    """A mid-flight departure on words alone, with work going on after them, read as unfinished.
+
+    Only while the turn is open: what the words promised and the model found missing may be the
+    very work the agent is doing, so the missing end is not a departure (the amendment is
+    `docs/design-reading-a-session.md#amended-2026-10-21-a-running-turn-is-unfinished`).
+    Work going on is a call still in flight, or a check or write recorded after the latest cited
+    words that bears on an outcome line (`_bears_on`). A citation that shows work (a failed check,
+    a write) is what the departure rests on and stands, and so does a stall: nothing in flight and
+    nothing recorded after the words means nothing kept going. One-way like every demotion here,
+    toward the result that raises no level and no steer.
+    """
+    if (
+        scope != SCOPE_MID_FLIGHT
+        or criterion.get("result") != RESULT_DEPARTURE
+        or name == CONSTRAINT_CLAIMS
+    ):
+        return criterion
+    cited = [by_id[key] for key in criterion["cites"] if key in by_id]
+    if not cited or any(
+        entry.get("type") == TOOL_REPORT_TYPE or entry.get("subject") for entry in cited
+    ):
+        return criterion
+    latest = max(_number(entry.get("at")) or 0.0 for entry in cited)
+    if latest <= 0.0:
+        return criterion
+    if open_call_at is not None and open_call_at > latest:
+        return {**criterion, "result": RESULT_NOT_REACHED}
+    if any(
+        (evidence_at(entry) or 0.0) > latest
+        and (not is_outcome_line(name) or _bears_on(line_text, entry))
+        for entry in work
+    ):
+        return {**criterion, "result": RESULT_NOT_REACHED}
+    return criterion
+
+
+def _without_settled_words(
+    result: str | None, cited: list[LedgerEntry], uncitable: frozenset[str]
+) -> list[LedgerEntry]:
+    """A departure's citations less the reader's kept direction and a correction pasted back.
+
+    Neither says what the work did (`settled_reader_words`), so they never stand under a departure,
+    whichever the model cited. Any other verdict keeps them.
+    """
+    if result != RESULT_DEPARTURE:
+        return cited
+    return [entry for entry in cited if entry["id"] not in uncitable]
+
+
 def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     row: Mapping[str, Any],
     by_index: Mapping[int, LedgerEntry],
@@ -3469,6 +3851,8 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     checks_unread: bool = False,
     scope: str = SCOPE_LAST_TURN,
     requested_at: float | None = None,
+    uncitable: frozenset[str] = frozenset(),
+    recorded_write: bool = False,
 ) -> Criterion:
     """One constraint's criterion, with every server-side rule applied.
 
@@ -3505,6 +3889,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
         and not _before_window(by_index[value], window_start)
         and after_line_request(by_index[value], requested_at)
     ]
+    cited = _without_settled_words(result, cited, uncitable)
     if (
         result in (RESULT_DEPARTURE, RESULT_CONSISTENT, RESULT_UNSUPPORTED, RESULT_NOT_REACHED)
         and not cited
@@ -3523,6 +3908,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
             latest_check_at=latest_check_at,
             checks_unread=checks_unread,
             carried=tuple(by_index.values()),
+            recorded_write=recorded_write,
         )
         if rests_on_nothing:
             result, why = RESULT_UNVERIFIABLE, rests_on_nothing
@@ -3542,6 +3928,15 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     # A claims departure or `unsupported` quotes the agent's own success words
     # by its nature ("said the change works"), and neither says the work
     # landed, so the backstop reads only a claims `consistent` (review, PR C).
+    recorded_done = (
+        result == RESULT_CONSISTENT
+        and bool(cited)
+        and all(
+            entry.get("subject") in (PR_SUBJECT, SKILL_SUBJECT)
+            and check_supports(entry, RESULT_CONSISTENT, window_start)
+            for entry in cited
+        )
+    )
     quoting = name == CONSTRAINT_CLAIMS and result in (RESULT_DEPARTURE, RESULT_UNSUPPORTED)
     if (
         result
@@ -3553,6 +3948,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
             result,
             reported=bool(reported),
             earlier_failed=any(entry.get("earlier_failed") is True for entry in reported),
+            recorded_done=recorded_done,
         )
     ):
         result, why = RESULT_UNVERIFIABLE, WHY_VERDICT_STATED
@@ -3574,6 +3970,701 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     return criterion
 
 
+# What the record settles before the model's word is believed. Two guards, both over entries the
+# code holds and neither adding anything to what the reading sends. A recorded write is a fact, not
+# a judgment: a file written under a folder an outcome line rules out, or outside the only folders
+# it allows, is a departure whatever the reply said, because "I cannot tell" about a line the same
+# card's own list of written files breaks is the record and the verdict contradicting each other
+# side by side. A recorded pass that covers a line is cited ahead of the agent's message on it, so
+# the page says which check it rests on rather than only what the agent said.
+# [DEC-17](docs/design-reading-a-session.md#amended-2026-10-21-the-record-settles-a-line)
+MAX_RECORDED_CITES = 3
+RULE_FORBID = "forbid"
+RULE_ONLY = "only"
+# The slash pairs ordinary prose is full of. Only a line that limits the work to a folder reads
+# a word it did not mean as a folder to the cost of a false departure, so they never name one.
+_PROSE_PAIRS = frozenset(
+    {
+        "and/or", "either/or", "input/output", "read/write", "pass/fail", "true/false",
+        "yes/no", "on/off", "he/she", "his/her", "w/o", "n/a", "i/o", "pros/cons",
+    }
+)  # fmt: skip
+_PATH_WORD = re.compile(r"[\w][\w.\-]*(?:/[\w][\w.\-]*)*/?")
+_CLAUSE_BREAK = re.compile(r";|\n|(?<=[.!?])\s+")
+_RULE_NEGATORS = re.compile(
+    r"\b(?:no|not|never|none|nothing|without|untouched|unchanged|zero)\b|n't\b", re.IGNORECASE
+)
+_RULE_MUTATION = re.compile(
+    r"\b(?:edit(?:s|ed|ing)?|chang(?:e|es|ed|ing)|modif(?:y|ies|ied|ying)|touch(?:es|ed|ing)?"
+    r"|writ(?:e|es|ing|ten)|wrote|add(?:s|ed|ing)?|creat(?:e|es|ed|ing)|delet(?:e|es|ed|ing)"
+    r"|alter(?:s|ed|ing)?|updat(?:e|es|ed|ing)|untouched|unchanged)\b",
+    re.IGNORECASE,
+)
+# "Within" and "inside" alone are not here: "no file within frontend/e2e is edited" rules the
+# folder out, and a bare preposition cannot tell that from "stays within".
+_RULE_LIMITS = re.compile(
+    r"\bonly\b|\b(?:stay|stays|staying|remain|remains)\s+(?:inside|within|in|under)\b"
+    r"|\b(?:limited|confined|restricted)\s+to\b",
+    re.IGNORECASE,
+)
+_RULE_OUTSIDE = re.compile(
+    r"\b(?:outside|beyond|other\s+than|except|apart\s+from|aside\s+from)\b", re.IGNORECASE
+)
+_FILE_NAME = re.compile(r"\.\w{1,5}$")
+
+
+_WORD_WRAP = "`'\"()[]{},;:!?\u2018\u2019\u201c\u201d"
+
+
+def _trim_word(raw: str) -> str:
+    """A word without the quotes, brackets and sentence stops around it, in any order.
+
+    One pass of strip then rstrip(".") left `md".` as `md"`: the period sat outside the strip
+    set, so the closing quote shielded it. Alternating until nothing changes handles a quoted
+    path ending a sentence, which is how an evaluator's reason usually names a file.
+    """
+    word = raw
+    while True:
+        trimmed = word.strip(_WORD_WRAP).rstrip(".")
+        if trimmed == word:
+            return word
+        word = trimmed
+
+
+def _path_tokens(text: str, *, files: bool = False) -> tuple[str, ...]:
+    """The paths a line's own words name, as written relative to the session's directory.
+
+    A word with a slash in it (`frontend/e2e`, `src/`); with `files`, also a bare file name
+    (`reading.py`). A glob tail is dropped and anything absolute or climbing out is not a path
+    this can place, so it is left out rather than guessed at.
+    """
+    found: list[str] = []
+    for raw in text.split():
+        word = _trim_word(raw)
+        for tail in ("/**", "/*"):
+            word = word.removesuffix(tail)
+        word = word.removeprefix("./")
+        if (
+            not _PATH_WORD.fullmatch(word)
+            or word.lower() in _PROSE_PAIRS
+            or any(part in {"", ".", ".."} for part in word.rstrip("/").split("/"))
+        ):
+            continue
+        if "/" not in word and not (files and _FILE_NAME.search(word)):
+            continue
+        path = word.rstrip("/")
+        if path not in found:
+            found.append(path)
+    return tuple(found)
+
+
+# The shapes in which a negator governs a path: it forbids the path only when the clause says the
+# path itself is not changed. A negator elsewhere in the clause ("no tests fail", "without
+# changing the public API", "no other file") governs something else, and a clause that
+# only has one of those leaves its paths to the reading.
+_MUT = (
+    r"(?:edit\w*|chang\w*|modif\w*|touch\w*|writ\w*|wrote|add\w*|creat\w*|delet\w*"
+    r"|alter\w*|updat\w*)"
+)
+_AUX = r"(?:(?:is|are|gets?|should|must|will|may)(?:\s+be)?\s+)?"
+_SCOPE = r"(?:under|in|inside|within)"
+_LEFT_ALONE = r"(?:untouched|unchanged|unmodified|alone)"
+_FORBID_SHAPES = (
+    rf"\b(?:no|zero)\s+(?:\w+\s+)?files?\s+{_SCOPE}\s+{{p}}\s+{_AUX}{_MUT}\b",
+    rf"\bnothing\s+{_SCOPE}\s+{{p}}\s+{_AUX}{_MUT}\b",
+    rf"\bno\s+(?:changes?|edits?|writes?|modifications?)\s+(?:to|{_SCOPE})\s+{{p}}",
+    (
+        rf"\b(?:do\s+not|don't|never|must\s+not|mustn't|should\s+not|shouldn't|without)\s+"
+        rf"(?:(?:ever|even)\s+)?{_MUT}\s+(?:(?:anything|any\s+files?|files?|code)\s+{_SCOPE}\s+)?{{p}}"
+    ),
+    (
+        rf"\b{{p}}\s+(?:is|are|stays?|remains?|must\s+(?:stay|remain)|should\s+(?:stay|remain)"
+        rf"|is\s+left|are\s+left|left)\s+{_LEFT_ALONE}"
+    ),
+    rf"\b{{p}}\s+(?:is|are)\s+(?:not|never)\s+{_MUT}\b",
+    rf"\bleav(?:e|es|ing)\s+(?:(?:anything|files?)\s+{_SCOPE}\s+)?{{p}}\s+{_LEFT_ALONE}",
+)
+
+
+def _forbids(clause: str, folder: str) -> bool:
+    """Whether a negator in the clause governs this folder as the thing left unchanged."""
+    path = rf"[`'\"(]*(?:\./)?{re.escape(folder)}/?(?:/\*\*?)?[`'\")]*(?=[\s,;:.!?]|$)"
+    return any(re.search(shape.format(p=path), clause, re.IGNORECASE) for shape in _FORBID_SHAPES)
+
+
+def folder_rules(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """The folder rules an outcome line states, each as (kind, folders), or none.
+
+    Deliberately narrow: a clause counts only when it names a path, speaks of changing files,
+    and says one way or the other where. `forbid` is a path the clause itself says is not
+    changed ("no file under X is edited", "don't touch X", "X is left untouched"), and only the
+    folders such a phrase governs are named; a negator that governs something else ("no tests
+    fail", "without changing the API") rules nothing out. `only` limits the work to the folders
+    ("only files under X change", "nothing outside X is changed"). A clause that mixes the two,
+    or says neither, is left to the reading, as is a line that names no folder at all.
+    """
+    rules: list[tuple[str, tuple[str, ...]]] = []
+    for clause in _CLAUSE_BREAK.split(text):
+        folders = _path_tokens(clause)
+        if not folders or not _RULE_MUTATION.search(clause):
+            continue
+        negated = _RULE_NEGATORS.search(clause) is not None
+        limits = _RULE_LIMITS.search(clause) is not None
+        outside = _RULE_OUTSIDE.search(clause) is not None
+        if negated and outside and not limits:
+            rules.append((RULE_ONLY, folders))
+        elif negated and not outside and not limits:
+            forbidden = tuple(folder for folder in folders if _forbids(clause, folder))
+            if forbidden:
+                rules.append((RULE_FORBID, forbidden))
+        elif limits and not negated and not outside:
+            rules.append((RULE_ONLY, folders))
+    return tuple(rules)
+
+
+def _within(path: str, folders: Sequence[str]) -> bool:
+    return any(path == folder or path.startswith(f"{folder}/") for folder in folders)
+
+
+@dataclass(frozen=True)
+class RecordedWrite:
+    """One path the record shows written, with the fact that shows it."""
+
+    id: str
+    path: str
+    at: float
+    result_at: float | None = None
+
+
+@dataclass(frozen=True)
+class RecordedRemoval:
+    """A path the shell took away: `deleted`, or `moved` from where it was."""
+
+    path: str
+    at: float
+    kind: str
+
+
+@dataclass(frozen=True)
+class RecordedPr:
+    """A pull request Claude Code's structured record shows created, with the fact that shows it."""
+
+    id: str
+    repository: str
+    number: int
+    at: float
+
+
+@dataclass(frozen=True)
+class Recorded:
+    """The writes, checks and created pull requests the session's record holds, whether or not a
+    prompt carried them.
+
+    Built from the facts by `recorded_from` and used only to settle and to cite. Nothing in it
+    is sent to a model.
+    """
+
+    writes: tuple[RecordedWrite, ...] = ()
+    checks: tuple[LedgerEntry, ...] = ()
+    removals: tuple[RecordedRemoval, ...] = ()
+    prs: tuple[RecordedPr, ...] = ()
+
+
+def recorded_from(
+    facts: Iterable[Mapping[str, Any]],
+    harness: str,
+    sid: str,
+    *,
+    tool_output: ToolOutput | None = None,
+) -> Recorded:
+    """What the record holds of this session's writes and checks, as the guards read them.
+
+    A check is read through `build_ledger`, so its summary, its aging flags and its time are the
+    ones a reading would have been shown, with the published `changed_after` where no grant
+    recovered the pair, as `levels` reads it.
+    """
+    writes: list[RecordedWrite] = []
+    checks: list[LedgerEntry] = []
+    prs: list[RecordedPr] = []
+    changed = tool_output.changed_after if tool_output is not None else frozenset()
+    incomplete = tool_output.read_incomplete if tool_output is not None else frozenset()
+    for fact in facts:
+        if isinstance(fact, dict) and fact.get("subject") == PR_SUBJECT:
+            pr = _recorded_pr(fact, harness, sid)
+            if pr is not None:
+                prs.append(pr)
+            continue
+        if not isinstance(fact, dict) or fact.get("subject") not in (WRITE_SUBJECT, CHECK_SUBJECT):
+            continue
+        if fact.get("subject") == WRITE_SUBJECT:
+            session = fact.get("source_session")
+            fact_id = records.safe_text(fact.get("fact_id"), 160).strip()
+            path = str(fact.get("summary") or "").strip().removeprefix("./")
+            stamp = _number(fact.get("at"))
+            if (
+                isinstance(session, dict)
+                and (session.get("harness"), session.get("sid")) == (harness, sid)
+                and fact.get("type") == TOOL_REPORT_TYPE
+                and fact_id
+                and stamp is not None
+                and stamp > 0
+                and path
+                and not path.startswith("/")
+                and ".." not in path.split("/")
+            ):
+                writes.append(RecordedWrite(fact_id, path.rstrip("/"), stamp))
+            continue
+        for row in build_ledger(
+            [fact],
+            harness,
+            sid,
+            tool_output={},
+            changed_after=changed,
+            read_incomplete=incomplete,
+        ):
+            if row.get("subject") == CHECK_SUBJECT:
+                row["changed_after"] = row.get("changed_after") is True or (
+                    fact.get("changed_after") is True
+                )
+                checks.append(row)
+    removals = tuple(
+        RecordedRemoval(path, at, kind)
+        for path, at, kind in (tool_output.removals if tool_output is not None else ())
+    )
+    return Recorded(tuple(writes), tuple(checks), removals, tuple(prs))
+
+
+def _recorded_pr(fact: Mapping[str, Any], harness: str, sid: str) -> RecordedPr | None:
+    session = fact.get("source_session")
+    fact_id = records.safe_text(fact.get("fact_id"), 160).strip()
+    stamp, number = _number(fact.get("at")), fact.get("pr_number")
+    repository = str(fact.get("pr_repository") or "")
+    if (
+        isinstance(session, dict)
+        and (session.get("harness"), session.get("sid")) == (harness, sid)
+        and fact.get("type") == TOOL_REPORT_TYPE
+        and fact_id
+        and stamp is not None
+        and stamp > 0
+        and type(number) is int
+        and number > 0
+        and repository
+    ):
+        return RecordedPr(fact_id, repository, number, stamp)
+    return None
+
+
+def recorded_departure(
+    text: str,
+    clause: str,
+    recorded: Recorded,
+    *,
+    window_start: float,
+    requested_at: float | None,
+    detail_cap_chars: int,
+) -> Criterion | None:
+    """The departure a recorded write settles on one outcome line, or None.
+
+    Only a departure: no write found says nothing, because the listing is capped and a window
+    can be partial, so the absence of one inside a folder is never a reason to say a line holds.
+    """
+    for kind, folders in folder_rules(text):
+        hits = sorted(
+            (
+                write
+                for write in recorded.writes
+                if not _before_window({"at": write.at}, window_start)
+                and after_line_request({"at": write.at}, requested_at)
+                and _within(write.path, folders) is (kind == RULE_FORBID)
+            ),
+            key=lambda write: write.at,
+        )
+        if not hits:
+            continue
+        where = ", ".join(folders)
+        files = f"{len(hits)} {'file' if len(hits) == 1 else 'files'}"
+        detail = (
+            f"{files} recorded as written under {where}, which this line rules out."
+            if kind == RULE_FORBID
+            else f"{files} recorded as written outside {where}, where this line keeps the work."
+        )
+        return {
+            "result": RESULT_DEPARTURE,
+            "cites": tuple(write.id for write in hits[:MAX_RECORDED_CITES]),
+            "detail": records.safe_text(detail, detail_cap_chars),
+            "clause": clause,
+            "why": WHY_RECORDED_WRITE,
+        }
+    return None
+
+
+# The harness's "goal met" verdict is a claim, tested the way an agent saying a task is done is
+# (owner, 2026-10-22):
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-22-a-goal-met-verdict-is-a-claim)
+# The result of the test, apart from every criterion, so the verdict can neither lower a level nor
+# stand in for a passing check. `agrees` and `disputed` are the two answers the record can give;
+# `unconfirmed` is what it gives when it holds neither the cited facts nor anything against them,
+# because absence never produces a dispute (rule 3).
+GOAL_VERDICT_AGREES = "agrees"
+GOAL_VERDICT_DISPUTED = "disputed"
+GOAL_VERDICT_UNCONFIRMED = "unconfirmed"
+GOAL_VERDICT_CHECKS = (GOAL_VERDICT_AGREES, GOAL_VERDICT_DISPUTED, GOAL_VERDICT_UNCONFIRMED)
+GOAL_VERDICT_WRITTEN = "written-before"
+GOAL_VERDICT_PASSED = "passed-before"
+GOAL_VERDICT_WRITTEN_AFTER = "written-after"
+GOAL_VERDICT_FAILED = "check-failed"
+GOAL_VERDICT_DELETED_AFTER = "deleted-after"
+GOAL_VERDICT_MOVED_AFTER = "moved-after"
+GOAL_VERDICT_PR = "pr-created-before"
+GOAL_VERDICT_NOT_FOUND = "not-found"
+GOAL_VERDICT_NOTHING_CHECKABLE = "nothing-checkable"
+GOAL_VERDICT_WHYS = (
+    GOAL_VERDICT_WRITTEN,
+    GOAL_VERDICT_PASSED,
+    GOAL_VERDICT_PR,
+    GOAL_VERDICT_WRITTEN_AFTER,
+    GOAL_VERDICT_DELETED_AFTER,
+    GOAL_VERDICT_MOVED_AFTER,
+    GOAL_VERDICT_FAILED,
+    GOAL_VERDICT_NOT_FOUND,
+    GOAL_VERDICT_NOTHING_CHECKABLE,
+)
+GOAL_VERDICT_KEYS = ("at", "check", "why", "cites")
+# A dispute that rests on a file taken away names the file and the moment, so the card can say which
+# and when. Both or neither, and only beside the two removal tokens.
+VERDICT_PATH_CAP_CHARS = 240
+GOAL_VERDICT_REMOVAL_KEYS = ("path", "changed_at")
+GOAL_VERDICT_REMOVAL_WHYS = (GOAL_VERDICT_DELETED_AFTER, GOAL_VERDICT_MOVED_AFTER)
+# A file name the evaluator's prose names: a stem of at least two characters and a lettered
+# extension, so "e.g." and a version such as "2.1" are not read as files.
+_VERDICT_FILE = re.compile(r"(?:[\w\-]+/)*[\w\-]{2,}\.[A-Za-z][A-Za-z0-9]{0,4}")
+
+
+# The evaluator elides the head of a long path as ".../" (measured on a real session, 2026-10-22).
+# What is left is a tail of the real path, which `_same_path` already matches by its end.
+_ELIDED_HEAD = re.compile(r"(?:\.\.\.|\u2026)/")
+
+
+def _verdict_files(reason: str) -> tuple[str, ...]:
+    text = _ELIDED_HEAD.sub("", reason)
+    return tuple(path for path in _path_tokens(text, files=True) if _VERDICT_FILE.fullmatch(path))
+
+
+# A pull request the evaluator's prose names: "PR #7", "PR 7", "PR (#7)", "pull request #7", a list
+# of them ("PRs #6 and #7", "PRs #7, #8"), or a `pull/7` path, which may carry the repository
+# before it (owner, 2026-10-23). A bare "#7" is not read: it is as often an issue.
+_VERDICT_PR_URL = re.compile(
+    r"(?:github\.com/(?P<repo>[\w.-]+/[\w.-]+)/pull/|\bpull/)(?P<number>\d+)\b", re.IGNORECASE
+)
+_VERDICT_PR_LIST = re.compile(
+    r"\b(?:PRs?|pull\s+requests?)\s*\(?\s*(?P<list>#?\d+\b(?:\s*(?:,|and|&)\s*#?\d+\b)*)",
+    re.IGNORECASE,
+)
+
+
+def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
+    named = [
+        ((found["repo"] or "").lower(), int(found["number"]))
+        for found in _VERDICT_PR_URL.finditer(reason)
+    ]
+    named.extend(
+        ("", int(number))
+        for found in _VERDICT_PR_LIST.finditer(reason)
+        for number in re.findall(r"\d+", found["list"])
+    )
+    return tuple(dict.fromkeys(named))
+
+
+def _verdict_check_kinds(reason: str) -> frozenset[str]:
+    return frozenset(kind for kind in _LINE_KINDS if _claims_result(reason, kind))
+
+
+def _removed_after(
+    named: Sequence[str], recorded: Recorded, set_at: float, verdict_at: float
+) -> RecordedRemoval | None:
+    """The latest removal after the verdict of a named file, or of a folder holding it.
+
+    A file written again after the removal stands again, so that is a write after the verdict and
+    not a removal. Nothing found is None: no recorded removal says nothing about the file.
+    """
+    hits = [
+        removal
+        for removal in recorded.removals
+        if removal.at > verdict_at
+        and removal.at >= set_at
+        and any(_removal_covers(removal.path, path) for path in named)
+        and not any(
+            write.at > removal.at and _removal_covers(removal.path, write.path)
+            for write in recorded.writes
+        )
+    ]
+    # `rm file && rmdir folder` records both at one time; name the file the verdict relied on.
+    return (
+        max(
+            hits,
+            key=lambda removal: (removal.at, any(_same_path(removal.path, p) for p in named)),
+        )
+        if hits
+        else None
+    )
+
+
+def _removal_covers(removed: str, path: str) -> bool:
+    """Whether taking `removed` away takes `path` with it: that file, or the folder holding it."""
+    return (
+        _same_path(removed, path) or f"/{removed}/" in f"/{path}/" or path.startswith(f"{removed}/")
+    )
+
+
+def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the record can give
+    goal: Any, recorded: Recorded
+) -> GoalVerdictCheck | None:
+    """Test the harness's `met` verdict on a session's goal against what the record holds.
+
+    The facts the evaluator's reason cites are the files it names, the kinds of check it says
+    passed, and a pull request it names by number that the record shows created. A cited
+    file the record shows written, or a check of a claimed kind that passed, at or
+    before the verdict and since undone by nothing, agrees. A cited file written after the verdict,
+    or a check of a claimed kind whose latest run failed (and that no later whole-suite run before
+    the verdict superseded), disputes it, and a dispute outweighs what agrees. Nothing found, or
+    nothing checkable in the reason, is `unconfirmed`: the listing is capped, so the absence of a
+    write says nothing. Only the record from the goal's own set time is read. None where the row
+    holds no well-formed verdict.
+    """
+    if not isinstance(goal, dict) or not isinstance(goal.get("verdict"), dict):
+        return None
+    verdict = goal["verdict"]
+    set_at, at = _number(goal.get("at")), _number(verdict.get("at"))
+    reason = verdict.get("reason")
+    if verdict.get("met") is not True or not set_at or not at or not isinstance(reason, str):
+        return None
+
+    verdict_at: float = at
+
+    def result(check: str, why: str, cites: Sequence[str] = ()) -> GoalVerdictCheck:
+        return {
+            "at": verdict_at,
+            "check": check,
+            "why": why,
+            "cites": tuple(cites[:MAX_RECORDED_CITES]),
+        }
+
+    files, kinds = _verdict_files(reason), _verdict_check_kinds(reason)
+    named_prs = _verdict_prs(reason)
+    # The condition names files too ("the file docs/e2e/notes.md exists"), and a file it names that
+    # the record shows taken away after the verdict contradicts the claim whatever the reason said.
+    named = tuple(dict.fromkeys((*files, *_verdict_files(str(goal.get("text") or "")))))
+    taken = _removed_after(named, recorded, set_at, at)
+    if taken is not None:
+        return {
+            **result(
+                GOAL_VERDICT_DISPUTED,
+                GOAL_VERDICT_DELETED_AFTER if taken.kind == "deleted" else GOAL_VERDICT_MOVED_AFTER,
+            ),
+            "path": records.safe_text(taken.path, VERDICT_PATH_CAP_CHARS),
+            "changed_at": taken.at,
+        }
+    if not files and not kinds and not named_prs:
+        return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOTHING_CHECKABLE)
+    writes = [
+        write
+        for write in recorded.writes
+        if write.at >= set_at and any(_same_path(path, write.path) for path in files)
+    ]
+    later = [write.id for write in writes if write.at > at]
+    if later:
+        return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_WRITTEN_AFTER, later)
+    checks = [
+        entry
+        for entry in recorded.checks
+        if (evidence_at(entry) or entry["at"]) >= set_at
+        and kinds & _check_kinds(_check_text(entry))
+    ]
+    failed = [
+        entry["id"]
+        for entry in checks
+        if entry.get("result") == RESULT_FAILED and not _superseded(entry, at, recorded.checks)
+    ]
+    if failed:
+        return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_FAILED, failed)
+    if writes:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_WRITTEN, [write.id for write in writes])
+    created = [
+        pr.id
+        for pr in recorded.prs
+        if set_at <= pr.at <= at
+        and any(
+            number == pr.number and repository in ("", pr.repository.lower())
+            for repository, number in named_prs
+        )
+    ]
+    if created:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_PR, created)
+    passed = [
+        entry["id"]
+        for entry in checks
+        if entry.get("result") == RESULT_PASSED
+        and (evidence_at(entry) or entry["at"]) <= at
+        and entry.get("changed_after") is not True
+    ]
+    if passed:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_PASSED, passed)
+    return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOT_FOUND)
+
+
+# The words of a line that say which kind of check would show it, and the words of a check's own
+# command that say which kind it is. Deliberately small: a check covers a line when the line claims
+# that kind's result (`_claims_result`), or when it names a path the check's command names. A line
+# neither shape reaches is left with the agent's message, which is the honest answer where no
+# check plainly covers it.
+_LINE_KINDS = {
+    "test": re.compile(r"\b(?:tests?|suite|specs?|pytest|vitest|jest|unittest)\b", re.IGNORECASE),
+    "lint": re.compile(r"\b(?:lint(?:s|ed|er|ing)?|ruff|biome|eslint)\b", re.IGNORECASE),
+    "types": re.compile(
+        r"\b(?:type-?check(?:s|ed|ing)?|type\s+checks?|mypy|tsc|pyright)\b", re.IGNORECASE
+    ),
+    "build": re.compile(r"\bbuild(?:s|ing)?\b", re.IGNORECASE),
+}
+_CHECK_WORDS = {
+    "test": re.compile(
+        r"^(?:pytest|unittest|vitest|jest|mocha|playwright|tests?|test:\S+|run_tests\.py)$"
+    ),
+    "lint": re.compile(r"^(?:ruff|biome|eslint|flake8|pylint|lint(?::\S+)?)$"),
+    "types": re.compile(r"^(?:mypy|tsc|pyright|typecheck|type-check)$"),
+    "build": re.compile(r"^build(?::\S+)?$"),
+}
+
+
+# What a line says when it claims a check's outcome, rather than merely naming its subject. A pass
+# shows "the tests pass" and "no lint errors"; it says nothing about "the lint config is left alone"
+# or "tests are not deleted", which share the keyword and claim no result (DRC-4937). The negated
+# form has its own branch because `\b` cannot sit before the `n't` of "don't fail".
+_RESULT_CLAIM = re.compile(
+    r"\b(?:pass(?:es|ed|ing)?|green|clean|ok|okay|succe(?:ed|eds|eded|ss|ssful|ssfully)"
+    r"|compil(?:e|es|ed)"
+    r"|(?:no|zero|without|0)\s+(?:\w+\s+){0,2}(?:errors?|failures?|failing|warnings?|violations?)"
+    r"|(?:not|never)\s+fail(?:s|ed|ing)?)\b"
+    r"|\wn['\u2019]t\s+fail(?:s|ed|ing)?\b",
+    re.IGNORECASE,
+)
+# A clause that says what was done to something states no result, even when it shares a word with
+# one: "no failing tests are removed". The action has to follow an auxiliary, so "the renamed tests
+# pass" still claims one. A modal is not listed: "the tests should pass" is how a reader writes the
+# outcome they expect, and a recorded pass of that kind is what shows it.
+_NOT_A_RESULT = re.compile(
+    r"\b(?:is|are|was|were|be|been|get|gets)\s+(?:(?:not|never|also|still|just)\s+)?"
+    r"(?:removed|deleted|disabled|skipped|suppressed|silenced|muted|ignored|renamed|touched"
+    r"|changed|edited|modified|added)\b",
+    re.IGNORECASE,
+)
+# No colon: "Tests: all passing" says its result after the colon, and splitting there left the
+# subject and the result in different clauses.
+_CLAUSE_BREAK = re.compile(r"[.;,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
+
+
+def _claims_result(text: str, kind: str) -> bool:
+    """Whether one clause of the line speaks of this kind of check and says how it came out."""
+    return any(
+        _LINE_KINDS[kind].search(clause)
+        and _RESULT_CLAIM.search(clause)
+        and not _NOT_A_RESULT.search(clause)
+        for clause in _CLAUSE_BREAK.split(text)
+    )
+
+
+def _check_kinds(command: str) -> frozenset[str]:
+    words = [os.path.basename(word) for word in command.split()]
+    return frozenset(
+        kind for kind, pattern in _CHECK_WORDS.items() if any(pattern.match(word) for word in words)
+    )
+
+
+def _same_path(a: str, b: str) -> bool:
+    return a == b or a.endswith(f"/{b}") or b.endswith(f"/{a}")
+
+
+def covers_line(text: str, command: str) -> bool:
+    """Whether a check's command plainly covers an outcome line.
+
+    A line that names a path is covered by a check that names it too; one that names none, by a
+    check of a kind the line claims a result for ("the tests pass", "lint is clean"). A line that
+    only shares the keyword ("the lint config is left alone") claims none, and a pass of the same
+    kind on a different target does not cover a line about this one.
+    """
+    named = _path_tokens(text, files=True)
+    if named:
+        words = command.split()
+        targets = [word.rstrip("/").removeprefix("./") for word in words if "/" in word]
+        targets += [word for word in words if _FILE_NAME.search(word)]
+        return any(_same_path(path, target) for path in named for target in targets)
+    return any(_claims_result(text, kind) for kind in _check_kinds(command))
+
+
+def covering_checks(
+    text: str,
+    recorded: Recorded,
+    *,
+    window_start: float,
+    requested_at: float | None,
+) -> list[str]:
+    """The ids of the latest recorded passes that cover the line and can carry a `consistent`."""
+    passes = [
+        entry
+        for entry in recorded.checks
+        if check_supports(entry, RESULT_CONSISTENT, window_start)
+        and after_line_request(entry, requested_at)
+        and covers_line(text, _check_text(entry))
+    ]
+    passes.sort(key=lambda entry: evidence_at(entry) or 0.0, reverse=True)
+    return [entry["id"] for entry in passes[:MAX_RECORDED_CITES]]
+
+
+def _settled_by_record(
+    criterion: Criterion,
+    name: str,
+    text: str,
+    recorded: Recorded,
+    *,
+    window_start: float,
+    requested_at: float | None,
+    detail_cap_chars: int,
+) -> Criterion:
+    """One outcome line after the record has had its say."""
+    if not is_outcome_line(name):
+        return criterion
+    departed = recorded_departure(
+        text,
+        criterion["clause"],
+        recorded,
+        window_start=window_start,
+        requested_at=requested_at,
+        detail_cap_chars=detail_cap_chars,
+    )
+    if departed is not None:
+        return departed
+    # A line about what the agent tells the reader rests on the agent's message, which is what it
+    # is about; a check beside it would say the run, not the report, is what shows it.
+    if criterion.get("result") != RESULT_CONSISTENT or _about_what_the_agent_tells(
+        RESULT_CONSISTENT, name, text
+    ):
+        return criterion
+    cited = set(criterion["cites"])
+    if any(entry["id"] in cited for entry in recorded.checks):
+        return criterion
+    leading = [
+        key
+        for key in covering_checks(
+            text, recorded, window_start=window_start, requested_at=requested_at
+        )
+        if key not in cited
+    ]
+    return (
+        {**criterion, "cites": (*leading, *criterion["cites"])[:MAX_CITES]}
+        if leading
+        else criterion
+    )
+
+
 def _numbered(selection: object) -> dict[int, LedgerEntry]:
     """The menu numbering, from the one handle allowed to carry it.
 
@@ -3590,7 +4681,7 @@ def _numbered(selection: object) -> dict[int, LedgerEntry]:
     return selection.by_index()
 
 
-def resolve(
+def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolve_one`
     parsed: Mapping[str, Mapping[str, Any]],
     selection: Selection,
     *,
@@ -3600,6 +4691,9 @@ def resolve(
     window_start: float = 0.0,
     scope: str = SCOPE_LAST_TURN,
     line_requests: Mapping[str, float] | None = None,
+    uncitable: frozenset[str] = frozenset(),
+    recorded: Recorded | None = None,
+    open_call_at: float | None = None,
 ) -> dict[str, Criterion]:
     """The model's tokens and indices, turned into what the page may render.
 
@@ -3614,6 +4708,10 @@ def resolve(
 
     `window_start` is where the evidence window opens: `window_start` of the
     revision read.
+
+    `recorded` is what the record holds of writes and checks, whether or not the prompt
+    carried them: it settles an outcome line a recorded write breaks and puts the check that
+    covers a `consistent` line ahead of the agent's message (`_settled_by_record`).
     """
     by_index = _numbered(selection)
     failed_on_record = selection.record_failed or any(
@@ -3628,12 +4726,45 @@ def resolve(
         ),
         default=0.0,
     )
+    by_id = {str(row["id"]): row for row in by_index.values()}
+    # The recorded checks and writes the reading was shown, for the mid-flight guard.
+    work = [
+        entry
+        for entry in (*selection.entries, *selection.unread_checks, *selection.unread_failures)
+        if entry.get("type") == TOOL_REPORT_TYPE
+        and entry.get("subject") in (CHECK_SUBJECT, WRITE_SUBJECT)
+    ]
     texts = [line for line in lines if line.strip()]
     names = constraints_for(texts, claims=selection.asked_claims)
     # The claims question has no words of the reader's to caption it; the
     # page names the row itself.
     clauses = dict(zip(names, (goal, *texts, ""), strict=False))
     out: dict[str, Criterion] = {}
+
+    def settled(name: str, criterion: Criterion) -> Criterion:
+        requested = (line_requests or {}).get(name) if is_outcome_line(name) else None
+        return (
+            _settled_by_record(
+                criterion,
+                name,
+                clauses[name],
+                recorded,
+                window_start=window_start,
+                requested_at=requested,
+                detail_cap_chars=detail_cap_chars,
+            )
+            if recorded is not None
+            else criterion
+        )
+
+    # The refusal stands in place of every other answer: the model said it before the record,
+    # so a line verdict beside it was given about words it had just found nothing to read against.
+    # The other rows are published as not asked and never reach the record-settles-a-line guard, so
+    # no departure survives a refused goal.
+    refused = asks_goal(goal) and (
+        result_for(CONSTRAINT_GOAL, str((parsed.get(CONSTRAINT_GOAL) or {}).get("token") or ""))
+        == RESULT_GOAL_UNCLEAR
+    )
     for name in names:
         # Bounded and scrubbed like every other published string. It is the
         # reader's own text, but it arrives here as an argument and it was the
@@ -3641,6 +4772,15 @@ def resolve(
         # keeping a bidi override that sits immediately before the verdict and
         # reorders it.
         clause = records.safe_text(clauses[name], detail_cap_chars)
+        if refused:
+            out[name] = {
+                "cites": (),
+                "detail": "",
+                "clause": clause,
+                "why": WHY_STANDS if name == CONSTRAINT_GOAL else WHY_NOT_ASKED,
+                "result": RESULT_GOAL_UNCLEAR if name == CONSTRAINT_GOAL else RESULT_UNVERIFIABLE,
+            }
+            continue
         # Not asked is not answered. The constraint the prompt never posed has
         # no token to resolve, whatever the reply volunteered. The lines come
         # from the prompt, never re-derived: the header it used is the
@@ -3656,30 +4796,45 @@ def resolve(
                 and bool(selection.unread_checks)
                 and not any(demonstrates_work(entry) for entry in selection.entries)
             )
-            out[name] = {
-                "result": RESULT_UNVERIFIABLE,
-                "cites": (),
-                "detail": "",
-                "clause": clause,
-                "why": WHY_CHECKS_NOT_READ if crowded else WHY_NOT_ASKED,
-            }
+            out[name] = settled(
+                name,
+                {
+                    "result": RESULT_UNVERIFIABLE,
+                    "cites": (),
+                    "detail": "",
+                    "clause": clause,
+                    "why": WHY_CHECKS_NOT_READ if crowded else WHY_NOT_ASKED,
+                },
+            )
             continue
-        out[name] = _resolve_one(
-            parsed.get(name) or {},
-            by_index,
-            name=name,
-            clause=clause,
-            detail_cap_chars=detail_cap_chars,
-            window_start=window_start,
-            unread_failures=selection.unread_failures,
-            failed_on_record=failed_on_record,
-            line_text=clauses[name],
-            latest_check_at=latest_check_at,
-            checks_unread=selection.checks_unsent
-            or bool(selection.unread_checks)
-            or bool(selection.unlisted),
-            scope=scope,
-            requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
+        out[name] = settled(
+            name,
+            _while_running(
+                _resolve_one(
+                    parsed.get(name) or {},
+                    by_index,
+                    name=name,
+                    clause=clause,
+                    detail_cap_chars=detail_cap_chars,
+                    window_start=window_start,
+                    unread_failures=selection.unread_failures,
+                    failed_on_record=failed_on_record,
+                    line_text=clauses[name],
+                    latest_check_at=latest_check_at,
+                    checks_unread=selection.checks_unsent
+                    or bool(selection.unread_checks)
+                    or bool(selection.unlisted),
+                    scope=scope,
+                    requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
+                    uncitable=uncitable,
+                ),
+                name,
+                by_id,
+                scope=scope,
+                work=work,
+                open_call_at=open_call_at,
+                line_text=clauses[name],
+            ),
         )
     return out
 
@@ -3693,6 +4848,7 @@ def _readable(
     discarded: bool = False,
     read_lines: bool = False,
     admit_turn_stop: bool = False,
+    admit_idle: bool | None = None,
 ) -> tuple[str, tuple[str, ...], str, str]:
     """(goal, lines, scope, withheld). A withheld reason means stop here.
 
@@ -3726,6 +4882,7 @@ def _readable(
         now=now,
         settle_sec=config.reading_settle_sec,
         admit_turn_stop=admit_turn_stop,
+        admit_idle=admit_idle,
     )
     return goal, lines, scope, withheld
 
@@ -3765,6 +4922,7 @@ def produce(  # noqa: PLR0913
     tool_output: ToolOutput | None = None,
     read_lines: bool = False,
     admit_turn_stop: bool = False,
+    admit_idle: bool | None = None,
     on_phase: Callable[[str], None] | None = None,
     record_withheld: str = "",
     read_agent_words: bool = False,
@@ -3774,6 +4932,8 @@ def produce(  # noqa: PLR0913
     ) = None,
     record_coverage_lookup: Callable[[], Mapping[str, Any]] | None = None,
     final_source_lookup: FinalLookup | None = None,
+    settled_through: Any = None,
+    open_call_lookup: Callable[[], float | None] | None = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -3806,6 +4966,15 @@ def produce(  # noqa: PLR0913
     rows the prompt selected (`build_prompt`'s `final_lookup`). The unasked lane never
     sends agent messages, so it never reaches it.
 
+    `settled_through` is the reading route's, read from the entry the press just settled: the row it
+    holds can predate a Keep the same press made, and a direction kept a moment ago must not stand
+    under a departure (`settled_reader_words`). Absent, the row's own is read.
+
+    `open_call_lookup` is the reading route's, for the running-turn guard: when the newest call
+    the transcript has no result for was made. Asked only of a running session. The idle press
+    also reads mid-flight, but nothing is running there, so an unanswered call is an
+    interruption and no call in flight excuses a departure; only work recorded after the words can.
+
     `on_phase` is a reading job's, told `PHASE_CHECKING` once a reply arrived
     and never otherwise, so a published phase is one that really happened.
 
@@ -3821,6 +4990,7 @@ def produce(  # noqa: PLR0913
         discarded=discarded,
         read_lines=read_lines,
         admit_turn_stop=admit_turn_stop,
+        admit_idle=admit_idle,
     )
     if withheld:
         return None, withheld, False
@@ -3880,6 +5050,8 @@ def produce(  # noqa: PLR0913
         else (),
     )
     measured = record_coverage_lookup() if record_coverage_lookup is not None else {}
+    # A /goal has no prompt behind it to find, so a missing source is not a cut: only the
+    # excerpt's own ellipsis says the stated condition was longer than the Goal field held.
     coverage = {
         "tail_truncated": measured.get("tail_truncated"),
         "tail_start": measured.get("tail_start"),
@@ -3888,6 +5060,8 @@ def produce(  # noqa: PLR0913
         "goal_source": (
             "typed"
             if not adopted
+            else ("excerpt" if goal.endswith("\u2026") else "whole")
+            if latest.get("goal_source") == SESSION_GOAL
             else "excerpt"
             if source is None
             else "whole"
@@ -3916,6 +5090,24 @@ def produce(  # noqa: PLR0913
         window_start=window_start(latest),
         scope=scope,
         line_requests=line_request_floors(latest, request_sources, harness, sid),
+        recorded=recorded_from(facts, harness, sid, tool_output=tool_output),
+        open_call_at=(
+            open_call_lookup()
+            if open_call_lookup is not None
+            and scope == SCOPE_MID_FLIGHT
+            and end_kind(row) == "running"
+            else None
+        ),
+        uncitable=settled_reader_words(
+            facts,
+            harness,
+            sid,
+            floor=_later_direction_floor(latest),
+            settled_through=max(
+                valid_prompt_time(settled_through) or 0.0,
+                valid_prompt_time(row.get("annotation_settled_through")) or 0.0,
+            ),
+        ),
     )
     cutoff = cutoff_text(
         selected.entries,
@@ -3925,7 +5117,15 @@ def produce(  # noqa: PLR0913
         coverage=coverage,
         window_start=window_start(latest),
     )
-    cutoff += _goal_note(adopted=adopted, source=source, goal=goal, whole=selected.goal_whole)
+    # A `/goal` is stated in the session, with no prompt of the reader's behind it to go missing
+    # (owner feedback, 2026-10-22): the note would name a prompt that never existed.
+    cutoff += _goal_note(
+        adopted=adopted and latest.get("goal_source") != SESSION_GOAL,
+        source=source,
+        goal=goal,
+        whole=selected.goal_whole,
+    )
+    cutoff += "" if outcome_lines(latest) else NO_OUTCOME_LINES_NOTE
     cutoff += _FINAL_NOTES.get(selected.newest_final or "", "")
     if tool_output is not None and not admitted and _has_reports(facts, harness, sid):
         cutoff += (
@@ -3953,7 +5153,24 @@ def produce(  # noqa: PLR0913
     if latest.get("goal_source") in PROMPT_SOURCES:
         assessment["goal_source"] = str(latest["goal_source"])
         assessment["goal_source_at"] = baseline_at(latest)
+    _attach_verdict_check(assessment, row, facts, tool_output)
     return assessment, "", True
+
+
+def _attach_verdict_check(
+    assessment: Assessment,
+    row: Mapping[str, Any],
+    facts: Sequence[Mapping[str, Any]],
+    tool_output: ToolOutput | None,
+) -> None:
+    """Add the test of the row's harness verdict, only where the row holds one."""
+    goal = row.get("session_goal")
+    if not isinstance(goal, dict) or "verdict" not in goal:
+        return
+    harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
+    checked = check_goal_verdict(goal, recorded_from(facts, harness, sid, tool_output=tool_output))
+    if checked is not None:
+        assessment["goal_verdict"] = checked
 
 
 def _left_out(
@@ -4002,6 +5219,8 @@ def _scope_text(scope: str, row: Mapping[str, Any]) -> str:
     stop = observed_stop(row) if scope == SCOPE_LAST_TURN else None
     if stop is not None and stop[1] == STOP_TRANSCRIPT:
         return SCOPE_TEXT_LAST_TURN_TRANSCRIPT
+    if scope == SCOPE_MID_FLIGHT and end_kind(row) in IDLE_PRESS_KINDS:
+        return SCOPE_TEXT_MID_FLIGHT_IDLE
     return SCOPE_TEXT[scope]
 
 
@@ -4049,7 +5268,9 @@ def _call_failed(model: Callable[..., tuple[str, str]], status: str) -> tuple[st
     if status in _STATUS_FAILURES:
         return _STATUS_FAILURES[status]
     if status != "ok":
-        return WITHHELD_MODEL_FAILED, True
+        failure = getattr(model, "failure_reason", None)
+        reason = failure() if callable(failure) else ""
+        return (reason if reason in WITHHELD else WITHHELD_MODEL_FAILED), True
     return None
 
 
@@ -4112,6 +5333,10 @@ class CodexReadingModel:
 
     unavailable_reason = WITHHELD_MODEL_UNAVAILABLE
 
+    def failure_reason(self) -> str:
+        """A failed Codex call: its stderr is discarded, so no cause is known."""
+        return WITHHELD_CODEX_FAILED
+
     def __init__(
         self,
         config: RuntimeConfig,
@@ -4169,9 +5394,12 @@ class ClaudeReadingModel:
         # A reading job's seam: told the moment the CLI exists, which is when
         # it starts waiting on the provider and what DRC-4693 cancels.
         self.on_spawn = on_spawn
+        # The last call's diagnostic: closed labels and counts, never the CLI's words.
+        self.diagnostic: dict[str, Any] | None = None
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         """The model's reply and a status of `ok`, `unavailable` or `failed`."""
+        self.diagnostic = None
         return observer.claude_exec(
             self.config,
             prompt,
@@ -4179,7 +5407,15 @@ class ClaudeReadingModel:
             runner=self.runner,
             binary_resolver=self.binary_resolver,
             on_spawn=self.on_spawn,
+            on_diagnostic=self._diagnosed,
         )
+
+    def _diagnosed(self, diagnostic: dict[str, Any]) -> None:
+        self.diagnostic = diagnostic
+
+    def failure_reason(self) -> str:
+        """Why the last call failed, as a withheld token (`claude_failure`)."""
+        return claude_failure(self.diagnostic)
 
     def available(self) -> bool:
         """A missing executable is known before reserving a reading attempt."""
@@ -4221,6 +5457,19 @@ def baseline_at(revision: Mapping[str, Any]) -> float:
     return valid_prompt_time(revision.get(field)) or 0.0
 
 
+def _later_direction_floor(revision: Mapping[str, Any]) -> float | None:
+    """When a message must be after to be a later direction of this revision's words.
+
+    `annotations.direction_floor`'s rule for a saved goal, which is all a reading is read from:
+    adopted words by their source time, typed words by when they were saved.
+    """
+    for name in ("goal_source_at", "goal_saved_at", "at"):
+        stamp = valid_prompt_time(revision.get(name))
+        if stamp is not None:
+            return stamp
+    return None
+
+
 # Said in the cutoff when an adopted goal could not be read whole (owner,
 # 2026-10-04): the stored goal is the goal box's clip, and the model read only
 # that. Composed by the code, never model prose.
@@ -4232,6 +5481,12 @@ GOAL_SOURCE_UNROOMED = (
     " Your goal's whole prompt had no room in the reading, so only the goal box's words were "
     "read as the goal."
 )
+# Said in the cutoff when the revision read holds no outcome line, so a reader can tell a level
+# resting on the goal's own end state from one resting on lines (owner, 2026-10-22). Keyed on the
+# revision, not on what the press sent: a press that read the goal alone while lines were saved
+# did not read "no lines". It names the goal and not the absent line, since noting an optional
+# field that was not filled in tells a reader nothing (owner, 2026-10-23).
+NO_OUTCOME_LINES_NOTE = " Read against your goal."
 # Said in the cutoff when the newest final reply was not read whole (owner, 2026-10-05):
 # the agent's newest message that the transcript records as ending its turn goes whole where
 # its row fits, and otherwise its excerpt stands. Keyed by `Selection.newest_final`, and

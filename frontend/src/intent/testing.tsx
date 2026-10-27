@@ -129,6 +129,7 @@ export function mountIntent(options: IntentShellOptions = {}) {
     shell,
     router,
     clock,
+    env,
     state,
     written,
     history,

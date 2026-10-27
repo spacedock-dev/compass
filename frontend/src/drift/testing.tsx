@@ -4,10 +4,16 @@
    a request nobody meant to make fails loudly. Not imported by production code. */
 import { act, fireEvent } from '@testing-library/react';
 import { json } from '../intent/testing';
-import { board, mountSession, SESSION_HASH, type Store } from '../intent/panel.testing';
+import {
+  board,
+  LEASE_ROUTE,
+  mountSession,
+  SESSION_HASH,
+  type Store,
+} from '../intent/panel.testing';
 import type { IntentShellOptions, Handler, RecordedRequest } from '../intent/testing';
 
-export { json, SESSION_HASH, type Handler };
+export { json, LEASE_ROUTE, SESSION_HASH, type Handler };
 
 export const ROUTE = {
   provider: 'claude',
@@ -22,18 +28,13 @@ export const ROUTE = {
 };
 
 export const POLICY = {
+  consent: true,
+  off: false,
+  reason: '',
   providers: { claude: true },
   words: { claude: true },
   tool_output: { claude: ['api'] },
   used: 1,
-  limit: 10,
-};
-
-export const UNCONSENTED = {
-  providers: { claude: false },
-  words: {},
-  tool_output: {},
-  used: 0,
   limit: 10,
 };
 
@@ -109,6 +110,16 @@ export function mountDrift(
   } as never);
 }
 
+/* Full activity starts collapsed; a reader opens it before reading or paging the record. Idempotent, so a
+   test may call it after every settle. */
+export const openActivity = async (): Promise<void> => {
+  const trigger = document.querySelector('[data-next-full-activity-trigger]');
+  if (!trigger || trigger.getAttribute('aria-expanded') === 'true') return;
+  await act(async () => {
+    fireEvent.click(trigger);
+  });
+};
+
 export const byAction = (action: string): HTMLButtonElement | null =>
   document.querySelector<HTMLButtonElement>(`[data-next-cockpit-action="${action}"]`);
 
@@ -117,6 +128,12 @@ export const press = async (button: Element | null): Promise<void> => {
   await act(async () => {
     fireEvent.click(button);
   });
+};
+
+/* A citation opens its card and jumps only from the card's "See in context of the session". */
+export const jumpTo = async (citation: Element | null): Promise<void> => {
+  await press(citation);
+  await press(document.querySelector('[data-next-citation-context]'));
 };
 
 export const textOf = (selector: string): string =>

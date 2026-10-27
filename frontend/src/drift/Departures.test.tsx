@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { datedClock } from '../observed/values';
 import { mountDrift, textOf } from './testing';
 
 const ROW = {
@@ -36,7 +37,7 @@ describe('the departures section', () => {
     expect(section.textContent).not.toContain('Raised while you were away: 0');
   });
 
-  it('collapses the rows under their count, each against the revision it read, with the figures', async () => {
+  it('collapses the rows under their count, each against the intent it read, with the figures', async () => {
     const page = mountDrift({
       payload: {
         unasked: true,
@@ -44,6 +45,7 @@ describe('the departures section', () => {
       },
       session: {
         departures: [ROW, { ...ROW, revision: 0, constraint: 'EXPECTED OUTCOME · LINE 1' }],
+        annotation_at: 1000,
         departure_checked: true,
         delivery_departure: {
           delivery_raises: 1,
@@ -60,9 +62,12 @@ describe('the departures section', () => {
     );
     const text = section.textContent ?? '';
     expect(text).toContain('2 departures were raised');
-    expect(text).toContain('read against revision 2');
-    expect(text).toContain('the revision it read is not on record');
-    expect(text).toContain('This raise read revision 2. Revision 3 is current');
+    expect(text).toContain('read against the intent as it stood then');
+    expect(text).toContain('the intent it read is not on record');
+    expect(text).toContain(
+      `This raise was made at ${datedClock(960)} against an earlier version of your intent. You changed it at ${datedClock(1000)}, so it does not describe what you are asking for now.`,
+    );
+    expect(text).not.toMatch(/revision \d/i);
     expect(section.querySelector('[data-next-delivery="handed-over"]')?.textContent).toContain(
       'One notification was raised about this session',
     );

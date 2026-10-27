@@ -18,13 +18,14 @@ import {
   sessionStop,
   type Row,
 } from '../observed';
+import { PROMPT_SOURCES } from '../sessions/intent';
 import { harnessLabels } from '../sessions/rows';
 import { readingRoute } from './route';
 import { WORK_AS_REPORTED, WORK_READ_FROM, WORK_HARNESSES } from './sentences';
 import { readingAuthor, readingCopied } from './shape';
 
-/* The session's activity, numbered. It sits right after CURRENT ACTIVITY in the activity column, under the
-   column's own "Session activity" heading, and the numbers are the ones every "#<n>" on the page names: a
+/* The session's activity, numbered. It sits right after CURRENT ACTIVITY in Full activity, under that
+   section's own heading, and the numbers are the ones every "#<n>" on the page names: a
    reading cites an entry by this list's number, so a citation resolves against the same list the reader is
    looking at rather than against a second collection assembled from the same facts. `cited` is the set of
    fact ids the current reading's surviving departures rest on. The legacy cockpit's `nextCockpitWorkEvidence`
@@ -108,7 +109,17 @@ export function toolReportParts(entry: WorkEntry): {
   readonly check: CheckMarks | null;
 } {
   if (entry.subject !== 'check')
-    return { actor: 'Agent', type: 'file written', notes: [], check: null };
+    return {
+      actor: 'Agent',
+      type:
+        entry.subject === 'pr'
+          ? 'pull request created'
+          : entry.subject === 'skill'
+            ? 'skill used'
+            : 'file written',
+      notes: [],
+      check: null,
+    };
   const key = `${entry.result} ${entry.resultSource}`;
   const recorded = Object.hasOwn(CHECK_RESULTS, key);
   const result: CheckResult =
@@ -174,7 +185,9 @@ export function checkScan(scan: Row | null | undefined): string {
   const other = nextNumber(scan['other_commands']) || 0;
   const more = nextNumber(scan['more']) || 0;
   const outside = nextNumber(scan['outside_paths']) || 0;
-  if (!runs && !background && !written && !other && !outside) {
+  const pulls = nextNumber(scan['pull_requests']) || 0;
+  const skills = nextNumber(scan['skills_used']) || 0;
+  if (!runs && !background && !written && !other && !outside && !pulls && !skills) {
     return 'No check ran in the part of the transcript read.';
   }
   /* The latest results, always, so a failure is never left for the listed rows alone to carry; the files are a
@@ -186,6 +199,10 @@ export function checkScan(scan: Row | null | undefined): string {
   if (written) files.push(count(written, 'file written', 'files written'));
   if (outside)
     files.push(`${count(outside, 'file', 'files')} written outside the working directory`);
+  /* Said apart from the files and the latest runs: neither is a check, and neither has a result to fail. */
+  const done: string[] = [];
+  if (pulls) done.push(count(pulls, 'pull request created', 'pull requests created'));
+  if (skills) done.push(count(skills, 'skill used', 'skills used'));
   const counted: string[] = [];
   if (background) {
     counted.push(
@@ -196,6 +213,7 @@ export function checkScan(scan: Row | null | undefined): string {
   return (
     `From the part of the transcript read: ${checks}.` +
     (files.length ? ` ${files.join(', ').replace(/^./, (c) => c.toUpperCase())}.` : '') +
+    (done.length ? ` ${done.join(', ').replace(/^./, (c) => c.toUpperCase())}.` : '') +
     (counted.length ? ` Counted and not listed: ${counted.join('; ')}.` : '') +
     (more ? ` Failures are listed first, and ${String(more)} more are counted and not listed.` : '')
   );
@@ -500,10 +518,7 @@ export function workList(input: WorkListInput): WorkList {
      for typed words, the prompt itself for adopted ones. A window at the save time is typed words with no
      earlier message, and nothing is expected there. */
   const promptSource = Boolean(
-    annotation &&
-      ['latest-prompt', 'first-prompt', 'chosen-prompt'].includes(
-        String(annotation['goal_source']),
-      ),
+    annotation && PROMPT_SOURCES.includes(String(annotation['goal_source'])),
   );
   const saved = nextNumber(annotation?.['at']);
   const expected = opened !== null && (promptSource || (saved !== null && opened < saved));
@@ -567,6 +582,87 @@ export function workList(input: WorkListInput): WorkList {
     limit,
     ordinals,
   };
+}
+
+/* What the list draws, apart from what the model says, so the comparison with the recorded answers still reads the
+   model's own words and order (docs/design-frontend-migration.md#activity-list-order). */
+
+/* The rows in number order: a check or file sits under the message whose number it carries. It was drawn where it
+   last ran, so #59.1 stood between #67 and #66. A row with no number keeps its place. */
+export function rowsByNumber(rows: readonly WorkRow[]): WorkRow[] {
+  const numbered = rows
+    .filter((row) => row.n !== null)
+    .sort((a, b) => labelOrder(String(a.n), String(b.n)));
+  let next = 0;
+  return rows.map((row) => (row.n === null ? row : (numbered[next++] as WorkRow)));
+}
+
+/* Newest first by message: a message and the checks and files numbered under it (#59, #59.1) are one group, and
+   the groups are reversed, so a message's checks stay under it. Reversing every row drew #59.1 above #59. A row with
+   no number is a group of its own. */
+export function newestFirst(rows: readonly WorkRow[]): WorkRow[] {
+  const groups: WorkRow[][] = [];
+  let major: string | null = null;
+  for (const row of rows) {
+    const next = row.n === null ? null : (String(row.n).split('.')[0] ?? null);
+    const last = groups.at(-1);
+    if (last && next !== null && next === major) last.push(row);
+    else groups.push([row]);
+    major = next;
+  }
+  return groups.reverse().flat();
+}
+
+/* The last turn said once, on its newest drawn row, with the numbers it spans: on every row it was the same tag
+   down the whole list. Chosen from the rows drawn outside a folded run, because the newest row of a turn is often
+   a passing check that folds, and a label inside a closed run is a label nobody sees. When every row of the turn
+   folds, the run holding its newest row carries the label on its trigger (`run`). */
+export function lastTurnLead(
+  rows: readonly WorkRow[],
+  folded?: readonly FoldedItem[],
+): {
+  readonly id: string;
+  readonly range: string;
+  readonly run: string | null;
+} | null {
+  const turn = rows.filter((row) => row.turn);
+  const newest = turn.at(-1);
+  if (!newest) return null;
+  const labels = turn
+    .map((row) => row.n)
+    .filter((n): n is string => n !== null)
+    .sort(labelOrder);
+  const first = labels[0];
+  const last = labels.at(-1);
+  const range = first && last && first !== last ? `#${first} to #${last}` : '';
+  if (!folded) return { id: newest.entry.id, range, run: null };
+  const drawn = new Set(folded.flatMap((item) => (item.kind === 'row' ? [item.row.entry.id] : [])));
+  const lead = turn.filter((row) => drawn.has(row.entry.id)).at(-1);
+  if (lead) return { id: lead.entry.id, range, run: null };
+  const run = folded.find(
+    (item) => item.kind === 'run' && item.rows.some((row) => row.entry.id === newest.entry.id),
+  );
+  return { id: newest.entry.id, range, run: run?.kind === 'run' ? run.last.entry.id : null };
+}
+
+/* Markdown emphasis an agent wrote ("**High**") drawn as the words it marks. Only paired asterisks: a lone `*` is
+   a glob and an underscore is part of a name. */
+export function plainEmphasis(text: string): string {
+  return text.replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, '$1');
+}
+
+/* A row's words as drawn. Emphasis is unwrapped only in an agent's prose or a model's paraphrase of it: a check
+   command, a file path and the person's own message are literal source text, where a pair of asterisks is a
+   glob, and a recursive glob in a check command once lost both of its pairs. */
+const LITERAL_TYPES = new Set(['tool_report', 'user_message']);
+export function rowWords(entry: {
+  readonly type: string;
+  readonly summary: string;
+  readonly modelDerived?: boolean;
+}): string {
+  const prose =
+    !LITERAL_TYPES.has(entry.type) && (entry.type === 'agent_message' || entry.modelDerived);
+  return prose ? plainEmphasis(entry.summary) : entry.summary;
 }
 
 export { WORK_AS_REPORTED };

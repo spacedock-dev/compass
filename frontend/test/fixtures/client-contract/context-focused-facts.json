@@ -50,7 +50,7 @@
         "sid": "a1b2c3d4"
       },
       "observer_model": {
-        "disclosure": "Send redacted transcript excerpts and workflow stage to OpenAI through Codex for a goal summary? Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. --no-observer-model refuses calls for this run.",
+        "disclosure": "A focused refresh sends redacted transcript excerpts and workflow stage through Codex to OpenAI for a goal summary. Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. Pause model calls or --no-observer-model stops these calls.",
         "enabled": false,
         "max_prompt_bytes": 16384
       },
@@ -232,11 +232,108 @@
           "omitted": [],
           "unavailable": []
         },
+        "outline": {
+          "basis": "grouping",
+          "blocks": [
+            {
+              "checks": [],
+              "counts": {
+                "agent_messages": 1,
+                "checks": 0,
+                "checks_failed": 0,
+                "checks_fixed": 0,
+                "checks_unknown": 0,
+                "files": 0,
+                "subagent_entries": 0
+              },
+              "failures": [],
+              "folders": [],
+              "opening": true,
+              "partial": false,
+              "prompt": {
+                "at": 1899996400.0,
+                "fact_id": "fact:1b3f7a63986acb47",
+                "title": "Add retry with backoff to the webhook handler."
+              },
+              "span": {
+                "entries": 2,
+                "first": "fact:1b3f7a63986acb47",
+                "from_at": 1899996400.0,
+                "last": "fact:97096f7eb5b6d42d",
+                "to_at": 1899996460.0
+              }
+            },
+            {
+              "checks": [],
+              "counts": {
+                "agent_messages": 0,
+                "checks": 0,
+                "checks_failed": 0,
+                "checks_fixed": 0,
+                "checks_unknown": 0,
+                "files": 0,
+                "subagent_entries": 0
+              },
+              "failures": [],
+              "folders": [],
+              "opening": false,
+              "partial": false,
+              "prompt": {
+                "at": 1899998200.0,
+                "fact_id": "fact:4aae9c22a7d95d9a",
+                "title": "Keep the diff small and leave the tests alone."
+              },
+              "span": {
+                "entries": 1,
+                "first": "fact:4aae9c22a7d95d9a",
+                "from_at": 1899998200.0,
+                "last": "fact:4aae9c22a7d95d9a",
+                "to_at": 1899998200.0
+              }
+            }
+          ],
+          "coverage": {
+            "agent_replies": "read",
+            "checks_and_files": "read",
+            "complete": true,
+            "end_offset": 890,
+            "notes": [],
+            "start_offset": 0,
+            "starts_at": null,
+            "unread": []
+          },
+          "harness": "claude",
+          "made_by": "compass",
+          "more_blocks": 0,
+          "reason": null,
+          "state": "ok"
+        },
         "scope": "focused session",
         "steer": {
           "live": 2,
           "omitted": [],
           "unavailable": []
+        },
+        "summary": {
+          "exists": false,
+          "job": null,
+          "plan": {
+            "calls": 4,
+            "complete": true,
+            "largest_read": {
+              "bytes_sent": 786432,
+              "call_timeout": 180.0,
+              "calls": 37,
+              "seconds": 600.0,
+              "window_bytes": 16384,
+              "windows": 32
+            },
+            "minutes": 10,
+            "parts": 2,
+            "reason": null,
+            "windows": 1
+          },
+          "state": "absent"
         },
         "surrounding_active": 0,
         "work": {
@@ -257,6 +354,22 @@
               "sid": "a1b2c3d4"
             }
           ],
+          "live_monitor": {
+            "banner_due_at": null,
+            "confirm_by": null,
+            "deadline": null,
+            "destination": null,
+            "disclosure": null,
+            "interval_sec": 60.0,
+            "label": "Live monitor · Haiku",
+            "last_end": null,
+            "level": null,
+            "model": "claude-haiku-5-5",
+            "now": 1900000000.0,
+            "on": false,
+            "started_at": null,
+            "visible": false
+          },
           "omitted": [],
           "support": {
             "collapsed_contributors": 0,
@@ -284,9 +397,11 @@
               "other_commands": 0,
               "outside_paths": 0,
               "passed": 0,
+              "pull_requests": 0,
               "read_only_commands": 0,
               "shell_calls": 0,
               "sid": "a1b2c3d4",
+              "skills_used": 0,
               "subagent_transcripts": 0,
               "subagent_transcripts_unread": 0,
               "unknown_flags": 0,
@@ -308,7 +423,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "5858",
+      "Content-Length": "7631",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

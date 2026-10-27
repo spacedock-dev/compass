@@ -151,11 +151,22 @@ DIRECTION_UNAVAILABLE = (
 # departure still quotes them verbatim on the wire. Naming both acts where the
 # reader meets them is what closes that belief, and SECURITY.md already says
 # the shorter name is the one printed on the button.
+#
+# It leads with what goes and what stays, because the walk found it explaining `Clear` and
+# saying nothing of the reading or the summary (DRC-4928). `Clear` is named last and only to
+# separate the two acts.
 DISCARD_WHY = (
-    "The clear beside the goal and the remove beside each outcome line empty them, and the save "
-    "after it keeps every earlier revision, so anything raised against those words goes on "
-    "quoting them. Discarding everything is the other act."
+    "Discarding everything deletes all you asked of this session, any reading "
+    "of it, and this session's summary, and nothing raised against those words quotes them any "
+    "more. It keeps the record that a check ran, which bounds how often one may run. Session "
+    "history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that "
+    "store. The clear beside the goal is the weaker act: the save after it keeps your earlier "
+    "saves."
 )
+# The page keeps a cue for the same number of seconds (`CUE_TTL_MS` in `controls/keyedState.ts`),
+# and `scripts/regen_client_fixtures.py` writes this one into the vocabulary fixture so a test on
+# that side fails when they part (DRC-4939). The armed discard and Delete summary lapse with it.
+CUE_WINDOW_SECONDS = 30
 # The confirmation, and it carries the whole scope rather than the fact that
 # there is one. It is the only sentence a reader sees before the act, so
 # naming the four effects here is what makes the two presses a decision
@@ -164,27 +175,73 @@ DISCARD_WHY = (
 # DISCARD_STORED's past, same four names in the same order, so a reader who
 # read one recognises the other.
 DISCARD_ARMED = (
-    "Press it again to discard. Every revision of what you asked of this session will go, along "
-    "with any reading of it, and nothing raised against those words will quote them any more; "
-    "the record that a check ran stays. Nothing has been deleted yet, and this offer lapses on "
-    "its own."
+    "Press it again to discard. Everything you asked of this session will go, along "
+    "with any reading of it and this session's summary, including one being written, and nothing "
+    "raised against those words will quote them any more; the record that a check ran stays. "
+    f"Nothing has been deleted yet, and this offer lapses in {CUE_WINDOW_SECONDS} seconds."
+)
+# A discard does not stop the session being summarized again: a finished session is summarized when
+# it is opened (docs/design-session-summary.md, rule 5). Said wherever the old summary is gone, so a
+# reader who sees one reappear was told it could.
+DISCARD_REOPEN = (
+    "Opening a finished session again writes a new summary unless summaries are turned off."
 )
 # Categorical and with no count. Nothing measures how many raises were
 # withdrawn: `departures.withdraw` answers True whether it blanked five rows or
 # none, and a figure derived from the row's own `departures` list would be the
 # first Measured Invariant's defect again.
+#
+# One sentence per thing that happened to the summary store, because the summary is the third
+# store and what it did is one of four things the route reports (DRC-4939): it deleted one, it had
+# none, it could not be written, or it could not be read. A sentence that named the summary in every
+# case said "its summary" over a session that never had one.
 DISCARD_STORED = (
-    "Discarded. Every revision of what you asked of this session is gone, along with any "
-    "reading of it, and nothing raised against those words quotes them any more. The record "
-    "that a check ran stays, because it is what bounds how often one may run."
+    "Discarded. Everything you asked of this session is gone, along with any "
+    "reading of it and its summary, and nothing raised against those words quotes them any "
+    "more. The record that a check ran stays, because it is what bounds how often one may run. "
+    + DISCARD_REOPEN
+)
+# A job was writing a summary when the discard came and nothing was stored yet: it was stopped,
+# which `absent` alone would leave unsaid under an armed sentence promising "one being written".
+DISCARD_STORED_STOPPED = (
+    "Discarded. Everything you asked of this session is gone, along with any "
+    "reading of it, and nothing raised against those words quotes them any more. This session "
+    "had no stored summary, and the one being written was stopped. The record that a check ran "
+    "stays, because it is what bounds how often one may run. " + DISCARD_REOPEN
+)
+DISCARD_STORED_NO_SUMMARY = (
+    "Discarded. Everything you asked of this session is gone, along with any "
+    "reading of it, and nothing raised against those words quotes them any more. This session "
+    "had no stored summary. The record that a check ran stays, because it is what bounds how "
+    "often one may run. " + DISCARD_REOPEN
+)
+# The summary store can fail alone: the words and the readings are gone by then and cannot be put
+# back, so these say what is left and, where it is true, the control that removes it. Nothing here
+# claims the departure store, which `DISCARD_UNWITHDRAWN` speaks for.
+DISCARD_SUMMARY_KEPT = (
+    "Discarded here, but this session's summary could not be deleted, so any summary stored for "
+    "it is still stored. Delete summary removes it."
+)
+# Unreadable is not unwritable: Compass does not know whether a summary exists, and Delete summary
+# reads the same store, so it names no remedy it cannot promise.
+DISCARD_SUMMARY_UNAVAILABLE = (
+    "Discarded here. The summary store could not be read, so Compass cannot say whether a summary "
+    "of this session is stored, and none was deleted."
+)
+# The summary store answered with a token this build does not know. It cannot be read as gone or
+# as kept, so this says neither and offers no remedy it cannot promise.
+DISCARD_SUMMARY_UNKNOWN = (
+    "Discarded here. Everything you asked of this session is gone, along with any reading of it, "
+    "and nothing raised against those words quotes them any more. Compass could not tell what "
+    "happened to this session's summary, so any summary stored for it may still be stored."
 )
 DISCARD_REFUSED = (
-    "Not discarded. The server refused, so every revision is still stored and nothing raised "
-    "against them was withdrawn."
+    "Not discarded. The server refused, so what you asked of this session is still stored and "
+    "nothing raised against it was withdrawn."
 )
 DISCARD_UNWRITABLE = (
-    "Not discarded. The store could not be written, so the next collection reads every "
-    "revision back and nothing raised against them was withdrawn."
+    "Not discarded. The store could not be written, so the next collection reads what you "
+    "asked of this session back and nothing raised against it was withdrawn."
 )
 # The store exists and this build cannot read it, so nothing was written. It
 # names the file and the step, as every refusal here names one.
@@ -217,10 +274,29 @@ STORE_UNREADABLE = (
 # this board: the control is gated on a stored revision and there is no longer
 # one, so a second press is not available to the reader who needs it.
 DISCARD_UNWITHDRAWN = (
-    "Discarded here. Every revision of what you asked of this session is gone, along with any "
+    "Discarded here. Everything you asked of this session is gone, along with any "
     "reading of it. The departure store could not be written, so anything raised against those "
     "words goes on quoting them."
 )
+# The departure store failing alone no longer hides the summary's half: the same sentence, then what
+# became of the summary in the words that case uses.
+DISCARD_UNWITHDRAWN_SUMMARY: Final[dict[str, str]] = {
+    "deleted": "Its summary was deleted.",
+    "absent": "This session had no stored summary.",
+    "stopped": "This session had no stored summary, and the one being written was stopped.",
+    "kept": (
+        "Its summary could not be deleted, so any summary stored for it is still stored. "
+        "Delete summary removes it."
+    ),
+    "unavailable": (
+        "The summary store could not be read, so Compass cannot say whether a summary of this "
+        "session is stored, and none was deleted."
+    ),
+    "unknown": (
+        "Compass could not tell what happened to its summary, so any summary stored for it may "
+        "still be stored."
+    ),
+}
 # What a discard leaves behind once its cue has lapsed (DRC-4565).
 #
 # The cue above is transient by construction and right to be: a thirty second
@@ -271,11 +347,28 @@ DISCARD_NOTHING = (
     "Nothing to discard. Nothing was typed against this session, so nothing was deleted "
     "and no record of a deletion was made."
 )
+# A discard over a session whose words an earlier discard already took. It is not
+# DISCARD_NOTHING: words were typed and a record of their discard exists, so "nothing
+# was typed" and "no record" would both be false. The reply tells the two zero-removed
+# cases apart by its `discarded` stamp, which is null only for the first.
+DISCARD_ALREADY = (
+    "Already discarded. What you asked of this session was discarded earlier, so this press "
+    "deleted nothing and the earlier record stands."
+)
 DISCARD_SENTENCES: Final[dict[str, str]] = {
     "why": DISCARD_WHY,
     "armed": DISCARD_ARMED,
     "stored": DISCARD_STORED,
+    "stored_no_summary": DISCARD_STORED_NO_SUMMARY,
+    "summary_stopped": DISCARD_STORED_STOPPED,
+    "summary_unknown": DISCARD_SUMMARY_UNKNOWN,
     "unwithdrawn": DISCARD_UNWITHDRAWN,
+    **{
+        f"unwithdrawn_{outcome}": f"{DISCARD_UNWITHDRAWN} {clause}"
+        for outcome, clause in DISCARD_UNWITHDRAWN_SUMMARY.items()
+    },
+    "summary_kept": DISCARD_SUMMARY_KEPT,
+    "summary_unavailable": DISCARD_SUMMARY_UNAVAILABLE,
     "refused": DISCARD_REFUSED,
     "unwritable": DISCARD_UNWRITABLE,
     "untrusted": DISCARD_UNTRUSTED,
@@ -283,6 +376,7 @@ DISCARD_SENTENCES: Final[dict[str, str]] = {
     "record": DISCARD_RECORD,
     "record_standing": DISCARD_RECORD_STANDING,
     "nothing": DISCARD_NOTHING,
+    "already": DISCARD_ALREADY,
     # The reading route's own refusal, so the block on the tab and the route
     # behind its button cannot word one state two ways.
     "unreadable": reading.WITHHELD[reading.WITHHELD_DISCARDED],
@@ -762,13 +856,70 @@ def _criterion(value: Any, cap: int) -> reading.Criterion | None:
         return None
     criterion: reading.Criterion = {
         "cites": tuple(records.safe_text(c, KEY_CAP_CHARS) for c in cites),
-        "detail": records.safe_text(value.get("detail"), cap),
+        # One over the cap: the producer marks a cut detail by appending "…" to `cap` characters,
+        # and loading at `cap` dropped that mark, so a cut sentence reloaded as a whole one.
+        "detail": records.safe_text(value.get("detail"), cap + 1),
         "clause": records.safe_text(value.get("clause"), cap),
         "why": why,
     }
     if result is not None:
         criterion["result"] = result
     return criterion
+
+
+class _VerdictKey(TypedDict, total=False):
+    """The one optional key of a stored reading that `_provenance` does not carry."""
+
+    goal_verdict: reading.GoalVerdictCheck
+
+
+def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
+    """One stored test of the harness's goal verdict, or nothing.
+
+    Closed tokens only, as a criterion's `why` is: the page maps a token to its own sentence, so a
+    sidecar rewritten to say something else refuses the reading whole rather than speaking for
+    Compass.
+    """
+    if not isinstance(value, dict):
+        return None
+    removal = set(value) - set(reading.GOAL_VERDICT_KEYS)
+    # The file and the moment a removal dispute names come together, and only with a removal token.
+    if set(value) - set(reading.GOAL_VERDICT_KEYS) - set(reading.GOAL_VERDICT_REMOVAL_KEYS) or (
+        set(reading.GOAL_VERDICT_KEYS) - set(value)
+    ):
+        return None
+    if removal and (
+        removal != set(reading.GOAL_VERDICT_REMOVAL_KEYS)
+        or value["why"] not in reading.GOAL_VERDICT_REMOVAL_WHYS
+        or not isinstance(value["path"], str)
+        or not value["path"].strip()
+        or isinstance(value["changed_at"], bool)
+        or not isinstance(value["changed_at"], (int, float))
+        or value["changed_at"] <= 0
+    ):
+        return None
+    at, cites = value["at"], value["cites"]
+    if (
+        isinstance(at, bool)
+        or not isinstance(at, (int, float))
+        or at <= 0
+        or value["check"] not in reading.GOAL_VERDICT_CHECKS
+        or value["why"] not in reading.GOAL_VERDICT_WHYS
+        or not isinstance(cites, (list, tuple))
+        or len(cites) > reading.MAX_RECORDED_CITES
+        or not all(isinstance(cite, str) for cite in cites)
+    ):
+        return None
+    checked: reading.GoalVerdictCheck = {
+        "at": float(at),
+        "check": value["check"],
+        "why": value["why"],
+        "cites": tuple(records.safe_text(cite, KEY_CAP_CHARS) for cite in cites),
+    }
+    if removal:
+        checked["path"] = records.safe_text(value["path"], reading.VERDICT_PATH_CAP_CHARS)
+        checked["changed_at"] = float(value["changed_at"])
+    return checked
 
 
 def _assessment(value: Any, cap: int) -> reading.Assessment | None:
@@ -796,8 +947,10 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         return None
     criteria = _criteria(value.get("criteria"), cap)
     coverage = reading.validate_coverage(value["coverage"]) if "coverage" in value else None
+    verdict = _goal_verdict(value["goal_verdict"]) if "goal_verdict" in value else None
     if (
         criteria is None
+        or ("goal_verdict" in value and verdict is None)
         or (value.get("coverage") is not None and coverage is None)
         or any(not reading.result_in_scope(row.get("result"), scope) for row in criteria.values())
     ):
@@ -818,6 +971,7 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         if not window_fields:
             return None
         window = window_fields["window_start"]
+    extra = _VerdictKey(goal_verdict=verdict) if verdict is not None else _VerdictKey()
     assessment: reading.Assessment = {
         **provenance,
         "revision_read": revision,
@@ -843,8 +997,19 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         "evidence_through": records.norm_epoch(value.get("evidence_through")) or None,
         "coverage": coverage,
         "criteria": criteria,
+        **extra,
     }
     return assessment
+
+
+def _goal_unclear_elsewhere(
+    parsed: Mapping[str, reading.Criterion], claims: reading.Criterion | None
+) -> bool:
+    """Whether `goal_unclear` sits anywhere but the Goal, as `unsupported` sits only on claims."""
+    rows = [row for name, row in parsed.items() if name != reading.CONSTRAINT_GOAL]
+    if claims is not None:
+        rows.append(claims)
+    return any(row.get("result") == reading.RESULT_GOAL_UNCLEAR for row in rows)
 
 
 def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
@@ -872,7 +1037,9 @@ def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
     claims = parsed.pop(reading.CONSTRAINT_CLAIMS, None)
     if claims is not None and claims.get("result") == reading.RESULT_NOT_REACHED:
         return None
-    if any(row.get("result") == reading.RESULT_UNSUPPORTED for row in parsed.values()):
+    if any(
+        row.get("result") == reading.RESULT_UNSUPPORTED for row in parsed.values()
+    ) or _goal_unclear_elsewhere(parsed, claims):
         return None
     if set(parsed) == {reading.CONSTRAINT_GOAL, reading.CONSTRAINT_OUTPUT}:
         output = parsed.pop(reading.CONSTRAINT_OUTPUT)
@@ -1843,6 +2010,7 @@ def annotate(  # noqa: PLR0913
     origins: Any = None,
     now: float | None = None,
     window_start: Any = None,
+    read_from_now: bool = False,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> str:
     """Save what the reader typed. Returns an `OUTCOMES` token.
@@ -1861,7 +2029,10 @@ def annotate(  # noqa: PLR0913
 
     `window_start` is the server's `reading.typed_window_start` for this save,
     computed from the session's record at `now`; None, or anything that is not
-    a moment at or before the save, opens the window at the save.
+    a moment at or before the save, opens the window at the save. It opens a
+    window only for a first save, or when `read_from_now` asks for one: a later
+    save keeps the start the reading already had (docs/design-reading-a-session.md,
+    "Amended 2026-10-21 (owner): editing the goal keeps the reading's start").
     """
     legacy = lines is None and isinstance(output, str)
     if legacy:
@@ -1873,7 +2044,11 @@ def annotate(  # noqa: PLR0913
     aligned = _aligned_origins(origins, lines, config.annotation_text_cap_chars)
     if aligned is False:
         return OUTCOME_REFUSED
-    options: dict[str, Any] = {"legacy_output": legacy, "origins": aligned}
+    options: dict[str, Any] = {
+        "legacy_output": legacy,
+        "origins": aligned,
+        "read_from_now": read_from_now,
+    }
     if expected_revision is not None:
         options["expected_revision"] = expected_revision
     return _annotate(
@@ -2116,6 +2291,11 @@ def direction_floor(
     latest = entry["revisions"][-1] if entry and entry["revisions"] else None
     if latest and str(latest.get("goal") or "").strip():
         return float(latest.get("goal_source_at") or latest.get("goal_saved_at") or latest["at"])
+    # The session's own /goal is the draft ahead of the prompts, and ahead of the control check:
+    # a session that opened with `/goal` has no first prompt, and still has this goal.
+    text, at = prompt_candidate(dict(row), reading.SESSION_GOAL)
+    if text and at is not None:
+        return at
     # A control-first session drafts nothing, so it has no draft time either (DRC-4766).
     if row.get("first_prompt_control") is True:
         return None
@@ -2256,9 +2436,14 @@ def _annotate(  # noqa: PLR0913
                 if new_texts is None
                 else _sourced(new_texts, last["lines"], options.get("origins"))
             )
-            unchanged = (last["goal"], last["lines"]) == (text_goal, text_lines) and (
-                _provenance(last) or {}
-            ) == source_fields
+            restart = options.get("read_from_now") is True
+            # Read from now asks for a new window, so words that repeat the last
+            # revision still mint one: the window is what the reader changed.
+            unchanged = (
+                (last["goal"], last["lines"]) == (text_goal, text_lines)
+                and (_provenance(last) or {}) == source_fields
+                and not restart
+            )
             if unchanged and through is None:
                 # Unchanged text is not a new request, so it mints no revision.
                 # The cache is still refreshed from the load above: two
@@ -2270,10 +2455,12 @@ def _annotate(  # noqa: PLR0913
                 return OUTCOME_UNCHANGED
             revision: Revision = {
                 **source_fields,
-                **_opened(
-                    source_fields,
-                    _carried_window(last, source_fields, text_goal, window_start),
+                **_window_after(
+                    last,
+                    source_fields if new_goal is not None else {},
+                    window_start,
                     stamp,
+                    restart=restart or (not last["goal"].strip() and bool(text_goal.strip())),
                 ),
                 **_goal_saved_at(last, source_fields, text_goal, stamp),
                 "n": last["n"] + 1,
@@ -2493,6 +2680,7 @@ def clear(
     *,
     now: float | None = None,
     diagnostic_sink: Callable[[str], None] = print,
+    receipt: dict[str, int] | None = None,
 ) -> str:
     """Forget one session's words entirely. Returns an `OUTCOMES` token.
 
@@ -2513,6 +2701,13 @@ def clear(
     which the test pinning it gives the reason for: the caller withdraws
     departure rows only on `STORED`, and an annotation evicted out from under
     its rows would otherwise leave them quoting forever.
+
+    `receipt["removed_revisions"]` is how many revisions this call took, counted from the
+    file under the lock and set only once the write landed (DRC-4939). The caller decides what
+    else to take with the words from it, never from `active`, whose cached copy a save in
+    another tab can outrun: a discard decided on that copy left the summary standing under
+    words that had gone. A save that lands first is a revision this call takes too; one that
+    lands after is a new revision over the record.
     """
     if not config.annotations_enabled:
         return OUTCOME_REFUSED
@@ -2527,6 +2722,7 @@ def clear(
         current = store.entries
         existing = find(current, *key)
         others = tuple(e for e in current if (e["harness"], e["sid"]) != key)
+        removed = 0
         if existing is None:
             kept: list[Annotation] = list(others)
         elif is_discarded(existing):
@@ -2534,6 +2730,7 @@ def clear(
             # when the words went, and a second press deleted nothing.
             kept = [*others, existing]
         else:
+            removed = len(existing["revisions"])
             record: Annotation = {
                 "harness": existing["harness"],
                 "sid": existing["sid"],
@@ -2543,7 +2740,10 @@ def clear(
             }
             kept = [*others, record]
         # Inside the lock, for `annotate`'s reason.
-        return _commit(config, state, store, key, kept, diagnostic_sink=diagnostic_sink)
+        outcome = _commit(config, state, store, key, kept, diagnostic_sink=diagnostic_sink)
+        if receipt is not None and outcome == OUTCOME_STORED:
+            receipt["removed_revisions"] = removed
+        return outcome
 
 
 def forget(config: RuntimeConfig) -> str:
@@ -2651,20 +2851,41 @@ def _goal_saved_at(
     return {"goal_saved_at": stamp}
 
 
-def _carried_window(last: Revision, provenance: Mapping[str, Any], goal: str, typed: Any) -> Any:
-    """Unchanged typed words keep their window, as their goal save time does."""
-    if not provenance and not _provenance(last) and last["goal"] == goal:
-        return last.get("window_start") or last["at"]
-    return typed
+def _window_after(
+    last: Revision,
+    provenance: Mapping[str, Any],
+    typed: Any,
+    stamp: float,
+    *,
+    restart: bool,
+) -> Window:
+    """The window start a later revision stores: the one before it, unless the reader restarts.
+
+    Editing the goal, adopting a prompt or a direction, and saving a line all
+    keep the start the reading already had, so work done toward the earlier
+    words stays read. `restart` is the reader's explicit Read from now, and
+    opens a window as a first save does, and so does the first save that
+    carries a goal over a revision holding lines alone: a line saved before any
+    goal is not the start of the work. The carried start is clamped to the
+    save, because a clock that stepped back would otherwise store a start
+    after its own revision, which is refused on read.
+    """
+    if restart:
+        return _opened(provenance, typed, stamp)
+    saved = reading.valid_prompt_time(stamp)
+    carried = reading.valid_prompt_time(last.get("window_start") or last["at"])
+    if saved is None or carried is None:
+        return {}
+    return {"window_start": min(carried, saved)}
 
 
 def _opened(provenance: Mapping[str, Any], typed: Any, stamp: float) -> Window:
-    """The window start a new revision stores: the words' own time.
+    """The window start a window-opening save stores: the words' own time.
 
-    Adopted words, including an adopted goal carried under a lines-only save,
-    open at their source time. Unchanged typed words carry their window through
-    a lines-only save; new goal words open at `typed`, else at the save. A stamp
-    that is not itself a moment stores nothing, so the revision still reads back.
+    Adopted words open at their source time, and new typed words at `typed`,
+    else at the save. A stamp that is not itself a moment stores nothing, so the
+    revision still reads back. Only a first save and Read from now reach this; a
+    later save carries the start before it (`_window_after`).
     """
     saved = reading.valid_prompt_time(stamp)
     if saved is None:
@@ -2677,7 +2898,10 @@ def _opened(provenance: Mapping[str, Any], typed: Any, stamp: float) -> Window:
 def prompt_candidate(row: dict[str, Any], source: str) -> tuple[str, float | None]:
     """Resolve the producer's source, never a client-authored goal or observer text."""
     harness = row.get("harness")
-    if harness not in {"claude", "codex"}:
+    # Antigravity offers its `/goal` and nothing else: its prompts are not adopted.
+    if harness not in {"claude", "codex"} and not (
+        source == reading.SESSION_GOAL and harness in records.SESSION_GOAL_HARNESSES
+    ):
         return "", None
     if source == "first-prompt":
         # A correction the reader copied from Compass is not their goal (DRC-4678).
@@ -2694,6 +2918,11 @@ def prompt_candidate(row: dict[str, Any], source: str) -> tuple[str, float | Non
         text, at = instruction.get("text"), instruction.get("at")
     elif source == "latest-prompt" and row.get("prompt_states_work") is True:
         text, at = row.get("title"), row.get("prompt_at")
+    elif source == reading.SESSION_GOAL and harness in records.SESSION_GOAL_HARNESSES:
+        goal = records.as_dict(row.get("session_goal"))
+        # The excerpt where the goal is longer than the Goal field holds, so the words the page
+        # offers, the words an adoption names and the words the store keeps are one string.
+        text, at = goal.get("offered") or goal.get("text"), goal.get("at")
     else:
         return "", None
     return (text if isinstance(text, str) else "", reading.valid_prompt_time(at))
@@ -2800,6 +3029,7 @@ def adopt(  # noqa: PLR0913
     settle_through: Any = None,
     chosen: PromptChoice | None = None,
     receipt: MutableMapping[str, int] | None = None,
+    read_from_now: bool = False,
 ) -> str:
     """Adopt a prompt as the goal. Returns an `OUTCOMES` token.
 
@@ -2837,6 +3067,7 @@ def adopt(  # noqa: PLR0913
             **options,
             "empty_goal_only": expected_revision is None,
             "expected_revision": expected_revision,
+            "read_from_now": read_from_now,
             **({"settle_through": float(settle_through), "goal_empty_or": text} if keep else {}),
         },
     )

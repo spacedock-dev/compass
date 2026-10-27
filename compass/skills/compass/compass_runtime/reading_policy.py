@@ -11,7 +11,7 @@ import contextlib
 import math
 import os
 import time
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
 from . import io as runtime_io
 from . import supervise
@@ -54,35 +54,31 @@ DESTINATION_CHANGED = "Where your words go has changed since you allowed this, s
 # The reason a job's reservation is refused when the destination moved after
 # the press was admitted: the token the press answers `409` with.
 DESTINATION_MOVED = "destination-changed"
-# What a reading sends, as a number the Allow is bound to beside its
-# destination. 2 is the agent's own messages (owner ruling, 2026-10-03): an
-# Allow given before the disclosure named them never covers sending them, so
-# the first press after asks once more (review, 2026-10-03). Raise it whenever
-# the disclosure names a new class of content.
-#
-# 3 is the agent's newest final reply sent whole (owner amendment, 2026-10-05): where a
-# Claude Code transcript records a message as ending its turn and the whole of it fits
-# 4,096 bytes of the prompt, that reply goes in full rather than as its first 1,000
-# characters. The agent's other messages keep the 1,000, and nothing is added from a shell or
-# an MCP tool, so an Allow from 2 does not cover the longer reply and asks once more.
-#
-# Required only of a press on a route that can carry the agent's words: a
-# Claude Code session, read by Claude Code or by Codex. A press on another
-# harness, and the unasked lane, which never sends them, read at
-# `WORDS_CONTENT_VERSION`, so an Allow from before the bump still covers them
-# (final review, 2026-10-03). The version is stored with the destination it
-# was given for, and covers only while that is still the bound destination.
-#
-# 4 repairs a version-3 Allow written from a narrower harness disclosure. Those
-# rows cannot prove which tier was shown, so the next Claude Code press asks
-# again. New Allows record the route's actual tier; words-only presses stay at 1.
+# The content epoch serves both notices and legacy explicit coverage. Epoch 2 added agent
+# messages, 3 added the newest final reply whole within 4,096 bytes, and 4 repaired the
+# ambiguity of a version-3 Allow written from a narrower harness disclosure. Words-only
+# routes and the unasked lane retain epoch 1. Reader-started calls renew the notice when
+# the epoch changes; Codex unasked calls retain the explicit coverage boundary.
 CONTENT_VERSION = 4
 WORDS_CONTENT_VERSION = 1
+NOTICE_KINDS = ("reading", "goal", "summary", "monitor")
 CONTENT_CHANGED = "What a reading sends has changed since you allowed this, so allow it again."
 
 
+class Notice(TypedDict):
+    kind: str
+    provider: str
+    destination: str
+    content: int
+    tool_output: str
+    at: float
+
+
 class Status(TypedDict):
+    generation: NotRequired[int]
     consent: bool
+    off: bool
+    notices: dict[str, dict[str, Notice]]
     used: int
     limit: int
     retry_at: float | None
@@ -90,7 +86,7 @@ class Status(TypedDict):
     # Which receivers an Allow covers today, so the page can tell whether the
     # provider its route names still needs one. An Allow covers a provider only
     # while its destination is the one the Allow was given for (owner,
-    # 2026-10-02). `consent` answers for the one provider the call asked about.
+    # 2026-10-02). Reader admission no longer depends on this legacy coverage.
     providers: dict[str, bool]
     # Provider to `DESTINATION_CHANGED`, for each Allow on record that does not
     # cover today's destination. Never for a refusal, which holds anywhere.
@@ -107,30 +103,36 @@ class Status(TypedDict):
     words: dict[str, bool]
 
 
+PERMISSION_TABLES = frozenset({"permission", "provider_permission"})
+
+
 def store_path(config: RuntimeConfig) -> Path:
     return config.state_dir / "compass-reading-permission.sqlite3"
 
 
 def _answer(
-    consent: bool = False,
     dates: tuple[float, ...] = (),
     reason: str = "",
     providers: dict[str, bool] | None = None,
     tool_output: dict[str, list[str]] | None = None,
     rebind: dict[str, str] | None = None,
     words: dict[str, bool] | None = None,
+    off: bool = False,
+    notices: dict[str, dict[str, Notice]] | None = None,
 ) -> Status:
     full = len(dates) >= DAILY_CAP
     return {
-        "consent": consent,
+        "consent": not off and reason not in {"run-disabled", "store-unavailable"},
+        "off": off,
+        "notices": notices or {},
         "used": len(dates),
         "limit": DAILY_CAP,
         "retry_at": min(dates) + DAY_SEC if full else None,
-        # The cap first: the budget is shared, so a spent day refuses every
-        # provider, and the page reads the Codex answer. Consent first told a
-        # reader with only Claude Code allowed that nothing stood in the way
-        # (DRC-4666).
-        "reason": reason or ("daily-cap" if full else "consent-required" if not consent else ""),
+        # The pause first: it is the reader's own answer and lasts until Resume,
+        # so a paused Analyze says model calls are paused even on a spent day
+        # (owner, 2026-10-19, DRC-4915). The cap still precedes any one
+        # provider's consent, which the page reads per provider (DRC-4666).
+        "reason": reason or ("model-calls-paused" if off else "daily-cap" if full else ""),
         "providers": dict(providers) if providers else dict.fromkeys(PROVIDERS, False),
         "tool_output": {name: list(where) for name, where in (tool_output or {}).items()},
         "rebind": dict(rebind or {}),
@@ -164,6 +166,73 @@ def _allowed(db: Any) -> dict[str, bool]:
         if name in allowed and name != LEGACY_PROVIDER:
             allowed[name] = value == 1
     return allowed
+
+
+def _off(db: Any, tables: frozenset[str] = PERMISSION_TABLES) -> bool:
+    """A stored refusal with no Allow beside it.
+
+    This build's off writes 0 for every provider and its Turn on clears them
+    (`_clear_off`), so both values stand together only after an older build's
+    Allow, which rewrote just the provider it allowed and left its own off's
+    zeros on the rest. That reader's last answer was Allow, so it reads as on.
+    """
+    values = {
+        value
+        for table in sorted(tables & PERMISSION_TABLES)
+        for (value,) in db.execute(f"SELECT allowed FROM {table}")  # noqa: S608 - fixed table names
+    }
+    return 0 in values and 1 not in values
+
+
+def _notices(db: Any) -> dict[str, dict[str, Notice]]:
+    notices: dict[str, dict[str, Notice]] = {}
+    for kind, provider, destination, content, tool_output, at in db.execute(
+        "SELECT kind, provider, destination, content, tool_output, at FROM notice"
+    ):
+        # Checked as `_disclosed` checks its rows: the page serialises these,
+        # and a locally rewritten row of another type would break the board.
+        if (
+            kind in NOTICE_KINDS
+            and provider in PROVIDERS
+            and isinstance(destination, str)
+            and isinstance(tool_output, str)
+            and isinstance(content, int)
+            and not isinstance(content, bool)
+            and isinstance(at, float)
+            and math.isfinite(at)
+        ):
+            notices.setdefault(kind, {})[provider] = Notice(
+                kind=kind,
+                provider=provider,
+                destination=destination,
+                content=content,
+                tool_output=tool_output,
+                at=at,
+            )
+    return notices
+
+
+def notice_due(
+    answer: Status, *, kind: str, provider: str, destination: str, content: int, tool_output: str
+) -> bool:
+    """Whether today's disclosure goes beyond the last notice for this kind and provider.
+
+    A wider record covers a narrower press at the same destination: a lower
+    tier, or no tool output where the record named it. Otherwise a reader
+    alternating between a Claude Code session and one it reads on another
+    harness's behalf would be shown the notice on every press.
+    """
+    previous = answer["notices"].get(kind, {}).get(provider)
+    return (
+        answer["consent"]
+        and provider in PROVIDERS
+        and (
+            previous is None
+            or previous["destination"] != destination
+            or previous["content"] < content
+            or (bool(tool_output) and previous["tool_output"] != tool_output)
+        )
+    )
 
 
 def _bound(db: Any) -> dict[str, str]:
@@ -245,18 +314,133 @@ def _write(db: Any, provider: str, allowed: bool) -> None:
         )
 
 
+def _notice_schema(db: Any) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS notice (kind TEXT NOT NULL, provider TEXT NOT NULL, "
+        "destination TEXT NOT NULL, content INTEGER NOT NULL, tool_output TEXT NOT NULL, "
+        "at REAL NOT NULL, PRIMARY KEY (kind, provider))"
+    )
+    for table in ("permission", "provider_permission"):
+        for event in ("INSERT", "UPDATE"):
+            # Pause model calls clears every notice, the summary's included, so Resume shows
+            # each again on its next call (SECURITY.md). An earlier trigger of this branch kept
+            # the summary's; it is replaced by name. Turn off summaries keeps its own handling.
+            db.execute(f"DROP TRIGGER IF EXISTS reading_notice_off_{table}_{event.lower()}")
+            db.execute(
+                f"CREATE TRIGGER IF NOT EXISTS notice_off_{table}_{event.lower()} "  # noqa: S608
+                f"AFTER {event} ON {table} WHEN NEW.allowed = 0 BEGIN "
+                "DELETE FROM notice; END"
+            )
+
+
+def _store_notice(db: Any, answer: Status, operation: str | Notice) -> Notice | None:
+    if not isinstance(operation, dict) or not notice_due(
+        answer,
+        kind=operation["kind"],
+        provider=operation["provider"],
+        destination=operation["destination"],
+        content=operation["content"],
+        tool_output=operation["tool_output"],
+    ):
+        return None
+    db.execute(
+        "INSERT OR REPLACE INTO notice VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            operation["kind"],
+            operation["provider"],
+            operation["destination"],
+            operation["content"],
+            operation["tool_output"],
+            operation["at"],
+        ),
+    )
+    return operation
+
+
+def _clear_off(db: Any, tables: frozenset[str] = PERMISSION_TABLES) -> None:
+    for table in sorted(tables & PERMISSION_TABLES):
+        db.execute(f"DELETE FROM {table} WHERE allowed = 0")  # noqa: S608 - fixed table names
+
+
+def _change_permissions(
+    db: Any,
+    operation: str | Notice,
+    provider: str,
+    current: Mapping[str, str],
+    content: int,
+    tool_output: str,
+    allowed: dict[str, bool],
+) -> None:
+    if operation in ("unasked-grant", "unasked-revoke") and _off(db):
+        return
+    if operation == "unasked-revoke":
+        _clear_off(db)
+        # Deleting the grant avoids writing a zero, which means Pause model calls
+        # in older stores. Revocation must not pause reader-requested calls.
+        table = "permission" if provider == LEGACY_PROVIDER else "provider_permission"
+        column, value = ("id", 1) if provider == LEGACY_PROVIDER else ("provider", provider)
+        db.execute(f"DELETE FROM {table} WHERE {column} = ?", (value,))  # noqa: S608 - fixed schema identifiers
+        db.execute("DELETE FROM permission_destination WHERE provider = ?", (provider,))
+        db.execute("DELETE FROM permission_disclosure WHERE provider = ?", (provider,))
+        allowed[provider] = False
+    if operation in ("allow", "unasked-grant") and provider in allowed:
+        where = current.get(provider, "")
+        previous = _disclosed(db).get(provider)
+        version = content
+        if (
+            allowed[provider]
+            and _bound(db).get(provider) == where
+            and previous is not None
+            and previous[1] == where
+            and previous[0] <= CONTENT_VERSION
+        ):
+            # A narrower disclosure cannot widen consent, or erase an
+            # earlier wider Allow that still covers this destination.
+            version = max(content, previous[0])
+        # An Allow clears the global off switch and grants the provider it names, the
+        # unasked lane included. No reader press writes one (`http_api._reading_permission`
+        # reads the stored answer only); Resume model calls clears the pause alone.
+        if operation == "allow":
+            _clear_off(db)
+        _write(db, provider, True)
+        allowed[provider] = True
+        # Bound to the destination the Allow's disclosure named, which
+        # the press has checked is today's (`http_api._reading_route`).
+        db.execute("INSERT OR REPLACE INTO permission_destination VALUES (?, ?)", (provider, where))
+        db.execute(
+            "INSERT OR REPLACE INTO permission_disclosure VALUES (?, ?, ?)",
+            (provider, version, where),
+        )
+        if tool_output:
+            db.execute(
+                "INSERT OR IGNORE INTO tool_output_permission VALUES (?, ?)",
+                (provider, tool_output),
+            )
+    elif operation == "off":
+        # Every receiver at once: "Pause model calls" and `--forget` name
+        # no provider, and a revocation that left one allowed would not be
+        # the answer the reader gave.
+        for name in PROVIDERS:
+            _write(db, name, False)
+        allowed.update(dict.fromkeys(PROVIDERS, False))
+        db.execute("DELETE FROM tool_output_permission")
+        db.execute("DELETE FROM notice")
+        # Every bound destination and disclosure goes too, by the triggers
+        # the legacy row's write above fires, as for an older build's off.
+
+
 def _transaction(
     config: RuntimeConfig,
     now: float,
-    operation: str,
+    operation: str | Notice,
     provider: str,
     tool_output: str = "",
     job_id: str = "",
     today: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
-) -> Status:
+) -> tuple[Status, Notice | None]:
     if not math.isfinite(now) or now <= 0:
-        return _answer(reason="store-unavailable")
+        return _answer(reason="store-unavailable"), None
     wait = READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC
     with contextlib.closing(_connect(config, wait)) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -332,6 +516,7 @@ def _transaction(
                 f"AFTER {event} ON permission WHEN NEW.allowed = 0 BEGIN "
                 "DELETE FROM permission_disclosure; END"
             )
+        _notice_schema(db)
         allowed = _allowed(db)
         db.execute("DELETE FROM spends WHERE at <= ?", (now - DAY_SEC,))
         db.execute("DELETE FROM spend_jobs WHERE at <= ?", (now - JOB_LEDGER_SEC,))
@@ -342,61 +527,24 @@ def _transaction(
         if any(not math.isfinite(at) or at <= 0 for at in dates):
             raise ValueError("Invalid spend timestamp")
         current = dict(today or {})
-        if operation == "allow" and provider in allowed:
-            where = current.get(provider, "")
-            previous = _disclosed(db).get(provider)
-            version = content
-            if (
-                allowed[provider]
-                and _bound(db).get(provider) == where
-                and previous is not None
-                and previous[1] == where
-                and previous[0] <= CONTENT_VERSION
-            ):
-                # A narrower disclosure cannot widen consent, or erase an
-                # earlier wider Allow that still covers this destination.
-                version = max(content, previous[0])
-            _write(db, provider, True)
-            allowed[provider] = True
-            # Bound to the destination the Allow's disclosure named, which
-            # the press has checked is today's (`http_api._reading_route`).
-            db.execute(
-                "INSERT OR REPLACE INTO permission_destination VALUES (?, ?)", (provider, where)
-            )
-            db.execute(
-                "INSERT OR REPLACE INTO permission_disclosure VALUES (?, ?, ?)",
-                (provider, version, where),
-            )
-            if tool_output:
-                db.execute(
-                    "INSERT OR IGNORE INTO tool_output_permission VALUES (?, ?)",
-                    (provider, tool_output),
-                )
-        elif operation == "off":
-            # Every receiver at once: "Turn off readings" and `--forget` name
-            # no provider, and a revocation that left one allowed would not be
-            # the answer the reader gave.
-            for name in PROVIDERS:
-                _write(db, name, False)
-            allowed = dict.fromkeys(PROVIDERS, False)
-            db.execute("DELETE FROM tool_output_permission")
-            # Every bound destination and disclosure goes too, by the triggers
-            # the legacy row's write above fires, as for an older build's off.
+        _change_permissions(db, operation, provider, current, content, tool_output, allowed)
         bound, disclosed = _bound(db), _disclosed(db)
         covered, rebind = _covered(allowed, bound, current, disclosed, content=content)
         words, _ = _covered(allowed, bound, current, disclosed, content=WORDS_CONTENT_VERSION)
         answer = _answer(
-            covered.get(provider, False),
             dates,
             providers=covered,
             tool_output=_tool_output(db),
             rebind=rebind,
             words=words,
+            off=_off(db),
+            notices=_notices(db),
         )
+        recorded = _store_notice(db, answer, operation)
         if operation == "reserve" and not answer["reason"]:
-            return _commit_charge(db, answer, now, job_id)
+            return _commit_charge(db, answer, now, job_id), None
         db.execute("COMMIT")
-        return answer
+        return answer, recorded
 
 
 def _commit_charge(db: Any, answer: Status, now: float, job_id: str) -> Status:
@@ -430,7 +578,7 @@ def _run(
     try:
         return _transaction(
             config, now, operation, provider, tool_output, job_id, today, content=content
-        )
+        )[0]
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         return _answer(reason="store-unavailable")
 
@@ -443,16 +591,16 @@ def status(
     destinations: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
 ) -> Status:
-    """The stored answer, as it covers a press to `destinations` today.
+    """Reader admission, recorded notices, and legacy explicit coverage for today's routes.
 
-    `destinations` is each provider's `reading_route.destination` now. One left
-    out is read as unnamed (""), which an Allow given for a named one never
-    covers, so a caller that forgets it asks again rather than sends.
-    `content` is what the press would send: `WORDS_CONTENT_VERSION` for one
-    that never carries the agent's words.
+    A missing destination is unnamed (""), so it cannot inherit named explicit coverage.
+    Reader admission depends on stored off, not on that coverage. `content` selects the
+    legacy coverage tier; words-only callers use `WORDS_CONTENT_VERSION`.
     """
     if config.model_calls_disabled:
         return _answer(reason="run-disabled")
+    if runtime_io.sqlite_module is None:
+        return _answer(reason="store-unavailable")
     if not os.path.lexists(store_path(config)):
         return _answer()
     return _run(config, now, "read", provider, today=destinations, content=content)
@@ -469,7 +617,7 @@ def set_consent(
     destinations: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
 ) -> Status:
-    """Allow one provider, or revoke every provider: off never names one.
+    """Resume model calls with one explicit Allow, or pause every provider.
 
     `destination` is where the press's disclosure said the words go, and the
     Allow covers presses only while they still go there. `tool_output` is the
@@ -482,6 +630,88 @@ def set_consent(
     today = {**(destinations or {}), provider: destination}
     operation = "allow" if allowed else "off"
     return _run(config, now, operation, provider, tool_output, today=today, content=content)
+
+
+def set_unasked_grant(
+    config: RuntimeConfig,
+    allowed: bool,
+    *,
+    now: float,
+    provider: str,
+    destination: str,
+    destinations: Mapping[str, str] | None = None,
+) -> Status:
+    """Grant or revoke words-only unasked coverage for one provider and destination.
+
+    The only writer of that grant: no press, Analyze or Resume writes one. It never
+    lifts Pause model calls, and while paused it changes nothing. A revoke deletes
+    the provider's rows rather than writing a zero, which an older store reads as a
+    pause. `destinations` is as `status` takes it, for the answer returned.
+    """
+    if provider not in PROVIDERS:
+        raise ValueError("Unknown unasked provider")
+    if config.model_calls_disabled or not config.unasked_enabled:
+        return _answer(reason="run-disabled")
+    answer = _run(
+        config,
+        now,
+        "unasked-grant" if allowed else "unasked-revoke",
+        provider,
+        today={provider: destination},
+        content=WORDS_CONTENT_VERSION,
+    )
+    if answer["reason"] not in {"", "daily-cap"}:
+        return answer
+    return status(config, now=now, destinations={**(destinations or {}), provider: destination})
+
+
+def unasked_status(config: RuntimeConfig, *, now: float, provider: str, destination: str) -> Status:
+    """Admission at the unasked seam, without spending the reader-requested budget."""
+    if not config.unasked_enabled:
+        return _answer(reason="run-disabled")
+    answer = status(
+        config,
+        now=now,
+        provider=provider,
+        destinations={provider: destination},
+        content=WORDS_CONTENT_VERSION,
+    )
+    # The lane's own durable check counts bound it; Analyze's budget cannot replace them.
+    if answer["reason"] == "daily-cap":
+        answer = {**answer, "reason": ""}
+    # The accepted Claude producer needs no separate grant; Codex retains explicit coverage.
+    # [DEC-18](docs/design-reading-a-session.md#amended-2026-10-20-unasked-checks-remain-reachable)
+    if not answer["reason"] and (
+        provider not in PROVIDERS
+        or (provider != "claude" and not answer["words"].get(provider, False))
+    ):
+        answer = {**answer, "reason": "unasked-permission-required"}
+    return answer
+
+
+def resume(config: RuntimeConfig, *, now: float) -> Status:
+    """Resume model calls: clear the stored pause without writing an Allow.
+
+    An Allow would also cover Codex unasked checks, so Resume clears only refusal
+    rows; their deliberate grant belongs to the separate toggle (owner, 2026-10-20). A run started
+    with model calls disabled keeps the stored pause: the startup switch is not
+    the reader's answer, and clearing it would lose theirs.
+    """
+    if config.model_calls_disabled:
+        return _answer(reason="run-disabled")
+    if runtime_io.sqlite_module is not None and os.path.lexists(store_path(config)):
+        try:
+            with contextlib.closing(_connect(config, WRITE_WAIT_SEC)) as db:
+                db.execute("BEGIN IMMEDIATE")
+                # Whichever permission tables exist: an older store may hold its
+                # pause in one, and the read below creates the other.
+                tables = _permission_tables(db)
+                if tables and _off(db, tables):
+                    _clear_off(db, tables)
+                db.execute("COMMIT")
+        except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+            return _answer(reason="store-unavailable")
+    return _run(config, now, "read", LEGACY_PROVIDER)
 
 
 def reserve(
@@ -499,7 +729,7 @@ def reserve(
     be a way to double a reader's daily readings. `job_id` commits with the
     charge, so a restart can ask `charged` whether that job's attempt was made.
     A shutdown before the commit answers `stopping` and charges nothing.
-    `destination` is where this call's words go, which the Allow must cover.
+    `destination` and `content` retain the legacy coverage fields in the returned status.
     """
     today = {provider: destination}
     if config.model_calls_disabled:
@@ -574,16 +804,23 @@ class GuardedModel:
         before_reserve: Callable[[], str | None] | None = None,
         cancelled: Callable[[], bool] | None = None,
         content: int = CONTENT_VERSION,
+        unasked: bool = False,
+        reserve_with: Callable[..., Status] | None = None,
     ) -> None:
+        if reserve_with is not None and before_reserve is not None:
+            # `before_reserve` returns the job id the charge is recorded under, and a ledger of
+            # its own records none, so the pair would drop the marker's promise silently.
+            msg = "A ledger of its own takes no job marker"
+            raise ValueError(msg)
         self.config = config
-        # What the press sends, which the reservation's Allow must cover.
         self.content = content
+        self.unasked = unasked
+        # A ledger of its own for a caller that must not spend Analyze's budget: the Live monitor
+        # charges `reserve_monitor` here, at the same seam and in the same order.
+        self.reserve_with = reserve_with
         self.model = model
         self.clock = clock
         self.provider = provider
-        # Where the route that admitted the press sends the words: the
-        # reservation is refused unless the Allow covers it, so the job checks
-        # what the press checked, from the same route.
         self.destination = destination
         # Where the words go now, asked again at the reservation (consent F4,
         # ui5): a managed drop-in or remote settings file can move the endpoint
@@ -604,6 +841,24 @@ class GuardedModel:
         # Passed through, so the refusal names the CLI this press would have used.
         self.unavailable_reason: str | None = getattr(model, "unavailable_reason", None)
 
+    def failure_reason(self) -> str:
+        """The wrapped model's own account of its last failed call, or "" for none."""
+        failure = getattr(self.model, "failure_reason", None)
+        return str(failure()) if callable(failure) else ""
+
+    def _reserve(self) -> Status:
+        if self.reserve_with is not None:
+            return self.reserve_with(self.config, now=self.clock())
+        job_id = self.before_reserve() if self.before_reserve is not None else None
+        return reserve(
+            self.config,
+            now=self.clock(),
+            provider=self.provider,
+            job_id=job_id or "",
+            destination=self.destination,
+            content=self.content,
+        )
+
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         available = getattr(self.model, "available", None)
         if available is not None and not available():
@@ -615,18 +870,16 @@ class GuardedModel:
         if self.cancelled is not None and self.cancelled():
             return "", "cancelled"
         if self.resolve_destination is not None and self.resolve_destination() != self.destination:
-            # Refused as the press refuses an Allow for a moved destination,
-            # before the marker and the charge, so nothing is spent.
+            # The press-time notice cannot cover a destination that moved mid-job.
             raise RefusedError(_answer(reason=DESTINATION_MOVED))
-        job_id = self.before_reserve() if self.before_reserve is not None else None
-        answer = reserve(
-            self.config,
-            now=self.clock(),
-            provider=self.provider,
-            job_id=job_id or "",
-            destination=self.destination,
-            content=self.content,
-        )
+        if self.unasked:
+            answer = unasked_status(
+                self.config, now=self.clock(), provider=self.provider, destination=self.destination
+            )
+            if answer["reason"]:
+                raise RefusedError(answer)
+            return self.model(prompt, output_cap_bytes=output_cap_bytes)
+        answer = self._reserve()
         if answer["reason"] == "stopping":
             # The shutdown reached the reservation before its commit, so the
             # call is the stop the early look above would have refused.
@@ -638,37 +891,387 @@ class GuardedModel:
         return self.model(prompt, output_cap_bytes=output_cap_bytes)
 
 
-def grant_tool_output(config: RuntimeConfig, destinations: Mapping[str, str]) -> bool:
-    """Record the reader's launch-time consent to tool output, as an Allow would.
-
-    `destinations` is each provider's `reading_route.destination` now. A provider
-    Compass cannot name gets no grant, as with an Allow. The row is kept like an
-    Allow's: "Turn off readings" and `--forget` clear it, and starting again without
-    the flag leaves it. It covers tool output only and writes no words Allow, so no
-    reading runs until the reader has allowed the words. Returns whether the store
-    took it.
-    """
-    if config.model_calls_disabled or not config.tool_output_pre_grant:
-        return False
-    named = [(name, where) for name, where in destinations.items() if name in PROVIDERS and where]
+def note(
+    config: RuntimeConfig,
+    *,
+    kind: str,
+    provider: str,
+    destination: str,
+    content: int,
+    tool_output: str,
+    now: float,
+) -> Notice | None:
+    """Record a due notice atomically, refusing the call if the store cannot record it."""
+    if config.model_calls_disabled:
+        return None
+    if kind not in NOTICE_KINDS or provider not in PROVIDERS:
+        raise ValueError("Unknown notice kind or provider")
+    notice = Notice(
+        kind=kind,
+        provider=provider,
+        destination=destination,
+        content=content,
+        tool_output=tool_output,
+        at=now,
+    )
     try:
-        with contextlib.closing(_connect(config, WRITE_WAIT_SEC)) as db:
-            db.execute("BEGIN IMMEDIATE")
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS tool_output_permission (provider TEXT NOT NULL, "
-                "destination TEXT NOT NULL, PRIMARY KEY (provider, destination))"
-            )
-            db.executemany("INSERT OR IGNORE INTO tool_output_permission VALUES (?, ?)", named)
-            db.execute("COMMIT")
+        answer, recorded = (
+            _summary_transaction(config, now, notice)
+            if kind == "summary"
+            else _transaction(config, now, notice, provider)
+        )
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
-        return False
-    return True
+        raise RefusedError(_answer(reason="store-unavailable")) from None
+    if answer["reason"] == "store-unavailable":
+        raise RefusedError(answer)
+    return recorded
+
+
+def retract(config: RuntimeConfig, notice: Notice) -> None:
+    """Delete a recorded notice whose call never launched, so the next press shows it.
+
+    Only that exact row, so a record a later press made is kept. Best effort:
+    a store that cannot be written here shows nothing again, which is the
+    failure the reader would have had anyway.
+    """
+    with (
+        contextlib.suppress(OSError, ValueError, RuntimeError, _SQL_ERROR),
+        contextlib.closing(_connect(config, WRITE_WAIT_SEC)) as db,
+    ):
+        db.execute(
+            "DELETE FROM notice WHERE kind = ? AND provider = ? AND destination = ? "
+            "AND content = ? AND tool_output = ? AND at = ?",
+            (
+                notice["kind"],
+                notice["provider"],
+                notice["destination"],
+                notice["content"],
+                notice["tool_output"],
+                notice["at"],
+            ),
+        )
 
 
 def forget(config: RuntimeConfig, *, now: float | None = None) -> bool:
     # Forgetting the answer cannot refill a rolling budget. No session content
     # is retained here, only the timestamps protecting the spend bound.
-    return (
-        set_consent(config, False, now=time.time() if now is None else now)["reason"]
-        != "store-unavailable"
+    when = time.time() if now is None else now
+    reading = set_consent(config, False, now=when)
+    summary = _summary_run(config, when, "forget")
+    return reading["reason"] != "store-unavailable" and summary["reason"] != "store-unavailable"
+
+
+def _summary_answer(
+    config: RuntimeConfig,
+    dates: tuple[float, ...] = (),
+    *,
+    off: bool = False,
+    readings_off: bool = False,
+    reason: str = "",
+    generation: int = 0,
+    notices: dict[str, dict[str, Notice]] | None = None,
+) -> Status:
+    answer = _answer(off=off, reason=reason, notices=notices)
+    full = len(dates) >= config.session_summary_rolling_cap
+    answer["used"] = len(dates)
+    answer["limit"] = config.session_summary_rolling_cap
+    answer["retry_at"] = min(dates) + DAY_SEC if full and dates else None
+    answer["reason"] = reason or (
+        "model-calls-paused"
+        if readings_off
+        else "daily-cap"
+        if full
+        else "summaries-off"
+        if off
+        else ""
     )
+    answer["consent"] = answer["consent"] and not readings_off
+    answer["generation"] = generation
+    return answer
+
+
+def _summary_transaction(
+    config: RuntimeConfig, now: float, operation: str | Notice, receipt: str = ""
+) -> tuple[Status, Notice | None]:
+    if not math.isfinite(now) or now <= 0:
+        raise ValueError("Invalid summary timestamp")
+    with contextlib.closing(
+        _connect(config, READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC)
+    ) as db:
+        db.execute("BEGIN IMMEDIATE")
+        # Independent rows preserve an explicit summary off through upgrades without changing
+        # Analyze or goal answers: docs/design-session-summary.md#the-ruling.
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS summary_permission (id INTEGER PRIMARY KEY CHECK(id=1), "
+            "allowed INTEGER NOT NULL CHECK(allowed IN (0,1)), generation INTEGER NOT NULL)"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS summary_spends (receipt TEXT PRIMARY KEY, at REAL NOT NULL)"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS notice (kind TEXT NOT NULL, provider TEXT NOT NULL, "
+            "destination TEXT NOT NULL, content INTEGER NOT NULL, tool_output TEXT NOT NULL, "
+            "at REAL NOT NULL, PRIMARY KEY (kind, provider))"
+        )
+        db.execute("DELETE FROM summary_spends WHERE at <= ?", (now - JOB_LEDGER_SEC,))
+        row = db.execute("SELECT allowed, generation FROM summary_permission WHERE id=1").fetchone()
+        # A press is refused while paused, but `--forget` is not a press: it
+        # stores summaries off whatever the pause says.
+        if operation == "forget" or (operation in ("on", "off") and not _readings_off(db)):
+            was_off = row is not None and row[0] == 0
+            off = operation != "on"
+            generation = (row[1] if row else 0) + int(was_off != off)
+            db.execute(
+                "INSERT OR REPLACE INTO summary_permission VALUES (1, ?, ?)",
+                (int(not off), generation),
+            )
+            if off:
+                db.execute("DELETE FROM notice WHERE kind = 'summary'")
+            row = (int(not off), generation)
+        dates = tuple(
+            float(at)
+            for (at,) in db.execute(
+                "SELECT at FROM summary_spends WHERE at > ? ORDER BY at", (now - DAY_SEC,)
+            )
+        )
+        if any(not math.isfinite(at) or at <= 0 for at in dates):
+            raise ValueError("Invalid summary spend")
+        answer = _summary_answer(
+            config,
+            dates,
+            off=row is not None and row[0] == 0,
+            readings_off=_readings_off(db),
+            generation=row[1] if row else 0,
+            notices=_notices(db),
+        )
+        recorded = _store_notice(db, answer, operation)
+        if operation == "reserve" and not answer["reason"]:
+            with supervise.admitting() as open_:
+                if not open_:
+                    answer["reason"] = "stopping"
+                else:
+                    db.execute("INSERT OR IGNORE INTO summary_spends VALUES (?, ?)", (receipt, now))
+                    dates = tuple(
+                        float(at)
+                        for (at,) in db.execute(
+                            "SELECT at FROM summary_spends WHERE at > ? ORDER BY at",
+                            (now - DAY_SEC,),
+                        )
+                    )
+                    answer["used"] = len(dates)
+        elif (
+            operation == "reserve"
+            and answer["reason"] == "daily-cap"
+            and db.execute("SELECT 1 FROM summary_spends WHERE receipt=?", (receipt,)).fetchone()
+        ):
+            # A retried receipt is already charged, including at the cap; no second spend.
+            answer["reason"] = "summaries-off" if answer["off"] else ""
+        db.execute("COMMIT")
+        return answer, recorded
+
+
+def _summary_read(config: RuntimeConfig, now: float) -> Status:
+    """The summary answer without a write lock, for board collection and preflight.
+
+    Every collection asks this, and dashboards on other ports share the store, so the read
+    takes no `BEGIN IMMEDIATE` and creates or prunes nothing: the 24-hour window is the
+    SELECT's own filter, and schema and pruning stay on the write paths.
+    """
+    if not math.isfinite(now) or now <= 0:
+        raise ValueError("Invalid summary timestamp")
+    with contextlib.closing(_connect(config, READ_WAIT_SEC)) as db:
+        db.execute("BEGIN")
+        tables = {
+            name
+            for (name,) in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name IN ('summary_permission', 'summary_spends', 'notice')"
+            )
+        }
+        row = (
+            db.execute("SELECT allowed, generation FROM summary_permission WHERE id=1").fetchone()
+            if "summary_permission" in tables
+            else None
+        )
+        dates = (
+            tuple(
+                float(at)
+                for (at,) in db.execute(
+                    "SELECT at FROM summary_spends WHERE at > ? ORDER BY at", (now - DAY_SEC,)
+                )
+            )
+            if "summary_spends" in tables
+            else ()
+        )
+        if any(not math.isfinite(at) or at <= 0 for at in dates):
+            raise ValueError("Invalid summary spend")
+        answer = _summary_answer(
+            config,
+            dates,
+            off=row is not None and row[0] == 0,
+            readings_off=_readings_off(db),
+            generation=row[1] if row else 0,
+            notices=_notices(db) if "notice" in tables else {},
+        )
+        db.execute("COMMIT")
+        return answer
+
+
+def _readings_off(db: Any) -> bool:
+    # After Pause model calls no session summary call is made either
+    # (docs/design-session-summary.md#job-and-grant-contract). The summary answer stays
+    # its own, so `off` still reports only that.
+    tables = _permission_tables(db)
+    return bool(tables) and _off(db, tables)
+
+
+def _permission_tables(db: Any) -> frozenset[str]:
+    return frozenset(
+        name
+        for (name,) in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('permission', 'provider_permission')"
+        )
+    )
+
+
+def _summary_off(config: RuntimeConfig) -> bool:
+    """The stored summary off, read without writing; false when it cannot be read."""
+    if runtime_io.sqlite_module is None or not os.path.lexists(store_path(config)):
+        return False
+    try:
+        with contextlib.closing(_connect(config, READ_WAIT_SEC)) as db:
+            row = db.execute("SELECT allowed FROM summary_permission WHERE id=1").fetchone()
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return False
+    return row is not None and row[0] == 0
+
+
+def _summary_run(config: RuntimeConfig, now: float, operation: str, receipt: str = "") -> Status:
+    if config.model_calls_disabled and operation not in {"off", "on", "forget"}:
+        return _summary_answer(config, off=_summary_off(config), reason="run-disabled")
+    try:
+        if operation == "read":
+            return _summary_read(config, now)
+        return _summary_transaction(config, now, operation, receipt)[0]
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return _summary_answer(config, reason="store-unavailable")
+
+
+def summary_status(config: RuntimeConfig, *, now: float) -> Status:
+    """The summary grant and its own rolling ledger; never Analyze's answer."""
+    if not os.path.lexists(store_path(config)) and not config.model_calls_disabled:
+        return _summary_answer(config)
+    return _summary_run(config, now, "read")
+
+
+def set_summary_consent(config: RuntimeConfig, allowed: bool, *, now: float) -> Status:
+    return _summary_run(config, now, "on" if allowed else "off")
+
+
+def reserve_summary(config: RuntimeConfig, *, now: float, receipt: str) -> Status:
+    """Charge an attempted part exactly once, before the model seam."""
+    if not receipt:
+        raise ValueError("Summary attempts require an idempotent receipt")
+    return _summary_run(config, now, "reserve", receipt)
+
+
+def summary_receipts(config: RuntimeConfig, job_id: str) -> int | None:
+    """Recover the charges committed even if the process died before its marker rewrite."""
+    try:
+        with contextlib.closing(_connect(config, READ_WAIT_SEC)) as db:
+            return int(
+                db.execute(
+                    "SELECT count(*) FROM summary_spends WHERE receipt GLOB ?", (job_id + ":*",)
+                ).fetchone()[0]
+            )
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return None
+
+
+# The Live monitor's ledger: its own table in this store and its own cap, so a tick never spends
+# Analyze's `DAILY_CAP` and Analyze never spends a tick's. Charged before launch and never
+# refunded, as every spend here is. Timestamps only: no session identity or content enters it.
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)  # noqa: E501
+
+
+def _monitor_answer(
+    config: RuntimeConfig,
+    dates: tuple[float, ...] = (),
+    *,
+    paused: bool = False,
+    reason: str = "",
+) -> Status:
+    answer = _answer(off=paused, reason=reason)
+    full = len(dates) >= config.live_monitor_daily_cap
+    answer["used"] = len(dates)
+    answer["limit"] = config.live_monitor_daily_cap
+    answer["retry_at"] = min(dates) + DAY_SEC if full and dates else None
+    answer["reason"] = reason or ("model-calls-paused" if paused else "cap" if full else "")
+    return answer
+
+
+def _monitor_dates(db: Any, now: float) -> tuple[float, ...]:
+    dates = tuple(
+        float(at)
+        for (at,) in db.execute(
+            "SELECT at FROM monitor_spends WHERE at > ? ORDER BY at", (now - DAY_SEC,)
+        )
+    )
+    if any(not math.isfinite(at) or at <= 0 for at in dates):
+        raise ValueError("Invalid monitor spend")
+    return dates
+
+
+def _monitor_transaction(config: RuntimeConfig, now: float, operation: str) -> Status:
+    with contextlib.closing(
+        _connect(config, READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC)
+    ) as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("CREATE TABLE IF NOT EXISTS monitor_spends (at REAL NOT NULL)")
+        db.execute("DELETE FROM monitor_spends WHERE at <= ?", (now - DAY_SEC,))
+        dates = _monitor_dates(db, now)
+        answer = _monitor_answer(config, dates, paused=_readings_off(db))
+        if operation == "reserve" and not answer["reason"]:
+            with supervise.admitting() as open_:
+                if not open_:
+                    db.execute("ROLLBACK")
+                    return {**answer, "reason": "stopping"}
+                db.execute("INSERT INTO monitor_spends VALUES (?)", (now,))
+                db.execute("COMMIT")
+            return {**answer, "used": answer["used"] + 1}
+        db.execute("COMMIT")
+        return answer
+
+
+def _monitor_run(config: RuntimeConfig, now: float, operation: str) -> Status:
+    refusal = (
+        "run-disabled"
+        if config.model_calls_disabled
+        else ""
+        if math.isfinite(now) and now > 0
+        else "store-unavailable"
+    )
+    if refusal:
+        return _monitor_answer(config, reason=refusal)
+    if operation == "read" and not os.path.lexists(store_path(config)):
+        return _monitor_answer(config)
+    try:
+        return _monitor_transaction(config, now, operation)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return _monitor_answer(config, reason="store-unavailable")
+
+
+def monitor_status(config: RuntimeConfig, *, now: float) -> Status:
+    """The monitor's own rolling answer: used and limit count ticks, never Analyze's readings."""
+    return _monitor_run(config, now, "read")
+
+
+def reserve_monitor(config: RuntimeConfig, *, now: float) -> Status:
+    """Charge one tick before launch; a refusal, a pause or a shutdown charges nothing.
+
+    The reason is `cap` at the board-wide rolling limit, `model-calls-paused` while paused,
+    `run-disabled` under `--no-observer-model` and `stopping` once the runner has shut. An
+    uncertain spend is never refunded by the caller, as `reserve` never refunds one.
+    """
+    return _monitor_run(config, now, "reserve")

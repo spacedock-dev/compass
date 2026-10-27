@@ -3,6 +3,7 @@ import { startWorkstream } from '../workstream';
 import { choiceOpenIn, createDisplayGate } from '../controls/displayGate';
 import { createRouter, type Router } from '../router/router';
 import {
+  browserBeacon,
   createBrowserEnvironment,
   createBrowserRuntime,
   type BrowserRuntimeOptions,
@@ -56,6 +57,7 @@ export function createShell(options: ShellOptions = {}): Shell {
               url: string,
             ) => EventSourceLike),
       now: () => Date.now(),
+      ...browserBeacon(),
     });
   const reducedMotion = options.reducedMotion ?? prefersReducedMotion;
   const announcer = options.announcer ?? createAnnouncer();
@@ -97,6 +99,7 @@ export function createShell(options: ShellOptions = {}): Shell {
     display,
     controls,
     clock: env.clock,
+    env,
     host: {
       reload: options.host?.reload ?? (() => window.location.reload()),
       streamSupported: options.host?.streamSupported ?? env.streamSupported,

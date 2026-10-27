@@ -225,6 +225,30 @@ class WhatAReaderSeesOfTheChecksASessionRan(ClaudeChecksTestCase):
         self.assertEqual(1, scan["distinct_checks"])
         self.assertEqual(1, scan["written_paths"])
 
+    def test_a_check_publishes_an_identity_that_a_directory_changes(self) -> None:
+        # The page pairs a failed run with a later pass by this identity. The command line is the
+        # same in both directories, so only the identity can keep a pass in one from hiding a
+        # failure in the other.
+        self.session.bash("cd api && pytest -q", "1 failed in 0.1s", is_error=True)
+        self.session.bash("cd web && pytest -q", "1 passed in 0.1s", is_error=False)
+        self.session.bash("cd api && pytest -q", "1 failed in 0.1s", is_error=True)
+
+        checks = self.checks()
+
+        self.assertEqual(2, len(checks), checks)
+        self.assertEqual({"pytest -q"}, {check["title"] for check in checks})
+        identities = {check["check_id"] for check in checks}
+        self.assertEqual(2, len(identities))
+        self.assertTrue(all(identity.startswith("check:") for identity in identities))
+
+    def test_a_written_path_carries_no_check_identity(self) -> None:
+        self.session.write(self.file("src/retry.py"))
+        self.session.bash("pytest -q", "1 passed in 0.1s", is_error=False)
+
+        events, _scan = self.read()
+
+        self.assertNotIn("check_id", next(event for event in events if event["subject"] == "write"))
+
     def test_a_piped_run_whose_tail_says_two_failed_is_a_failure_whatever_the_flag(self) -> None:
         self.session.bash(
             "pytest -q 2>&1 | tail -3",
@@ -312,6 +336,31 @@ class WhatAReaderSeesOfTheChecksASessionRan(ClaudeChecksTestCase):
                 self.setUp()
                 self.session.bash(command, "", is_error=False)
                 self.assertEqual(title, self.only_check()["title"])
+
+    def test_pnpm_shorthand_for_a_closed_runner_is_a_check_and_other_words_are_not(self) -> None:
+        for words, is_check in (
+            (["pnpm", "vitest", "run", "x.test.tsx"], True),
+            (["pnpm", "tsc", "--noEmit"], True),
+            (["pnpm", "eslint", "."], True),
+            (["pnpm", "playwright", "install"], False),
+            (["pnpm", "install"], False),
+            (["pnpm", "dev"], False),
+        ):
+            with self.subTest(words=words):
+                self.assertIs(is_check, project_context._is_check(words))
+
+    def test_a_lone_pnpm_shorthand_call_reads_its_summary_like_the_exec_form(self) -> None:
+        output = "Test Files  1 failed (1)\n     Tests  2 failed | 5 passed (7)"
+        for command in (
+            "pnpm vitest run x.test.tsx 2>&1 | tail -40",
+            "pnpm exec vitest run x.test.tsx 2>&1 | tail -40",
+        ):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, output, is_error=False)
+                check = self.only_check()
+                self.assertEqual("failed", check["result"])
+                self.assertEqual("summary", check["result_source"])
 
     def test_a_check_line_is_its_own_segment_and_never_the_rest_of_the_shell_line(self) -> None:
         self.session.bash("cd api && pytest -q 2>&1 | tail -3 ; echo done", "3 passed")
@@ -1067,6 +1116,57 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
                 scan = self.read()[1]
                 self.assertEqual(0, scan["read_only_commands"])
                 self.assertIsNotNone(scan["last_changing_command_at"])
+
+
+class WhichFilesAShellCallRemoved(ClaudeChecksTestCase):
+    """Deletions and moves, read for the press alone: the record the goal verdict is tested against."""
+
+    def removals(self) -> tuple[tuple[str, float, str], ...]:
+        self.session.save(self.path)
+        return project_context.claude_check_press(self.config, str(self.path)).removals
+
+    def test_rm_records_the_file_it_deleted(self) -> None:
+        self.session.bash(
+            "ls docs/e2e && rm docs/e2e/notes.md && rmdir docs/e2e", "", is_error=False
+        )
+        found = self.removals()
+        self.assertEqual(
+            [("docs/e2e", "deleted"), ("docs/e2e/notes.md", "deleted")],
+            sorted((p, k) for p, _at, k in found),
+        )
+        self.assertGreater(found[0][1], 0)
+
+    def test_a_call_that_errored_after_the_rm_still_records_it(self) -> None:
+        # The last command (`ls` of the removed folder) set the exit status, not the rm.
+        self.session.bash(
+            "rm docs/e2e/notes.md && ls docs/e2e", "ls: docs/e2e: No such file", is_error=True
+        )
+        self.assertEqual(["docs/e2e/notes.md"], [p for p, _at, _k in self.removals()])
+
+    def test_an_rm_that_reported_its_own_failure_is_no_removal(self) -> None:
+        self.session.bash(
+            "rm docs/notes.md", "rm: docs/notes.md: Operation not permitted", is_error=True
+        )
+        self.assertEqual((), self.removals())
+
+    def test_mv_records_its_source_as_moved_and_not_its_destination(self) -> None:
+        self.session.bash("mv docs/notes.md docs/old/notes.md", "", is_error=False)
+        self.assertEqual([("docs/notes.md", "moved")], [(p, k) for p, _at, k in self.removals()])
+
+    def test_unlink_counts_and_flags_are_not_files(self) -> None:
+        self.session.bash("unlink b.md && rm -rf -- c.md", "", is_error=False)
+        self.assertEqual(
+            [("b.md", "deleted"), ("c.md", "deleted")],
+            sorted((p, k) for p, _at, k in self.removals()),
+        )
+
+    def test_a_target_outside_the_session_or_a_glob_is_not_published(self) -> None:
+        self.session.bash("rm /etc/hosts ../elsewhere.md docs/*.md", "", is_error=False)
+        self.assertEqual((), self.removals())
+
+    def test_a_read_only_command_removes_nothing(self) -> None:
+        self.session.bash("cat docs/notes.md && ls docs", "", is_error=False)
+        self.assertEqual((), self.removals())
 
 
 class WhichOrderTheEntriesAreKeptIn(ClaudeChecksTestCase):

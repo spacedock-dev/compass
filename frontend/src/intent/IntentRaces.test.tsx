@@ -202,17 +202,18 @@ describe('Keep names the revision it drew, however the record moves', () => {
       session: SAVED_AT,
       routes: {
         '/api/project-context': () => json({ semantic: { facts: [fact('f1', 600, 'Short.')] } }),
-        '/api/direction': () => json({ ok: true, text: 'Short.', clipped: true }),
+        '/api/direction': () => json({ results: [{ ok: true, text: 'Short.', clipped: true }] }),
         '/api/annotate': () => stored(1, { outcome: 'unchanged' }),
       },
     });
     await settle(page);
-    await press(control('direction-keep'));
-    await settle(page);
+    // The clipped start is quoted, with its limit, before any press.
     expect(page.allPosts().map((post) => post.path)).toEqual(['/api/direction']);
     expect(text('.next-cockpit-direction-whole')).toContain(
       'Only the start of this direction is shown; it is longer than Compass opens.',
     );
+    await press(control('direction-keep'));
+    await settle(page);
     await press(control('direction-keep'));
     await settle(page);
     expect(page.allPosts().filter((post) => post.path === '/api/annotate')).toHaveLength(0);

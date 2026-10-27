@@ -16,6 +16,14 @@ from typing import Any, Final
 
 # Private goal-source metadata; never part of the Analyze words or their cache.
 GOAL_SOURCE_CUT_FIELD: Final = "goal_source_cut"
+# The closed goal-source tokens an adopted goal carries; `reading` re-exports them and the page
+# mirrors them (`vocabulary.json`). `typed`, the fallback, is not one of them.
+PROMPT_CHOSEN: Final = "chosen-prompt"
+SESSION_GOAL: Final = "session-goal"
+# The harnesses whose rows publish `session_goal`: Claude Code, Codex and Antigravity record a
+# `/goal` the reader set; no other harness writes one Compass reads. The page holds the same three.
+SESSION_GOAL_HARNESSES: Final = ("claude", "codex", "antigravity")
+PROMPT_SOURCES: Final = ("latest-prompt", "first-prompt", PROMPT_CHOSEN, SESSION_GOAL)
 
 # C0 and DEL, the zero-width space, the two directional marks, and the bidi
 # embedding and isolate ranges. Listed one by one across U+200B to U+200F rather
@@ -1199,6 +1207,11 @@ _CODEX_USER_TAGS = frozenset(
         "bash-stdout",  # 14
         "user_shell_command",  # 5
         "turn_aborted",  # 3 here, and 52 leading a developer-role record
+        # 83 over a later local corpus (codex-cli 0.149 to 0.164), every one written by Codex:
+        # 55 `source="user_goal"` lines restating a `/goal` action, 27 `source="goal"` goal
+        # continuation instructions, 1 `source="daemon_recovery"`. The goal itself is published
+        # as `session_goal` (`claude_data._codex_goal_event`).
+        "codex_internal_context",
     }
 )
 
@@ -1313,6 +1326,23 @@ def strip_prompt_wrappers(text: str) -> str:
         if shorter == stripped:
             return stripped
         stripped = shorter
+
+
+# Claude Code 2.1.305 stores a paste in the user record's content string as
+# `\n\n<pasted_content id="N">\nTEXT\n</pasted_content>\n`, with whatever the reader typed around
+# it. Only the two tags are the harness's; the text between them is the reader's, or Compass's for
+# a correction pasted back. The attribute list is matched loosely because the shape is measured,
+# not documented, and a tag name that only begins the same (`pasted_contents`) is another tag.
+_PASTE_TAG_RE = re.compile(r"</?pasted_content(?:\s[^<>]*)?>")
+
+
+def strip_paste_wrapper(text: str) -> str:
+    """The text with the harness's paste tags taken off, trimmed as `strip_prompt_wrappers` does.
+
+    Two readers hold the same rule: what the page quotes of a direction, and the digest that
+    recognises a correction pasted back, so a wrapper never reaches either.
+    """
+    return _PROMPT_TRIM_RE.sub("", _PASTE_TAG_RE.sub("", text))
 
 
 def injected_prompt(text: str, harness: str) -> bool:

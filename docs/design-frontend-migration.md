@@ -17,6 +17,239 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-27, the quota fetch is on until turned off
+([the amendment](../SECURITY.md#usage-quota-reads-the-quota-fetcher)). The recorded capacity answers hold the
+retired page's question ("Read your quota from the vendor?", Read my quota and No thanks) and its switch
+("Vendor quota fetch: on"), and the page now draws one line, "Quota is read with the Claude Code and Cursor
+logins on this machine. No session content is sent.", with Turn off, or "Quota reading is off. ..." with Turn
+on. No golden file is changed. `CapacityStrip.differential.test.tsx` leaves the quota line out of both trees and
+still compares every row, model line, count and prospect; its Console rail comparison, which was only that
+question and switch, is gone, and the test declares those recorded answers unread. `UsageConsent.test.tsx` and
+the `Capacity/Quota line` story hold the new line and the requests it changes. The on-demand capacity browser
+proof (`pnpm test:capacity:browser`) was not edited or run for this change and will report the old question
+until it is restated.
+
+2026-10-23, the Live monitor switch drives a lease the server holds and is not remembered
+([the amendment](design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)).
+Two recorded answers depart, and neither golden file is changed. First, the switch's hint: the recording says
+"Shows a level after every turn, from checks and file paths, with no model call. The level shows here and in
+the header." (`frontend/test/golden/e2e/drift-parity.json`), and the page now says it asks Haiku, through the
+reader's Claude Code, where the latest turns are heading, about once a minute while the session is on screen, and
+that the level comes from checks and file paths until a check returns. The estimate's own source line keeps its recorded words; the
+monitor's level has a line of its own. Second, the storage key: `compass.next.live-estimate:` is dropped, so
+the switch is off after a reload until it is pressed, and the codec owns eleven families where the recording
+(`frontend/test/golden/e2e/storage-conformance.json`, the `live-estimate` entries) holds twelve. The on-demand
+browser proofs that read those recordings or name the key (`frontend/e2e/storage-conformance.mjs`,
+`intent-parity.mjs`, `drift-parity.mjs` and `support/intent-worlds.mjs`) were not edited and were not run for
+this change; they will report those rows until they are restated on the recorded side, and nothing in the gate
+reads them. The unit proofs that held the old behaviour (`flags.test.ts`, `reads.test.ts` and
+`LiveMonitor.test.tsx`) now hold the new one, and `frontend_inventory.py` checks the reader-state row against
+the code that exists.
+
+2026-10-23, a session whose only prompt was a harness command is not said to have an unpublished title: on the
+session page's heading, the browser tab title and the breadcrumb, a session with no title whose first prompt
+was a command (`first_prompt_control`) reads "No name: the session opened with a command" where the
+recording says "Title not published", since the prompt was published and Compass declined to name the session
+by it. `detail.differential.test.tsx` restates that heading on the recorded side
+(`projectRecordedCommandOpener`) so every other word stays held to the recording. A Sessions row, the
+project and activity lists and the waiting panel say the same, because every surface that names a session says
+the same thing for it. The generated differential tests restate the phrase on the recorded side for exactly the
+rows marked `first_prompt_control` (`frontend/test/recordedCommandOpener.ts`), including the one coverage
+caveat that lists each distinct reason a title is missing. Golden files are unchanged.
+
+2026-10-21, departure cards and Steer back read as the redesign draws them
+([the amendment](design-reading-a-session.md#amended-2026-10-21-departure-cards-and-steer-back-read-as-the-design-does)):
+a departure's headline says what happened and its What is one sentence, so the cards no longer carry the
+constraint's sentence as a title or a list of quotes, and the correction box is labelled "Correction to paste"
+where the recorded page said "Correction to copy". The recorded answers are unchanged: the only one that holds
+the old label is `frontend/test/golden/e2e/drift-parity.json`, which the on-demand browser proof reads and no
+test in the gate does. The proof restates that one label on the recorded side
+(`frontend/e2e/support/session-deviations.mjs`) so the rest of the recorded card stays held to the recording;
+the golden file is unchanged, and the proof was edited but not run for this change.
+
+2026-10-21, the session header reads as one line, as the redesign draws it: the state, the identity, the measured words and the controls share one
+row under the title, and the measured line no longer opens with the harness's label, which the identity beside it
+already names. A session between turns shows no token rate, and a finished turn says "Turn ended 11:00 · waiting
+for you" in the measured line and under CURRENT ACTIVITY where the recording says "awaiting your message". The
+recorded text is restated before the comparison, in `detail.differential.test.tsx`
+(`projectRecordedHarnessWord`, `projectRecordedTurnEnd`); every other word of the header stays held to the
+recording, and the golden files are unchanged. The session page also draws What the session has done before the
+Drift card, which the comparison already excluded with the panel. The session heading, the browser tab title and
+the breadcrumb, which all read one session title, substitute the goal or the first prompt for a title that is
+only an identifier (an issue key, a hex or UUID id, or the session's own id); a Sessions row keeps the title as
+published. An issue key is upper-case letters with two or more digits; a hex or UUID id is matched separately.
+The header's entry count reads "at least N entries" while the record is partly read, which is a deliberate
+restatement of the recorded header: the count is a floor for as long as an older page is unread, whether or not
+an intent window is open.
+
+2026-10-21, the edges of the Drift card's states
+([the amendment](design-reading-a-session.md#amended-2026-10-21-the-drift-card-has-one-state-at-a-time)):
+the card says its read time once, so the analysis level's line is "Intent against cited checks and
+messages." where the recording says "Analysis at 14:03 · intent against cited checks and messages."
+(`level.differential.test.ts` projects the recorded line to the page's form and compares every other
+field as before), What the analysis read names the model without the stamp's "read at" time, and
+the delegated-work line is no longer drawn on the card, so `DepartureParts.test.tsx` no longer asks for
+the answers recorded for it and says why with `allowUnreadGoldens`; the rows and the way back beside
+them are still compared in full. A failed check a later pass of the same check followed is not a failed
+check on the card (`failedChecksAfterPerson`), a departure from the retired page's list; no generated
+case in `result.differential.test.ts` or `correction.differential.test.ts` reaches it, and
+`FixedCheck.test.ts` holds it. Golden files are unchanged.
+
+2026-10-21, the discard sentences name no revision
+([the amendment](design-reading-a-session.md#amended-2026-10-21-the-edges-of-the-intent-card)):
+`annotations.DISCARD_SENTENCES` now say "everything you asked of this session" and "your earlier saves"
+where the earlier ones said "every revision". The recordings under `test/golden/e2e` that quote the old
+sentences are unchanged and are not compared by any test that runs in CI; the client-contract fixtures are
+regenerated from the live server, which is not a recorded answer of the retired page.
+
+2026-10-21, a later direction is quoted where it is settled
+([the amendment](design-reading-a-session.md#amended-2026-10-21-a-later-direction-is-quoted-where-it-is-settled)):
+a saved line's source reads "added from your 11:05 message" where the retired page said "added from #7".
+`derive.differential.test.ts` compares every other line source with the recording, and where the recording
+numbers the entry it requires the time form and nothing else. The question's words and controls changed
+with it and were never in a recording the differential tests compare. Golden files are unchanged.
+
+2026-10-21, editing the goal keeps the reading's start
+([the amendment](design-reading-a-session.md#amended-2026-10-21-owner-editing-the-goal-keeps-the-readings-start)):
+no sentence on the page names a revision number any more. The stale line under a reading or a raise says
+when it was made and when the intent changed ("This reading was made at 11:07 against an earlier version of
+your intent. You changed it at 11:09, so it does not describe what you are asking for now."), a raise's
+baseline reads "read against the intent as it stood then", a list row's reading note reads "read at 11:07;
+intent changed at 11:09", and the saved line under the goal reads "typed 5m ago" with "older saves dropped"
+past the store's bound, where the recordings say "This reading read revision 2. Revision 3 is current",
+"read against revision 2", "read revision 2, 3 is current" and "revision 4 of 16 · typed 5m ago". The
+Saved disclosure's second sentence is rewritten, since the recorded one ("Adding a line keeps this window;
+saving new goal words opens another.") now says the opposite of what a save does, and Read from now is a
+new control beside Save intent. `test/revisionWordDeviation.ts` masks the retired sentence and its
+replacement to one token on both sides of `result.differential.test.ts`, `IntentLog.differential.test.tsx`,
+`annotation.differential.test.ts`, `sessions.differential.test.tsx` and `DepartureParts.test.tsx`; every other
+word around them is still held to the recording, which is untouched. The replacements are held by
+`api/vocabulary.test.ts`. The on-demand browser recordings (`frontend/test/golden/e2e/intent-parity.json`)
+still carry the retired wording and are not regenerated, so `pnpm test:intent:browser` will report those
+lines until its comparison masks them the same way. Golden files are unchanged.
+
+2026-10-21, the edges of the departure-backed level
+([the clarification](design-reading-a-session.md#clarified-2026-10-21-the-edges-of-the-departure-backed-level)):
+under a reading that stands with no level the card says when it is also hiding a live estimate the
+reader switched on, says it is early over an empty verdict of a session minutes old, and names a
+departure that cleared where a reading departs less often than the one before it, not only a clear
+to zero. The how-to's sentence about a goal with no expected outcome line now says "Can't tell"
+and draws no level. None of these is in a recording, and no golden file changed.
+
+2026-10-21, a level needs a departure
+([the amendment](design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)): the
+analysis level the retired page drew from the server's row is no longer drawn at Medium, High or
+Extreme beside a reading that shows no departure, and a server None or low the page holds back
+names the row that held it. `level.differential.test.ts` projects both departures: where the
+recording's level is above None or low and the page's shape carries no departure, the page's
+level must read Not enough recorded yet and nothing else of that analysis is compared; and the
+page's own held-back row is removed from its blockers before they are compared with the recorded
+ones. Every other field of the analysis and of the live estimate is still held to the recording,
+which is untouched. The card also draws no "Not enough recorded yet" bar or "Why not None or low"
+under a reading that stands (the live estimate keeps both), and the header pill says "so far"
+while the session runs; neither is in a recording. Golden files are unchanged.
+
+2026-10-22, a goal alone gets a level or is refused
+([the amendment](design-reading-a-session.md#amended-2026-10-22-a-goal-alone-is-read-or-refused)):
+the retired page's answer reducer read a reading with no outcome line as "Can't tell" whatever its goal
+row said, and `driftAnswer` now answers from the goal row alone, so a goal that departs, a failed check
+or a goal consistent with a check each answer as they do over a line. A goal the model refused as too
+vague (`goal too vague to analyze against`, on the goal row only) answers `goal-unclear` before every
+other rule, draws no quiet row, level or Steer back, and its sentence stands under the Goal field and
+clears when the goal is edited. The how-to's two sentences about an outcome line are rewritten.
+`result.differential.test.ts` and `level.differential.test.ts` pass unchanged over their generated
+readings, which never reach the new result and did not exercise the goal-only answer, so neither
+comparison was edited and the recordings are untouched. The new
+result and reason are held to the producer's by `api/vocabulary.test.ts`. Golden files are unchanged.
+
+2026-10-20, from the usability review: Full activity draws its rows in number order, so a check
+sits under the message whose number it carries even when it last ran later; it says "Last turn"
+once, on the turn's newest row, with the numbers the turn spans; it puts each row's source sentence
+behind a Source toggle in the row head instead of reading it out on every row; and it draws an
+agent's `**emphasis**` as the words it marks. All four are presentation in `WorkListView` and
+`EntrySource`: the `workList` model keeps the recorded order, words, per-row turn flag and source,
+so `workList.differential.test.ts` is unchanged. Landing on a row now waits for the Full activity
+panel to finish easing open (`drift/panelSettle.ts`); the hidden source line had been stretching
+the page past the panel's clip, which is why a landing during the ease used to reach. The session
+header names the token rate's unit ("44 tokens/min" where the retired page wrote "44 /m"):
+`detail.differential.test.tsx` restates the recorded identity line in those words with
+`projectRecordedRateUnit` before comparing. The header's entry count stays the session's total
+once an intent is saved, with the entries since the intent's start beside it, and a chip for an
+entry before that start keeps its number, muted. Golden files are unchanged.
+
+2026-10-20, usability review: each Sessions row leads with one state word (Working, Waiting on
+you, Idle, Ended, or State not published where the board publishes no known state) in place of the
+SESSION label, `NOW · <state>` and the QUIET or ENDED tag; WHERE is the project label alone, without
+the hatched "Exact location not published"; and the drift chip of a departing stored reading names
+the level the session header shows, from the same derivation ("Drift: Medium · 4m ago", or "Medium
+or higher" with no meter before this tab holds the project's analysis). A raise alone names no level. `sessions.differential.test.tsx` now reads the recorded
+legacy row with those three parts reworded as the page words them, and drops the state word and the
+chip's level from the React row before comparing; it counts ended rows from the recorded markup.
+The state word and the level are held by `SessionsView.test.tsx` and the Sessions stories. Golden
+files are unchanged. The Drift card's answer-first layout
+([the amendment](design-reading-a-session.md#amended-2026-10-20-the-answer-first-and-what-quotes-the-entry))
+changed no differential comparison: `coverageLine`, `resultStale` and `evidenceRows` keep their
+recorded answers, and the page draws new fields beside them.
+
+2026-10-20: the owner ruled that Steer back's correction carries each departure's explanation
+([the amendment](design-reading-a-session.md#amended-2026-10-20-owner-the-correction-carries-the-explanation)),
+and the correction's cap rose from 2,000 to 4,216 characters to hold them. The retired page was
+recorded at 2,000. `correction.differential.test.ts` now passes that recorded cap, as
+`RECORDED_CAP`, to `correctionFit` when it compares the edit arithmetic with the recording, so the
+cut is still held to the recorded answer at the recorded cap; the page's own cap is asserted in
+`SteerBack.test.tsx` and the Steer back correction stories. The composition refusal sentence names
+4,216 where the frozen page named 2,000. Golden files are unchanged.
+
+2026-10-20, second ruling: the correction drops Compass entry numbers, draws its times in the
+reader's zone and quotes the agent's own words
+([the amendment](design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)),
+so the cap rose again, to 5,140. A placeholder is now drawn as nothing, where the retired page drew
+"(#n in Compass)" and "(#n)". `correction.differential.test.ts` compares the recorded correction text
+through `recordedWithoutNumbers`, which removes the recorded numbers, in place of the
+`recordedNumbering` projection of 2026-10-14; the recorded cap is still passed as `RECORDED_CAP`.
+On the same day the owner allowed Analyze drift on an idle Claude Code session with no recorded turn
+finish, so Claude Code lost its own idle press line ("Last turn isn't recorded as finished. Run
+another turn to open Analyze." on the retired page). `route.differential.test.ts` maps that recorded
+line to the line every harness gets for an idle row. The same row now gets a line before the press,
+"Reads the session up to its last recorded entry; its last turn was not recorded as finished.",
+where the retired page's `nextObservedReadHint` returned nothing. `observed.differential.test.ts`
+holds every other row to the recording and asserts the recording was empty for that one; the line
+itself is asserted in `observed.test.ts`. Golden files are unchanged.
+
+2026-10-20: unasked checks keep their opt-in flag and gain a destination-bound Codex grant
+in the Drift card, with an Attention cue linking sessions waiting for it. Claude Code needs no
+separate toggle. The page reads who the lane reaches from `unasked_routes`, never from
+`reading_routes`, because on a harness with no producer of its own the lane prefers Claude Code
+where Analyze prefers Codex. No golden recording or differential
+comparison was changed for this addition; permission behavior is held by `UnaskedPermission.test.tsx`
+and `UnaskedChecks.stories.tsx`.
+
+2026-10-19: the owner renamed the master switch to Pause model calls / Resume model calls.
+The pause reason is `model-calls-paused`. Resume changes permission without starting Analyze.
+The summary switch stays visible and disabled while paused and keeps its saved answer through resume.
+`intent-parity.mjs` filters the renamed master switch from the same moved-control comparison as before;
+its recorded oracle is unchanged. Tests and stories assert the new words and behavior.
+
+
+2026-10-19, owner ruling DEC-28: reader-started calls run opt-out with a notice, as
+[the widening](design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts)
+requires. The recorded `nextReadingConsent`, `nextReadingToolOutputGranted`,
+`nextReadingNeedsAllow` and `nextReadingAnyConsent` admission answers in
+`route.differential.test.ts` no longer apply: their oracle calls remain in sequence but those
+four comparisons are withdrawn by name. Other route and refusal comparisons remain.
+`ReadingCapBanner.test.tsx` uses `model-calls-paused` for its under-cap policy case in place of the
+retired `consent-required` case; the budget and reset comparisons are unchanged. Analyze and
+Keep run directly, notices accompany due calls, and a stored off requires Resume model calls before another analysis. Goal summaries also run on the explicit focused refresh without a browser consent card.
+Golden files remain unchanged; the new behavior is asserted in component tests and Drift stories.
+The CSS display census visits a running notice instead of the removed consent card. Its chrome
+comparison maps only `reading-notice` to the recorded `reading-consent` recipe and
+`observer-controls` to `observer-consent`; these preserve the same card styling, not the old admission behavior.
+The on-demand browser proofs `drift-parity.mjs` and `journey-budget.mjs` still drive the removed
+consent card, so `drift-parity.mjs` is no longer an oracle for the Analyze notice row of
+`scripts/frontend-migration.json`, and the consent-step journeys in both are retired until they
+are rewritten for the notice. Their shared fixture policy, once `UNCONSENTED`, is
+`FIRST_PRESS`: readings on with no notice recorded.
+
 The rename kept saved browser choices readable until 1.0.0: a missing Compass key read the matching
 Cargento key through the shared storage adapter. 1.0.0 removed that fallback with the adapter code
 and its test, so a saved choice made under a `cargento.` key is not carried over.
@@ -80,6 +313,15 @@ Each proof still holds the React side to its own assertions in every run. The re
 legacy page said; they say nothing the React page was not also asserted to do. Sections below that say a
 port was "run next to" or "compared with" the legacy page describe how it was proved while that page
 existed.
+
+The one-column session page is a deliberate departure (owner, 2026-10-19;
+[the reversal](design-reading-a-session.md#amended-2026-10-19-owner-one-column-again)). The
+`sessions__detail` comparison in `frontend/src/sessions/detail.differential.test.tsx` reads it back in
+the recorded order and words before comparing: the state badge, which now leads the measured line
+with a status dot, returns to the start of the title row without its dot, and the Full activity
+trigger reads as the recorded "Session activity" heading. The header still comes first, the panel is
+still outside the comparison, and every other sentence of the activity, in its recorded order, is
+compared unchanged. The recording is untouched.
 
 Base UI Select is a deliberate departure from native option DOM (owner, 2026-10-12). The Intent
 editor comparison retires its native-menu column and excludes the combobox trigger from action
@@ -158,6 +400,39 @@ first back for the shape and result differentials, `recordedNumbering` in
 `frontend/src/drift/correction.differential.test.ts` projects the second for the correction text, and
 the drift browser proof restates the second and the third in the recorded steer box and live estimate.
 Every other word, the placeholders dropped and their order stay held to the recording.
+
+The Intent card's redesign of 2026-10-19 departs from the recorded editor in four places, and nothing is
+re-recorded. The draft marks' dashed "from your prompt" badge and its excerpt cue became one plain source line
+beside the count, "From your prompt · first|latest|HH:MM · not saved." with the cap sentence the 2026-10-13
+departure ruled ("Analyze reads at most the first 1,000 characters of any prompt.") and, for an excerpt, the
+excerpt cue. The checklist's label reads "Expected outcome · up to 6 lines" where it read "Expected outcome
+(optional)". Every character count reads "n / cap" where it read "n/cap". And the prompt menu's trigger is named
+"Use your prompt". `intentEditorDeviations` in `frontend/e2e/support/intent-editor-deviations.mjs` projects the
+first three onto the recorded editor; the browser proofs that read the retired badge or the old menu name now
+read the source line and the new name.
+
+The Goal field's layout and copy changed again on 2026-10-23 (owner request), and nothing is re-recorded. The
+Intent heading's lede moved to a hint under the Goal box, beside the count, and reads "Write what should be
+true when this session is done. Compass checks the session's work against it and never writes into the
+session." The source line moved from beside the count to directly above the box, under any ended-goal note,
+and says what the words are rather than where they were found: "Drafted from your first prompt · not saved"
+(latest, or "the prompt you chose"), "Your edit of your first prompt · not saved", "From your /goal at 11:53 ·
+not saved" or "· saved", "Found in your prompts at 23:11 · not saved", "You typed this · not saved" or "· saved
+at 18:54", and "From your first prompt · saved". A cut /goal appends "· Shortened to fit 240 characters; Analyze
+reads this shortened goal" (the box's own cap) and a cut prompt "· Shortened here; Analyze reads the whole
+prompt". The cleared note no longer names the draft ("; the draft below is ..."): the source line directly
+under it does. `intentEditorDeviations` projects the recorded badge onto the new source-line wording, and the cap sentence it
+used to add is gone from that line, so the on-demand proof reads the line as the page draws it.
+
+The Drift card header says "Analysis last run 14:03" where the retired page said "Analysis at 14:03"
+(owner, 2026-10-19), because the old words read as a time inside the session. The analysis level's own line
+no longer carries a time at all (2026-10-21): the header is the card's one read time. The `drift__level`
+comparison in `frontend/src/drift/level.differential.test.ts` projects the recorded line to the page's form
+before comparing, and every other field of the analysis level stays held to the recording, which is
+untouched. The departure cards that replace "Model assessment" in the same change draw from the same
+`result.ts` functions, which the `drift__result` comparison still holds unchanged. The first analysis
+journey proof (`frontend/e2e/journey-budget.mjs`, run on demand) now finds the departure's account in
+its card and its cited entries under What; each entry's recorded time moved behind Evidence. (Amended 2026-10-23: the result has no Evidence fold now; see [the design record](design-reading-a-session.md#amended-2026-10-23-owner-the-citations-are-the-source).)
 
 ## The ownership map
 
@@ -382,7 +657,8 @@ native action or a per-run value are listed with their reason in the index inste
 written by hand.
 
 Storage conformance holds the codec to what the legacy page did with its storage, in both directions for
-all twelve families. The legacy page ran in Chromium against the real backend when the answers were
+all twelve recorded families (the codec owns eleven since 2026-10-23: the live monitor's key is retired, and
+[held to recorded answers](#held-to-recorded-answers) says so). The legacy page ran in Chromium against the real backend when the answers were
 recorded, and the proof now hands the real codec a blank same-origin page and applies each recorded
 change to it, so the codec reads exactly what that page wrote and every codec write is checked against
 what the legacy page did with it. A direction is labelled by what exercised it: the page's own UI,
@@ -444,6 +720,12 @@ retired triggers with the measured row-filling how-to; its fonts, inks and borde
 normalizers account for labels and counter placement; the proof asserts the first-step controls
 and counts one click on each of four active/recent, saved/drafted fixtures. Goldens stay unchanged.
 
+Deviation (2026-10-20): ACTIVE NOW counts the cards listed under Active now, which include a
+session holding recorded drift. The legacy count left drift out, so a browser walk read
+"ACTIVE NOW 0" above a listed drift card. WORKING is unchanged and still never counts an idle
+session with drift. The recorded side of `sessions.differential.test.tsx` sets that one count to its
+own active group's rows; every other fact still compares.
+
 The observed model that Sessions, the header counts and session detail all stand on is a full port of
 the legacy `next-observed.js`, checked by executing the real legacy file next to it over hundreds of
 generated payloads with no difference, and by mutants that show the comparison can fail. The header
@@ -498,10 +780,14 @@ instead (one direction read, nothing saved), `intentForReading`, the live monito
 reading-feedback lane. The per-entry Add to my intent buttons of the legacy activity list are drawn by the
 Drift step's numbered activity list.
 
-Deviations (owner, 2026-10-12): prompt, stage and direction choices now use shadcn Base UI Select.
+Deviations (owner, 2026-10-12): prompt, stage and direction choices now use shadcn Base UI Select. The prompt
+later became a button that opens a list in a popover (2026-10-21), which is why its trigger is a button and not a
+combobox, and its popup is `data-slot=popover-content`.
 The prompt opens immediately, shows "Loading your prompts" as a disabled item while fetching,
 and keeps that popup open for choices or a stated absence for an empty read or a failed read after an empty or failed
 read. The trigger stays "Use your prompt" at rest and carries `aria-busy` during the request.
+Beside a saved typed goal its face reads "Replace with your prompt" (2026-10-20), because "Use your
+prompt" beside "Typed · saved" read as the goal's source; its accessible name stays "Use your prompt".
 Its width is 18rem on wide screens and the remaining label-row width on narrow screens. The Goal label and trigger retain one row on narrow screens, preserving the first-view positions of Analyze, results, direction questions and Steer back. The popup drops
 below the trigger, scrolls without shifting the page, and clamps each titled item to two lines.
 Escape closes only the popup before any disclosure or route dismissal. A choice fills a pending
@@ -540,20 +826,24 @@ cohort rows retain the baseline shape. Removing the native prompt-wrapper rule l
 
 DEC-27 trims the first view: one optional outcome line, its Add and Remove controls after use,
 Undo after a goal edit or prompt choice, and six groups in the session-scoped More disclosure. Saved reads-from and
-Clear move there with Live monitor, Discard everything, Delegated work, Turn off readings and
+Clear move there with Live monitor, Discard everything, Delegated work, Pause model calls and
 neutral later-direction state. The idle monitor explanation and editor hint move with their owners.
 The count-only Direction summary draws no text, so every Keep requires the whole-text opening
 press before settlement. Activity Add stays mounted and becomes visible on hover or focus.
 Below 1101 px the panel precedes the activity in one column; from 1101 px the activity reads on the left
 and the panel on the right, level at the top (owner request, 2026-10-12). The unblocked header moves into
 the activity area.
+The owner reversed that on 2026-10-19: the page is one column at every width, More is retired, and
+each of its parts has a new home in the Intent card, the Drift card or the "What is sent" popover
+([the inventory](design-reading-a-session.md#where-everything-in-more-went)).
 From 761 px the Intent section is a card like the Drift card, 24 px above it, and its text fields show
 three lines; at 760 px and below the earlier compact spacing and one-line fields stay so the goal and the
 primary control remain in the 375 by 667 first view. The field chrome reference table records the card's
 background, border, radius and padding for the wide Intent panel; nothing else in it changes.
 The ended-session note appears beside the Goal field before typing. Claude's idle session without
- an observed stop says "Analyze opens while this session runs." The route and browser projections
-replace only the former refusal sentence. Recorded-side projections adapt those placements and
+ an observed stop is analyzed up to its last recorded entry since 2026-10-20, so it carries no
+refusal; the route projection maps the retired page's refusal sentence to the line every harness
+gets for an idle row. Recorded-side projections adapt those placements and
 controls; field values, evidence and requests remain asserted.
 The idle drafted panel has a 90-word ceiling outside field values and closed bodies; the browser
 first-view proof checks the viewport, the control set, a one-button mutation and the limit paths.
@@ -596,6 +886,36 @@ action writes. Steer back composes an editable correction (2000 code points) tha
 written to the session; the proof drives typing, caret, selection and native undo through board ticks, IME
 composition through the debugger protocol, a paste over the cap, and a pointer held through the click.
 
+Deviation (2026-10-20): the line saying what put Steer back on offer names a departure by its first cited
+entry, the one its result row and its reason line name. The legacy line took the latest of all its citations,
+so one card read "Departs; evidence #3" beside "Departure evidence at #4". A failed check
+without a departure draws no line at all (amended 2026-10-21): the card offers Steer back only with a
+departure, so the wording that stood here, "A check the agent ran failed", was unreachable and went with its
+branch. `correction.differential.test.ts` gives the recorded side the same first citation, still asks it for
+the failed-check line because its answers are keyed by call order, and compares only a departure's.
+
+Deviation (2026-10-21): the card is drawn one state at a time, where the retired page drew every control
+in every state. Pause model calls and the Live monitor sit behind Drift settings, the stale notice is a line
+in the card's header beside a re-run control that stays there from the first reading on, a run over a
+reading keeps that reading in view dimmed, the one-time notice collapses under What is sent when its
+analysis ends, the verdict sentence replaces the result's own heading, Steer back is offered only with a
+departure, and Where the work went moved under What the analysis read (the delegated-work limit left the card on the same day). No pure
+function changed, so the differential tests and the recorded answers are as they were; the
+[design record](design-reading-a-session.md#amended-2026-10-21-the-drift-card-has-one-state-at-a-time) owns
+each ruling and what was rejected.
+
+Deviation (2026-10-21): an unsettled line says why in view, a claims row quotes its claim, and a claim
+alone draws no line beside Steer back
+([the amendment](design-reading-a-session.md#amended-2026-10-21-the-record-settles-a-line)). `resultStatus`
+and `claimStatus` keep the retired page's words, so `result.differential.test.ts` is unchanged: the quiet
+row draws `Can't tell · <line>` and its reason, and `What the agent claimed · "<claim>"` with the claim's
+tail, from `cantTellReason` and `claimHeading`, new functions the recording has no answer for. The retired
+page's `Claim to check at #n · age` is the one trigger answer that departs: `correction.differential.test.ts`
+asks the recorded side with the claim taken out of the offer, and every other trigger is still held to it.
+The page also lets a written path carry a departure stored as `recorded-write`, which `checkSupports` takes
+as a flag; the recorded checks and every recorded answer for a row stored without it are unchanged. Golden
+files are unchanged.
+
 Deviations, each recorded rather than hidden. The card, the numbered list and the departures hold the last
 board they drew while the reader is in the correction box (untouched or edited), composing, or holding a
 pointer on a control they left it for, and say "Updates are paused" instead of the legacy whole-page queue,
@@ -616,6 +936,10 @@ naming the count and pointing at Show more. The criterion carries that count as 
 had no such field, so both differentials drop it before a recorded answer's key is computed
 (`withoutKey` in `legacy.test.helper.ts`). The page still loads no record page by itself
 ([reader state](design-reader-state.md#the-inventory)).
+
+One more departure, 2026-10-22. The shape carries `goalVerdict`, Compass's test of the harness's goal-met verdict
+(`reading.goal_verdict`), which the retired page never had, so `shape.differential.test.ts` and
+`result.differential.test.ts` drop it with `withoutKey` as they drop `unloaded`. No recorded answer changes.
 
 Departures the drift proof restates, 2026-10-21, with the recording unchanged. The retired page printed
 "N of M left today" under each reading; commit 4f6512bb removed that line, and under the cap the page prints no
@@ -645,6 +969,29 @@ the obsolete current-result run button removed from the recorded side. Dedicated
 cover every added button, missing citations, renumbering, focus, scrolling and zero non-GET requests
 or launches, including while ordinary GET polling continues.
 
+### The redesign pass (2026-10-20)
+
+Decisions taken while bringing the page in line with the redesign mockup, each with what it replaced.
+
+- Steer back is the primary press whenever a departure stands, including on a session waiting for the
+  reader. The earlier rule kept it secondary there so the awaited answer came first (the Blocked
+  Session story pinned it); the owner ruled that Steer back leads. Update intent instead sits left of it,
+  dashed and sized to its text.
+- The shell sets a 44px minimum size on every link in `#app`. On a citation that stretched each
+  bullet's line height and the gap between numbers, so citations opt out with `min-h-0 min-w-0`. An
+  arbitrary `[min-inline-size:0]` utility was tried first and did not take effect in the built
+  sheet, while the physical-property utilities did.
+- Entry numbers in Compass's own sentences are citation links through one component (`CitedText`),
+  applied only to text Compass wrote. Applying it to a model's words would link "PRs #9325". The
+  Intent card's own `#n` source labels stay text: a link inside a form label would take clicks meant for
+  the field.
+- The citation card uses Base UI's preview card. Storybook's dependency pre-bundle list needs
+  `@base-ui/react/preview-card` named, because the card imports a CommonJS shim the bundler does not
+  discover on its own, and every story that imports it fails without the entry.
+- The Drift card now precedes What the session has done, so the sample tour's numbered marks were
+  reordered to match, and a popover at the foot of the page is drawn above its control when there is no
+  room below, which a story asserts either way.
+
 ### The first analysis click budget
 
 [DEC-27](design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result)
@@ -670,12 +1017,12 @@ Each fixture has a fresh browser context and no Allow for the route's receiver, 
 destination or its tool-output destination. The synthetic Intent backend performs saves and
 prompt adoption; the Drift script supplies the model job and stored assessment without calling
 a model. Completion requires the level, findings and cited evidence with recorded times to be
-read in place without another activation. A goal-only result can say Not enough recorded yet.
+read in place without another activation. A goal-only result draws no level and reads "Can't tell" unless the goal departs ("Not enough recorded yet" is the live estimate's word, not a result's).
 The nondeparture fixture keeps the same three-click ceiling and reads the cited entry in
 Session activity without another press; a departure is not required to qualify as a result.
 
 Two refusal fixtures also remain on the path: a goal typed on an ended session states before
-typing that words saved now cannot be read against it, then says "saved after this session ended"
+typing that what they save now is kept but will not be checked against, then says "saved after this session ended"
 with no result; idle without a recorded stop keeps Analyze inert and shows its refusal sentence.
 Their attempted paths cost four and two activations respectively, without a model request.
 

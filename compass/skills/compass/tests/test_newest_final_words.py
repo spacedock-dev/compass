@@ -737,7 +737,7 @@ class AWholeReplyOnlyGoesWhereItFits(_Prompt):
             return {}
 
         rows = [*self.rows(), *(_agent(f"pre{n}", 5.0 + n, "x" * 80) for n in range(40))]
-        _, selection = self.build(rows, lookup, max_bytes=2_400)
+        _, selection = self.build(rows, lookup, max_bytes=2_900)
         chosen = {e["id"] for e in selection.entries if e["type"] == reading.AGENT_MESSAGE_TYPE}
         self.assertEqual([chosen], [set(ids) for ids in seen])
         self.assertLess(len(chosen), 42)

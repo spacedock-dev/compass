@@ -27,6 +27,8 @@ export interface BrowserGlobals {
   };
   readonly EventSource: (new (url: string) => EventSourceLike) | undefined;
   readonly now: () => number;
+  /** `navigator.sendBeacon`, where the browser has it. */
+  readonly sendBeacon?: (url: string, body: Blob) => boolean;
 }
 
 export function createBrowserEnvironment(g: BrowserGlobals): Environment {
@@ -58,7 +60,27 @@ export function createBrowserEnvironment(g: BrowserGlobals): Environment {
       listen(g.document, 'visibilitychange', () => {
         if (!g.document.hidden) listener();
       }),
+    isHidden: () => g.document.hidden,
+    onBecameHidden: (listener) =>
+      listen(g.document, 'visibilitychange', () => {
+        if (g.document.hidden) listener();
+      }),
+    sendBeacon(url, body) {
+      if (!g.sendBeacon) return false;
+      try {
+        return g.sendBeacon(url, new Blob([body], { type: 'application/json' }));
+      } catch {
+        return false;
+      }
+    },
   };
+}
+
+/* `navigator.sendBeacon`, where this browser has it, as the one optional global the environment takes. */
+export function browserBeacon(): Pick<BrowserGlobals, 'sendBeacon'> {
+  return typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function'
+    ? { sendBeacon: (url: string, body: Blob) => navigator.sendBeacon(url, body) }
+    : {};
 }
 
 export type BrowserRuntime = BoardRuntime & {
@@ -96,6 +118,7 @@ export function createBrowserRuntime(options: BrowserRuntimeOptions = {}): Brows
             url: string,
           ) => EventSourceLike),
     now: () => Date.now(),
+    ...browserBeacon(),
   };
   const legacy = options.provider ? createLegacyStorage(options.provider) : createLegacyStorage();
   const runtime = createBoardRuntime({

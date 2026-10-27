@@ -1,5 +1,7 @@
 import type { PayloadData } from '../api/types';
 import type { Route } from '../router/grammar';
+import { SAMPLE_FIXTURE } from '../sample/fixture';
+import { isSampleRoute } from '../sample/ids';
 import { findSession, sessionTitle } from './derive';
 
 /* One title per view, stable while the board refreshes: it changes only when the route does, or when
@@ -18,7 +20,8 @@ export function documentTitle(route: Route, data: PayloadData | null): string {
     case 'project':
       return `${route.project} — Compass`;
     case 'session': {
-      const session = findSession(data, route.project, route.harness, route.session);
+      const board = isSampleRoute(route) ? (SAMPLE_FIXTURE.board as unknown as PayloadData) : data;
+      const session = findSession(board, route.project, route.harness, route.session);
       const title = session ? sessionTitle(session) : String(route.session || 'Session');
       return `${title} — ${route.project} — Compass`;
     }

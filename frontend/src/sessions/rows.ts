@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { stableProjectKey } from '../api/identity';
 import type { RouteInput } from '../router/grammar';
 import {
   durationSince,
@@ -16,6 +17,7 @@ import {
   intentDraft,
   openedWithControl,
   PROMPT_CHOSEN,
+  SESSION_GOAL,
   PROMPT_SOURCES,
   READING_ASSESSMENT_KEYS,
   READING_CLAIMS,
@@ -23,6 +25,7 @@ import {
   sessionInstruction,
   type PromptCandidate,
 } from './intent';
+import { datedClock } from '../observed/values';
 
 /* What the Sessions screen draws, as data: a pure function of one payload and the model read from it, so
    every sentence is testable without a DOM and the screen cannot say something the rows do not. The
@@ -106,6 +109,25 @@ export interface DriftRecord {
   readonly subject: 'This raise' | 'This reading';
 }
 
+/** The stored reading itself departs: an intent line found a departure and cites what it rests on. */
+export function readingDeparts(source: Row | undefined): boolean {
+  const raw = source?.['annotation_assessment'];
+  if (!isRecord(raw) || !Object.keys(raw).every((key) => READING_ASSESSMENT_KEYS.includes(key)))
+    return false;
+  const criteria = isRecord(raw['criteria']) ? raw['criteria'] : {};
+  return Object.keys(criteria)
+    .filter((key) => readingNamesConstraint(key) && key !== READING_CLAIMS)
+    .some((key) => {
+      const criterion = criteria[key];
+      return (
+        isRecord(criterion) &&
+        criterion['result'] === 'departure' &&
+        Array.isArray(criterion['cites']) &&
+        criterion['cites'].some((cite) => typeof cite === 'string' && cite.trim())
+      );
+    });
+}
+
 export function drift(source: Row | undefined, context: SessionsContext): DriftRecord[] {
   if (!context.annotate || !source) return [];
   const rows: DriftRecord[] = (
@@ -118,41 +140,33 @@ export function drift(source: Row | undefined, context: SessionsContext): DriftR
       subject: 'This raise' as const,
     }));
   const raw = source['annotation_assessment'];
-  if (isRecord(raw) && Object.keys(raw).every((key) => READING_ASSESSMENT_KEYS.includes(key))) {
-    const criteria = isRecord(raw['criteria']) ? raw['criteria'] : {};
-    const departed = Object.keys(criteria)
-      .filter((key) => readingNamesConstraint(key) && key !== READING_CLAIMS)
-      .some((key) => {
-        const criterion = criteria[key];
-        return (
-          isRecord(criterion) &&
-          criterion['result'] === 'departure' &&
-          Array.isArray(criterion['cites']) &&
-          criterion['cites'].some((cite) => typeof cite === 'string' && cite.trim())
-        );
-      });
-    // A contradicted claim is not drift from the intent.
-    if (departed)
-      rows.push({
-        at: nextNumber(raw['read_at']),
-        revision: nextNumber(raw['revision_read']),
-        subject: 'This reading',
-      });
-  }
+  // A contradicted claim is not drift from the intent.
+  if (isRecord(raw) && readingDeparts(source))
+    rows.push({
+      at: nextNumber(raw['read_at']),
+      revision: nextNumber(raw['revision_read']),
+      subject: 'This reading',
+    });
   return rows;
 }
 
 /* One reading, or one raise, against words that have moved on. The sentence is owned here for the
-   reason the legacy page owns it once: a second wording would be a second promise. Silence on either
-   absence rather than a placeholder: a raise whose revision did not survive says so on its own line and
-   is never shown today's number. */
+   reason the legacy page owns it once: a second wording would be a second promise. It names the two
+   moments the reader has seen on this page (when the reading was made, when they changed the words) and
+   never a revision number, which appears nowhere else. The numbers still decide whether the words moved;
+   they are not printed. Silence on either absence rather than a placeholder: a moment the record did not
+   keep is left out of the sentence, never replaced by today's. */
 export function revisionSuperseded(
   subject: string,
   read: number | null,
   current: number | null,
+  madeAt: number | null = null,
+  changedAt: number | null = null,
 ): string {
   if (read === null || current === null || read === current) return '';
-  return `${subject} read revision ${String(read)}. Revision ${String(current)} is current, so it does not describe what you are asking for now.`;
+  const made = madeAt !== null && madeAt > 0 ? ` at ${datedClock(madeAt)}` : '';
+  const changed = changedAt !== null && changedAt > 0 ? ` at ${datedClock(changedAt)}` : '';
+  return `${subject} was made${made} against an earlier version of your intent. You changed it${changed}, so it does not describe what you are asking for now.`;
 }
 
 export interface DriftMark {
@@ -169,9 +183,12 @@ export function driftMark(source: Row | undefined, context: SessionsContext): Dr
   const dated = records.map((row) => row.at).filter((at): at is number => at !== null && at > 0);
   const age = dated.length ? durationSince(context.generated, Math.max(...dated)) : null;
   const current = nextNumber(source['annotation_revision']);
+  const changedAt = nextNumber(source['annotation_at']);
   const stale = [
     ...new Set(
-      records.map((row) => revisionSuperseded(row.subject, row.revision, current)).filter(Boolean),
+      records
+        .map((row) => revisionSuperseded(row.subject, row.revision, current, row.at, changedAt))
+        .filter(Boolean),
     ),
   ];
   return {
@@ -232,16 +249,20 @@ export function goalCell(
       : intentDraft(source, { annotate: context.annotate, unreadable: context.unreadable }, chosen);
   const text = typed || (draft ? draft.text : openedWithControl(source) ? '' : prompt);
   const label = typed
-    ? PROMPT_SOURCES.includes(String(source?.['annotation_goal_source']))
-      ? 'GOAL · FROM YOUR PROMPT'
-      : 'GOAL · YOUR WORDS'
+    ? String(source?.['annotation_goal_source']) === SESSION_GOAL
+      ? 'GOAL · FROM /GOAL'
+      : PROMPT_SOURCES.includes(String(source?.['annotation_goal_source']))
+        ? 'GOAL · FROM YOUR PROMPT'
+        : 'GOAL · YOUR WORDS'
     : draft && draft.source === 'first-prompt'
       ? 'GOAL · YOUR FIRST PROMPT'
-      : draft && draft.source === PROMPT_CHOSEN
-        ? 'GOAL · YOUR CHOSEN PROMPT'
-        : text
-          ? 'GOAL · YOUR LATEST PROMPT'
-          : 'GOAL';
+      : draft && draft.source === SESSION_GOAL
+        ? 'GOAL · YOUR /GOAL'
+        : draft && draft.source === PROMPT_CHOSEN
+          ? 'GOAL · YOUR CHOSEN PROMPT'
+          : text
+            ? 'GOAL · YOUR LATEST PROMPT'
+            : 'GOAL';
   return typed
     ? { label, kind: 'link', text, known: true }
     : { label, kind: 'link', text: text || 'Add a goal', known: Boolean(text) };
@@ -254,6 +275,8 @@ export interface SessionRow {
   readonly source: Row | undefined;
   readonly route: RouteInput & { readonly view: 'session' };
   readonly harnessLabel: string;
+  /** The project's stable key, which the drift context rows are held under. */
+  readonly projectKey: string;
   readonly goal: GoalCell;
   readonly drift: DriftMark | null;
   /** "ended <duration> ago", or empty. */
@@ -303,6 +326,18 @@ export function buildSessionsScreen(
   const asks = operationsAsks(payload, rows);
   const labels = harnessLabels(payload);
   const groups = groupSessions(model, sources, context);
+  const projectKeys = new Map<string, string>();
+  const projectKey = (project: string): string => {
+    let key = projectKeys.get(project);
+    if (key === undefined) {
+      key = stableProjectKey({
+        label: project,
+        sessions: rows.filter((one) => String(one['project'] ?? '') === project),
+      });
+      projectKeys.set(project, key);
+    }
+    return key;
+  };
   const seen = new Map<string, number>();
   const unique = (session: ObservedSession): string => {
     const base = `${sessionKey(session)}\u0000${session.project}`;
@@ -326,6 +361,7 @@ export function buildSessionsScreen(
         session: session.sid,
       },
       harnessLabel: labels.get(session.harness) || session.harness,
+      projectKey: projectKey(String(source?.['project'] ?? '')),
       goal: goalCell(source, context, source && chosenFor ? chosenFor(source) : null),
       drift: driftMark(source, context),
       endedSince: since ? `ended ${since} ago` : '',
@@ -335,9 +371,24 @@ export function buildSessionsScreen(
   };
   return {
     context,
-    counters: model.counters,
+    // The count under "Active now" counts the cards listed there, which include recorded drift. The model's
+    // count is the board's and has no drift, so it read 0 above a listed drift card.
+    counters: model.counters.map((counter) =>
+      counter.label === 'ACTIVE NOW' ? { ...counter, value: groups.active.length } : counter,
+    ),
     lede: anyChecked(rows, context) === false,
     active: groups.active.map((session) => row(session, false)),
     history: groups.history.map((session) => row(session, true)),
   };
+}
+
+/* One state word leads each row (usability review, 2026-10-20): the row once said "NOW · IDLE" and "QUIET"
+   under "Active now", three words for one fact that read as a contradiction. Ended outranks the rest because
+   an ended session waits on nobody. */
+export function rowState(session: ObservedSession): string {
+  if (session.isEnded) return 'Ended';
+  if (session.isNeeds || session.askKnown) return 'Waiting on you';
+  if (session.isWorking) return 'Working';
+  // Only a published idle reads Idle: a missing or unknown state is not observed quiet.
+  return session.isQuiet ? 'Idle' : 'State not published';
 }

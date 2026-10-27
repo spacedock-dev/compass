@@ -24,6 +24,8 @@ from . import (
     reading_route,
     records,
     sessions,
+    summary_jobs,
+    summary_store,
     tripwires,
     unasked,
 )
@@ -444,6 +446,7 @@ _RAW_ROW_TEXT: Final = (
     "state_detail",
     "project_key",
     "project_name",
+    "worktree",
 )
 
 # `(the row field holding a list of dicts, the keys inside each one)`.
@@ -680,6 +683,32 @@ def _hide_unmeasured_rates(rows: list[Session], harnesses: tuple[HarnessSpec, ..
             row["rate_per_min"] = None
 
 
+def _reading_permissions(config: RuntimeConfig, rows: list[Session], now: float) -> dict[str, Any]:
+    answer = reading_policy.status(config, now=now, destinations=reading_route.destinations())
+    routes = reading_route.resolve_all(
+        (str(row.get("harness") or "") for row in rows), config=config
+    )
+    return {
+        "reading": answer,
+        "reading_routes": {
+            harness: {
+                **route,
+                "notice_due": reading_policy.notice_due(
+                    answer,
+                    kind="reading",
+                    provider=str(route.get("provider") or ""),
+                    destination=str(route.get("words_destination") or ""),
+                    tool_output=str(route.get("destination") or ""),
+                    content=reading_policy.CONTENT_VERSION
+                    if harness in reading_route.AGENT_MESSAGE_HARNESSES
+                    else reading_policy.WORDS_CONTENT_VERSION,
+                ),
+            }
+            for harness, route in routes.items()
+        },
+    }
+
+
 class Application:
     """One dashboard process's collection surface.
 
@@ -727,6 +756,11 @@ class Application:
         # collection and must not start a `codex` subprocess while reporting
         # what the stores hold.
         self.unasked_lane: UnaskedLane | None = None
+        # Created on the first Live monitor start, so a board nobody monitors holds no table and
+        # runs no thread. Never persisted: a restart starts with no lease.
+        self.live_leases: Any = None
+        # Set when the server closes, so a request that arrives after builds no ticker.
+        self.live_leases_closed = False
 
     def harness_label(self, key: str) -> str:
         """The registry's display label for a harness key, or "" for anything else.
@@ -846,6 +880,20 @@ class Application:
         # ranked by the state it no longer claims. The summary below is counted
         # from the patched rows for the same reason.
         history_fields = self._apply_overlays(out_sessions, now=now)
+        stored_summaries = summary_store.load(config)
+        summaries_by_key = {(entry.harness, entry.sid): entry for entry in stored_summaries.entries}
+        for row in out_sessions:
+            stored = summaries_by_key.get((str(row["harness"]), str(row["sid"])))
+            row.update(
+                summary_store.published(
+                    stored,
+                    available=stored_summaries.state == "ok",
+                    checked=summary_store.last_checked(state, stored),
+                )
+            )
+            row["summary"]["job"] = summary_jobs.published(
+                self, str(row["harness"]), str(row["sid"])
+            )
         # After dedupe, which keys on (harness, sid) and would otherwise decide
         # between two rows one of which carries the annotation. And AFTER the
         # overlays, which is the half that was wrong: identity is not patchable
@@ -918,6 +966,10 @@ class Application:
             "native_notify": self.native_notifier(config.platform_name),
             "in_quiet_hours": in_quiet,
             "harnesses": harnesses,
+            # The summary grant's own block. Not under `summary`, which already names the
+            # board's counts, and not behind `annotate`, because the summary store does not
+            # depend on the annotation store: docs/design-session-summary.md#job-and-grant-contract.
+            "summaries": summary_jobs.board(config, now=now),
             "summary": {
                 "needs_input": sum(1 for x in active_sessions if x["state"] == "needs_input"),
                 "working": sum(1 for x in active_sessions if x["state"] == "working"),
@@ -961,15 +1013,7 @@ class Application:
                         # receivers, and a sentence naming the wrong one under
                         # a button that sends a reader's words is the failure
                         # the disclosure exists to prevent.
-                        "reading_routes": reading_route.resolve_all(
-                            (str(row.get("harness") or "") for row in out_sessions), config=config
-                        ),
-                        # Covered only where today's destination is the one
-                        # each Allow was given for, from the resolver the
-                        # routes above use (owner, 2026-10-02).
-                        "reading": reading_policy.status(
-                            config, now=now, destinations=reading_route.destinations()
-                        ),
+                        **_reading_permissions(config, out_sessions, now),
                         # The reader's running analyses, board-wide rather than
                         # per row so a job is never a session field or history
                         # (DRC-4686). A reload reads the job from here.
@@ -1156,6 +1200,24 @@ class Application:
         # draws nothing rather than a panel that never fills.
         return {
             **({"unasked": True} if self.unasked_lane is not None else {}),
+            # Who an unasked check of each harness would reach, which is not the
+            # Analyze route on a harness with no producer of its own (owner,
+            # 2026-10-20). The page shows the Codex toggle from this, never from
+            # `reading_routes`, so it asks only where the lane would send.
+            **(
+                {
+                    "unasked_routes": {
+                        harness: {**route, "disclosure_parts": reading_route.unasked_parts(route)}
+                        for harness, route in reading_route.resolve_all(
+                            (str(row.get("harness") or "") for row in rows),
+                            config=self.config,
+                            unasked=True,
+                        ).items()
+                    }
+                }
+                if self.unasked_lane is not None
+                else {}
+            ),
             "unasked_off_reason": "run-disabled"
             if self.config.model_calls_disabled
             else "not-requested",

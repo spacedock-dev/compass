@@ -6,25 +6,45 @@ import { Disclosure, disclosureKey, useFocusKey } from '../controls';
 import { clock, endedAt } from '../observed';
 import { useDisplayed } from '../shell/context';
 import { ActionButton } from './ActionButton';
-import { discardStamp, revisionLine, storeUnreadable } from './annotation';
+import {
+  annotationDiscarded,
+  discardStamp,
+  heldCap,
+  revisionLine,
+  storeUnreadable,
+} from './annotation';
 import { heldSentence } from './cues';
 import {
   directionLinesQuestion,
+  directionWhy,
   intentChanges,
+  linesDraft,
+  linesToSend,
   intentDrafted,
   intentKey,
+  intentStatus,
+  DRAFT_UNSAVED,
   noDraftWhy,
 } from './derive';
 import { undoChanges } from './edit';
-import { GoalField } from './GoalField';
-import { OutcomeLines, AddOutcomeLine } from './OutcomeLines';
+import { ArmedDiscard, CaveatNotes, Caveats, LaterDirections } from './Caveats';
+import { ClearGoal, GoalField } from './GoalField';
+import { OutcomeLines } from './OutcomeLines';
 import { saveIntent } from './save';
-import { ENDED_CAVEAT } from './sentences';
+import { saveIntentAndLine } from './directions';
+import {
+  ENDED_CAVEAT,
+  INTENT_EDITED_ADD,
+  INTENT_MEASURED,
+  READ_FROM_NOW_WHY,
+  isReadsFrom,
+} from './sentences';
+import { REVISION_DEFINITION } from '../drift/sentences';
 import { usePanel } from './useIntent';
 import { HowTo } from './HowTo';
 
-/* Save remains in view over an untouched prompt draft; Undo appears after a goal edit or a pending
-   prompt choice. Outcome-only edits retain native undo and Escape without adding a first-view control. */
+/* The controls sit together on the left and are always drawn, as the design has them: Save intent and Undo
+   changes, inert until there is something to undo. Add a line lives inside the Expected outcome accordion. */
 function Footer() {
   const { ctx, input, session, payload } = usePanel();
   const key = intentKey(session);
@@ -46,36 +66,63 @@ function Footer() {
   const kind = saving ? '' : ctx.held.kind(key);
   const cue = [
     heldSentence(kind, null),
-    kind === 'saved' && endedAt(session) !== null ? ENDED_CAVEAT : '',
+    (kind === 'saved' || isReadsFrom(kind)) && endedAt(session) !== null ? ENDED_CAVEAT : '',
   ]
     .filter(Boolean)
     .join(' ');
   const question = directionLinesQuestion(ctx.held, session);
+  /* The one save for the card, and for a pending line beside it: an open later-direction line is added by this
+     same press, so the card never draws a second Save. */
+  const line = ctx.held.directions.get(compatSessKey(session));
+  const lineLive =
+    Boolean(line) &&
+    typeof line?.text === 'string' &&
+    Boolean(line.text.trim()) &&
+    !line.pending &&
+    !question &&
+    [INTENT_EDITED_ADD, ''].includes(directionWhy(line, input, heldCap(input.payload)));
+  const saveLive = ((changes.any || changes.adoptable) && !question) || lineLive;
+  /* Offered only over words that are saved: the first save opens the window by itself, so beside it the
+     choice would be a second button for one act. `revision_count` is the store's own count and is 0 for none. */
+  const reopenable =
+    (nextNumber(input.annotation?.['revision_count']) ?? 0) > 0 &&
+    !annotationDiscarded(input.annotation);
   /* Undo is inert while its save is in flight: reverting the box would leave the words being sent unseen. */
   return (
     <div className="next-cockpit-held-footer">
-      <AddOutcomeLine />
       <span className="next-cockpit-held-tools">
-        {changes.goal || changes.pending ? (
-          <ActionButton
-            label="Undo changes"
-            action="held-undo"
-            arg="intent"
-            inert={!(changes.undoable && !saving)}
-            focusKey={`${key}:undo`}
-            onPress={() => undoChanges(ctx, input)}
-          />
-        ) : null}
         <ActionButton
           label="Save intent"
+          className={`font-bold px-4 ${saveLive || saving ? 'border-[var(--accent)] text-[color:var(--accent)]' : ''}`}
           busyLabel="Saving…"
           pendingKey={`${key}:save`}
           action="held-save"
           arg="intent"
-          inert={!((changes.any || changes.adoptable) && !question)}
+          inert={!saveLive}
           describedBy={absent.join(' ')}
           focusKey={`${key}:save`}
-          onPress={() => void saveIntent(ctx, session)}
+          onPress={() => void saveIntentAndLine(ctx, session)}
+        />
+        {reopenable ? (
+          <ActionButton
+            label="Read from my latest message"
+            busyLabel="Saving…"
+            pendingKey={`${key}:save`}
+            action="held-save-from-now"
+            arg="intent"
+            title={READ_FROM_NOW_WHY}
+            inert={!saveLive}
+            focusKey={`${key}:save-from-now`}
+            onPress={() => void saveIntent(ctx, session, true)}
+          />
+        ) : null}
+        <ActionButton
+          label="Undo changes"
+          action="held-undo"
+          arg="intent"
+          inert={!(changes.undoable && !saving)}
+          focusKey={`${key}:undo`}
+          onPress={() => undoChanges(ctx, input)}
         />
       </span>
       {cue ? <small className="next-cockpit-held-cue">{cue}</small> : null}
@@ -104,11 +151,61 @@ export function SavedStamp() {
       summary={`Saved${start !== null && start > 0 ? ` · reads from ${clock(start)}` : ''}`}
       className="next-cockpit-held-stamp"
     >
-      <p>Adding a line keeps this window; saving new goal words opens another.</p>
+      <p>
+        Editing the goal or adding a line keeps this start. Read from my latest message moves it.
+      </p>
       <span className="next-cockpit-held-revision">{line}</span>
-      <span className="next-cockpit-define">Each save is a revision.</span>
+      <span className="next-cockpit-define">{REVISION_DEFINITION}</span>
       <span className="next-cockpit-held-bound">{compatSessKey(session)}</span>
     </Disclosure>
+  );
+}
+
+/* What the retired session More held about the reader's words, reduced to what the design has: the reading's
+   start beside the card, and one quiet menu for the rest (the sentence saying drift is measured against these
+   words, Clear, how Intent and drift works, the caveats, Discard everything and the state of later
+   directions). What became of discarded words stays in the card, because it says what became of the reader's
+   words. Each part draws nothing when it has nothing to say.
+   [The More inventory](../../../docs/design-reading-a-session.md#where-everything-in-more-went) */
+function Kept() {
+  const { project, session, input, payload } = usePanel();
+  const menu = disclosureKey({ project, scope: compatSessKey(session), name: 'intent-menu' });
+  /* The menu holds what acts on words that exist: Clear, the caveats, Discard everything, later directions.
+     Under an empty or discarded form it held only the how-to and drew as a lone "More", so it is left out
+     until the box or the store holds words. A discard's own account is drawn by CaveatNotes, not here. */
+  const changes = intentChanges(input);
+  const offered = (nextNumber(input.annotation?.['revision_count']) ?? 0) > 0;
+  const words =
+    offered ||
+    Boolean(changes.typed.trim()) ||
+    linesToSend(linesDraft(input.held, session, input.annotation)).length > 0;
+  const stamped = Boolean(revisionLine(input.annotation, nextNumber(payload['generated'])));
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label text-muted-foreground [&_.next-session-drift-caveats]:contents [&_.next-cockpit-held-discard]:mt-0 [&_.next-cockpit-held-hint]:flex-initial [&_.next-cockpit-held-hint]:text-label"
+      data-next-intent-kept
+    >
+      <SavedStamp />
+      <CaveatNotes />
+      {words || stamped ? (
+        <Disclosure
+          disclosureKey={menu}
+          summary="More"
+          summaryLabel="More about these words"
+          variant="popover"
+          focusKey={`intent-menu:${compatSessKey(session)}`}
+        >
+          <p className="next-cockpit-held-hint" data-next-intent-measured>
+            {INTENT_MEASURED}
+          </p>
+          <ClearGoal />
+          <Caveats />
+          <LaterDirections />
+          <HowTo />
+        </Disclosure>
+      ) : null}
+      <ArmedDiscard />
+    </div>
   );
 }
 
@@ -119,6 +216,7 @@ export function IntentSection() {
     ctx.shell.controls.focusLane,
     `intent:${compatSessKey(session)}`,
   );
+  const status = useDisplayed((snapshot) => intentStatus(input, snapshot.pending));
   const annotation = input.annotation;
   const generated = nextNumber(payload['generated']);
   const stamp = discardStamp(annotation, generated);
@@ -126,18 +224,35 @@ export function IntentSection() {
   const why = drafted ? '' : noDraftWhy(session, annotation, payload);
   const unreadable = storeUnreadable(payload);
   return (
-    <Card variant="intent-panel" as="section" className="next-cockpit-held">
+    <Card
+      variant="intent-panel"
+      as="section"
+      className="next-cockpit-held"
+      aria-labelledby="next-session-intent-heading"
+    >
       <header className="flex-wrap">
-        <h2
-          id="next-session-intent-heading"
-          ref={heading}
-          tabIndex={-1}
-          data-next-focus={`intent:${compatSessKey(session)}`}
-        >
-          Intent
-        </h2>
-        <SampleMark id="intent" />
-        <HowTo />
+        {/* The mark beside the heading it notes, not spread to the middle of the row. */}
+        <span className="flex items-baseline">
+          <h2
+            id="next-session-intent-heading"
+            ref={heading}
+            tabIndex={-1}
+            data-next-focus={`intent:${compatSessKey(session)}`}
+          >
+            Intent
+          </h2>
+          <SampleMark id="intent" />
+        </span>
+        <span className="ms-auto flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          {status ? (
+            <span
+              className={`[font-family:var(--mono)] text-label ${status === 'Saved' || status === DRAFT_UNSAVED ? 'text-muted-foreground' : 'text-[var(--amber)]'}`}
+              data-next-intent-status
+            >
+              {status}
+            </span>
+          ) : null}
+        </span>
       </header>
       {/* Under the heading rather than in its header, so the revision line keeps the sentence tier. */}
       {why ? (
@@ -156,6 +271,7 @@ export function IntentSection() {
         <OutcomeLines />
       </div>
       <Footer />
+      <Kept />
     </Card>
   );
 }

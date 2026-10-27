@@ -122,8 +122,10 @@ def legacy_header(
     tool_note: bool = False,
     claims: bool = False,
     scope: str = "last-turn",
+    no_lines: bool = False,
 ) -> str:
     del scope  # Historical header had no scope directive; actual scope remains current.
+    del no_lines  # Nor the goal-alone rule the current header gained on 2026-10-22.
     # This is immutable trusted repository code, never transcript or caller source.
     if digest(LEGACY_HEADER_SOURCE) != LEGACY_HEADER_SHA256:
         raise ValueError("Frozen historical header source changed")

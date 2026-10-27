@@ -1,6 +1,9 @@
 import { buttonVariants } from '../ui/button';
 import { cn } from '../lib/utils';
 import { fragmentForRoute, sessionHome, type Route, type TopLevelView } from '../router/grammar';
+import type { PayloadData } from '../api/types';
+import { SAMPLE_FIXTURE } from '../sample/fixture';
+import { isSampleRoute } from '../sample/ids';
 import { findSession, sessionTitle } from './derive';
 import { useDisplayed } from './context';
 
@@ -42,7 +45,9 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
       </>
     );
   } else {
-    const session = findSession(data, route.project, route.harness, route.session);
+    /* The sample's session is on its own board, not the one this page polls, so its crumb reads its title there. */
+    const board = isSampleRoute(route) ? (SAMPLE_FIXTURE.board as unknown as PayloadData) : data;
+    const session = findSession(board, route.project, route.harness, route.session);
     const label = session ? sessionTitle(session) : 'Session';
     const current = (
       <>

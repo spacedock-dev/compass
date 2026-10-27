@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import observer, project_context, semantic_history, sessions, spacedock
+from compass_runtime import (
+    observer,
+    project_context,
+    reading_route,
+    semantic_history,
+    sessions,
+    spacedock,
+)
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -171,7 +178,9 @@ class ProjectContextTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def collect(self, *, refresh: bool = True, focused: bool = True) -> dict[str, Any]:
+    def collect(
+        self, *, refresh: bool = True, focused: bool = True, model_consent: bool = False
+    ) -> dict[str, Any]:
         state = build_runtime_state(self.config, started=self.NOW)
         sessions = [
             {
@@ -198,6 +207,7 @@ class ProjectContextTest(unittest.TestCase):
             "repo/proj",
             now=self.NOW,
             refresh=refresh,
+            model_consent=model_consent,
             focus=("pi", self.SID) if focused else None,
         )
 
@@ -611,6 +621,101 @@ class ProjectContextTest(unittest.TestCase):
             project_context.MAX_PROJECT_OBSERVERS,
             result["sources"]["surrounding_active"],
         )
+
+    def test_focused_goal_refresh_honors_off_and_publishes_the_notice(self) -> None:
+        self.model.stop()
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        reading_policy.set_consent(self.config, False, now=self.NOW)
+        with mock.patch.object(observer, "codex_exec") as execute:
+            off = self.collect(model_consent=True)
+        execute.assert_not_called()
+        self.assertEqual("model-calls-paused", off["observers"][0]["model"]["status"])
+        self.assertNotIn("notice", off["observer_model"])
+        reading_policy.set_consent(self.config, True, now=self.NOW + 1)
+
+        def execute_goal(*_args: Any, **kwargs: Any) -> tuple[str, str]:
+            kwargs["before_call"]()
+            return "ship the parser", "ok"
+
+        with mock.patch.object(observer, "codex_exec", side_effect=execute_goal):
+            on = self.collect(model_consent=True)
+            again = self.collect(model_consent=True)
+        self.assertTrue(on["observer_model"]["enabled"])
+        self.assertEqual("goal", on["observer_model"]["notice"]["kind"])
+        self.assertEqual(
+            reading_route.destination(reading_route.CODEX),
+            on["observer_model"]["notice"]["destination"],
+        )
+        self.assertNotIn("notice", again["observer_model"])
+        self.assertNotIn("?", on["observer_model"]["disclosure"])
+        self.assertIn("Pause model calls", on["observer_model"]["disclosure"])
+
+    def test_a_childs_goal_call_publishes_the_notice_it_recorded(self) -> None:
+        # The child is observed before its parent, so its call is the one that
+        # records the notice; the parent then finds none due.
+        from compass_runtime import reading_policy  # noqa: PLC0415
+
+        reading_policy.store_path(self.config).unlink(missing_ok=True)
+        state = build_runtime_state(self.config, started=self.NOW)
+        parent = {
+            "project": "repo/proj",
+            "harness": "codex",
+            "sid": "parent-thread",
+            "last_activity": self.NOW,
+            "active": True,
+            "subagent_hierarchy": [
+                {"name": "Volta", "depth": 1, "parent_name": None, "observer_sid": "child"}
+            ],
+        }
+        for goal in ("Improve the assignment roster", observer.NO_GOAL):
+            with self.subTest(goal=goal):
+                reading_policy.set_consent(self.config, False, now=self.NOW)
+                reading_policy.set_consent(self.config, True, now=self.NOW)
+
+                def observe_child(*_args: Any, child_goal: str = goal, **_kwargs: Any) -> Any:
+                    notice = reading_policy.note(
+                        self.config,
+                        kind="goal",
+                        provider="codex",
+                        destination="OpenAI",
+                        content=reading_policy.CONTENT_VERSION,
+                        tool_output="",
+                        now=self.NOW,
+                    )
+                    return {
+                        "goal": child_goal,
+                        "observed_at": self.NOW,
+                        "snapshot_status": "refreshed",
+                        "notice": notice,
+                    }
+
+                with (
+                    mock.patch.object(
+                        observer,
+                        "resolve_transcript",
+                        side_effect=lambda _c, _s, _h, sid: (
+                            "/tmp/child.jsonl" if sid == "child" else None
+                        ),
+                    ),
+                    mock.patch.object(
+                        project_context, "_observe_session", side_effect=observe_child
+                    ),
+                ):
+                    result = project_context.collect(
+                        self.config,
+                        state,
+                        [parent],
+                        "repo/proj",
+                        now=self.NOW,
+                        refresh=True,
+                        model_consent=True,
+                        focus=("codex", "parent-thread"),
+                    )
+                notice = result["observer_model"]["notice"]
+                self.assertEqual("goal", notice["kind"])
+                self.assertEqual("OpenAI", notice["destination"])
+                self.assertNotIn("notice", result["child_assignments"][0])
 
     def test_refresh_without_model_consent_uses_local_analysis(self) -> None:
         # Given: model analysis is enabled but no consent was supplied.

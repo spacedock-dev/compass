@@ -1,8 +1,3 @@
-import { useLayoutEffect, type ReactNode } from 'react';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../ui/collapsible';
-import { useControls } from '../controls/kit';
-import { useControlledDisclosureState } from '../controls/useDisclosureState';
-import { useRevealFragment } from '../controls/useRevealFragment';
 import { compatSessKey } from '../api/identity';
 import { nextNumber } from '../api/bootstrap';
 import { Disclosure, disclosureKey } from '../controls';
@@ -72,10 +67,9 @@ export function LaterDirections() {
   }
   const generated = nextNumber(payload['generated']);
   const age = durationSince(generated, settledAt);
-  const revision = nextNumber(annotation?.['settled_revision']);
   return block(
     age === null ? 'settled' : `settled ${age} ago`,
-    `You settled this${age === null ? '' : ` ${age} ago`}${revision === null ? '' : `, against revision ${String(revision)}`}. A direction given after that will raise it again.`,
+    `You settled this${age === null ? '' : ` ${age} ago`}. A direction given after that will raise it again.`,
     'next-cockpit-conflict-settled',
   );
 }
@@ -113,38 +107,81 @@ function discardView(panel: ReturnType<typeof usePanel>): DiscardView | null {
   };
 }
 
-function ArmedDiscard({ name, children }: { readonly name: string; readonly children: ReactNode }) {
-  const { ctx, session } = usePanel();
-  const controls = useControls();
-  const open = useControlledDisclosureState(controls.disclosures, name);
-  const panelRef = useRevealFragment(name);
-  useLayoutEffect(() => {
-    controls.disclosures.set(name, true);
-    return () => controls.disclosures.set(name, false);
-  }, [controls, name]);
+/* What became of discarded words stays on the card, outside the menu that holds the offer to discard. */
+export function CaveatNotes() {
+  const panel = usePanel();
+  const { input, session, payload } = panel;
+  const discard = discardView(panel);
+  const account = discardAccount(
+    input.annotation,
+    session['departures'],
+    publishedDiscard(payload),
+    !discard?.landed,
+  );
+  if (!account.length && !discard?.landed) return null;
   return (
-    <Collapsible
-      className="ctl-disclosure next-cockpit-held-discard-offer"
-      open={open}
-      onOpenChange={(next, detail) => {
-        if (detail.reason === 'trigger-press') controls.noteToggle();
-        controls.disclosures.set(name, next);
-      }}
+    <div className="next-session-drift-caveats">
+      {account.map((said) => (
+        <p key={said} className="next-cockpit-held-absent">
+          {said}
+        </p>
+      ))}
+      {discard?.landed ? (
+        <div className="next-cockpit-held-discard">
+          <small className="next-cockpit-held-cue">{discard.landed}</small>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* The armed offer is drawn outside the menu, in the card, from the press that arms it until it is confirmed,
+   kept or lapses. In the menu its warning was hidden whenever the menu was closed, which an Escape, a focus
+   move or a refresh did, and the menu moved between the first press and the second. Escape keeps the words,
+   as the Keep button does. */
+export function ArmedDiscard() {
+  const panel = usePanel();
+  const { ctx, session } = panel;
+  const view = discardView(panel);
+  if (!view?.offer || !view.armed) return null;
+  const key = discardKey(session);
+  return (
+    <div
+      className="next-cockpit-held-discard basis-full"
+      role="group"
+      aria-label="Discard everything"
+      data-next-intent-armed-discard
       onKeyDown={(event) => {
         if (event.key !== 'Escape' || !disarmDiscard(ctx, session)) return;
         event.preventDefault();
         event.stopPropagation();
       }}
     >
-      <CollapsibleTrigger>Discard everything</CollapsibleTrigger>
-      <CollapsibleContent
-        ref={panelRef}
-        hiddenUntilFound
-        className="transition-none h-auto data-[starting-style]:h-auto data-[ending-style]:h-auto data-[starting-style]:opacity-100 data-[ending-style]:opacity-100"
-      >
-        {children}
-      </CollapsibleContent>
-    </Collapsible>
+      {view.why ? <p className="next-cockpit-held-absent">{view.why}</p> : null}
+      <p className="next-cockpit-held-absent" id="next-cockpit-discard-armed">
+        {view.warning}
+      </p>
+      <span className="flex flex-wrap gap-2">
+        <ActionButton
+          weight="secondary"
+          tone="muted"
+          strongBorder
+          label="Confirm discard"
+          busyLabel="Discarding…"
+          pendingKey={key}
+          action="held-discard"
+          focusKey={key}
+          describes="next-cockpit-discard-armed"
+          onPress={(detail) => pressDiscard(ctx, session, detail)}
+        />
+        <ActionButton
+          weight="secondary"
+          label="Keep my words"
+          action="held-discard-keep"
+          onPress={() => void disarmDiscard(ctx, session)}
+        />
+      </span>
+    </div>
   );
 }
 
@@ -152,45 +189,28 @@ function DiscardBlock({ view }: { readonly view: DiscardView }) {
   const { ctx, session } = usePanel();
   const key = discardKey(session);
   const name = useKey('held-discard');
-  const { offer, armed, landed, warning, why } = view;
-  const button = (
-    <ActionButton
-      weight="secondary"
-      tone="muted"
-      strongBorder={armed}
-      label={armed ? 'Confirm discard' : 'Discard everything'}
-      busyLabel="Discarding…"
-      pendingKey={key}
-      action="held-discard"
-      focusKey={key}
-      describes={warning ? 'next-cockpit-discard-armed' : ''}
-      onPress={(detail) => pressDiscard(ctx, session, detail)}
-    />
-  );
+  const { offer, armed, why } = view;
+  // While armed, the question is the card's (`ArmedDiscard`), so the menu holds no second copy of it.
+  if (!offer || armed) return null;
   return (
     <div className="next-cockpit-held-discard">
-      {offer ? (
-        /* Arming gives the warning its own store key, initially open; the ordinary offer keeps its reader state. */
-        armed ? (
-          <ArmedDiscard name={`${name}:armed`}>
-            {why ? <p className="next-cockpit-held-absent">{why}</p> : null}
-            {button}
-            <p className="next-cockpit-held-absent" id="next-cockpit-discard-armed">
-              {warning}
-            </p>
-          </ArmedDiscard>
-        ) : (
-          <Disclosure
-            disclosureKey={name}
-            summary="Discard everything"
-            className="next-cockpit-held-discard-offer"
-          >
-            {why ? <p className="next-cockpit-held-absent">{why}</p> : null}
-            {button}
-          </Disclosure>
-        )
-      ) : null}
-      {landed ? <small className="next-cockpit-held-cue">{landed}</small> : null}
+      <Disclosure
+        disclosureKey={name}
+        summary="Discard everything"
+        className="next-cockpit-held-discard-offer"
+      >
+        {why ? <p className="next-cockpit-held-absent">{why}</p> : null}
+        <ActionButton
+          weight="secondary"
+          tone="muted"
+          label="Discard everything"
+          busyLabel="Discarding…"
+          pendingKey={key}
+          action="held-discard"
+          focusKey={key}
+          onPress={(detail) => pressDiscard(ctx, session, detail)}
+        />
+      </Disclosure>
     </div>
   );
 }
@@ -199,7 +219,7 @@ function DiscardBlock({ view }: { readonly view: DiscardView }) {
    do. The discard account stays in view, because it says what became of the reader's words. */
 export function Caveats() {
   const panel = usePanel();
-  const { input, session, payload } = panel;
+  const { input, session } = panel;
   const key = useKey('held-saved-about');
   const annotation = input.annotation;
   const ended = endedAt(session) !== null;
@@ -207,9 +227,8 @@ export function Caveats() {
     annotation?.['binding_why'] && (annotation['goal'] || annotationLines(annotation).length)
       ? String(annotation['binding_why'])
       : '';
-  const account = discardAccount(annotation, session['departures'], publishedDiscard(payload));
   const discard = discardView(panel);
-  if (!(ended || binding) && !account.length && !discard) return null;
+  if (!(ended || binding) && !discard?.offer) return null;
   return (
     <div className="next-session-drift-caveats">
       {ended || binding ? (
@@ -223,12 +242,7 @@ export function Caveats() {
           {binding ? <p className="next-cockpit-held-absent">{binding}</p> : null}
         </Disclosure>
       ) : null}
-      {account.map((said) => (
-        <p key={said} className="next-cockpit-held-absent">
-          {said}
-        </p>
-      ))}
-      {discard ? <DiscardBlock view={discard} /> : null}
+      {discard?.offer ? <DiscardBlock view={discard} /> : null}
     </div>
   );
 }

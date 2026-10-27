@@ -95,6 +95,7 @@ export function AnswerBlock({
       as="section"
       variant="session-ask"
       className="next-session-section"
+      aria-label="Asked you"
       data-next-session-section="ask"
     >
       <div className="next-session-ask-callout">

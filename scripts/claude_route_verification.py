@@ -736,6 +736,9 @@ def app_binding(application: Any, selected: dict[str, Any]) -> str:
         now=application.clock(),
         settle_sec=config.reading_settle_sec,
         admit_turn_stop=True,
+        # Not the idle admission of 2026-10-20: the qualification this press follows was accepted
+        # under the earlier rule, which withheld an idle session with no recorded finish.
+        admit_idle=False,
     )
     _require(scope and not why, "native Claude session is not eligible")
     transcript = observer.resolve_transcript(config, application.state, "claude", selected["sid"])

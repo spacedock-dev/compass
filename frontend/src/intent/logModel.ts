@@ -1,8 +1,9 @@
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
 import { isRecord, records, type Row } from '../observed';
+import { datedClock } from '../observed/values';
 import { LANE_OFF_RECORD } from '../sessions/detail';
-import { PROMPT_SOURCES } from '../sessions/intent';
+import { PROMPT_SOURCES, SESSION_GOAL } from '../sessions/intent';
 import {
   annotationDiscarded,
   annotationLines,
@@ -69,15 +70,25 @@ function departures(row: Row, unasked: boolean): string {
   return String(row['departure_why'] || '').trim();
 }
 
-/* Compact on purpose: the session page's drift block owns the full sentence about a reading that read an
-   older revision, and a list row says the same fact in the space it has. */
+/* Compact on purpose: the session page's drift block owns the full sentence about a reading made against
+   older words, and a list row says the same fact in the space it has. */
 function reading(row: Row): string {
   const raw = row['assessment'];
   const read = isRecord(raw) ? nextNumber(raw['revision_read']) : null;
   const current = nextNumber(row['revision']);
   if (read !== null) {
-    const stale = current !== null && read !== current ? `, ${String(current)} is current` : '';
-    return `read revision ${String(read)}${stale}`;
+    const readAt = isRecord(raw) ? nextNumber(raw['read_at']) : null;
+    const changedAt = nextNumber(row['at']);
+    const moved = current !== null && read !== current;
+    const made =
+      readAt !== null && readAt > 0 ? `read at ${datedClock(readAt)}` : 'read your intent';
+    const changed =
+      moved && changedAt !== null && changedAt > 0
+        ? `; intent changed at ${datedClock(changedAt)}`
+        : moved
+          ? '; intent changed since'
+          : '';
+    return `${made}${changed}`;
   }
   const withheld = String(row['reading_withheld'] || '').trim();
   if (withheld) return withheld;
@@ -95,6 +106,8 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   const cachedGoal = session?.['cached_deterministic_goal'];
   const cached = isRecord(cachedGoal) ? cachedGoal : null;
   const goal = String((cached && cached['goal']) || '').trim();
+  const stated = session?.['session_goal'];
+  const statedGoal = String((isRecord(stated) && stated['text']) || '').trim();
   const spacedock = session?.['spacedock'];
   const workflows =
     payload['spacedock_enabled'] === false
@@ -109,9 +122,11 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   if (discarded) line('Your words', String(row['discarded_why'] || ''));
   if (typed) {
     line(
-      PROMPT_SOURCES.includes(row['goal_source'] as string)
-        ? 'Goal from your prompt'
-        : 'Typed goal',
+      row['goal_source'] === SESSION_GOAL
+        ? 'Goal from /goal'
+        : PROMPT_SOURCES.includes(row['goal_source'] as string)
+          ? 'Goal from your prompt'
+          : 'Typed goal',
       String(row['goal'] || row['goal_why'] || 'No goal typed for this session.'),
     );
     const lines = annotationLines(row);
@@ -137,6 +152,9 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   } else {
     line('Cached deterministic goal', 'No cached deterministic goal available.');
   }
+  /* A /goal is a fourth place a goal can live, so a session that states one never reads as
+     goal-less: the sentence below is scoped to the sources listed, and a reader takes it for the session. */
+  if (statedGoal) line('Goal stated with /goal', statedGoal);
   if (payload['spacedock_enabled'] === false)
     line('Workflow goal', 'Spacedock is off for this run.');
   else if (!workflows.length) line('Workflow goal', 'No workflow goal published.');
@@ -149,6 +167,7 @@ function sources(row: Row, session: Row | null, retained: boolean, payload: Row,
   if (
     !(typed && String(row['goal'] || '').trim()) &&
     !goal &&
+    !statedGoal &&
     !workflows.some((workflow) => String(workflow['goal'] || '').trim())
   ) {
     why('No goal available from these sources.');
