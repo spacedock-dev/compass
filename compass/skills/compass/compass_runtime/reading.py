@@ -4610,9 +4610,21 @@ _REMOTE_CLAUSE = re.compile(
 )
 
 
+def _is_kind_list(job: str) -> bool:
+    """Whether every part of a joined token is itself a check word: a list of kinds, not a job."""
+    return all(
+        any(pattern.match(segment) for pattern in _CHECK_WORDS.values())
+        or all(
+            any(pattern.match(part) for pattern in _CHECK_WORDS.values())
+            for part in segment.lower().split("-")
+        )
+        for segment in job.lower().split("/")
+    )
+
+
 def _drop_remote_job(match: re.Match[str]) -> str:
     job = match["job"]
-    if _NOT_A_JOB.match(job):
+    if _NOT_A_JOB.match(job) or _is_kind_list(job):
         return match[0]
     if "/" in job and _PATH_AFTER.search(match.string[: match.start("job")]):
         return match[0]

@@ -5895,7 +5895,9 @@ with the job the evaluator meant. A phrase that names a remote job is now left o
 matches to local runs. Three shapes count, and nothing more:
 
 - a token joined by hyphens or slashes directly before `pass`, `passed`, `fail` or `failed` (`server-unittest pass`,
-  `ci/lint fail`), which is dropped whole and never split to find a kind word inside it. `type-check` and
+  `ci/lint fail`), which is dropped whole and never split to find a kind word inside it. A joined token whose every part is itself a check
+  word (`pytest/ruff pass`, `lint/type-check pass`, `tests/lint pass`) is a list of kinds, not a job name, and keeps
+  them; `ci/lint` and `build-and-test` hold a part that is no check word, so they stay job names. `type-check` and
   `typecheck` are not job names for this purpose, so "type-check passed" is still a local claim;
 - a clause that says `CI`, `Actions`, a workflow, or `check on` or `checks on` something, so "the tests pass in CI"
   claims nothing about a local run. `CI` and `Actions` are read in capitals only, because a bare lowercase `ci` and `actions` are
@@ -5907,7 +5909,7 @@ Clauses are still split at commas, full stops, semicolons and `and`, so "All 14 
 server-unittest check on the PR passed" agrees on the local claim alone. "The tests pass", "pytest passes" and
 "lint is clean" keep their match. Such a phrase contributes no kind, so a reason that is only remote reads as
 `nothing-checkable`. A ratio (`14/14 pass`) or a path after `in`, `under` or `of` is not a job name. Hyphen-joined local-sounding
-tokens such as `unit-tests` and `lint-staged` are an accepted loss: they read as nothing-checkable. Only the goal
+tokens with a part that is no check word, such as `unit-tests` and `lint-staged`, are an accepted loss: they read as nothing-checkable. Only the goal
 verdict reads this way; outcome-line coverage (`covers_line`) and what a write bears on are unchanged.
 Matching a job's name to a recorded CI fact is a separate rule and is not built here.
 Rejected: reading `server-unittest` as a test claim when a local test run exists, which is the wrong-reason

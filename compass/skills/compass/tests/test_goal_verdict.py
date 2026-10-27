@@ -279,6 +279,21 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
             frozenset(), reading._verdict_check_kinds("ci/lint failed earlier, then passed")
         )
 
+    def test_a_hyphen_joined_job_name_holding_a_kind_word_claims_no_kind(self) -> None:
+        for reason in ("server-unittest pass", "build-and-test passed", "ci/lint pass"):
+            with self.subTest(reason=reason):
+                self.assertEqual(frozenset(), reading._verdict_check_kinds(reason))
+
+    def test_a_joined_list_of_kinds_is_a_local_claim(self) -> None:
+        for reason, kinds in (
+            ("pytest/ruff pass", {"test", "lint"}),
+            ("lint/type-check pass", {"lint", "types"}),
+            ("tests/lint pass", {"test", "lint"}),
+            ("pytest-ruff pass", {"test", "lint"}),
+        ):
+            with self.subTest(reason=reason):
+                self.assertEqual(frozenset(kinds), reading._verdict_check_kinds(reason))
+
     def test_outcome_line_coverage_ignores_remote_phrasing(self) -> None:
         self.assertTrue(reading.covers_line("the tests pass in CI", "pytest -x"))
         self.assertTrue(reading.covers_line("the tests pass in CI", "python3 -m pytest tests"))
