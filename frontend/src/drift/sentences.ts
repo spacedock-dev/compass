@@ -192,10 +192,11 @@ export const goalVerdictPullRequest = (name: string): string =>
 export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
   `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;
 export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
-/* Both claims name the product, not the payload's harness label ("Claude"): only Claude Code reports a goal
-   met or ends one this way, and the Intent card's note says "Claude Code" too. */
-export const goalVerdictClaim = (at: string): string =>
-  `Claude Code marked this goal met at ${at}.`;
+/* Both claims name the product, not the payload's harness label ("Claude"). Claude Code and Codex report a
+   goal met; only Claude Code gives one up this way, and the Intent card's note says "Claude Code" too. */
+const VERDICT_PRODUCT: Readonly<Record<string, string>> = { claude: 'Claude Code', codex: 'Codex' };
+export const goalVerdictClaim = (at: string, harness = 'claude'): string =>
+  `${VERDICT_PRODUCT[harness] ?? 'The harness'} marked this goal met at ${at}.`;
 export const goalGaveUpClaim = (at: string): string => `Claude Code gave up on this goal at ${at}.`;
 /* A give-up is the harness's say-so about a goal it ended: Compass does not check it and it moves no level. */
 export const GOAL_GAVE_UP_LINE = 'Compass has not checked it, and it does not change the level.';

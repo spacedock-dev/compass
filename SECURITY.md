@@ -3422,10 +3422,20 @@ the model creates itself, so a goal the model wrote is never published as the re
 `User cleared the goal.` line Codex writes in its own `<codex_internal_context>` wrapper, published as
 `session_goal_cleared` only when a goal was held, because Codex writes the same line for a clear with no goal
 and before every new goal. An objective over 4,000 characters is stored by Codex as a sentence naming a file
-it wrote the words to; that sentence publishes nothing, and the file is not read. Codex reports a goal met
-only in `~/.codex/goals_1.sqlite`, which Compass does not read, so a Codex goal carries no `verdict` and no
-give-up. The `<codex_internal_context>` messages are Codex's own wording and are never read as a prompt the
-reader typed.
+it wrote the words to; that sentence publishes nothing, and the file is not read. The `<codex_internal_context>`
+messages are Codex's own wording and are never read as a prompt the reader typed.
+
+Codex records a goal met only in `goals_1.sqlite`, beside `sessions/` under `CODEX_HOME` (`~/.codex` by default),
+so that file is read too (amended 2026-10-27). It is opened read-only through SQLite's `mode=ro` URI and never
+written. One query reads the thread id, objective and the two timestamps of rows whose status is `complete`,
+at most 10,000 of them, and nothing else in the file: not the token budget, the tokens or time used, or any
+other status. A row attaches to a Codex row's `session_goal` as `verdict` (`{met, at, reason}`, with an empty
+reason, because Codex records none) only when its thread id is the session's id and its set time and masked
+words match the goal the rollout published, so an edited, replaced or cleared goal never inherits another's
+completion. The working model marks its own goal complete, so the verdict is weaker than Claude Code's
+evaluator, and it is published and tested the same way: as the harness's claim, which a reading checks and
+which never moves a level. A missing file, a build without `sqlite3`, or a read that fails publishes no
+verdict; a failed read is kept as a store error. Codex records no give-up, so a Codex goal never carries one.
 
 An Antigravity session that states a goal with `/goal` has it read from the person's own typed input in
 `brain/<conversation>/.system_generated/logs/transcript_full.jsonl`, a file beside the `transcript.jsonl`

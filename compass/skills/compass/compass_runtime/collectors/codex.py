@@ -610,7 +610,8 @@ def collect(
         # The session's own `/goal`, behind the same guard as the first prompt below, so a row
         # the rollout was not read for publishes none. Read before the clear, which comes from
         # the same cache entry.
-        goal = claude_data.session_goal(config, state, fp, "codex") if info else None
+        # Completion reaches only Codex's goal file, so the verdict is read there, for this goal.
+        goal = claude_data.codex_session_goal(config, state, fp, sid) if info else None
         s = sessions.base_session(
             "codex",
             sid,
