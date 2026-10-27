@@ -168,12 +168,12 @@ class WhatTheReportNeverHolds(unittest.TestCase):
             ("npx supersecrettoken", "npx"),
             ("uv run hunter2", "uv run"),
             ("rtk hunter2", "rtk"),
-            ("pnpm exec hunter2", "pnpm"),
+            ("pnpm exec hunter2", "pnpm exec"),
             ("FOO=1 npx hunter2", "npx"),
             ("rtk git status", "git status"),
         ):
             heads: collections.Counter[str] = collections.Counter()
-            call = pc._ShellCall(0.0, "/", {"command": command})  # noqa: SLF001
+            call = pc._ShellCall(0.0, "/", {"command": command})
             command_coverage._count_heads(call, pc, heads)
             self.assertEqual({expected}, set(heads), command)
 
