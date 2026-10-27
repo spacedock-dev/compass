@@ -201,6 +201,7 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
                         "test:c": "jest -u",
                         "test:d": "pytest --snapshot-update",
                         "lint:a": "rubocop -A",
+                        "lint:b": "ruff check --fix-only .",
                         "typecheck": "tsc --noEmit --watch",
                     }
                 )
@@ -215,6 +216,7 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
             "test:c",
             "test:d",
             "lint:a",
+            "lint:b",
             "typecheck",
         ):
             self.ran(f"pnpm run {name}")
