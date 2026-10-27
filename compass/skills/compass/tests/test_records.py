@@ -1304,6 +1304,7 @@ class MaskCommandTest(unittest.TestCase):
     def test_the_prose_path_still_masks_an_authorization_value(self) -> None:
         self.assertNotIn(
             "FakeTok99", records.mask_prose("send Authorization: Bearer FakeTok99 to it")
+        )
 
     def test_a_pytest_plugin_flag_shows_only_for_pytest_and_only_as_no_identifier(self) -> None:
         pytest_line = ["python", "-m", "pytest", "-p", "no:cacheprovider", "-p", "myplugin"]

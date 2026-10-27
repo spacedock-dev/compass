@@ -897,7 +897,9 @@ def _positional_credential(words: list[str], start: int, program: str) -> int:
 _PYTEST_PLUGIN_OFF: Final = re.compile(r"no:[A-Za-z_][A-Za-z0-9_.]*")
 
 
-def mask_words(words: list[str], *, prose: bool = False, pytest: bool = False) -> list[str]:
+def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
+    words: list[str], *, prose: bool = False, pytest: bool = False
+) -> list[str]:
     """Each word of a command with every value a named form carries replaced.
 
     Per word, before the words are joined and re-quoted, so a quoted value with
