@@ -2092,6 +2092,9 @@ def _read_cases(  # noqa: C901, PLR0913 - native pipeline with explicit isolated
                 read_incomplete=press.read_incomplete,
                 # The listing's cap leaving out a pass or a write, as the press reads it.
                 passes_and_writes=press.passes_and_writes,
+                # The values a shell call masked, which scrub the explanation a reading stores.
+                # They never reach the prompt, so no frozen prompt byte or digest moves.
+                masked_values=press.masked_values,
             )
             model = _Charged(
                 inner,

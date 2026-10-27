@@ -1141,3 +1141,74 @@ class TheScreenFindsAClaimDeepInALongReply(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheReplayScrubsWhatTheRuntimeScrubs(unittest.TestCase):
+    """The press hands the producer the values a shell call masked; a replay must as well."""
+
+    SECRET = "FakePass99"  # noqa: S105
+
+    def setUp(self) -> None:
+        self.enterContext(mock.patch.object(campaign_guard, "active_campaign", return_value=None))
+
+    def replay(self) -> tuple[list[Any], dict[str, Any]]:
+        real_facts_at = dr.facts_at
+        seen: list[Any] = []
+        _config, _context, _live, _correction, reading = dr._runtime()
+        real_produce = reading.produce
+
+        def facts_at(*args: Any, **kwargs: Any) -> Any:
+            facts, press = real_facts_at(*args, **kwargs)
+            return facts, press._replace(masked_values=frozenset({self.SECRET}))
+
+        def produce(*args: Any, **kwargs: Any) -> Any:
+            seen.append(kwargs.get("tool_output"))
+            return real_produce(*args, **kwargs)
+
+        reply = json.dumps(
+            {
+                "goal": {
+                    "result": "not_reached",
+                    "cites": [1],
+                    "detail": f"The login still needs {self.SECRET} typed in.",
+                }
+            }
+        )
+        with (
+            _Session() as s,
+            mock.patch.object(dr, "facts_at", facts_at),
+            mock.patch.object(reading, "produce", produce),
+        ):
+            home = _Home(s)
+            ledger = dr.Ledger(str(s.home / "spend.json"))
+            done: dict[str, Any] = {}
+            dr._read_cases(
+                home.body,
+                home.paths,
+                lambda _prompt, **_kw: (reply, "ok"),
+                ledger,
+                done,
+                "fixtures",
+                ("realistic",),
+                dry_run=False,
+                say=lambda _line: None,
+            )
+        return seen, done
+
+    def test_the_press_values_reach_the_producer_the_replay_calls(self) -> None:
+        seen, _done = self.replay()
+        self.assertTrue(seen)
+        for tool_output in seen:
+            self.assertEqual(frozenset({self.SECRET}), tool_output.masked_values)
+
+    def test_a_masked_value_in_a_stored_explanation_is_scrubbed(self) -> None:
+        _seen, done = self.replay()
+        explanations = [
+            criterion["detail"]
+            for arms in done.values()
+            for entry in arms.values()
+            for criterion in entry["assessment"]["criteria"].values()
+        ]
+        # Vacuous if no explanation survived to be scrubbed: the assertion below needs one.
+        self.assertTrue(any(explanations), explanations)
+        self.assertNotIn(self.SECRET, json.dumps(explanations))
