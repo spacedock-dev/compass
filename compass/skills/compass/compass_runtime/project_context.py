@@ -1528,6 +1528,7 @@ def _pi_outcome(
         attributable=attributable,
         flag_result=flag_result,
         summary=_summary_for(call, index, call.words[index][0], attributable, tail=tail),
+        flag_failed=flag is True,
     )
     reason = _withheld_reason(
         call,
@@ -3954,13 +3955,20 @@ _LAST_LINE_SUMMARIES: dict[str, tuple[re.Pattern[str], re.Pattern[str]]] = {
         re.compile(r"Found [1-9]\d* errors?\.|\[\*\] \d+ fixable with the .+|No fixes available.*"),
     ),
     "vitest": (
-        re.compile(
-            r"\s*Tests\s+(?:\d+ \w+(?: \| )?)*[1-9]\d* passed(?: \| \d+ \w+)*(?: \(\d+\))?\s*"
-        ),
+        re.compile(r"\s*Tests\s+(?:\d+ \w+ \| )*[1-9]\d* passed(?: \| \d+ \w+)*(?: \(\d+\))?\s*"),
         re.compile(r"\s*Tests\s+(?:\d+ \w+ \| )*[1-9]\d* failed(?: \| \d+ \w+)*(?: \(\d+\))?\s*"),
     ),
     "node": (re.compile(rf"{_INFO} fail 0"), re.compile(rf"{_INFO} fail [1-9]\d*")),
 }
+
+
+# Lines a runner prints after its summary line, skipped only from the end of the output.
+_TRAILING_LINES: dict[str, re.Pattern[str]] = {
+    "vitest": re.compile(r"\s*(?:Start at|Duration)\s"),
+    "node": re.compile(rf"{_INFO} (?:cancelled|skipped|todo|duration_ms)\b"),
+}
+_UNITTEST_RAN = re.compile(r"Ran ([1-9]\d*) tests? in \S+")
+_LAST_LINE_MAX = 200
 
 
 def _summary_runner(words: list[str]) -> str:
@@ -3985,6 +3993,11 @@ def _summary_for(
     """The last-line result for one check, where the whole window is not already its own."""
     if attributable or not call.last_line_may_speak(index):
         return ""
+    # An earlier check of the same runner prints the same shape of line, and with `&&` the later
+    # one may never have run, so the last line cannot be told apart as this check's.
+    runner = _summary_runner(words)
+    if any(_summary_runner(call.words[c][0]) == runner for c in call.checks if c < index):
+        return ""
     return _last_line_summary(words, records.redact_secrets(tail))
 
 
@@ -3997,11 +4010,22 @@ def _last_line_summary(words: list[str], text: str) -> str:
     lines = [line for line in _without_trailer(text).split("\n") if line.strip()]
     if not runner or not lines:
         return ""
-    last = _ANSI_RE.sub("", lines[-1]).rstrip()
+    lines = [_ANSI_RE.sub("", line).rstrip() for line in lines[-6:]]
+    trailing = _TRAILING_LINES.get(runner)
+    while trailing is not None and len(lines) > 1 and trailing.match(lines[-1]):
+        lines.pop()
+    last = lines[-1]
+    if len(last) > _LAST_LINE_MAX:
+        return ""
     passed, failed = _LAST_LINE_SUMMARIES[runner]
     if failed.fullmatch(last):
         return "failed"
-    return "passed" if passed.fullmatch(last) else ""
+    if not passed.fullmatch(last):
+        return ""
+    # unittest prints `OK` after an empty discovery too, so a pass needs a real count before it.
+    if runner == "unittest" and not (len(lines) > 1 and _UNITTEST_RAN.match(lines[-2])):
+        return ""
+    return "passed"
 
 
 def _ran_nothing(tail: str) -> bool:
@@ -4018,9 +4042,17 @@ def _rtk_outcome(tail: str, flag_result: str) -> tuple[str, str]:
     return (flag_result, "flag") if flag_result else ("not-recorded", "")
 
 
-def _summary_outcome(summary: str, flag_result: str) -> tuple[str, str]:
+def _summary_outcome(
+    summary: str, flag_result: str, *, flag_failed: bool = False
+) -> tuple[str, str]:
     """A last-line result beside the flag: a failing summary overrides a passing flag, and any
-    other flag reading stands."""
+    other flag reading stands. A failing flag that speaks for no one check (`flag_result` is
+    empty) cannot be outvoted by a passing summary: the failure may be a command whose output
+    the last line is not, so the check is withheld."""
+    if flag_failed:
+        if flag_result == "failed":
+            return "failed", "flag"
+        return ("failed", "summary") if summary == "failed" else ("not-recorded", "")
     if flag_result == "passed" and summary == "failed":
         return "failed", "summary"
     return (flag_result, "flag") if flag_result else (summary, "summary")
@@ -4906,6 +4938,7 @@ class _ToolReportTally:
                         attributable=attributable,
                         flag_result=flag_result,
                         summary=_summary_for(call, index, words, attributable, tail=text),
+                        flag_failed=flag is True,
                     )
                     reason = _withheld_reason(
                         call,
@@ -4972,7 +5005,13 @@ class _ToolReportTally:
 
     @staticmethod
     def _outcome(
-        tail: str, *, rtk: bool, attributable: bool, flag_result: str, summary: str = ""
+        tail: str,
+        *,
+        rtk: bool,
+        attributable: bool,
+        flag_result: str,
+        summary: str = "",
+        flag_failed: bool = False,
     ) -> tuple[str, str]:
         """By item 2's order, as the review rounds narrowed it: a result that
         cannot be attributed reads "ran, result not recorded".
@@ -4984,7 +5023,7 @@ class _ToolReportTally:
         if rtk:
             return _rtk_outcome(tail, flag_result)
         if summary:
-            return _summary_outcome(summary, flag_result)
+            return _summary_outcome(summary, flag_result, flag_failed=flag_failed)
         failed_summary = bool(_SUMMARY_FAILED.search(tail))
         failure_text = failed_summary or bool(_FAILURE_MARKER.search(tail))
         if flag_result == "passed":

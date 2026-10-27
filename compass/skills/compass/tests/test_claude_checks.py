@@ -2214,6 +2214,24 @@ class WhyACheckHasNoRecordedResult(ClaudeChecksTestCase):
         self.assertEqual("not-recorded", run["result"])
         self.assertEqual("piped_beside_other_commands", run["result_reason"])
 
+    def test_the_pi_collector_reads_the_last_line_and_the_error_flag(self) -> None:
+        for result, tail, expected in (
+            ({"status": "", "is_error": False}, "x\n3 passed in 1s", "passed"),
+            ({"status": "", "is_error": False}, "x\n3 failed in 1s", "failed"),
+            ({"status": "exited", "is_error": True}, "x\n3 passed in 1s", "not-recorded"),
+            ({"status": "exited", "is_error": True}, "x\n3 failed in 1s", "failed"),
+        ):
+            with self.subTest(result=result, tail=tail):
+                runs = project_context._pi_check_runs(
+                    "echo a; pytest -q | tail -3",
+                    call_key="pi-call-1",
+                    at=1.0,
+                    result={**result, "at": 2.0, "tail": tail},
+                    harness="pi",
+                    sid=SHORT,
+                )
+                self.assertEqual(expected, runs[0][1]["result"])
+
 
 class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase):
     """The runner's own summary on the last line speaks for the last check (DEC-29)."""
@@ -2277,10 +2295,52 @@ class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase)
             ("echo a; ruff check .", "[*] 1 fixable with the `--fix` option.", "failed"),
             ("echo a; vitest run", "      Tests  1 failed | 4 passed (5)", "failed"),
             ("echo a; vitest run", "      Tests  5 passed (5)", "passed"),
-            ("echo a; python3 -m unittest", "OK", "passed"),
-            ("echo a; python3 -m unittest", "FAILED (failures=1)", "failed"),
+            (
+                "echo a; vitest run | tail -5",
+                (
+                    " Test Files  1 passed (1)\n      Tests  5 passed (5)\n"
+                    "   Start at  10:00:00\n   Duration  500ms"
+                ),
+                "passed",
+            ),
+            (
+                "echo a; vitest run | tail -5",
+                (
+                    " Test Files  1 failed (1)\n      Tests  2 failed | 3 passed (5)\n"
+                    "   Start at  10:00:00\n   Duration  500ms"
+                ),
+                "failed",
+            ),
+            ("echo a; python3 -m unittest", "Ran 4 tests in 0.01s\n\nOK", "passed"),
+            ("echo a; python3 -m unittest", "Ran 0 tests in 0.000s\n\nOK", "not-recorded"),
+            (
+                "echo a; python3 -m unittest 2>&1 | tail -3",
+                "Ran 0 tests in 0.000s\n\nOK",
+                "not-recorded",
+            ),
+            (
+                "echo a; python3 -m unittest",
+                "Ran 4 tests in 0.01s\n\nFAILED (failures=1)",
+                "failed",
+            ),
             ("echo a; node --test", "\u2139 fail 0", "passed"),
             ("echo a; node --test", "\u2139 fail 2", "failed"),
+            (
+                "echo a; node --test 2>&1 | tail -9",
+                (
+                    "\u2139 tests 3\n\u2139 suites 0\n\u2139 pass 3\n\u2139 fail 0\n\u2139 cancelled 0\n"
+                    "\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 52"
+                ),
+                "passed",
+            ),
+            (
+                "echo a; node --test 2>&1 | tail -9",
+                (
+                    "\u2139 tests 3\n\u2139 pass 1\n\u2139 fail 2\n\u2139 cancelled 0\n"
+                    "\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 52"
+                ),
+                "failed",
+            ),
             ("echo a; pytest", "1 failed, 13 passed in 1.97s", "failed"),
             ("echo a; pytest", "no tests ran in 0.01s", "not-recorded"),
             ("echo a; pytest", "0 passed in 0.01s", "not-recorded"),
@@ -2290,6 +2350,53 @@ class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase)
             with self.subTest(command=command, output=output):
                 self.setUp()
                 self.assertEqual(expected, self.result_of(command, output))
+
+    def test_an_error_flag_is_not_outvoted_by_a_passing_summary(self) -> None:
+        # The failure may be the setup command, so the check is withheld, not passed.
+        for command in (
+            "echo a; pytest -q",
+            "echo a; pytest -q --cov --cov-fail-under=90",
+            "source .venv/bin/activate && which python; pytest -q | tail -20",
+        ):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, "14 passed in 1.97s", is_error=True)
+                self.assertEqual("not-recorded", list(self.checks())[-1]["result"])
+
+    def test_an_error_flag_beside_a_failing_summary_is_a_failure(self) -> None:
+        self.session.bash("echo a; pytest -q", "2 failed in 1.97s", is_error=True)
+        self.assertEqual("failed", list(self.checks())[-1]["result"])
+
+    def test_a_clean_flag_still_yields_to_a_failing_summary(self) -> None:
+        self.session.bash("echo a; pytest -q | tail -3", "3 failed in 1s", is_error=False)
+        self.assertEqual("failed", list(self.checks())[-1]["result"])
+
+    def test_a_substitution_before_the_check_withholds_its_summary(self) -> None:
+        self.assertEqual(
+            "not-recorded", self.result_of("echo $(touch marker); pytest -q", "3 passed in 1s")
+        )
+
+    def test_a_pipe_that_is_not_a_filter_withholds_the_summary(self) -> None:
+        for command in ("echo a; pytest -q | sort", "echo a; pytest -q | tee out.log"):
+            with self.subTest(command=command):
+                self.setUp()
+                self.assertEqual("not-recorded", self.result_of(command, "3 passed in 1s"))
+
+    def test_a_second_check_of_the_same_runner_is_never_read_from_the_last_line(self) -> None:
+        for command, output in (
+            ("pytest a {} pytest b", "1 failed in 0.1s"),
+            ("python3 -m unittest a {} python3 -m unittest b", "FAILED (failures=1)"),
+            ("ruff check . {} ruff check x", "Found 2 errors."),
+        ):
+            for joiner in ("&&", "||", ";"):
+                with self.subTest(command=command, joiner=joiner):
+                    self.setUp()
+                    results = self.results_of(command.format(joiner), output)
+                    self.assertNotIn("failed", results.values())
+
+    def test_a_line_of_repeated_counts_is_read_in_bounded_time(self) -> None:
+        line = "      Tests  " + "1 a1 " * 3000
+        self.assertEqual("", project_context._last_line_summary(["vitest", "run"], line))
 
     def test_an_rtk_wrapped_check_stays_flag_only(self) -> None:
         self.assertEqual("not-recorded", self.result_of("echo a; rtk pytest -q", "3 passed in 1s"))
@@ -2341,7 +2448,10 @@ class WhatClaudeCodeAppendsToACommandsOutput(ClaudeChecksTestCase):
             with self.subTest(output=output):
                 self.setUp()
                 self.assertEqual(
-                    expected, self.result_of("python3 -m unittest 2>&1 | tail -3", output)
+                    expected,
+                    self.result_of(
+                        "python3 -m unittest 2>&1 | tail -3", f"Ran 9 tests in 0.1s\n\n{output}"
+                    ),
                 )
 
 
@@ -2350,7 +2460,8 @@ class EveryWithheldResultNamesItsReason(ClaudeChecksTestCase):
 
     def test_every_shape_the_attribution_rules_withhold_carries_a_reason(self) -> None:
         for command, output in (
-            ("pytest -q && ruff check .", "2 failed, 3 passed"),
+            ("pytest -q && ruff check .", "2 failed, 3 passed in 1.2s"),
+            ("pytest a && pytest b", "2 failed, 3 passed in 1.2s"),
             ('cd "$REPO" && pytest -q', "2 failed, 3 passed"),
             ("echo start && pytest -q 2>&1 | tail -3", "2 failed, 3 passed"),
             ("source .venv/bin/activate; pytest -q", "2 failed, 3 passed"),

@@ -2602,7 +2602,7 @@ after a verifier reproduced false results against the first clarification:
 DRC-4890 names the rule on the published entry. A check whose result an attribution rule withholds
 carries `result_reason`: `several_checks` when the call holds more than one check,
 `directory_not_placeable` when a `cd` before it names a directory the shell places at run time, and
-`piped_beside_other_commands` when a pipe sits in a call whose other segments print, and
+`piped_beside_other_commands` when a pipe sits in a call whose other segments print, or
 `printed_beside_other_commands` for any other call where a command beside the check may print (added
 by [the 2026-10-27 DEC-29 amendment](#amended-2026-10-27-owner-a-checks-own-summary-on-the-last-line-records-its-result),
 which also reads the last line past such commands). The token is set
@@ -2621,7 +2621,7 @@ destination withhold it. `pytest || echo '5 passed'` and `pytest; echo '5 passed
 independent print never supplies its count. The read-only list and write-ageing rules are unchanged.
 
 Summary lines, source (ii), read from the recorded output tail, may record a pass or a failure:
-pytest's `N passed`, `N failed` and `N error` or `N errors`; unittest's `OK`, only as the whole line, and `FAILED (`; jest's
+pytest's `N passed`, `N failed` and `N error` or `N errors`; unittest's `OK`, only as the whole line (it may carry its own counts, such as `OK (skipped=N)`), and `FAILED (`; jest's
 and vitest's `Tests:` line with its passed and failed counts; node's `ℹ pass N` and `ℹ fail N`
 lines, where `ℹ fail 0` is a pass; cargo's `test result: ok` and `test result: FAILED`; mypy's
 `Success: no issues found` and `Found N errors`; ruff's `All checks passed!` and `Found N errors`.
@@ -2646,7 +2646,7 @@ its pass comes only from the error flag.
 The owner settled these points on review the same day, as part of the ruling rather than as an
 amendment: a program file counts only when `test` or `tests` stands alone as a word in its name; a
 summary-line pass counts only when nothing in the same tail records a failure, a go pass comes only
-from the error flag, and unittest's `OK` counts only as the whole line; and the read-only list above.
+from the error flag, and unittest's `OK` counts only as the whole line (it may carry its own counts, such as `OK (skipped=N)`); and the read-only list above.
 The orchestrator added, on review the same day and in the withholding direction: the error-flag
 attribution above, failure evidence outranking a passing flag, node's `ℹ cancelled N`, and go's
 `[no test files]`. The owner added `rtk` as a wrapper whose checks read the flag alone.
@@ -7401,7 +7401,7 @@ before editing.`) or with `(Bash completed with no output)`. Those exact shapes 
 output, and only the end, before the window is cut or the last line is read. The same words in the middle of the
 output are the command's own and are kept.
 
-**Every withheld result names its reason.** A result a rule withholds publishes one of four closed tokens; the
+**Every result an attribution rule withholds names its reason.** A result such a rule withholds publishes one of four closed tokens; the
 fourth, `printed_beside_other_commands`, covers the setup shapes the other three did not name, which showed as
 "no token".
 
@@ -7410,10 +7410,19 @@ a filter records 98 runs that were withheld, with 0 false of 33 hand-labelled (u
 98 in a census (upper bound 3.0%). Extending it to the last of several checks adds 139 runs and had 3 false
 attributions (2.2%): two where a failing lint run printed its count last and it was read as a type check that
 never ran, and one silent type check that took a test runner's line. Requiring the summary to be one the check's
-own runner prints removes all three. Reading the whole 180-character window instead of the last line flips 12
+own runner prints removes the three measured shapes. A check whose call holds an earlier check of the same runner never takes the last-of-several read, because with `&&` the later one may not have run and both print the same shape of line. Reading the whole 180-character window instead of the last line flips 12
 runs to false failures. Trailer lines ended 274 of 925 tails that matched no pattern and pushed the summary out
 of the window in 103. unittest's `OK (skipped=N)` form accounts for 158 runs the plain `OK` pattern never
 matched, and 17 withheld runs carried no reason.
+
+**A failing flag is not outvoted, an empty run is not a pass, and the runner's own tail is read.** A call whose
+error flag is set and that speaks for no one check records a passing last line as "ran, result not recorded":
+the failure may be a setup command, and the last line says nothing about it. A failing last line still records
+a failure, and a one-check call still takes the flag. unittest's `OK` counts only with a `Ran N tests` line
+above it and N above zero, since an empty discovery prints `OK` too. vitest and node print their summary
+before a few closing lines (`Start at` and `Duration`; `cancelled`, `skipped`, `todo` and `duration_ms`), and
+those exact lines are skipped from the end before the last line is read. A last line longer than 200
+characters is not read.
 
 **What it does not change.** The tiers, the never-a-pass rule and the ageing rule above stand. The summary of a
 runner in the table is evidence only for that runner's check; nothing here lets one command's line speak for
