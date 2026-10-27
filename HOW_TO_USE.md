@@ -522,7 +522,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-events` | The event coordinator. State comes from scanning stores rather than from pushed events, and the session-end store is neither read nor written |
 | `--no-spacedock` | Reading Spacedock workflow state out of a project; saved stage conditions remain readable but suspended |
 | `--no-tripwires` | Workflow stage conditions and every read or write of their saved store |
-| `--no-git` | The end-of-session git probe. No git command runs inside any repository |
+| `--no-git` | The end-of-session git probe and the read of a project's check scripts. No git command runs inside any repository |
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
 | `--no-annotations` | The goal and expected outcome lines you typed against a session. Nothing is shown or saved, and the page offers no field |
 | `--no-focus` | Raising a session's terminal. No focus command runs, no terminal identity is recorded, and the page is offered no raise control. `--no-events` turns it off as well |

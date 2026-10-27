@@ -17,7 +17,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
-from . import observer, record_pages, records, transcripts
+from . import observer, project_scripts, record_pages, records, transcripts
 from . import project_context as context
 
 if TYPE_CHECKING:
@@ -551,9 +551,10 @@ def _classify(
     position: int,
     sid: str,
     session_dir: str,
+    declared: project_scripts.Declarations | None = None,
 ) -> list[SourceEntry]:
     stream = read.cursor.stream
-    tally = context._ToolReportTally(results, session_dir)  # noqa: SLF001
+    tally = context._ToolReportTally(results, session_dir, declared)  # noqa: SLF001
     tally.add(
         call.at,
         call.cwd,
@@ -649,6 +650,7 @@ def _tools(
     sid: str,
     session_dir: str,
     budget: _Budget,
+    declared: project_scripts.Declarations | None = None,
 ) -> tuple[list[SourceEntry], list[PendingCall]]:
     stream = read.cursor.stream
     sidechain = stream != "parent"
@@ -699,7 +701,9 @@ def _tools(
         for call in groups[row]:
             first_entry = len(entries)
             entries.extend(
-                _classify(read, call, results, positions.get(call.call_id, -1), sid, session_dir)
+                _classify(
+                    read, call, results, positions.get(call.call_id, -1), sid, session_dir, declared
+                )
             )
             if call.call_id not in results:
                 pending.append(
@@ -870,9 +874,18 @@ def _finish(
     pending: list[PendingCall] = []
     groups = []
     regions: list[UnreadRegion] = []
+    # The project's own check scripts, from the same read a published fact uses. A page holds only
+    # its own rows, so a write on an earlier page is seen by the work tree's bytes alone.
+    declared = (
+        context._declared_scripts(  # noqa: SLF001
+            config, path, session_dir, parent.rows, [stream.rows for stream in streams[1:]]
+        )
+        if harness == "claude"
+        else None
+    )
     for stream_read in streams:
         tools, held = (
-            _tools(stream_read, after.pending if after else (), sid, session_dir, budget)
+            _tools(stream_read, after.pending if after else (), sid, session_dir, budget, declared)
             if harness == "claude"
             else ([], [])
         )

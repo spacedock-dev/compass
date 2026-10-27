@@ -231,7 +231,7 @@ def _reusable(previous: _Replayed | None, marks: list[bytes]) -> int:
 
 def _checkpoint(tally: pc._ToolReportTally) -> pc._ToolReportTally:
     """Copy only normalized check state; never retain raw results or tails."""
-    saved = pc._ToolReportTally({}, tally.session_dir)  # noqa: SLF001
+    saved = pc._ToolReportTally({}, tally.session_dir, tally.declared)  # noqa: SLF001
     saved._hash_identities = True  # noqa: SLF001
     saved.runs = {
         _cached_identity(identity, tally): [{**run, "tail": ""} for run in history]
@@ -469,7 +469,7 @@ def _prefix_replay(  # noqa: PLR0913, PLR0917
 def _new_tally(
     scan: pc._CheckScan, results: dict[str, Any], *, force_incomplete: bool
 ) -> pc._ToolReportTally:
-    tally = pc._ToolReportTally(results, scan.session_dir)  # noqa: SLF001
+    tally = pc._ToolReportTally(results, scan.session_dir, scan.declared)  # noqa: SLF001
     tally.completed_launch_calls = pc._stream_completed_background_calls(scan.parent, scan.children)  # noqa: SLF001
     tally.reads_from = scan.horizon
     tally.scan["last_user_at"] = pc._last_person_at(scan.parent)  # noqa: SLF001
@@ -525,6 +525,11 @@ def _replay(
         scan.orphan_unread,
         len(scan.children),
         pc._last_person_at(scan.parent),  # noqa: SLF001 - invalidate a turn without new tools
+        # A replayed call keeps the class it was given, so a change in which scripts are
+        # declared checks starts the replay over.
+        None
+        if scan.declared is None
+        else (scan.declared.toplevel, scan.declared.commit, tuple(sorted(scan.declared.files))),
     )
     calls = [
         call

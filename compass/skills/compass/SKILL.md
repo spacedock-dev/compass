@@ -383,7 +383,8 @@ On a harness without fixed numbers, a check that re-runs or a file written again
 after it. Each entry shows who wrote it, its own type and the source that published it, and the
 list states the limit under it: demonstrated work results are read on Pi, and on
 Claude Code the record also lists the checks a session ran and the files it wrote, each result as
-the tool reported it and counted from the whole transcript read, every other command that is not a
+the tool reported it and counted from the whole transcript read (a project's own test, lint or build script counts as a check
+when its body is a known runner, read from the commit the session began on, so a script the session edited counts for nothing), every other command that is not a
 read with its exit status and the words "Compass does not know what it checks" (an exit of 0 may settle a
 line, and one that cannot fail, such as `echo` or an exit a trailing `|| true` forces, never does), and what the agent said, each of
 its messages an entry marked "Agent said". A reading you press for sends the agent's messages as
@@ -806,7 +807,7 @@ Paths 2 and 3 are complementary and can both be installed. Keep `Notification` o
 | `--no-usage` | For this run, never fetch vendor quota over the network and ignore quota a harness pushes in, regardless of the setting stored in the dashboard. Quota a harness writes into its own store (Codex, Copilot) still shows. |
 | `--no-irreversible` | Disable command-shape matching, report ingress and publication for this run. `--no-events` also disables it. Ordinary lifecycle hints remain available with only this flag. |
 | `--no-events` | For this run, do not accept lifecycle events: no event overlays, no coarse store probe, no capability published, and the fixed-interval scan keeps the board warm instead. The session-end store is neither read nor written, since the coordinator is its only writer, so a session that ended before this run reads as quiet. The rollback switch if event acquisition misbehaves. |
-| `--no-git` | For this run, do not run the end-of-session git probe in any session's working repository. No git command runs at all, and every row's `dirty` and `changed` stay empty. Empty means no reading available: never attempted (including refused), attempted without a usable result, or a reading retired after resumed work. It does not mean a clean tree. |
+| `--no-git` | For this run, do not run the end-of-session git probe in any session's working repository. No git command runs at all, so a project's own check scripts are not read either, and every row's `dirty` and `changed` stay empty. Empty means no reading available: never attempted (including refused), attempted without a usable result, or a reading retired after resumed work. It does not mean a clean tree. |
 | `--no-dismiss` | For this run, do not read or write the store of sessions marked handled: every marked session comes back onto the board. The rollback switch for the dismissal store Compass writes on your behalf. |
 | `--no-annotations` | For this run, do not read or write the goal and expected outcome lines you typed against a session: nothing is shown, nothing is saved, and the session page's Intent and drift panel offers no field; its `Analyze drift` control stays on the page, inert, and says why. The rollback switch for the one store holding prose you composed. |
 | `--no-ask` | For this run, do not let a session ask the reader a question: the register, poll and answer routes refuse and the page offers no control. The rollback switch for the ask lane. |

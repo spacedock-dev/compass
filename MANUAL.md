@@ -65,7 +65,7 @@ them and ignores the other flags, though their values must still parse.
 | `--daemon` | Detach and keep serving after the starting shell exits. Reports the URL, process ID and log path. Without it, serving stays in the foreground. On Windows the launcher starts a detached child; see [platform notes](#platform-notes). |
 | `--status` | Report whether Compass answers on the selected port, then exit. Distinguishes a running dashboard, no dashboard, stale state and a port held by another process. |
 | `--stop` | Ask Compass on the selected port to shut down and wait for the port to be free. A foreign process is left alone. If nothing is running, remove stale instance state if present. |
-| `--diagnose` | Report the local store paths searched, whether they are readable and what was found; exit without serving, writing history or making model calls. Use it first when a harness is missing. |
+| `--diagnose` | Report the local store paths searched, whether they are readable and what was found, and any project script file it skipped and why; exit without serving, writing history or making model calls. Use it first when a harness is missing. |
 | `--json` | Format `--diagnose` as JSON. Does not change status output or make the dashboard's normal output JSON. |
 | `--window-hours HOURS` | Hide sessions with no activity within this many hours. Default: `24`. Accepts a floating-point number. This display window is separate from history retention. |
 
@@ -117,7 +117,7 @@ These features are enabled by default. An off switch suppresses the named featur
 | `--no-tripwires` | Do not read or write saved workflow stage conditions. |
 | `--no-events` | Disable the event coordinator, event overlays and coarse store probe. Fixed-interval collection continues. Also disables terminal focus, command-shape reporting and reading/writing recorded session ends. Observation history is independent. |
 | `--no-irreversible` | Disable hook command-shape matching, report ingress and publication. Ordinary lifecycle hints remain available unless `--no-events` is also set. |
-| `--no-git` | Do not run end-of-session Git probes in session repositories. Dirty/changed fields stay empty; empty is not a finding that the tree is clean. |
+| `--no-git` | Do not run end-of-session Git probes in session repositories, and do not read a project's `package.json`, Makefile or justfile from git to count its test and lint scripts as checks. Dirty/changed fields stay empty; empty is not a finding that the tree is clean. |
 | `--no-focus` | Do not record terminal identities, publish a focus capability or raise session terminals. `--no-events` also turns this off. |
 | `--no-ask` | Disable session-to-reader questions: register, poll and answer routes refuse, and the page offers no ask control. |
 

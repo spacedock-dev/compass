@@ -48,8 +48,10 @@ here, and no caller is ever given a way to reach them.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
@@ -250,3 +252,138 @@ def _reading(stdout: object) -> GitStatus:
             entries += 1
         start = stop + 1
     return GitStatus(dirty=entries > 0, changed=entries)
+
+
+# The committed-file read: a second command family beside the status probe, for the one reader that
+# needs a file as a commit held it, a project's own check scripts. The ruling:
+# [DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)  # noqa: E501
+# Same resolved executable and scrubbed environment as `probe`, with the two of its three flags
+# that matter to commands that never touch the work tree or the index. Every argument is a
+# constant, an object id this module validated as hex, or a name the caller passed that matched
+# a closed pattern: nothing session-supplied is interpolated.
+_SAFE_READ: Final[tuple[str, ...]] = (
+    "-c",
+    "core.fsmonitor=",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "--no-optional-locks",
+)
+_OBJECT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+_TREE_ENTRY = re.compile(rb"^(\d{6}) (\w+) ([0-9a-f]+) +(\d+|-)\t(.+)$", re.DOTALL)
+_PATH_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
+# The least a repository can be asked to name: a regular file (100644 or 100755).
+_REGULAR_MODES: Final = frozenset({"100644", "100755"})
+
+
+@dataclass(frozen=True)
+class CommittedEntry:
+    """One named file as a commit holds it. `content` is None unless it was read."""
+
+    name: str
+    mode: str
+    size: int
+    content: bytes | None = None
+
+
+@dataclass(frozen=True)
+class CommittedFiles:
+    """The toplevel of a work tree, the commit read, and the named files that commit holds."""
+
+    toplevel: str
+    commit: str
+    entries: tuple[CommittedEntry, ...]
+
+
+def _read(
+    args: tuple[str, ...],
+    cwd: str,
+    environ: Mapping[str, str],
+    resolved: str,
+    *,
+    deadline: float,
+    runner: Callable[..., Any],
+) -> bytes | None:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    try:
+        result = runner(
+            (resolved, *_SAFE_READ, *args),
+            cwd=cwd,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=remaining,
+            check=False,
+            env=dict(environ),
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    if getattr(result, "returncode", 1) != 0:
+        return None
+    out = getattr(result, "stdout", b"")
+    return bytes(out) if isinstance(out, (bytes, bytearray)) else None
+
+
+def read_committed(
+    cwd: str,
+    at: float,
+    names: tuple[str, ...],
+    *,
+    max_bytes: int,
+    timeout_sec: float,
+    runner: Callable[..., Any] = subprocess.run,
+) -> CommittedFiles | None:
+    """The named files at the toplevel of `cwd`'s work tree, as the commit HEAD named at time `at`.
+
+    None means nothing was read: not a repository, git absent, a deadline passed, or no commit
+    that old. The commit is the newest first-parent commit of HEAD whose commit date is at or
+    before `at`, because Compass does not record the commit a session began on (the transcript
+    carries a branch name at most). A commit the session made after `at` is therefore never the
+    base. A file whose blob is over `max_bytes` is listed with no content; a mode other than a
+    regular file (a link, a submodule) is listed with no content either, so the caller can say why
+    it read nothing.
+
+    Measured 2026-10-27 at git 2.x: `--before=<digits>` is not a timestamp (it matched a commit
+    newer than the bound), so the bound is written as an ISO date in UTC.
+    """
+    if not os.path.isdir(cwd) or any(_PATH_NAME.fullmatch(name) is None for name in names):
+        return None
+    environ = probe_environment(os.environ)
+    resolved = _executable(environ)
+    if resolved is None:
+        return None
+    deadline = time.monotonic() + timeout_sec
+
+    def run(args: tuple[str, ...], where: str) -> bytes | None:
+        return _read(args, where, environ, resolved, deadline=deadline, runner=runner)
+
+    top = run(("rev-parse", "--show-toplevel"), cwd)
+    toplevel = top.decode("utf-8", "replace").strip() if top else ""
+    if not toplevel or not os.path.isdir(toplevel):
+        return None
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(max(at, 0.0)))
+    found = run(("rev-list", "-1", "--first-parent", f"--before={stamp}", "HEAD"), toplevel)
+    commit = found.decode("ascii", "replace").strip() if found else ""
+    if _OBJECT_ID.fullmatch(commit) is None:
+        return None
+    listing = run(("ls-tree", "-l", "-z", commit, "--", *names), toplevel)
+    if listing is None:
+        return None
+    entries: list[CommittedEntry] = []
+    for raw in listing.split(b"\0"):
+        match = _TREE_ENTRY.match(raw)
+        if match is None:
+            continue
+        mode, kind, oid = match[1].decode(), match[2], match[3].decode()
+        size = int(match[4]) if match[4] != b"-" else 0
+        name = match[5].decode("utf-8", "replace")
+        content = None
+        if (
+            kind == b"blob"
+            and mode in _REGULAR_MODES
+            and size <= max_bytes
+            and _OBJECT_ID.fullmatch(oid)
+        ):
+            content = run(("cat-file", "blob", oid), toplevel)
+        entries.append(CommittedEntry(name, mode, size, content))
+    return CommittedFiles(toplevel, commit, tuple(entries))

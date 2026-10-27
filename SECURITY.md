@@ -349,7 +349,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
-| The git probe | One bounded `git` command, in a repository you chose. Nothing leaves the machine. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all` |
+| The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose. Nothing leaves the machine. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
 | A native notification | On macOS, `/usr/bin/osascript` with text Compass composes. Other platforms have no native notifier. Nothing leaves the machine. | `--quiet-hours` holds it back inside a window you name. No switch turns it off outright. | None: the program is meant to launch. `test_notifications.NoNativeNotificationTest` only keeps this repository's own test run from launching one. |
@@ -484,9 +484,10 @@ writes. `--no-spacedock` leaves saved intent readable but suspended. See the
 
 ## Repository git reads (the end-of-session probe)
 
-One feature runs a program inside a directory the user chose. Compass already records each
-session's working directory; when a session ends, the server runs one bounded git command there, so
-the board can show that a session stopped with work still in the tree.
+Two features run a program inside a directory the user chose, both git, both in `git_status.py`.
+Compass already records each session's working directory; when a session ends, the server runs one
+bounded git command there, so the board can show that a session stopped with work still in the tree.
+The second, below the probe's own contract, reads a project's check scripts as a commit held them.
 
 The probe is exactly this command, or there is no probe:
 
@@ -702,6 +703,48 @@ for a session in a subdirectory and the wrong one for a session under a `$HOME` 
 That selection also trusts local metadata: a gitfile can select external metadata, and
 `core.worktree` can redirect the contents compared against the discovered index. The boundary does
 not promise that those contents lie beneath the session directory or the discovered metadata.
+
+### The committed-file read (project check scripts)
+
+A Claude Code session that ran `pnpm typecheck` or `make lint` is read as having run a check when the
+project's own `package.json`, Makefile or justfile says that script is a known test or lint runner.
+The agent can write those files, so Compass reads them from git as a commit held them, not from the
+work tree alone. This is a second command family in `git_status.py`, not the probe, and the probe's
+own contract above is unchanged.
+
+Four read-only subcommands, each behind `-c core.fsmonitor= -c core.hooksPath=/dev/null
+--no-optional-locks`, through the same resolved executable and scrubbed environment as the probe:
+
+- `rev-parse --show-toplevel`, in the session's directory;
+- `rev-list -1 --first-parent --before=<ISO date in UTC> HEAD`, in the toplevel;
+- `ls-tree -l -z <commit> -- <names>`, naming at most the seven declaring files;
+- `cat-file blob <id>`, for each regular file of at most 256 KiB that the listing returned.
+
+Every argument is a constant, an object id the module checked as hex, or a name that matched a closed
+pattern. None reads the index, runs a filter or an fsmonitor, or writes. Measured 2026-10-27:
+`--before=<digits>` is not a timestamp (git matched a commit newer than the bound), which is why the
+date is written out. One five second deadline covers all four, and a failure means no declarations,
+never a guess.
+
+What bounds the content: only the toplevel of the work tree the session began in; a link or special
+file in the commit's tree is refused by its mode, and one in the work tree by `lstat` before any open,
+which is non-blocking and refuses a link, so a FIFO cannot block the read; the work-tree file must
+equal the commit's blob byte for byte, so a file the session edited declares nothing; a recorded
+write by a write tool withdraws that kind of file even if the session restored it. A file over the
+cap, with more than 500 scripts, that does not parse, or that is a Makefile using `include`,
+conditionals, `define`, `.ONESHELL` or a custom `SHELL` adds nothing, and `--diagnose` lists it by
+path and a closed reason. The commit is the newest first-parent commit of HEAD no newer than the
+transcript's first record, since Compass does not record the commit a session began on. Workflow `run:`
+steps are not read.
+
+Nothing read from these files leaves the machine. The script bodies are never published, shown or
+sent; what is published is the session's own command line, masked and clipped as any check's is, which
+the vendor rule of [the command ruling](docs/design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)
+already covers. `--no-git` stops the read, and the scripts read as commands again. The residuals are
+the probe's: a repository can carry configuration of its own, and an edit made by a shell command and
+put back before the session ended is the one change neither the recorded write nor the byte
+comparison sees. [The ruling](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-projects-own-scripts-are-tier-2-checks)
+holds the rest.
 
 ## Reaching a session's terminal (the focus command)
 
@@ -1851,7 +1894,7 @@ after a bounded parent cutoff search. A parent cutoff it cannot establish within
 allowance refuses the frozen check read. Each subagent entry is labelled `worker_kind: "subagent"`
 ([the amendment](docs/design-reading-a-session.md#amended-2026-09-28-a-subagents-checks-and-writes-are-the-parents)).
 A clipped parent Agent result without its earlier call withholds a passing check when that child
-cannot be read completely; it does not count as a verified named child. A check is a shell command segment whose runner is on the ruling's closed list, and
+cannot be read completely; it does not count as a verified named child. A check is a shell command segment whose runner is on the ruling's closed list, or a project script (a `package.json` script, make target or just recipe) whose own body is a closed-list runner or a `&&` chain of them and whose name carries a check verb, read as the commit the session began on held it; and
 a program file counts only when `test` or `tests` stands alone as a word in its name. This check
 allowance does not bound the separate activity, identity or user-message reads made during a full
 frozen admission or validation. Its publication bounds:

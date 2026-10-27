@@ -257,9 +257,20 @@ class TheLiveEstimateTest(_Replay):
         self.session.bash("pytest", "1 failed", is_error=True)
         self.session.save(self.path)
         before = sorted(p.name for p in self.root.rglob("*"))
+        real_popen = subprocess.Popen
+
+        def only_a_committed_file_read(argv: Any, *args: Any, **kwargs: Any) -> Any:
+            # The one process the live estimate may start: git reading a project's declaring
+            # files as a commit held them, so a declared script counts as a check here as it does
+            # in the published facts. `subprocess.run` starts its child through `Popen`.
+            words = [str(word) for word in argv] if isinstance(argv, (list, tuple)) else []
+            reads = {"rev-parse", "rev-list", "ls-tree", "cat-file"}
+            if not words or Path(words[0]).name != "git" or not reads & set(words):
+                raise AssertionError("a process")
+            return real_popen(argv, *args, **kwargs)
+
         with (
-            mock.patch.object(subprocess, "Popen", side_effect=AssertionError("a process")),
-            mock.patch.object(subprocess, "run", side_effect=AssertionError("a process")),
+            mock.patch.object(subprocess, "Popen", side_effect=only_a_committed_file_read),
             mock.patch.object(socket, "create_connection", side_effect=AssertionError("a socket")),
             # Every model class the runtime can start: the goal summary and both reading
             # producers. Only the first was patched, so a Claude reading started from the
