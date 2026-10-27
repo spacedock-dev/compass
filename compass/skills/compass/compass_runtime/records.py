@@ -225,16 +225,17 @@ _SECRET_SHAPES: Final = (
     # plain characters or backslash pairs, and a cued shape stopping at the first
     # `\"` published every key after it. Name and quote stay, only the value goes.
     # A Python repr spells the value in single quotes, so either quote opens it.
-    # The bound is 65,536 and a value with no closing quote in the text runs to
-    # its end: a secret longer than the old 4,096 window was returned whole,
-    # because the closing quote fell outside it.
+    # Unbounded, because a bound is a cliff: past it the closing quote falls
+    # outside the window and the whole secret was returned (4,096, then 65,536;
+    # review, 2026-10-27). The run is linear: its two alternatives cannot both
+    # match a character, and a match always ends at the quote, the line or the text.
     (
         "secretstring",
         0,
         False,
         (
             r"(?i:\bsecretstring)[\"']?\s*:\s*(?P<ssq>[\"'])"
-            r"(?P<ssval>(?:(?!(?P=ssq))[^\\\n]|\\.){1,65536})(?:(?P=ssq)|(?=\n)|$)"
+            r"(?P<ssval>(?:(?!(?P=ssq))[^\\\n]|\\.)+)(?:(?P=ssq)|(?=\n)|$)"
         ),
     ),
     # A `.netrc` entry: `machine <host>` or `default`, then `login <user>` and
@@ -266,8 +267,13 @@ _SECRET_SHAPES: Final = (
         (
             r"(?:(?<=[?&])|(?<=&amp;)|(?<=\\u0026))"
             r"(?i:x-amz-signature|x-amz-security-token|x-goog-signature|signature|sig)"
-            r"=(?P<sigval>(?=[^\s&#\"'<>]{0,2048}(?:[0-9%+/]|[A-Z][^\s&#\"'<>]{0,2048}[a-z]"
-            r"|[a-z][^\s&#\"'<>]{0,2048}[A-Z]))[^\s&#\"'<>]{6,2048})"
+            # Flat lookaheads, one condition each: nesting one bounded run inside
+            # another cost about 2048 * 2048 steps per `sig=`, so repeated starts
+            # stalled on 10,000 characters (review, 2026-10-27). `?` ends a value, so
+            # one start's scan never runs on through the next `?sig=`.
+            r"=(?P<sigval>(?:(?=[^\s&#?\"'<>]{0,2048}[0-9%+/])"
+            r"|(?=[^\s&#?\"'<>]{0,2048}[A-Z])(?=[^\s&#?\"'<>]{0,2048}[a-z]))"
+            r"[^\s&#?\"'<>]{6,2048})"
         ),
     ),
     # A credential with no shape of its own, known only by the cue in front of

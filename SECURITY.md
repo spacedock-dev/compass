@@ -3992,8 +3992,8 @@ prose can open like it, so some false positives and misses stay: `sig=` outside 
 because the shape needs the `login` word, a value with a digit or a capital, or a signature-like
 value; a loginless `default password Reset` is masked, and an all-lowercase signature with no digit,
 `+`, `/` or `%` is not.
-A `"SecretString"` value is masked up to 65,536 characters, and one with no closing quote is masked to
-the end of its line.
+A `"SecretString"` value is masked to its closing quote however long it is, and one with no closing
+quote is masked to the end of its line.
 
 Since 2026-10-03 one shape is cued rather than shaped, beside the AWS secret. The cue is
 `Authorization: Bearer`, a `--password`, `--token`, `--secret` or `--api-key` flag, or a name ending

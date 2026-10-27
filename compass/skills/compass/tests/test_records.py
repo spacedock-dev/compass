@@ -1408,6 +1408,22 @@ class OutputSecretShapesTest(unittest.TestCase):
         records.redact_secrets(text)
         self.assertLess(time.monotonic() - start, 5.0)
 
+    def test_a_secret_string_past_the_old_bound_is_redacted_whole(self) -> None:
+        for tail in ('" tail', "\nnext line", ""):
+            body = "FakePass99" * 7_000
+            out = records.redact_secrets('"SecretString": "' + body + tail)
+            with self.subTest(tail=tail):
+                self.assertNotIn("FakePass99", out)
+
+    def test_repeated_signature_starts_are_not_quadratic(self) -> None:
+        for filler in ("aaaaa", ".", ":", "=", "?", "a.", ":a"):
+            for name in ("?sig=", "?x-amz-signature="):
+                text = (name + filler) * (20_000 // (len(name) + len(filler)))
+                start = time.monotonic()
+                records.redact_secrets(text)
+                with self.subTest(name=name, filler=filler):
+                    self.assertLess(time.monotonic() - start, 2.0)
+
     def test_a_signature_behind_an_escaped_ampersand_is_redacted(self) -> None:
         for url in (
             "https://b.example.com/k?a=1&amp;sig=abcdef123456",

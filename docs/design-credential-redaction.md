@@ -112,7 +112,7 @@ and then `login <user>`; without a login the value must carry a digit or a capit
 learning password manager" and "default password reset" are sentences. A signature must look like one
 (a digit, a base64 or percent character, or both letter cases), so `sig=overview` is a word, and it
 accepts the `&amp;` and `\u0026` spellings of the separator. A `"SecretString"` value runs to its
-closing quote up to 65,536 characters, or to the end of the text when none arrives, in either quote.
+closing quote however long it is, or to the end of its line when none arrives, in either quote.
 
 ## C-1: Redact in place, keep the surrounding words
 
