@@ -92,8 +92,8 @@
       "method": "POST",
       "name": "annotate-too-large",
       "route": "/api/annotate",
-      "sha256": "3ba210f5cc493c698617b607915bd783e2b98d95e877e57e5948177232d0b027",
-      "status": 413
+      "sha256": "3147548c7a81ee609a3ed13b3db1fc7913612b9ac262a4811c12695eae2314ec",
+      "status": 400
     },
     {
       "method": "POST",
@@ -582,8 +582,8 @@
       "method": "POST",
       "name": "reading-too-large",
       "route": "/api/reading",
-      "sha256": "4edb796b8615712fdec7bd14e679c789644c7bc8a3aa1e10d0f1b890180ffe6e",
-      "status": 413
+      "sha256": "20dc9fd529ffb685de6bcf603833f723dca9bf91105d0283e85f1d817c378c59",
+      "status": 400
     },
     {
       "method": "POST",

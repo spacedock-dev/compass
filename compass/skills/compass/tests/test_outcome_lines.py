@@ -612,6 +612,21 @@ class TheStoreNeverOutgrowsItsReadLimitTest(_StoreCase):
             },
         )
 
+    def test_a_stored_reading_keeps_the_goals_clause_at_the_goals_cap(self) -> None:
+        # A reading quotes the goal it read; cut at a line's 240 it said less than was read, and
+        # the level reading a goal with no lines judged its first 240 characters (2026-10-27).
+        entry = self.full_entry(0, "a")
+        criteria = entry["assessment"]["criteria"]
+        criteria["goal"]["clause"] = "g" * 900
+        criteria["line_1"]["clause"] = "l" * 300
+
+        self.assertTrue(annotation_store.save(self.config, [entry]))
+
+        (loaded,) = annotation_store.load(self.config)
+        read = loaded["assessment"]["criteria"]
+        self.assertEqual("g" * 900, read["goal"]["clause"])
+        self.assertEqual(self.config.annotation_text_cap_chars, len(read["line_1"]["clause"]))
+
     def test_the_read_limit_is_sixteen_mib(self) -> None:
         self.assertEqual(16 * 1024 * 1024, self.config.annotation_read_cap_bytes)
 
@@ -1223,6 +1238,7 @@ class TheStoresOwnEdgeRulesTest(_StoreCase):
 class _Config:
     reading_settle_sec = 8.0
     annotation_text_cap_chars = 240
+    annotation_goal_cap_chars = 1_000
 
 
 def _pi_fact(fact_id: str, at: float, summary: str = "wrote the retry loop") -> dict[str, Any]:
@@ -1472,14 +1488,16 @@ class TheReplyAndThePromptHaveRoomForSevenTest(_ProducerCase):
 
     def test_the_worst_intent_fits_its_share_and_leaves_room_for_the_record(self) -> None:
         astral = "\U0001f600" * 240
+        # The goal at its own cap (owner, 2026-10-27), which is wider than a line's.
+        goal = "\U0001f600" * make_config().annotation_goal_cap_chars
         # With the claims question too (owner, 2026-10-04): it took its room
         # from the answer shape, spelt once, and not from the record.
-        header = reading._header(astral, (astral,) * 6, tool_note=True, claims=True)
+        header = reading._header(goal, (astral,) * 6, tool_note=True, claims=True)
 
         size = len(header.encode("utf-8"))
         self.assertLessEqual(size, reading.INTENT_SHARE_BYTES)
-        self.assertEqual(9_728, reading.INTENT_SHARE_BYTES)
-        self.assertGreaterEqual(observer.OBSERVER_MODEL_MAX_PROMPT_BYTES - size, 6_656)
+        self.assertEqual(12_800, reading.INTENT_SHARE_BYTES)
+        self.assertGreaterEqual(observer.OBSERVER_MODEL_MAX_PROMPT_BYTES - size, 3_584)
 
     def test_an_intent_between_its_share_and_the_budget_still_drops_every_line(self) -> None:
         # Past 9,728 bytes and under 16,384, so only the share can be what refuses it.
@@ -1897,10 +1915,10 @@ class TheAnnotateRouteTakesAListTest(unittest.TestCase):
 
         self.assertEqual(400, status)
 
-    def test_the_body_cap_is_12288_bytes(self) -> None:
-        self.assertEqual(12_288, self.config.annotation_body_cap_bytes)
+    def test_the_body_cap_is_16384_bytes(self) -> None:
+        self.assertEqual(16_384, self.config.annotation_body_cap_bytes)
         base = {"harness": "claude", "sid": "s-1", "lines": ["a"], "pad": ""}
-        spare = 12_288 - len(json.dumps(base).encode())
+        spare = 16_384 - len(json.dumps(base).encode())
         with self.serving() as port:
             fits, _ = self.post(port, json.dumps({**base, "pad": "p" * spare}).encode())
             over, _ = self.post(port, json.dumps({**base, "pad": "p" * (spare + 1)}).encode())
@@ -1916,7 +1934,7 @@ class TheAnnotateRouteTakesAListTest(unittest.TestCase):
             {
                 "harness": "claude",
                 "sid": "x" * 64,
-                "goal": pasted,
+                "goal": "\x01" * self.config.annotation_goal_cap_chars,
                 "lines": [pasted] * 6,
                 "expected_revision": 123456,
             },
@@ -1931,7 +1949,7 @@ class TheAnnotateRouteTakesAListTest(unittest.TestCase):
             {
                 "harness": "claude",
                 "sid": "x" * 64,
-                "goal": astral,
+                "goal": "\U0001f600" * self.config.annotation_goal_cap_chars,
                 "lines": [astral] * 6,
                 "expected_revision": 123456,
             },

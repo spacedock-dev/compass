@@ -2146,7 +2146,13 @@ each prompt.
 - Everything that offers a goal takes the goal's cap: `prompt_choices`, a later direction's
   `goal_choice`, a `/goal` condition's `offered` excerpt, and Find goal's answer. Session history
   keeps its own 256-character field, so a long goal is recorded there as its opening.
-- Three budgets sized against a 240-character goal grew with it. Steer back's lines went from
+- Five budgets sized against a 240-character goal grew with it. The reading prompt's intent
+  share went from 9,728 to 12,800 bytes, because the widest goal and lines (written in emoji)
+  measured 12,515 and past the share every outcome line goes unasked; the record keeps at least
+  3,584 bytes in that worst case. The annotation request body cap went from 12,288 to 16,384
+  bytes for the widest pasted body, 14,798. The goal's clause in a stored reading keeps the
+  goal's cap, so "What the analysis read" quotes the goal it read, and the level that reads a
+  goal with no lines as its one line reads all of it. Steer back's lines went from
   2,000 to 2,760 characters, the 760 the goal gained, so no correction that composed before is
   refused; the cap is 2,760 + 8 × 277 + 7 × 132 = 5,900. The Live monitor sends the whole goal
   where it sent 600 characters. The annotation store's 16 MiB read limit did not move: 256
@@ -3202,13 +3208,15 @@ the later-direction floor (item 9).
      when it cannot fit even alone, nothing is written and the save answers `unwritable`.
    - The history copy is one flat field per line, at most 256 characters each, with a closed
      source token beside it and no entry id.
-   - The goal and the lines take at most 9,728 of 16,384 bytes of the prompt. Over that share,
+   - The goal and the lines take at most 12,800 of 16,384 bytes of the prompt (9,728 until the
+     goal's cap rose to 1,000, [2026-10-27](#amended-2026-10-27-owner-the-goal-holds-1000-characters)). Over that share,
      every line is dropped together as not asked, never some of them.
    - The reply cap is 8,192 bytes, and a reply cut at the cap keeps each answer that arrived
      whole.
-   - The annotation request body cap is 12,288 bytes. The widest body the page can send is a
+   - The annotation request body cap is 16,384 bytes. The widest body the page can send is a
      goal and six lines pasted as control characters, which the browser writes as six bytes each
-     before the store collapses them: 10,238 bytes with a 64-character session id.
+     before the store collapses them: 14,798 bytes with a 64-character session id and a
+     1,000-character goal (10,238 and a 12,288 cap before [2026-10-27](#amended-2026-10-27-owner-the-goal-holds-1000-characters)).
 4. A later direction before an analysis. When the record holds an unsettled later direction of the
    reader's, the Drift section asks before the press, naming how many are unsettled. For one it
    says "You gave a later direction at #<n>: "<first line>"."; for several, "You gave <N> later
@@ -5085,7 +5093,7 @@ one more character of lines. The refusal names what is bounded: "Your goal and l
 longer than 2,000 characters. Shorten a line of your intent.", since the counter beside it counts
 the whole text to 4,216. The copy route reads a body of up to `copied_corrections.COPY_BODY_CAP_BYTES`
 (twelve bytes a character for the text and both identity fields, the widest JSON spells a code
-point, and 256 for the object), not the 12,288 the other annotation routes share: at that bound
+point, and 256 for the object), not the 12,288 the other annotation routes then shared (16,384 since 2026-10-27): at that bound
 4,216 CJK characters were refused, the page still said Copied, and the paste then counted as the
 reader's words. Recompose and the stale rules are unchanged but for one addition: the stamp is still
 the saved words' revision, the settlement, the reading's `read_at` and the cited entries, and marking

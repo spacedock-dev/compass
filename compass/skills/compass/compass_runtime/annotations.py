@@ -831,7 +831,7 @@ def _revision(value: Any, cap: int, goal_cap: int | None = None) -> Revision | N
     }
 
 
-def _criterion(value: Any, cap: int) -> reading.Criterion | None:
+def _criterion(value: Any, cap: int, clause_cap: int | None = None) -> reading.Criterion | None:
     """One untrusted criterion of a stored reading, or nothing.
 
     `result` absent and `result` present are both legal and they mean
@@ -861,7 +861,7 @@ def _criterion(value: Any, cap: int) -> reading.Criterion | None:
         # One over the cap: the producer marks a cut detail by appending "…" to `cap` characters,
         # and loading at `cap` dropped that mark, so a cut sentence reloaded as a whole one.
         "detail": records.safe_text(value.get("detail"), cap + 1),
-        "clause": records.safe_text(value.get("clause"), cap),
+        "clause": records.safe_text(value.get("clause"), cap if clause_cap is None else clause_cap),
         "why": why,
     }
     if result is not None:
@@ -924,7 +924,7 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     return checked
 
 
-def _assessment(value: Any, cap: int) -> reading.Assessment | None:
+def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.Assessment | None:
     """One untrusted reading, or nothing at all.
 
     Dropped WHOLE on any failure. A half-parsed reading is the worst of the
@@ -947,7 +947,7 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         or scope not in reading.SCOPE_TEXT
     ):
         return None
-    criteria = _criteria(value.get("criteria"), cap)
+    criteria = _criteria(value.get("criteria"), cap, goal_cap)
     coverage = reading.validate_coverage(value["coverage"]) if "coverage" in value else None
     verdict = _goal_verdict(value["goal_verdict"]) if "goal_verdict" in value else None
     if (
@@ -1014,7 +1014,9 @@ def _goal_unclear_elsewhere(
     return any(row.get("result") == reading.RESULT_GOAL_UNCLEAR for row in rows)
 
 
-def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
+def _criteria(
+    value: Any, cap: int, goal_cap: int | None = None
+) -> dict[str, reading.Criterion] | None:
     """A reading's criteria, keyed goal, each line in order, then any claims, or nothing.
 
     The keys are the goal and `line_1` to `line_N` with no gap, N at most six:
@@ -1029,7 +1031,7 @@ def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
         return None
     parsed: dict[str, reading.Criterion] = {}
     for name, raw in value.items():
-        criterion = _criterion(raw, cap)
+        criterion = _criterion(raw, cap, goal_cap if name == reading.CONSTRAINT_GOAL else None)
         if criterion is None:
             return None
         parsed[str(name)] = criterion
@@ -1139,7 +1141,7 @@ def _entry(
     settled = _settlement(value.get("settled"))
     if settled is not None:
         entry["settled"] = settled
-    assessment = _assessment(value.get("assessment"), text_cap)
+    assessment = _assessment(value.get("assessment"), text_cap, goal_cap)
     if assessment is not None:
         entry["assessment"] = assessment
     elif value.get("assessment") is not None:

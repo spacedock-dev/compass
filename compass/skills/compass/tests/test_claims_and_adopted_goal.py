@@ -101,6 +101,7 @@ class _Producer(unittest.TestCase):
     class _Config:
         reading_settle_sec = 8.0
         annotation_text_cap_chars = 240
+        annotation_goal_cap_chars = 1_000
 
     def setUp(self) -> None:
         self.prompts: list[str] = []

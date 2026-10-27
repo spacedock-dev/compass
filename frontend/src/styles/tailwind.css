@@ -16,7 +16,7 @@
 @source '../lib/**/*.{ts,tsx}';
 @source '../terminal/TerminalSurface.tsx';
 @source '../intent/{DirectionQuestion,GoalField,IntentPanel,IntentSection,OutcomeLines,DirectionActionButton}.tsx';
-@source '../sessions/{SessionDetail,FullActivity,WhatItDid,SummaryParts,DepartureParts}.tsx';
+@source '../sessions/{SessionDetail,FullActivity,WhatItDid,SummaryParts,DepartureParts,SessionsView}.tsx';
 @source '../steering/StageConditions.tsx';
 @source '../intent/PromptSelect.tsx';
 @source '../sample/**/*.{ts,tsx}';

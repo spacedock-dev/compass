@@ -507,7 +507,8 @@ class RuntimeConfig:
     # paste of control characters, which `JSON.stringify` writes as six bytes
     # each before the store collapses them: a goal and six lines of 240 of them,
     # a 64-character session id and an expected revision measure 10,238 bytes,
-    # so 12 KiB holds it and is still far below the event cap. `POST
+    # so 12 KiB held it. With the goal at 1,000 (2026-10-27) the same body
+    # measures 14,798, so 16 KiB holds it and is still far below the event cap. `POST
     # /api/reading` shares it, where it is only generous.
     annotation_body_cap_bytes: int
     prompt_path_collapse_min_length: int
@@ -1049,7 +1050,7 @@ def build_runtime_config(
         departure_max_entries=512,
         end_read_cap_bytes=65_536,
         end_max_entries=512,
-        annotation_body_cap_bytes=12_288,
+        annotation_body_cap_bytes=16_384,
         dismissal_body_cap_bytes=1_024,
         history_retention_sec=history_retention_sec,
         history_max_bytes=history_max_bytes,
