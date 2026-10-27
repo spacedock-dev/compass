@@ -3163,13 +3163,17 @@ Three rulings of 2026-10-27 reopen parts of this record, and each is written in 
   [DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes):
   the closed list becomes tier 2 of three, project scripts and a pull request's CI commands join it, and any
   other command may settle a line as a labelled tier-3 result. The read-only list grows by the commands that
-  section names.
+  section names, for ageing and for the cannot-fail rule except the CI-reading commands, which can fail and
+  whose recorded result counts. The quoted rule is item 3's closed-list rule as written in
+  [the closed lists](#the-closed-lists), and the restatement it widens is
+  [the 2026-10-23 PR and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts).
 - Item 5 ("its time only, never its text") is widened by
   [DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor): which vendor
   reads the session decides whether a command that is not a check may be sent with its masked line and output
   tail.
 - Item 10 ("the unasked lane never receives tool outcomes") opens for failed results only, by the same
-  [DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor) ruling.
+  [DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor) ruling, without
+  waiting for DEC-18's rubric thresholds. Passes are never admitted.
 
 Nothing above changes until the layers that build these rulings ship; this record states the decision, and
 the amendments to the shipped skill, SECURITY.md and the promise map ride in those layers.
@@ -6211,7 +6215,8 @@ recorded harness fact for the analysis level's None or low, the same as a pull r
 in the 2026-10-24 amendment above. The other conditions of that amendment hold unchanged. A pending CI state is
 never a pass, a head that moved past the session's commit does not settle the session's lines, and a session
 that changed the CI configuration carries the caution DEC-30 names, so the floor rests on a CI fact only when
-DEC-30 lets that fact stand. The live estimate's floor (item 1) is not touched.
+DEC-30 lets that fact stand. Later file writes in the transcript do not age a CI fact, and DEC-30 item 4's
+head-equals-HEAD test is the only ageing it has. The live estimate's floor (item 1) is not touched.
 
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
@@ -7084,6 +7089,14 @@ were never evidence. May a result from outside the list count, and how far may e
    subject added later cannot reach a consumer nobody chose.
 6. **The read-only list grows.** `sleep`, `gh pr checks`, `gh pr view`, `gh run view`, `gh run list`,
    `gh run watch` and `glab ci status` join DEC-23 item 3's list, with their writing options excluded.
+   The read-only list governs ageing and the fields read, and item 3's never-a-pass clause applies to every
+   command on it except the three tier-2 CI commands (`gh pr checks`, `gh run view`, `glab ci status`), which
+   can fail and whose recorded result counts. `sleep`, `gh pr view`, `gh run list` and `gh run watch` are
+   read-only and never pass. A CI command the agent ran counts only by its recorded result as
+   [DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) item 2 defines it, never by
+   rows parsed from its output, and the provider read in
+   [DEC-30](#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze) is the stronger
+   fact.
 7. **Attribution, as a direction.** When a check is the last command before a `tail` or `head` filter, a summary
    on the output's last line is that check's result, even beside earlier setup commands that print. This ships
    only once a measured sample shows the false-attribution rate, and until then the existing rule stands.
@@ -7091,10 +7104,11 @@ were never evidence. May a result from outside the list count, and how far may e
    next.
 9. **Qualification runs after this ships, not before**, for the new false-`consistent` class: a pass on a command
    Compass does not understand. This follows the 2026-10-02 acceptance of the Claude Code reader. A change to the
-   prompt header is accepted and re-pinned.
+   prompt header is accepted, and the prompt's pinned digest is re-pinned.
 
-**What it reopens.** DEC-23 item 3, "a runner not named here is not a check", and the 2026-10-23 restatement of
-it. It does not reopen the 2026-09-30 rejection of keyword overlap for relevance.
+**What it reopens.** DEC-23 item 3, whose closed-list rule ("a runner not named here is not a check") is written
+in [the closed lists](#the-closed-lists), and
+[the 2026-10-23 PR and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts) that restates it. It does not reopen the 2026-09-30 rejection of keyword overlap for relevance.
 
 **What was rejected, and why.**
 
@@ -7203,11 +7217,13 @@ every output to its own vendor. Reading it through the same vendor exposes nothi
 4. **Upkeep, never blocking.** Redaction learns the shapes found leaking: gcloud `ya29.` tokens,
    `SecretString` values, netrc passwords, `curl -u user:pass`, `Cookie:` headers and others. A stored
    departure explanation is scrubbed with the call's masked values. Neither holds a build or a press.
-5. **Item 10 of DEC-23 opens for failed results only.** The unasked lane may receive failures and never passes,
-   because it raises departures and never reassures.
+5. **Item 10 of DEC-23 opens for failed results only.** The unasked lane receives failed results now, without
+   waiting for DEC-18's rubric thresholds, and never receives passes, because a failure raises departures and a
+   pass never reassures.
 
-**What it reopens.** DEC-23 item 5, "its time only, never its text", as narrowed on 2026-09-24 and restated on
-2026-10-23.
+**What it reopens.** DEC-23 item 5, "its time only, never its text", as narrowed on 2026-09-24 and restated in
+[the 2026-10-23 PR and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts), and DEC-23 item 10, "the
+unasked lane never receives tool outcomes", for failed results only.
 
 **What was rejected, and why.**
 
