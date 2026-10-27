@@ -1216,6 +1216,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.sessions",
         },
         "compass_runtime.diagnostics": {
+            "compass_runtime.project_scripts",
             "compass_runtime.tripwires",
             "compass_runtime.aggregate",
             "compass_runtime.config",
@@ -1628,6 +1629,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.observer",
+            # A project's own check scripts, read from the commit a session began on.
+            "compass_runtime.project_scripts",
             # The goal notice names the Codex destination the reading route resolves.
             "compass_runtime.reading_route",
             "compass_runtime.record_pages",
@@ -1689,6 +1692,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.io",
             "compass_runtime.observer",
             "compass_runtime.project_context",
+            "compass_runtime.project_scripts",
             "compass_runtime.record_pages",
             "compass_runtime.records",
             # Cuts a bounded prompt title back to a whole word for the outline (`transcripts.clip`).
@@ -1755,6 +1759,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # ordering to think about, and nothing it does can reach back into state.
         "compass_runtime.focus": set(),
         "compass_runtime.git_status": set(),
+        # A project's declaring files as the commit a session began on held them: it reads them
+        # through `git_status`'s committed-file read and owns every bound on what it parses.
+        "compass_runtime.project_scripts": {"compass_runtime.git_status"},
         # `history` imports `config` and `io` (for the shared owner-only write
         # helper; DRC-4345), which is narrower than `dismissals` beside it
         # (that one reaches `records` and `state`).

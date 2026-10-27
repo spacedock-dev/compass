@@ -3185,14 +3185,30 @@ _SCRIPT_WRITING_ARGS = frozenset(
     {"--fix", "--write", "-w", "--update", "-u", "--updateSnapshot", "--update-snapshots",
      "--watch", "--watchAll", "-W", "--fix-only", "--unsafe-fixes"}
 )  # fmt: skip
+# A declared body that watches, rewrites snapshots or autocorrects is not a check. `-W` is left
+# out: `python -W error -m pytest` is a check, and the flag is a warning filter there.
+_BODY_WRITING_ARGS = frozenset(
+    {"--watch", "--watchAll", "-w", "--continuous", "-u", "--update", "--updateSnapshot",
+     "--update-snapshots", "--snapshot-update", "-update", "--autocorrect", "--auto-correct",
+     "-a", "-A", "--fix", "--write"}
+)  # fmt: skip
 _SCRIPT_NAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.:-]*")
 _MAKE_OPTIONS = re.compile(r"^(?:-s|--silent|--quiet|-k|--keep-going|--no-print-directory|-j\d*)$")
 _SCRIPT_DEPTH = 4
 
 
-def _script_name_ok(name: str) -> bool:
+def _script_name_ok(name: str, lines: tuple[str, ...] = ()) -> bool:
     tokens = set(re.split(r"[^a-z0-9]+", name.lower()))
-    return bool(tokens & _SCRIPT_VERBS) and not tokens & _SCRIPT_REFUSED
+    refused = tokens & _SCRIPT_REFUSED
+    # `format:check` is the usual spelling of a formatter's verify mode. The name alone is not
+    # enough, so the body has to ask for it with `--check` or `-c` on every line.
+    if refused == {"format"} and "check" in tokens and lines:
+        refused = set() if all(_asks_to_check_only(line) for line in lines) else refused
+    return bool(tokens & _SCRIPT_VERBS) and not refused
+
+
+def _asks_to_check_only(line: str) -> bool:
+    return any(word in ("--check", "-c") for word in line.split())
 
 
 def _package_invocation(program: str, rest: list[str]) -> tuple[str, list[str]] | None:
@@ -3203,21 +3219,48 @@ def _package_invocation(program: str, rest: list[str]) -> tuple[str, list[str]] 
         name, args = rest[0], rest[1:]
     else:
         return None
+    # An option before the literal `--` is the package manager's own, whichever side of the name
+    # it sits on: `--prefix`, `--workspace(s)`, `--filter`, `--dir`, `--script-shell` and
+    # `--ignore-scripts` each select another package or stop the script, so the declared one is
+    # not what ran. After the `--` an argument reaches the script itself.
+    own, _separator, forwarded = _partition_double_dash(args)
     if (
         name.startswith("-")
         or _SCRIPT_NAME_RE.fullmatch(name) is None
-        or any(arg.split("=", 1)[0] in _SCRIPT_WRITING_ARGS for arg in args)
+        or any(arg.startswith("-") for arg in own)
+        or any(arg.split("=", 1)[0] in _SCRIPT_WRITING_ARGS for arg in (*own, *forwarded))
     ):
         return None
     return "package", [name]
 
 
+def _partition_double_dash(args: list[str]) -> tuple[list[str], list[str], list[str]]:
+    if "--" not in args:
+        return args, [], []
+    at = args.index("--")
+    return args[:at], ["--"], args[at + 1 :]
+
+
+# Variables that change which script or recipe a package manager, `make` or `just` runs, or
+# whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`).
+_STEERING_VARIABLE_RE = re.compile(r"^(?:npm_config_|JUST_)|^(?:MAKEFLAGS|MAKE)$", re.IGNORECASE)
+
+
+def _steers_a_script(raw: tuple[str, ...]) -> bool:
+    """Whether a segment's words, before stripping, assign a variable that steers a script run."""
+    return any(
+        _ASSIGNMENT_RE.match(word) and _STEERING_VARIABLE_RE.match(word.split("=", 1)[0])
+        for word in raw
+    )
+
+
 def _script_invocation(words: list[str]) -> tuple[str, list[str]] | None:
     """The declaring-file kind and script names a command runs, or None for anything else.
 
-    Only the plain forms: no option before the script's name (`--filter`, `-r`, `-C` and `--dir`
-    select another package or directory, whose declarations are not read), and no argument that
-    writes.
+    Only the plain forms: no package-manager option on either side of the script's name before a
+    literal `--` (`--filter`, `-r`, `-C`, `--dir`, `--prefix` and `--workspace` select another
+    package or directory, whose declarations are not read, and `--script-shell` can stop the script
+    running), and no argument that writes.
     """
     if not words:
         return None
@@ -3254,6 +3297,8 @@ def _script_line_is_check(
             or (index < len(parts) - 1 and part.joiner != "&&")
             or _is_fixer(words)
             or _always_zero(words)
+            or _steers_a_script(part.raw)
+            or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
         ):
             return False
         if _is_check(words):
@@ -3283,7 +3328,11 @@ def _script_is_check(
     identity = f"{kind}:{name}"
     script = declared.kind(kind).get(name)
     result = False
-    if script is not None and identity not in trail and (not named or _script_name_ok(name)):
+    if (
+        script is not None
+        and identity not in trail
+        and (not named or _script_name_ok(name, script.lines))
+    ):
         trail = (*trail, identity)
         result = (
             bool(script.lines or script.needs)
@@ -3310,14 +3359,17 @@ def _script_is_check(
 
 
 def _declared_check(
-    declared: project_scripts.Declarations | None, directory: str, words: list[str]
+    declared: project_scripts.Declarations | None,
+    directory: str,
+    words: list[str],
+    raw: tuple[str, ...] = (),
 ) -> bool:
     """Whether a segment runs a script the project's own declarations make a check.
 
     Only in the toplevel of the work tree the declarations were read from: a command in a
     subfolder runs that folder's own scripts, which are not read.
     """
-    if declared is None or not words or not declared.at(directory):
+    if declared is None or not words or not declared.at(directory) or _steers_a_script(raw):
         return False
     invoked = _script_invocation(words)
     if invoked is None:
@@ -3963,7 +4015,7 @@ class _ShellCall:
             for i in self.meaningful
             if i not in self.checks
             and self.placed[i]
-            and _declared_check(declared, self.directories[i], self.words[i][0])
+            and _declared_check(declared, self.directories[i], self.words[i][0], self.parts[i].raw)
         ]
         self.checks = sorted([*self.checks, *self.declared_checks])
         # A check's own redirection into a file is a recorded write by the call

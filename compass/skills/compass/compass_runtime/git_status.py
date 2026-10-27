@@ -1,5 +1,8 @@
 """The end-of-session git probe: one bounded command, two scalars, no pathnames.
 
+The committed-file read (`read_committed`) is the second command family here: four read-only
+commands that return a few named files as a commit held them.
+
 This is the only place in the runtime that runs a program inside a directory the
 user chose, and `SECURITY.md`'s "Repository git reads (the end-of-session probe)"
 section is the contract it implements. The bounds are
@@ -348,7 +351,9 @@ def read_committed(
     """
     if not os.path.isdir(cwd) or any(_PATH_NAME.fullmatch(name) is None for name in names):
         return None
-    environ = probe_environment(os.environ)
+    # A replace ref can point a blob at another one while `git status` still reads the file as
+    # modified, so none of the four reads honours one.
+    environ = {**probe_environment(os.environ), "GIT_NO_REPLACE_OBJECTS": "1"}
     resolved = _executable(environ)
     if resolved is None:
         return None

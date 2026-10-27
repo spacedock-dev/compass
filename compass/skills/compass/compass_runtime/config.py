@@ -196,7 +196,8 @@ class RuntimeConfig:
     observer_model_enabled: bool
     model_calls_disabled: bool
     claude_reading_model: str
-    # Whether the end-of-session git probe runs at all. `--no-git` is the off
+    # Whether the end-of-session git probe, and the read of a project's own check scripts,
+    # run at all. `--no-git` is the off
     # switch [DEC-3](SECURITY.md#repository-git-reads-the-end-of-session-probe) made part of its
     # ruling, and off means no git command runs and
     # both published fields stay `None` — never a confident clean.

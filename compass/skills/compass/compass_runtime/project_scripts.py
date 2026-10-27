@@ -27,6 +27,7 @@ declarations, is ever published, as any check's line is; the scripts' bodies nev
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -56,6 +57,9 @@ MAX_FILE_BYTES: Final = 256 * 1024
 MAX_SCRIPTS: Final = 500
 MAX_LINES: Final = 5000
 MAX_BODY_CHARS: Final = 4096
+# One line of a Makefile or justfile, before or after its continuations are joined. Without it a
+# single long whitespace line is the input a backtracking pattern spends minutes on.
+MAX_LINE_CHARS: Final = 4096
 GIT_TIMEOUT_SEC: Final = 5.0
 # A load is reused this long. The base commit and the file's bytes change on a human's time scale,
 # and every collect asks again.
@@ -71,6 +75,7 @@ EDITED_REASON: Final = "differs from the commit the session began on"
 PARSE_REASON: Final = "could not be parsed"
 FEATURE_REASON: Final = "uses syntax this reader does not follow"
 COUNT_REASON: Final = "declares too many scripts"
+LINE_REASON: Final = "has a line over the length cap"
 
 
 @dataclass(frozen=True)
@@ -95,6 +100,9 @@ class Declarations:
     # declarations to withdraw.
     files: frozenset[str] = frozenset()
     real_toplevel: str = ""
+    # A digest of each trusted file's committed bytes, so a cached load can be checked against the
+    # work tree again without asking git.
+    digests: Mapping[str, bytes] = field(default_factory=dict, repr=False, compare=False)
     memo: dict[Any, bool] = field(default_factory=dict, repr=False, compare=False)
 
     def at(self, directory: str) -> bool:
@@ -121,6 +129,7 @@ class Declarations:
             self.skipped,
             self.files - written,
             self.real_toplevel,
+            self.digests,
         )
 
     def kind(self, kind: str) -> Mapping[str, Script]:
@@ -169,9 +178,11 @@ def load(
     key = (session_dir, int(at))
     with _lock:
         held = _cache.get(key)
-        if held is not None and now() - held[0] < CACHE_SECONDS:
+        fresh = held is not None and now() - held[0] < CACHE_SECONDS
+        if fresh and held is not None:
             _cache.move_to_end(key)
-            return held[1]
+    if fresh and held is not None and (held[1] is None or _still_committed(held[1])):
+        return held[1]
     loaded = _load(session_dir, at, runner)
     with _lock:
         _cache[key] = (now(), loaded)
@@ -179,6 +190,19 @@ def load(
         while len(_cache) > _CACHE_ENTRIES:
             _cache.popitem(last=False)
     return loaded
+
+
+def _still_committed(held: Declarations) -> bool:
+    """Whether every trusted file in the work tree still holds the bytes it was trusted with.
+
+    The cache outlives a shell edit by up to `CACHE_SECONDS` otherwise, and a declaration read in
+    that window would be one the session wrote. No git run is needed: the digests are held.
+    """
+    for name, digest in held.digests.items():
+        working, reason = _working_bytes(os.path.join(held.toplevel, name))
+        if reason is not None or working is None or hashlib.sha256(working).digest() != digest:
+            return False
+    return True
 
 
 def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declarations | None:
@@ -196,6 +220,7 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
     by_kind: dict[str, dict[str, Script]] = {"package": {}, "make": {}, "just": {}}
     skipped: list[tuple[str, str]] = []
     trusted: set[str] = set()
+    digests: dict[str, bytes] = {}
     for entry in committed.entries:
         reason = _unusable(entry, top)
         parsed: dict[str, Script] | None = None
@@ -207,6 +232,8 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
             _note(top, entry.name, reason or PARSE_REASON)
             continue
         trusted.add(entry.name)
+        assert entry.content is not None  # noqa: S101 - a trusted entry was read
+        digests[entry.name] = hashlib.sha256(entry.content).digest()
         # A name two files of a kind both declare is read from the first, as `make` and `just` do.
         for name, script in parsed.items():
             by_kind[_kind(entry.name)].setdefault(name, script)
@@ -223,6 +250,7 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
         tuple(skipped),
         frozenset(trusted),
         real,
+        digests,
     )
 
 
@@ -310,12 +338,25 @@ def _parse(name: str, content: bytes) -> tuple[dict[str, Script] | None, str | N
     kind = _kind(name)
     if kind == "package":
         return _parse_package(text)
+    return _parse_line_file(kind, text)
+
+
+def _parse_line_file(kind: str, text: str) -> tuple[dict[str, Script] | None, str | None]:
     if text.count("\n") > MAX_LINES:
         return None, SIZE_REASON
-    scripts = _parse_make(text) if kind == "make" else _parse_just(text)
+    if any(len(line) > MAX_LINE_CHARS for line in text.splitlines()):
+        return None, LINE_REASON
+    try:
+        scripts = _parse_make(text) if kind == "make" else _parse_just(text)
+    except _LineTooLong:
+        return None, LINE_REASON
     if scripts is None:
         return None, FEATURE_REASON
     return (scripts, None) if len(scripts) <= MAX_SCRIPTS else (None, COUNT_REASON)
+
+
+class _LineTooLong(Exception):  # noqa: N818 - a refusal with a closed reason, not an error
+    """A logical line over `MAX_LINE_CHARS` once its continuations are joined."""
 
 
 def _parse_package(text: str) -> tuple[dict[str, Script] | None, str | None]:
@@ -343,13 +384,40 @@ def _parse_package(text: str) -> tuple[dict[str, Script] | None, str | None]:
 # Make features that change which recipe runs or what it means, which a line-by-line reading
 # cannot follow: the file is not read at all rather than read wrongly.
 _MAKE_UNSUPPORTED = re.compile(
-    r"^\s*(?:-?include|sinclude|define|endef|ifn?eq|ifn?def|override|vpath|export\s+-?\w+\s*:?=)\b"
-    r"|^\s*\.(?:ONESHELL|SHELLFLAGS|DEFAULT|SECONDEXPANSION|POSIX|EXPORT_ALL_VARIABLES)\b"
-    r"|^\s*SHELL\s*[:?+]?=",
+    r"^[ \t]*(?:-?include|sinclude|define|endef|ifn?eq|ifn?def|override|vpath"
+    r"|export[ \t]+-?\w+[ \t]*:?=)\b"
+    r"|^[ \t]*\.(?:ONESHELL|SHELLFLAGS|DEFAULT|SECONDEXPANSION|POSIX|EXPORT_ALL_VARIABLES)\b"
+    r"|^[ \t]*SHELL[ \t]*[:?+]?=",
     re.MULTILINE,
 )
 _MAKE_ASSIGNMENT = re.compile(r"^[A-Za-z_][\w.\-]*\s*(?:[:+?!]|::)?=")
-_MAKE_RULE = re.compile(r"^([^:=#\s][^:=#]*?)\s*(::?)(?!=)\s*([^#]*)$")
+_PUNCTUATION = re.compile(r"[:=#]")
+
+
+def _make_rule(line: str) -> tuple[list[str], str, str] | None:
+    """The target names, the colons and the text after them of a rule line, or None.
+
+    Found by index, not by a pattern: a lazy group between two whitespace runs backtracks
+    quadratically on a long line of spaces. A `#` comment after the colons is dropped, unless the
+    line also holds a `$` or a `\\#`, which this reader does not follow.
+    """
+    if not line or line[0] in ":=# \t":
+        return None
+    found = _PUNCTUATION.search(line)
+    if found is None or found.group() != ":":
+        return None
+    at = found.start()
+    colons = "::" if line[at + 1 : at + 2] == ":" and line[at + 2 : at + 3] != "=" else ":"
+    rest = line[at + len(colons) :]
+    if rest[:1] == "=":
+        return None
+    if "#" in rest:
+        if "$" in line or "\\#" in line:
+            return None
+        rest = rest.partition("#")[0]
+    return line[:at].split(), colons, rest
+
+
 _RECIPE_PREFIX = "@+"
 
 
@@ -359,11 +427,14 @@ class _MakeReader:
     def __init__(self) -> None:
         self.targets: dict[str, dict[str, Any]] = {}
         self.unusable: set[str] = set()
+        self.phony: set[str] = set()
         self.current: str | None = None
         self.block_has_recipe = False
 
     def header(self, line: str) -> None:
-        self.current, self.block_has_recipe = _make_header(line, self.targets, self.unusable)
+        self.current, self.block_has_recipe = _make_header(
+            line, self.targets, self.unusable, self.phony
+        )
         if self.current is not None and (inline := line.partition(";")[2].strip()):
             self.recipe(inline)
 
@@ -388,7 +459,11 @@ class _MakeReader:
             name: Script(tuple(entry["lines"]), tuple(entry["needs"]))
             for name, entry in self.targets.items()
             # Two blocks with recipes for one target: make keeps one and warns, or runs both.
-            if name not in self.unusable and entry["blocks"] <= 1
+            if name not in self.unusable
+            and entry["blocks"] <= 1
+            # A target with no prerequisite and no `.PHONY` line is a file name: `make test` beside
+            # a `test/` directory prints "up to date" and runs nothing.
+            and (name in self.phony or entry["needs"])
         }
 
 
@@ -405,15 +480,18 @@ def _parse_make(text: str) -> dict[str, Script] | None:
 
 
 def _make_header(
-    line: str, targets: dict[str, dict[str, Any]], unusable: set[str]
+    line: str, targets: dict[str, dict[str, Any]], unusable: set[str], phony: set[str]
 ) -> tuple[str | None, bool]:
     """The target a rule line opens, or None for an assignment, a pattern or a special target."""
     if _MAKE_ASSIGNMENT.match(line):
         return None, False
-    rule = _MAKE_RULE.match(line)
+    rule = _make_rule(line)
     if rule is None:
         return None, False
-    names, colons, rest = rule[1].split(), rule[2], rule[3].partition(";")[0]
+    names, colons, rest = rule[0], rule[1], rule[2].partition(";")[0]
+    if names == [".PHONY"] and colons == ":":
+        phony.update(rest.split())
+        return None, False
     if len(names) != 1 or colons != ":" or names[0].startswith("."):
         unusable.update(names)
         return None, False
@@ -435,7 +513,11 @@ def _logical_lines(text: str) -> list[str]:
         physical = raw.lstrip() if carry else raw
         if physical.endswith("\\"):
             carry += physical[:-1] + " "
+            if len(carry) > MAX_LINE_CHARS:
+                raise _LineTooLong
             continue
+        if len(carry) + len(physical) > MAX_LINE_CHARS:
+            raise _LineTooLong
         joined.append(carry + physical)
         carry = ""
     if carry:
@@ -447,7 +529,23 @@ _JUST_UNSUPPORTED = re.compile(
     r"^(?:import|mod)\b|^set\s+(?:windows-)?shell\b|^set\s+(?:script-interpreter)\b",
     re.MULTILINE,
 )
-_JUST_HEADER = re.compile(r"^(@?)([A-Za-z_][A-Za-z0-9_-]*)(\s+[^:]*?)?\s*:(?!=)\s*(.*)$")
+_JUST_NAME = re.compile(r"(@?)([A-Za-z_][A-Za-z0-9_-]*)(\s.*)?")
+
+
+def _just_header(line: str) -> tuple[str, str, str] | None:
+    """The recipe name, its parameter text and the text after the colon, or None.
+
+    Split at the first colon by index: the pattern this replaces spent cubic time on a long line.
+    """
+    at = line.find(":")
+    if at < 0 or line[at + 1 : at + 2] == "=":
+        return None
+    head = _JUST_NAME.fullmatch(line[:at])
+    if head is None:
+        return None
+    return head[2], head[3] or "", line[at + 1 :].strip()
+
+
 _JUST_ATTRIBUTE = re.compile(r"^\[(.*)\]\s*$")
 _JUST_QUIET_ATTRIBUTES = ("private", "group", "doc")
 
@@ -482,11 +580,11 @@ def _parse_just(text: str) -> dict[str, Script] | None:
             continue
         close()
         name, lines, needs = None, [], ()
-        header = _JUST_HEADER.match(line)
+        header = _just_header(line)
         if header is None or line.startswith(("alias ", "set ", "export ")):
             pending_unusable = False
             continue
-        recipe, params, rest = header[2], header[3], header[4]
+        recipe, params, rest = header
         dependencies = rest.split()
         if (
             pending_unusable

@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -187,6 +188,43 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
         self.assertEqual([], self.titles())
         self.assertEqual(8, len(self.titles("command")))
 
+    def test_a_body_rule_refuses_what_a_name_rule_would_let_through(self) -> None:
+        self.commit(
+            {
+                "package.json": package(
+                    **{
+                        "lint": "eslint --fix .",
+                        "check": "ruff check --fix .",
+                        "test:e": "exit 0",
+                        "test:a": "ruff check . > out.txt",
+                        "test:b": "pytest -q && ./push.sh",
+                        "test:c": "jest -u",
+                        "test:d": "pytest --snapshot-update",
+                        "lint:a": "rubocop -A",
+                        "typecheck": "tsc --noEmit --watch",
+                    }
+                )
+            }
+        )
+        for name in (
+            "lint",
+            "check",
+            "test:e",
+            "test:a",
+            "test:b",
+            "test:c",
+            "test:d",
+            "lint:a",
+            "typecheck",
+        ):
+            self.ran(f"pnpm run {name}")
+        self.assertEqual([], self.titles())
+
+    def test_a_warning_filter_in_a_body_is_not_a_writing_argument(self) -> None:
+        self.commit({"package.json": package(**{"test:w": "python -m pytest -W error"})})
+        self.ran("npm run test:w")
+        self.assertEqual(["npm run test:w"], self.titles())
+
     def test_a_body_with_a_redirect_a_subshell_or_a_substitution_does_not_count(self) -> None:
         self.commit(
             {
@@ -233,6 +271,37 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
         ):
             self.ran(command)
         self.assertEqual([], self.titles())
+
+    def test_an_option_after_the_name_or_a_steering_variable_leaves_the_script_a_command(
+        self,
+    ) -> None:
+        self.commit(
+            {
+                "package.json": package(typecheck="tsc --noEmit"),
+                "Makefile": ".PHONY: lint\nlint:\n\truff check .\n",
+            }
+        )
+        refused = (
+            "npm run typecheck --prefix sub",
+            "npm run typecheck --workspaces",
+            "npm run typecheck -ws",
+            "npm run typecheck --script-shell=/usr/bin/true",
+            "pnpm typecheck --filter a",
+            "pnpm typecheck --dir sub",
+            "pnpm typecheck -- --fix",
+            "npm_config_script_shell=/usr/bin/true npm run typecheck",
+            "env NPM_CONFIG_PREFIX=sub npm run typecheck",
+            "MAKEFLAGS=-n make lint",
+            "MAKE=true make lint",
+        )
+        for command in refused:
+            self.ran(command)
+        self.assertEqual([], self.titles())
+
+    def test_an_argument_forwarded_after_a_double_dash_still_counts(self) -> None:
+        self.commit({"package.json": package(typecheck="tsc")})
+        self.ran("npm run typecheck -- --noEmit")
+        self.assertEqual(["npm run typecheck -- --noEmit"], self.titles())
 
     def test_a_script_the_file_does_not_declare_is_not_guessed_from_its_name(self) -> None:
         self.commit({"package.json": package(typecheck="tsc --noEmit")})
@@ -397,6 +466,91 @@ class TheResultIsReadLikeAnyCheck(ProjectScriptTestCase):
         self.assertNotIn("tsconfig.secret", json.dumps(entries))
 
 
+class TheParsersAreBoundedInTime(unittest.TestCase):
+    def refusal(self, name: str, text: str) -> tuple[Any, float]:
+        started = time.monotonic()
+        result = project_scripts._parse(name, text.encode())
+        return result, time.monotonic() - started
+
+    def test_a_long_whitespace_line_is_refused_quickly_in_each_declaring_file(self) -> None:
+        for name in ("justfile", "Makefile"):
+            with self.subTest(name=name):
+                result, seconds = self.refusal(name, "a" + " " * 5000 + "x\n")
+                self.assertEqual((None, project_scripts.LINE_REASON), result)
+                self.assertLess(seconds, 1.0)
+
+    def test_a_long_logical_line_made_of_continuations_is_refused(self) -> None:
+        text = "lint:\n" + "".join("\tpytest \\\n" for _ in range(1000))
+        result, _seconds = self.refusal("Makefile", text)
+        self.assertEqual((None, project_scripts.LINE_REASON), result)
+
+    def test_a_file_of_blank_lines_parses_quickly(self) -> None:
+        _result, seconds = self.refusal("Makefile", "\n" * 4000)
+        self.assertLess(seconds, 1.0)
+
+    def test_too_many_scripts_and_too_many_lines_are_refused(self) -> None:
+        many = "".join(f"t{i}:\n    pytest\n" for i in range(project_scripts.MAX_SCRIPTS + 1))
+        self.assertEqual(
+            (None, project_scripts.COUNT_REASON), project_scripts._parse("justfile", many.encode())
+        )
+        lines = "\n" * (project_scripts.MAX_LINES + 1)
+        self.assertEqual(
+            (None, project_scripts.SIZE_REASON), project_scripts._parse("justfile", lines.encode())
+        )
+
+
+class ASlowGitReadsNothing(ProjectScriptTestCase):
+    def test_a_runner_past_the_deadline_makes_the_load_return_none(self) -> None:
+        self.commit({"package.json": package(typecheck="tsc --noEmit")})
+
+        def slow(*_args: Any, **_kwargs: Any) -> Any:
+            raise subprocess.TimeoutExpired("git", 5)
+
+        self.assertIsNone(project_scripts.load(str(self.cwd), 1_790_000_000.0, runner=slow))
+
+
+class ACachedLoadIsCheckedAgainstTheWorkTree(ProjectScriptTestCase):
+    def test_a_shell_edit_inside_the_cache_window_withdraws_the_declarations(self) -> None:
+        self.commit({"package.json": package(typecheck="tsc --noEmit")})
+        at = 1_790_000_000.0
+        first = project_scripts.load(str(self.cwd), at)
+        assert first is not None
+        self.assertEqual(frozenset({"package.json"}), first.files)
+        (self.cwd / "package.json").write_text(package(typecheck="tsc --noEmit && true"))
+        again = project_scripts.load(str(self.cwd), at)
+        assert again is not None
+        self.assertEqual(frozenset(), again.files)
+        self.assertIn(("package.json", project_scripts.EDITED_REASON), again.skipped)
+
+
+class AReplaceRefDoesNotForgeTheBase(ProjectScriptTestCase):
+    def test_a_replace_ref_pointing_a_blob_at_an_edited_blob_leaves_the_file_untrusted(
+        self,
+    ) -> None:
+        self.commit({"package.json": package(typecheck="tsc --noEmit")})
+        old = subprocess.run(
+            [GIT or "git", "rev-parse", "HEAD:package.json"],
+            cwd=self.cwd,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        edited = package(typecheck="tsc --noEmit && true")
+        (self.cwd / "package.json").write_text(edited)
+        new = subprocess.run(
+            [GIT or "git", "hash-object", "-w", "package.json"],
+            cwd=self.cwd,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        git(self.cwd, "replace", old, new)
+        loaded = project_scripts.load(str(self.cwd), 1_790_000_000.0)
+        assert loaded is not None
+        self.assertEqual(frozenset(), loaded.files)
+        self.assertIn(("package.json", project_scripts.EDITED_REASON), loaded.skipped)
+
+
 class DiagnoseSaysWhyAFileWasSkipped(ProjectScriptTestCase):
     def test_the_rendering_names_the_file_and_the_reason_and_nothing_from_it(self) -> None:
         self.commit({"package.json": '{"scripts": {"typecheck": "tsc --noEmit-FAKE-BODY"'})
@@ -451,7 +605,7 @@ class TheCommittedFileRead(ProjectScriptTestCase):
 class TheDeclarationParsers(unittest.TestCase):
     def test_make_reads_targets_prerequisites_and_inline_recipes(self) -> None:
         scripts = project_scripts._parse_make(
-            "FOO := 1\n.PHONY: test\ntest: build ; pytest -q\nbuild:\n\ttsc -b \\\n\t  --noEmit\n"
+            "FOO := 1\n.PHONY: test build\ntest: build ; pytest -q\nbuild:\n\ttsc -b \\\n\t  --noEmit\n"
         )
         assert scripts is not None
         self.assertEqual(("pytest -q",), scripts["test"].lines)
@@ -470,6 +624,30 @@ class TheDeclarationParsers(unittest.TestCase):
         )
         assert scripts is not None
         self.assertEqual({"lint", "helper"}, set(scripts))
+
+    def test_a_non_phony_target_without_prerequisites_is_a_file_name_not_a_check(self) -> None:
+        scripts = project_scripts._parse_make(
+            "test:\n\tpytest -q\n.PHONY: lint\nlint:\n\truff check .\nall: lint\n\tmypy .\n"
+        )
+        assert scripts is not None
+        self.assertEqual({"lint", "all"}, set(scripts))
+
+    def test_a_make_comment_after_the_colon_is_not_a_prerequisite(self) -> None:
+        scripts = project_scripts._parse_make(".PHONY: test\ntest: ## Run tests\n\tpytest -q\n")
+        assert scripts is not None
+        self.assertEqual((), scripts["test"].needs)
+        self.assertEqual(("pytest -q",), scripts["test"].lines)
+        refused = project_scripts._parse_make(".PHONY: t\nt: a # $(X)\n\tpytest\n")
+        self.assertEqual({}, refused)
+
+    def test_a_format_script_that_only_checks_counts_and_a_bare_format_does_not(self) -> None:
+        for name, lines, expected in (
+            ("format:check", ("prettier --check .",), True),
+            ("format:check", ("prettier --write .",), False),
+            ("format", ("prettier --check .",), False),
+        ):
+            with self.subTest(name=name, lines=lines):
+                self.assertIs(expected, project_context._script_name_ok(name, lines))
 
     def test_a_script_name_needs_a_check_verb_and_no_fixing_word(self) -> None:
         for name, expected in (
