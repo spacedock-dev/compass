@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2140255,
+    "bytes": 2138107,
     "file": "react.html",
-    "sha256": "e685ac88ac7ece951aff5a98e649868d259bf13db798530a28148c8a3ed994bc"
+    "sha256": "e486bbafaf8b4415294c79521491b46026309071cf2664c92f49454d0a383979"
   },
   "format": 1,
   "frontend": "react",
@@ -359,7 +359,7 @@
       },
       {
         "file": "frontend/src/capacity/CapacityStrip.tsx",
-        "sha256": "00c376c00489197bd1dcf47b89371f01c17c6b3603696bb832dfeb20ba15be0e"
+        "sha256": "351d3f9f1350bede9f210b34f029abb54444d6832c1bb57c1f413ddb448173f1"
       },
       {
         "file": "frontend/src/capacity/ObserverControls.tsx",
@@ -367,19 +367,19 @@
       },
       {
         "file": "frontend/src/capacity/UsageConsent.tsx",
-        "sha256": "8a0929b2a2a9a45c9c2eadb9907e1fcce910708397580263e6554529bc4439ae"
+        "sha256": "a70594e981453b28ba917b74f119b5de156567ecfd0d74ff8f3545dc69477b91"
       },
       {
         "file": "frontend/src/capacity/capacity.css",
-        "sha256": "84f8f13f23cda5793c36310572c2194fa3da85ad4ef8fc963338ec65e862f43c"
+        "sha256": "1e0084962b9af3ebb7344365185ada1647d7f52b38993aa7363bb2b3a463f00e"
       },
       {
         "file": "frontend/src/capacity/held.ts",
-        "sha256": "5b1cc1ca56ec82a2355aaacfe7e6fdfee1181adc004b53184d454926fa48813c"
+        "sha256": "ba98b799cb356584043cc5e8467432d98763710237151e1fb0652282837b879e"
       },
       {
         "file": "frontend/src/capacity/index.ts",
-        "sha256": "67eaee84657003d5a905172e8ba84efbef8e211a59c75a36fd345ccf54490eac"
+        "sha256": "184d09604728491770a713d6c556f1d3179bd63df10269b8cd011c661acc6b32"
       },
       {
         "file": "frontend/src/capacity/model.ts",
@@ -1575,7 +1575,7 @@
       },
       {
         "file": "frontend/src/transport/runtime.ts",
-        "sha256": "ce432fd59f2b1f2919d0131e11eb07bb2bb850733f1774d88e61b6a8de468208"
+        "sha256": "1578faed923c7c4e8023ba4e8b575e367838cfd43257e9f79bf35386fede9251"
       },
       {
         "file": "frontend/src/transport/testing.ts",
