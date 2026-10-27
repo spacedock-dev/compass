@@ -76,19 +76,7 @@ Linux and Windows halves of this section are unchanged: an ask there still needs
   translated filesystems can coarsen it further. The title caches keyed on `(st_mtime_ns, st_size)`
   can therefore serve a stale title after a same-size rewrite. Unmitigated, low impact.
 
-## 3. Adjacent, recorded but not planned
-
-- Containers and `--bind`. `-p 127.0.0.1:4553:4553` cannot reach a server bound to the *container's*
-  loopback, and the fixed port permits one instance per network namespace. Adding `--bind` is
-  coupled to the loopback exposure documented in `SECURITY.md`, so it is a security and deployment
-  change rather than a portability one, and the skill body currently says bluntly not to change the
-  bind address.
-- Release gate. `release.yml` is a single Ubuntu job with no `needs`, so a tag on a red `main` tip
-  still releases. Either make it depend on the `quality-gate` status of the tagged commit, or say
-  plainly in `AGENTS.md` that it does not. The current silent mismatch is the only unacceptable
-  option.
-
-## 4. Questions only a real machine can answer
+## 3. Questions only a real machine can answer
 
 `--diagnose` output from any Windows user substitutes for all four.
 
@@ -100,7 +88,7 @@ Linux and Windows halves of this section are unchanged: an ask there still needs
    matrix says eight harnesses on Windows rather than ten, which is a documentation outcome and not
    a failure.
 
-## 5. Open maintainer decisions
+## 4. Open maintainer decisions
 
 - The `platform = "darwin"` mypy pin. Its stated justification is no longer true, because
   `mypy --platform linux` passes clean on the current tree: the remaining platform branch goes

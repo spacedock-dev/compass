@@ -4041,11 +4041,12 @@ can reach the port. Reading `/api/data` is the whole board: every session's titl
 project paths. Writing is the twenty-two POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
 somebody other than you. Three of the twenty-two store nothing durable of their own: `POST /api/direction` returns the whole text
-of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
+of a direction a session's user gave, which `/api/project-context` names by its first sentence,
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
-message's published title of at most 112 characters. Both answer only a loopback peer, so a non-default bind does not widen them; their
-bounds are in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty of them, for the reason the
+message's published title of at most 112 characters, and `POST /api/live-monitor` holds the Live
+monitor's lease in memory only. All three answer only a loopback peer, so a non-default bind does not widen them;
+the first two have their bounds in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client

@@ -141,8 +141,9 @@ steering bar, the tripwires, the workflow stage conditions, the Decisions tab an
 over a real backend, and that drafts, carets, an open disclosure and the retained terminal survive
 live updates, a change of tab and a route away and back; it takes no native action. `pnpm test:attention:browser`
 checks the Attention view and the notification control against a scripted Notification
-API, and `pnpm test:capacity:browser` does the same for the capacity strip, the usage consent and the observer
-consent, checking that no usage parameter, model request or notification starts without an explicit press.
+API, and `pnpm test:capacity:browser` does the same for the capacity strip, the quota line and the goal-summary
+controls, checking that every board read asks for quota until Turn off and none after, and that no model request
+or notification starts without an explicit press.
 `pnpm test:css:browser` is the stylesheet's readability contract on the rendered page, over the Sessions, session,
 Drift, Intent, Projects, project, Attention and capacity views of the fixture boards.
 
