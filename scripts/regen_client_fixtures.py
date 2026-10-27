@@ -1728,6 +1728,11 @@ def vocabulary() -> dict[str, Any]:
         "ciBuckets": list(runtime_ci_read.BUCKETS),
         "ciSources": list(runtime_ci_read.SOURCES),
         "ciReadErrors": list(runtime_ci_read.ERRORS),
+        "ciEntryResults": dict(runtime_ci_read._RESULT),  # noqa: SLF001 - the producer's own words
+        "ciEntryWords": dict(runtime_ci_read._WORDS),  # noqa: SLF001
+        "ciEntrySource": runtime_ci_read.SOURCE_TEXT,
+        "ciHeadMoved": runtime_ci_read.HEAD_MOVED_TEXT,
+        "ciCaution": runtime_ci_read.CAUTION_TEXT,
         "workEvidenceByHarness": {
             harness: sorted(types) for harness, types in reading.WORK_EVIDENCE_BY_HARNESS.items()
         },

@@ -181,7 +181,7 @@ Pressing Analyze drift also reads one pull request's CI checks from GitHub with 
 when your goal names the pull request by its URL, or when a Claude Code session records one for the
 repository its folder points at
 ([DEC-30](design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)).
-GitHub is sent the repository and the number and nothing else of the session. Checks still running,
+GitHub is sent the repository and the number, or, where a pushed branch is what bound it, the repository and that branch's name, and nothing else of the session. Checks still running,
 no completed check, a pull request head past the session's commit, and a cancelled check each settle
 nothing, and skipped checks count as neither a pass nor a failure. `--no-ci-read` and the switch beside
 the notice turn the read off, and a missing or signed-out `gh` is said beside the reading. Only

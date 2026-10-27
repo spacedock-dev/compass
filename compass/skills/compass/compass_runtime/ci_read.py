@@ -277,7 +277,8 @@ def environment(environ: Mapping[str, str]) -> dict[str, str]:
 
     `GH_HOST`, `GH_REPO`, `GH_TOKEN`, `GH_CONFIG_DIR` and the `GITLAB_*` and `GL_*` names each
     redirect the CLI to another host, repository, account or configuration, so none of them
-    reaches it. The reader's own stored login is what remains.
+    reaches it. What the CLI then uses is the reader's own login: a `GITHUB_TOKEN` or
+    `GITHUB_ENTERPRISE_TOKEN` in the environment where one is set, the stored login otherwise.
     """
     scrubbed = git_status.probe_environment(environ)
     kept = {key: value for key, value in scrubbed.items() if not key.startswith(_REMOVED_ENV)}
@@ -292,7 +293,7 @@ _NOT_FOUND = re.compile(
     r"could not resolve to a pull\s?request|no pull requests? found|not found", re.IGNORECASE
 )
 _RATE = re.compile(r"rate limit", re.IGNORECASE)
-_NO_CHECKS = re.compile(r"no checks reported", re.IGNORECASE)
+_NO_CHECKS = re.compile(r"no (?:required )?checks reported", re.IGNORECASE)
 
 
 def _error_token(stderr: str) -> str:

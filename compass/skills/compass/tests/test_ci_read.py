@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -83,7 +84,7 @@ sys.exit(answer.get("rc", 0))
         gh.chmod(0o755)
         self.set()
 
-    def set(
+    def set(  # noqa: PLR0913 - a scenario is its keyword switches
         self,
         *,
         head: str = SESSION_HEAD,
@@ -93,13 +94,14 @@ sys.exit(answer.get("rc", 0))
         required: list[dict[str, str]] | None = None,
         view: dict[str, Any] | None = None,
         checks_raw: dict[str, Any] | None = None,
+        required_raw: dict[str, Any] | None = None,
         head_after: str | None = None,
     ) -> None:
         scenario = {
             "view": view or {"stdout": json.dumps({"headRefOid": head, "number": number})},
             "checks": checks_raw
             or {"stdout": json.dumps(GREEN if checks is None else checks), "rc": checks_rc},
-            "required": {"stdout": json.dumps(required or [])},
+            "required": required_raw or {"stdout": json.dumps(required or [])},
         }
         if head_after is not None:
             scenario["view_second"] = {
@@ -202,6 +204,24 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
         )
         self.assertIsNotNone(ci_read.validate(record))
         self.assertTrue(ci_read.green(record))
+
+    def test_no_required_checks_keeps_the_whole_listing(self) -> None:
+        self.stub.set(
+            required_raw={
+                "stdout": "",
+                "stderr": "no required checks reported on the 'x' branch",
+                "rc": 1,
+            }
+        )
+        record = read(self.stub)
+        self.assertEqual("", record["error"])
+        self.assertFalse(record["required_only"])
+        self.assertEqual(2, record["counts"]["pass"])
+        self.assertTrue(ci_read.green(record))
+
+    def test_a_signed_out_required_call_still_fails_the_read(self) -> None:
+        self.stub.set(required_raw={"stdout": "", "stderr": "gh auth login", "rc": 1})
+        self.assertEqual(ci_read.ERROR_SIGNED_OUT, read(self.stub)["error"])
 
     def test_the_argv_names_the_host_and_repository_and_asks_for_four_fields(self) -> None:
         read(self.stub)
@@ -896,3 +916,133 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _real_git() -> str | None:
+    return shutil.which("git")
+
+
+@unittest.skipUnless(_real_git(), "needs a git executable")
+class ThePressTimeIdentityReadsTheFolder(unittest.TestCase):
+    """`git_status.identity` and `probe_session` against a real temporary repository."""
+
+    def setUp(self) -> None:
+        self.folder = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        self.repo = self.folder / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        self.git(
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "x",
+        )
+
+    def git(self, *args: str) -> None:
+        subprocess.run(
+            ["git", *args],  # noqa: S607 - the test's own repository, a real git on PATH
+            cwd=self.repo,
+            check=True,
+            capture_output=True,
+        )
+
+    def test_the_head_and_the_origin(self) -> None:
+        self.git("remote", "add", "origin", f"https://github.com/{REPO}.git")
+        found = git_status.identity(str(self.repo), timeout_sec=5.0)
+        assert found is not None
+        self.assertEqual(("github.com", REPO), (found.host, found.repository))
+        self.assertRegex(found.head, r"^[0-9a-f]{40}$")
+
+    def test_no_origin_keeps_the_head(self) -> None:
+        found = git_status.identity(str(self.repo), timeout_sec=5.0)
+        assert found is not None
+        self.assertEqual(("", ""), (found.host, found.repository))
+        self.assertRegex(found.head, r"^[0-9a-f]{40}$")
+
+    def test_a_missing_folder_and_a_non_repository_read_nothing(self) -> None:
+        self.assertIsNone(git_status.identity(str(self.folder / "absent"), timeout_sec=5.0))
+        plain = self.folder / "plain"
+        plain.mkdir()
+        self.assertIsNone(git_status.identity(str(plain), timeout_sec=5.0))
+
+    def test_a_failing_or_non_hex_runner_reads_nothing(self) -> None:
+        failed = mock.Mock(return_value=types.SimpleNamespace(returncode=1, stdout=b""))
+        self.assertIsNone(git_status.identity(str(self.repo), timeout_sec=5.0, runner=failed))
+        junk = mock.Mock(return_value=types.SimpleNamespace(returncode=0, stdout=b"not-a-commit"))
+        self.assertIsNone(git_status.identity(str(self.repo), timeout_sec=5.0, runner=junk))
+
+    def test_no_git_launches_nothing(self) -> None:
+        config = types.SimpleNamespace(git_probe_enabled=False, git_probe_timeout_sec=5.0)
+        boom = mock.Mock(side_effect=AssertionError("a subprocess was started"))
+        with mock.patch.multiple(subprocess, Popen=boom, run=boom):
+            self.assertIsNone(ci_read.probe_session(cast("Any", config), str(self.repo)))
+            self.assertIsNone(ci_read.probe_session(cast("Any", config), ""))
+
+    def test_a_press_binds_a_pr_link_record_to_the_folders_own_origin(self) -> None:
+        self.git("remote", "add", "origin", f"https://github.com/{REPO}.git")
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],  # noqa: S607
+            cwd=self.repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        stub = StubGh(self)
+        stub.set(head=head, number=7)
+        record = self.press(stub, REPO)
+        assert record is not None
+        self.assertEqual("", record["error"])
+        self.assertEqual(ci_read.SOURCE_RECORD, record["source"])
+        self.assertTrue(record["head_matches"])
+
+    def test_a_record_for_another_repository_makes_no_gh_call(self) -> None:
+        self.git("remote", "add", "origin", "https://github.com/acme/other.git")
+        stub = StubGh(self)
+        self.assertIsNone(self.press(stub, REPO))
+        self.assertEqual([], stub.calls)
+
+    def press(self, stub: StubGh, linked: str) -> dict[str, Any] | None:
+        transcript = self.folder / "session.jsonl"
+        rows = [
+            {"type": "user", "cwd": str(self.repo)},
+            {"type": "pr-link", "prRepository": linked, "prNumber": 7},
+        ]
+        transcript.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+        config = types.SimpleNamespace(
+            state_dir=self.folder,
+            ci_read_enabled=True,
+            model_calls_disabled=False,
+            git_probe_enabled=True,
+            git_probe_timeout_sec=5.0,
+            reverse_chunk_bytes=65_536,
+            claude_cwd_scan_lines=50,
+            claude_cwd_line_bytes=65_536,
+            max_cache_entries=16,
+        )
+        state = types.SimpleNamespace(cache_lock=threading.Lock(), cwd_cache={})
+        application = types.SimpleNamespace(config=config, state=state, clock=lambda: 1_000.0)
+        row = {"harness": "claude", "sid": "s1", "session_goal": {"text": "tidy up", "at": 1.0}}
+        entry = {"revisions": [{"n": 1, "goal": "tidy up"}]}
+        hooks = types.SimpleNamespace(cancelled=lambda: False)
+        git_dir = str(pathlib.Path(cast("str", _real_git())).parent)
+        environ = {
+            "PATH": os.pathsep.join([str(stub.bin), git_dir]),
+            "CI_STUB_DIR": str(stub.folder),
+        }
+        with mock.patch.dict(os.environ, environ, clear=True):
+            return http_api._read_ci(
+                cast("Any", application),
+                row,
+                cast("Any", entry),
+                str(transcript),
+                [],
+                cast("Any", hooks),
+            )

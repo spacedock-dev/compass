@@ -575,11 +575,12 @@ _FINAL_REPLY_BYTES = 4_096
 
 # The one line a press's notice carries for the GitHub read, as the ruling asks:
 # [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)  # noqa: E501
-# What goes to GitHub is the repository and the number; the checks that come back go to the model
+# What goes to GitHub is the repository and the number, or the repository and a pushed branch's
+# name where that branch is what bound the read; the checks that come back go to the model
 # beside the rest of the entries, so the `To:` item above covers them.
 CI_READ_PART = (
-    "GitHub: a pull request your goal or the session names has its checks read with your gh "
-    "login, sending GitHub its repository and number. --no-ci-read or the switch below stops it."
+    "GitHub: a pull request your goal or session names has its checks read with your gh login, "
+    "sending its repository and number or branch. --no-ci-read or the switch below stops it."
 )
 
 

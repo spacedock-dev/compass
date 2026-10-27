@@ -94,6 +94,23 @@
     "skipping",
     "cancel"
   ],
+  "ciCaution": "this session changed the CI configuration",
+  "ciEntryResults": {
+    "cancel": "cancelled",
+    "fail": "failed",
+    "pass": "passed",
+    "pending": "pending",
+    "skipping": "skipped"
+  },
+  "ciEntrySource": "GitHub pull request check, read by Compass",
+  "ciEntryWords": {
+    "cancel": "cancelled on the pull request",
+    "fail": "failed on the pull request",
+    "pass": "passed on the pull request",
+    "pending": "still running on the pull request",
+    "skipping": "skipped on the pull request"
+  },
+  "ciHeadMoved": "the pull request head is not this session's commit",
   "ciReadErrors": [
     "gh-missing",
     "gh-signed-out",

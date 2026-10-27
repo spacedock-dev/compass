@@ -7606,8 +7606,8 @@ fact and its store, the page setting and `--no-ci-read`, and the notice line.
 ### Amended 2026-10-27 (owner): the `gh` read is built, for `github.com`
 
 This layer builds the ruling for GitHub only. `glab` and a host from the tool's own hosts file are not
-built, so the known hosts are `github.com` and nothing else, and a goal that names another host binds
-nothing. The ruling's other items stand as written, and these are the choices it left open.
+built, so the known hosts are `github.com` and nothing else, and a goal that names another host
+contributes no pull request, and the session's own records may still bind one. The ruling's other items stand as written, and these are the choices it left open.
 
 - **One fact per check, built from the stored record.** A `ci_check` entry carries the check's name,
   bucket and completion time, and Compass's own word for whether it may settle (`ci_counts`). The record
@@ -7627,7 +7627,8 @@ nothing. The ruling's other items stand as written, and these are the choices it
   be read (`--no-git`, a missing directory) gives no head to match, so nothing settles.
 - **Binding order.** A goal that names exactly one pull request by URL binds, and one that names two
   binds none. Otherwise the newest `pr-link` record of the folder's own `origin` binds, and then the
-  newest pushed branch of it, which is looked up once for its number. A record naming another
+  newest pushed branch of it, which is looked up once for its number. That look-up sends GitHub the
+  branch's name once, the one place a push-bound read sends more than the repository and the number. A record naming another
   repository binds nothing, because a transcript can say anything and only the folder's own remote says
   it is this one.
 - **The harness's own verdict.** A goal verdict that names the bound pull request agrees when its CI
