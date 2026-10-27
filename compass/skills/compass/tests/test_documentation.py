@@ -1025,7 +1025,7 @@ class GitProbeContractDocumentationTest(unittest.TestCase):
         # writes and non-loopback traffic — none of which is subprocess execution.
         self.assertIn(
             "running any program inside a user's repository other than the probe described in "
-            "Repository git reads (the end-of-session probe),",
+            "Repository git reads (the end-of-session probe) and the two press-time identity commands described in Pull request CI reads,",
             self.FLAT,
         )
         # Amended 2026-09-07 (DEC-11). The old wording said the probe "neither
@@ -2088,7 +2088,7 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
         # three paths Compass already ships. The whitelist has to stay a
         # whitelist of scoped clauses.
         self.assertIn(
-            "a whitelist of two scoped clauses and not a general permission to execute",
+            "a whitelist of three scoped clauses and not a general permission to execute",
             self.FLAT,
         )
         for shipped in (

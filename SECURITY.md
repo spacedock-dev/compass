@@ -285,10 +285,11 @@ Anything that weakens either invariant is a security bug: a bind reaching an add
 not ask for, a request admitted that the bind's own Host gate should have refused, file reads outside
 the documented store paths and the project-read contract below (however the path was derived),
 writes to harness stores, running any program inside a user's repository other than the probe
-described in Repository git reads (the end-of-session probe), the two press-time identity commands described in Pull request CI reads, running a program to reach a session's
+described in Repository git reads (the end-of-session probe) and the two press-time identity
+commands described in Pull request CI reads, running a program to reach a session's
 terminal other than the focus command described in Reaching a session's terminal (the focus
-command), or the hook client reaching a non-loopback destination. Those two exceptions are a
-whitelist of two scoped clauses and not a general permission to execute: written generally the
+command), or the hook client reaching a non-loopback destination. Those three exceptions are a
+whitelist of three scoped clauses and not a general permission to execute: written generally the
 sentence would make documented security bugs of three paths Compass already ships, the native
 notifier's `osascript`, `--daemon`'s respawn of the server, and the quota fetcher's Keychain read.
 
