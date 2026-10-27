@@ -2367,6 +2367,13 @@ class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase)
         self.session.bash("echo a; pytest -q", "2 failed in 1.97s", is_error=True)
         self.assertEqual("failed", list(self.checks())[-1]["result"])
 
+    def test_a_clean_unpiped_flag_yields_to_a_failing_summary(self) -> None:
+        for command in ("touch x; pytest -q", "make setup && pytest -q", "echo a; pytest -q"):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, "3 failed in 1s", is_error=False)
+                self.assertEqual("failed", list(self.checks())[-1]["result"])
+
     def test_a_clean_flag_still_yields_to_a_failing_summary(self) -> None:
         self.session.bash("echo a; pytest -q | tail -3", "3 failed in 1s", is_error=False)
         self.assertEqual("failed", list(self.checks())[-1]["result"])
