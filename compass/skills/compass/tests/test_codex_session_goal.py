@@ -11,14 +11,19 @@ objective over 4,000 characters is stored as a fixed sentence pointing at a file
 
 from __future__ import annotations
 
+import dataclasses
+import sqlite3
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from compass_runtime import claude_data, records
+from compass_runtime import io as runtime_io
 
-from .fixtures import _iso, _jsonl
+from .fixtures import _iso, _jsonl, _sqlite
 from .support import HarnessContractTestCase, make_runtime
 
 OBJECTIVE = "the placeholder parser handles every token type and its tests pass"
@@ -200,6 +205,153 @@ class TheCodexCollectorPublishesTheGoalTest(HarnessContractTestCase):
         row = self.row([*set_goal(when + 5), goal_line(when + 30, CLEARED)])
         self.assertIsNone(row["session_goal"])
         self.assertEqual({"at": when + 30}, row["session_goal_cleared"])
+
+
+GOALS_SCHEMA = (
+    "CREATE TABLE thread_goals (thread_id TEXT PRIMARY KEY NOT NULL, goal_id TEXT NOT NULL,"
+    " objective TEXT NOT NULL, status TEXT NOT NULL, token_budget INTEGER,"
+    " tokens_used INTEGER NOT NULL DEFAULT 0, time_used_seconds INTEGER NOT NULL DEFAULT 0,"
+    " created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL)"
+)
+
+
+def goals_file(
+    codex_home: Path, rows: list[tuple[str, str, str, float, float]], when: float = T0
+) -> None:
+    """Codex's goal file as 0.164.0 writes it: `(thread, objective, status, set, updated)` in seconds."""
+    _sqlite(
+        codex_home / claude_data.CODEX_GOALS_DB,
+        [
+            (GOALS_SCHEMA, ()),
+            *(
+                (
+                    (
+                        "INSERT INTO thread_goals (thread_id, goal_id, objective, status,"
+                        " created_at_ms, updated_at_ms) VALUES (?, 'g', ?, ?, ?, ?)"
+                    ),
+                    (thread, objective, status, int(created * 1000) + 412, int(updated * 1000)),
+                )
+                for thread, objective, status, created, updated in rows
+            ),
+        ],
+        when,
+    )
+
+
+class TheCodexVerdictIsReadFromItsGoalFileTest(unittest.TestCase):
+    GOAL: dict[str, Any] = {"text": OBJECTIVE, "at": T0 + 5}  # noqa: RUF012 - read-only fixture
+
+    def verdict(
+        self,
+        rows: list[tuple[str, str, str, float, float]] | None,
+        goal: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        with tempfile.TemporaryDirectory() as home:
+            codex = Path(home)
+            (codex / "sessions").mkdir()
+            if rows is not None:
+                goals_file(codex, rows)
+            config, state = make_runtime()
+            roots = {**config.store_roots, "codex.sessions": (str(codex / "sessions"),)}
+            config = dataclasses.replace(config, store_roots=MappingProxyType(roots))
+            return claude_data.codex_goal_verdict(
+                config, state, "thread", self.GOAL if goal is None else goal
+            )
+
+    def test_a_completed_goal_is_the_harness_s_claim_at_the_moment_it_completed(self) -> None:
+        self.assertEqual(
+            {"met": True, "at": T0 + 40, "reason": ""},
+            self.verdict([("thread", OBJECTIVE, "complete", T0 + 5, T0 + 40)]),
+        )
+
+    def test_nothing_else_is_a_verdict(self) -> None:
+        for label, rows in (
+            ("no file", None),
+            ("still active", [("thread", OBJECTIVE, "active", T0 + 5, T0 + 40)]),
+            ("blocked", [("thread", OBJECTIVE, "blocked", T0 + 5, T0 + 40)]),
+            ("another thread", [("other", OBJECTIVE, "complete", T0 + 5, T0 + 40)]),
+            ("other words", [("thread", LATER, "complete", T0 + 5, T0 + 40)]),
+            ("another set time", [("thread", OBJECTIVE, "complete", T0 + 9, T0 + 40)]),
+        ):
+            with self.subTest(label):
+                self.assertIsNone(self.verdict(rows))
+
+    def test_a_row_with_no_goal_reads_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            config, state = make_runtime()
+            self.assertIsNone(claude_data.codex_goal_verdict(config, state, "thread", None))
+            self.assertFalse(Path(home, claude_data.CODEX_GOALS_DB).exists())
+
+    def test_a_file_that_will_not_read_is_no_verdict_and_a_store_error(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            codex = Path(home)
+            (codex / "sessions").mkdir()
+            (codex / claude_data.CODEX_GOALS_DB).write_bytes(b"not a database")
+            config, state = make_runtime()
+            roots = {**config.store_roots, "codex.sessions": (str(codex / "sessions"),)}
+            config = dataclasses.replace(config, store_roots=MappingProxyType(roots))
+            self.assertIsNone(claude_data.codex_goal_verdict(config, state, "thread", self.GOAL))
+            self.assertIn(str(codex / claude_data.CODEX_GOALS_DB), state.store_errors)
+
+
+class TheCodexGoalFileIsReadAsCodexLeavesItTest(unittest.TestCase):
+    """What the security review reproduced: Codex keeps the file in WAL mode, and a clean close of its
+    last connection removes the `-wal` and `-shm` a `mode=ro` open needs."""
+
+    def setUp(self) -> None:
+        self.home = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.home, ignore_errors=True))
+        (self.home / "sessions").mkdir()
+        self.config, self.state = make_runtime()
+        roots = {**self.config.store_roots, "codex.sessions": (str(self.home / "sessions"),)}
+        self.config = dataclasses.replace(self.config, store_roots=MappingProxyType(roots))
+
+    def test_a_wal_file_closed_by_its_last_writer_still_gives_the_verdict(self) -> None:
+        goals_file(self.home, [("thread", OBJECTIVE, "complete", T0 + 5, T0 + 40)])
+        con = sqlite3.connect(str(self.home / claude_data.CODEX_GOALS_DB))
+        con.execute("PRAGMA journal_mode=WAL")
+        con.close()
+        self.assertFalse((self.home / f"{claude_data.CODEX_GOALS_DB}-shm").exists())
+        verdict = claude_data.codex_goal_verdict(
+            self.config, self.state, "thread", {"text": OBJECTIVE, "at": T0 + 5}
+        )
+        self.assertEqual({"met": True, "at": T0 + 40, "reason": ""}, verdict)
+        self.assertEqual({}, self.state.store_errors)
+
+    def test_a_failed_read_is_tried_once_per_change_not_once_per_row(self) -> None:
+        (self.home / claude_data.CODEX_GOALS_DB).write_bytes(b"not a database")
+        opened: list[str] = []
+        real = runtime_io.sqlite_module.connect
+
+        def counting(database: str, **kw: Any) -> Any:
+            opened.append(database)
+            return real(database, **kw)
+
+        with unittest.mock.patch.object(runtime_io.sqlite_module, "connect", counting):
+            for _ in range(5):
+                claude_data.codex_goal_verdict(
+                    self.config, self.state, "thread", {"text": OBJECTIVE, "at": T0 + 5}
+                )
+        self.assertLessEqual(len(opened), 2)  # the read-only open and its immutable retry, once
+
+    def test_an_objective_over_the_goal_bound_is_not_read(self) -> None:
+        goals_file(self.home, [("thread", "x" * 4001, "complete", T0 + 5, T0 + 40)])
+        self.assertEqual({}, dict(claude_data._codex_completed_goals(self.config, self.state)))
+
+
+class TheCodexCollectorPublishesTheVerdictTest(HarnessContractTestCase):
+    def test_a_completed_goal_carries_codex_s_verdict(self) -> None:
+        when = self.NOW - 100
+
+        def build(root: Path, at: float, sid: str, title: str) -> dict[str, str]:
+            stores: dict[str, str] = _store(set_goal(when + 5))(root, at, sid, title)
+            goals_file(root.parent, [(sid, OBJECTIVE, "complete", when + 5, when + 40)], at)
+            return stores
+
+        (row,) = self.sessions_for(self.collect(build, when=self.NOW), "codex")
+        self.assertEqual(
+            {"met": True, "at": when + 40, "reason": ""}, row["session_goal"]["verdict"]
+        )
 
 
 if __name__ == "__main__":

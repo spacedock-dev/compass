@@ -33,6 +33,7 @@ export function GoalVerdictNote() {
     clock: datedClock(verdict.at, ctx.shell.clock.now() / 1000),
     changedClock: changed ? datedClock(changed, ctx.shell.clock.now() / 1000) : '',
     cited: model.byId,
+    harness: String(model.session?.['harness'] ?? ''),
   });
   return (
     <div

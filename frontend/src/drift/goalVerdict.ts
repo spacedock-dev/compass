@@ -4,6 +4,7 @@ import {
   GOAL_VERDICT_LABEL,
   GOAL_VERDICT_LINES,
   GOAL_VERDICT_WHY,
+  GOAL_VERDICT_WHY_GOAL,
   goalVerdictClaim,
   goalVerdictPullRequest,
   goalVerdictRemoval,
@@ -12,7 +13,8 @@ import type { WorkEntry } from '../intent/work';
 import type { Shape } from './shape';
 
 /* The harness's "goal met" verdict, as the row publishes it under `session_goal.verdict`, and what the card says
-   of it. The verdict is Claude Code's claim: this reads it, never believes it, and nothing here reaches a level
+   of it. The verdict is the harness's claim (Claude Code's evaluator, or the Codex agent's own): this reads it,
+   never believes it, and nothing here reaches a level
    or a check. Compass's test of it is the reading's own `goal_verdict`, read through the shape contract. */
 
 export interface HarnessVerdict {
@@ -74,6 +76,8 @@ export function verdictNote(input: {
   readonly changedClock?: string;
   /** The entries the test cited, by fact id, so a confirmed pull request can be named. */
   readonly cited?: ReadonlyMap<string, WorkEntry>;
+  /** The row's harness, which the claim names. */
+  readonly harness?: string;
 }): VerdictNote {
   const { verdict, shape } = input;
   const test = shape && !shape.malformed ? shape.goalVerdict : null;
@@ -87,18 +91,20 @@ export function verdictNote(input: {
     tested?.why === 'pr-created-before'
       ? tested.cites.map((id) => input.cited?.get(id)).find((entry) => entry?.subject === 'pr')
       : undefined;
+  // A claim with no reason was tested against the goal's words, so the sentence names the goal.
+  const byGoal = verdict.reason === '';
   const why = tested
     ? tested.path && input.changedClock
       ? goalVerdictRemoval(tested.why, tested.path, input.changedClock)
       : pr?.summary
-        ? goalVerdictPullRequest(pr.summary)
-        : (GOAL_VERDICT_WHY[tested.why] ?? '')
+        ? goalVerdictPullRequest(pr.summary, byGoal)
+        : ((byGoal ? GOAL_VERDICT_WHY_GOAL : GOAL_VERDICT_WHY)[tested.why] ?? '')
     : '';
   const line = GOAL_VERDICT_LINES[state];
   return {
     state,
     label: GOAL_VERDICT_LABEL,
-    claim: goalVerdictClaim(input.clock),
+    claim: goalVerdictClaim(input.clock, input.harness),
     line: line ? line(why) : '',
     reason: verdict.reason,
   };

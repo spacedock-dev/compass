@@ -195,6 +195,16 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
         self.assertEqual(reading.GOAL_VERDICT_WRITTEN_AFTER, checked["why"])
         self.assertEqual(("w2",), checked["cites"])
 
+    def test_a_claim_with_no_reason_is_tested_against_what_the_goal_names(self) -> None:
+        # Every Codex verdict has an empty reason. The goal names findings.md, so a write of it before
+        # the verdict agrees, and no write of it is "not found" rather than "nothing checkable".
+        checked = self._checked([write_fact("docs/findings.md", at=120.0)], "")
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, checked["check"])
+        self.assertEqual(reading.GOAL_VERDICT_WRITTEN, checked["why"])
+        missing = self._checked([], "")
+        self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, missing["check"])
+        self.assertEqual(reading.GOAL_VERDICT_NOT_FOUND, missing["why"])
+
     def test_a_file_named_by_its_folder_path_matches_a_write_of_it(self) -> None:
         checked = self._checked(
             [write_fact("docs/findings.md", at=120.0)], "findings.md was written"

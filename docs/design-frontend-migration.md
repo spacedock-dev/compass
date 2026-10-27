@@ -26,8 +26,13 @@ on. No golden file is changed. `CapacityStrip.differential.test.tsx` leaves the 
 still compares every row, model line, count and prospect; its Console rail comparison, which was only that
 question and switch, is gone, and the test declares those recorded answers unread. `UsageConsent.test.tsx` and
 the `Capacity/Quota line` story hold the new line and the requests it changes. The on-demand capacity browser
-proof (`pnpm test:capacity:browser`) was not edited or run for this change and will report the old question
-until it is restated.
+proof (`pnpm test:capacity:browser`) was restated in a follow-up the same day: it reads the recorded question
+only to hold the page to its absence, proves every board read carries `usage=1` until Turn off and none after,
+per origin and across a reload and a reconnect, and its quota mutations are restated (`unanswered-is-no`,
+`off-hides-the-line`). The same pass restated its goal-summary steps, stale since the summary widening: the
+controls ask no question, a Summarize press is one request for the exact session, and because development
+fixtures must keep `--no-observer-model`, the press reaches the server and no model runs. It passed in the
+development and production runs, and each of its five quota and summary mutations failed it.
 
 2026-10-23, the Live monitor switch drives a lease the server holds and is not remembered
 ([the amendment](design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)).

@@ -1,6 +1,6 @@
 /*
- * The capacity strip, the usage consent and the observer-model consent in a real browser, against the real
- * backend (DRC-4827, capacity half).
+ * The capacity strip, the quota line and the observer-model consent in a real browser, against the real
+ * backend (DRC-4827, capacity half; the quota line restated 2026-10-27).
  *
  * The React page runs in Chromium over a synthetic board (`frontend/test/capacity_backend.py`) whose backend
  * counts what matters to a person who was promised a disclosure: the requests that carried `usage=1` to the
@@ -17,9 +17,11 @@
  * its origin standing in as the second origin of "the answer is per origin" (the production run opens the React
  * page at a second origin instead).
  *
- * What a unit test cannot see is proved here: that an unanswered or declined consent sends no usage parameter
- * through a mount, StrictMode, a route change, a reload and a reconnect; that the parameter rides the very next
- * request after a real press and stops at the next one after turning it off; that the answer is per origin;
+ * The quota fetch is on until the reader turns it off (SECURITY.md, Usage quota reads, amended 2026-10-27), so the
+ * recorded question is read only to hold the page to its absence. What a unit test cannot see is proved here:
+ * that every board read carries the usage parameter through a mount, a route change, a reload and a reconnect;
+ * that Turn off stops it at the next request and is kept across a reload, and Turn on brings it back at the next
+ * one; that the choice is per origin;
  * that the selected window survives a redraw that reorders it and a route change; that allowing the observer
  * model sends nothing and that one press of Summarize sends one request for the exact session; that nothing
  * posts, raises a terminal or notifies; and that the layout holds at 320 and 375 CSS px.
@@ -74,45 +76,41 @@ const MUTATIONS = {
   'answer-pointer-only': [
     [
       'src/capacity/UsageConsent.tsx',
-      "onClick={() => answer('declined')}",
-      "onMouseDown={() => answer('declined')}",
+      "onClick={() => answer(on ? 'declined' : 'granted')}",
+      "onMouseDown={() => answer(on ? 'declined' : 'granted')}",
     ],
   ],
-  // An unanswered consent is read as a yes: the first request carries the usage parameter.
-  'unanswered-is-yes': [
+  // The fetch waits for a yes again: an unanswered origin sends no usage parameter. Since 2026-10-27 the fetch
+  // is on until turned off, so this is the break.
+  'unanswered-is-no': [
     [
       'src/transport/runtime.ts',
-      "usage: storage.usageConsent() === 'granted',",
       "usage: storage.usageConsent() !== 'declined',",
+      "usage: storage.usageConsent() === 'granted',",
     ],
   ],
-  // The disclosure stays after the answer, claiming a decision the switch also claims.
-  'disclosure-stays': [
+  // Turned off, the line vanishes, so the reader has no way to turn it back on.
+  'off-hides-the-line': [
     [
       'src/capacity/UsageConsent.tsx',
-      'if (!offered || consent !== null) return null;',
       'if (!offered) return null;',
+      "if (!offered || consent === 'declined') return null;",
     ],
   ],
-  // Allowing the observer model also asks it for a summary.
-  'allow-sends': [
+  // Turning summaries back on also asks the model for one.
+  'turn-on-sends': [
     [
       'src/capacity/ObserverControls.tsx',
-      "if (action === 'allow') answer('granted');",
-      "if (action === 'allow') {\n      answer('granted');\n      summarize();\n    }",
+      "    heldFor(runtime).observer.answer('granted');\n  };",
+      "    heldFor(runtime).observer.answer('granted');\n    summarize();\n  };",
     ],
   ],
-  // The observer model is asked for a summary as soon as the controls are drawn with consent already given.
+  // The observer model is asked for a summary as soon as the controls are drawn, without a press.
   'observer-on-mount': [
     [
       'src/capacity/ObserverControls.tsx',
-      "import { useState, type ReactNode } from 'react';",
-      "import { useEffect, useState, type ReactNode } from 'react';",
-    ],
-    [
-      'src/capacity/ObserverControls.tsx',
       'const model = selectObserverModel(entry);',
-      "useEffect(() => {\n    if (identity && heldFor(runtime).observer.read() === 'granted')\n      void runtime.requestObserverSummary({ projectKey, focus: identity });\n  }, [entry]);\n  const model = selectObserverModel(entry);",
+      "useEffect(() => {\n    if (identity && heldFor(runtime).observer.read() !== 'declined')\n      void runtime.requestObserverSummary({ projectKey, focus: identity });\n  }, [entry]);\n  const model = selectObserverModel(entry);",
     ],
   ],
   // The selection is not kept: the first window is always the selected one.
@@ -371,15 +369,24 @@ const stripOf = (page) =>
       models: [...section.querySelectorAll('[data-next-capacity-models]')].map(text),
     };
   });
+/* The quota line (`data-next-usage-switch`, `on` or `off`) and the retired question, which must stay gone. */
 const consentOf = (page) =>
   page.evaluate(() => {
     const text = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : null);
     const { document } = globalThis;
+    const line = document.querySelector('[data-next-usage-switch]');
     return {
       disclosure: text(document.querySelector('[data-next-usage-consent]')),
-      switch: text(document.querySelector('.next-usage-switch')),
+      line: text(line),
+      state: line?.getAttribute('data-next-usage-switch') ?? null,
     };
   });
+// The sentence and the button label, which `textContent` joins with no space between them.
+const ON_LINE =
+  /^Quota is read with the Claude Code and Cursor logins on this machine\. No session content is sent\.\s*Turn off$/;
+const OFF_LINE =
+  /^Quota reading is off\. Windows above are the last cached read and will lapse\.\s*Turn on$/;
+const withoutUsage = (view) => dataRequests(view).filter((r) => !/[?&]usage=1(&|$)/.test(r.path));
 const dataRequests = (view) => view.log.requests.filter((r) => r.path.startsWith('/api/data'));
 const usageRequests = (view) => dataRequests(view).filter((r) => /[?&]usage=/.test(r.path));
 const modelRequests = (view) =>
@@ -393,7 +400,7 @@ const pressWindow = (view, key) =>
   view.page.locator(`[data-next-capacity-row="${key}"] button`).first().click();
 const observerText = (page) =>
   page.evaluate(() => {
-    const section = globalThis.document.querySelector('[data-next-observer-consent]');
+    const section = globalThis.document.querySelector('[data-next-observer-controls]');
     if (section) return section.textContent.replace(/\s+/g, ' ').trim();
     const empty = [...globalThis.document.querySelectorAll('.next-cockpit-empty')]
       .map((node) => node.textContent.replace(/\s+/g, ' ').trim())
@@ -426,7 +433,7 @@ try {
      page's Console tab, on a page that carries no test hook. The development run mounts the harness instead. */
   if (PRODUCTION)
     await step(
-      'shipped page: the strip is mounted by the Sessions view and the consent by the Console tab',
+      'shipped page: the strip is mounted by the Sessions view and the quota line by the Console tab',
       async () => {
         await until(
           () => view.page.locator('[data-next-view-body="sessions"] [data-next-capacity]').count(),
@@ -438,9 +445,9 @@ try {
           await until(
             () =>
               console_.page
-                .locator('[data-next-view-body="project"] [data-next-usage-consent]')
+                .locator('[data-next-view-body="project"] [data-next-usage-switch]')
                 .count(),
-            'the consent inside the Console tab',
+            'the quota line inside the Console tab',
           );
         } finally {
           await console_.close();
@@ -448,42 +455,37 @@ try {
       },
     );
 
+  /* Since 2026-10-27 the quota fetch is on until the reader turns it off (SECURITY.md, Usage quota reads): one
+     line says what is read and that no session content is sent, beside Turn off. The recording holds the retired
+     page's question, which the page must no longer ask; it is read so the recording stays accounted for, and the
+     React page is held to the opposite of it. */
   await step(
-    'the unanswered disclosure is drawn and no request carries a usage parameter',
+    'the quota line is drawn and every board read carries usage=1 from the first',
     async () => {
-      await until(async () => (await consentOf(view.page)).disclosure, 'the disclosure');
+      await until(async () => (await consentOf(view.page)).line, 'the quota line');
       await until(async () => (await stripOf(view.page))?.rows.length, 'the strip');
-      await pause(2500);
-      assert.ok(dataRequests(view).length > 0, `${side.name}: the page read the board`);
-      assert.deepEqual(
-        usageRequests(view),
-        [],
-        `${side.name}: a usage parameter without an answer`,
+      await until(() => dataRequests(view).length > 0, `${side.name} the first read`);
+      assert.deepEqual(withoutUsage(view), [], `${side.name}: a board read without usage=1`);
+      await until(
+        async () => (await eventsOf(side, 'usage_fetch')).length > 0,
+        `${side.name} the server counting it`,
       );
-      assert.equal(
-        (await eventsOf(side, 'usage_fetch')).length,
-        0,
-        `${side.name}: the server saw one`,
-      );
-
-      const react = await consentOf(view.page);
-      golden.observe('the unanswered disclosure: the legacy sentence');
-      golden.verify('the unanswered disclosure: the legacy sentence', react.disclosure);
-      assert.match(react.disclosure, /reading the credential that harness already stored/);
-      assert.equal(react.switch, null);
+      const state = await consentOf(view.page);
+      assert.equal(state.state, 'on');
+      assert.match(state.line, ON_LINE);
+      assert.equal(state.disclosure, null, `${side.name}: the retired question is drawn`);
+      const recorded = golden.observe('the unanswered disclosure: the legacy sentence');
+      assert.match(String(recorded), /Read your quota from the vendor\?/);
     },
   );
 
-  await step('a route change, a reload and a reconnect without an answer send none', async () => {
+  await step('a route change, a reload and a reconnect keep reading it', async () => {
     await navigate(view, ELSEWHERE);
     await pause(300);
     await navigate(view, SESSIONS);
     await until(async () => (await stripOf(view.page))?.rows.length, 'the strip after a return');
     await view.page.reload();
-    await until(
-      async () => (await consentOf(view.page)).disclosure,
-      'the disclosure after a reload',
-    );
+    await until(async () => (await consentOf(view.page)).line, 'the quota line after a reload');
     // A reconnect: the page loses the network, then regains it, and reads the board again.
     const before = dataRequests(view).length;
     await view.context.setOffline(true);
@@ -495,63 +497,67 @@ try {
       `${side.name} reading the board again after reconnecting`,
       patience(20000),
     );
-    assert.deepEqual(usageRequests(view), [], `${side.name}: a usage parameter without an answer`);
-    assert.equal((await eventsOf(side, 'usage_fetch')).length, 0);
+    assert.deepEqual(withoutUsage(view), [], `${side.name}: a board read without usage=1`);
   });
 
   await step(
-    'No thanks sends no parameter, says the windows will lapse, and is kept across a reload',
+    'Turn off sends no parameter, says the windows will lapse, and is kept across a reload',
     async () => {
-      view.reset();
+      // Pressed while quota is on, so a poll can land between a reset and the press; the count starts once
+      // the line says off, with the read the reload asks for.
       await pressUsage(view, 'declined');
-      await until(async () => (await consentOf(view.page)).switch, `${side.name} the switch`);
-      // The answer asks for the board again, and that read says nothing about usage.
+      await until(
+        async () => (await consentOf(view.page)).state === 'off',
+        `${side.name} the line turned off`,
+      );
+      view.reset();
+      await view.page.reload();
       await until(
         () => dataRequests(view).length > 0,
-        `${side.name} reading the board after the answer`,
+        `${side.name} reading the board after the press`,
       );
-      const state = await consentOf(view.page);
-      assert.equal(state.disclosure, null, `${side.name}: the question is gone once answered`);
-      assert.match(state.switch, /Vendor quota fetch: off/);
-      assert.match(state.switch, /Windows above are the last cached read and will lapse\./);
+      assert.match((await consentOf(view.page)).line, OFF_LINE);
+      const frozen = (await eventsOf(side, 'usage_fetch')).length;
       await pause(2000);
-      assert.deepEqual(usageRequests(view), [], `${side.name}: declined sent a usage parameter`);
+      assert.deepEqual(usageRequests(view), [], `${side.name}: turned off and still sent usage=1`);
       await view.page.reload();
-      await until(async () => (await consentOf(view.page)).switch, 'the switch after a reload');
-      assert.equal((await consentOf(view.page)).disclosure, null);
+      await until(
+        async () => (await consentOf(view.page)).state === 'off',
+        'the line still off after a reload',
+      );
       assert.deepEqual(usageRequests(view), []);
-      assert.equal((await eventsOf(side, 'usage_fetch')).length, 0);
+      assert.equal(
+        (await eventsOf(side, 'usage_fetch')).length,
+        frozen,
+        `${side.name}: still fetching`,
+      );
     },
   );
 
-  await step(
-    'the answer is per origin: another origin in the same profile is asked again',
-    async () => {
-      /* The second origin. The shipped page serves everything from one origin, so the same React server under
-         another loopback name (`localhost`, which this server admits) is a second origin to the browser. The
-         development page loads its modules from a Vite server that answers only the first origin, so there the
-         React page cannot be opened at another one: the production run holds this half of the proof. */
-      const elsewhere = PRODUCTION ? `http://localhost:${new URL(world.react.origin).port}` : null;
-      const wide = await open(browser, world.react, [elsewhere].filter(Boolean));
-      try {
-        await go(wide, SESSIONS);
-        await until(async () => (await consentOf(wide.page)).disclosure, 'the question');
-        await pressUsage(wide, 'declined');
-        await until(async () => (await consentOf(wide.page)).switch, 'the answer on this origin');
-        // Same profile, different origin: nothing was answered there, so the question is asked.
-        if (elsewhere) {
-          await wide.page.goto(`${elsewhere}/${SESSIONS}`);
-          await until(
-            async () => (await consentOf(wide.page)).disclosure,
-            'the question on the other origin',
-          );
-          assert.equal((await consentOf(wide.page)).switch, null);
-        }
-      } finally {
-        await wide.close();
+  await step('the choice is per origin: turning it off on one leaves another on', async () => {
+    /* The second origin. The shipped page serves everything from one origin, so the same React server under
+       another loopback name (`localhost`, which this server admits) is a second origin to the browser. The
+       development page loads its modules from a Vite server that answers only the first origin, so there the
+       React page cannot be opened at another one: the production run holds this half of the proof. */
+    const elsewhere = PRODUCTION ? `http://localhost:${new URL(world.react.origin).port}` : null;
+    const wide = await open(browser, world.react, [elsewhere].filter(Boolean));
+    try {
+      await go(wide, SESSIONS);
+      await until(async () => (await consentOf(wide.page)).state === 'on', 'the line on');
+      await pressUsage(wide, 'declined');
+      await until(async () => (await consentOf(wide.page)).state === 'off', 'off on this origin');
+      // Same profile, different origin: nothing was turned off there, so it reads quota.
+      if (elsewhere) {
+        await wide.page.goto(`${elsewhere}/${SESSIONS}`);
+        await until(
+          async () => (await consentOf(wide.page)).state === 'on',
+          'the line on at the other origin',
+        );
       }
-    },
-  );
+    } finally {
+      await wide.close();
+    }
+  });
 
   await step(
     'Turn on carries usage=1 on the very next request, the server sees it, and Turn off stops it',
@@ -568,20 +574,15 @@ try {
         async () => (await eventsOf(side, 'usage_fetch')).length > before,
         `${side.name} the server counting it`,
       );
-      assert.match((await consentOf(view.page)).switch, /Vendor quota fetch: on/);
-      assert.doesNotMatch((await consentOf(view.page)).switch, /lapse/);
-      // An answer given on an earlier visit rides the very first read of a fresh page.
+      assert.match((await consentOf(view.page)).line, ON_LINE);
+      // Turned back on, the choice rides the very first read of a fresh page load.
       view.reset();
       await view.page.reload();
       await until(() => dataRequests(view).length > 0, `${side.name} the first read`);
-      assert.match(
-        dataRequests(view)[0].path,
-        /usage=1/,
-        `${side.name}: an answered yes rides the first read`,
-      );
+      assert.match(dataRequests(view)[0].path, /usage=1/, `${side.name}: on rides the first read`);
       // Off again: the read the press asks for carries none, and the server's count stops.
       view.reset();
-      await until(async () => (await consentOf(view.page)).switch, 'the switch');
+      await until(async () => (await consentOf(view.page)).line, 'the line');
       await pressUsage(view, 'declined');
       await until(
         () => dataRequests(view).length > 0,
@@ -600,27 +601,21 @@ try {
   );
 
   await step(
-    'a fresh profile answering Read my quota is asked once, and nothing before the press',
+    'a fresh profile reads quota from its very first request, and a press keeps focus on the switch',
     async () => {
       const fresh = await open(browser, world.react);
       try {
         await go(fresh, SESSIONS);
-        await until(async () => (await consentOf(fresh.page)).disclosure, 'the question');
-        await pause(1500);
-        assert.deepEqual(usageRequests(fresh), [], 'nothing before the press');
-        const seen = (await eventsOf(world.react, 'usage_fetch')).length;
-        await pressUsage(fresh, 'granted');
-        await until(() => usageRequests(fresh).length > 0, 'the request after the press');
-        assert.match((await consentOf(fresh.page)).switch, /Vendor quota fetch: on/);
-        await until(
-          async () => (await eventsOf(world.react, 'usage_fetch')).length > seen,
-          'the server counting the press',
-        );
-        // The very press moved focus to the switch, so a keyboard reader is not left on nothing.
+        await until(() => dataRequests(fresh).length > 0, 'the first read');
+        assert.match(dataRequests(fresh)[0].path, /usage=1/, 'the first read asks for quota');
+        await until(async () => (await consentOf(fresh.page)).state === 'on', 'the line on');
+        await pressUsage(fresh, 'declined');
+        await until(async () => (await consentOf(fresh.page)).state === 'off', 'the line off');
+        // The button stays where it was, renamed, so a keyboard reader is not left on nothing.
         const focused = await fresh.page.evaluate(
           () => globalThis.document.activeElement?.closest('.next-usage-switch') !== null,
         );
-        assert.ok(focused, 'focus lands on the switch');
+        assert.ok(focused, 'focus stays on the switch');
       } finally {
         await fresh.close();
       }
@@ -866,24 +861,25 @@ try {
     },
   );
 
+  /* Restated 2026-10-27: since the summary widening (docs/design-session-summary.md, "The widening") the controls
+     ask no question. Summarize this session is the press, Pause model calls sits beside it, and a reader who turned
+     summaries off is offered Turn on summaries. Pause is a POST, which this proof's observer pages forbid, so it is
+     held by the unit tests and the story instead. */
   await step(
-    'allowing sends nothing; one press of Summarize sends one request for the exact session',
+    'nothing is sent before a press; one press of Summarize is one request for the exact session',
     async () => {
       await steer(side, { windows: 'full', observer: 'enabled' }, { board: false });
       const before = (await eventsOf(side, 'model_call')).length;
       await observer(side, async (view) => {
         const first = await until(async () => {
           const buttons = await observerButtons(view.page);
-          return buttons.some((b) => b.action === 'allow') ? buttons : null;
-        }, `${side.name} the question`);
+          return buttons.some((b) => b.action === 'request') ? buttons : null;
+        }, `${side.name} the Summarize button`);
         assert.deepEqual(
           first.map((b) => b.label),
-          ['Allow model summaries', 'No thanks'],
+          ['Summarize this session', 'Pause model calls'],
         );
-        const asked = await observerText(view.page);
-        assert.match(asked, /Quota consent does not authorize this request\./);
-        assert.match(asked, /Allowing summaries does not send a request\./);
-        // Mounting, StrictMode, a poll and a route change asked nothing.
+        // Mounting, StrictMode, a poll, a route change and a reload asked nothing.
         await pause(2000);
         await navigate(view, ELSEWHERE);
         await pause(300);
@@ -892,102 +888,88 @@ try {
           async () => (await observerButtons(view.page)).length,
           'the controls after a return',
         );
-        assert.equal(modelRequests(view).length, 0, `${side.name}: a request before a press`);
-        await view.page.locator('[data-next-observer-action="allow"]').click();
-        const allowed = await until(async () => {
-          const buttons = await observerButtons(view.page);
-          return buttons.some((b) => b.action === 'request') ? buttons : null;
-        }, `${side.name} the allowed state`);
-        assert.deepEqual(
-          allowed.map((b) => b.label),
-          ['Summarize this session', 'Turn off model summaries'],
+        await view.page.reload();
+        await until(
+          async () => (await observerButtons(view.page)).some((b) => b.action === 'request'),
+          'the controls after a reload',
         );
         await pause(1500);
-        assert.equal(modelRequests(view).length, 0, `${side.name}: allowing sent a request`);
+        assert.equal(modelRequests(view).length, 0, `${side.name}: a request before a press`);
         assert.equal(
           (await eventsOf(side, 'model_call')).length,
           before,
           `${side.name}: the server saw one`,
         );
-        // Consent is kept, and a reload asks nothing either.
-        await view.page.reload();
-        await until(
-          async () => (await observerButtons(view.page)).some((b) => b.action === 'request'),
-          'the allowed state after a reload',
-        );
-        await pause(1500);
-        assert.equal(modelRequests(view).length, 0, `${side.name}: a reload sent a request`);
-        // The press: a double click is one request for exactly this session.
+        // The press: a double click is one request for exactly this session. This world starts the server with
+        // `--no-observer-model`, which development fixtures must keep, and since the summary widening the server
+        // asks the reading policy before it passes a press on, so the request arrives and no model runs: the page
+        // says the refresh returned and published no summary, and the server records no model call.
         await view.page.locator('[data-next-observer-action="request"]').dblclick();
-        // The answer comes from the fixture's own refresh on a shared runner, so the wait is generous, and the
-        // page's text is what a failure reports: "false" said nothing about what the page drew instead.
         await until(
           async () => {
             const drawn = (await observerText(view.page)) ?? '';
-            if (/Observed goal: Retry the queue until it drains/.test(drawn)) return drawn;
+            if (/No goal summary was published by this refresh\./.test(drawn)) return drawn;
             throw new Error(`the page drew: ${drawn.slice(0, 400)}`);
           },
-          `${side.name} the goal`,
+          `${side.name} the refresh`,
           patience(30000),
         );
-        const text = await observerText(view.page);
-        assert.match(text, /The refresh returned\./);
-        assert.match(text, /Model status: fixture/);
+        assert.match(await observerText(view.page), /The refresh returned\./);
         assert.equal(modelRequests(view).length, 1, `${side.name}: not one request`);
         assert.match(modelRequests(view)[0].path, /session=claude%3Alive-work/);
-        const calls = (await eventsOf(side, 'model_call')).slice(before);
-        assert.deepEqual(
-          calls.map((c) => [c.harness, c.sid]),
-          [['claude', 'live-work']],
+        assert.equal(
+          (await eventsOf(side, 'model_call')).length,
+          before,
+          `${side.name}: a model call with model calls off for the run`,
         );
-        // Turning it off offers only the way back; what the last refresh returned stays as it was said.
-        await view.page.locator('[data-next-observer-action="decline"]').click();
-        await until(async () => {
-          const actions = (await observerButtons(view.page)).map((b) => b.action);
-          return actions.length === 1 && actions[0] === 'allow';
-        }, `${side.name} the way back`);
-        assert.equal((await eventsOf(side, 'model_call')).length, before + 1);
       });
     },
   );
 
-  await step('quota consent does not authorize the observer model', async () => {
-    await steer(side, { windows: 'full', observer: 'enabled' }, { board: false });
-    const view = await open(browser, side);
-    try {
-      await view.page.goto(`${side.origin}/${SESSIONS}`);
-      await view.page.evaluate(() =>
-        globalThis.localStorage.setItem('compass.next.usage.consent', 'granted'),
-      );
-      const before = (await eventsOf(side, 'model_call')).length;
-      await go(view, CONSOLE);
-      await until(
-        async () => (await observerButtons(view.page)).some((b) => b.action === 'allow'),
-        `${side.name} the question`,
-      );
-      assert.deepEqual(
-        (await observerButtons(view.page)).map((b) => b.action),
-        ['allow', 'decline'],
-      );
-      await pause(1500);
-      assert.equal(modelRequests(view).length, 0);
-      assert.equal((await eventsOf(side, 'model_call')).length, before);
-      // Declining says so in words, and offers only the way back.
-      await view.page.locator('[data-next-observer-action="decline"]').click();
-      await until(
-        async () =>
-          /Model summaries are off in this browser\./.test((await observerText(view.page)) ?? ''),
-        `${side.name} the declined sentence`,
-      );
-      assert.deepEqual(
-        (await observerButtons(view.page)).map((b) => b.action),
-        ['allow'],
-      );
-      assert.equal(modelRequests(view).length, 0);
-    } finally {
-      await view.close();
-    }
-  });
+  await step(
+    'reading quota sends no summary, and Turn on summaries sends nothing by itself',
+    async () => {
+      await steer(side, { windows: 'full', observer: 'enabled' }, { board: false });
+      const view = await open(browser, side);
+      try {
+        await view.page.goto(`${side.origin}/${SESSIONS}`);
+        await view.page.evaluate(() =>
+          globalThis.localStorage.setItem('compass.observer-model-consent.v1', 'declined'),
+        );
+        const before = (await eventsOf(side, 'model_call')).length;
+        await go(view, CONSOLE);
+        await until(
+          async () => (await observerButtons(view.page)).some((b) => b.action === 'on'),
+          `${side.name} the way back`,
+        );
+        assert.deepEqual(
+          (await observerButtons(view.page)).map((b) => b.action),
+          ['on', 'off'],
+        );
+        assert.match(
+          (await observerText(view.page)) ?? '',
+          /Goal summaries are off in this browser\. Nothing is sent for a summary until you turn them back on\./,
+        );
+        // The quota line is on, and its board reads carry usage=1, without a summary being asked for.
+        assert.equal((await consentOf(view.page)).state, 'on');
+        assert.ok(usageRequests(view).length > 0, `${side.name}: no board read carried usage=1`);
+        assert.deepEqual(withoutUsage(view), [], `${side.name}: a board read without usage=1`);
+        await pause(1500);
+        assert.equal(modelRequests(view).length, 0);
+        assert.equal((await eventsOf(side, 'model_call')).length, before);
+        await view.page.locator('[data-next-observer-action="on"]').click();
+        await until(
+          async () => (await observerButtons(view.page)).some((b) => b.action === 'request'),
+          `${side.name} Summarize after turning summaries on`,
+        );
+        await pause(1500);
+        assert.equal(modelRequests(view).length, 0, `${side.name}: turning summaries on sent one`);
+        assert.equal((await eventsOf(side, 'model_call')).length, before);
+      } finally {
+        await view.close();
+      }
+    },
+  );
 
   await step('nothing posted, raised a terminal or notified on either page', async () => {
     assert.deepEqual(
@@ -1119,7 +1101,7 @@ try {
           'console',
           CONSOLE,
           async (view) =>
-            (await observerButtons(view.page)).length || (await consentOf(view.page)).switch,
+            (await observerButtons(view.page)).length || (await consentOf(view.page)).line,
         ],
       ]) {
         for (const width of [320, 375, 640]) {
@@ -1162,14 +1144,17 @@ try {
         }
       }
 
-      // The answered switch, in a fresh profile that answers on the page, at the narrowest width and the largest text.
+      // The line turned off, which is the longer of its two sentences, at the narrowest width and the largest text.
       const answered = await open(browser, world.react);
       try {
         await answered.page.setViewportSize({ width: 320, height: 900 });
         await go(answered, SESSIONS);
-        await until(async () => (await consentOf(answered.page)).disclosure, 'the question');
+        await until(async () => (await consentOf(answered.page)).state === 'on', 'the line on');
         await pressUsage(answered, 'declined');
-        await until(async () => (await consentOf(answered.page)).switch, 'the answered switch');
+        await until(
+          async () => (await consentOf(answered.page)).state === 'off',
+          'the line turned off',
+        );
         await answered.page.evaluate(() => {
           globalThis.document.documentElement.style.fontSize = '200%';
         });
@@ -1177,9 +1162,9 @@ try {
         const switched = await measure(answered.page);
         assert.ok(
           switched.overflow <= CHEVRON_PX,
-          `react: the usage switch scrolls the page by ${switched.overflow} at 320px, text 200%`,
+          `react: the quota line scrolls the page by ${switched.overflow} at 320px, text 200%`,
         );
-        report['react answered switch at 320px, text 200%'] = { overflow: switched.overflow };
+        report['react quota line off at 320px, text 200%'] = { overflow: switched.overflow };
       } finally {
         await answered.close();
       }
@@ -1187,10 +1172,10 @@ try {
     },
   );
 
-  /* A reader who never touches the mouse: the window rows and the consent answers are reached by Tab and operated by
+  /* A reader who never touches the mouse: the window rows and the quota switch are reached by Tab and operated by
      Enter and Space, and each press does what the same press with a pointer does. */
   await step(
-    'keyboard: the window rows and the consent buttons are reached by Tab, operated by Enter and Space, and keep their focus',
+    'keyboard: the window rows and the quota switch are reached by Tab, operated by Enter and Space, and keep their focus',
     async () => {
       const trace = { react: {} };
       const nameOf = (page, selector) =>
@@ -1242,63 +1227,68 @@ try {
           assert.equal(await holdsFocus(rows.page, buttonOf(before)), true, 'focus left the row');
           seen.rows = [target, before];
         }
-        assert.deepEqual(
-          usageRequests(rows),
-          [],
-          `${side.name}: choosing a window sent a usage parameter`,
-        );
       } finally {
         await rows.close();
       }
 
-      // The consent: each answer is a button a keyboard reader reaches and presses, on a profile never asked.
-      for (const [answer, key, expectFetch] of [
+      // The quota line: Turn off and Turn on are each a button a keyboard reader reaches and presses.
+      for (const [answer, key, startOff] of [
         ['declined', 'Enter', false],
         ['granted', 'Space', true],
       ]) {
         const view = await open(browser, side);
         try {
           await go(view, SESSIONS);
+          if (startOff) {
+            await view.page.evaluate(() =>
+              globalThis.localStorage.setItem('compass.next.usage.consent', 'declined'),
+            );
+            await view.page.reload();
+          }
+          const from = startOff ? 'off' : 'on';
           await until(
-            async () => (await consentOf(view.page)).disclosure,
-            `${side.name} the question`,
+            async () => (await consentOf(view.page)).state === from,
+            `${side.name} the line ${from}`,
           );
-          await pause(800);
-          assert.deepEqual(usageRequests(view), [], `${side.name}: a request before the press`);
           {
             const selector = `[data-next-usage-answer="${answer}"]`;
             const name = await nameOf(view.page, selector);
             assert.ok(name, `no ${answer} button`);
             seen[`${answer}Tabs`] = await tabTo(view.page, name);
             const seenBefore = (await eventsOf(side, 'usage_fetch')).length;
-            view.reset();
+            // Turning off from on: a poll can still carry usage=1 until the press lands, so the count starts
+            // after the line says off. Turning on from off: nothing carries it before, so it starts at once.
+            if (startOff) view.reset();
             await view.page.keyboard.press(key);
-            await until(async () => (await consentOf(view.page)).switch, `${side.name} the switch`);
+            const to = startOff ? 'on' : 'off';
+            await until(
+              async () => (await consentOf(view.page)).state === to,
+              `${side.name} the line ${to} after ${key}`,
+            );
+            if (!startOff) view.reset();
             await until(
               () => dataRequests(view).length > 0,
-              `${side.name} the read after the answer`,
+              `${side.name} the read after the press`,
             );
-            if (expectFetch) {
+            if (answer === 'granted') {
               await until(() => usageRequests(view).length > 0, `${side.name} the parameter`);
               assert.match(usageRequests(view)[0].path, /usage=1/);
               await until(
                 async () => (await eventsOf(side, 'usage_fetch')).length > seenBefore,
                 `${side.name} the server counting the press`,
               );
-              assert.match((await consentOf(view.page)).switch, /Vendor quota fetch: on/);
             } else {
               await pause(1500);
-              assert.deepEqual(usageRequests(view), [], `${side.name}: No thanks sent a parameter`);
-              assert.match((await consentOf(view.page)).switch, /Vendor quota fetch: off/);
+              assert.deepEqual(usageRequests(view), [], `${side.name}: Turn off sent a parameter`);
             }
-            // The question is gone with its buttons, so focus is handed to the switch that replaced it.
+            // The button stays and is renamed, so focus stays with it.
             seen[`${answer}Focus`] = await focusedLabel(view.page);
             assert.equal(
               await view.page.evaluate(
                 () => globalThis.document.activeElement?.closest('.next-usage-switch') !== null,
               ),
               true,
-              `focus did not land on the switch after ${key} on ${answer}`,
+              `focus left the switch after ${key} on ${answer}`,
             );
           }
         } finally {

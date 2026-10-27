@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
@@ -478,6 +478,140 @@ def _antigravity_goal_event(record: Any) -> GoalEvent | None:
         return None
     at = records.iso_epoch(stamp) if isinstance(stamp, str) else None
     return ("set", words[len("/goal") :].strip(), at, "")
+
+
+# Codex keeps each thread's current goal as one row of `thread_goals` in this file, beside
+# `sessions/` under `CODEX_HOME`, and a completed goal reaches nothing else: across 21
+# completions no rollout record said `complete` (codex-cli 0.164.0,
+# docs/captures/codex/goal-0.164.0-macos.jsonl). The `_1` is the file's own schema version,
+# measured from 0.149 to 0.164; a later name reads as no file.
+CODEX_GOALS_DB = "goals_1.sqlite"
+# A bound on what one read keeps. One row per thread that ever finished a goal; a person would need
+# years of goals to reach it, and a file past it still answers for the newest rows.
+CODEX_GOALS_ROW_CAP = 10_000
+
+
+def _codex_goals_path(config: RuntimeConfig) -> str:
+    sessions_root = runtime_config.primary_store(config, "codex.sessions")
+    return os.path.join(os.path.dirname(sessions_root.rstrip(os.sep)), CODEX_GOALS_DB)
+
+
+def _read_codex_goals(path: str) -> list[Any]:
+    """The completed rows, read-only. Raises the SQLite error a failed open or query gives.
+
+    Codex keeps the file in WAL mode, and once its last process closes SQLite removes the `-wal`
+    and `-shm` beside it; a `mode=ro` open of such a file cannot create the `-shm` it needs and
+    fails. With no pending `-wal` data the file on disk is the whole database, so it is read again
+    as `immutable`, as the Antigravity stores are (`collectors/antigravity.py`). With pending WAL
+    data an immutable read could miss committed rows, so the first error stands.
+    """
+    query = (
+        "SELECT thread_id, objective, created_at_ms, updated_at_ms FROM thread_goals"
+        " WHERE status = 'complete' AND length(objective) <= ?"
+        " ORDER BY updated_at_ms DESC LIMIT ?"
+    )
+
+    def read(uri: str) -> list[Any]:
+        con = runtime_io.sqlite_module.connect(uri, uri=True, timeout=0.2)
+        try:
+            return list(con.execute(query, (GOAL_CAP_CHARS, CODEX_GOALS_ROW_CAP)).fetchall())
+        finally:
+            con.close()
+
+    try:
+        return read(runtime_io.sqlite_ro_uri(path))
+    except runtime_io.sqlite_module.Error:
+        try:
+            pending = os.path.getsize(path + "-wal") > 0
+        except OSError:
+            pending = False
+        if pending:
+            raise
+        return read(runtime_io.sqlite_ro_uri(path, immutable=True))
+
+
+def _codex_completed_goals(
+    config: RuntimeConfig, state: RuntimeState
+) -> Mapping[str, tuple[str, float, float]]:
+    """Every completed goal in Codex's goal file, by thread id: `(objective, set, completed)`.
+
+    Opened read-only; the database is never written, though SQLite's WAL index (`-shm`) records
+    the reader as it does for any reader. Cached on the file's own size and mtime and on its `-wal`
+    beside it, so a board with many Codex rows reads it once per change, a failed read included. No
+    file, no `sqlite3`, or a read that fails is no completed goal; a failed read is recorded once
+    as a store error. An objective over `GOAL_CAP_CHARS` is not read, since no published goal can
+    hold it.
+    """
+    path = _codex_goals_path(config)
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return {}
+    try:
+        wal = os.stat(path + "-wal")
+        wal_key: tuple[int, int] = (wal.st_mtime_ns, wal.st_size)
+    except OSError:
+        wal_key = (0, 0)
+    key, version = f"codex-goals:{path}", (stat.st_mtime_ns, stat.st_size, *wal_key)
+    with state.cache_lock:
+        cached = state.metadata_cache.get(key)
+    if cached is not None and cached.get("version") == version:
+        return cast("Mapping[str, tuple[str, float, float]]", cached["rows"])
+    rows: dict[str, tuple[str, float, float]] = {}
+    if runtime_io.sqlite_available():
+        try:
+            found = _read_codex_goals(path)
+        except runtime_io.sqlite_module.Error as exc:
+            runtime_io.record_store_error(state, path, exc)
+            found = []
+        for thread, objective, created, updated in found:
+            if (
+                isinstance(thread, str)
+                and isinstance(objective, str)
+                and isinstance(created, int)
+                and isinstance(updated, int)
+                and 0 < created <= updated
+            ):
+                rows[thread] = (objective, float(created // 1000), updated / 1000)
+    with state.cache_lock:
+        runtime_state.bounded_put(
+            state.metadata_cache,
+            key,
+            {"version": version, "rows": rows},
+            limit=config.max_cache_entries,
+        )
+    return rows
+
+
+def codex_goal_verdict(
+    config: RuntimeConfig, state: RuntimeState, sid: str, goal: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Codex's own `complete` on the goal a Codex row holds, as `{met, at, reason}`, or None.
+
+    The working model marks its own goal complete with `update_goal`, so this is a weaker claim
+    than Claude Code's separate evaluator, and it is published the same way: as the harness's
+    claim, which a reading tests. It carries no reason, because Codex records none. It is this
+    goal's only when the row's set time and words match the file's: an edit keeps the set time and
+    rewrites the words, a replace makes a new row, and a clear deletes it.
+    """
+    if goal is None or not sid:
+        return None
+    found = _codex_completed_goals(config, state).get(sid)
+    if found is None:
+        return None
+    objective, created, completed = found
+    if created != goal.get("at") or _goal_words(objective) != goal.get("text"):
+        return None
+    return {"met": True, "at": completed, "reason": ""}
+
+
+def codex_session_goal(
+    config: RuntimeConfig, state: RuntimeState, path: str, sid: str
+) -> dict[str, Any] | None:
+    """The `/goal` a Codex rollout holds, with Codex's own `complete` on it where recorded."""
+    goal = session_goal(config, state, path, "codex")
+    verdict = codex_goal_verdict(config, state, sid, goal)
+    return {**goal, "verdict": verdict} if goal is not None and verdict is not None else goal
 
 
 def _codex_goal_set(goal: Any) -> GoalEvent | None:

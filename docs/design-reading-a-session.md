@@ -5703,10 +5703,15 @@ same `session_goal` field, the same `session-goal` adoption token, and the same 
   recovery notice); before this they were read as the reader's prompts, and a goal-only session drafted
   "User set the goal: ..." as its goal.
 - A Codex session started with `/goal` and never prompted since has no prompt to name it, so its goal does.
-- Rejected for now: reading `~/.codex/goals_1.sqlite` for the met state. Completion never reaches the rollout
-  (21 of 21 measured), and the working model marks its own goal complete, so a met state there is a weaker
-  claim than Claude Code's separate evaluator. Reading it means a new file outside the rollout, which needs
-  its own entry in `SECURITY.md`; it is left for a later change rather than folded into this one.
+- Deferred at first, then done the same day: reading `goals_1.sqlite` for the met state. Completion never
+  reaches the rollout (21 of 21 measured), so the file is the only place a met Codex goal shows. The working
+  model marks its own goal complete, so it is a weaker claim than Claude Code's separate evaluator, and it is
+  published the same way, as `session_goal.verdict` with an empty reason, and tested the same way. It
+  attaches only where the file's row has the session's thread id and the goal's set time and words: an edit
+  keeps the set time and rewrites the words, a replace starts a new row, and a clear deletes it, so a
+  completion never lands on the wrong goal. A claim with no reason is tested against what the goal names, so
+  a Codex verdict can agree, and the page words that answer by the goal rather than by a reason. Only `complete` is read. `blocked`, `usage_limited` and `budget_limited` were not captured, and a
+  status the record has not shown is not published as an ending.
 
 ### What reading an Antigravity `/goal` decided, 2026-10-27
 
