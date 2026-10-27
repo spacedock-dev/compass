@@ -2,6 +2,7 @@
  "board": {
   "annotate": true,
   "annotate_cap": 240,
+  "annotate_goal_cap": 1000,
   "annotate_discard": {
    "already": "Already discarded. What you asked of this session was discarded earlier, so this press deleted nothing and the earlier record stands.",
    "armed": "Press it again to discard. Everything you asked of this session will go, along with any reading of it and this session's summary, including one being written, and nothing raised against those words will quote them any more; the record that a check ran stays. Nothing has been deleted yet, and this offer lapses in 30 seconds.",

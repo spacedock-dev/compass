@@ -92,8 +92,8 @@
       "method": "POST",
       "name": "annotate-too-large",
       "route": "/api/annotate",
-      "sha256": "3ba210f5cc493c698617b607915bd783e2b98d95e877e57e5948177232d0b027",
-      "status": 413
+      "sha256": "3147548c7a81ee609a3ed13b3db1fc7913612b9ac262a4811c12695eae2314ec",
+      "status": 400
     },
     {
       "method": "POST",
@@ -281,7 +281,7 @@
       "method": "GET",
       "name": "data-empty",
       "route": "/api/data",
-      "sha256": "a046008cccc53cb2e456b12a1f46e6eef23c8d03ef62d1aa10954b4c6a742d84",
+      "sha256": "e2b6941d4c4d03905c645b9e2139931d681f28bad9ab142ca7e1d59a98d3a0a1",
       "status": 200
     },
     {
@@ -302,35 +302,35 @@
       "method": "GET",
       "name": "data-healthy",
       "route": "/api/data",
-      "sha256": "7a5cb1cd74eb278b91fb0c2ac826c1b5ed17ad2afa36c71ccdd8b1ae42958c4d",
+      "sha256": "9f7de7fc54adae0bc2b9c62aa04943b53a7235a0cf9f982ee1cc1fbee870b340",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-identity-collisions",
       "route": "/api/data",
-      "sha256": "7616f55be367f6824cd516843048e9914975993db6b87dd98b70caa8bebecd23",
+      "sha256": "29c632c50bb8eed1b991d421c2361b8548b93c699a6eb1c2c58179d18557887b",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-restarted-build",
       "route": "/api/data",
-      "sha256": "11ba56d5a1188d3d875bbc23d0f468682b2c24b87359bda8bbbc31ca98e9b7cf",
+      "sha256": "60be4283b998d0b7f0cb0b221ab13fb0eacc98f60771655c9ffedc439ca1ad7e",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
-      "sha256": "efa1a49de87afc17a478b2bef1cab5fb8a0917551240b9762027e37f258cf41c",
+      "sha256": "e10193f77ab41f4d6343073feb6da83c7f2f85ceec94f6ff1490d2d679b76095",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unavailable",
       "route": "/api/data",
-      "sha256": "38190c66834dddee2439b7e60e8b2a357c0f01c06db6f994befca35b36117ac4",
+      "sha256": "b00b518c5eca8322017291f84864e2e353c896c74ae035ea302ab3cb269c2058",
       "status": 200
     },
     {
@@ -582,8 +582,8 @@
       "method": "POST",
       "name": "reading-too-large",
       "route": "/api/reading",
-      "sha256": "4edb796b8615712fdec7bd14e679c789644c7bc8a3aa1e10d0f1b890180ffe6e",
-      "status": 413
+      "sha256": "20dc9fd529ffb685de6bcf603833f723dca9bf91105d0283e85f1d817c378c59",
+      "status": 400
     },
     {
       "method": "POST",

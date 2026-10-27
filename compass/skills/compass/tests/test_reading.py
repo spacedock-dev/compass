@@ -1268,6 +1268,7 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
     class _Config:
         reading_settle_sec = 8.0
         annotation_text_cap_chars = 240
+        annotation_goal_cap_chars = 1_000
 
     END = 1_700_000_000.0
     REVISIONS: ClassVar[list[dict[str, Any]]] = [
@@ -1837,6 +1838,7 @@ class WhatOnePressActuallyCostsAndProduces(unittest.TestCase):
     class _Config:
         reading_settle_sec = 8.0
         annotation_text_cap_chars = 240
+        annotation_goal_cap_chars = 1_000
         claude_reading_model = "claude-sonnet-5-5"
 
     FACT: ClassVar[dict[str, Any]] = {
@@ -2059,6 +2061,7 @@ class WhatAClaudeCodeReadingCostsAndProduces(unittest.TestCase):
         class _Config:
             reading_settle_sec = 8.0
             annotation_text_cap_chars = 240
+            annotation_goal_cap_chars = 1_000
             claude_reading_model = "claude-sonnet-5-5"
 
         self.config = _Config()

@@ -65,7 +65,7 @@ export const FIND_GOAL_TITLE = (label: string): string =>
   `Sends the prompts you typed in this session to ${label} to look for a goal. Nothing is sent until you press.`;
 /* Appended to a source line whose words were cut; `cap` is the box's own limit, never a literal. */
 export const goalCut = (cap: number): string =>
-  ` · Shortened to fit ${String(cap)} characters; Analyze reads this shortened goal`;
+  ` · Shortened to fit ${cap.toLocaleString('en-US')} characters; Analyze reads this shortened goal`;
 export const EXCERPT_READ_WHOLE = ' · Shortened here; Analyze reads the whole prompt';
 /* `reading.LEDGER_WORDS_CAP_CHARS`, copied rather than fetched; `test_reader_words.py` holds the two equal.
    The ruled wording (docs/design-frontend-migration.md, 2026-10-13 departures): "up to" read as a limit that

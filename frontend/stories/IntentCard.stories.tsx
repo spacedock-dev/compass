@@ -34,6 +34,7 @@ function buildPayload(
     generated,
     annotate: true,
     annotate_cap: 240,
+    annotate_goal_cap: 1000,
     intent_revision: 'r1',
     /* The server's own sentences, as `annotations.DISCARD_SENTENCES` words them: this page draws them and
        composes none, so a story that quotes them holds the page to what the server said it would remove and keep. */
@@ -263,7 +264,7 @@ export const TypedSourceAndSavedStatus: Story = {
     await expect(goal).toHaveAttribute('placeholder', 'What should this session achieve?');
     await userEvent.type(goal, 'Keep the parser small and pure');
     await expect(view.getByText('You typed this · not saved')).toBeVisible();
-    await expect(view.getByText('30 / 240')).toBeVisible();
+    await expect(view.getByText('30 / 1000')).toBeVisible();
     await expect(card.querySelector('[data-next-intent-status]')).toHaveTextContent(
       'Unsaved changes',
     );
@@ -784,7 +785,8 @@ export const MovedControlsInQuietRow: Story = {
     await expect(
       await quiet.findByRole('button', { name: /^Later directions: settled/ }),
     ).toBeVisible();
-    // Every count reads "n / cap", the outcome lines' as the goal's.
+    // Every count reads "n / cap" against its own box's cap: the goal holds 1,000, an outcome line 240.
+    await expect(within(card).getByText('30 / 1000')).toBeVisible();
     await expect(within(card).getByText('26 / 240')).toBeVisible();
     // The stamp opens its definition from the quiet row.
     await userEvent.click(within(kept).getByRole('button', { name: /^Saved · reads from/ }));
@@ -1191,7 +1193,7 @@ export const StateGoalDetectedCut: Story = {
     // The excerpt is what the box holds, and the line says it was cut rather than passing it off as whole.
     await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
     await expect(goalSource(card)).toMatch(
-      / · Shortened to fit 240 characters; Analyze reads this shortened goal$/,
+      / · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
     );
   },
 };

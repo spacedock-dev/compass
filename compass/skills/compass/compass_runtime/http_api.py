@@ -816,7 +816,7 @@ def _with_prompt_choices(
         annotation_store.prompt_choices(
             matching[0],
             _prompt_facts(application, matching[0], _facts_of(context), coverage),
-            application.config.annotation_text_cap_chars,
+            application.config.annotation_goal_cap_chars,
         )
         if application.config.annotations_enabled and len(matching) == 1
         else []
@@ -2761,7 +2761,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             content=reading_policy.WORDS_CONTENT_VERSION,
         )
         try:
-            result = goal_find.find(prompts, model, goal_cap=config.annotation_text_cap_chars)
+            result = goal_find.find(prompts, model, goal_cap=config.annotation_goal_cap_chars)
         except reading_policy.RefusedError as exc:
             # Another tab filled the day, or the pause landed, after this press was admitted.
             if notice is not None:
@@ -3041,7 +3041,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         choices = annotation_store.prompt_choices(
             row,
             _prompt_facts(self.server.application, row, self._session_facts(row)),
-            self.server.application.config.annotation_text_cap_chars,
+            self.server.application.config.annotation_goal_cap_chars,
         )
         choice = next((choice for choice in choices if choice["fact_id"] == fact_id), None)
         if choice is not None:
@@ -3051,7 +3051,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return None
         at, words, cut = found
         return annotation_store.prompt_choice(
-            fact_id, at, words, self.server.application.config.annotation_text_cap_chars, cut=cut
+            fact_id, at, words, self.server.application.config.annotation_goal_cap_chars, cut=cut
         )
 
     def _session_row(self, harness: str, sid: str) -> dict[str, Any] | None:
@@ -3287,7 +3287,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 "clipped": clipped,
                 "fits": fits,
                 "goal_choice": annotation_store.prompt_choice(
-                    str(fact_id), found[0], found[1], config.annotation_text_cap_chars, cut=found[2]
+                    str(fact_id), found[0], found[1], config.annotation_goal_cap_chars, cut=found[2]
                 )
                 if harness in annotation_store.ADOPTION_HARNESSES
                 and not records.harness_control(found[1])
@@ -3666,7 +3666,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             and latest["goal"]
             == records.safe_text(
                 payload.get("expected_prompt"),
-                self.server.application.config.annotation_text_cap_chars,
+                self.server.application.config.annotation_goal_cap_chars,
             )
         )
 

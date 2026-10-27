@@ -51,6 +51,7 @@ PROSE = "MODEL_PROSE the agent did something else"
 class _Config:
     reading_settle_sec = 8.0
     annotation_text_cap_chars = 240
+    annotation_goal_cap_chars = 1_000
 
 
 class _Model:

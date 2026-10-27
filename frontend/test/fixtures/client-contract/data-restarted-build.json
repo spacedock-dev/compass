@@ -39,6 +39,7 @@
         "unwritable": "Not discarded. The store could not be written, so the next collection reads what you asked of this session back and nothing raised against it was withdrawn.",
         "why": "Discarding everything deletes all you asked of this session, any reading of it, and this session's summary, and nothing raised against those words quotes them any more. It keeps the record that a check ran, which bounds how often one may run. Session history, where it is recording, keeps its own fourteen-day copy, and --forget deletes that store. The clear beside the goal is the weaker act: the save after it keeps your earlier saves."
       },
+      "annotate_goal_cap": 1000,
       "annotate_unreadable": "",
       "browser_lane": false,
       "browser_lane_at": null,
@@ -619,7 +620,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "22940",
+      "Content-Length": "22967",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000500.1"

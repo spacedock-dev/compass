@@ -602,9 +602,10 @@ CONTEXT_READERS = {
     "_goal_find_prompts": "the reader's own prompts, sent to the model; the page gets only a goal that quotes them",
 }
 # The one published carrier of a reader message's words, by the owner's ruling Q7 of
-# 2026-10-01: up to five prompts, each clipped to the goal's 240-character cap, on the
-# focused project context only. Everything else on every route stays word-free.
-PROMPT_CHOICE_CAP = 240
+# 2026-10-01: up to five prompts, each clipped to the goal's cap, on the focused project
+# context only. Everything else on every route stays word-free. The cap was 240 until the
+# owner raised the goal's to 1,000 on 2026-10-27, so a chosen prompt is offered whole.
+PROMPT_CHOICE_CAP = 1_000
 
 
 class EveryPageRouteDropsTheWordsTest(_Collected):
@@ -656,7 +657,7 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
         return json.dumps(context).encode()
 
     def test_a_long_message_reaches_the_page_only_as_a_bounded_choice(self) -> None:
-        long = SENTINEL + " " + "x" * 900 + " TAIL-PAST-THE-CAP"
+        long = SENTINEL + " " + "x" * (PROMPT_CHOICE_CAP + 100) + " TAIL-PAST-THE-CAP"
 
         def context(*_a: Any, **_k: Any) -> dict[str, Any]:
             built = self.context()

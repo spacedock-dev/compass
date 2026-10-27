@@ -44,9 +44,10 @@ SCHEMA_VERSION = 1
 # its lines' own 2,000, and since the owner's ruling of 2026-10-20 room for eight explanations (the
 # goal, six outcome lines and a contradicted claim) of 277 each, the label's 36 and a stored
 # detail's 240 and its "…", and since the owner's second ruling of that day room for seven quotes
-# of the agent's own words (the goal and six outcome lines) of 132 each: 2,000 + 8 * 277 + 7 * 132.
+# of the agent's own words (the goal and six outcome lines) of 132 each. The lines' 2,000 became
+# 2,760 when the goal's cap rose to 1,000 (owner, 2026-10-27): 2,760 + 8 * 277 + 7 * 132.
 # `correction.py` holds the parts and `test_correction` the sum.
-CORRECTION_CAP_CHARS = 5140
+CORRECTION_CAP_CHARS = 5900
 # The owner's bound, 2026-09-28: eight per session, the oldest dropped. It counts copies still
 # waiting for their message; a recognised message moves to `matches` and leaves this count.
 COPIES_PER_SESSION = 8

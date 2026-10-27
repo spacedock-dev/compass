@@ -135,12 +135,16 @@ _OUTCOME_LINE = re.compile(r"line_([1-9][0-9]*)")
 # intent's share of `observer.OBSERVER_MODEL_MAX_PROMPT_BYTES`: the worst goal
 # and six lines at four bytes a character, with the claims question, measure
 # 9,6xx bytes with the non-final scope, so this leaves at least 6,656 for the record.
+# The goal's cap rose from 240 to 1,000 on 2026-10-27 and the worst header then
+# measured 12,515 bytes, so the share rose to 12,800: past it every outcome line
+# goes unasked, which costs the reader more than the record's narrower worst
+# case (3,584 bytes, met only by a goal and six lines written in emoji).
 # The reply cap: eight answers with twelve four-digit citations and a
 # 240-character detail each measure 4,751 bytes compact and 5,664 indented in
 # raw two-byte UTF-8, and a
 # cut reply keeps every complete answer (`_members`), so the headroom is not
 # the only guard.
-INTENT_SHARE_BYTES = 9_728
+INTENT_SHARE_BYTES = 12_800
 REPLY_CAP_BYTES = 8_192
 # How far under the cap a reply may come back and still count as cut: the
 # exec layer strips trailing whitespace, and an indented reply cut inside its
@@ -4692,6 +4696,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
     goal: str,
     lines: Sequence[str] = (),
     detail_cap_chars: int,
+    goal_cap_chars: int | None = None,
     window_start: float = 0.0,
     scope: str = SCOPE_LAST_TURN,
     line_requests: Mapping[str, float] | None = None,
@@ -4775,7 +4780,14 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
         # one published field that skipped `safe_text` -- unbounded, and
         # keeping a bidi override that sits immediately before the verdict and
         # reorders it.
-        clause = records.safe_text(clauses[name], detail_cap_chars)
+        # The goal's clause keeps the goal's own cap (2026-10-27), so "What the analysis read"
+        # quotes the goal it read rather than its first 240 characters.
+        clause_cap = (
+            goal_cap_chars
+            if name == CONSTRAINT_GOAL and goal_cap_chars is not None
+            else detail_cap_chars
+        )
+        clause = records.safe_text(clauses[name], clause_cap)
         if refused:
             out[name] = {
                 "cites": (),
@@ -5091,6 +5103,7 @@ def produce(  # noqa: PLR0913
         goal=goal,
         lines=selected.lines,
         detail_cap_chars=config.annotation_text_cap_chars,
+        goal_cap_chars=config.annotation_goal_cap_chars,
         window_start=window_start(latest),
         scope=scope,
         line_requests=line_request_floors(latest, request_sources, harness, sid),

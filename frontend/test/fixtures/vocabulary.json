@@ -85,7 +85,7 @@
     "passed flag": "passed, as the tool reported",
     "passed summary": "passed, per its summary line"
   },
-  "correctionCapChars": 5140,
+  "correctionCapChars": 5900,
   "criterionKeys": [
     "result",
     "cites",

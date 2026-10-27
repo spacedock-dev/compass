@@ -283,7 +283,7 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
         assert goal is not None
         self.assertEqual("x" * 4000, goal["text"])
         self.assertTrue(goal["cut"])
-        self.assertLessEqual(len(goal["offered"]), 240)
+        self.assertLessEqual(len(goal["offered"]), 1_000)
 
     def test_a_condition_over_the_documented_limit_publishes_none(self) -> None:
         self.assertIsNone(read_goal(set_goal(T0 + 5, "x" * 4001)))
@@ -313,9 +313,9 @@ class TheGoalReadFromTheRecordTest(unittest.TestCase):
 
 
 class AGoalOverTheGoalLimitIsOfferedCutTest(unittest.TestCase):
-    """The Goal field holds 240 characters. A longer `/goal` is offered as an excerpt marked cut."""
+    """The Goal field holds 1,000 characters. A longer `/goal` is offered as an excerpt marked cut."""
 
-    LONG = "the placeholder parser handles every token type and " * 8
+    LONG = "the placeholder parser handles every token type and " * 24
 
     def test_a_goal_within_the_limit_publishes_no_excerpt(self) -> None:
         goal = read_goal([*set_goal(T0 + 5)])
@@ -328,7 +328,7 @@ class AGoalOverTheGoalLimitIsOfferedCutTest(unittest.TestCase):
         assert goal is not None
         self.assertEqual(" ".join(self.LONG.split()), goal["text"])
         self.assertTrue(goal["cut"])
-        self.assertLessEqual(len(goal["offered"]), 240)
+        self.assertLessEqual(len(goal["offered"]), 1_000)
         self.assertTrue(goal["text"].startswith(goal["offered"]))
 
     def test_the_server_resolves_the_excerpt_and_never_the_whole_words_for_adoption(self) -> None:
@@ -345,7 +345,7 @@ class AGoalOverTheGoalLimitIsOfferedCutTest(unittest.TestCase):
         adopted = annotation_store._adoption(row, "session-goal", goal["offered"], T0 + 5, T0 + 9)
         assert adopted is not None
         self.assertEqual(goal["offered"], adopted["goal"])
-        self.assertEqual(goal["offered"], records.safe_text(adopted["goal"], 240))
+        self.assertEqual(goal["offered"], records.safe_text(adopted["goal"], 1_000))
         # Naming the whole words is a stale or forged adoption: refused, never clipped to fit.
         self.assertIsNone(
             annotation_store._adoption(row, "session-goal", goal["text"], T0 + 5, T0 + 9)

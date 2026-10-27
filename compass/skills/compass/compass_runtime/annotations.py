@@ -794,7 +794,7 @@ def _lines(value: Mapping[str, Any], cap: int) -> tuple[OutcomeLine, ...] | None
     return tuple(line for line in parsed if line is not None and line["text"].strip())
 
 
-def _revision(value: Any, cap: int) -> Revision | None:
+def _revision(value: Any, cap: int, goal_cap: int | None = None) -> Revision | None:
     """One untrusted revision, or nothing.
 
     Through `records.safe_text`, which redacts before it clips. The order is
@@ -824,12 +824,14 @@ def _revision(value: Any, cap: int) -> Revision | None:
         # Type-checked here as well as on the way in. Any local process can
         # rewrite this file, so a dict here would publish its repr exactly as one
         # arriving over the endpoint would.
-        "goal": records.safe_text(raw_goal, cap) if isinstance(raw_goal, str) else "",
+        "goal": records.safe_text(raw_goal, cap if goal_cap is None else goal_cap)
+        if isinstance(raw_goal, str)
+        else "",
         "lines": lines,
     }
 
 
-def _criterion(value: Any, cap: int) -> reading.Criterion | None:
+def _criterion(value: Any, cap: int, clause_cap: int | None = None) -> reading.Criterion | None:
     """One untrusted criterion of a stored reading, or nothing.
 
     `result` absent and `result` present are both legal and they mean
@@ -859,7 +861,7 @@ def _criterion(value: Any, cap: int) -> reading.Criterion | None:
         # One over the cap: the producer marks a cut detail by appending "…" to `cap` characters,
         # and loading at `cap` dropped that mark, so a cut sentence reloaded as a whole one.
         "detail": records.safe_text(value.get("detail"), cap + 1),
-        "clause": records.safe_text(value.get("clause"), cap),
+        "clause": records.safe_text(value.get("clause"), cap if clause_cap is None else clause_cap),
         "why": why,
     }
     if result is not None:
@@ -922,7 +924,7 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     return checked
 
 
-def _assessment(value: Any, cap: int) -> reading.Assessment | None:
+def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.Assessment | None:
     """One untrusted reading, or nothing at all.
 
     Dropped WHOLE on any failure. A half-parsed reading is the worst of the
@@ -945,7 +947,7 @@ def _assessment(value: Any, cap: int) -> reading.Assessment | None:
         or scope not in reading.SCOPE_TEXT
     ):
         return None
-    criteria = _criteria(value.get("criteria"), cap)
+    criteria = _criteria(value.get("criteria"), cap, goal_cap)
     coverage = reading.validate_coverage(value["coverage"]) if "coverage" in value else None
     verdict = _goal_verdict(value["goal_verdict"]) if "goal_verdict" in value else None
     if (
@@ -1012,7 +1014,9 @@ def _goal_unclear_elsewhere(
     return any(row.get("result") == reading.RESULT_GOAL_UNCLEAR for row in rows)
 
 
-def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
+def _criteria(
+    value: Any, cap: int, goal_cap: int | None = None
+) -> dict[str, reading.Criterion] | None:
     """A reading's criteria, keyed goal, each line in order, then any claims, or nothing.
 
     The keys are the goal and `line_1` to `line_N` with no gap, N at most six:
@@ -1027,7 +1031,7 @@ def _criteria(value: Any, cap: int) -> dict[str, reading.Criterion] | None:
         return None
     parsed: dict[str, reading.Criterion] = {}
     for name, raw in value.items():
-        criterion = _criterion(raw, cap)
+        criterion = _criterion(raw, cap, goal_cap if name == reading.CONSTRAINT_GOAL else None)
         if criterion is None:
             return None
         parsed[str(name)] = criterion
@@ -1095,7 +1099,9 @@ def _discard_record(value: dict[str, Any], harness: str, sid: str) -> Annotation
     return entry
 
 
-def _entry(value: Any, *, text_cap: int, revision_cap: int) -> Annotation | None:
+def _entry(
+    value: Any, *, text_cap: int, revision_cap: int, goal_cap: int | None = None
+) -> Annotation | None:
     """One untrusted record as an annotation, or nothing.
 
     A record whose revisions all fail validation is dropped whole unless it
@@ -1124,7 +1130,9 @@ def _entry(value: Any, *, text_cap: int, revision_cap: int) -> Annotation | None
         # Dropping just this revision could restore older typed words and
         # authorize the unasked lane against a baseline we no longer know.
         return None
-    parsed = [rev for rev in (_revision(item, text_cap) for item in raw) if rev is not None]
+    parsed = [
+        rev for rev in (_revision(item, text_cap, goal_cap) for item in raw) if rev is not None
+    ]
     _drop_unbound_request_ages(parsed, harness, sid)
     kept = tuple(sorted(parsed, key=lambda rev: rev["n"])[-revision_cap:]) if revision_cap else ()
     if not kept:
@@ -1133,7 +1141,7 @@ def _entry(value: Any, *, text_cap: int, revision_cap: int) -> Annotation | None
     settled = _settlement(value.get("settled"))
     if settled is not None:
         entry["settled"] = settled
-    assessment = _assessment(value.get("assessment"), text_cap)
+    assessment = _assessment(value.get("assessment"), text_cap, goal_cap)
     if assessment is not None:
         entry["assessment"] = assessment
     elif value.get("assessment") is not None:
@@ -1401,6 +1409,7 @@ def _read_store(config: RuntimeConfig) -> _Store:
             value,
             text_cap=config.annotation_text_cap_chars,
             revision_cap=config.annotation_max_revisions,
+            goal_cap=config.annotation_goal_cap_chars,
         )
         if entry is not None:
             parsed.append(entry)
@@ -2383,7 +2392,9 @@ def _annotate(  # noqa: PLR0913
     # the two would make a client that posts only the goal silently destroy
     # the outcome lines beside it, which is the opposite of the independence
     # the two are documented to have.
-    new_goal = records.safe_text(goal, cap) if isinstance(goal, str) else None
+    new_goal = (
+        records.safe_text(goal, config.annotation_goal_cap_chars) if isinstance(goal, str) else None
+    )
     new_texts = None if lines is None else _typed_lines(lines, cap)
     stamp = time.time() if now is None else now
     options = adoption or {}

@@ -441,6 +441,8 @@ class InjectionTest(unittest.TestCase):
 
 class LengthTest(unittest.TestCase):
     LONG = "x" * 240
+    # The goal's own cap (owner, 2026-10-27), which the lines' budget grew by.
+    GOAL = "x" * 1_000
 
     @staticmethod
     def widest(parts: list[Any]) -> int:
@@ -449,7 +451,7 @@ class LengthTest(unittest.TestCase):
 
     def test_the_consistent_lines_go_first_and_the_rest_stays_whole(self) -> None:
         criteria: dict[str, Any] = {"line_1": row_of(DEPARTED, ("c-fail",))}
-        row = session_row(annotation_goal=self.LONG)
+        row = session_row(annotation_goal=self.GOAL)
         for k in range(1, 7):
             row[f"annotation_line_{k}"] = f"{k}{self.LONG[1:]}"
             if k > 1:
@@ -459,16 +461,16 @@ class LengthTest(unittest.TestCase):
         self.assertIs(True, answer["ok"])
         text = words(answer["parts"])
         self.assertIn(f"- 1{self.LONG[1:]}: departed at T110", text)
-        self.assertIn(f"Back to my goal: {self.LONG}", text)
+        self.assertIn(f"Back to my goal: {self.GOAL}", text)
         kept = [k for k in range(2, 7) if f"- {k}{self.LONG[1:]}" in text]
         self.assertLess(len(kept), 5)
         self.assertEqual(list(range(2, 2 + len(kept))), kept, "dropped from the end")
-        # The lines keep their 2,000; the departure's explanation is outside that budget.
+        # The lines keep their 2,760; the departure's explanation is outside that budget.
         self.assertIn(f"{WHY}{DETAIL}", text)
-        self.assertLessEqual(self.widest(answer["parts"]) - len(f"{WHY}{DETAIL}"), 2000)
+        self.assertLessEqual(self.widest(answer["parts"]) - len(f"{WHY}{DETAIL}"), 2760)
 
     def test_still_too_long_without_them_it_is_refused_with_a_sentence(self) -> None:
-        row = session_row(annotation_goal=self.LONG, annotation_assessment=None)
+        row = session_row(annotation_goal=self.GOAL, annotation_assessment=None)
         for k in range(1, 7):
             row[f"annotation_line_{k}"] = f"{k}{self.LONG[1:]}"
         answer = compose(row, (check("c-fail", 118, "failed"), fact("d1", 114, "user_message")))
@@ -476,7 +478,7 @@ class LengthTest(unittest.TestCase):
             {
                 "ok": False,
                 "reason": "too-long",
-                "why": "Your goal and lines would be longer than 2,000 characters. "
+                "why": "Your goal and lines would be longer than 2,760 characters. "
                 "Shorten a line of your intent.",
             },
             answer,
@@ -484,7 +486,7 @@ class LengthTest(unittest.TestCase):
 
     def test_a_placeholder_adds_no_width(self) -> None:
         # The page draws nothing for a placeholder since the owner's ruling of 2026-10-20, so the
-        # lines' 2,000 is the text itself, to the character.
+        # lines' 2,760 is the text itself, to the character.
         facts = (check("c-fail", 118, "failed"), fact("d1", 114, "user_message"))
 
         def with_goal(size: int) -> dict[str, Any]:
@@ -498,10 +500,10 @@ class LengthTest(unittest.TestCase):
             return compose(row, facts)
 
         base = len(words(with_goal(1)["parts"])) - 1
-        fits = with_goal(2000 - base)
+        fits = with_goal(2760 - base)
         self.assertIs(True, fits["ok"])
-        self.assertEqual(2000, self.widest(fits["parts"]))
-        self.assertEqual("too-long", with_goal(2000 - base + 1)["reason"])
+        self.assertEqual(2760, self.widest(fits["parts"]))
+        self.assertEqual("too-long", with_goal(2760 - base + 1)["reason"])
 
 
 class ExplanationTest(unittest.TestCase):
@@ -677,7 +679,7 @@ class ExplanationCapTest(unittest.TestCase):
             + correction.QUOTES_MAX * correction.QUOTE_MAX_CHARS,
             correction.CAP_CHARS,
         )
-        self.assertEqual(5140, correction.CAP_CHARS)
+        self.assertEqual(5900, correction.CAP_CHARS)
         # The producer stores a detail at this bound, so the room is never narrower than it.
         self.assertEqual(make_config().annotation_text_cap_chars, correction.EXPLANATION_TEXT_CHARS)
 

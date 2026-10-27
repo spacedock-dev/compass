@@ -57,7 +57,7 @@ describe('typing in the goal box', () => {
     const page = mountSession();
     await settle(page);
     type(goalBox(), 'Ship the queue worker, then verify');
-    expect(text('[data-next-cockpit-held-count="goal"]')).toBe('34 / 240');
+    expect(text('[data-next-cockpit-held-count="goal"]')).toBe('34 / 1000');
     expect(document.querySelector('[data-next-cockpit-draft-marks]')).toBeNull();
     expect(inert(control('held-undo'))).toBe(false);
     expect(page.posts()).toBe(0);
@@ -68,9 +68,20 @@ describe('typing in the goal box', () => {
     await settle(page);
     type(goalBox(), 'one\ntwo');
     expect(goalBox().value).toBe('one two');
-    type(goalBox(), 'x'.repeat(300));
-    expect(goalBox().value).toHaveLength(240);
-    expect(text('[data-next-cockpit-held-count="goal"]')).toBe('240 / 240');
+    type(goalBox(), 'x'.repeat(1100));
+    expect(goalBox().value).toHaveLength(1000);
+    expect(text('[data-next-cockpit-held-count="goal"]')).toBe('1000 / 1000');
+  });
+
+  it('holds a whole long prompt as the goal while an outcome line keeps its own 240', async () => {
+    const page = mountSession({
+      store: { goal: 'Saved goal', lines: ['A saved line'], revision: 1 },
+    });
+    await settle(page);
+    type(goalBox(), 'g'.repeat(900));
+    expect(goalBox().value).toHaveLength(900);
+    type(lineBoxes()[0] as HTMLTextAreaElement, 'l'.repeat(300));
+    expect(lineBoxes()[0]?.value).toHaveLength(240);
   });
 
   it('keeps the words, the caret and the selection across a board refresh that changes nothing they stand on', async () => {

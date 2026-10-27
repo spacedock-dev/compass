@@ -121,7 +121,7 @@ describe('a /goal over a session with no saved goal', () => {
     });
   });
 
-  it('offers a goal over the 240-character limit as its excerpt, with a note that it was cut', async () => {
+  it('offers a goal over the 1,000-character limit as its excerpt, with a note that it was cut', async () => {
     const excerpt = GOAL.slice(0, 30);
     const page = mountSession({
       session: { session_goal: { text: `${GOAL} ${GOAL}`, at: 500, offered: excerpt, cut: true } },
@@ -129,7 +129,7 @@ describe('a /goal over a session with no saved goal', () => {
     await settle(page);
     expect(goalBox().value).toBe(excerpt);
     expect(source()).toMatch(
-      / · Shortened to fit 240 characters; Analyze reads this shortened goal$/,
+      / · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
     );
   });
 
@@ -142,7 +142,7 @@ describe('a /goal over a session with no saved goal', () => {
     });
     await settle(page);
     expect(source()).toMatch(
-      / · saved · Shortened to fit 240 characters; Analyze reads this shortened goal$/,
+      / · saved · Shortened to fit 1,000 characters; Analyze reads this shortened goal$/,
     );
   });
 

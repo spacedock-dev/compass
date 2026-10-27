@@ -93,6 +93,7 @@ ADMITTED = reading.ToolOutput(destination="Anthropic", label="Claude Code", tail
 class _Config:
     reading_settle_sec = SETTLE
     annotation_text_cap_chars = 240
+    annotation_goal_cap_chars = 1_000
 
 
 # ------------------------------------------------------------------------------ when it may read

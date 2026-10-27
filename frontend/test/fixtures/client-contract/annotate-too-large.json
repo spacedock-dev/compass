@@ -15,7 +15,7 @@
   "response": {
     "error_page": {
       "contains": [
-        "Error code: 413",
+        "Error code: 400",
         "Error response"
       ],
       "kind": "python-http-server"
@@ -23,6 +23,6 @@
     "headers": {
       "Content-Type": "text/html;charset=utf-8"
     },
-    "status": 413
+    "status": 400
   }
 }

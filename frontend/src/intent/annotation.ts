@@ -197,6 +197,14 @@ export function heldCap(payload: Row | null | undefined): number {
   return cap !== null && cap > 0 ? Math.round(cap) : HELD_CAP_DEFAULT;
 }
 
+/* The goal's own cap, published as `annotate_goal_cap` (1,000 since 2026-10-27), so a chosen prompt fits whole.
+   An outcome line keeps `heldCap`. Where none was published the line's cap stands: a box that says words fit
+   when the store would clip them is the failure the published bound exists to prevent. */
+export function goalCap(payload: Row | null | undefined): number {
+  const cap = nextNumber(payload?.['annotate_goal_cap']);
+  return cap !== null && cap > 0 ? Math.round(cap) : heldCap(payload);
+}
+
 /* The server's sentence while the annotation store cannot be read, or "". While it stands, no box may say
    nothing was typed: the words may be on disk in a file this build could not read. */
 export function storeUnreadable(payload: Row | null | undefined): string {

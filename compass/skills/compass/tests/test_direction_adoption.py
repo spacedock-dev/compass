@@ -1453,8 +1453,8 @@ class DirectionRouteTest(_ClaudeSession):
                 "goal_choice": {
                     "fact_id": fact_id,
                     "at": self.direction()["at"],
-                    "text": records.safe_text(LONG, 240).strip(),
-                    "cut": True,
+                    "text": " ".join(LONG.split()),
+                    "cut": False,
                 },
             },
             body,

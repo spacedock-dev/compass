@@ -235,8 +235,11 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
       <small>{goal.label}</small>
       <RouteAnchor
         route={row.route}
+        /* A goal holds 1,000 characters since 2026-10-27: the list shows three lines, the session page the rest. */
         className={
-          goal.known ? 'next-operation-goal-link' : 'next-operation-goal-link next-absence'
+          goal.known
+            ? 'next-operation-goal-link line-clamp-3'
+            : 'next-operation-goal-link line-clamp-3 next-absence'
         }
         extra={{ 'data-next-goal-focus': '' }}
         before={onGoal}

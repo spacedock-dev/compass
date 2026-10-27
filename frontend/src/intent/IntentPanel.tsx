@@ -7,7 +7,7 @@ import { nextFiniteNumber } from '../api/bootstrap';
 import type { Row } from '../observed';
 import { goalFocusFor } from '../sessions/heldState';
 import { useDisplayed, useShell } from '../shell/context';
-import { annotationOf, annotateOn, heldCap } from './annotation';
+import { annotationOf, annotateOn, goalCap, heldCap } from './annotation';
 import { DirectionQuestion } from './DirectionQuestion';
 import { chosenIsStale, goalKey, intentDraft, type DraftInput } from './derive';
 import { reconcileDirection } from './directions';
@@ -152,6 +152,7 @@ export function IntentPanel({
     projectKey,
     source,
     cap: heldCap(payload),
+    goalCap: goalCap(payload),
   };
   return (
     <PanelContext value={panel}>

@@ -432,10 +432,11 @@ class RuntimeConfig:
     # the ruling `reading.MAX_OUTCOME_LINES` cites: measured, 256 sessions at
     # 16 revisions of a goal and six 240-character lines, each with a full
     # seven-criterion reading, serialize to 10.5 to 12.4 MB in ASCII,
-    # depending on the length of the fact ids cited. The 2.5 MiB before it was
-    # already under the 3.0 MB the two old fields permitted, and a store past
-    # the cap was ignored and then overwritten by the next save. No fixed cap
-    # clears every case, because
+    # depending on the length of the fact ids cited. With the goal at its
+    # 1,000 (2026-10-27) the widest-id case measured 13.6 MB, still under it.
+    # The 2.5 MiB before it was already under the 3.0 MB the two old fields
+    # permitted, and a store past the cap was ignored and then overwritten by
+    # the next save. No fixed cap clears every case, because
     # `ensure_ascii` writes an astral character as twelve bytes, so a write
     # trims oldest-first until the file fits (`annotations._kept`) and `load`
     # still refuses anything past it. Two count bounds and no time-to-live, again
@@ -444,12 +445,17 @@ class RuntimeConfig:
     # matches `dismissal_max_entries` against the same measured board; 16
     # revisions is set against a reader refining one line a handful of times,
     # and the numbering keeps counting past an eviction so a dropped revision
-    # reads as dropped. The text cap is 240 characters, the bound the design
-    # draws as its live `n/240` counter.
+    # reads as dropped. The text cap is 240 characters for an outcome line, the
+    # bound the design draws as its live `n/240` counter. The goal has its own,
+    # 1,000: the whole prompt a reading already reads in an adopted goal's
+    # place (`reading.LEDGER_WORDS_CAP_CHARS`), so a prompt chosen as the goal
+    # is shown and saved as it is read rather than cut at 240 (owner,
+    # 2026-10-27).
     annotation_read_cap_bytes: int
     annotation_max_sessions: int
     annotation_max_revisions: int
     annotation_text_cap_chars: int
+    annotation_goal_cap_chars: int
     # The unasked lane's bounds. Per session and per day, separately, because
     # they answer different failures: one session churning, and a whole board
     # quietly spending a day's capacity. Each reading is a `codex` subprocess at
@@ -501,7 +507,8 @@ class RuntimeConfig:
     # paste of control characters, which `JSON.stringify` writes as six bytes
     # each before the store collapses them: a goal and six lines of 240 of them,
     # a 64-character session id and an expected revision measure 10,238 bytes,
-    # so 12 KiB holds it and is still far below the event cap. `POST
+    # so 12 KiB held it. With the goal at 1,000 (2026-10-27) the same body
+    # measures 14,798, so 16 KiB holds it and is still far below the event cap. `POST
     # /api/reading` shares it, where it is only generous.
     annotation_body_cap_bytes: int
     prompt_path_collapse_min_length: int
@@ -1035,6 +1042,7 @@ def build_runtime_config(
         annotation_max_sessions=256,
         annotation_max_revisions=16,
         annotation_text_cap_chars=240,
+        annotation_goal_cap_chars=1_000,
         unasked_session_cap=3,
         unasked_daily_cap=12,
         unasked_session_floor_sec=900.0,
@@ -1042,7 +1050,7 @@ def build_runtime_config(
         departure_max_entries=512,
         end_read_cap_bytes=65_536,
         end_max_entries=512,
-        annotation_body_cap_bytes=12_288,
+        annotation_body_cap_bytes=16_384,
         dismissal_body_cap_bytes=1_024,
         history_retention_sec=history_retention_sec,
         history_max_bytes=history_max_bytes,

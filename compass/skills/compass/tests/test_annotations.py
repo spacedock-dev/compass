@@ -314,8 +314,17 @@ class AnnotationStoreTest(unittest.TestCase):
         )
         entry = annotation_store.find(annotation_store.active(self.config, self.state), "pi", "s")
         assert entry is not None
-        self.assertLessEqual(
-            len(entry["revisions"][-1]["goal"]), self.config.annotation_text_cap_chars
+        self.assertEqual(self.config.annotation_goal_cap_chars, len(entry["revisions"][-1]["goal"]))
+
+    def test_the_goal_holds_more_than_an_outcome_line(self) -> None:
+        # Owner, 2026-10-27: a prompt chosen as the goal was cut at an outcome line's 240.
+        goal = "g" * 900
+        annotation_store.annotate(self.config, self.state, "pi", "s", goal=goal, now=self.NOW)
+        entry = annotation_store.find(annotation_store.active(self.config, self.state), "pi", "s")
+        assert entry is not None
+        self.assertEqual(goal, entry["revisions"][-1]["goal"])
+        self.assertGreater(
+            self.config.annotation_goal_cap_chars, self.config.annotation_text_cap_chars
         )
 
     def test_binding_uses_the_full_session_id_not_a_display_prefix(self) -> None:

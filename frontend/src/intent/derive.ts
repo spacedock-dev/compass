@@ -18,7 +18,7 @@ import {
   annotateOn,
   annotationDiscarded,
   annotationLines,
-  heldCap,
+  goalCap,
   storeUnreadable,
   OUTCOME_LINES_MAX,
   type Annotation,
@@ -765,7 +765,7 @@ export function goalSourceLine(input: DraftInput): string {
   const stored = discarded ? '' : String(annotation?.['goal'] || '');
   const text = held.goals.has(key) ? (held.goals.get(key) ?? baseline) : baseline;
   if (!text.trim()) return '';
-  const cut = goalCut(heldCap(input.payload));
+  const cut = goalCut(goalCap(input.payload));
   const found = foundGoal(input);
   if (found) return `Found in your prompts at ${clockText(found.foundAt)} · not saved`;
   if (drafted && text === drafted.text) {

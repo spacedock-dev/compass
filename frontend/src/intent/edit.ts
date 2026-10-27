@@ -1,6 +1,6 @@
 import { compatSessKey } from '../api/identity';
 import { type Row } from '../observed';
-import { annotationDiscarded, heldCap, scrub } from './annotation';
+import { annotationDiscarded, goalCap, heldCap, scrub } from './annotation';
 import { pendingHas, type Ctx, announce } from './context';
 import {
   goalBaseline,
@@ -21,19 +21,18 @@ import { OUTCOME_LINES_MAX } from './annotation';
    Each returns what the box should now say, so the editor can put a scrubbed or capped value back into the
    native node, which is the only time the node is written. */
 
-const cap = (input: DraftInput): number => heldCap(input.payload);
-
 /* The store's own scrub and bound, applied to what was typed: a pasted line break is the one space the
-   store would keep, and a box over the server's bound is cut, as the native `maxlength` cuts it. */
-function bounded(raw: string, input: DraftInput): string {
-  return scrub(raw).slice(0, cap(input));
+   store would keep, and a box over the server's bound is cut, as the native `maxlength` cuts it. The goal
+   and a line have different bounds. */
+function bounded(raw: string, input: DraftInput, cap: number = heldCap(input.payload)): string {
+  return scrub(raw).slice(0, cap);
 }
 
 /* A keystroke in the goal box. The goal's own cue goes (the next press is a fresh attempt on different
    words), and so does the footer's save mark. */
 export function typeGoal(ctx: Ctx, input: DraftInput, raw: string): string {
   const key = goalKey(input.session);
-  const value = bounded(raw, input);
+  const value = bounded(raw, input, goalCap(input.payload));
   ctx.held.clearActionFeedback(compatSessKey(input.session));
   if (value === '') ctx.held.cleared.add(key);
   else if (value === goalBaseline(input)) ctx.held.cleared.delete(key);

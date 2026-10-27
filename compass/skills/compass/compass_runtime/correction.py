@@ -52,8 +52,10 @@ CAP_CHARS = copied_corrections.CORRECTION_CAP_CHARS
 # Two budgets, so carrying the explanations (owner, 2026-10-20) changes no refusal and drops no
 # line: the template's own lines keep item 7's 2,000, measured without the explanations, and each
 # explanation has a fixed room of its own. A correction that composed before still composes, with
-# every explanation it is owed, and `CAP_CHARS` is the sum.
-LINES_CAP_CHARS = 2000
+# every explanation it is owed, and `CAP_CHARS` is the sum. The 2,000 grew by the 760 characters
+# the goal gained when its cap rose from 240 to 1,000 (owner, 2026-10-27), so a long goal refuses
+# no correction that a 240-character one composed.
+LINES_CAP_CHARS = 2760
 # Labelled as Compass's reading in the card's own words, on its own indented line under the line it
 # explains, so neither an agent nor the reader takes it for the reader's words.
 EXPLANATION_LABEL = "\n  Why Compass reads this as drift: "
@@ -86,9 +88,9 @@ TIME_ZONE_MAX_CHARS = 64
 # coming back would count as the reader's own words.
 HARNESSES = copied_corrections.HARNESSES
 
-# Names what the 2,000 bounds, the goal and lines, since the page counts the whole text to the cap.
+# Names what the 2,760 bounds, the goal and lines, since the page counts the whole text to the cap.
 TOO_LONG = (
-    "Your goal and lines would be longer than 2,000 characters. Shorten a line of your intent."
+    "Your goal and lines would be longer than 2,760 characters. Shorten a line of your intent."
 )
 REASON_NOTHING = "nothing"
 REASON_TOO_LONG = "too-long"
