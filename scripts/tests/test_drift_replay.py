@@ -1139,10 +1139,6 @@ class TheScreenFindsAClaimDeepInALongReply(unittest.TestCase):
         self.assertIn("EARLIER IN THE SAME REPLY", screen)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TheReplayScrubsWhatTheRuntimeScrubs(unittest.TestCase):
     """The press hands the producer the values a shell call masked; a replay must as well."""
 
@@ -1212,3 +1208,7 @@ class TheReplayScrubsWhatTheRuntimeScrubs(unittest.TestCase):
         # Vacuous if no explanation survived to be scrubbed: the assertion below needs one.
         self.assertTrue(any(explanations), explanations)
         self.assertNotIn(self.SECRET, json.dumps(explanations))
+
+
+if __name__ == "__main__":
+    unittest.main()

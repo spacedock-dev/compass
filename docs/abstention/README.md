@@ -122,9 +122,11 @@ synthesised case bodies. All three stay on the machine that made them.
 
 The drift replay passes the values a shell call masked to the producer, as the runtime does (see
 [the drift replay record](../drift-replay/README.md#masked-values-2026-10-28)). The abstention
-tools (`mark_abstention.py`, `score_abstention.py`) and `levels_cases.py` do not. They read frozen
-cases, and a case freezes each check's tail, later-command pairs and incomplete-read pairs but no
-masked values. Freezing them would write credential-shaped values into case files and change the
+tools (`mark_abstention.py`, `score_abstention.py`) and `levels_cases.py` do not.
+`mark_abstention.py` and `score_abstention.py` read frozen cases that carry each check's tail,
+later-command pairs and incomplete-read pairs but no masked values. `levels_cases.py` sends no
+tails and freezes only the later-command and incomplete-read pairs. None of them freezes masked
+values. Freezing them would write credential-shaped values into case files and change the
 case packet that the marks digest and the inputs digest bind, so a sealed input would move. The
 effect is limited to an explanation: a masked value that a stored explanation quotes is not
 scrubbed in these studies' local results, while the runtime would scrub it. The prompt, which
