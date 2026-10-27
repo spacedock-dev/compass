@@ -3223,7 +3223,8 @@ below replace what it said.
   removed; one inside a longer word or path is not.
 - **The output shapes.** A netrc entry needs its `login`, or a value with a digit or capital when it
   has none; a signature needs a signature-like value and accepts `&amp;` and `\u0026` before it; an
-  AWS `"SecretString"` runs to its closing quote however long, in either quote.
+  AWS `"SecretString"` runs to its closing quote, in either quote, up to 65,536 characters; an
+  unclosed one is masked to the end of its line.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

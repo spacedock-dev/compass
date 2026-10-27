@@ -984,6 +984,16 @@ class ScrubValuesTest(unittest.TestCase):
                 self.assertNotIn("FakePass99", out)
                 self.assertIn(records.SECRET_MARKER, out)
 
+    def test_a_password_quoted_as_user_colon_password_is_scrubbed_in_prose(self) -> None:
+        for text in (
+            "it used alice:FakePass99 to log in",
+            "it ran curl -u alice:FakePass99 x",
+        ):
+            with self.subTest(text=text):
+                out = records.scrub_values(text, ["FakePass99"], prose=True)
+                self.assertNotIn("FakePass99", out)
+                self.assertIn("alice:", out)
+
     def test_a_value_inside_a_longer_word_or_path_stays_in_prose(self) -> None:
         for text in ("it edited test_a.py", "it read src/test/x", "see test.example.com"):
             with self.subTest(text=text):
@@ -1168,6 +1178,14 @@ class MaskCommandTest(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertEqual(line, mask(line))
                 self.assertEqual([], records.masked_values(shlex.split(line)))
+
+    def test_a_jvm_or_spring_property_that_names_a_credential_is_masked(self) -> None:
+        for line in (
+            "java -Dspring.datasource.password=FakePass99 -jar app.jar",
+            "java -jar app.jar --spring.datasource.password=FakePass99",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn("FakePass99", mask(line))
 
     def test_a_dotted_config_key_that_names_a_credential_is_masked(self) -> None:
         for line in (
@@ -1378,6 +1396,17 @@ class OutputSecretShapesTest(unittest.TestCase):
     def test_an_unclosed_secret_string_is_redacted_to_the_end(self) -> None:
         out = records.redact_secrets('"SecretString": "' + "FakePass99" * 600)
         self.assertNotIn("FakePass99", out)
+
+    def test_an_unclosed_secret_string_masks_only_to_the_end_of_its_line(self) -> None:
+        out = records.redact_secrets('"SecretString": "FakePass99\nnext line stays')
+        self.assertNotIn("FakePass99", out)
+        self.assertIn("next line stays", out)
+
+    def test_a_long_run_after_a_signature_name_is_not_quadratic(self) -> None:
+        text = "?sig=" + "a" * 100_000
+        start = time.monotonic()
+        records.redact_secrets(text)
+        self.assertLess(time.monotonic() - start, 5.0)
 
     def test_a_signature_behind_an_escaped_ampersand_is_redacted(self) -> None:
         for url in (

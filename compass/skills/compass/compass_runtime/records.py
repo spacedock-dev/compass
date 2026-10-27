@@ -234,7 +234,7 @@ _SECRET_SHAPES: Final = (
         False,
         (
             r"(?i:\bsecretstring)[\"']?\s*:\s*(?P<ssq>[\"'])"
-            r"(?P<ssval>(?:(?!(?P=ssq))[^\\\n]|\\.){1,65536})(?:(?P=ssq)|$)"
+            r"(?P<ssval>(?:(?!(?P=ssq))[^\\\n]|\\.){1,65536})(?:(?P=ssq)|(?=\n)|$)"
         ),
     ),
     # A `.netrc` entry: `machine <host>` or `default`, then `login <user>` and
@@ -266,8 +266,8 @@ _SECRET_SHAPES: Final = (
         (
             r"(?:(?<=[?&])|(?<=&amp;)|(?<=\\u0026))"
             r"(?i:x-amz-signature|x-amz-security-token|x-goog-signature|signature|sig)"
-            r"=(?P<sigval>(?=[^\s&#\"'<>]*(?:[0-9%+/]|[A-Z][^\s&#\"'<>]*[a-z]"
-            r"|[a-z][^\s&#\"'<>]*[A-Z]))[^\s&#\"'<>]{6,2048})"
+            r"=(?P<sigval>(?=[^\s&#\"'<>]{0,2048}(?:[0-9%+/]|[A-Z][^\s&#\"'<>]{0,2048}[a-z]"
+            r"|[a-z][^\s&#\"'<>]{0,2048}[A-Z]))[^\s&#\"'<>]{6,2048})"
         ),
     ),
     # A credential with no shape of its own, known only by the cue in front of
@@ -726,8 +726,12 @@ _MASK_HEADER_ALONE: Final = re.compile(
 # backtracking on `Loading.....`). A dotted config key (`http.extraheader=`,
 # `credential.helper=`) whose last component names a credential. It starts with a
 # letter, so `--max-tokens=4096`, `--password-file=/x` and `--secrets-dir=...` are
-# flags and not keys.
-_MASK_DOTTED_KEY: Final = re.compile(r"^(['\"]?[A-Za-z][\w-]*(?:\.[^\s=.]+)+=).+$", re.DOTALL)
+# flags and not keys. A `-D` or `--` prefix is allowed because the key must hold
+# a dot: `-Dspring.datasource.password=` and `--spring.datasource.password=` are
+# JVM and Spring properties, and no dot-free flag reaches this pattern.
+_MASK_DOTTED_KEY: Final = re.compile(
+    r"^(['\"]?(?:-D|--)?[A-Za-z][\w-]*(?:\.[^\s=.]+)+=).+$", re.DOTALL
+)
 _MASK_DOTTED_CREDENTIAL: Final = re.compile(
     r"(?:extraheader|password|passwd|token|secret|apikey|api-key)$", re.IGNORECASE
 )
@@ -2067,8 +2071,11 @@ def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> st
             piece.replace("'", "'\"'\"'"),
         )
     }
+    # In prose a `:` after a word is how `user:password` is quoted, so it does not
+    # make the value part of a longer word; a `/`, `.` or `@` still does.
+    before = r"(?<![\w./@+\-])" if prose else rf"(?<!{boundary})"
     for spelling in sorted(spellings, key=len, reverse=True):
-        text = re.sub(rf"(?<!{boundary}){re.escape(spelling)}{after}", _SECRET_MARKER, text)
+        text = re.sub(rf"{before}{re.escape(spelling)}{after}", _SECRET_MARKER, text)
         text = re.sub(
             rf"(?<!{boundary})(-[pP]){re.escape(spelling)}{after}",
             lambda match: match[1] + _SECRET_MARKER,
