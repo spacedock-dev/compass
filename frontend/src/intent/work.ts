@@ -48,6 +48,8 @@ export interface WorkEntry {
   readonly beforeLastChange: boolean;
   readonly changedAfter: boolean;
   readonly readIncomplete: boolean;
+  /** A command whose exit status says nothing about it (a later `|| true` forces it); absent on every other row. */
+  readonly cannotFail?: boolean;
   /** The server's fixed number for a message, or for the message a check or file follows. */
   readonly ordinal: number | null;
   /** A check or file's place after that message; null for a message. */
@@ -120,6 +122,7 @@ export function workEntries(session: Row, semantic: unknown): WorkEntry[] {
         beforeLastChange: fact['before_last_change'] === true,
         changedAfter: fact['changed_after'] === true,
         readIncomplete: fact['read_incomplete'] === true,
+        ...(fact['cannot_fail'] === true ? { cannotFail: true } : {}),
         ordinal: positiveInteger(fact['ordinal']),
         ordinalSub: positiveInteger(fact['ordinal_sub']),
         source: [evidence['source'], evidence['confidence']]

@@ -110,6 +110,69 @@ export const Fold: Story = {
     await expect(trigger.querySelector('[data-icon="expand"]')).not.toBeNull();
   },
 };
+/* A command off the closed list reads with its exit status and what Compass does not know, never as a
+   passed check, and a run of them is not folded into "N checks". A CI read keeps a check's words. */
+export const CommandsKeepTheirLabel: Story = {
+  render: () => (
+    <RunExample
+      rows={[
+        activityRow(4, {
+          subject: 'ci_command',
+          result: 'passed',
+          resultSource: 'flag',
+          summary: 'gh pr checks 7',
+        }),
+        ...[3, 2, 1].map((n) =>
+          activityRow(n, {
+            subject: 'command',
+            result: 'passed',
+            resultSource: 'flag',
+            summary: `make step${String(n)}`,
+          }),
+        ),
+      ]}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByRole('button', { name: /checks/ })).toBeNull();
+    await expect(canvasElement.querySelectorAll('[data-story-entry]')).toHaveLength(4);
+    const labelled = canvas.getAllByLabelText('Exited 0; Compass does not know what it checks');
+    await expect(labelled).toHaveLength(3);
+    for (const mark of labelled) await expect(mark).toHaveTextContent('Exited 0');
+    await expect(canvas.getAllByText('command')).toHaveLength(3);
+    await expect(canvas.getByText('CI check')).toBeVisible();
+    // Only the CI read says what a check says; no command says it passed.
+    await expect(canvas.getAllByLabelText('Passed, as the tool reported')).toHaveLength(1);
+    await expect(canvasElement.textContent).not.toMatch(/Passed, as the tool reported.*make step/);
+  },
+};
+
+export const CommandWithAForcedStatusSaysSo: Story = {
+  render: () => (
+    <RunExample
+      rows={[
+        activityRow(1, {
+          subject: 'command',
+          result: 'not-recorded',
+          resultSource: '',
+          cannotFail: true,
+          summary: 'make deploy || true',
+        }),
+      ]}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByLabelText(
+        'Ran, exit status not recorded: a later command forces the exit status to 0',
+      ),
+    ).toBeVisible();
+    await expect(canvasElement.textContent).not.toMatch(/Exited 0/);
+  },
+};
+
 export const FailureSplits: Story = {
   render: () => (
     <RunExample

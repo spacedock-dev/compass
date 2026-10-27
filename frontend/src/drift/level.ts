@@ -5,7 +5,7 @@ import type { WorkEntry, WorkSource } from '../intent/work';
 import { entryNumbers, labelOrder } from '../intent/work';
 import { clock, isRecord, type Row } from '../observed';
 import type { ContextEntry } from '../store/board';
-import { localRecordedTime, recordedTime } from './result';
+import { entryKind, localRecordedTime, recordedTime } from './result';
 import { fmtDur } from './route';
 import {
   BLOCKER_LINES,
@@ -257,15 +257,17 @@ export function evidenceRows(
     const at = nextNumber(entry.at);
     const kind = check
       ? `${entry.result || 'Recorded'} check`
-      : entry.subject === 'write'
-        ? 'File write'
-        : entry.subject === 'pr'
-          ? 'Pull request created'
-          : entry.subject === 'skill'
-            ? 'Skill used'
-            : agentMessage(entry)
-              ? 'Agent message'
-              : String(entry.type || 'Recorded entry');
+      : entry.subject === 'command' || entry.subject === 'ci_command'
+        ? entryKind(entry)
+        : entry.subject === 'write'
+          ? 'File write'
+          : entry.subject === 'pr'
+            ? 'Pull request created'
+            : entry.subject === 'skill'
+              ? 'Skill used'
+              : agentMessage(entry)
+                ? 'Agent message'
+                : String(entry.type || 'Recorded entry');
     return {
       id: String(entry.id || ''),
       label: [

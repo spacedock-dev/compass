@@ -200,6 +200,11 @@ function subjectlessPiCheck(entry: WorkEntry): boolean {
    result, so it carries neither, and a subjectless Pi result an older build stored carries none. The one
    exception is a row the producer stored as `recorded-write`: the code, not the model, found that write
    inside or outside a folder the line names, so it carries that departure and no other verdict. */
+/* The subjects whose fact carries a recorded exit status: a check, a tier 2 CI read and a tier 3 command
+   ([DEC-29](../../../docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)).
+   A command whose status a later `|| true` forces carries nothing, and the producer says so with `cannotFail`. */
+export const RESULT_SUBJECTS: ReadonlySet<string> = new Set(['check', 'command', 'ci_command']);
+
 export function checkSupports(
   entry: WorkEntry,
   result: string,
@@ -207,6 +212,12 @@ export function checkSupports(
   recordedWrite = false,
 ): boolean {
   const report = String(entry.type || '') === 'tool_report';
+  if (
+    (entry.subject === 'command' || entry.subject === 'ci_command') &&
+    (!report || entry.cannotFail === true)
+  ) {
+    return false;
+  }
   if (!report && entry.subject !== 'check') return !subjectlessPiCheck(entry);
   if (entry.subject === 'pr' || entry.subject === 'skill') {
     /* A created pull request or a launched skill shows something done and has no result to fail: it carries a
@@ -215,7 +226,7 @@ export function checkSupports(
     const at = evidenceAt(entry);
     return result === CONSISTENT && at !== null && at > 0 && !beforeWindow(entry, windowStart);
   }
-  if (entry.subject !== 'check') {
+  if (!RESULT_SUBJECTS.has(entry.subject)) {
     const at = evidenceAt(entry);
     return (
       recordedWrite &&
@@ -377,7 +388,7 @@ export function criterion(
   let failedCited = false;
   if (result !== UNVERIFIABLE) {
     failedCited = cited.some(
-      (entry) => entry.subject === 'check' && checkSupports(entry, DEPARTURE, windowStart),
+      (entry) => RESULT_SUBJECTS.has(entry.subject) && checkSupports(entry, DEPARTURE, windowStart),
     );
     const incompletePass =
       result === CONSISTENT &&
@@ -469,7 +480,8 @@ export function criterion(
     (isOutcomeLine(key) || claims) &&
     !shows.length &&
     entries.some(
-      (entry) => entry && entry.subject === 'check' && checkSupports(entry, DEPARTURE, windowStart),
+      (entry) =>
+        entry && RESULT_SUBJECTS.has(entry.subject) && checkSupports(entry, DEPARTURE, windowStart),
     )
   ) {
     /* A line's consistent resting on no work beside a failed check this page holds, cited or not and sent or

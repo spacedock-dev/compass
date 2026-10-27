@@ -620,24 +620,38 @@ export function coverageLine(shape: Shape): string {
   return [coverageLimits(shape), goalSourceLine(shape)].filter(Boolean).join(' ');
 }
 
+/* A command's kind, in words that never say it passed: it exited, and Compass does not know what it checks. A
+   tier 2 CI read says what the tool reported, as a check does. */
+function commandKind(entry: WorkEntry): string {
+  if (entry.subject === 'ci_command') return `${entry.result || 'Recorded'} CI check`;
+  return entry.result === 'passed'
+    ? 'Command that exited 0'
+    : entry.result === 'failed'
+      ? 'Command that exited non-zero'
+      : 'Command, status not recorded';
+}
+
 /* Whether an entry is one of the agent's own words, for the evidence rows' kind. */
 export function entryKind(entry: WorkEntry): string {
-  return entry.subject === 'check'
-    ? `${entry.result || 'Recorded'} check`
-    : entry.subject === 'write'
-      ? 'File write'
-      : entry.subject === 'pr'
-        ? 'Pull request created'
-        : entry.subject === 'skill'
-          ? 'Skill used'
-          : agentMessage(entry)
-            ? 'Agent message'
-            : String(entry.type || 'Recorded entry');
+  return entry.subject === 'command' || entry.subject === 'ci_command'
+    ? commandKind(entry)
+    : entry.subject === 'check'
+      ? `${entry.result || 'Recorded'} check`
+      : entry.subject === 'write'
+        ? 'File write'
+        : entry.subject === 'pr'
+          ? 'Pull request created'
+          : entry.subject === 'skill'
+            ? 'Skill used'
+            : agentMessage(entry)
+              ? 'Agent message'
+              : String(entry.type || 'Recorded entry');
 }
 
 /* What a cited entry is, in Compass's own words, beside its number on a finding: never a model's account of
    it. A raw record type is not a reader's word, so anything unnamed here is a recorded entry. */
 export function citedKind(entry: WorkEntry): string {
+  if (entry.subject === 'command' || entry.subject === 'ci_command') return commandKind(entry);
   if (entry.subject === 'check') return `${entry.result || 'Recorded'} check`;
   if (entry.subject === 'write') return 'File write';
   if (entry.subject === 'pr') return 'Pull request created';
@@ -751,6 +765,9 @@ export function departureWhat(entries: readonly WorkEntry[]): string {
 export function citedLine(entry: WorkEntry): string {
   const words = bounded(String(entry.summary || ''));
   if (!words) return citedKind(entry);
+  if (entry.subject === 'command' || entry.subject === 'ci_command') {
+    return `${commandKind(entry)}: ${words}`;
+  }
   if (entry.subject === 'check') {
     const result = String(entry.result || 'Recorded');
     return `${result.charAt(0).toUpperCase()}${result.slice(1)} check: ${words}`;
@@ -766,19 +783,21 @@ export function citedLine(entry: WorkEntry): string {
 /* An entry as the verdict sentence names it, with its time. */
 function entryPhrase(entry: WorkEntry): string {
   const kind =
-    entry.subject === 'check'
-      ? `a ${String(entry.result || 'recorded')} check`
-      : entry.subject === 'write'
-        ? 'a file write'
-        : entry.subject === 'pr'
-          ? 'a pull request created'
-          : entry.subject === 'skill'
-            ? 'a skill used'
-            : agentMessage(entry)
-              ? "the agent's message"
-              : personAuthored(entry)
-                ? 'your message'
-                : 'an entry';
+    entry.subject === 'command' || entry.subject === 'ci_command'
+      ? `a ${commandKind(entry).toLowerCase()}`
+      : entry.subject === 'check'
+        ? `a ${String(entry.result || 'recorded')} check`
+        : entry.subject === 'write'
+          ? 'a file write'
+          : entry.subject === 'pr'
+            ? 'a pull request created'
+            : entry.subject === 'skill'
+              ? 'a skill used'
+              : agentMessage(entry)
+                ? "the agent's message"
+                : personAuthored(entry)
+                  ? 'your message'
+                  : 'an entry';
   const at = nextNumber(entry.at);
   return at !== null && at > 0 ? `${kind} at ${clock(at)}` : kind;
 }

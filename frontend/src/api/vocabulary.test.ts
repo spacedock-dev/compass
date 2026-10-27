@@ -8,7 +8,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ASSESSMENT_KEYS } from '../drift/shape';
+import { ASSESSMENT_KEYS, RESULT_SUBJECTS } from '../drift/shape';
 import {
   BLOCKER_LINES,
   CORRECTION_CAP,
@@ -25,7 +25,12 @@ import {
   STORED_WHY,
 } from '../drift/sentences';
 import { CUE_TTL_MS } from '../controls/keyedState';
-import { CHECK_NOT_RECORDED_REASONS, toolReportLine } from '../drift/workList';
+import {
+  CHECK_NOT_RECORDED_REASONS,
+  COMMAND_NOT_RECORDED,
+  COMMAND_RESULTS,
+  toolReportLine,
+} from '../drift/workList';
 import { DELETE_LAPSE_SECONDS } from '../sessions/summary';
 import {
   ANNOTATION_FIELDS,
@@ -58,6 +63,9 @@ interface Vocabulary {
   readonly workEvidenceByHarness: Record<string, string[]>;
   readonly checkResultWords: Record<string, string>;
   readonly checkNotRecorded: string;
+  readonly commandResultWords: Record<string, string>;
+  readonly commandNotRecorded: string;
+  readonly resultSubjects: string[];
   readonly checkNotRecordedReasons: Record<string, string>;
   readonly checkEarlierFailed: string;
   readonly checkBeforeLastChange: string;
@@ -151,6 +159,24 @@ describe('the words beside a check', () => {
       const [result, source] = key.split(' ') as [string, string];
       expect(toolReportLine(entry(result, source))).toBe(`Agent · check · ${words}`);
     }
+  });
+
+  it("reads a command in the producer's words, and never as a passed check", () => {
+    expect(COMMAND_RESULTS).toEqual(vocabulary.commandResultWords);
+    expect(COMMAND_NOT_RECORDED).toBe(vocabulary.commandNotRecorded);
+    for (const [key, words] of Object.entries(vocabulary.commandResultWords)) {
+      const [result, source] = key.split(' ') as [string, string];
+      const line = toolReportLine({ ...entry(result, source), subject: 'command' });
+      expect(line).toBe(`Agent · command · ${words}`);
+      expect(line).not.toContain('passed, as the tool reported');
+    }
+    expect(toolReportLine({ ...entry('', ''), subject: 'command' })).toBe(
+      `Agent · command · ${vocabulary.commandNotRecorded}`,
+    );
+  });
+
+  it("holds the subjects that carry an exit status equal to the producer's", () => {
+    expect([...RESULT_SUBJECTS].sort()).toEqual(vocabulary.resultSubjects);
   });
 
   it('says what the producer says for a result nobody recorded and for the two flags', () => {

@@ -77,6 +77,20 @@ async function noBudgetLine(root: HTMLElement) {
   await expect(root.textContent).not.toMatch(/of \d+ left/);
 }
 
+/* A reading stored before commands were recorded cites checks and files only, and its facts carry no tier and
+   no forced-status field. It still renders its departure and the failed check it cites, with the check's own
+   words and not a command's. */
+export const AnOlderReadingWithoutTiersStillRenders: Story = {
+  ...scenario(RESULT),
+  play: async ({ canvasElement }) => {
+    const root = await card(canvasElement);
+    await foot(root);
+    await expect(root).toHaveTextContent('It stopped running the tests.');
+    await expect(canvasElement.textContent).not.toMatch(/Compass does not know what it checks/);
+    await expect(canvasElement.querySelector('[data-next-result-mark]')).not.toBeNull();
+  },
+};
+
 export const UnderTheLimitSaysNothingAboutIt: Story = {
   ...scenario(RESULT),
   play: async ({ canvasElement }) => {
