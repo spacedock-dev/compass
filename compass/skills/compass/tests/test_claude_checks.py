@@ -1097,7 +1097,9 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
     def test_an_rtk_check_reads_its_result_from_the_flag_alone(self) -> None:  # R12
         for command, output, flag, expected in (
             ("rtk pytest", "", True, "failed"),
-            ("rtk proxy pytest", "", False, "passed"),
+            # `rtk proxy` is RTK's unfiltered mode, so its output is the runner's own.
+            ("rtk proxy python -m pytest -q", "14 passed in 1.0s", False, "passed"),
+            ("rtk proxy python -m pytest -q", "1 failed, 3 passed", False, "failed"),
             ("rtk pytest 2>&1 | tail -2", "5 passed", False, "not-recorded"),
             ("rtk pytest", "1 failed", False, "not-recorded"),
         ):
@@ -1105,7 +1107,7 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
                 self.setUp()
                 self.session.bash(command, output, is_error=flag)
                 check = self.only_check()
-                self.assertTrue(check["title"].startswith("pytest"))
+                self.assertIn("pytest", check["title"])
                 self.assertEqual(expected, check["result"])
 
     def test_a_command_a_hook_rewrote_is_the_command_that_ran(self) -> None:  # R12
@@ -1199,6 +1201,22 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
         call_id = self.session.bash("pytest", "1 failed", is_error=False)
         self.assertTrue(call_id)
         self.assertEqual("failed", self.only_check()["result"])
+
+    def test_a_pytest_plugin_flag_is_shown_and_a_bare_word_stays_masked(self) -> None:
+        for command, title in (
+            ("pytest -p no:cacheprovider -q", "pytest -p no:cacheprovider -q"),
+            ("uv run pytest -p no:randomly", "pytest -p no:randomly"),
+            ("python3 -m pytest tests/x.py -q -pno:cacheprovider", None),
+            ("pytest -p myplugin", "pytest -p \u2026REDACTED"),
+        ):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, "", is_error=False)
+                shown = self.only_check()["title"]
+                if title is None:
+                    self.assertIn("-pno:cacheprovider", shown)
+                else:
+                    self.assertEqual(title, shown)
 
     def test_paths_options_and_subshells_are_stripped(self) -> None:  # R13
         for command, title in (

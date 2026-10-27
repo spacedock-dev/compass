@@ -1304,6 +1304,23 @@ class MaskCommandTest(unittest.TestCase):
     def test_the_prose_path_still_masks_an_authorization_value(self) -> None:
         self.assertNotIn(
             "FakeTok99", records.mask_prose("send Authorization: Bearer FakeTok99 to it")
+
+    def test_a_pytest_plugin_flag_shows_only_for_pytest_and_only_as_no_identifier(self) -> None:
+        pytest_line = ["python", "-m", "pytest", "-p", "no:cacheprovider", "-p", "myplugin"]
+        self.assertEqual(
+            ["python", "-m", "pytest", "-p", "no:cacheprovider", "-p", "\u2026REDACTED"],
+            records.mask_words(pytest_line, pytest=True),
+        )
+        self.assertEqual(
+            ["pytest", "-pno:randomly", "-p\u2026REDACTED", "-p", "\u2026REDACTED"],
+            records.mask_words(["pytest", "-pno:randomly", "-pno:", "-p", "no:a b"], pytest=True),
+        )
+        self.assertNotIn(
+            "no:cacheprovider",
+            " ".join(records.mask_words(["pytest", "-P", "no:cacheprovider"], pytest=True)),
+        )
+        self.assertNotIn(
+            "no:cacheprovider", " ".join(records.mask_words(["mysql", "-p", "no:cacheprovider"]))
         )
 
     def test_a_command_with_nothing_to_mask_reads_as_it_was_typed(self) -> None:

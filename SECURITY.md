@@ -1863,7 +1863,9 @@ it is named in `history.PROMPT_DERIVED_CARRIERS`.
 
 Masking is by named form, word by word, and covers these forms and no others: a `NAME=value`
 assignment; the value after `--password`, `--token`, `--api-key`, `--secret`, `--auth`, `-p` or
-`-P`, joined by `=` or in the next word; an `Authorization:` or `X-Api-Key:` header value anywhere;
+`-P`, joined by `=` or in the next word, except that a pytest check shows `-p no:<plugin>` (or
+`-pno:<plugin>`) for an identifier and masks any other word after `-p`; an `Authorization:` or
+`X-Api-Key:` header value anywhere;
 and, only where a header is expected (the word after `-H`, `--header` or `--proxy-header`, a header
 joined to its flag, or an `extraheader=` key), a `Proxy-Authorization:`, `Cookie:` or `Set-Cookie:`
 value or one whose name holds `token`, `key`, `secret`, `password`, `passwd` or `credential`

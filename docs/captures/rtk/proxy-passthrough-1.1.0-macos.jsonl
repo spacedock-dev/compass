@@ -1,0 +1,4 @@
+{"harness": "rtk", "kind": "provenance", "version_line": "rtk 1.1.0", "os": "macos", "note": "rtk is the token-saving command proxy; a different program (Rust Type Kit) also installs a binary named rtk, so the version line is checked to read 'rtk X.Y.Z' before a capture is trusted"}
+{"harness": "rtk", "kind": "arm", "arm": "proxy_sh_summary_then_exit_1", "argv": ["rtk", "proxy", "sh", "-c", "echo '14 passed in 1.0s'; exit 1"], "stdout": "14 passed in 1.0s\n", "stderr": "", "exit": 1}
+{"harness": "rtk", "kind": "arm", "arm": "proxy_false", "argv": ["rtk", "proxy", "false"], "stdout": "", "stderr": "", "exit": 1}
+{"harness": "rtk", "kind": "arm", "arm": "proxy_sh_exit_0", "argv": ["rtk", "proxy", "sh", "-c", "echo '14 passed in 1.0s'; exit 0"], "stdout": "14 passed in 1.0s\n", "stderr": "", "exit": 0}

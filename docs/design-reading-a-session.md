@@ -3301,6 +3301,22 @@ The source comparison names it as changed, whether the later read is a continuat
 reader that acts on a change by reading the whole file again ends with the same checks as a read of the
 whole file. Until it does, a reader holding only the earlier pages still has the typed command's check.
 
+### Amended 2026-10-27 (owner): `rtk proxy` is not a wrapper that rewrites output
+
+[The closed lists](#the-closed-lists) name `rtk` as a wrapper whose checks read the error flag alone. `rtk proxy`
+is RTK's unfiltered mode: [the capture](captures/rtk/proxy-passthrough-1.1.0-macos.jsonl) shows a pass summary
+printed unchanged with the command's own exit status, so `rtk proxy <runner>` is stripped to `<runner>` and read
+from its output as if `rtk` were absent, and bare `rtk <runner>` keeps the flag-only rule. A different program,
+Rust Type Kit, is also installed as `rtk`; the capture's version line reads `rtk X.Y.Z` for the one measured.
+
+### Amended 2026-10-27 (owner): pytest's `-p no:<plugin>` is shown
+
+Item 5 of this ruling masks the word after `-p` as a password for every runner, and a pytest check then read
+`-p …REDACTED` where the agent had passed a plugin flag. After wrappers are stripped, a pytest runner (`pytest`,
+`py.test`, `python -m pytest`) shows the word after `-p`, or the joined `-pno:<name>`, only when it is `no:` and an
+identifier of letters, digits, `_` and `.`. Any other word stays masked, because `-p hunter2` cannot be told from
+`-p myplugin`, and every other runner and `-P` keep the mask.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
