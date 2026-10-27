@@ -4423,8 +4423,8 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
 
     The facts the evaluator's reason cites are the files it names, the kinds of check it says
     passed, and a pull request it names by number that the record shows created. A verdict with
-    an empty reason, which is every Codex verdict, is read the same way against the goal's words. A cited
-    file the record shows written, or a check of a claimed kind that passed, at or
+    an empty reason, which is every Codex verdict, is read the same way against the goal's words.
+    A cited file the record shows written, or a check of a claimed kind that passed, at or
     before the verdict and since undone by nothing, agrees. A cited file written after the verdict,
     or a check of a claimed kind whose latest run failed (and that no later whole-suite run before
     the verdict superseded), disputes it, and a dispute outweighs what agrees. Nothing found, or

@@ -12,13 +12,16 @@ objective over 4,000 characters is stored as a fixed sentence pointing at a file
 from __future__ import annotations
 
 import dataclasses
+import sqlite3
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 from compass_runtime import claude_data, records
+from compass_runtime import io as runtime_io
 
 from .fixtures import _iso, _jsonl, _sqlite
 from .support import HarnessContractTestCase, make_runtime
@@ -289,6 +292,51 @@ class TheCodexVerdictIsReadFromItsGoalFileTest(unittest.TestCase):
             config = dataclasses.replace(config, store_roots=MappingProxyType(roots))
             self.assertIsNone(claude_data.codex_goal_verdict(config, state, "thread", self.GOAL))
             self.assertIn(str(codex / claude_data.CODEX_GOALS_DB), state.store_errors)
+
+
+class TheCodexGoalFileIsReadAsCodexLeavesItTest(unittest.TestCase):
+    """What the security review reproduced: Codex keeps the file in WAL mode, and a clean close of its
+    last connection removes the `-wal` and `-shm` a `mode=ro` open needs."""
+
+    def setUp(self) -> None:
+        self.home = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.home, ignore_errors=True))
+        (self.home / "sessions").mkdir()
+        self.config, self.state = make_runtime()
+        roots = {**self.config.store_roots, "codex.sessions": (str(self.home / "sessions"),)}
+        self.config = dataclasses.replace(self.config, store_roots=MappingProxyType(roots))
+
+    def test_a_wal_file_closed_by_its_last_writer_still_gives_the_verdict(self) -> None:
+        goals_file(self.home, [("thread", OBJECTIVE, "complete", T0 + 5, T0 + 40)])
+        con = sqlite3.connect(str(self.home / claude_data.CODEX_GOALS_DB))
+        con.execute("PRAGMA journal_mode=WAL")
+        con.close()
+        self.assertFalse((self.home / f"{claude_data.CODEX_GOALS_DB}-shm").exists())
+        verdict = claude_data.codex_goal_verdict(
+            self.config, self.state, "thread", {"text": OBJECTIVE, "at": T0 + 5}
+        )
+        self.assertEqual({"met": True, "at": T0 + 40, "reason": ""}, verdict)
+        self.assertEqual({}, self.state.store_errors)
+
+    def test_a_failed_read_is_tried_once_per_change_not_once_per_row(self) -> None:
+        (self.home / claude_data.CODEX_GOALS_DB).write_bytes(b"not a database")
+        opened: list[str] = []
+        real = runtime_io.sqlite_module.connect
+
+        def counting(database: str, **kw: Any) -> Any:
+            opened.append(database)
+            return real(database, **kw)
+
+        with unittest.mock.patch.object(runtime_io.sqlite_module, "connect", counting):
+            for _ in range(5):
+                claude_data.codex_goal_verdict(
+                    self.config, self.state, "thread", {"text": OBJECTIVE, "at": T0 + 5}
+                )
+        self.assertLessEqual(len(opened), 2)  # the read-only open and its immutable retry, once
+
+    def test_an_objective_over_the_goal_bound_is_not_read(self) -> None:
+        goals_file(self.home, [("thread", "x" * 4001, "complete", T0 + 5, T0 + 40)])
+        self.assertEqual({}, dict(claude_data._codex_completed_goals(self.config, self.state)))
 
 
 class TheCodexCollectorPublishesTheVerdictTest(HarnessContractTestCase):

@@ -496,14 +496,51 @@ def _codex_goals_path(config: RuntimeConfig) -> str:
     return os.path.join(os.path.dirname(sessions_root.rstrip(os.sep)), CODEX_GOALS_DB)
 
 
+def _read_codex_goals(path: str) -> list[Any]:
+    """The completed rows, read-only. Raises the SQLite error a failed open or query gives.
+
+    Codex keeps the file in WAL mode, and once its last process closes SQLite removes the `-wal`
+    and `-shm` beside it; a `mode=ro` open of such a file cannot create the `-shm` it needs and
+    fails. With no pending `-wal` data the file on disk is the whole database, so it is read again
+    as `immutable`, as the Antigravity stores are (`collectors/antigravity.py`). With pending WAL
+    data an immutable read could miss committed rows, so the first error stands.
+    """
+    query = (
+        "SELECT thread_id, objective, created_at_ms, updated_at_ms FROM thread_goals"
+        " WHERE status = 'complete' AND length(objective) <= ?"
+        " ORDER BY updated_at_ms DESC LIMIT ?"
+    )
+
+    def read(uri: str) -> list[Any]:
+        con = runtime_io.sqlite_module.connect(uri, uri=True, timeout=0.2)
+        try:
+            return list(con.execute(query, (GOAL_CAP_CHARS, CODEX_GOALS_ROW_CAP)).fetchall())
+        finally:
+            con.close()
+
+    try:
+        return read(runtime_io.sqlite_ro_uri(path))
+    except runtime_io.sqlite_module.Error:
+        try:
+            pending = os.path.getsize(path + "-wal") > 0
+        except OSError:
+            pending = False
+        if pending:
+            raise
+        return read(runtime_io.sqlite_ro_uri(path, immutable=True))
+
+
 def _codex_completed_goals(
     config: RuntimeConfig, state: RuntimeState
 ) -> Mapping[str, tuple[str, float, float]]:
     """Every completed goal in Codex's goal file, by thread id: `(objective, set, completed)`.
 
-    Opened read-only and never written. Cached on the file's own size and mtime and on its `-wal`
-    beside it, so a board with many Codex rows reads it once per change. No file, no `sqlite3`, or
-    a read that fails is no completed goal; a failed read is recorded as a store error.
+    Opened read-only; the database is never written, though SQLite's WAL index (`-shm`) records
+    the reader as it does for any reader. Cached on the file's own size and mtime and on its `-wal`
+    beside it, so a board with many Codex rows reads it once per change, a failed read included. No
+    file, no `sqlite3`, or a read that fails is no completed goal; a failed read is recorded once
+    as a store error. An objective over `GOAL_CAP_CHARS` is not read, since no published goal can
+    hold it.
     """
     path = _codex_goals_path(config)
     try:
@@ -523,23 +560,10 @@ def _codex_completed_goals(
     rows: dict[str, tuple[str, float, float]] = {}
     if runtime_io.sqlite_available():
         try:
-            con = runtime_io.sqlite_module.connect(
-                runtime_io.sqlite_ro_uri(path), uri=True, timeout=0.2
-            )
+            found = _read_codex_goals(path)
         except runtime_io.sqlite_module.Error as exc:
             runtime_io.record_store_error(state, path, exc)
-            return {}
-        try:
-            found = con.execute(
-                "SELECT thread_id, objective, created_at_ms, updated_at_ms FROM thread_goals"
-                " WHERE status = 'complete' ORDER BY updated_at_ms DESC LIMIT ?",
-                (CODEX_GOALS_ROW_CAP,),
-            ).fetchall()
-        except runtime_io.sqlite_module.Error as exc:
-            runtime_io.record_store_error(state, path, exc)
-            return {}
-        finally:
-            con.close()
+            found = []
         for thread, objective, created, updated in found:
             if (
                 isinstance(thread, str)
