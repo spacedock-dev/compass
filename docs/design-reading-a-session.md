@@ -2602,7 +2602,10 @@ after a verifier reproduced false results against the first clarification:
 DRC-4890 names the rule on the published entry. A check whose result an attribution rule withholds
 carries `result_reason`: `several_checks` when the call holds more than one check,
 `directory_not_placeable` when a `cd` before it names a directory the shell places at run time, and
-`piped_beside_other_commands` when a pipe sits in a call whose other segments print. The token is set
+`piped_beside_other_commands` when a pipe sits in a call whose other segments print, and
+`printed_beside_other_commands` for any other call where a command beside the check may print (added
+by [the 2026-10-27 DEC-29 amendment](#amended-2026-10-27-owner-a-checks-own-summary-on-the-last-line-records-its-result),
+which also reads the last line past such commands). The token is set
 only when lifting that rule would publish a result, so a check the flag or the output's own wording
 already leaves unrecorded carries none. The page words each token in its reason table, and
 `frontend/test/fixtures/vocabulary.json` pins the two together.
@@ -7348,7 +7351,10 @@ were never evidence. May a result from outside the list count, and how far may e
    fact.
 7. **Attribution, as a direction.** When a check is the last command before a `tail` or `head` filter, a summary
    on the output's last line is that check's result, even beside earlier setup commands that print. This ships
-   only once a measured sample shows the false-attribution rate, and until then the existing rule stands.
+   only once a measured sample shows the false-attribution rate, and until then the existing rule stands. The
+   sample came back on 2026-10-27, and
+   [the amendment at the end of this section](#amended-2026-10-27-owner-a-checks-own-summary-on-the-last-line-records-its-result)
+   records the rule that shipped.
 8. **Harnesses.** Every harness whose record carries commands and their exit status: Claude Code now, Codex
    next.
 9. **Qualification runs after this ships, not before**, for the new false-`consistent` class: a pass on a command
@@ -7373,7 +7379,45 @@ not reopen the 2026-09-30 rejection of keyword overlap for relevance.
 
 **Built by**, in words: the layers that follow add the tier classification, the cannot-fail rule, the
 read-only additions, the per-consumer allowlist and its one covering test, and the prompt header. The
-attribution direction in item 7 waits for its measured sample.
+attribution direction in item 7 shipped later, under the amendment below.
+
+### Amended 2026-10-27 (owner): a check's own summary on the last line records its result
+
+The measured sample item 7 waited for is in, and the owner ruled that the direction ships.
+
+**The rule.** The last check of a call is read from the last non-empty line of its output when nothing follows
+it but `tail`, `head` or `grep` filters that read stdin, whatever earlier setup commands printed. The line counts
+only when it is one the check's own runner prints, from a closed table: unittest (`OK`, `OK (skipped=N)`,
+`OK (expected failures=N)`, `FAILED (...)`), pytest (the counted summary with its timing), mypy (`Success` and
+`Found N errors in ...`), ruff check (`All checks passed!`, `Found N errors.` and the fixable-count line under
+it), vitest (its `Tests` line) and `node --test` (its `fail` line). A runner that prints no summary of its own
+(`tsc`, `eslint`, `biome`) never takes another command's line. A check wrapped in `rtk` stays flag-only, and a
+check that is not the last of the call is unchanged. Only the last line is read, so a failure printed earlier in
+the window by another command does not fail a later passing check.
+
+**Claude Code's own trailer lines are not the command's output.** A result may end with a line saying the shell
+directory was reset, with the notice that the command modified files the session had read (ending `Call Read
+before editing.`) or with `(Bash completed with no output)`. Those exact shapes are dropped from the end of the
+output, and only the end, before the window is cut or the last line is read. The same words in the middle of the
+output are the command's own and are kept.
+
+**Every withheld result names its reason.** A result a rule withholds publishes one of four closed tokens; the
+fourth, `printed_beside_other_commands`, covers the setup shapes the other three did not name, which showed as
+"no token".
+
+**What was measured**, counts only. Over 2,183 check runs on one machine: the rule for the one check last before
+a filter records 98 runs that were withheld, with 0 false of 33 hand-labelled (upper bound 8.7%) and 0 false of
+98 in a census (upper bound 3.0%). Extending it to the last of several checks adds 139 runs and had 3 false
+attributions (2.2%): two where a failing lint run printed its count last and it was read as a type check that
+never ran, and one silent type check that took a test runner's line. Requiring the summary to be one the check's
+own runner prints removes all three. Reading the whole 180-character window instead of the last line flips 12
+runs to false failures. Trailer lines ended 274 of 925 tails that matched no pattern and pushed the summary out
+of the window in 103. unittest's `OK (skipped=N)` form accounts for 158 runs the plain `OK` pattern never
+matched, and 17 withheld runs carried no reason.
+
+**What it does not change.** The tiers, the never-a-pass rule and the ageing rule above stand. The summary of a
+runner in the table is evidence only for that runner's check; nothing here lets one command's line speak for
+another.
 
 ### Amended 2026-10-27 (owner): the tiers are built
 

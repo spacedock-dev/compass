@@ -21,9 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import command_coverage
 
 CORPUS = Path(__file__).resolve().parent / "fixtures" / "command_coverage"
-# The recorded-result share the corpus gives today: 6 of its 7 foreground check runs carry a result.
+# The recorded-result share the corpus gives today: 8 of its 9 foreground check runs carry a result,
+# two of them read from the runner's own last line past a setup command and a Claude Code trailer.
 # A floor, not a pin: a change that reads more of these runs may raise it, and none may lower it.
-RECORDED_SHARE_FLOOR = Fraction(6, 7)
+RECORDED_SHARE_FLOOR = Fraction(8, 9)
 
 
 def _report() -> dict[str, Any]:
@@ -49,7 +50,7 @@ class TheFiguresOnTheFixtureCorpus(unittest.TestCase):
     def test_check_runs_by_result(self) -> None:
         runs = self.report["check_runs"]
         self.assertEqual(
-            {"passed": 5, "failed": 1, "not_recorded": 1, "background": 1, "foreground": 7},
+            {"passed": 7, "failed": 1, "not_recorded": 1, "background": 1, "foreground": 9},
             {
                 key: runs[key]
                 for key in ("passed", "failed", "not_recorded", "background", "foreground")
@@ -58,7 +59,7 @@ class TheFiguresOnTheFixtureCorpus(unittest.TestCase):
 
     def test_a_subagents_check_run_is_in_the_tally_and_not_in_the_session_counts(self) -> None:
         # `ruff format --check .` runs only in the subagent transcript beside proj-a's parent.
-        self.assertEqual(5, self.report["check_runs"]["passed"])
+        self.assertEqual(7, self.report["check_runs"]["passed"])
         self.assertEqual(3, self.report["sessions_with_bash"])
 
     def test_a_blank_withheld_reason_is_counted_as_no_token(self) -> None:
@@ -108,7 +109,7 @@ class TheFiguresOnTheFixtureCorpus(unittest.TestCase):
             "polling CI",
             "not recorded 1",
             "background 1",
-            "85.7%",
+            "88.9%",
             "no token",
             "terraform plan",
             "present (2 records in 2 sessions)",

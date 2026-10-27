@@ -1523,7 +1523,11 @@ def _pi_outcome(
         alone=len(call.meaningful) == 1,
     )
     outcome, source = _ToolReportTally._outcome(  # noqa: SLF001 - one rule, both harnesses
-        tail, rtk=rtk, attributable=attributable, flag_result=flag_result
+        tail,
+        rtk=rtk,
+        attributable=attributable,
+        flag_result=flag_result,
+        summary=_summary_for(call, index, call.words[index][0], attributable, tail=tail),
     )
     reason = _withheld_reason(
         call,
@@ -2148,9 +2152,11 @@ _SUMMARY_FAILED = re.compile(
 # 2026-09-24). Node's pass count alone is not a pass: node prints the fail count
 # on the line after it, so a tail that kept one and lost the other says nothing
 # about failures. Go's `ok  <pkg>` is not a pass either: go passes come from the
-# error flag alone. unittest's `OK` must be the whole line.
+# error flag alone. unittest's `OK` must be the whole line, with the counts it prints
+# beside it: `OK (skipped=4)`, `OK (expected failures=1)` and both together.
+_UNITTEST_OK = r"^OK(?: \((?:[a-z ]+=\d+(?:, )?)+\))?\s*$"
 _SUMMARY_PASSED = re.compile(
-    rf"\b\d+ passed\b|^OK\s*$|^\s*Tests:\s.*\b\d+ passed|^{_INFO} fail 0\s*$"
+    rf"\b\d+ passed\b|{_UNITTEST_OK}|^\s*Tests:\s.*\b\d+ passed|^{_INFO} fail 0\s*$"
     r"|test result: ok|^Success: no issues found|^All checks passed!",
     re.MULTILINE,
 )
@@ -3547,6 +3553,7 @@ CHECK_NOT_RECORDED_REASONS = {
     "several_checks": "several checks in one call",
     "directory_not_placeable": "directory not placeable",
     "piped_beside_other_commands": "output is piped beside other commands",
+    "printed_beside_other_commands": "output is printed beside other commands",
 }
 
 
@@ -3893,10 +3900,130 @@ def _tool_result_text(block: dict[str, Any]) -> str:
     return ""
 
 
+# Lines Claude Code appends to a Bash result, none of them the command's output. A closed list of
+# exact shapes, read only at the end of the output: the same words in the middle are the command's.
+_CLAUDE_CODE_TRAILERS = (
+    re.compile(r"Shell cwd was reset to .+"),
+    re.compile(
+        r"\[This command modified \d+ files? you've previously read: .*"
+        r" Call Read before editing\.\]"
+    ),
+    re.compile(r"\(Bash completed with no output\)"),
+)
+
+
+def _without_trailer(text: str) -> str:
+    """The output without Claude Code's own trailer lines at its end.
+
+    They end most results that print nothing else, and pushed the summary out of the
+    window in about a tenth of the no-pattern tails of a 925-tail measurement.
+    """
+    lines = text.rstrip().split("\n")
+    while lines and (
+        not lines[-1].strip() or any(shape.fullmatch(lines[-1]) for shape in _CLAUDE_CODE_TRAILERS)
+    ):
+        lines.pop()
+    return "\n".join(lines)
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_PYTEST_COUNT = r"\d+ (?:passed|failed|skipped|deselected|xfailed|xpassed|warnings?|errors?|rerun)"
+_PYTEST_TIMING = r" in [\d.]+s(?: \(\d+:\d{2}:\d{2}\))?(?: =+)?"
+
+
+def _pytest_line(verdict: str) -> re.Pattern[str]:
+    """A pytest summary line holding at least one `verdict` count, with its timing."""
+    return re.compile(
+        rf"(?:=+ )?(?:{_PYTEST_COUNT}, )*[1-9]\d* {verdict}(?:, {_PYTEST_COUNT})*{_PYTEST_TIMING}"
+    )
+
+
+# Each runner's own last-line summaries, whole line and keyed by runner: (pass, fail). A runner
+# that prints nothing (`tsc`, `eslint`, `biome`) has no row, so it never takes another command's
+# line. The rule:
+# [DEC-29](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-checks-own-summary-on-the-last-line-records-its-result)  # noqa: E501
+_LAST_LINE_SUMMARIES: dict[str, tuple[re.Pattern[str], re.Pattern[str]]] = {
+    "unittest": (re.compile(_UNITTEST_OK), re.compile(r"FAILED \(.+\)")),
+    "pytest": (_pytest_line("passed"), _pytest_line("(?:failed|errors?)")),
+    "mypy": (
+        re.compile(r"Success: no issues found in \d+ source files?"),
+        re.compile(r"Found [1-9]\d* errors? in \d+ files?(?: \(checked \d+ source files?\))?"),
+    ),
+    "ruff": (
+        re.compile(r"All checks passed!"),
+        re.compile(r"Found [1-9]\d* errors?\.|\[\*\] \d+ fixable with the .+|No fixes available.*"),
+    ),
+    "vitest": (
+        re.compile(
+            r"\s*Tests\s+(?:\d+ \w+(?: \| )?)*[1-9]\d* passed(?: \| \d+ \w+)*(?: \(\d+\))?\s*"
+        ),
+        re.compile(r"\s*Tests\s+(?:\d+ \w+ \| )*[1-9]\d* failed(?: \| \d+ \w+)*(?: \(\d+\))?\s*"),
+    ),
+    "node": (re.compile(rf"{_INFO} fail 0"), re.compile(rf"{_INFO} fail [1-9]\d*")),
+}
+
+
+def _summary_runner(words: list[str]) -> str:
+    """The key in `_LAST_LINE_SUMMARIES` for a stripped check segment, or ""."""
+    words = _runner_words(words)
+    if _PYTHON_RE.match(words[0]) and words[1:3] == ["-m", "unittest"]:
+        return "unittest"
+    if os.path.basename(words[0]) in ("pytest", "py.test") or (
+        _PYTHON_RE.match(words[0]) and words[1:3] == ["-m", "pytest"]
+    ):
+        return "pytest"
+    if words[0] in ("mypy", "vitest"):
+        return words[0]
+    if words[:2] == ["ruff", "check"]:
+        return "ruff"
+    return "node" if words[0] == "node" and "--test" in words else ""
+
+
+def _summary_for(
+    call: _ShellCall, index: int, words: list[str], attributable: bool, *, tail: str
+) -> str:
+    """The last-line result for one check, where the whole window is not already its own."""
+    if attributable or not call.last_line_may_speak(index):
+        return ""
+    return _last_line_summary(words, records.redact_secrets(tail))
+
+
+def _last_line_summary(words: list[str], text: str) -> str:
+    """ "passed" or "failed" when the last non-empty line of the output is a summary the check's
+    own runner prints, and "" otherwise. Only that line is read: an earlier line may belong to any
+    command in the call (measured: reading the whole window flipped 12 of 139 runs to false
+    failures)."""
+    runner = _summary_runner(words)
+    lines = [line for line in _without_trailer(text).split("\n") if line.strip()]
+    if not runner or not lines:
+        return ""
+    last = _ANSI_RE.sub("", lines[-1]).rstrip()
+    passed, failed = _LAST_LINE_SUMMARIES[runner]
+    if failed.fullmatch(last):
+        return "failed"
+    return "passed" if passed.fullmatch(last) else ""
+
+
 def _ran_nothing(tail: str) -> bool:
     return bool(_RAN_NOTHING.search(tail)) or (
         bool(_NO_TEST_FILES.search(tail)) and not _GO_OK.search(tail)
     )
+
+
+def _rtk_outcome(tail: str, flag_result: str) -> tuple[str, str]:
+    """rtk may rewrite output, so its runs read the flag alone (owner), and failure text beside
+    a passing flag withholds it (V5)."""
+    if flag_result == "passed" and (_SUMMARY_FAILED.search(tail) or _FAILURE_MARKER.search(tail)):
+        return "not-recorded", ""
+    return (flag_result, "flag") if flag_result else ("not-recorded", "")
+
+
+def _summary_outcome(summary: str, flag_result: str) -> tuple[str, str]:
+    """A last-line result beside the flag: a failing summary overrides a passing flag, and any
+    other flag reading stands."""
+    if flag_result == "passed" and summary == "failed":
+        return "failed", "summary"
+    return (flag_result, "flag") if flag_result else (summary, "summary")
 
 
 def _tail_result(tail: str) -> tuple[str, str] | None:
@@ -4323,11 +4450,25 @@ class _ShellCall:
             for i, (words, _rtk) in enumerate(self.words)
         )
 
+    def last_line_may_speak(self, index: int) -> bool:
+        """Whether the last line of the output can be this check's own summary: it is the last
+        check, nothing follows it but pipe filters, and no substitution may have printed.
+        Setup commands before it may print freely, because only the last line is read.
+        """
+        if not self.checks or index != self.checks[-1] or self.substituted:
+            return False
+        return all(
+            all(part.joiner == "|" for part in self.parts[index:i])
+            and _pipe_filter(self.parts[i])
+            and self._reads_only(i)
+            for i in range(index + 1, len(self.words))
+        )
+
     def unattributed_reason(self, index: int) -> str:
         """The rule that keeps this check's output from speaking for it, as a
-        token in `CHECK_NOT_RECORDED_REASONS`, or "" where none of the three
-        applies. Read in the order a reader meets them: several checks, then a
-        directory the shell places at run time, then a pipe."""
+        token in `CHECK_NOT_RECORDED_REASONS`. Read in the order a reader meets
+        them: several checks, then a directory the shell places at run time, then
+        a pipe, and last any other command that may print beside the check."""
         if len(self.checks) != 1:
             return "several_checks"
         for words, _rtk in self.words[:index]:
@@ -4335,7 +4476,7 @@ class _ShellCall:
                 return "directory_not_placeable"
         if any(part.joiner == "|" for part in self.parts):
             return "piped_beside_other_commands"
-        return ""
+        return "printed_beside_other_commands"
 
     def background(self, index: int) -> bool:
         return self.all_background or self.parts[index].background
@@ -4736,6 +4877,7 @@ class _ToolReportTally:
     ) -> None:
         flag = result.get("is_error") if result is not None else None
         # Redaction runs over the whole read window before the tail is cut (item 5).
+        text = _without_trailer(text) if result is not None else text
         tail = records.redact_secrets(text)[-TOOL_REPORT_TAIL_CHARS:]
         all_and = all(joiner == "&&" for joiner in call.joiners()[:-1])
         # V8: output speaks for a check only when it is the call's one check,
@@ -4759,7 +4901,11 @@ class _ToolReportTally:
                         alone=len(call.meaningful) == 1,
                     )
                     outcome, source = self._outcome(
-                        tail, rtk=rtk, attributable=attributable, flag_result=flag_result
+                        tail,
+                        rtk=rtk,
+                        attributable=attributable,
+                        flag_result=flag_result,
+                        summary=_summary_for(call, index, words, attributable, tail=text),
                     )
                     reason = _withheld_reason(
                         call,
@@ -4825,17 +4971,22 @@ class _ToolReportTally:
             self._last_added_runs.append((identity, self.runs[identity][-1]))
 
     @staticmethod
-    def _outcome(tail: str, *, rtk: bool, attributable: bool, flag_result: str) -> tuple[str, str]:
+    def _outcome(
+        tail: str, *, rtk: bool, attributable: bool, flag_result: str, summary: str = ""
+    ) -> tuple[str, str]:
         """By item 2's order, as the review rounds narrowed it: a result that
-        cannot be attributed reads "ran, result not recorded"."""
+        cannot be attributed reads "ran, result not recorded".
+
+        `summary` is the last-line result of the check's own runner (`_last_line_summary`),
+        given only where `_ShellCall.last_line_may_speak` allows it. It stands in for the
+        window, which another command may have printed into.
+        """
+        if rtk:
+            return _rtk_outcome(tail, flag_result)
+        if summary:
+            return _summary_outcome(summary, flag_result)
         failed_summary = bool(_SUMMARY_FAILED.search(tail))
         failure_text = failed_summary or bool(_FAILURE_MARKER.search(tail))
-        if rtk:
-            # rtk may rewrite output, so its runs read the flag alone (owner),
-            # and failure text beside a passing flag withholds it (V5).
-            if flag_result == "passed" and failure_text:
-                return "not-recorded", ""
-            return (flag_result, "flag") if flag_result else ("not-recorded", "")
         if flag_result == "passed":
             # V4: only a failure summary overrides a passing flag; a marker, or
             # a run of nothing, only withholds it.

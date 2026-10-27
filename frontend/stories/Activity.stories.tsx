@@ -361,6 +361,7 @@ const NOT_RECORDED_REASONS = [
   ['several_checks', 'several checks in one call'],
   ['directory_not_placeable', 'directory not placeable'],
   ['piped_beside_other_commands', 'output is piped beside other commands'],
+  ['printed_beside_other_commands', 'output is printed beside other commands'],
 ] as const;
 export const NotRecordedReasons: Story = {
   render: () => (
@@ -386,6 +387,9 @@ export const NotRecordedReasons: Story = {
     await expect(
       canvas.getByLabelText('Ran, result not recorded: output is piped beside other commands'),
     ).toHaveTextContent('No result: output is piped beside other commands');
+    await expect(
+      canvas.getByLabelText('Ran, result not recorded: output is printed beside other commands'),
+    ).toHaveTextContent('No result: output is printed beside other commands');
   },
 };
 

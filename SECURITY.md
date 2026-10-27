@@ -1931,8 +1931,8 @@ literal commands. Command substitutions in an unquoted body do execute, however,
 pass unless their own commands meet the closed read-only rules. A quoted delimiter keeps its body
 literal. Behind `bash -c`, `sh -c`, `zsh -c` or `bash -lc`, it is the
 inner segment alone, never the wrapper. A call with an unterminated quote is a syntax error and is
-read as not run, so nothing of its text is published; the last 180 characters of output, with redaction run over the whole read
-window before the clip; and a written path relative to the session's working directory, the folder
+read as not run, so nothing of its text is published; the last 180 characters of output, with Claude Code's own trailer lines dropped from its end and
+redaction run over the whole read window before the clip; and a written path relative to the session's working directory, the folder
 it began in. A written path is a file-write tool's path or, since 2026-09-27, a check's own
 redirect target, published only when it falls inside that directory and through the same
 redaction; a target outside it, one the shell decides at run time (`$VAR`, a substitution, `~`), one under a directory a `cd` left unknown,

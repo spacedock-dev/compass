@@ -83,6 +83,7 @@ export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
   several_checks: 'several checks in one call',
   directory_not_placeable: 'directory not placeable',
   piped_beside_other_commands: 'output is piped beside other commands',
+  printed_beside_other_commands: 'output is printed beside other commands',
 };
 
 /* A check's or a file's own line in parts: who, what it was, and the notes about its result. The row draws the
