@@ -3178,6 +3178,31 @@ Three rulings of 2026-10-27 reopen parts of this record, and each is written in 
 Nothing above changes until the layers that build these rulings ship; this record states the decision, and
 the amendments to the shipped skill, SECURITY.md and the promise map ride in those layers.
 
+### Amended 2026-10-27 (owner): more shapes and forms are masked, and a stored explanation is scrubbed
+
+Item 5's masking and the output tail's redaction covered fewer credentials than a command's output can
+print, and a departure's explanation was cleaned by shape alone. Three changes, each stopping a credential
+from reaching a page or a stored reading and none changing what a check records.
+
+- **Output shapes.** `records.redact_secrets` now also removes a gcloud `ya29.` access token, an AWS
+  `"SecretString"` value, the password of a netrc entry behind `login` or `machine`, a `PASSPHRASE`
+  assignment, and the signature parameter of a pre-signed URL inside a query string. The name stays and
+  the value becomes the marker. Ordinary runner output, paths and commit ids are unchanged, and a test
+  holds that.
+- **Command-line forms.** `records.mask_words` also masks the password of `curl -u`, `--user` and
+  `--proxy-user` (only a word with a colon, so `git push -u` is untouched), the value of `--cookie`, a
+  `Cookie:`, `Proxy-Authorization:` or vendor-key header (a name holding `api-key`, `auth-token`,
+  `access-token`, `secret` or `password`), a header name standing alone with its value in the words after
+  it, a dotted config key such as `http.extraheader=`, the word after `-a` or `--pass` for `redis-cli`
+  only, the token word of `vault login`, and the value of `aws configure set` for a secret-named key.
+  Over-masking stays the accepted direction.
+- **A stored explanation.** The press now carries every value any shell call masked
+  (`PressChecks.masked_values`, `ToolOutput.masked_values`), and `reading.resolve` removes them from a
+  criterion's explanation before it is stored, with the same boundary and re-quoting rules the output
+  tail uses (`records.scrub_values`), and then applies the shape redaction it always did. Before this
+  the tail was scrubbed of a masked value and the model's prose about it was not. The unasked lane sends
+  no tool output and carries no masked values.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.

@@ -97,6 +97,16 @@ of the three cues and not one has a 40-character value behind it. The cue and th
 the marker, because with a cued shape the cue is what names the kind, and `…REDACTED` on its own
 would tell an operator nothing about which credential to go and rotate.
 
+Four shapes joined on 2026-10-27, none of them measured against the local store because each is a form
+a command's output prints rather than a prefix: gcloud's `ya29.` access token (a 20 to 1,024 character
+body that admits `.`, because the newer `ya29.c.` form carries dots), the value of an AWS `"SecretString"`
+(a run of plain characters or backslash pairs, so the escaped JSON a secret holds is removed whole
+instead of stopping at its first inner quote), the password of a netrc entry, cued by `login` or
+`machine` in front and not by `password` alone (which opens ordinary prose), and the signature of a
+pre-signed URL, cued by a `?` or `&` in front because `sig=` and `signature=` are also ordinary code.
+`passphrase` joined the cued name list. Each keeps the words around the value and replaces the value
+group alone.
+
 ## C-1: Redact in place, keep the surrounding words
 
 Dropping the line loses the instruction, and the instruction is why the line is on the card. A prompt

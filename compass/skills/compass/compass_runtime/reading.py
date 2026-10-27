@@ -58,7 +58,7 @@ from . import observer, records, supervise
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 
     from . import reading_policy
     from .config import RuntimeConfig
@@ -473,6 +473,9 @@ class ToolOutput:
     # shell took away, read at the press for testing a harness verdict. Never
     # sent to a model and never stored except as the one file a dispute names.
     removals: tuple[tuple[str, float, str], ...] = ()
+    # Every value a shell call's command line masked, read at the press. It
+    # scrubs the explanation a reading stores and goes no further.
+    masked_values: frozenset[str] = frozenset()
 
 
 SCOPE_MID_FLIGHT = "mid-flight"
@@ -3857,6 +3860,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     requested_at: float | None = None,
     uncitable: frozenset[str] = frozenset(),
     recorded_write: bool = False,
+    masked_values: Collection[str] = (),
 ) -> Criterion:
     """One constraint's criterion, with every server-side rule applied.
 
@@ -3956,7 +3960,9 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
         )
     ):
         result, why = RESULT_UNVERIFIABLE, WHY_VERDICT_STATED
-    detail = records.safe_text(raw_detail, detail_cap_chars)
+    # The values the calls masked come out before the shape filter runs, so a short
+    # password the agent quoted is held as masked in the explanation as on its line.
+    detail = records.safe_text(records.scrub_values(raw_detail, masked_values), detail_cap_chars)
     if detail and len(raw_detail) > len(detail):
         # A cut sentence loses its qualifier, and the qualifier is always last.
         # Say so rather than publishing half a claim as a whole one.
@@ -4703,6 +4709,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
     uncitable: frozenset[str] = frozenset(),
     recorded: Recorded | None = None,
     open_call_at: float | None = None,
+    masked_values: Collection[str] = (),
 ) -> dict[str, Criterion]:
     """The model's tokens and indices, turned into what the page may render.
 
@@ -4843,6 +4850,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
                     scope=scope,
                     requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
                     uncitable=uncitable,
+                    masked_values=masked_values,
                 ),
                 name,
                 by_id,
@@ -5108,6 +5116,7 @@ def produce(  # noqa: PLR0913
         scope=scope,
         line_requests=line_request_floors(latest, request_sources, harness, sid),
         recorded=recorded_from(facts, harness, sid, tool_output=tool_output),
+        masked_values=tool_output.masked_values if tool_output is not None else (),
         open_call_at=(
             open_call_lookup()
             if open_call_lookup is not None

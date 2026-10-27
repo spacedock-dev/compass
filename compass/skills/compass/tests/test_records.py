@@ -593,6 +593,22 @@ class RedactSecretsTest(unittest.TestCase):
         ("slack app token", "xapp-1-" + "Y" * 20, "xapp-…REDACTED"),
         ("posthog key", "phc_" + "G" * 43, "phc_…REDACTED"),
         ("google api key", "AIza" + "H" * 35, "AIza…REDACTED"),
+        ("gcloud access token", "ya29." + "FAKEFAKEFAKE" * 4, "ya29.…REDACTED"),
+        (
+            "secrets manager value",
+            '"SecretString": "FakePass99"',
+            '"SecretString": "…REDACTED"',
+        ),
+        (
+            "netrc password",
+            "machine example.com login bob password FakePass99",
+            "machine example.com login bob password …REDACTED",
+        ),
+        (
+            "pre-signed url signature",
+            "https://b.example.com/k?X-Amz-Signature=abcdef0123456789",
+            "https://b.example.com/k?X-Amz-Signature=…REDACTED",
+        ),
         ("jwt", "eyJ" + "I" * 20 + "." + "J" * 20 + "." + "K" * 20, "eyJ…REDACTED"),
         (
             "pem private key",
@@ -1009,9 +1025,154 @@ class MaskCommandTest(unittest.TestCase):
     def test_the_userinfo_mask_keeps_the_user_and_the_host(self) -> None:
         self.assertEqual(["app:\u2026REDACTED@db"], records.mask_words(["app:EXAMPLEaa@db"]))
 
+    def test_curl_user_flags_keep_the_user_and_lose_the_password(self) -> None:
+        for line in (
+            "curl -u alice:FakePass99 https://api.example.com",
+            "curl --user alice:FakePass99 https://api.example.com",
+            "curl --user=alice:FakePass99 https://api.example.com",
+            "curl -ualice:FakePass99 https://api.example.com",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn("FakePass99", masked)
+                self.assertIn("alice", masked)
+                self.assertIn("https://api.example.com", masked)
+
+    def test_a_user_flag_without_a_password_and_git_push_u_read_as_typed(self) -> None:
+        for line in ("curl -u alice https://x.example", "git push -u origin main"):
+            with self.subTest(line=line):
+                self.assertEqual(line, mask(line))
+
+    def test_a_cookie_or_vendor_key_header_loses_its_value(self) -> None:
+        for line in (
+            "curl -H 'Cookie: session=FakeSession99' https://x.example",
+            "curl -H 'DD-API-KEY: 0123456789abcdef0123456789abcdef' https://x.example",
+            "curl -H 'X-Auth-Token: FakeTok99' https://x.example",
+            "curl --cookie 'session=FakeSession99' https://x.example",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                for leaked in ("FakeSession99", "0123456789abcdef", "FakeTok99"):
+                    self.assertNotIn(leaked, masked)
+                self.assertIn("https://x.example", masked)
+
+    def test_a_header_name_standing_alone_masks_the_words_after_it(self) -> None:
+        masked = mask("git -c http.extraheader=AUTHORIZATION: basic FakeB64Value99 fetch origin")
+        self.assertNotIn("FakeB64Value99", masked)
+        self.assertIn("basic", masked)
+        self.assertTrue(masked.endswith("fetch origin"))
+        masked = mask("git -c 'http.extraheader=AUTHORIZATION: basic FakeB64Value99' fetch")
+        self.assertNotIn("FakeB64Value99", masked)
+
+    def test_redis_cli_password_flag_is_masked_only_for_redis_cli(self) -> None:
+        self.assertNotIn("FakePass99", mask("redis-cli -a FakePass99 ping"))
+        self.assertNotIn("FakePass99", mask("redis-cli --pass FakePass99 ping"))
+        self.assertEqual("ls -a /tmp", mask("ls -a /tmp"))
+
+    def test_vault_login_masks_the_token_word(self) -> None:
+        masked = mask("vault login hvs.FakeVaultToken99")
+        self.assertNotIn("FakeVaultToken99", masked)
+        self.assertTrue(masked.startswith("vault login "))
+        self.assertEqual("vault login -method=userpass", mask("vault login -method=userpass"))
+        self.assertEqual("vault status", mask("vault status"))
+
+    def test_aws_configure_set_masks_a_secret_value_and_keeps_a_region(self) -> None:
+        masked = mask("aws configure set aws_secret_access_key FakeSecretValue99")
+        self.assertNotIn("FakeSecretValue99", masked)
+        self.assertIn("aws_secret_access_key", masked)
+        self.assertNotIn("FakeToken99", mask("aws configure set aws_session_token FakeToken99"))
+        region = "aws configure set region us-east-1"
+        self.assertEqual(region, mask(region))
+
+    def test_the_values_a_new_form_masks_are_reported_for_the_tail_scrub(self) -> None:
+        words = shlex.split("curl -u alice:FakePass99 --cookie sid=FakeSid99 https://x.example")
+        self.assertEqual({"FakePass99", "sid=FakeSid99"}, set(records.masked_values(words)))
+
     def test_a_command_with_nothing_to_mask_reads_as_it_was_typed(self) -> None:
         line = "python3 -m pytest tests/test_retry.py -q 2>&1 | tail -20"
         self.assertEqual(line, mask(line))
+
+
+class OutputSecretShapesTest(unittest.TestCase):
+    """Credentials a command's output prints, which carry no vendor prefix of their own.
+
+    Every value is obviously fake. Each shape has its own test, so a regression
+    names the shape it lost.
+    """
+
+    MARK = records.SECRET_MARKER
+
+    def test_a_gcloud_access_token_is_redacted(self) -> None:
+        token = "ya29." + "FAKEFAKEFAKE" * 8
+        out = records.redact_secrets(f"$ gcloud auth print-access-token\n{token}\ndone")
+        self.assertNotIn("FAKEFAKE", out)
+        self.assertIn("ya29." + self.MARK, out)
+        self.assertIn("done", out)
+
+    def test_an_aws_secret_string_value_is_redacted_keeping_the_name(self) -> None:
+        line = (
+            '{"ARN": "arn:aws:secretsmanager:us-east-1:1:secret:db", "SecretString": "FakePass99"}'
+        )
+        out = records.redact_secrets(line)
+        self.assertNotIn("FakePass99", out)
+        self.assertIn('"SecretString": "' + self.MARK + '"', out)
+        self.assertIn("arn:aws:secretsmanager", out)
+
+    def test_an_aws_secret_string_holding_escaped_json_is_redacted_whole(self) -> None:
+        line = r'"SecretString": "{\"username\":\"app\",\"password\":\"FakePass99\"}"'
+        out = records.redact_secrets(line)
+        for leaked in ("FakePass99", "username", "app"):
+            self.assertNotIn(leaked, out)
+
+    def test_a_netrc_password_line_is_redacted(self) -> None:
+        for text in (
+            "machine example.com login bob password FakePass99",
+            "machine example.com\n  login bob\n  password FakePass99\n",
+            "default login bob password FakePass99",
+        ):
+            with self.subTest(text=text[:20]):
+                out = records.redact_secrets(text)
+                self.assertNotIn("FakePass99", out)
+                self.assertIn("password", out)
+                self.assertIn("bob", out)
+
+    def test_a_passphrase_environment_line_is_redacted(self) -> None:
+        for line in (
+            "MY_PASSPHRASE=FakePass99",
+            "GPG_PASSPHRASE: FakePass99",
+            "passphrase=FakePass99",
+        ):
+            with self.subTest(line=line):
+                out = records.redact_secrets(line)
+                self.assertNotIn("FakePass99", out)
+                self.assertIn("PASSPHRASE".lower(), out.lower())
+
+    def test_a_presigned_url_signature_is_redacted(self) -> None:
+        for name in ("X-Amz-Signature", "sig", "Signature", "X-Amz-Security-Token"):
+            url = f"https://bucket.example.com/key?X-Amz-Expires=60&{name}=abcdef0123456789FAKE&x=1"
+            with self.subTest(name=name):
+                out = records.redact_secrets(url)
+                self.assertNotIn("abcdef0123456789FAKE", out)
+                self.assertIn(f"{name}={self.MARK}", out)
+                self.assertIn("&x=1", out)
+                self.assertIn("X-Amz-Expires=60", out)
+
+    def test_ordinary_runner_output_is_left_alone(self) -> None:
+        for line in (
+            "14 passed in 1.97s",
+            "All checks passed!",
+            "Coverage gate passed",
+            "src/compass_runtime/records.py:560: ok",
+            "commit 6f852892b0c1d2e3f4a5b6c7d8e9f00112233445",
+            "a password reset email was sent",
+            "login failed for machine and the password prompt",
+            "def sig(): pass",
+            "see https://example.com/docs?page=2&sort=name",
+            "inspect.signature=None",
+            "passphrase prompt shown",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(line, records.redact_secrets(line))
 
 
 if __name__ == "__main__":

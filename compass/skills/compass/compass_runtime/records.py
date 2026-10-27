@@ -8,11 +8,15 @@ import json
 import math
 import os
 import re
+import shlex
 import string
 import unicodedata
 from bisect import bisect_left, bisect_right
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 # Private goal-source metadata; never part of the Analyze words or their cache.
 GOAL_SOURCE_CUT_FIELD: Final = "goal_source_cut"
@@ -211,6 +215,42 @@ _SECRET_SHAPES: Final = (
         False,
         r"://[^\s/:@]*:(?:[^\s/@]+(?=@)|(?![0-9]+$)[^\s/@]+$)",
     ),
+    # gcloud's OAuth access token, which `gcloud auth print-access-token` writes
+    # alone on a line. The `c.` second segment of the newer format carries dots,
+    # so the body admits them; the vendor documents no maximum, and 1,024 is the
+    # longest the sweep behind the other caps would have allowed.
+    ("gcloud", 5, True, r"ya29\.[A-Za-z0-9_.-]{20,1024}"),  # 0 values (2026-10-27)
+    # Secrets Manager's `get-secret-value` prints the secret as one JSON string,
+    # which is itself JSON, so its quotes arrive escaped: the body is a run of
+    # plain characters or backslash pairs, and a cued shape stopping at the first
+    # `\"` published every key after it. Name and quote stay, only the value goes.
+    (
+        "secretstring",
+        0,
+        False,
+        r"(?i:\bsecretstring)[\"']?\s*:\s*\"(?P<ssval>(?:[^\"\\\n]|\\.){1,4096})\"",
+    ),
+    # A `.netrc` entry keeps its password on a line of its own, behind `login` or
+    # `machine`. Cued by those two words and not by `password` alone, because a
+    # bare `password` followed by a word opens ordinary prose ("password reset").
+    (
+        "netrc",
+        0,
+        False,
+        r"(?<![\w-])(?:login|machine)\s+\S+\s+password\s+(?P<netrcval>\S{1,512})",
+    ),
+    # A pre-signed URL's signature is the credential: whoever holds the URL holds
+    # the access until it expires. Only inside a query string (`?` or `&` in
+    # front), because `sig=` and `signature=` are also ordinary code and prose.
+    (
+        "querysig",
+        0,
+        False,
+        (
+            r"(?<=[?&])(?i:x-amz-signature|x-amz-security-token|x-goog-signature|signature|sig)"
+            r"=(?P<sigval>[^\s&#\"'<>]{6,2048})"
+        ),
+    ),
     # A credential with no shape of its own, known only by the cue in front of
     # it: an `Authorization: Bearer` value, a `--password` flag, or a name such
     # as `password`, `DB_PASSWORD`, `PGPASSWORD`, `GITHUB_API_TOKEN` or
@@ -230,7 +270,7 @@ _SECRET_SHAPES: Final = (
             r"|(?P<cuebearer>(?i:\bbearer)\s+)"
             r"|(?P<cueflag>(?<![\w-])--(?i:password|passwd|token|secret|api-key|apikey)(?:=|\s+))"
             r"|(?P<cuename>(?<![A-Za-z0-9_])[A-Za-z0-9_]*"
-            r"(?i:password|passwd|pwd|token|secret|api_key|apikey|key))"
+            r"(?i:password|passwd|passphrase|pwd|token|secret|api_key|apikey|key))"
             r"[\"']?\s*(?P<cuesep>[=:])\s*)"
             r"(?:(?P<cueq>[\"'])(?P<cuedquoted>[^\"'\n]{1,512})(?P=cueq)"
             r"|(?P<cuedvalue>[^\s\"'`,;&)]{1,512}))"
@@ -251,6 +291,10 @@ _TOKEN_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_-")
 # credential to go and rotate; `…REDACTED` alone says nothing and takes the
 # words of the instruction with it.
 _SECRET_KEEP_TO_BODY: Final = {"aws_secret": 40}
+
+# The shapes whose value is a named group inside the match: the words around it
+# stay and only the group becomes the marker.
+_SECRET_VALUE_GROUP: Final = {"secretstring": "ssval", "netrc": "netrcval", "querysig": "sigval"}
 
 # The longest prefix any shape keeps in front of the marker, which is what the
 # bound in `redact_clip` has to be able to step over.
@@ -279,6 +323,7 @@ _SECRET_UNAMBIGUOUS: Final = {
     "aws": 20,  # `AKIA` plus 16 is the whole shape; it has no longer form.
     "github_fine": 51,  # `github_pat_` plus its 40.
     "linear": 48,  # `lin_api_` plus its 40, which is the only length it has.
+    "gcloud": 25,  # `ya29.` plus 20; no innocent text opens a token with it.
 }
 
 # The literal every shape opens with, scanned with `in` before the alternation
@@ -320,6 +365,13 @@ _SECRET_HINTS: Final = (
     "AIza",
     "eyJ",
     "-----BEGIN ",
+    "ya29.",
+    # A pre-signed URL's signature parameter, in the spellings the vendors use.
+    "sig=",
+    "Sig=",
+    "SIG=",
+    "ignature=",
+    "IGNATURE=",
     # The AWS secret key's cue, in the three spellings the vendor's own tooling
     # writes: the CLI's config file, the environment variable, and the SDKs'
     # camel case. Both cases spelled out rather than one case-insensitive scan,
@@ -336,6 +388,8 @@ _SECRET_HINTS: Final = (
     "EARER",
     "assw",
     "ASSW",
+    "assph",
+    "ASSPH",
     "wd",
     "WD",
     "ecret",
@@ -432,6 +486,10 @@ def _mark_secret(match: re.Match[str]) -> str | None:
         quoted = match.group("cuedquoted") is not None
         start = match.start("cuedquoted" if quoted else "cuedvalue") - match.start()
         return body[:start] + _SECRET_MARKER + (match.group("cueq") if quoted else "")
+    value_group = _SECRET_VALUE_GROUP.get(name)
+    if value_group is not None:
+        first, last = match.span(value_group)
+        return body[: first - match.start()] + _SECRET_MARKER + body[last - match.start() :]
     from_body = _SECRET_KEEP_TO_BODY.get(name)
     if from_body is not None:
         return body[:-from_body] + _SECRET_MARKER
@@ -597,6 +655,12 @@ _MASK_FLAGS: Final = frozenset(
         "-P",
     }
 )
+# Header names whose value is a credential. The two the ruling named, plus the
+# cookie and the vendor spellings a request carries: `DD-API-KEY`, `X-Auth-Token`.
+_MASK_HEADER_NAMES: Final = (
+    r"(?:authorization|proxy-authorization|cookie|set-cookie"
+    r"|[\w-]*(?:api-?key|auth-?token|access-?token|secret|password))"
+)
 _MASK_WORD_FORMS: Final = (
     # `--password=value` and the other named flags, `=` joined.
     re.compile(r"^(['\"]?--(?:password|token|api[-_]?key|apikey|secret|auth)=).+$", re.DOTALL),
@@ -604,13 +668,51 @@ _MASK_WORD_FORMS: Final = (
     re.compile(r"^(['\"]?-[pP]).+$", re.DOTALL),
     # `NAME=value`: `PGPASSWORD=...`, `--env TOKEN=...`.
     re.compile(r"^(['\"]?[A-Za-z_][A-Za-z0-9_]*=).+$", re.DOTALL),
-    # `Authorization: ...` and `X-Api-Key: ...` header values.
-    re.compile(r"^(['\"]?(?:authorization|x-api-key)\s*:\s*).+$", re.IGNORECASE | re.DOTALL),
+    # `Authorization: ...`, `Cookie: ...` and `X-Api-Key: ...` header values.
+    re.compile(rf"^(['\"]?{_MASK_HEADER_NAMES}\s*:\s*).+$", re.IGNORECASE | re.DOTALL),
+    # `git -c http.extraheader=AUTHORIZATION: basic ...`, a dotted config key.
+    re.compile(
+        r"^(['\"]?[\w.-]*(?:extraheader|password|passwd|token|secret|apikey|api-key)[\w.-]*=).+$",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    # `--cookie=value` and `--user=name:value`, joined; the user name stays.
+    re.compile(r"^(['\"]?--cookie=).+$", re.DOTALL),
+    re.compile(r"^(['\"]?--(?:user|proxy-user)=[^:]*:).+$", re.DOTALL),
+    # `-ualice:value`, curl's joined form.
+    re.compile(r"^(-u[^\s:]+:).+$", re.DOTALL),
 )
 # `user:password@host`, scheme optional, the password running to the LAST `@`
 # in the word so one holding `/`, `@` or whitespace is masked whole: a quoted
 # password with a space in it stopped `\S*` short of the `@` (DRC-4703).
 _MASK_USERINFO: Final = re.compile(r"((?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:).*@", re.DOTALL)
+
+# `curl -u user:pass`: the next word is masked after its first colon, and only
+# when it has one. `-u` is also `git push -u origin`, which names no credential
+# and which a flag-wide mask would have cost a word of every push.
+_MASK_USER_FLAGS: Final = frozenset({"-u", "--user", "--proxy-user"})
+_MASK_COOKIE_FLAGS: Final = frozenset({"--cookie"})
+# Flags that are a password only for the command that owns them: `redis-cli -a`
+# is a password and `ls -a` is not.
+_MASK_COMMAND_FLAGS: Final = {"redis-cli": frozenset({"-a", "--pass"})}
+# A header name that ends its word, with the value in the words after it, as an
+# unquoted `-H Authorization: Bearer ...` or a split `extraheader=AUTHORIZATION:`
+# leaves it.
+_MASK_HEADER_ALONE: Final = re.compile(
+    rf"^['\"]?(?:[\w.-]*extraheader=)?{_MASK_HEADER_NAMES}\s*:$", re.IGNORECASE
+)
+_MASK_AUTH_WORDS: Final = frozenset({"bearer", "basic", "token", "digest", "negotiate"})
+# The words a command may open with before the program itself.
+_MASK_WRAPPERS: Final = frozenset({"sudo", "env", "command", "time", "exec", "nohup"})
+_MASK_CONFIG_SECRET: Final = re.compile(r"secret|token|password|passwd|key", re.IGNORECASE)
+
+
+def _program(words: list[str]) -> int:
+    """The index of the program a segment runs, past assignments and wrappers."""
+    for index, word in enumerate(words):
+        if word in _MASK_WRAPPERS or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", word):
+            continue
+        return index
+    return len(words)
 
 
 def mask_words(words: list[str]) -> list[str]:
@@ -621,22 +723,77 @@ def mask_words(words: list[str]) -> list[str]:
     the word after it.
     [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
     """
+    start = _program(words)
+    program = os.path.basename(words[start]) if start < len(words) else ""
+    after = [w for w in words[start + 1 :] if not w.startswith("-")]
+    flags = _MASK_FLAGS | _MASK_COMMAND_FLAGS.get(program, frozenset())
+    # Positional credentials: `vault login <token>` and `aws configure set <name> <value>`.
+    positional = -1
+    if program == "vault" and after[:1] == ["login"]:
+        positional = _first_value_after(words, start, "login")
+    elif program == "aws" and after[:2] == ["configure", "set"]:
+        name_at = _first_value_after(words, start, "set")
+        name = words[name_at] if 0 <= name_at < len(words) else ""
+        if name and _MASK_CONFIG_SECRET.search(name):
+            positional = _next_plain(words, name_at)
     masked: list[str] = []
-    mask_next = False
-    for word in words:
+    mask_next = user_next = header_owed = scheme_next = False
+    for index, word in enumerate(words):
+        if header_owed:
+            if scheme_next and word.lower() in _MASK_AUTH_WORDS:
+                masked.append(word)
+                scheme_next = False
+                continue
+            masked.append(_SECRET_MARKER)
+            header_owed = scheme_next = False
+            continue
         if mask_next:
             masked.append(_SECRET_MARKER)
             mask_next = False
             continue
-        if word in _MASK_FLAGS:
+        if user_next:
+            user_next = False
+            user, colon, _rest = word.partition(":")
+            if colon:
+                masked.append(user + colon + _SECRET_MARKER)
+                continue
+        if index == positional:
+            masked.append(_SECRET_MARKER)
+            continue
+        if word in flags or word in _MASK_COOKIE_FLAGS:
             masked.append(word)
             mask_next = True
+            continue
+        if word in _MASK_USER_FLAGS:
+            masked.append(word)
+            user_next = True
+            continue
+        if _MASK_HEADER_ALONE.match(word):
+            masked.append(word)
+            header_owed = scheme_next = True
             continue
         formed = next(
             (m.group(1) + _SECRET_MARKER for p in _MASK_WORD_FORMS if (m := p.match(word))), word
         )
         masked.append(_MASK_USERINFO.sub(lambda m: m.group(1) + _SECRET_MARKER + "@", formed))
     return masked
+
+
+def _first_value_after(words: list[str], start: int, anchor: str) -> int:
+    """The index of the first non-flag word after the first `anchor`, or -1."""
+    try:
+        at = words.index(anchor, start)
+    except ValueError:
+        return -1
+    return _next_plain(words, at)
+
+
+def _next_plain(words: list[str], at: int) -> int:
+    """The index of the first word after `at` that is not a flag or a `NAME=value`."""
+    for index in range(at + 1, len(words)):
+        if not words[index].startswith("-") and "=" not in words[index]:
+            return index
+    return -1
 
 
 # A header name standing as its own word in prose, with the value in the words
@@ -1654,3 +1811,46 @@ def instruction_line(
     if not bounded or not label:
         return None
     return {"label": label, "text": bounded, "at": at if at and at > 0 else 0}
+
+
+# Shorter pieces of a masked value are not scrubbed from text: a two-letter piece
+# would wipe ordinary output, and the check line masks it anyway.
+SCRUB_MIN_CHARS: Final = 4
+
+
+def scrub_values(text: str, values: Iterable[str]) -> str:
+    """`text` with every value a command line masked replaced by the marker.
+
+    A masked command line still leaves the value in two other places: an echoed
+    command in the output, and the agent's own words about it. This removes it
+    from either. Filename and path characters stay inside the word, so a password
+    `test` does not turn `test_a.py`, `test-file.py` or `src/test` into a
+    redacted name.
+    """
+    boundary = r"[\w./:@+\-]"
+    spellings = {
+        spelling
+        for value in values
+        for piece in (value, *value.split())
+        if len(piece) >= SCRUB_MIN_CHARS
+        for spelling in (
+            piece,
+            shlex.quote(piece),
+            "'" + piece.replace("'", "'\\''") + "'",
+            piece.replace("'", "'\\''"),
+            piece.replace("'", "'\"'\"'"),
+        )
+    }
+    for spelling in sorted(spellings, key=len, reverse=True):
+        text = re.sub(rf"(?<!{boundary}){re.escape(spelling)}(?!{boundary})", _SECRET_MARKER, text)
+        text = re.sub(
+            rf"(?<!{boundary})(-[pP]){re.escape(spelling)}(?!{boundary})",
+            lambda match: match[1] + _SECRET_MARKER,
+            text,
+        )
+        text = re.sub(
+            rf"((?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:){re.escape(spelling)}(@)",
+            lambda match: match[1] + _SECRET_MARKER + match[2],
+            text,
+        )
+    return text

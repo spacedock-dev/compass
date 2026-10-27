@@ -2046,9 +2046,9 @@ TOOL_REPORT_LINE_CHARS = 120
 # The existing ledger cap (`reading.LEDGER_SUMMARY_CAP_CHARS`), which item 5 names.
 TOOL_REPORT_TAIL_CHARS = 180
 TOOL_REPORT_PATH_CHARS = 240
-# Shorter pieces of a masked value are not scrubbed from the tail: a two-letter
-# piece would wipe ordinary output, and the check line masks it anyway.
-_SCRUB_MIN_CHARS = 4
+# Bounds the set of masked values a press carries; a session past it stops adding.
+MASKED_VALUES_MAX = 512
+_SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _PYTHON_RE = re.compile(r"^python(?:\d+(?:\.\d+)?)?$")
@@ -3483,37 +3483,7 @@ def _scrubbed_tail(text: str, values: Iterable[str]) -> str:
     an echoed command repeats it, and the tail reaches the prompt row
     (review, 2026-09-27). Redaction then runs over the whole window, and the
     cut comes last (item 5)."""
-    # Filename/path characters stay inside the word. A password `test` must
-    # not change `test_a.py`, `test-file.py` or `src/test` into a redacted name.
-    boundary = r"[\w./:@+\-]"
-    spellings = {
-        spelling
-        for value in values
-        for piece in (value, *value.split())
-        if len(piece) >= _SCRUB_MIN_CHARS
-        for spelling in (
-            piece,
-            shlex.quote(piece),
-            "'" + piece.replace("'", "'\\''") + "'",
-            piece.replace("'", "'\\''"),
-            piece.replace("'", "'\"'\"'"),
-        )
-    }
-    for spelling in sorted(spellings, key=len, reverse=True):
-        text = re.sub(
-            rf"(?<!{boundary}){re.escape(spelling)}(?!{boundary})", records.SECRET_MARKER, text
-        )
-        text = re.sub(
-            rf"(?<!{boundary})(-[pP]){re.escape(spelling)}(?!{boundary})",
-            lambda match: match[1] + records.SECRET_MARKER,
-            text,
-        )
-        text = re.sub(
-            rf"((?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:){re.escape(spelling)}(@)",
-            lambda match: match[1] + records.SECRET_MARKER + match[2],
-            text,
-        )
-    return records.redact_secrets(text)[-TOOL_REPORT_TAIL_CHARS:]
+    return records.redact_secrets(records.scrub_values(text, values))[-TOOL_REPORT_TAIL_CHARS:]
 
 
 def _written_path(raw: object, cwd: str, session_dir: str = "") -> str | None:
@@ -3810,6 +3780,8 @@ class _ToolReportTally:
         self.skills: dict[str, dict[str, Any]] = {}
         # The latest delete or move away of each path, for the press alone (`removals`).
         self.removed: dict[str, dict[str, Any]] = {}
+        # Every value any shell call masked, for the press's explanation scrub.
+        self.masked_values: set[str] = set()
         # (time, call id) of every recorded write and fixer run. A pass is aged
         # by one from another call at or after its own time, since recorded
         # time cannot order two calls that share it (DRC-4709); its own call is
@@ -4024,6 +3996,8 @@ class _ToolReportTally:
             else _ShellCall(at, cwd, tool_input, moved=bool(_MOVED_TO_BACKGROUND_RE.match(text)))
         )
         self.shell_seq += 1
+        if len(self.masked_values) < MASKED_VALUES_MAX:
+            self.masked_values |= call.masked_values
         if call.changes():
             self.changing_seqs.append(self.shell_seq)
             self.scan["last_changing_command_at"] = at
@@ -4502,6 +4476,9 @@ class PressChecks(NamedTuple):
     # (path, time, "deleted" or "moved") of the latest removal of each path
     # (`_ToolReportTally.removals`), for testing a harness verdict against.
     removals: tuple[tuple[str, float, str], ...] = ()
+    # Every value a shell call's command line masked, so a stored explanation
+    # that quotes one is scrubbed the way the output tail is.
+    masked_values: frozenset[str] = frozenset()
 
 
 def claude_check_press(
@@ -4528,6 +4505,7 @@ def _press(tally: _ToolReportTally) -> PressChecks:
         tally.read_incomplete(),
         tally.passes_and_writes(),
         tally.removals(),
+        frozenset(tally.masked_values),
     )
 
 

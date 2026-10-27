@@ -1849,14 +1849,22 @@ came from and, as `result_at`, when it arrived, and never the output itself. The
 (`project_context.claude_check_press`), keyed by the call, and carried into that one prompt only:
 Compass never writes it onto the fact, a row, the page or history. A departure's explanation is
 model prose, and the model may quote a line of the tail in it; that explanation is stored with the
-reading and shown on the page with credential-shape redaction only, so a shapeless source line or
-assertion diff can appear there. The class lives in the observed record only, as
+reading and shown on the page with credential-shape redaction and, since 2026-10-27, the values the
+session's commands masked removed from it, so a shapeless source line or assertion diff can still
+appear there. The class lives in the observed record only, as
 its own fact type, kept out of the semantic history store and out of every session row field, and
 it is named in `history.PROMPT_DERIVED_CARRIERS`.
 
 Masking is by named form, word by word, and covers these forms and no others: a `NAME=value`
 assignment; the value after `--password`, `--token`, `--api-key`, `--secret`, `--auth`, `-p` or
-`-P`, joined by `=` or in the next word; an `Authorization:` or `X-Api-Key:` header value; and the
+`-P`, joined by `=` or in the next word; an `Authorization:`, `Proxy-Authorization:`, `Cookie:` or
+`Set-Cookie:` header value, or one whose name holds `api-key`, `auth-token`, `access-token`, `secret`
+or `password` (`X-Api-Key:`, `DD-API-KEY:`), including a header name standing alone with its value in
+the words after it; the password of `curl -u`, `--user` or `--proxy-user` (the user name stays, and
+only a word with a colon is masked, so `git push -u origin` reads as typed); the value of `--cookie`;
+the value of a dotted config key such as `http.extraheader=`; the word after `-a` or `--pass` for
+`redis-cli` only; the token word of `vault login`; the value of `aws configure set` for a name holding
+`secret`, `token`, `password` or `key`; and the
 password in `user:password@`, up to the last `@` in the word, so one holding `/`, `@` or whitespace
 is masked whole. The words are the ones the program receives: quotes removed, `$'…'` escapes
 decoded and backslash-newline continuations joined before masking and redaction run, so a value is
@@ -1872,8 +1880,12 @@ clip. This covers the
 literal value and its shell re-quoting, including an apostrophe split by xtrace, since an echoed
 command (`set -x`, a runner printing its arguments) repeats it. Matching respects filename and
 identifier boundaries: a password `test` does not rewrite `test_a.py`, `contest` or `src/test`.
-A shapeless value no named form masked, a masked piece shorter than four characters, or an arbitrary
-encoding of a value can still reach the prompt through the tail.
+Credential shapes the tail itself can print are redacted as well, since 2026-10-27: a gcloud
+`ya29.` access token, the value of an AWS `"SecretString"`, the password of a netrc entry (behind
+`login` or `machine`), a `PASSPHRASE` assignment, and the signature of a pre-signed URL (`X-Amz-Signature=`,
+`sig=`, `signature=` and the like, inside a query string only). Ordinary runner output, paths and commit
+ids are left as they are. A shapeless value no named form masked, a masked piece shorter than four
+characters, or an arbitrary encoding of a value can still reach the prompt through the tail.
 
 The destination rule: it goes to the reading producer that reads the session, or the fallback
 route `reading_route.resolve` selects and discloses before the press. Tool output is included by
@@ -3950,6 +3962,12 @@ in `aggregate`, a backstop under both that also reaches `state_detail`, the inst
 subjects and a subagent name. An ask answer needs no cover, being an index into options the asking
 agent wrote rather than text. The measurement, the false-positive rate and the rejected alternatives
 are in [`docs/design-credential-redaction.md`](docs/design-credential-redaction.md).
+
+Since 2026-10-27 the list also holds the shapes a command's output prints with no vendor prefix: a
+gcloud `ya29.` token, an AWS `"SecretString"` value (escaped JSON inside it included), a netrc
+password after `login` or `machine`, and the signature parameter of a pre-signed URL. The cue list
+gains `passphrase`. Each keeps its name and loses its value, and none is a guess at an arbitrary word:
+`sig=` outside a query string, "password reset" and a `login` line with no password are left alone.
 
 Since 2026-10-03 one shape is cued rather than shaped, beside the AWS secret. The cue is
 `Authorization: Bearer`, a `--password`, `--token`, `--secret` or `--api-key` flag, or a name ending

@@ -4058,5 +4058,49 @@ class AGoalAloneIsReadAgainstItsOwnEndState(AClaudeCodeReadingProducer):
         self.assertNotIn(NO_LINES_NOTE, unread["cutoff"])
 
 
+class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
+    """The detail a reading stores is scrubbed with the values the calls masked.
+
+    A masked command line shows `-u alice:\u2026REDACTED` to the model, but the
+    agent's own words and an echoed output line can still say the password, and
+    no credential shape matches a short one. The press carries the masked values
+    and `resolve` removes them from the explanation before it is stored.
+    """
+
+    def resolve_detail(self, detail: str, masked: frozenset[str]) -> str:
+        criterion = reading.resolve(
+            reply(reading.RESULT_DEPARTURE, goal_cites=(1,), goal_detail=detail),
+            reading.Selection((entry(),)),
+            goal="rename the flag",
+            lines=(),
+            detail_cap_chars=300,
+            masked_values=masked,
+        )[reading.CONSTRAINT_GOAL]
+        return str(criterion["detail"])
+
+    def test_a_quoted_masked_value_is_stored_masked(self) -> None:
+        detail = self.resolve_detail(
+            "it logged in with FakePass99 and then renamed the wrong flag",
+            frozenset({"FakePass99"}),
+        )
+        self.assertNotIn("FakePass99", detail)
+        self.assertIn(records.SECRET_MARKER, detail)
+        self.assertIn("renamed the wrong flag", detail)
+
+    def test_a_value_inside_a_longer_word_or_path_is_not_cut(self) -> None:
+        detail = self.resolve_detail(
+            "it edited test_helpers.py, a different file", frozenset({"test"})
+        )
+        self.assertEqual("it edited test_helpers.py, a different file", detail)
+
+    def test_a_credential_shape_is_still_redacted_with_no_masked_values(self) -> None:
+        detail = self.resolve_detail("it printed ya29." + "FAKEFAKEFAKE" * 3, frozenset())
+        self.assertNotIn("FAKEFAKE", detail)
+
+    def test_the_press_carries_the_masked_values_to_produce(self) -> None:
+        output = reading.ToolOutput(destination="d", label="l", masked_values=frozenset({"x" * 5}))
+        self.assertEqual(frozenset({"x" * 5}), output.masked_values)
+
+
 if __name__ == "__main__":
     unittest.main()
