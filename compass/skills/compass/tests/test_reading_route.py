@@ -888,11 +888,12 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
         # which alone may run to 47, and to the two Claude Code session routes' totals.
         # The 2026-10-27 command tiers amendment adds one clause to that item for every other
         # command (7 words from its own vendor, 10 from another), so the item may run to 57.
+        # The 2026-10-27 CI read adds one 31-word item, `GitHub: ...`, to every route.
         budgets = {
-            "codex": (4, 61),
-            "claude": (7, 172),
-            "claude-by-codex": (6, 154),
-            "codex-by-claude": (5, 100),
+            "codex": (5, 92),
+            "claude": (8, 203),
+            "claude-by-codex": (7, 185),
+            "codex-by-claude": (6, 131),
         }
         for name, (harness, installed) in self.ROUTES.items():
             route = _named(harness, installed)

@@ -330,6 +330,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--no-ci-read",
+        action="store_true",
+        help=(
+            "do not read a pull request's CI checks from GitHub when Analyze drift is pressed "
+            "(no `gh` command runs, and a reading goes without those checks)"
+        ),
+    )
+    parser.add_argument(
         "--no-focus",
         action="store_true",
         help=(
@@ -535,6 +543,7 @@ def build_runtime(
         claude_reading_model=args.claude_reading_model,
         claude_monitor_model=args.claude_monitor_model,
         git_probe_enabled=not args.no_git,
+        ci_read_enabled=not getattr(args, "no_ci_read", False),
         focus_enabled=not args.no_focus,
         irreversible_enabled=not args.no_irreversible and not args.no_events,
         dismissals_enabled=not args.no_dismiss,
@@ -678,6 +687,7 @@ def validate_frontend_args(parser: argparse.ArgumentParser, args: argparse.Names
         "no_observer_model",
         "no_usage",
         "no_git",
+        "no_ci_read",
         "no_focus",
         "no_events",
         "no_spacedock",

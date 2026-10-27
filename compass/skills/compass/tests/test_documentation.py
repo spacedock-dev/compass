@@ -1799,8 +1799,12 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         }
         # `observer.py` reads the question tool's own result and `project_context.py` three others
         # besides the pull request read; each is another place a result's structured field is read.
-        # The sixth is the command listing's exemption for a call that carries the record.
-        self.assertEqual({"observer.py": 1, "project_context.py": 6}, found)
+        # The sixth of `project_context.py`'s is the command listing's exemption for a call that
+        # carries the record.
+        # `ci_read.py` reads a `pr-link` row's fields, `toolUseResult` and `gitOperation.push` for a
+        # pushed branch name, and SECURITY.md's Pull request CI reads section says so.
+        self.assertEqual({"ci_read.py": 3, "observer.py": 1, "project_context.py": 6}, found)
+        self.assertIn("`toolUseResult.gitOperation.push` (`branch`)", self.FLAT)
         for phrase in (
             "the `skill` name of a `Skill` call",
             "`toolUseResult.gitOperation.pr` (`number`, `url`, `action`)",
@@ -1966,6 +1970,7 @@ class HandOffRequestContractDocumentationTest(unittest.TestCase):
                 "--no-observer-model",
                 "--no-harness-usage",
                 "--no-git",
+                "--no-ci-read",
                 "--no-focus",
                 "--no-history",
                 "--no-dismiss",
@@ -2038,11 +2043,11 @@ class HandOffRequestContractDocumentationTest(unittest.TestCase):
         # falsifies both the old number and the closing clause (DRC-4434).
         self.assertNotIn("Two kinds of outbound request are in scope", self.FLAT)
         self.assertIn(
-            "Three kinds of outbound request are implemented",
+            "Four kinds of outbound request are implemented",
             self.FLAT,
         )
         readme = (self.ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("for all three", re.sub(r"\s+", " ", readme))
+        self.assertIn("for all four", re.sub(r"\s+", " ", readme))
 
 
 class FocusCommandContractDocumentationTest(unittest.TestCase):
