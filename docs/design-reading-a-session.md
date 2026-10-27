@@ -2533,6 +2533,8 @@ explicit `GET`. Its accepted options are `--paginate`, `--slurp`, `--silent`, `-
 closed set: numeric clock-setting operands and GNU `date --set` stay changes, and BSD date parsing
 forms are left unread. GitHub CLI fields imply `POST` unless a method overrides them, but field
 forms remain outside this set even with explicit `GET`.
+The [2026-10-27 amendment](#amended-2026-10-27-owner-ci-polling-commands-are-read-only) adds the CI polling commands
+and the loop keywords around them.
 Any other segment that is not a check, run after
 any check's latest passing run, is the blocker item 3 names. This list is closed too. A segment is
 not read-only, whatever its command, when it holds a command or process substitution whose own
@@ -3225,6 +3227,42 @@ below replace what it said.
   has none; a signature needs a signature-like value and accepts `&amp;` and `\u0026` before it; an
   AWS `"SecretString"` runs to its closing quote, in either quote, however long; an unclosed one is
   masked to the end of its line.
+
+### Amended 2026-10-27 (owner): CI polling commands are read-only
+
+A session that ran its tests, pushed, then watched CI showed every earlier pass as before a change. The
+last recorded change was a polling loop: `for`, `do`, `sleep`, `gh pr checks` and the `$(...)` that held
+its output were all outside the read-only list, so each counted as a command that may change files. In a
+30-day corpus of the owner's own sessions, 85% of shell calls held at least one such segment.
+
+The read-only list of item 3 gains these, matched the same way and with the same refusals:
+
+- `sleep`, `seq`, `true`, `false`, `:`, `break`, `continue`, `test`, `[` and `[[`.
+- `gh pr checks`, `gh pr view`, `gh run view`, `gh run list`, `gh run watch` and `glab ci status`. They
+  read a pull request, a run or a pipeline and take no option that writes a file. `gh run download` and
+  `gh pr checkout` are not on the list. `gh run view --log > out.txt` is still a change, because of the
+  redirect and for no other reason.
+- A `for NAME in WORDS` header. A substitution in the word list is read on its own, so
+  `for f in $(rm x)` is still a change.
+
+A loop adds nothing of its own. At the start of a command, `do`, `done`, `while`, `until` and `!` are
+syntax, dropped the way `then` and `fi` always were, so the command after them is read as itself:
+`for i in 1 2; do pytest -q; done` lists `pytest -q`, and `for f in *; do rm $f; done` is still a change
+because of `rm`. A substitution whose body is read-only is read-only, so `out=$(gh pr checks 7)` ages
+nothing, and one whose body is not read-only still hides a change.
+
+Two consequences are the part a loop can get wrong:
+
+- **`!` inverts the exit status.** A negated check is listed and its result is never read: the flag and the
+  summary no longer say whether the code is sound, so it reads "ran, result not recorded", never a pass.
+  A `!` that is not at a command's start, as in `[ ! -f x ]`, negates nothing.
+- **A loop body may run again from where it ended.** A relative `cd` inside a loop leaves the directory
+  unplaced, and so does any `cd` that moved the directory inside a loop for the commands after `done`,
+  because the loop may have run any number of times, or none.
+
+Unchanged: `git commit` and `git push` stay commands that may change files (see the 2026-10-23 amendment
+above). With the commit and the push in the session the earlier pass is still aged by them, and the polling
+loop adds nothing; without them the loop alone does not age it.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

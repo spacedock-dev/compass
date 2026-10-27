@@ -1498,7 +1498,7 @@ def _pi_outcome(
     The reason is read before the caller's exit-line override, which only turns a pass into
     "not-recorded": a withheld result is never the override's, so it keeps its token.
     """
-    if result is None or call.background(index) or call.unestablished(index):
+    if result is None or call.background(index) or call.unestablished(index) or call.negated(index):
         return "not-recorded", "", ""
     if flag is None and result.get("status") == "stopped":
         return "not-recorded", "", ""
@@ -2195,6 +2195,32 @@ _READ_ONLY_WORDS = frozenset(
 _READ_ONLY_PAIRS = frozenset(
     {"git status", "git log", "git diff", "git show", "git rev-parse", "git merge-base"}
 )
+# Owner, 2026-10-27: waiting on CI is not a change. These only read a pull request, a run or a
+# pipeline, so a polling loop stops ageing the passes before it. The ruling:
+# [DEC-23](docs/design-reading-a-session.md#amended-2026-10-27-owner-ci-polling-commands-are-read-only)  # noqa: E501
+# `gh run download` and `gh pr checkout` write files and are deliberately absent; a `--log`
+# sent to a file is a redirect, which `_reads_only` already refuses.
+_READ_ONLY_TRIPLES = frozenset(
+    {
+        "gh pr checks",
+        "gh pr view",
+        "gh run view",
+        "gh run list",
+        "gh run watch",
+        "glab ci status",
+    }
+)
+# Words that run nothing: the loop and test keywords, and the commands a loop condition or a
+# polling loop's counter uses. `for`'s own header is `_for_header`.
+_LOOP_WORDS = frozenset(
+    {"sleep", "seq", "true", "false", ":", "break", "continue", "test", "[", "[["}
+)
+# At a command's start the shell reads these as syntax, not as a program: they are dropped so
+# the command after them is read as itself, as `then` always was. `!` negates the exit status,
+# which `_Part.syntax` keeps so a negated check is never read as a pass.
+_SYNTAX_WORDS = frozenset(
+    {"{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "!"}
+)
 # Options that make a read-only command write or run something, per command:
 # `find -o` is an OR and stays read-only, `tree -o` writes a file.
 _WRITING_OPTIONS = {
@@ -2423,7 +2449,7 @@ class _ShellLexer:
     def _syntax_word(self, word: str, *, literal: bool, words: list[str]) -> bool:
         if not literal:
             return False
-        if not words and word in {"{", "}", "if", "then", "else", "elif", "fi"}:
+        if not words and word in _SYNTAX_WORDS:
             self.syntax.append(word)
             return True
         if not words and word == "case":
@@ -3194,7 +3220,20 @@ def _reads_only(redirects: list[_Redirect], words: list[str]) -> bool:
     writing = _WRITING_OPTIONS.get(words[0]) or _WRITING_OPTIONS.get(" ".join(words[:2]))
     if writing and writing & {w.split("=", 1)[0] for w in words[1:]}:
         return False
-    return " ".join(words[:2]) in _READ_ONLY_PAIRS or words[0] in _READ_ONLY_WORDS
+    if _for_header(words):
+        return True
+    return (
+        " ".join(words[:3]) in _READ_ONLY_TRIPLES
+        or " ".join(words[:2]) in _READ_ONLY_PAIRS
+        or words[0] in _READ_ONLY_WORDS
+        or words[0] in _LOOP_WORDS
+    )
+
+
+def _for_header(words: list[str]) -> bool:
+    """`for NAME in WORDS`: it assigns a variable and runs nothing itself. A substitution in
+    the word list is read on its own, by `_body_facts`."""
+    return len(words) >= 3 and words[0] == "for" and words[2] == "in"
 
 
 def _gh_api_reads_only(args: list[str]) -> bool:
@@ -3257,6 +3296,14 @@ def _changed_directory(current: str, known: bool, args: list[str]) -> tuple[str,
     if args[0].startswith("-") or not _placeable(args[0]):
         return target, False
     return target, known or os.path.isabs(args[0])
+
+
+def _after_loops(loops: list[str], closed: int, current: str, known: bool) -> bool:
+    """Whether the directory is still known after `done` closes `closed` loops: a loop that moved
+    it may have run once or not at all."""
+    for _ in range(min(closed, len(loops))):
+        known = known and loops.pop() == current
+    return known
 
 
 def _conditional_directory(
@@ -3655,6 +3702,9 @@ class _ShellCall:
         placed: list[bool] = []
         entered: list[tuple[str, bool, bool]] = []
         conditions: list[tuple[str, bool, bool]] = []
+        # Where each open loop body started: its `cd` runs again on the next turn, from where
+        # the last one ended, and the loop may not run at all.
+        loops: list[str] = []
         detached: tuple[str, bool, bool] | None = None
         for index, part in enumerate(self.parts):
             if detached is not None and not part.background:
@@ -3666,6 +3716,7 @@ class _ShellCall:
             current, known, cdpath = _conditional_directory(
                 (current, known, cdpath), conditions, part.syntax
             )
+            loops.extend([current] * part.syntax.count("do"))
             found.append(current)
             placed.append(known)
             words = part.words
@@ -3680,10 +3731,12 @@ class _ShellCall:
                 if lookup and words[1:] and not os.path.isabs(words[-1]):
                     known = False
                 current, known = _changed_directory(current, known, words[1:])
+                known = known and not (loops and not os.path.isabs(words[-1]))
             elif words[:1] in (["pushd"], ["popd"]):
                 known = False
             for _ in range(part.closes):
                 current, known, cdpath = entered.pop()
+            known = _after_loops(loops, part.syntax.count("done"), current, known)
         return found, placed
 
     def written_path(self, target: str, at: int, cwd: str, session_dir: str = "") -> str | None:
@@ -3742,6 +3795,11 @@ class _ShellCall:
 
     def background(self, index: int) -> bool:
         return self.all_background or self.parts[index].background
+
+    def negated(self, index: int) -> bool:
+        """Whether `!` inverts the segment's exit status. A negated check has no recorded
+        result: the flag and the summary no longer say whether the code is sound."""
+        return "!" in self.parts[index].syntax
 
     def unestablished(self, index: int) -> bool:
         """Whether a `||` before the segment leaves its execution unknown."""
@@ -4081,7 +4139,7 @@ class _ToolReportTally:
                 outcome, source = "not-recorded", ""
             else:
                 self.scan["check_runs"] += 1
-                if result is None or call.unestablished(index):
+                if result is None or call.unestablished(index) or call.negated(index):
                     outcome, source = "not-recorded", ""
                 else:
                     flag_result = _flag_result(

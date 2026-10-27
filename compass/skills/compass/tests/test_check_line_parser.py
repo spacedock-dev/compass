@@ -891,3 +891,114 @@ class APublishedPathIsTheSameOnEveryOs(CheckLineTestCase):
         for command, expected in cases:
             with self.subTest(command=command):
                 self.assertEqual(expected, found[command])
+
+
+class ALoopOrANegationAroundACheckIsStillThatCheck(CheckLineTestCase):
+    """A check inside `for`, `while`, `until` or after `!` is found, and a negated one is never a pass."""
+
+    def test_a_check_inside_a_loop_is_listed(self) -> None:
+        for command in (
+            "for i in 1 2 3; do pytest -q; done",
+            "for i in 1 2\ndo\n  pytest -q\ndone",
+            "while true; do pytest -q; done",
+            "until pytest -q; do sleep 1; done",
+            "i=0; while [ $i -lt 2 ]; do pytest -q; i=$((i + 1)); done",
+        ):
+            with self.subTest(command=command):
+                self.fresh()
+                self.session.bash(command, "5 passed", is_error=False)
+                titles = [c["title"] for c in self.checks()]
+                self.assertTrue(titles and all(t == "pytest -q" for t in titles), titles)
+
+    def test_a_negated_check_is_listed_and_never_a_pass(self) -> None:
+        for command in ("! pytest -q", "if ! pytest -q; then echo broke; fi", "ls && ! pytest -q"):
+            for output, is_error in (("5 passed", False), ("", False), ("1 failed", True)):
+                with self.subTest(command=command, output=output):
+                    self.fresh()
+                    self.session.bash(command, output, is_error=is_error)
+                    check = self.only_check()
+                    self.assertEqual("pytest -q", check["title"])
+                    self.assertEqual("not-recorded", check["result"])
+
+    def test_a_bang_inside_a_test_expression_negates_nothing(self) -> None:
+        self.session.bash("[ ! -f x ] && pytest -q", "5 passed", is_error=False)
+        self.assertEqual("passed", self.only_check()["result"])
+
+
+class ACiPollingLoopIsReadOnly(CheckLineTestCase):
+    """DEC-23 item 3, amended 2026-10-27: waiting on CI changes no file."""
+
+    POLL = (
+        "for i in $(seq 1 28); do out=$(gh pr checks 7 --repo acme/widgets 2>&1); "
+        'if echo "$out" | grep -q x && ! echo "$out" | grep -qiE "pending|queued"; '
+        'then break; fi; sleep 20; done; echo "$out"'
+    )
+
+    def changed_after(self, *later: str, keep_commit: bool = True) -> bool:
+        self.fresh()
+        self.session.bash("pytest -q", "5 passed", is_error=False)
+        if keep_commit:
+            self.session.bash(
+                "git commit -m 'fix widget guard'", "[fix/widget-guard 1]", is_error=False
+            )
+            self.session.bash("git push origin fix/widget-guard", "", is_error=False)
+        for command in later:
+            self.session.bash(command, "all passing", is_error=False)
+        return bool(self.only_check()["changed_after"])
+
+    def test_the_loop_alone_does_not_age_a_pass(self) -> None:
+        self.assertIs(False, self.changed_after(self.POLL, keep_commit=False))
+
+    def test_the_commit_and_push_still_do_and_the_loop_adds_nothing_to_them(self) -> None:
+        self.assertIs(True, self.changed_after(self.POLL))
+        self.assertIs(True, self.changed_after())
+
+    def test_each_polling_command_is_read_only(self) -> None:
+        for command in (
+            "sleep 20",
+            "gh pr checks 7 --repo acme/widgets",
+            "gh pr view 7 --json state --jq .state",
+            "gh run view 123 --log-failed",
+            "gh run list --limit 3",
+            "gh run watch 123 --exit-status",
+            "glab ci status",
+            "for i in 1 2; do sleep 1; done",
+            "out=$(gh pr checks 7 --repo acme/widgets)",
+            "while ! gh pr checks 7; do sleep 5; done",
+        ):
+            with self.subTest(command=command):
+                self.assertIs(False, self.changed_after(command, keep_commit=False))
+
+    def test_a_write_hidden_in_the_same_shapes_still_ages_the_pass(self) -> None:
+        for command in (
+            "gh run view 123 --log > out.txt",
+            "gh run download 123",
+            "gh pr checkout 7",
+            "gh pr merge 7",
+            "for f in *; do rm $f; done",
+            "for i in 1 2; do sleep 1; touch x; done",
+            "out=$(gh run download 123)",
+            "while true; do gh pr checks 7 > checks.txt; done",
+        ):
+            with self.subTest(command=command):
+                self.assertIs(True, self.changed_after(command, keep_commit=False))
+
+
+class ALoopDoesNotPlaceADirectoryItMovesEachTurn(CheckLineTestCase):
+    """A relative `cd` in a loop body runs again on the next turn, from where it ended."""
+
+    def placed(self, command: str) -> list[bool]:
+        call = project_context._ShellCall(0.0, "/work/billing", {"command": command})
+        return [call.placed[i] for i in call.checks]
+
+    def test_a_check_in_a_plain_loop_stays_placed(self) -> None:
+        self.assertEqual([True], self.placed("for i in 1 2; do pytest -q; done"))
+
+    def test_a_relative_cd_in_the_body_leaves_the_check_unplaced(self) -> None:
+        self.assertEqual([False], self.placed("for i in 1 2; do cd sub; pytest -q; done"))
+
+    def test_an_absolute_cd_in_the_body_places_it_every_turn(self) -> None:
+        self.assertEqual([True], self.placed("for i in 1 2; do cd /work/other; pytest -q; done"))
+
+    def test_a_directory_changed_inside_the_loop_is_unknown_after_it(self) -> None:
+        self.assertEqual([False], self.placed("for i in 1 2; do cd sub; done; pytest -q"))
