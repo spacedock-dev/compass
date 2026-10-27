@@ -4390,7 +4390,9 @@ def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:
-    return frozenset(kind for kind in _LINE_KINDS if _claims_result(reason, kind))
+    return frozenset(
+        kind for kind in _LINE_KINDS if _claims_result(reason, kind, remote_aware=True)
+    )
 
 
 def _removed_after(
@@ -4589,31 +4591,52 @@ _CLAUSE_BREAK = re.compile(r"[.;,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
 _CI_RUN_URL = re.compile(
     r"https?://[^\s)]*/(?:actions/runs|pipelines|jobs)/\d+[^\s)]*", re.IGNORECASE
 )
-_REMOTE_MARK = "ciremoterun"
+_REMOTE_MARK = "\ue000"
+_RESULT_WORD = r"(?:pass(?:es|ed|ing)?|green|succe\w*|fail(?:s|ed|ing)?)"
 _REMOTE_JOB = re.compile(
-    r"(?<![\w-])(?!type-?checks?\b)\w[\w.]*(?:[-/]\w[\w.]*)+\s+(?:pass|passed|fail|failed)\b",
+    r"(?<![\w-])[`'\"]?(?!type-?checks?\b)(?P<job>\w[\w.]*(?:[-/]\w[\w.]*)+)[`'\"]?"
+    rf"(?:\s+(?:job|check))?(?:\s*[:(]\s*|\s+(?:is\s+)?){_RESULT_WORD}\b\)?",
     re.IGNORECASE,
 )
-# Case matters for the two short words: "ci" and "actions" are ordinary words in a reason.
+# A ratio ("14/14 pass") and a path after "in", "under" or "of" ("tests in tests/unit pass") are
+# local claims that merely look like a slash-joined job name.
+_NOT_A_JOB = re.compile(r"^\d+(?:/\d+)+$")
+_PATH_AFTER = re.compile(r"\b(?:in|under|of)\s+[`'\"]?$", re.IGNORECASE)
+# Case matters for the two short words: "ci" and "actions" are ordinary words in a reason, and a
+# hyphen or colon after one ("CI-related", "Actions: all tests pass") is not the remote service.
 _REMOTE_CLAUSE = re.compile(
-    rf"\b(?:CI|Actions)\b|(?i:\bworkflows?\b|\bchecks?\s+on\b|\b{_REMOTE_MARK}\b)"
+    r"(?<![\w-])(?:CI|Actions)(?![\w-]|:)"
+    rf"|(?i:\bworkflows?\b|\bchecks?\s+on\b|{_REMOTE_MARK}|github\s+actions|\b(?:in|on|via|per)\s+ci\b)"
 )
+
+
+def _drop_remote_job(match: re.Match[str]) -> str:
+    job = match["job"]
+    if _NOT_A_JOB.match(job):
+        return match[0]
+    if "/" in job and _PATH_AFTER.search(match.string[: match.start("job")]):
+        return match[0]
+    return " "
 
 
 def _local_clauses(text: str) -> list[str]:
     """The clauses of a line that can speak of a local run, remote phrasing removed."""
-    marked = _CI_RUN_URL.sub(f" {_REMOTE_MARK} ", text)
-    clauses = (_REMOTE_JOB.sub(" ", clause) for clause in _CLAUSE_BREAK.split(marked))
-    return [clause for clause in clauses if not _REMOTE_CLAUSE.search(clause)]
+    marked = _REMOTE_JOB.sub(_drop_remote_job, _CI_RUN_URL.sub(f" {_REMOTE_MARK} ", text))
+    return [clause for clause in _CLAUSE_BREAK.split(marked) if not _REMOTE_CLAUSE.search(clause)]
 
 
-def _claims_result(text: str, kind: str) -> bool:
-    """Whether one clause of the line speaks of this kind of check and says how it came out."""
+def _claims_result(text: str, kind: str, *, remote_aware: bool = False) -> bool:
+    """Whether one clause of the line speaks of this kind of check and says how it came out.
+
+    Only a goal verdict reads remote phrasing out of the line (`remote_aware`); an outcome line
+    keeps the plain clause split it always had.
+    """
+    clauses = _local_clauses(text) if remote_aware else _CLAUSE_BREAK.split(text)
     return any(
         _LINE_KINDS[kind].search(clause)
         and _RESULT_CLAIM.search(clause)
         and not _NOT_A_RESULT.search(clause)
-        for clause in _local_clauses(text)
+        for clause in clauses
     )
 
 

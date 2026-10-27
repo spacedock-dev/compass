@@ -5898,14 +5898,18 @@ matches to local runs. Three shapes count, and nothing more:
   `ci/lint fail`), which is dropped whole and never split to find a kind word inside it. `type-check` and
   `typecheck` are not job names for this purpose, so "type-check passed" is still a local claim;
 - a clause that says `CI`, `Actions`, a workflow, or `check on` or `checks on` something, so "the tests pass in CI"
-  claims nothing about a local run. `CI` and `Actions` are read in capitals only, because `ci` and `actions` are
-  ordinary words in a sentence;
+  claims nothing about a local run. `CI` and `Actions` are read in capitals only, because a bare lowercase `ci` and `actions` are
+  ordinary words in a sentence (lowercase `github actions` and `in`, `on`, `via` or `per` `ci` are read too), and
+  `CI-related` or `Actions:` do not count;
 - a CI run URL (`.../actions/runs/<n>`, or a GitLab `pipelines` or `jobs` URL), which marks its clause the same way.
 
 Clauses are still split at commas, full stops, semicolons and `and`, so "All 14 tests pass locally and the
 server-unittest check on the PR passed" agrees on the local claim alone. "The tests pass", "pytest passes" and
 "lint is clean" keep their match. Such a phrase contributes no kind, so a reason that is only remote reads as
-`nothing-checkable`. Matching a job's name to a recorded CI fact is a separate rule and is not built here.
+`nothing-checkable`. A ratio (`14/14 pass`) or a path after `in`, `under` or `of` is not a job name. Hyphen-joined local-sounding
+tokens such as `unit-tests` and `lint-staged` are an accepted loss: they read as nothing-checkable. Only the goal
+verdict reads this way; outcome-line coverage (`covers_line`) and what a write bears on are unchanged.
+Matching a job's name to a recorded CI fact is a separate rule and is not built here.
 Rejected: reading `server-unittest` as a test claim when a local test run exists, which is the wrong-reason
 agreement this removes.
 

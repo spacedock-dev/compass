@@ -253,15 +253,48 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
         for reason in (
             "the server-unittest pass shows it",
             "coverage-gate pass and server-unittest pass, nothing marked fail",
-            "ci/lint failed earlier, then passed",
             "the tests pass in CI",
             "the workflow shows the tests passed",
             "the tests passed https://github.com/acme/widgets/actions/runs/123456",
             "the tests passed https://gitlab.com/acme/widgets/-/pipelines/99",
+            "`server-unittest` passed",
+            "server-unittest passes",
+            "server-unittest is green",
+            "server-unittest succeeded",
+            "server-unittest: pass",
+            "server-unittest (pass)",
+            "'server-unittest' passed",
+            "the server-unittest job passed",
+            "the server-unittest check passed",
+            "nothing red; build-and-test pass",
+            "tests passed in github actions",
+            "tests passed on ci",
         ):
             with self.subTest(reason=reason):
                 checked = self._checked(passing, reason)
                 self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, checked["check"])
+
+    def test_a_ci_job_in_the_reason_claims_no_kind(self) -> None:
+        self.assertEqual(
+            frozenset(), reading._verdict_check_kinds("ci/lint failed earlier, then passed")
+        )
+
+    def test_outcome_line_coverage_ignores_remote_phrasing(self) -> None:
+        self.assertTrue(reading.covers_line("the tests pass in CI", "pytest -x"))
+        self.assertTrue(reading.covers_line("the tests pass in CI", "python3 -m pytest tests"))
+
+    def test_local_claims_that_look_like_job_names_keep_their_kind(self) -> None:
+        for reason in (
+            "tests: 14/14 pass",
+            "all tests in tests/unit pass",
+            "the tests in compass/skills pass",
+            "pytest 14/14 passed",
+            "CI-related tests pass",
+            "Actions: all tests pass",
+            "the ciremoterun tests pass",
+        ):
+            with self.subTest(reason=reason):
+                self.assertEqual(frozenset({"test"}), reading._verdict_check_kinds(reason))
 
     def test_all_the_local_tests_passing_still_agrees(self) -> None:
         for reason in ("All 14 tests pass", "pytest passes", "type-check passed"):
