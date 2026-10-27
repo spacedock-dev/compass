@@ -3155,6 +3155,25 @@ Found on a real session whose goal was to use a skill and create a pull request:
 Code recorded its own goal as met with a reason naming the pull request, and the analysis said Can't tell,
 because neither the pull request nor the skill was anywhere in what a reading is sent.
 
+### Amended 2026-10-27 (owner): items 3, 5 and 10 are widened by DEC-29 and DEC-31
+
+Three rulings of 2026-10-27 reopen parts of this record, and each is written in its own section.
+
+- Item 3 ("a runner not named here is not a check") is widened by
+  [DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes):
+  the closed list becomes tier 2 of three, project scripts and a pull request's CI commands join it, and any
+  other command may settle a line as a labelled tier-3 result. The read-only list grows by the commands that
+  section names.
+- Item 5 ("its time only, never its text") is widened by
+  [DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor): which vendor
+  reads the session decides whether a command that is not a check may be sent with its masked line and output
+  tail.
+- Item 10 ("the unasked lane never receives tool outcomes") opens for failed results only, by the same
+  [DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor) ruling.
+
+Nothing above changes until the layers that build these rulings ship; this record states the decision, and
+the amendments to the shipped skill, SECURITY.md and the promise map ride in those layers.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
@@ -6184,6 +6203,16 @@ keeps the floor off. A pull request or a skill does not age: it is a record that
 later file write does not turn it into a pass followed by a change. The live estimate's floor (item 1) is not
 touched; it still asks for a passing check.
 
+### Amended 2026-10-27 (owner): a CI fact is a recorded harness fact
+
+A pull request's CI state read under
+[DEC-30](#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze) counts as a
+recorded harness fact for the analysis level's None or low, the same as a pull request created or a skill used
+in the 2026-10-24 amendment above. The other conditions of that amendment hold unchanged. A pending CI state is
+never a pass, a head that moved past the session's commit does not settle the session's lines, and a session
+that changed the CI configuration carries the caution DEC-30 names, so the floor rests on a CI fact only when
+DEC-30 lets that fact stand. The live estimate's floor (item 1) is not touched.
+
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
 Decided 2026-10-11 (DRC-4855), on the Actions Front and Center project, in the milestone "Intent
@@ -7014,3 +7043,186 @@ the agent. Nothing about the reading changes; this is placement and wording on t
 - The how-to and `HOW_TO_USE.md` say nothing about these folds and are unchanged. This change updates the
   sample tour (`frontend/src/sample/tour.ts`), the shipped skill body (`SKILL.md`) and the pointer in
   [the frontend migration record](design-frontend-migration.md).
+
+## DEC-29: a command's result is evidence by tier, and a command that cannot fail never passes
+
+Decided by the owner on 2026-10-27 (DRC-4972). This layer writes the ruling down; the layers that follow build
+it, and none of this is shipped by the commit that carries this section. SECURITY.md, the shipped skill and the
+promise map change in those layers, not here.
+
+The owner's direction for the whole milestone applies: Compass runs on the reader's machine, in the reader's own
+sessions, so the aim is an answer that helps, and a rule stays only if it stops a wrong answer.
+
+**The question.** [DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) item 3 says a
+runner not on its closed list is not a check. On a real machine that rule left almost every check unread.
+Measured over 30 days of one machine, with no session ids kept: 52% of sessions that used a shell ran a
+closed-list check, and 95.6% of 2,159 foreground closed-list check runs recorded no result at all, so they could
+not settle a line. A project's own commands, such as `pnpm typecheck` or `python3 scripts/validate_plugins.py`,
+were never evidence. May a result from outside the list count, and how far may each kind be trusted?
+
+**The ruling is option (a), with tier 3 allowed to count.**
+
+1. **Three tiers.**
+   - Tier 1 is a structured harness record: a pull request created, a push, a skill used. These already exist
+     under DEC-23's 2026-10-23 amendment.
+   - Tier 2 is a known runner: the DEC-23 closed list; a project's own test, lint, build and typecheck scripts,
+     when the script body is itself a closed-list runner; and `gh pr checks`, `gh run view` and `glab ci status`.
+   - Tier 3 is any other command.
+2. **A tier-3 result may settle a line.** It may stand as `consistent`, labelled "the command exited 0; Compass
+   does not know what it checks", it counts toward the level, and a tier-3 failure may support a departure.
+   Whether a command is relevant to a line stays the model's judgement. Compass does not use keyword overlap to
+   decide it, so the 2026-09-30 rejection of keyword relevance stands.
+3. **A command that cannot fail never counts as a pass, whatever its tier**, and the server enforces it, not the
+   prompt: `echo`, `printf`, `true`, `:`, `exit 0`, anything ending `|| true` or `; exit 0`, and any command on
+   the read-only list.
+4. **Tier and ageing are independent.** Every command that is not on the read-only list ages an earlier pass
+   ([DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) item 3's blocker), whatever
+   tier its own result has.
+5. **Each new fact subject is admitted per consumer from an explicit allowlist.** The consumers are the work
+   floor, `check_supports`, the live level, the Live monitor's turn text, `check_goal_verdict`, the history's
+   prompt-derived carriers and the unasked ledger. One test covers every subject against every consumer, so a
+   subject added later cannot reach a consumer nobody chose.
+6. **The read-only list grows.** `sleep`, `gh pr checks`, `gh pr view`, `gh run view`, `gh run list`,
+   `gh run watch` and `glab ci status` join DEC-23 item 3's list, with their writing options excluded.
+7. **Attribution, as a direction.** When a check is the last command before a `tail` or `head` filter, a summary
+   on the output's last line is that check's result, even beside earlier setup commands that print. This ships
+   only once a measured sample shows the false-attribution rate, and until then the existing rule stands.
+8. **Harnesses.** Every harness whose record carries commands and their exit status: Claude Code now, Codex
+   next.
+9. **Qualification runs after this ships, not before**, for the new false-`consistent` class: a pass on a command
+   Compass does not understand. This follows the 2026-10-02 acceptance of the Claude Code reader. A change to the
+   prompt header is accepted and re-pinned.
+
+**What it reopens.** DEC-23 item 3, "a runner not named here is not a check", and the 2026-10-23 restatement of
+it. It does not reopen the 2026-09-30 rejection of keyword overlap for relevance.
+
+**What was rejected, and why.**
+
+- **(b) Tier 3 on the machine only.** The page would show a pass the reading cannot use, so the reader sees
+  "ran" beside a level that ignores it. The same evidence would count in one place and not in another, which
+  helps nobody.
+- **(c) Grow the list one runner at a time.** Each addition is a release, and the list is always behind the
+  commands a project actually has. The 95.6% figure above is the cost of waiting.
+- **(d) The closed list plus declared checks, with no tier 3.** It asks every reader to declare what they run
+  before Compass helps, which is a setup step on a tool that is meant to work in the reader's own sessions
+  unmodified, and it still reads nothing for a command nobody declared.
+
+**Built by**, in words: the layers that follow add the tier classification, the cannot-fail rule, the
+read-only additions, the per-consumer allowlist and its one covering test, and the prompt header. The
+attribution direction in item 7 waits for its measured sample.
+
+## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
+
+Decided by the owner on 2026-10-27 (DRC-4973). This layer writes the ruling down; the layers that follow build
+it. SECURITY.md, the shipped skill and the promise map change in those layers, not here.
+
+**The question.** A session that opens a pull request usually ends with the real check, the pull request's CI,
+running somewhere the transcript does not record. May Compass ask GitHub or GitLab for that state when a reader
+presses Analyze?
+
+**The ruling is (a): yes, on by default, folded into Analyze drift.**
+
+1. **One control, with a turn-off.** There is no separate button. Like the quota read, it has a page setting and
+   a `--no-ci-read` option. One line naming the read joins the existing notice, and there is no consent step,
+   as [DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) already rules for model calls.
+2. **Binding.** The pull request is the goal's URL, or Claude Code's `pr-link` and push records when their
+   repository matches the session folder's own git remote. A `/goal` the reader typed counts as the reader's
+   words. When the goal names one pull request and the record another, the goal wins.
+3. **What green means.** Pending is never a pass. Skipped checks count as neither a pass nor a failure, so a
+   pass on the checks that ran stands. Zero completed checks is no result. Where the provider reports which
+   checks are required, they are preferred.
+4. **The session's commit.** CI counts only when the pull request's head equals the HEAD of the session's
+   folder, read with the existing git probe. A head that moved past it is named, and that CI does not settle the
+   session's lines.
+5. **A session that edited CI configuration is not blocked.** For `.github/workflows/**` or `.gitlab-ci.yml`
+   the reading carries a caution line that the session changed the CI config, and the model judges whether that
+   weakened CI.
+6. **A CI fact is a recorded harness fact** for an Analyze reading's None or low, as the DEC-26 amendment of
+   2026-10-27 records.
+7. **Stored with the reading**, labelled with the time it was read.
+8. **Harnesses.** Any harness with a goal URL. Binding through transcript records is Claude Code only for now.
+9. **Where it does not run.** Not the Live monitor and not the unasked lane for now, so no network call happens
+   without a press.
+10. **Launch safeguards.**
+    - An absolute binary, resolved against a PATH with no relative entries, as the git probe does.
+    - A Compass-private empty working directory.
+    - `GH_*`, `GITLAB_*` and `GL_*` overrides stripped, with prompts and update checks off.
+    - An explicit `--repo HOST/OWNER/REPO`, validated against a closed pattern.
+    - Known hosts only: `github.com`, or a host in the tool's own hosts configuration; https; never an IP
+      literal.
+    - A hard timeout that kills the process group.
+    - JSON parsed whatever the exit code, size-capped and schema-validated.
+    - Stderr never stored beyond a closed error token.
+    - Check names are writable by whoever writes the workflows, so they take a closed character set, are
+      clipped, and are sent as quoted fields. Description, link and log text are never read.
+11. **Refusal order and rate.** `--no-observer-model`, Pause model calls and the Analyze cap are checked before
+    any launch. There is one read per pull request per press, with a cache floor.
+
+**What it reopens.** SECURITY.md scope item 1, where three outbound kinds become four, and the 2026-10-23 choice
+not to read `pr-link` ([DEC-23](#amended-2026-10-23-owner-pr-and-skill-facts)). The repository and the pull
+request number are session content, and they leave the machine with the reader's own login.
+
+**What was rejected, and why.**
+
+- **(b) A separate Check CI control.**
+  [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result) keeps one primary
+  action on the first view, and a second press for the evidence the first needs asks the reader to know which to
+  press.
+- **(c) Parse CI rows from shell text.** It misses polling loops such as `out=$(...)`, an output-rewriting hook
+  can change what the transcript holds, and `echo` forges the same text. It reads what the agent printed, not
+  what the provider recorded.
+- **(d) No.** The pull request's own checks are the strongest evidence a session of this kind can have, and
+  leaving them out is the 95.6% problem
+  [DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes) measured,
+  one layer up.
+
+**Built by**, in words: the layers that follow add the binder, the guarded launcher for `gh` and `glab`, the
+fact and its store, the page setting and `--no-ci-read`, and the notice line.
+
+## DEC-31: the text of a command that is not a check may leave the machine, by vendor
+
+Decided by the owner on 2026-10-27 (DRC-4987). This layer writes the ruling down; the layers that follow build
+it. SECURITY.md, the shipped skill and the promise map change in those layers, not here.
+
+**The question.** [DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) item 5 keeps
+the text of a command that is not a check on the machine: "its time only, never its text". May that text leave
+in a reading?
+
+**The ruling is a vendor rule, not a content rule.** A Claude Code session has already sent every command and
+every output to its own vendor. Reading it through the same vendor exposes nothing new.
+
+1. **Same vendor as the session.** A Claude Code session read by Claude Code, the Live monitor's Haiku
+   included: every command's masked line and its redacted output tail may be sent.
+2. **A different vendor.** For example Codex reading a Claude Code session: every command and its exit status
+   may be sent, and output tails for tier 1 and tier 2 only
+   ([DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)'s
+   tiers).
+3. **One line in the existing one-time notice names it.** The first press runs, as
+   [DEC-28](#dec-28-a-model-may-summarize-a-session-and-the-summary-is-kept) already rules, with no hold until
+   the notice is seen.
+4. **Upkeep, never blocking.** Redaction learns the shapes found leaking: gcloud `ya29.` tokens,
+   `SecretString` values, netrc passwords, `curl -u user:pass`, `Cookie:` headers and others. A stored
+   departure explanation is scrubbed with the call's masked values. Neither holds a build or a press.
+5. **Item 10 of DEC-23 opens for failed results only.** The unasked lane may receive failures and never passes,
+   because it raises departures and never reassures.
+
+**What it reopens.** DEC-23 item 5, "its time only, never its text", as narrowed on 2026-09-24 and restated on
+2026-10-23.
+
+**What was rejected, and why.**
+
+- **(a) Nothing more leaves.** It protects against a disclosure the same vendor has already received, and it is
+  the reason a reading of a session full of project commands could not name one of them.
+- **(b) Program name and exit status only.** It tells a reading that something ran and not what, so the model
+  cannot judge whether the command bears on a line, which is the judgement
+  [DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes) leaves to
+  it.
+- **(c) A closed list of programs.** It is DEC-29's rejected option (c) again, for text: always behind the
+  commands a project has.
+- **(d) The masked line and tail for every command to every vendor.** Unsafe across vendors with today's
+  redaction. A second vendor has received none of it, and the shapes in item 4 show redaction still learning.
+  Cross-vendor therefore stays at the command and its status.
+
+**Built by**, in words: the layers that follow add the vendor comparison, the two admission levels, the notice
+line, the redaction shapes and the scrub of a stored explanation, and the failed-results-only admission for
+the unasked lane.
