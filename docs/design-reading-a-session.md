@@ -3256,6 +3256,8 @@ Two consequences are the part a loop can get wrong:
 - **`!` inverts the exit status.** A negated check is listed and its result is never read: the flag and the
   summary no longer say whether the code is sound, so it reads "ran, result not recorded", never a pass.
   A `!` that is not at a command's start, as in `[ ! -f x ]`, negates nothing.
+  A negated group's extent is not tracked, so a check after a negated group closes in the same call is read
+  as negated too (`! (cd . ; pytest -q) ; pytest -q`). That fails toward no recorded result, never a pass.
 - **A loop body may run again from where it ended.** A relative `cd` inside a loop leaves the directory
   unplaced, and so does any `cd` that moved the directory inside a loop for the commands after `done`,
   because the loop may have run any number of times, or none.
