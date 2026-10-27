@@ -3266,6 +3266,29 @@ Unchanged: `git commit` and `git push` stay commands that may change files (see 
 above). With the commit and the push in the session the earlier pass is still aged by them, and the polling
 loop adds nothing; without them the loop alone does not age it.
 
+### Amended 2026-10-27: the command a hook rewrote is the command that ran
+
+A `PreToolUse` hook can replace a Bash call's command before it runs. RTK is one: it turns a typed
+`ruff check x` into `rtk ruff check x` and the call returns the condensed output (`Ruff: No issues found`)
+instead of ruff's own. Claude Code keeps the typed command in the `tool_use` block and records the rewrite
+as a separate `attachment` row ([the capture](captures/claude/pretooluse-rewrite-shape-2.1.311-macos.jsonl)).
+Compass read only the block, so a rewritten check was read as a raw one and its condensed output went through
+rules written for the runner's own text, which the `rtk` rule of 2026-09-24 exists to avoid.
+
+The rule: a Bash call is the command that ran. When an attachment named `PreToolUse:Bash` carries a
+`toolUseID` equal to the call's id and its `stdout` parses as a JSON object with a non-empty string
+`hookSpecificOutput.updatedInput.command`, that command replaces the typed one everywhere the call is read:
+the check's identity, its title and its wrapper stripping, so a rewrite that adds `rtk` takes its result from
+the error flag alone. A call with no such attachment reads as before. A `stdout` that is not JSON, not an
+object, over 64 KiB, or whose command is missing, empty or not a string is no rewrite, and the typed command
+stands. Nothing else in the attachment is read, and the join is by id only, so a rewrite of one call never
+reaches another. The masking and clipping of a check line are unchanged and apply to the command that ran.
+
+Measured against RTK 1.1.0 on synthetic projects: of eight condensed outputs (pytest, ruff and go test, each
+passing, failing and finding nothing to run), none matched a summary rule wrongly. Four matched a rule for the
+right reason, which the `rtk` rule would ignore anyway. Jest, cargo and tsc were not installed, so their
+condensed formats are unmeasured.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.

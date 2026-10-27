@@ -105,6 +105,26 @@ class Transcript:
         self.result(call_id, output, is_error=is_error)
         return call_id
 
+    def hook_rewrite(self, call_id: str, stdout: str) -> None:
+        """The record Claude Code writes when a PreToolUse hook answers a Bash call."""
+        self.rows.append(
+            {
+                "type": "attachment",
+                "isSidechain": False,
+                "cwd": self.cwd,
+                "sessionId": SID,
+                "timestamp": self._stamp(),
+                "attachment": {
+                    "type": "hook_success",
+                    "hookName": "PreToolUse:Bash",
+                    "hookEvent": "PreToolUse",
+                    "toolUseID": call_id,
+                    "stdout": stdout,
+                    "exitCode": 0,
+                },
+            }
+        )
+
     def write(self, path: str, content: str = "print('hello')\n") -> None:
         call_id = self.call("Write", {"file_path": path, "content": content})
         self.result(call_id, f"File created successfully at: {path}")
@@ -116,6 +136,20 @@ class Transcript:
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(json.dumps(row) for row in self.rows) + "\n", encoding="utf-8")
+
+
+def hook_stdout(command: str) -> str:
+    """What an output-rewriting hook prints: the call, with its command replaced."""
+    return json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": "auto-rewrite",
+                "updatedInput": {"command": command},
+            }
+        }
+    )
 
 
 class ClaudeChecksTestCase(unittest.TestCase):
@@ -1071,6 +1105,46 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
                 check = self.only_check()
                 self.assertTrue(check["title"].startswith("pytest"))
                 self.assertEqual(expected, check["result"])
+
+    def test_a_command_a_hook_rewrote_is_the_command_that_ran(self) -> None:  # R12
+        """The agent typed `pytest`; the hook ran `rtk pytest`, whose output no rule may read."""
+        call_id = self.session.call("Bash", {"command": "pytest"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk pytest"))
+        self.session.result(call_id, "1 failed", is_error=False)
+        check = self.only_check()
+        self.assertTrue(check["title"].startswith("pytest"))
+        self.assertEqual("not-recorded", check["result"])
+
+    def test_a_rewritten_check_with_a_failing_flag_fails_on_the_flag(self) -> None:  # R12
+        call_id = self.session.call("Bash", {"command": "ruff check x"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk ruff check x"))
+        self.session.result(call_id, "Exit code 1\nRuff: 2 issues", is_error=True)
+        self.assertEqual("failed", self.only_check()["result"])
+
+    def test_a_rewrite_that_does_not_read_as_a_command_leaves_the_typed_one(self) -> None:  # R12
+        for stdout in (
+            "{not json",
+            "[]",
+            json.dumps({"hookSpecificOutput": {"updatedInput": "rtk pytest"}}),
+            json.dumps({"hookSpecificOutput": {"updatedInput": {"command": ["rtk", "pytest"]}}}),
+            json.dumps({"hookSpecificOutput": {"updatedInput": {"command": ""}}}),
+            json.dumps({"hookSpecificOutput": {"permissionDecision": "allow"}}),
+            hook_stdout("rtk pytest " + "x" * 70000),
+        ):
+            with self.subTest(stdout=stdout[:60]):
+                self.setUp()
+                call_id = self.session.call("Bash", {"command": "pytest"})
+                self.session.hook_rewrite(call_id, stdout)
+                self.session.result(call_id, "1 failed", is_error=False)
+                self.assertEqual("failed", self.only_check()["result"])
+
+    def test_a_rewrite_of_another_call_does_not_reach_this_one(self) -> None:  # R12
+        other = self.session.call("Bash", {"command": "ls"})
+        self.session.hook_rewrite(other, hook_stdout("rtk ls"))
+        self.session.result(other, "a", is_error=False)
+        call_id = self.session.bash("pytest", "1 failed", is_error=False)
+        self.assertTrue(call_id)
+        self.assertEqual("failed", self.only_check()["result"])
 
     def test_paths_options_and_subshells_are_stripped(self) -> None:  # R13
         for command, title in (
