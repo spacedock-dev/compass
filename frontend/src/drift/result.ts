@@ -588,6 +588,15 @@ export function coverageLimits(shape: Shape): string {
   return clauses.join(' ');
 }
 
+/* A reading's cutoff already says how many other commands ran beside the entries it read, so this speaks only
+   where the count was never recorded: a reading stored before it was measured, or one whose session had no scan.
+   Said apart from `coverageLimits`, which the retired page's own sentence is held to. */
+export function commandCountNote(shape: Shape): string {
+  return shape.coverage && Object.hasOwn(shape.coverage, 'other_commands')
+    ? ''
+    : 'How many other commands ran beside the entries read was not recorded for this reading.';
+}
+
 /* What the analysis did with an adopted prompt. Said under What the analysis read rather than beside the
    answer (usability review, 2026-10-20): it is about the reading's input, and above the departures it stood
    between the reader and the verdict. */

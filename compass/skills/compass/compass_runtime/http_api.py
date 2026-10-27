@@ -857,6 +857,12 @@ def _scan_of(context: dict[str, Any], harness: str, sid: str) -> dict[str, Any]:
     )
 
 
+def _command_counts_of(context: dict[str, Any], harness: str, sid: str) -> dict[str, Any]:
+    """The other-command counts this session's full scan measured, or nothing."""
+    scan = _scan_of(context, harness, sid)
+    return {k: scan[k] for k in ("other_commands", "read_only_commands") if k in scan}
+
+
 def _facts_of(context: dict[str, Any]) -> list[Any]:
     semantic = context.get("semantic")
     facts = semantic.get("facts", []) if isinstance(semantic, dict) else []
@@ -3729,6 +3735,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 )
                 if press_stamp is not None
                 else {}
+            ),
+            command_counts_lookup=lambda: _command_counts_of(
+                context, str(row.get("harness")), str(row.get("sid"))
             ),
             goal_source_lookup=lambda: runtime_project_context.transcript_user_facts(
                 application.config,

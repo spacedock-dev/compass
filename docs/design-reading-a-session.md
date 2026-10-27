@@ -3338,6 +3338,24 @@ pytest check is shown whatever it is; credential-shaped values are still redacte
 and the call's masked-value set keep the unconditional `-p` mask, so a shown plugin word can still be erased from
 an echoed tail: that side only over-masks.
 
+### Amended 2026-10-27 (owner): the cutoff counts the commands the reading never received
+
+"Read all 14 entries after your intent" read as everything, when the session had also run seven Bash calls that
+are not checks, among them the CI polls that proved the goal. Compass reads when those commands ran, to age an
+earlier pass (item 3), and nothing else about them, so "not read" would be false and silence would be worse. The
+cutoff now adds one sentence when any ran: "7 other commands ran, 4 of them read-only, and Compass read only when
+they ran." The two counts come from the session's full scan, so they cover the
+whole transcript and not only the window read, and sit beside the
+[measured coverage](#amended-2026-10-04-owner-disclose-measured-reading-coverage) the reading already stores. Read-only is the scan's own test of whether the command could
+change a file. A session that ran none says nothing.
+
+The stored `coverage` mapping gains `other_commands` and `read_only_commands`, both or neither, so a reading
+stored before this change keeps its five keys and still validates. The page says "How many other commands ran
+beside the entries read was not recorded for this reading" for any reading without them, which includes a session
+on a harness with no scan. A lone count, a count that is not a whole number, and a read-only count above the total
+refuse the reading, because a malformed count read as zero would say no command ran. No command text is stored or
+sent: both are integers, and the model's prompt does not change.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
