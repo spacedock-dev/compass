@@ -17,6 +17,7 @@ import json
 import math
 import pathlib
 import random
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -4097,9 +4098,71 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
         detail = self.resolve_detail("it printed ya29." + "FAKEFAKEFAKE" * 3, frozenset())
         self.assertNotIn("FAKEFAKE", detail)
 
-    def test_the_press_carries_the_masked_values_to_produce(self) -> None:
-        output = reading.ToolOutput(destination="d", label="l", masked_values=frozenset({"x" * 5}))
-        self.assertEqual(frozenset({"x" * 5}), output.masked_values)
+    def test_a_value_at_a_sentence_end_or_in_brackets_is_stored_masked(self) -> None:
+        for detail in (
+            "It logged in with the password FakePass99.",
+            "It was FakePass99:",
+            "It typed FakePass99, then failed",
+            "It typed (FakePass99) and failed",
+        ):
+            with self.subTest(detail=detail):
+                self.assertNotIn(
+                    "FakePass99", self.resolve_detail(detail, frozenset({"FakePass99"}))
+                )
+
+    def test_ordinary_words_a_command_masked_stay_in_the_explanation(self) -> None:
+        masked = frozenset(
+            {
+                *records.masked_values(
+                    shlex.split("CI=true NODE_ENV=production pnpm test")
+                    + shlex.split("curl -H 'Authorization: Bearer FakeTok99xx' x")
+                ),
+                "test",
+            }
+        )
+        detail = self.resolve_detail(
+            "it claimed the flag was true in production, sent Bearer FakeTok99xx, "
+            "and renamed the wrong flag",
+            masked,
+        )
+        for kept in ("true", "production", "Bearer", "renamed the wrong flag"):
+            self.assertIn(kept, detail)
+        self.assertNotIn("FakeTok99xx", detail)
+
+    def test_a_scrubbed_explanation_that_was_not_cut_has_no_ellipsis(self) -> None:
+        detail = self.resolve_detail(
+            "it logged in with " + "P9" * 30 + " and renamed the wrong flag",
+            frozenset({"P9" * 30}),
+        )
+        self.assertFalse(detail.endswith("\u2026"), detail)
+        self.assertIn(records.SECRET_MARKER, detail)
+
+    def test_a_press_masked_value_reaches_the_stored_explanation_through_produce(self) -> None:
+        words = shlex.split("curl -u alice:FakePass99 https://x.example")
+        answer = json.dumps(
+            {
+                "goal": {
+                    "result": "departure",
+                    "cites": [1],
+                    "detail": "it logged in with FakePass99. That was not asked for.",
+                },
+                "line_1": {"result": "met", "cites": [], "detail": ""},
+            }
+        )
+        producer = AClaudeCodeReadingProducer("setUp")
+        producer.setUp()
+        self.addCleanup(shutil.rmtree, producer.config.state_dir, True)  # type: ignore[attr-defined]
+        assessment, _why, _spent = producer._produce(
+            [WORDS_FACT],
+            model=producer._model(answer),
+            tool_output=reading.ToolOutput(
+                destination="",
+                label="l",
+                masked_values=frozenset(records.masked_values(words)),
+            ),
+        )
+        self.assertNotIn("FakePass99", json.dumps(assessment))
+        self.assertIn("not asked for", json.dumps(assessment))
 
 
 if __name__ == "__main__":

@@ -968,6 +968,46 @@ def mask(line: str) -> str:
     return " ".join(records.mask_words(shlex.split(line)))
 
 
+class ScrubValuesTest(unittest.TestCase):
+    """`scrub_values` removes masked values from a tail and, with `prose`, a sentence."""
+
+    def test_a_sentence_end_or_bracket_does_not_hide_the_value_in_prose(self) -> None:
+        for text in (
+            "The agent ran mysql with FakePass99.",
+            "It was FakePass99:",
+            "It was FakePass99, then it failed",
+            "the password (FakePass99) failed",
+            "the password FakePass99; then",
+        ):
+            with self.subTest(text=text):
+                out = records.scrub_values(text, ["FakePass99"], prose=True)
+                self.assertNotIn("FakePass99", out)
+                self.assertIn(records.SECRET_MARKER, out)
+
+    def test_a_value_inside_a_longer_word_or_path_stays_in_prose(self) -> None:
+        for text in ("it edited test_a.py", "it read src/test/x", "see test.example.com"):
+            with self.subTest(text=text):
+                self.assertEqual(text, records.scrub_values(text, ["test"], prose=True))
+
+    def test_the_tail_keeps_the_filename_boundary(self) -> None:
+        for text in ("test_a.py", "test-file.py", "src/test", "ran test_a.py ok"):
+            with self.subTest(text=text):
+                self.assertEqual(text, records.scrub_values(text, ["test"]))
+
+    def test_a_masked_number_from_a_wrapper_flag_does_not_wipe_output(self) -> None:
+        words = shlex.split("docker run --rm -u 1000:1000 img pytest -q")
+        self.assertEqual(
+            "1000 passed in 2s",
+            records.scrub_values("1000 passed in 2s", records.masked_values(words)),
+        )
+
+    def test_the_explanation_keeps_words_that_name_no_credential(self) -> None:
+        values = records.explanation_values(
+            ["true", "production", "Bearer FakeTok99xx", "main", "4096", "FakePass99"]
+        )
+        self.assertEqual({"FakeTok99xx", "FakePass99"}, values)
+
+
 class MaskCommandTest(unittest.TestCase):
     def test_the_string_masker_that_split_on_whitespace_is_gone(self) -> None:  # V9
         # It leaked a quoted value's tail; the check line masks shell words.
@@ -1086,7 +1126,156 @@ class MaskCommandTest(unittest.TestCase):
 
     def test_the_values_a_new_form_masks_are_reported_for_the_tail_scrub(self) -> None:
         words = shlex.split("curl -u alice:FakePass99 --cookie sid=FakeSid99 https://x.example")
-        self.assertEqual({"FakePass99", "sid=FakeSid99"}, set(records.masked_values(words)))
+        self.assertEqual(
+            {"FakePass99", "sid=FakeSid99", "FakeSid99"}, set(records.masked_values(words))
+        )
+
+    def test_curl_user_in_a_cluster_of_short_flags_is_masked(self) -> None:
+        for flags in ("-sSu", "-su", "-vu", "-fsSLu"):
+            with self.subTest(flags=flags):
+                masked = mask(f"curl {flags} alice:FakePass99 https://x.example")
+                self.assertNotIn("FakePass99", masked)
+                self.assertIn("alice", masked)
+
+    def test_a_user_flag_is_a_password_only_for_an_http_client(self) -> None:
+        for line in (
+            "tar -su alice:data x.tar",
+            "docker run --rm -u 1000:1000 img pytest -q",
+            "git push origin -u HEAD:main",
+            "id -u 1000:1000",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(line, mask(line))
+                self.assertEqual([], records.masked_values(shlex.split(line)))
+
+    def test_a_flag_that_only_resembles_a_credential_key_is_left_alone(self) -> None:
+        for line in (
+            "llm --max-tokens=4096 --tokenizer=gpt2 run",
+            "app --password-file=/etc/app/pw run",
+            "app --secrets-dir=/run/secrets run",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(line, mask(line))
+                self.assertEqual([], records.masked_values(shlex.split(line)))
+
+    def test_a_dotted_config_key_that_names_a_credential_is_masked(self) -> None:
+        for line in (
+            "git -c http.extraheader=AUTHORIZATION:basicFakeHex99 fetch",
+            "git -c 'http.https://github.com/.extraheader=AUTHORIZATION: basic FakeHex99' fetch",
+            "tool -c app.password=FakePass99 run",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn("FakeHex99", masked)
+                self.assertNotIn("FakePass99", masked)
+                self.assertNotIn("basicFakeHex99", masked)
+
+    def test_every_vendor_header_name_loses_its_value(self) -> None:
+        for name in (
+            "X-Vault-Token",
+            "Private-Token",
+            "X-GitLab-Token",
+            "X-Amz-Security-Token",
+            "X-Consul-Token",
+            "DD-APPLICATION-KEY",
+            "Ocp-Apim-Subscription-Key",
+            "x-functions-key",
+        ):
+            with self.subTest(name=name):
+                masked = mask(f"curl -H '{name}: hvs.FakeValue99' https://x.example")
+                self.assertNotIn("FakeValue99", masked)
+                self.assertIn("https://x.example", masked)
+
+    def test_a_header_joined_to_its_flag_loses_its_value(self) -> None:
+        for line in (
+            "curl --header='Authorization: Bearer FakeHex99' https://x.example",
+            "curl -H'Authorization: Bearer FakeHex99' https://x.example",
+            "wget --header='Cookie: sid=FakeHex99' https://x.example",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn("FakeHex99", mask(line))
+
+    def test_a_header_name_in_an_argument_is_not_a_header(self) -> None:
+        words = shlex.split("grep -n 'Authorization:' server.log")
+        self.assertEqual(words, records.mask_words(words))
+        self.assertEqual([], records.masked_values(words))
+        self.assertEqual("echo cookie: yes done", mask("echo cookie: yes done"))
+
+    def test_redis_cli_is_found_behind_a_container_and_in_its_joined_forms(self) -> None:
+        for line in (
+            "docker exec c redis-cli -a FakePass99",
+            "redis-cli -aFakePass99 ping",
+            "redis-cli --pass=FakePass99 ping",
+            "rtk redis-cli -a FakePass99 ping",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn("FakePass99", mask(line))
+
+    def test_the_git_scoped_extraheader_in_a_github_actions_form_is_masked(self) -> None:
+        line = "git -c 'http.https://github.com/.extraheader=AUTHORIZATION: basic FAKEHEX99' fetch"
+        self.assertNotIn("FAKEHEX99", mask(line))
+
+    def test_httpie_user_flag_is_masked(self) -> None:
+        masked = mask("http -a bob:FakePass99 https://x.example")
+        self.assertNotIn("FakePass99", masked)
+        self.assertIn("bob", masked)
+
+    def test_the_rtk_prefix_and_other_wrappers_do_not_hide_the_program(self) -> None:
+        for line in (
+            "rtk vault login hvs.FakeFake99",
+            "rtk proxy aws configure set aws_secret_access_key FakeFake99",
+            "sudo -u bob vault login hvs.FakeFake99",
+            "env -i vault login hvs.FakeFake99",
+            "uv run vault login hvs.FakeFake99",
+            "rtk curl -u alice:FakeFake99 https://x.example",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn("FakeFake99", mask(line))
+                self.assertTrue(
+                    any("FakeFake99" in v for v in records.masked_values(shlex.split(line)))
+                )
+
+    def test_aws_configure_set_reads_past_a_profile_flag(self) -> None:
+        for line in (
+            "aws configure set --profile p aws_secret_access_key FakeFake99",
+            "aws --profile p configure set aws_secret_access_key FakeFake99",
+            "aws configure set aws_secret_access_key FakeFake99 --profile p",
+            "aws configure set profile.p.aws_secret_access_key FakeFake99",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn("FakeFake99", masked)
+                self.assertIn("aws_secret_access_key", masked)
+
+    def test_aws_configure_set_masks_a_base64_value_with_an_equals_sign(self) -> None:
+        self.assertNotIn(
+            "FakeFake99", mask("aws configure set aws_secret_access_key FakeFake99/+aa==")
+        )
+
+    def test_vault_login_skips_the_value_of_an_address_flag(self) -> None:
+        masked = mask("vault login -address http://vault.example hvs.FakeFake99")
+        self.assertNotIn("FakeFake99", masked)
+        self.assertIn("http://vault.example", masked)
+
+    def test_a_bare_cookie_value_is_reported_beside_the_pair(self) -> None:
+        words = shlex.split("curl -H 'Cookie: session=FakeSession99; theme=FakeDark77' x")
+        values = records.masked_values(words)
+        self.assertIn("FakeSession99", values)
+        self.assertIn("FakeDark77", values)
+
+    def test_a_prose_sentence_keeps_the_words_after_a_header_like_name(self) -> None:
+        for text in (
+            "Fix the password: handling in the login flow",
+            "the Set-Cookie: header is missing on logout",
+            "send the Cookie: header with every request",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(text, records.mask_prose(text))
+
+    def test_the_prose_path_still_masks_an_authorization_value(self) -> None:
+        self.assertNotIn(
+            "FakeTok99", records.mask_prose("send Authorization: Bearer FakeTok99 to it")
+        )
 
     def test_a_command_with_nothing_to_mask_reads_as_it_was_typed(self) -> None:
         line = "python3 -m pytest tests/test_retry.py -q 2>&1 | tail -20"
@@ -1156,6 +1345,47 @@ class OutputSecretShapesTest(unittest.TestCase):
                 self.assertIn(f"{name}={self.MARK}", out)
                 self.assertIn("&x=1", out)
                 self.assertIn("X-Amz-Expires=60", out)
+
+    def test_a_netrc_value_in_quotes_or_after_default_is_redacted(self) -> None:
+        for text in (
+            "default password FakePw99",
+            "machine example.com login bob password 'Fake Pass 99'",
+            'machine example.com login bob password "Fake Pass 99"',
+        ):
+            with self.subTest(text=text):
+                out = records.redact_secrets(text)
+                for leaked in ("FakePw99", "Pass 99", "Fake Pass"):
+                    self.assertNotIn(leaked, out)
+
+    def test_a_secret_string_longer_than_the_old_window_is_redacted(self) -> None:
+        for quote in ('"', "'"):
+            body = "FakePass99" * 500
+            out = records.redact_secrets(f"{{'SecretString': {quote}{body}{quote}}}")
+            with self.subTest(quote=quote):
+                self.assertNotIn("FakePass99", out)
+
+    def test_an_unclosed_secret_string_is_redacted_to_the_end(self) -> None:
+        out = records.redact_secrets('"SecretString": "' + "FakePass99" * 600)
+        self.assertNotIn("FakePass99", out)
+
+    def test_a_signature_behind_an_escaped_ampersand_is_redacted(self) -> None:
+        for url in (
+            "https://b.example.com/k?a=1&amp;sig=abcdef123456",
+            "https://b.example.com/k?a=1\\u0026sig=abcdef123456",
+        ):
+            with self.subTest(url=url):
+                self.assertNotIn("abcdef123456", records.redact_secrets(url))
+
+    def test_sentences_that_open_like_a_shape_are_left_alone(self) -> None:
+        for line in (
+            "login page password reset link sent",
+            "machine learning password manager review",
+            "the default password reset flow",
+            "see https://example.com/docs?sig=overview for details",
+            "see https://example.com/docs?sig=handler_function_name for details",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(line, records.redact_secrets(line))
 
     def test_ordinary_runner_output_is_left_alone(self) -> None:
         for line in (

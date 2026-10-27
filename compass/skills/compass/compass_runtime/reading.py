@@ -3962,8 +3962,12 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
         result, why = RESULT_UNVERIFIABLE, WHY_VERDICT_STATED
     # The values the calls masked come out before the shape filter runs, so a short
     # password the agent quoted is held as masked in the explanation as on its line.
-    detail = records.safe_text(records.scrub_values(raw_detail, masked_values), detail_cap_chars)
-    if detail and len(raw_detail) > len(detail):
+    # Only the values that can be a credential: `true` from `CI=true` stays a word.
+    scrubbed = records.scrub_values(
+        raw_detail, records.explanation_values(masked_values), prose=True
+    )
+    detail = records.safe_text(scrubbed, detail_cap_chars)
+    if detail and len(scrubbed) > len(detail):
         # A cut sentence loses its qualifier, and the qualifier is always last.
         # Say so rather than publishing half a claim as a whole one.
         detail = f"{detail}…"

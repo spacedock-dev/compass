@@ -2777,8 +2777,9 @@ item 5's fields and the closed lists.
    apostrophe, match at filename and identifier boundaries, so masking `test` leaves `test_a.py`,
    `contest` and `src/test` readable. A wrapper's script is read as its inner words rather than as
    one assignment value; its ordinary runner and summary words are not masked. The named forms
-   are unchanged: these forms and no others. Short pieces and arbitrary encodings remain outside
-   this scrub.
+   are unchanged: these forms and no others, except as amended in the
+   [2026-10-27 amendment](#amended-2026-10-27-owner-more-shapes-and-forms-are-masked-and-a-stored-explanation-is-scrubbed).
+   Short pieces and arbitrary encodings remain outside this scrub.
 6. A redirection is not an argument and is not published: not its target, not a here-string's
    word, not a heredoc's delimiter. A heredoc body and a here-string word are stdin data. Amended
    2026-09-27: a check segment's redirect target inside the working directory is published as a
@@ -3202,6 +3203,27 @@ from reaching a page or a stored reading and none changing what a check records.
   tail uses (`records.scrub_values`), and then applies the shape redaction it always did. Before this
   the tail was scrubbed of a masked value and the model's prose about it was not. The unasked lane sends
   no tool output and carries no masked values.
+
+#### Corrected after review, 2026-10-27
+
+An adversarial review of the change above found it removed too much and too little, and the points
+below replace what it said.
+
+- **Where a flag is a password.** `-u`, `--user` and `--proxy-user` are a password only for `curl`,
+  `wget`, `http`, `https` and `xh` (`-su` and `-fsSLu` clusters included for `curl`), not for
+  `docker run -u 1000:1000` or `git push -u`. A dotted config key is masked by its last part, so
+  `--max-tokens=4096` is a flag and not a key. A program is found behind `rtk`, `sudo`, `env`, `uv run`
+  and `docker exec`, because this owner's hook rewrites commands to `rtk <cmd>`.
+- **Where a header is expected.** The wider header names (`Cookie:`, `X-Vault-Token:`, any name holding
+  `token`, `key`, `secret`, `password`, `passwd` or `credential`) are read after `-H`, `--header`,
+  `--proxy-header` or `extraheader=`, or joined to them, and nowhere else. A person's typed direction
+  reads only `Authorization:` and `X-Api-Key:`, so "Fix the password: handling" keeps its words.
+- **Which values leave an explanation.** Only a masked value that can be a credential, so `CI=true`
+  does not erase the word `true` from a sentence. A value ending a sentence or inside brackets is
+  removed; one inside a longer word or path is not.
+- **The output shapes.** A netrc entry needs its `login`, or a value with a digit or capital when it
+  has none; a signature needs a signature-like value and accepts `&amp;` and `\u0026` before it; an
+  AWS `"SecretString"` runs to its closing quote however long, in either quote.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

@@ -107,6 +107,13 @@ pre-signed URL, cued by a `?` or `&` in front because `sig=` and `signature=` ar
 `passphrase` joined the cued name list. Each keeps the words around the value and replaces the value
 group alone.
 
+Review the same day tightened three of them. A netrc entry is cued by `machine <host>` or `default`
+and then `login <user>`; without a login the value must carry a digit or a capital, because "machine
+learning password manager" and "default password reset" are sentences. A signature must look like one
+(a digit, a base64 or percent character, or both letter cases), so `sig=overview` is a word, and it
+accepts the `&amp;` and `\u0026` spellings of the separator. A `"SecretString"` value runs to its
+closing quote up to 65,536 characters, or to the end of the text when none arrives, in either quote.
+
 ## C-1: Redact in place, keep the surrounding words
 
 Dropping the line loses the instruction, and the instruction is why the line is on the card. A prompt
