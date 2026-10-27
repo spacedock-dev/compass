@@ -3326,7 +3326,27 @@ def _partition_double_dash(args: list[str]) -> tuple[list[str], list[str], list[
 
 # Variables that change which script or recipe a package manager, `make` or `just` runs, or
 # whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`).
-_STEERING_VARIABLE_RE = re.compile(r"^(?:npm_config_|JUST_)|^(?:MAKEFLAGS|MAKE)$", re.IGNORECASE)
+_STEERING_VARIABLE_RE = re.compile(
+    r"^(?:npm_config_|JUST_|YARN_)|^(?:MAKEFLAGS|GNUMAKEFLAGS|MFLAGS|MAKEFILES|MAKEOVERRIDES|MAKE)$",
+    re.IGNORECASE,
+)
+# A linter's own switch that makes it exit zero whatever it finds, so the body cannot fail.
+_EXIT_ZERO_FLAG = "--exit-zero"
+_EXIT_CODE_FLAG = "--issues-exit-code"
+
+
+def _exits_zero_by_flag(words: list[str]) -> bool:
+    """Whether a command's own arguments make it exit zero (`ruff check --exit-zero`,
+    `golangci-lint run --issues-exit-code=0`), which `|| true` and `exit 0` do from outside."""
+    for index, word in enumerate(words):
+        flag, _, value = word.partition("=")
+        if flag == _EXIT_ZERO_FLAG:
+            return True
+        if flag == _EXIT_CODE_FLAG:
+            given = value if "=" in word else (words[index + 1] if index + 1 < len(words) else "")
+            if given == "0":
+                return True
+    return False
 
 
 def _steers_a_script(raw: tuple[str, ...]) -> bool:
@@ -3380,6 +3400,7 @@ def _script_line_is_check(
             or (index < len(parts) - 1 and part.joiner != "&&")
             or _is_fixer(words)
             or _always_zero(words)
+            or _exits_zero_by_flag(words)
             or _steers_a_script(part.raw)
             or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
         ):
@@ -3413,6 +3434,7 @@ def _script_is_check(
     result = False
     if (
         script is not None
+        and not script.withdrawn
         and identity not in trail
         and (not named or _script_name_ok(name, script.lines))
     ):
@@ -3542,7 +3564,7 @@ def listed_entry_refusal(entry: str) -> tuple[str, str]:
     program = reader_checks.program_of(words)
     listed = _listed_inner(list(words))
     reason = ""
-    if _always_zero(listed):
+    if _always_zero(listed) or _exits_zero_by_flag(listed):
         reason = reader_checks.CANNOT_FAIL_REASON
     elif os.path.basename(listed[0]) in _LISTED_BUILTINS:
         reason = reader_checks.BUILTIN_REASON
@@ -4476,10 +4498,16 @@ class _ShellCall:
         # reader, so it ages earlier passes as any command whose effects are not known does
         # (`changes`, `changes_later_in_call`). It is not in `changing_others`, which would stop
         # its own output from being read as the call's one check's.
+        # A variable a segment sets for the rest of the call (`export MAKEFLAGS=-n; make lint`)
+        # steers every later segment, which its own words do not show.
+        steered_from = next(
+            (i for i, part in enumerate(self.parts) if _steers_a_script(part.raw)), len(self.parts)
+        )
         self.declared_checks = [
             i
             for i in self.meaningful
             if i not in self.checks
+            and i <= steered_from
             and self.placed[i]
             and _declared_check(declared, self.directories[i], self.words[i][0], self.parts[i].raw)
         ]
@@ -4489,6 +4517,7 @@ class _ShellCall:
             for i in self.meaningful
             if i not in self.checks
             and i not in self.declared_checks
+            and i <= steered_from
             and _listed_check(
                 declared,
                 self.words[i][0],
