@@ -277,6 +277,29 @@ def _checks(evidence: Evidence) -> list[Mapping[str, Any]]:
     return [f for f in evidence.facts if f.get("subject") == reading.CHECK_SUBJECT]
 
 
+def _ci_reads(evidence: Evidence) -> list[Mapping[str, Any]]:
+    """Tier 2 CI reads, which a check's pass and failure rules apply to as they stand."""
+    return [
+        f
+        for f in evidence.facts
+        if f.get("subject") == reading.CI_SUBJECT
+        and reading.admits("live_level", reading.CI_SUBJECT)
+        and not reading.cannot_fail(f)
+    ]
+
+
+def _commands(evidence: Evidence) -> list[Mapping[str, Any]]:
+    """Tier 3 commands. Only a failure of one is read here, as a blocker of the floor: a
+    command's own call is a changing command, so a later pass of it is never unchanged."""
+    return [
+        f
+        for f in evidence.facts
+        if f.get("subject") == reading.COMMAND_SUBJECT
+        and reading.admits("live_level", reading.COMMAND_SUBJECT)
+        and not reading.cannot_fail(f)
+    ]
+
+
 def _writes(evidence: Evidence) -> list[Mapping[str, Any]]:
     return [f for f in evidence.facts if f.get("subject") == _WRITE_SUBJECT]
 
@@ -331,7 +354,7 @@ def live_level(evidence: Evidence, intent: Intent) -> Level:
     if not intent.saved:
         return Level(NO_LIVE_LEVEL, SOURCE_LIVE, (REASON_DRAFT_UNSAVED,))
     scan = evidence.scan
-    checks = _checks(evidence)
+    checks = [*_checks(evidence), *_ci_reads(evidence)]
     passes = [f for f in checks if f.get("result") == reading.RESULT_PASSED]
     aged = [f for f in passes if f.get("before_last_change") is True]
 
@@ -390,11 +413,17 @@ def _live_floor_blockers(evidence: Evidence, passes: list[Mapping[str, Any]]) ->
     blockers: list[str] = []
     if not scan_complete(scan):
         blockers.append(REASON_SCAN_INCOMPLETE)
-    if _count(scan, "failed") or any(
-        f.get("result") == reading.RESULT_FAILED for f in _checks(evidence)
+    if (
+        _count(scan, "failed")
+        or _count(scan, "ci_failed")
+        or _count(scan, "command_failed")
+        or any(
+            f.get("result") == reading.RESULT_FAILED
+            for f in (*_checks(evidence), *_ci_reads(evidence), *_commands(evidence))
+        )
     ):
         blockers.append(REASON_FAILED_CHECK)
-    passed = _count(scan, "passed")
+    passed = _count(scan, "passed") + _count(scan, "ci_passed")
     if not passed:
         # Zero is too little: at least one check whose latest run passed.
         blockers.append(REASON_NO_PASSING_CHECK)
@@ -513,7 +542,7 @@ class _LineTally:
         passes = [
             f
             for f in cited
-            if f.get("subject") == "check"
+            if f.get("subject") in reading.RESULT_SUBJECTS
             and f.get("result") == reading.RESULT_PASSED
             and f.get("work") is True
         ]

@@ -188,6 +188,9 @@ class PullRequestAndSkillFacts(ClaudeChecksTestCase):
         events, scan = self.read()
         self.assertEqual(1, scan["distinct_checks"])
         self.assertEqual({"pr", "check"}, {e["subject"] for e in events})
+        # The created pull request's own call holds a structured record, so its command line is
+        # never listed as a command beside it.
+        self.assertEqual([], [e for e in events if e["subject"] == "command"])
 
 
 def pr_fact(number: int = 7, *, at: float = 130.0, fact_id: str = "pr-1") -> dict[str, Any]:

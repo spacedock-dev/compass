@@ -165,7 +165,15 @@ A reading includes them by default and names them, with their destination, in th
 first press shows; Pause model calls or `--no-observer-model` stops them. Where Compass cannot name
 that destination it sends none and says so. A recorded pass is what the
 tool reported, never an inspection of the work, and a reading labels it that way; a result the
-record does not carry reads as not recorded rather than as a pass.
+record does not carry reads as not recorded rather than as a pass. A command Compass does not
+recognise is listed beside the checks with its exit status and the words "Compass does not know what
+it checks". An exit of 0 may settle a line and a failure may support a departure, the model judges
+whether the command bears on the line, and a command that cannot fail, such as `echo` or one whose
+status a trailing `|| true` forces, never counts. A pull request's CI commands count by their exit
+status, and a pending one is not a pass. A reading by another vendor than the session's receives such a
+command's line and exit status and no output
+([DEC-29](design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes),
+[DEC-31](design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)).
 Session summaries are Claude Code only, and the outline beside them covers Claude Code and Codex.
 A summary has its own cap of 200 model calls in a rolling twenty-four hours, so it never spends
 Analyze's 100, and each one stops at 37 calls, 768 KiB sent and ten minutes.

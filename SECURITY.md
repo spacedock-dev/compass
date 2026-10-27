@@ -361,7 +361,8 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 
 Tool output is included by default in a reader-pressed Claude Code reading when Compass can name
 its destination: a check's command, result, last 180 characters of output, written paths, the
-repository and number of a pull request it created, and the names of skills it used.
+repository and number of a pull request it created, and the names of skills it used, and, for each
+other command, its masked line and exit status (and its tail, when the session's own vendor reads it).
 [Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns the content bounds.
 `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do nothing for one release;
 they will be removed in a later release. They write no grant and need no forwarding on respawn.
@@ -1813,6 +1814,27 @@ with a matching number and the action is `created`. A skill is read from a `Skil
 error, and published as its name alone, in a closed character set of at most 80 characters. Neither reads a
 command, an output tail or a skill's arguments. Like a check, each reaches a prompt only under the same
 grant for a named destination, and the unasked lane never receives them.
+
+Commands join it by the owner's rulings of 2026-10-27
+([DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)
+and [DEC-31](docs/design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)).
+A foreground shell command that is neither a closed-list check nor on the read-only list is published as
+a command: its line, masked and clipped as a check line is, and its exit status where the call's status
+speaks for it. `gh pr checks` and `gh run view --exit-status` are published as CI reads, which count by
+their exit status, and `gh pr checks` exiting 8 (pending) records no result. A command that cannot fail
+(`echo`, `printf`, `true`, `:`, `export`, `unset`, `exit 0`) is never published, and one whose status a
+later `|| true` or `; exit 0` forces is published with no result and withdrawn from every verdict and
+level. A call whose result carries Claude Code's structured git record publishes that record only, never
+its command line. A quoted word the masking cannot read word by word, such as the script of a `bash -c`
+call that did not parse, is published as `…`, so half of a value is never shown. The same rules decide the
+last 180 characters of output the press reads. The vendor of the session decides what leaves the machine:
+a Claude Code session read through Claude Code, the Live monitor's Haiku check included, may be sent every
+command's masked line and redacted tail, since that vendor already received them. Another vendor (Codex
+reading a Claude Code session) is sent each command's line and status, and tails for checks and CI reads
+only: a tail whose call also holds a command is withheld whole, because it is the whole call's output.
+The notice names it in one sentence. The residual: redaction is by named form and shape and is best
+effort, so a credential in a form it does not name can reach the provider, and across vendors the command
+line is the one place that can. The unasked lane and the history store receive no command.
 
 The content class is what a Claude Code transcript recorded about the checks a session ran and the
 files it wrote. Since 2026-09-28 that includes the session's subagents, read from their own

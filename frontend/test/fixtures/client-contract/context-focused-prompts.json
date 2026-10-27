@@ -403,6 +403,13 @@
               "background_more": 0,
               "background_unpaired": 0,
               "check_runs": 0,
+              "ci_failed": 0,
+              "ci_not_recorded": 0,
+              "ci_passed": 0,
+              "command_failed": 0,
+              "command_not_recorded": 0,
+              "command_passed": 0,
+              "commands": 0,
               "distinct_checks": 0,
               "failed": 0,
               "harness": "claude",
@@ -441,7 +448,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "7936",
+      "Content-Length": "8060",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

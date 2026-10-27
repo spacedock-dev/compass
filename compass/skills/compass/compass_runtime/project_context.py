@@ -148,6 +148,10 @@ _SEMANTIC_FACT_TYPES = {
     # [DEC-23](docs/design-reading-a-session.md#amended-2026-10-23-owner-pr-and-skill-facts)
     "pr_created": "tool_report",
     "skill_used": "tool_report",
+    # A command that is neither a closed-list check nor on the read-only list, and the two CI
+    # reads that carry an exit status: a subject apart from `check`, never reusing it. The tiers:
+    # [DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)  # noqa: E501
+    "command_run": "tool_report",
 }
 _DISPATCH_BUILD_RE = re.compile(r"^\s*spacedock\s+dispatch\s+build(?:\s+(.*))?$", re.IGNORECASE)
 # This is transcript grammar from the dispatch contract, not a location we create or write.
@@ -2039,7 +2043,7 @@ def work_events(
 # the history store never sees these facts; `semantic_history._FACT_EVENT_TYPES`
 # not naming the type is the second wall (item 6).
 _TOOL_REPORT_KINDS = frozenset(
-    {"check_run", "path_written", "background_launch", "pr_created", "skill_used"}
+    {"check_run", "path_written", "background_launch", "pr_created", "skill_used", "command_run"}
 )
 TOOL_REPORT_MAX_ENTRIES = 12
 TOOL_REPORT_LINE_CHARS = 120
@@ -2169,6 +2173,13 @@ _PR_RANK = 1
 # After the launches and every counted entry: `_folder_share` counts a written path the cap dropped
 # as outside the named folders, so a skill ranked with the writes could raise the live level.
 _SKILL_RANK = 5
+# Tier 3 ranks after every other kind of entry, so a session full of commands never
+# crowds a check, a written path, a pull request or a skill out of the listing of twelve.
+# A failed command is listed before the rest of its own tier.
+_COMMAND_FAILED_RANK = 6
+_COMMAND_RANK = 7
+COMMAND_SUBJECT = "command"
+CI_SUBJECT = "ci_command"
 # Closed shapes: the only text of a PR or a skill that reaches a record. The URL is rebuilt from
 # the matched parts, so nothing past the number (a line break, an instruction) is ever kept.
 _PR_URL_RE = re.compile(
@@ -3548,6 +3559,35 @@ def _tail_result(tail: str) -> tuple[str, str] | None:
     return None
 
 
+# Commands whose own exit status is always 0: a pass of one proves nothing, so none is listed as a
+# command at all, by the cannot-fail rule. `export` and `unset` only change the shell's variables.
+_ALWAYS_ZERO_WORDS = frozenset({"true", ":", "printf", "echo", "export", "unset"})
+
+
+def _always_zero(words: list[str]) -> bool:
+    return bool(words) and (words[0] in _ALWAYS_ZERO_WORDS or words[:2] == ["exit", "0"])
+
+
+def _ci_run_kind(words: list[str]) -> str:
+    """The tier-2 CI read a read-only segment is, or "" where it records no result.
+
+    `gh pr checks` exits non-zero on failing or pending checks. `gh run view` exits 0 on a failed
+    run unless `--exit-status` is given, so without it the command is a read and records nothing,
+    and `glab ci status` records nothing until a later measurement shows it exits non-zero on a
+    failed pipeline, as the CI rule for these reads says.
+    """
+    if words[:3] == ["gh", "pr", "checks"]:
+        return "pr_checks"
+    if words[:3] == ["gh", "run", "view"] and "--exit-status" in words[3:]:
+        return "run_view"
+    return ""
+
+
+# `gh pr checks` exits 8 while checks are pending: neither a pass nor a failure.
+_PENDING_EXIT = 8
+_EXIT_CODE_RE = re.compile(r"\AExit code (\d+)\b")
+
+
 def _flag_result(flag: object, *, last: bool, all_and: bool, alone: bool) -> str:
     """What the call's error flag says about one check in it (review and
     verifier, 2026-09-24).
@@ -3580,6 +3620,37 @@ def _check_line(words: list[str]) -> str:
     """
     masked = records.mask_words(words, pytest=_is_pytest(words))
     line = " ".join(shlex.quote(word) if re.search(r"\s", word) else word for word in masked)
+    bounded = records.redact_clip(line, TOOL_REPORT_LINE_CHARS)
+    return records.safe_text(bounded, len(bounded))
+
+
+# What a word holding whitespace is shown as when it is a script or argument list the masking
+# cannot read word by word. It is never a part of the value: a half-shown secret is a leak.
+_OPAQUE_WORD = "…"
+
+
+def _readable_word(word: str) -> bool:
+    """Whether a word holding whitespace splits cleanly and masks to itself.
+
+    A shell's `-c` script that the parser could not unwrap, or a quoted argument list with a
+    named flag in it, would otherwise show the half of a value that masking one word at a time
+    leaves behind.
+    """
+    try:
+        pieces = shlex.split(word)
+    except ValueError:
+        return False
+    return records.mask_words(pieces) == pieces
+
+
+def _command_line(words: list[str]) -> str:
+    """A tier 3 command's line: masked as a check's is, an unreadable quoted word hidden whole."""
+    masked = records.mask_words(words, pytest=_is_pytest(words))
+    shown = [
+        _OPAQUE_WORD if re.search(r"\s", word) and not _readable_word(word) else word
+        for word in masked
+    ]
+    line = " ".join(shlex.quote(word) if re.search(r"\s", word) else word for word in shown)
     bounded = records.redact_clip(line, TOOL_REPORT_LINE_CHARS)
     return records.safe_text(bounded, len(bounded))
 
@@ -3883,6 +3954,15 @@ class _ShellCall:
         """Whether a `||` before the segment leaves its execution unknown."""
         return "||" in self.joiners()[:index]
 
+    def status_masked(self, index: int) -> bool:
+        """Whether a later segment forces the call's exit status to 0 (`|| true`, `; true`,
+        `; exit 0`), so the status no longer says whether this segment failed."""
+        joiners = self.joiners()
+        return any(
+            _always_zero(self.parts[j].words) and joiners[j - 1] in ("||", ";", "\n")
+            for j in range(index + 1, len(self.parts))
+        )
+
     def changes(self) -> bool:
         """Whether any segment may change files without a recorded write."""
         return bool(self.unbalanced or self.fixers or self.changing_others or self.substituted)
@@ -3900,6 +3980,9 @@ class _ToolReportTally:
         # Where a written path is read from: not a record's `cwd`, which a `cd` moves.
         self.session_dir = session_dir
         self.runs: dict[str, list[dict[str, Any]]] = {}
+        # Tier 2 CI reads and tier 3 commands, by identity: separate from `runs` so a command is
+        # never counted, merged or ranked as a check.
+        self.commands: dict[str, list[dict[str, Any]]] = {}
         self.launches: dict[str, dict[str, Any]] = {}
         self.last_turn_floor = 0.0
         self.completed_launch_calls: dict[str, float] = {}
@@ -3944,6 +4027,8 @@ class _ToolReportTally:
                     "not_recorded",
                     "listed", "more", "subagent_transcripts", "subagent_transcripts_unread",
                     "pull_requests", "skills_used",
+                    "commands", "command_passed", "command_failed", "command_not_recorded",
+                    "ci_passed", "ci_failed", "ci_not_recorded",
                 ),
                 0,
             ),
@@ -4154,7 +4239,9 @@ class _ToolReportTally:
         if foreground and not [i for i in call.checks if i in foreground]:
             self.scan["other_commands"] += 1
             self.scan["read_only_commands"] += not call.changes()
-        self._add_runs(call, call_id, result, text, found.at if found is not None else None, worker)
+        result_at = found.at if found is not None else None
+        self._add_runs(call, call_id, result, text, result_at, worker)
+        self._add_commands(call, call_id, result, text, result_at, worker)
 
     def _record_removals(
         self,
@@ -4314,6 +4401,146 @@ class _ToolReportTally:
         from_tail = _tail_result(tail) if attributable else None
         return from_tail if from_tail is not None else ("not-recorded", "")
 
+    # The tiers, and what cannot fail (item 3):
+    # [DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)  # noqa: E501
+    def _add_commands(
+        self,
+        call: _ShellCall,
+        call_id: str,
+        result: dict[str, Any] | None,
+        text: str,
+        result_at: float | None,
+        worker: str,
+    ) -> None:
+        """Tier 2 CI reads and tier 3 commands in one call.
+
+        Each foreground segment that is neither a closed-list check nor on the read-only list,
+        with the call's exit status where it speaks for it. A segment that cannot fail is never
+        listed, and one whose status a later `|| true` or `; exit 0` masks is listed with no
+        result and `cannot_fail` set. The same flag rules a check follows read the status.
+        """
+        flag = result.get("is_error") if result is not None else None
+        all_and = all(joiner == "&&" for joiner in call.joiners()[:-1])
+        found = self.results.get(call_id)
+        if found is not None and isinstance(found.meta, dict) and found.meta.get("gitOperation"):
+            # Claude Code's own structured record of the git operation (a pull request, a push)
+            # is the fact: its command line carries free text the record deliberately never does.
+            return
+        tail = ""
+        for index in call.meaningful:
+            if index in call.checks or call.background(index):
+                continue
+            words, _rtk = call.words[index]
+            reads_only = call._reads_only(index)  # noqa: SLF001
+            ci = _ci_run_kind(words) if reads_only else ""
+            if (reads_only and not ci) or _always_zero(words):
+                continue
+            outcome, source = "not-recorded", ""
+            masked = call.status_masked(index)
+            if result is not None and not (
+                call.unestablished(index) or call.negated(index) or masked
+            ):
+                flag_result = _flag_result(
+                    flag,
+                    last=index == len(call.parts) - 1,
+                    all_and=all_and,
+                    alone=len(call.meaningful) == 1,
+                )
+                if flag_result:
+                    outcome, source = flag_result, "flag"
+                exited = _EXIT_CODE_RE.match(text)
+                if (
+                    ci == "pr_checks"
+                    and outcome == "failed"
+                    and exited
+                    and int(exited[1]) == _PENDING_EXIT
+                ):
+                    outcome, source = "not-recorded", ""
+            if not tail and result is not None:
+                tail = _scrubbed_tail(text, call.masked_values)
+            identity = _check_identity(
+                call.directories[index],
+                words,
+                unplaced=f"{worker}:{call_id}:{index}" if not call.placed[index] else "",
+            )
+            if self._hash_identities:
+                identity = hashlib.sha256(identity.encode("utf-8", "replace")).hexdigest()
+            run = {
+                "at": call.at,
+                "record_id": call_id,
+                "title": _command_line(words),
+                "segment": index,
+                "result": outcome,
+                "result_source": source,
+                "recorded": result is not None,
+                "result_at": result_at if result is not None else None,
+                "background": False,
+                "tail": tail,
+                "seq": self.shell_seq,
+                "worker": worker,
+                "subject": CI_SUBJECT if ci else COMMAND_SUBJECT,
+                "cannot_fail": masked,
+                "changes_later_in_call": any(
+                    i > index
+                    for i in (
+                        *call.fixers,
+                        *call.changing_others,
+                        *call.substituted,
+                        *(j for j, _target, _at in call.redirect_writes),
+                    )
+                ),
+                "fixes": any(i >= index for i in call.fixers)
+                or any(j > index for j, _target, _at in call.redirect_writes),
+            }
+            self._entry_cache.pop(f"command:{identity}", None)
+            self.commands.setdefault(identity, []).append(run)
+            # A call that adds anything beside one check is not a head a checkpoint may drop.
+            self._last_added_runs.append((f"command:{identity}", run))
+
+    def _command_entry(self, history: list[dict[str, Any]]) -> dict[str, Any]:
+        index = self._latest(history)
+        latest = history[index]
+        who = "Claude subagent" if latest["worker"] else "Claude"
+        ci = latest["subject"] == CI_SUBJECT
+        if latest["recorded"]:
+            source = f"{who} Bash call and paired result"
+        else:
+            source = f"{who} Bash call, no result recorded yet"
+        entry: dict[str, Any] = {
+            "kind": "command_run",
+            "subject": latest["subject"],
+            "tier": 2 if ci else 3,
+            "at": latest["at"],
+            "record_id": latest["record_id"],
+            "title": latest["title"],
+            "result": latest["result"],
+            "earlier_failed": any(
+                run["result"] == "failed" for i, run in enumerate(history) if i != index
+            ),
+            "before_last_change": (
+                latest["fixes"]
+                or any(
+                    at >= latest["at"] and call_id != latest["record_id"]
+                    for at, call_id in self.write_calls
+                )
+            ),
+            "changed_after": self._changed_after(latest),
+            "read_incomplete": self._read_incomplete(latest),
+            "source": source,
+            "rank": _RESULT_ORDER[latest["result"]]
+            if ci
+            else (_COMMAND_FAILED_RANK if latest["result"] == "failed" else _COMMAND_RANK),
+        }
+        if latest["cannot_fail"]:
+            entry["cannot_fail"] = True
+        if latest["result_source"]:
+            entry["result_source"] = latest["result_source"]
+        if latest["result_at"] is not None:
+            entry["result_at"] = latest["result_at"]
+        if latest["worker"]:
+            entry["worker_kind"] = latest["worker"]
+        return entry
+
     @staticmethod
     def _latest(history: list[dict[str, Any]]) -> int:
         """The index of the run whose evidence is newest: its result's time, or
@@ -4400,6 +4627,11 @@ class _ToolReportTally:
         for entry in candidates:
             if entry["subject"] == "check":
                 self.scan[str(entry["result"]).replace("-", "_")] += 1
+            elif entry["subject"] in (COMMAND_SUBJECT, CI_SUBJECT):
+                # Kept apart from the check counters: the page's "N checks" and the live floor's
+                # check blockers read those, and a command is not one.
+                prefix = "ci" if entry["subject"] == CI_SUBJECT else "command"
+                self.scan[f"{prefix}_{str(entry['result']).replace('-', '_')}"] += 1
         listed = candidates[:TOOL_REPORT_MAX_ENTRIES]
         # A created pull request is what a goal such as "create a PR" rests on, and the verdict
         # check reads the listing, so newer checks may not evict it: the newest of those the cap
@@ -4408,6 +4640,7 @@ class _ToolReportTally:
         listed += kept[:TOOL_REPORT_MAX_ENTRIES]
         self.scan.update(
             distinct_checks=len(histories),
+            commands=len(self.commands),
             written_paths=len(self.writes),
             pull_requests=len(self.prs),
             skills_used=len(self.skills),
@@ -4427,7 +4660,11 @@ class _ToolReportTally:
         # or not the listing keeps it: evicting one leaves a gap and moves no number after it. A
         # failed check a later pass covers, and one that has only run in the background, leave the
         # candidates but keep their place, or the entries after them would move when it happened.
-        counted = {row["_key"]: row["_first_at"] for row in candidates}
+        counted = {
+            row["_key"]: row["_first_at"]
+            for row in candidates
+            if row["subject"] not in (COMMAND_SUBJECT, CI_SUBJECT)
+        }
         for identity, runs in self.runs.items():
             counted.setdefault(f"check:{identity}", min(run["at"] for run in runs))
         positions = (
@@ -4523,6 +4760,15 @@ class _ToolReportTally:
                     "_first_at": min(run["at"] for run in self.runs[identity]),
                 }
             )
+        for identity, history in self.commands.items():
+            key = f"command:{identity}"
+            entry = self._entry_cache.get(key)
+            if entry is None:
+                entry = self._command_entry(history)
+                self._entry_cache[key] = entry
+            # Not counted by `entries` for a fixed place: a command listed there would move the
+            # number of every check and file after it in a session already read.
+            candidates.append({**entry, "_key": key, "_first_at": history[0]["at"]})
         candidates.extend(self._write_entry(path, write) for path, write in self.writes.items())
         candidates.extend(self._pr_entry(key, pr) for key, pr in self.prs.items())
         candidates.extend(self._skill_entry(name, skill) for name, skill in self.skills.items())
@@ -4563,13 +4809,36 @@ class _ToolReportTally:
     def tails(self) -> dict[str, str]:
         """Each check's latest foreground run's redacted output tail, by call id."""
         latest = (history[self._latest(history)] for history in self.runs.values())
-        return {
+        tails = {
             run["record_id"]: run["tail"] for run in latest if not run["background"] and run["tail"]
         }
+        # A command's tail is the call's output, so it is keyed by the call as a check's is. It
+        # never overrides a check's own, and `tier3_calls` says which calls a different vendor
+        # may not be sent.
+        for history in self.commands.values():
+            run = history[self._latest(history)]
+            if run["tail"]:
+                tails.setdefault(run["record_id"], run["tail"])
+        return tails
+
+    def tier3_calls(self) -> frozenset[str]:
+        """The call ids whose latest foreground run of a tier 3 command is listed: a call that
+        holds one has an output tail that is not a tier 1 or 2 tail
+        ([DEC-31](docs/design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor))."""
+        return frozenset(
+            run["record_id"]
+            for history in self.commands.values()
+            if (run := history[self._latest(history)])["subject"] == COMMAND_SUBJECT
+        )
+
+    def _all_histories(self) -> Iterable[list[dict[str, Any]]]:
+        return (*self.runs.values(), *self.commands.values())
 
     def _changed_after(self, run: dict[str, Any]) -> bool:
-        return bool(run["changes_later_in_call"]) or any(
-            seq > run["seq"] for seq in self.changing_seqs
+        # `changing_seqs` only ever grows, so the newest decides: with a command per entry the scan
+        # of every changing command made the listing quadratic in a session's commands.
+        return bool(run["changes_later_in_call"]) or (
+            bool(self.changing_seqs) and self.changing_seqs[-1] > run["seq"]
         )
 
     def _read_incomplete(self, run: dict[str, Any]) -> bool:
@@ -4582,7 +4851,7 @@ class _ToolReportTally:
 
     def read_incomplete(self) -> frozenset[tuple[str, str]]:
         """Latest passes the bounded scan or missing named child cannot vouch for."""
-        latest = (history[self._latest(history)] for history in self.runs.values())
+        latest = (history[self._latest(history)] for history in self._all_histories())
         return frozenset(
             (run["record_id"], run["title"]) for run in latest if self._read_incomplete(run)
         )
@@ -4594,7 +4863,7 @@ class _ToolReportTally:
         or any later call that ran and may change files. A change before the
         check, or a read-only command after it, does not count.
         """
-        latest = (history[self._latest(history)] for history in self.runs.values())
+        latest = (history[self._latest(history)] for history in self._all_histories())
         return frozenset(
             (run["record_id"], run["title"]) for run in latest if self._changed_after(run)
         )
@@ -4615,6 +4884,9 @@ class PressChecks(NamedTuple):
     # Every value a shell call's command line masked, so a stored explanation
     # that quotes one is scrubbed the way the output tail is.
     masked_values: frozenset[str] = frozenset()
+    # The calls whose tail belongs to a tier 3 command, which only the session's own vendor may
+    # be sent: a tail of another call is a tier 1 or 2 tail.
+    tier3_calls: frozenset[str] = frozenset()
 
 
 def claude_check_press(
@@ -4642,6 +4914,7 @@ def _press(tally: _ToolReportTally) -> PressChecks:
         tally.passes_and_writes(),
         tally.removals(),
         frozenset(tally.masked_values),
+        tally.tier3_calls(),
     )
 
 
@@ -7445,6 +7718,8 @@ def _semantic_fact_from_event(
         "worker_kind",
         "subject",
         "check_id",
+        "tier",
+        "cannot_fail",
         "result",
         "result_source",
         "result_reason",

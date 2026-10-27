@@ -72,7 +72,7 @@ _REFUSED_BY_STATUS = frozenset({"model-calls-paused", "run-disabled", "store-una
 _NOT_SENT = frozenset({"unavailable", "closed", "cancelled"})
 # The rows that carry a check's command and a written path: the tool-output class Analyze names
 # in its notice, sent only where the destination can be named.
-_TOOL_KINDS = frozenset({"check", "write"})
+_TOOL_KINDS = frozenset({"check", "write", "command"})
 # The blockers item 1 of the owner's floor ruling shares across both sources: a failed check and
 # an unsettled later direction. The live estimate's own shell-command blocker is named for "the
 # live estimate" alone, so it does not bind a model level.
@@ -390,7 +390,7 @@ class Turn:
     text: str
 
 
-def _turn_text(fact: Mapping[str, Any]) -> tuple[str, str] | None:
+def _turn_text(fact: Mapping[str, Any]) -> tuple[str, str] | None:  # noqa: PLR0911 - one return per kind of fact
     """The kind and words one fact contributes, or None for a fact the monitor never sends."""
     kind_of = str(fact.get("type") or "")
     if kind_of == "user_message":
@@ -401,14 +401,21 @@ def _turn_text(fact: Mapping[str, Any]) -> tuple[str, str] | None:
     if kind_of == reading.AGENT_MESSAGE_TYPE:
         words = str(fact.get(reading.AGENT_WORDS_FIELD) or "")
         return ("agent", words) if words else None
-    if kind_of == "tool_report" and fact.get("subject") == reading.CHECK_SUBJECT:
+    subject = fact.get("subject")
+    if kind_of != "tool_report" or not reading.admits("monitor_turn", subject):
+        return None
+    if subject == reading.CHECK_SUBJECT:
         return (
             "check",
             f"{fact.get('summary') or 'a check'}: {fact.get('result') or 'not recorded'}",
         )
-    if kind_of == "tool_report" and fact.get("subject") == "write":
+    if subject == "write":
         return ("write", f"wrote {fact.get('summary') or 'a file'}")
-    return None
+    if reading.cannot_fail(fact):
+        return None
+    # A command's status goes with the words that say what Compass does not know about it, so
+    # the monitor never reads a pass of an unknown command as a pass of a test.
+    return ("command", f"{fact.get('summary') or 'a command'}: {reading.result_words(fact)}")
 
 
 def new_entries(

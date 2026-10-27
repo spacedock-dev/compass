@@ -183,14 +183,14 @@
       "method": "GET",
       "name": "context-focused-facts",
       "route": "/api/project-context",
-      "sha256": "aec89074436b1897272d652fee895eb2d1aa336c0e4915c283394e2871655bd4",
+      "sha256": "9a1c7e6eca693ee39e4f17fd831084212bd28ab0e5f248a9f7508252e117333a",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-prompts",
       "route": "/api/project-context",
-      "sha256": "022c6fcf3cc8b05f7fbceb50562bb6e9955a1134ab3bb40ec00ba41782f2506f",
+      "sha256": "7a0a3d645aae8703dc8d6c2d98f6307efc48216c650575d4146cf91e09d3a9a0",
       "status": 200
     },
     {
@@ -512,7 +512,7 @@
       "method": "POST",
       "name": "reading-destination-changed",
       "route": "/api/reading",
-      "sha256": "3cf6193cd942497fb7c3f9d1dd7295f3e886c014f040c14108bfaadaf75b8e64",
+      "sha256": "703d84a4fed7380233e3df505282c2bd9a5950ef5b9757d381e25d752d87dd16",
       "status": 409
     },
     {
@@ -547,21 +547,21 @@
       "method": "POST",
       "name": "reading-off",
       "route": "/api/reading",
-      "sha256": "d7b697498d9e9d5723c50dd71a860c7aced4cea8e7bf424049f321c6d04e10d5",
+      "sha256": "9e5e068f4d7355160d71b7143515053a961f3d9831eb2e591228234b443d9304",
       "status": 403
     },
     {
       "method": "POST",
       "name": "reading-page-outdated",
       "route": "/api/reading",
-      "sha256": "ec7df20c990f9d5c574788ef65ab3a50c2893f51ccfee5a782de501040cfd7d1",
+      "sha256": "ece6bf3742ac90487e85f4b9e3de1df9529e4074d82f47adf8f3190f880def90",
       "status": 400
     },
     {
       "method": "POST",
       "name": "reading-provider-changed",
       "route": "/api/reading",
-      "sha256": "b5e6e19f6bffa0c8e1a0ba390084f165016b83692a08b510c683f5c92092e0fe",
+      "sha256": "9783ea28669b035d83c0f4ecde6f0880067201b5aebeb8df9382a7c6b4999b5e",
       "status": 409
     },
     {
@@ -575,7 +575,7 @@
       "method": "POST",
       "name": "reading-stale-model",
       "route": "/api/reading",
-      "sha256": "0db3121024390e7f2d2d3775c71408436512a266bdef50ed52282258f14134ea",
+      "sha256": "47f1cb32c57f93213c7c474c20a00ed71902eeba32f7bfa20f37d291e5869296",
       "status": 409
     },
     {

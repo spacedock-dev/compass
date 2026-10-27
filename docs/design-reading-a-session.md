@@ -7344,6 +7344,45 @@ not reopen the 2026-09-30 rejection of keyword overlap for relevance.
 read-only additions, the per-consumer allowlist and its one covering test, and the prompt header. The
 attribution direction in item 7 waits for its measured sample.
 
+### Amended 2026-10-27 (owner): the tiers are built
+
+The layer that follows the ruling adds the fact subjects, the consumer table and the cannot-fail rule. What
+the build had to decide, in the order a reader meets it:
+
+- **Two subjects, neither `check`.** A tier 3 command is `command` and a tier 2 CI read is `ci_command`, each
+  carrying its tier. A check's subject was never reused, so a consumer that tests `check` reads no command by
+  accident, and the scan counts them under `command_*` and `ci_*` beside the check counters the page and the
+  live floor already read.
+- **The CI reads.** `gh pr checks` counts by exit status: 0 is a pass, 8 is pending and records no result, and
+  any other non-zero is a failure. `gh run view` counts only with `--exit-status`. `glab ci status` lists
+  nothing, because no measurement of its exit status exists yet. All three stay on the read-only list, so a
+  CI poll never ages a pass.
+- **What cannot fail is not listed.** `echo`, `printf`, `true`, `:`, `export`, `unset` and `exit 0` never become a
+  command: `export` and `unset` were added to the ruling's list because they only change the shell's variables
+  and a pass of one is no evidence. A command whose status a later `|| true`, `; true` or `; exit 0` forces is
+  listed with no result and `cannot_fail` set. The resolver also reads the published line, so a fact that
+  lacks the flag is withdrawn the same way. `false` is not on the list: it always fails, which is a result.
+- **A structured git record stands alone.** A call whose result carries Claude Code's `gitOperation` publishes
+  that record (the pull request) and no command line, because a pull request's title and body are free text
+  the record deliberately never carried.
+- **One table decides every consumer.** `reading.CONSUMER_SUBJECTS` names the subjects each consumer reads,
+  and `test_subject_consumers` runs a fact of every subject through the real consumer. The work floor and the
+  verdict resolver read both new subjects. The live level reads the CI read as a check and a command only as a
+  blocker of its floor: a command's own call is a changing command, so a pass of it is never unchanged and
+  could not reach the floor anyway. The Live monitor sends both. The goal verdict reads neither, because it
+  matches a check's words to the claim by keyword, which the 2026-09-30 rejection of keyword relevance rules
+  out for a command whose purpose Compass does not know. The history store and the unasked lane read no
+  command.
+- **The listing.** A command takes no place number, so the number of every check and file after it in a session
+  already read does not move. It is listed after every other kind of entry, failures first within its own tier,
+  and the scan counts every one the cap left out. In a prompt it follows the reader's words, every check, write,
+  pull request, skill and CI read and the checks with no result, and ahead of the agent's messages.
+- **The label.** A command's result reads "exited 0; Compass does not know what it checks" or "exited
+  non-zero; Compass does not know what it checks", on the row the model reads and on the page, where it never
+  uses a check's mark or its words and is not folded into a run of checks.
+- **The prompt header is unchanged**, so its pinned digest stands. The new false-`consistent` class is the
+  qualification item 9 owes after the wave ships, and it has not run.
+
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
 Decided by the owner on 2026-10-27 (DRC-4973). This layer writes the ruling down; the layers that follow build
@@ -7461,3 +7500,17 @@ unasked lane never receives tool outcomes", for failed results only.
 **Built by**, in words: the layers that follow add the vendor comparison, the two admission levels, the notice
 line, the redaction shapes and the scrub of a stored explanation, and the failed-results-only admission for
 the unasked lane.
+
+### Amended 2026-10-27 (owner): the vendor rule is built
+
+The press compares the vendor of the route with the vendor of the session's harness
+(`reading_route.same_vendor`). The same vendor sends every command's masked line and redacted tail. Another
+vendor sends each command's line and status, and `reading_route.tails_for` drops a tail whose call holds a
+tier 3 command, since a tail is the whole call's output and a call that held both a check and a command would
+otherwise carry the command's text across. The one sentence in the notice's tool-output item says which
+applies: "Other commands go too, with their output." or "Other commands go with their exit status and no
+output." The Live monitor sends no output tail at all, so it needed no second rule.
+
+A line is masked as a check's is, with one addition: a quoted word that the masking cannot read word by word
+is shown as `…`. A `bash -c` script that did not parse is the case that showed it, and masking one word at a
+time left half of a value behind.

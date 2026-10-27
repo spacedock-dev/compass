@@ -3845,10 +3845,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
             press = runtime_project_context.press_checks(
                 application.config, application.state, harness, sid
             )
+            tails = runtime_reading_route.tails_for(
+                route["provider"], harness, press.tails, press.tier3_calls
+            )
             tool_output = runtime_reading.ToolOutput(
                 destination=where,
                 label=route["label"],
-                tails=press.tails,
+                tails=tails,
                 changed_after=press.changed_after,
                 read_incomplete=press.read_incomplete,
                 passes_and_writes=press.passes_and_writes,

@@ -85,6 +85,11 @@
     "passed flag": "passed, as the tool reported",
     "passed summary": "passed, per its summary line"
   },
+  "commandNotRecorded": "ran, exit status not recorded",
+  "commandResultWords": {
+    "failed flag": "exited non-zero; Compass does not know what it checks",
+    "passed flag": "exited 0; Compass does not know what it checks"
+  },
   "correctionCapChars": 5900,
   "criterionKeys": [
     "result",
@@ -158,6 +163,11 @@
     "first-prompt",
     "chosen-prompt",
     "session-goal"
+  ],
+  "resultSubjects": [
+    "check",
+    "ci_command",
+    "command"
   ],
   "results": [
     "departure",

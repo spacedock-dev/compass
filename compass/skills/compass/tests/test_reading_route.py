@@ -886,10 +886,12 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
         # Keep the existing 31-word per-item limit and all previous disclosure facts.
         # The 2026-10-23 pull request and skill amendment adds 18 words to the tool output item,
         # which alone may run to 47, and to the two Claude Code session routes' totals.
+        # The 2026-10-27 command tiers amendment adds one clause to that item for every other
+        # command (7 words from its own vendor, 10 from another), so the item may run to 57.
         budgets = {
             "codex": (4, 61),
-            "claude": (7, 168),
-            "claude-by-codex": (6, 147),
+            "claude": (7, 172),
+            "claude-by-codex": (6, 154),
             "codex-by-claude": (5, 100),
         }
         for name, (harness, installed) in self.ROUTES.items():
@@ -899,7 +901,7 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
                 parts = route["disclosure_parts"]
                 self.assertLessEqual(len(parts), items, parts)
                 for part in parts:
-                    limit = 47 if part.startswith("Tool output is included") else 31
+                    limit = 57 if part.startswith("Tool output is included") else 31
                     self.assertLessEqual(len(part.split()), limit, part)
                 self.assertLessEqual(len(route["disclosure"].split()), words)
 

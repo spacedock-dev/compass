@@ -383,7 +383,9 @@ On a harness without fixed numbers, a check that re-runs or a file written again
 after it. Each entry shows who wrote it, its own type and the source that published it, and the
 list states the limit under it: demonstrated work results are read on Pi, and on
 Claude Code the record also lists the checks a session ran and the files it wrote, each result as
-the tool reported it and counted from the whole transcript read, and what the agent said, each of
+the tool reported it and counted from the whole transcript read, every other command that is not a
+read with its exit status and the words "Compass does not know what it checks" (an exit of 0 may settle a
+line, and one that cannot fail, such as `echo` or an exit a trailing `|| true` forces, never does), and what the agent said, each of
 its messages an entry marked "Agent said". A reading you press for sends the agent's messages as
 evidence of what it said and claimed, each redacted and up to 1,000 characters, except the newest
 reply the transcript records as ending its turn, which goes whole where it fits 4,096 bytes. The
