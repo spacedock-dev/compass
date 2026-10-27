@@ -20,9 +20,9 @@ GOAL_SOURCE_CUT_FIELD: Final = "goal_source_cut"
 # mirrors them (`vocabulary.json`). `typed`, the fallback, is not one of them.
 PROMPT_CHOSEN: Final = "chosen-prompt"
 SESSION_GOAL: Final = "session-goal"
-# The harnesses whose rows publish `session_goal`: Claude Code and Codex record a `/goal` the
-# reader set; no other harness writes one Compass reads. The page holds the same pair.
-SESSION_GOAL_HARNESSES: Final = ("claude", "codex")
+# The harnesses whose rows publish `session_goal`: Claude Code, Codex and Antigravity record a
+# `/goal` the reader set; no other harness writes one Compass reads. The page holds the same three.
+SESSION_GOAL_HARNESSES: Final = ("claude", "codex", "antigravity")
 PROMPT_SOURCES: Final = ("latest-prompt", "first-prompt", PROMPT_CHOSEN, SESSION_GOAL)
 
 # C0 and DEL, the zero-width space, the two directional marks, and the bidi

@@ -1156,6 +1156,23 @@ export const StateGoalDetectedCodex: Story = {
   },
 };
 
+/* An Antigravity /goal reads the same: the person typed it, so it is their goal until edited. */
+export const StateGoalDetectedAntigravity: Story = {
+  args: {
+    setup: {
+      session: { harness: 'antigravity', session_goal: { text: DETECTED_GOAL, at: 1_760_000_300 } },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(DETECTED_GOAL);
+    await expect(card.querySelector('[data-next-goal-detected]')).toHaveTextContent(
+      'Goal detected',
+    );
+  },
+};
+
 export const StateGoalDetectedCut: Story = {
   args: {
     setup: {

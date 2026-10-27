@@ -18,10 +18,10 @@ import os
 import re
 from typing import TYPE_CHECKING, Any
 
+from compass_runtime import claude_data, records, sessions, transcripts, turns
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
 from compass_runtime import quota as runtime_quota
-from compass_runtime import records, sessions, transcripts, turns
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -723,8 +723,14 @@ def collect(
         project = sessions.project_from_cwd(config, cwd) or "antigravity"
         session = sessions.base_session("antigravity", sid, project)
         sessions.apply_project_identity(config, session, cwd)
+        # The `/goal` the person typed, from the whole-field transcript so a long condition keeps
+        # its middle. Behind `active`, as the other transcript reads are: a stale row reads none.
+        full = transcripts.antigravity_transcript(_root(config), sid, full=True) if active else None
         session.update(
             {
+                "session_goal": (
+                    claude_data.session_goal(config, state, full, "antigravity") if full else None
+                ),
                 # `provider` stays None: the only vendor-adjacent fields in the
                 # blob are per-generation booleans (`used_claude=false`) and an
                 # opaque `MODEL_PLACEHOLDER_*` enum. Reading "google" off the

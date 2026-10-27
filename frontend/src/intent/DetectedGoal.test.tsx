@@ -166,6 +166,16 @@ describe('a /goal over a session with no saved goal', () => {
     expect(source()).toMatch(/^From your \/goal at \d\d:\d\d · not saved$/);
   });
 
+  it('reads an Antigravity /goal the same way', async () => {
+    const page = mountSession({
+      hash: '#n=session:alpha%2Fapp:antigravity:s1',
+      session: { harness: 'antigravity', session_goal: DETECTED },
+    });
+    await settle(page);
+    expect(goalBox().value).toBe(GOAL);
+    expect(mark()?.textContent).toBe('Goal detected');
+  });
+
   it('reads no goal into a session whose harness publishes none', async () => {
     const page = mountSession({ session: { harness: 'pi', session_goal: DETECTED } });
     await settle(page);

@@ -1286,7 +1286,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # `quota` arrived with the status-line usage provider: Antigravity's
         # quota is pushed in and cached there, so the collector reads it back
         # rather than parsing anything of its own.
+        # `claude_data` for `session_goal`, as for Codex: an Antigravity `/goal` advances the same state.
         "compass_runtime.collectors.antigravity": {
+            "compass_runtime.claude_data",
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.quota",

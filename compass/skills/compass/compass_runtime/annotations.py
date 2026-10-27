@@ -2898,7 +2898,10 @@ def _opened(provenance: Mapping[str, Any], typed: Any, stamp: float) -> Window:
 def prompt_candidate(row: dict[str, Any], source: str) -> tuple[str, float | None]:
     """Resolve the producer's source, never a client-authored goal or observer text."""
     harness = row.get("harness")
-    if harness not in {"claude", "codex"}:
+    # Antigravity offers its `/goal` and nothing else: its prompts are not adopted.
+    if harness not in {"claude", "codex"} and not (
+        source == reading.SESSION_GOAL and harness in records.SESSION_GOAL_HARNESSES
+    ):
         return "", None
     if source == "first-prompt":
         # A correction the reader copied from Compass is not their goal (DRC-4678).

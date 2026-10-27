@@ -1437,9 +1437,13 @@ def _first_prompt_record(record: dict[str, Any], harness: str) -> tuple[str, flo
 # 115 directions, which it marks in `truncated_fields` (1.2.11 capture,
 # docs/captures/antigravity/transcript-shapes-1.2.11-macos.jsonl).
 ANTIGRAVITY_TRANSCRIPT: Final = (".system_generated", "logs", "transcript.jsonl")
+# The whole-field copy beside it, read only for a `/goal`: the short file keeps the first and
+# last 2,048 characters of a long input around `<truncated N bytes>` (agy 1.4.7,
+# docs/captures/antigravity/goal-1.4.7-macos.jsonl), so a long condition would lose its middle.
+ANTIGRAVITY_FULL_TRANSCRIPT: Final = (".system_generated", "logs", "transcript_full.jsonl")
 
 
-def antigravity_transcript(root: str, sid: str) -> str | None:
+def antigravity_transcript(root: str, sid: str, *, full: bool = False) -> str | None:
     """The conversation's brain transcript under the Antigravity root, a regular
     file reached through no link below `brain/`, or None.
 
@@ -1454,11 +1458,10 @@ def antigravity_transcript(root: str, sid: str) -> str | None:
     if not sid or sid.startswith(".") or "/" in sid or os.sep in sid:
         return None
     brain = os.path.join(root, "brain")
-    path = os.path.join(brain, sid, *ANTIGRAVITY_TRANSCRIPT)
+    parts = ANTIGRAVITY_FULL_TRANSCRIPT if full else ANTIGRAVITY_TRANSCRIPT
+    path = os.path.join(brain, sid, *parts)
     try:
-        unlinked = os.path.realpath(path) == os.path.join(
-            os.path.realpath(brain), sid, *ANTIGRAVITY_TRANSCRIPT
-        )
+        unlinked = os.path.realpath(path) == os.path.join(os.path.realpath(brain), sid, *parts)
         is_file = unlinked and os.path.isfile(path)
     except (OSError, ValueError):
         return None

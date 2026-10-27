@@ -3427,6 +3427,18 @@ only in `~/.codex/goals_1.sqlite`, which Compass does not read, so a Codex goal 
 give-up. The `<codex_internal_context>` messages are Codex's own wording and are never read as a prompt the
 reader typed.
 
+An Antigravity session that states a goal with `/goal` has it read from the person's own typed input in
+`brain/<conversation>/.system_generated/logs/transcript_full.jsonl`, a file beside the `transcript.jsonl`
+the directions are already read from that holds the same records with no field cut. Only a `USER_INPUT` from
+`USER_EXPLICIT` whose request opens `/goal ` and whose metadata carries agy's fixed `/goal is a [Slash
+Command]` paragraph counts, and the condition is the request after the command. It is published as the same
+`session_goal`, with the same masking, the same 4,000-character bound (agy itself accepts longer, and a
+longer one publishes nothing), the same excerpt keys and the same 8 MiB forward read, and the same symlink
+checks guard the path. agy records no end to a goal: a met or cancelled goal is a marker in the model's own
+reply, which Compass does not read, so an Antigravity goal carries no verdict, no clear and no `earlier`, and
+the latest `/goal` stays the session's goal. The server adopts an Antigravity row's `session-goal` and still
+adopts none of its prompts.
+
 The revision number beside them, `annotation_revision`, is in the record and not on this list. It
 is an integer the board derives, not text anybody typed.
 

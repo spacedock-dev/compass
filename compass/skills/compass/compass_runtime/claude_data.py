@@ -10,6 +10,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 from typing import TYPE_CHECKING, Any
 
 from compass_runtime import config as runtime_config
@@ -443,6 +444,37 @@ def _codex_goal_event(record: Any) -> GoalEvent | None:
     return None
 
 
+# The fixed paragraph agy 1.4.7 adds to a `/goal` input's `<ADDITIONAL_METADATA>`, the same on all
+# 9 goal inputs measured in print and interactive mode; a request that only starts with the word
+# carries none.
+ANTIGRAVITY_GOAL_MARKER = "/goal is a [Slash Command]"
+_ANTIGRAVITY_REQUEST_RE = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.DOTALL)
+
+
+def _antigravity_goal_event(record: Any) -> GoalEvent | None:
+    """A `/goal` an Antigravity person typed, as `("set", condition, at, "")`, or None.
+
+    agy writes no goal record of its own: the goal is a `USER_INPUT` from `USER_EXPLICIT` whose
+    request opens `/goal ` and whose metadata carries the slash command's fixed paragraph. Nothing
+    ends one on the record: a met or cancelled goal is a marker in the model's own reply, which is
+    not read (reading this harness's work is out of scope, owner 2026-09-27), and a replace writes
+    only the next set. Shapes: docs/captures/antigravity/goal-1.4.7-macos.jsonl.
+    """
+    if not isinstance(record, dict):
+        return None
+    if record.get("type") != "USER_INPUT" or record.get("source") != "USER_EXPLICIT":
+        return None
+    content, stamp = record.get("content"), record.get("created_at")
+    if not isinstance(content, str) or ANTIGRAVITY_GOAL_MARKER not in content:
+        return None
+    request = _ANTIGRAVITY_REQUEST_RE.search(content)
+    words = request.group(1) if request else ""
+    if not words.startswith("/goal") or not words[len("/goal") :][:1].isspace():
+        return None
+    at = records.iso_epoch(stamp) if isinstance(stamp, str) else None
+    return ("set", words[len("/goal") :].strip(), at, "")
+
+
 def _codex_goal_set(goal: Any) -> GoalEvent | None:
     if not isinstance(goal, dict):
         return None
@@ -579,10 +611,11 @@ def _after_verdict(state: GoalState, words: str, at: float | None, reason: str) 
 def session_goal(
     config: RuntimeConfig, state: RuntimeState, path: str, harness: str = "claude"
 ) -> dict[str, Any] | None:
-    """The `/goal` this Claude or Codex session holds, `{"text", "at"}`, or None.
+    """The `/goal` this Claude, Codex or Antigravity session holds, `{"text", "at"}`, or None.
 
-    `harness` picks the record reader (`_goal_event` or `_codex_goal_event`); the state the two
-    advance, the cache and the published mapping are shared. A Codex goal carries no verdict.
+    `harness` picks the record reader (`_goal_event`, `_codex_goal_event` or
+    `_antigravity_goal_event`); the state they advance, the cache and the published mapping are
+    shared. A Codex or Antigravity goal carries no verdict, and an Antigravity one no `earlier`.
 
     Read forward and incrementally, as `turns.scan_turns` is: each call parses only the bytes
     appended since the last, because the newest goal can sit anywhere in a long file and a
@@ -602,7 +635,7 @@ def session_goal(
     except OSError:
         return None
     key = f"session-goal:{path}"
-    read_event = _codex_goal_event if harness == "codex" else _goal_event
+    read_event = _GOAL_READERS.get(harness, _goal_event)
     with state.cache_lock:
         cached = state.metadata_cache.get(key)
     if (
@@ -653,7 +686,15 @@ def session_goal(
             limit=config.max_cache_entries,
         )
     goal = goal_state["goal"]
-    return _with_excerpt(goal, config.annotation_text_cap_chars) if goal is not None else None
+    if goal is None:
+        return None
+    if harness == "antigravity":
+        # agy records no end to a goal, so a later set says nothing true about the one before it.
+        goal = {key: value for key, value in goal.items() if key != "earlier"}
+    return _with_excerpt(goal, config.annotation_text_cap_chars)
+
+
+_GOAL_READERS = {"codex": _codex_goal_event, "antigravity": _antigravity_goal_event}
 
 
 def _cached_goal_state(cached: dict[str, Any]) -> GoalState:

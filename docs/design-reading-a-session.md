@@ -5708,6 +5708,32 @@ same `session_goal` field, the same `session-goal` adoption token, and the same 
   claim than Claude Code's separate evaluator. Reading it means a new file outside the rollout, which needs
   its own entry in `SECURITY.md`; it is left for a later change rather than folded into this one.
 
+### What reading an Antigravity `/goal` decided, 2026-10-27
+
+Built against `docs/captures/antigravity/goal-1.4.7-macos.jsonl`. agy 1.4.7 has a `/goal` slash command that
+keeps the model working through a stop hook until the model writes `<!-- GOAL_COMPLETE -->` or
+`<!-- GOAL_CANCELLED -->`. The person typed it, so it is the same source as the other two: `session_goal`,
+`session-goal` and the same page.
+
+- The goal is the person's `USER_INPUT` whose request opens `/goal ` and whose metadata carries the fixed
+  `/goal is a [Slash Command]` paragraph (9 of 9 goal inputs carried it, print and interactive). The paragraph
+  is required, so a request that only starts with the word is not a goal, and `/edit_goal`, which is not a
+  command in 1.4.7, never is.
+- It is read from `transcript_full.jsonl`, not the `transcript.jsonl` the directions come from. The short
+  file keeps the first and last 2,048 characters of a long input, so a long condition would lose its middle
+  while the marker in the tail still matched.
+- The latest `/goal` wins and the row publishes no `earlier`, no clear and no verdict. Nothing on the record
+  ends a goal: a replace writes only the next set, and met or cancelled is the model's own marker, which the
+  2026-09-27 ruling keeps unread. Saying "Replaced an earlier /goal" would be wrong whenever the earlier one
+  had been met.
+- The 4,000-character bound is shared with the other two harnesses although agy accepts 5,000 and more. A
+  longer condition publishes nothing rather than a bound of its own.
+- The server adopts `session-goal` from an Antigravity row and nothing else from it: its prompts were never
+  adoptable, and this does not change that.
+- Rejected: reading the `GOAL_COMPLETE` marker as a verdict. It is the working model's own claim, and one
+  reply wrote it again a turn after its goal was already met, so the marker alone does not even show a goal
+  was active.
+
 ### The starting definitions
 
 These are what DRC-4692 validates, not a measured result. Medium: a pass is followed by writes, or
