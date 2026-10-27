@@ -25,6 +25,9 @@ import {
   GOAL_UNCLEAR_RESULT,
   GOAL_VERDICT_CHECKS,
   GOAL_VERDICT_KEYS,
+  GOAL_VERDICT_QUOTED_KEYS,
+  GOAL_VERDICT_QUOTED_MAX,
+  GOAL_VERDICT_QUOTED_WHY,
   GOAL_VERDICT_REMOVAL_KEYS,
   GOAL_VERDICT_REMOVAL_WHYS,
   GOAL_VERDICT_WHY,
@@ -626,23 +629,34 @@ export interface GoalVerdictCheck {
   /** The file a removal dispute rests on and when the record shows it taken away. */
   readonly path?: string;
   readonly changed_at?: number;
+  /** How many distinct quoted spans were found in recorded checks' output; only beside `quoted-in-check`. */
+  readonly quoted?: number;
 }
 
 export function readingGoalVerdict(raw: unknown): GoalVerdictCheck | null {
   if (!isRecord(raw) || GOAL_VERDICT_KEYS.some((key) => !Object.hasOwn(raw, key))) return null;
   const extra = Object.keys(raw).filter((key) => !GOAL_VERDICT_KEYS.includes(key));
-  /* The file and the moment come together and only with a removal token; anything else is a reading this
-     build cannot read. */
+  /* The file and the moment come together and only with a removal token, and the count of quoted spans comes
+     alone with its own; anything else is a reading this build cannot read. */
+  const removal = extra.filter((key) => GOAL_VERDICT_REMOVAL_KEYS.includes(key));
+  const quoted = extra.filter((key) => GOAL_VERDICT_QUOTED_KEYS.includes(key));
   if (
-    extra.length &&
-    (extra.length !== GOAL_VERDICT_REMOVAL_KEYS.length ||
-      extra.some((key) => !GOAL_VERDICT_REMOVAL_KEYS.includes(key)) ||
-      !GOAL_VERDICT_REMOVAL_WHYS.includes(raw['why'] as string) ||
-      typeof raw['path'] !== 'string' ||
-      !raw['path'] ||
-      typeof raw['changed_at'] !== 'number' ||
-      !Number.isFinite(raw['changed_at']) ||
-      raw['changed_at'] <= 0)
+    removal.length + quoted.length !== extra.length ||
+    (removal.length > 0 &&
+      (quoted.length > 0 ||
+        removal.length !== GOAL_VERDICT_REMOVAL_KEYS.length ||
+        !GOAL_VERDICT_REMOVAL_WHYS.includes(raw['why'] as string) ||
+        typeof raw['path'] !== 'string' ||
+        !raw['path'] ||
+        typeof raw['changed_at'] !== 'number' ||
+        !Number.isFinite(raw['changed_at']) ||
+        raw['changed_at'] <= 0)) ||
+    (quoted.length > 0 &&
+      (raw['why'] !== GOAL_VERDICT_QUOTED_WHY ||
+        !Number.isInteger(raw['quoted']) ||
+        (raw['quoted'] as number) < 1 ||
+        (raw['quoted'] as number) > GOAL_VERDICT_QUOTED_MAX)) ||
+    (raw['why'] === GOAL_VERDICT_QUOTED_WHY && quoted.length === 0)
   ) {
     return null;
   }

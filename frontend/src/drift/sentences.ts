@@ -171,6 +171,11 @@ export const GOAL_VERDICT_KEYS: readonly string[] = ['at', 'check', 'why', 'cite
 /* A dispute that rests on a file taken away names the file and the moment, both or neither. */
 export const GOAL_VERDICT_REMOVAL_KEYS: readonly string[] = ['path', 'changed_at'];
 export const GOAL_VERDICT_REMOVAL_WHYS: readonly string[] = ['deleted-after', 'moved-after'];
+/* The text the reason quotes was found in a recorded check's output: the count of distinct quoted spans
+   found comes alone, with its own token (never in a payload as the text, only as how many). */
+export const GOAL_VERDICT_QUOTED_KEYS: readonly string[] = ['quoted'];
+export const GOAL_VERDICT_QUOTED_WHY = 'quoted-in-check';
+export const GOAL_VERDICT_QUOTED_MAX = 8;
 export const GOAL_VERDICT_CHECKS: readonly string[] = ['agrees', 'disputed', 'unconfirmed'];
 export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
   'written-before': 'the file its reason names is recorded as written before the verdict',
@@ -183,6 +188,7 @@ export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
   'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
   'moved-after': 'a file its reason or the goal names was moved away after the verdict',
   'check-failed': 'a check of the kind its reason names has a failing latest run',
+  'quoted-in-check': 'the quoted text is in the output of a check Compass recorded',
   'not-found': 'the record Compass read does not show what its reason names',
   'nothing-checkable': 'its reason names no file or check Compass can look for',
 };
@@ -198,6 +204,7 @@ export const GOAL_VERDICT_WHY_GOAL: Readonly<Record<string, string>> = {
   'deleted-after': 'a file the goal names was deleted after the verdict',
   'moved-after': 'a file the goal names was moved away after the verdict',
   'check-failed': 'a check of the kind the goal names has a failing latest run',
+  'quoted-in-check': 'the quoted text is in the output of a check Compass recorded',
   'not-found': 'the record Compass read does not show what the goal names',
   'nothing-checkable':
     'the claim gives no reason, and the goal names no file or check Compass can look for',
@@ -301,6 +308,12 @@ export const CI_SWITCH_FAILED = 'Could not save that. Try again.';
    the pull request fact the test confirmed, named from the entry it cites. */
 export const goalVerdictPullRequest = (name: string, byGoal = false): string =>
   `the pull request ${byGoal ? 'the goal' : 'its reason'} names, ${name}, is recorded as created before the verdict`;
+/* "the quoted text is in the output of check #12": where the text its reason quotes was found, named by the
+   numbers the card gives the checks. It says where the text is and nothing about whether the check passed. */
+export const goalVerdictQuoted = (numbers: readonly string[]): string =>
+  `the quoted text is in the output of ${numbers.length === 1 ? 'check' : 'checks'} ${numbers
+    .map((n) => `#${n}`)
+    .join(numbers.length === 2 ? ' and ' : ', ')}`;
 /* "docs/e2e/notes.md was deleted at 22:59, after the verdict": the file and the moment the record shows. */
 export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
   `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;

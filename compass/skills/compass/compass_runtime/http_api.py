@@ -3960,6 +3960,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 label=route["label"],
                 removals=press.removals,
                 masked_values=press.masked_values,
+                quotable=press.quotable,
             )
         elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
             press = runtime_project_context.press_checks(
@@ -3977,6 +3978,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 passes_and_writes=press.passes_and_writes,
                 removals=press.removals,
                 masked_values=press.masked_values,
+                quotable=press.quotable,
             )
         return {
             "tool_output": tool_output,

@@ -6466,6 +6466,45 @@ that changed the CI configuration carries the caution DEC-30 names, so the floor
 DEC-30 lets that fact stand. Later file writes in the transcript do not age a CI fact, and DEC-30 item 4's
 head-equals-HEAD test is the only ageing it has. The live estimate's floor (item 1) is not touched.
 
+### Amended 2026-10-27 (owner): text a reason quotes, found in a recorded check's output
+
+A real session's evaluator quoted two CI rows from the last poll (`"coverage-gate pass"`, `"server-unittest pass"`)
+and the card could only say it could not confirm the claim, because
+[the verdict test](#amended-2026-10-22-a-goal-met-verdict-is-a-claim) reads a reason for file names, check kinds and
+pull requests and nothing else. The test now also asks whether text the reason puts in quotes is in the output of a
+check Compass recorded, and says where it is.
+
+- **Where it may look.** Only the output the press already attributes to one recorded check
+  ([DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) item 2, the single-check and
+  no-other-printer rule, with the last-line reading of
+  [DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)), for a
+  tier 1 or 2 check whose latest foreground run came at or before the verdict, at or after the goal's own set
+  time, with no later command that may have changed files. A read, a `WebFetch`, an `echo`, a command beside the
+  check, a second check in the same call and a tier 3 command are never searched. The text searched is the last
+  180 characters the press already holds for the check, redacted; the search reads nothing more and widens no
+  allowance.
+- **Why not anywhere in the transcript.** The evaluator read the transcript, so its quote is in some tool output by
+  construction, and `echo "coverage-gate pass"` would satisfy a search of all of it. The only text that can say
+  something is output a recorded check owns.
+- **Which spans.** Double or curly double quotes only: a reason sets a file, a command or an identifier in backticks
+  or single quotes far more often than a line a run printed, so those are not read. A span must be 12 to 180
+  characters (the output searched is only the last 180) once whitespace is folded and case is ignored, and at most
+  eight are looked for. A span made only of result words ("pass", "ok", "all checks passed", "no issues found") is
+  ignored. A span the check's own command line holds is not found there, and neither are the `> ` lines a package
+  runner echoes for its recipe; a line the script itself prints is still the check's output and is searched. A span that
+  names a remote job (the shapes
+  [the 2026-10-27 CI job amendment](#amended-2026-10-27-a-ci-job-named-in-the-reason-is-not-a-local-check) lists) is
+  left to the pull request's CI facts. A span that holds a credential shape or a redaction marker is never searched.
+- **What it says.** "The quoted text is in the output of check #n", and the answer stays `unconfirmed`: output that
+  holds a phrase is not a passing check, so this never yields `agrees` and never raises a level. It comes after every
+  other answer, so a failed check still disputes and a written file or a passing check of the claimed kind still
+  agrees as before. The stored `why` is `quoted-in-check` with `cites` the check entries and `quoted`, the count of
+  distinct spans found (1 to 8). Nothing of the searched output or of the span is stored, published or sent. The
+  search runs whether or not tool output is allowed, since it sends nothing.
+- **Rejected:** searching every tool output (an `echo` satisfies it); searching a check's output for the quote and
+  calling it agreement (a phrase in output is not a result); matching a quoted job name to a CI fact by its name,
+  which stays with the pull request's CI facts and the number the reason names.
+
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
 Decided 2026-10-11 (DRC-4855), on the Actions Front and Center project, in the milestone "Intent

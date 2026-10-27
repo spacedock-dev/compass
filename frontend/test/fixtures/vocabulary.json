@@ -156,6 +156,11 @@
     "why",
     "cites"
   ],
+  "goalVerdictQuotedKeys": [
+    "quoted"
+  ],
+  "goalVerdictQuotedMax": 8,
+  "goalVerdictQuotedWhy": "quoted-in-check",
   "goalVerdictRemovalKeys": [
     "path",
     "changed_at"
@@ -173,6 +178,7 @@
     "deleted-after",
     "moved-after",
     "check-failed",
+    "quoted-in-check",
     "not-found",
     "nothing-checkable"
   ],
