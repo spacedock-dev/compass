@@ -993,9 +993,10 @@ AGENT_MESSAGE_TYPE = "agent_message"
 # cap, 240, and the counted sentence alone runs to about 180, so the clauses
 # saying the checks were not sent, or had no room, were cut off in the store
 # (review, 2026-09-24). Composed by the code from counts, never model prose.
-# The newest-final fallback clause raises the measured seven-digit count case
-# to 697 characters. Keep all loss clauses rather than clipping their tail.
-CUTOFF_CAP_CHARS = 768
+# The newest-final fallback clause and the largest accepted command counts raise
+# the measured worst case to 825 characters. Keep all loss clauses rather than
+# clipping their tail.
+CUTOFF_CAP_CHARS = 832
 
 
 class LedgerEntry(TypedDict):
@@ -2321,18 +2322,22 @@ def cutoff_text(
 def _commands_note(measured: Mapping[str, Any]) -> str:
     """The commands that ran beside the entries read, which no entry carries.
 
-    Compass reads when they ran, to age an earlier pass, and nothing else, so a
-    session whose goal was proved by a command that is not a check would read as
-    fully covered. A count that was not recorded, or is malformed, says nothing
-    here rather than reading as zero: the page says it was not recorded.
+    Compass reads only the time of the latest command that can change files, to
+    age an earlier pass, item 3 of
+    [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work),
+    and nothing about the read-only ones, so a session whose goal was
+    proved by a command that is not a check would read as fully covered. The
+    counts are the session's, not the window's. A count that was not recorded,
+    or is malformed, says nothing here rather than reading as zero: the page
+    says it was not recorded.
     """
     counts = _command_counts(measured)
     if counts is None or not counts[0]:
         return ""
     other, read_only = counts
-    ran = f"{other} other command{'s' if other != 1 else ''} ran"
+    ran = f"The session ran {other} other command{'s' if other != 1 else ''}"
     apart = f"{read_only} of them read-only" if read_only else "none of them read-only"
-    return f" {ran}, {apart}, and Compass read only when they ran."
+    return f" {ran}, {apart}; Compass did not read what they did."
 
 
 def _counted(lookup: Callable[[], Mapping[str, Any]] | None) -> dict[str, int]:

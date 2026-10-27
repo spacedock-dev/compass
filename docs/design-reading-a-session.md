@@ -3341,13 +3341,21 @@ an echoed tail: that side only over-masks.
 ### Amended 2026-10-27 (owner): the cutoff counts the commands the reading never received
 
 "Read all 14 entries after your intent" read as everything, when the session had also run seven Bash calls that
-are not checks, among them the CI polls that proved the goal. Compass reads when those commands ran, to age an
-earlier pass (item 3), and nothing else about them, so "not read" would be false and silence would be worse. The
-cutoff now adds one sentence when any ran: "7 other commands ran, 4 of them read-only, and Compass read only when
-they ran." The two counts come from the session's full scan, so they cover the
-whole transcript and not only the window read, and sit beside the
-[measured coverage](#amended-2026-10-04-owner-disclose-measured-reading-coverage) the reading already stores. Read-only is the scan's own test of whether the command could
-change a file. A session that ran none says nothing.
+are not checks, among them the CI polls that proved the goal. Compass reads only the time of the latest command
+that can change files, to age an earlier pass (item 3), and nothing about the read-only ones. The cutoff now adds
+one sentence when any ran: "The session ran 7 other commands, 4 of them read-only; Compass did not read what they
+did." The sentence names the session and not the window, so a long session can read "412 other commands" beside
+three listed entries. The two counts come from the session scan, are stored only when that scan read the whole
+transcript, and are left unrecorded when the scan was cut from the tail, because a cut scan counted only the
+commands after the cut. They sit beside the
+[measured coverage](#amended-2026-10-04-owner-disclose-measured-reading-coverage) the reading already stores.
+Read-only is the scan's own test of whether the command could change a file. A session that ran none says
+nothing.
+
+The figure counts foreground Bash calls that hold no check. Background launches, calls that did not balance or
+never ran, and a call that also runs a check are not in it, and a call that holds several commands counts once, so
+it is a count of calls and a floor. A reading from the unasked-check lane carries no counts, so the page says they
+were not recorded.
 
 The stored `coverage` mapping gains `other_commands` and `read_only_commands`, both or neither, so a reading
 stored before this change keeps its five keys and still validates. The page says "How many other commands ran
@@ -4919,8 +4927,8 @@ come from an older scan, so the tail start does not describe the check listing. 
 passed, failed and unrecorded runs, files written, launches, person messages, agent messages and
 derived entries. Omitted pass and write counts cover only the reading's window through its stop,
 not the session-wide count; checks the prompt could not fit have their own count. Loss and source
-clauses fit the stored cutoff's 768-character bound without truncation. The newest-final
-fallback raises the measured large-count case to 697 characters; this keeps every loss clause.
+clauses fit the stored cutoff's 832-character bound without truncation. The newest-final
+fallback and the largest accepted command counts raise the measured large-count case to 825 characters; this keeps every loss clause.
 
 Coverage stores only an optional closed mapping of counts, a time, a boolean and the source state.
 It changes no model prompt. A found adopted source already equal to the saved goal was read whole,

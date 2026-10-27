@@ -858,8 +858,14 @@ def _scan_of(context: dict[str, Any], harness: str, sid: str) -> dict[str, Any]:
 
 
 def _command_counts_of(context: dict[str, Any], harness: str, sid: str) -> dict[str, Any]:
-    """The other-command counts this session's full scan measured, or nothing."""
+    """The other-command counts this session's full scan measured, or nothing.
+
+    A scan cut from the tail counted only the commands after the cut, so neither
+    count is a measurement of the session and both are left out.
+    """
     scan = _scan_of(context, harness, sid)
+    if scan.get("reads_from") is not None:
+        return {}
     return {k: scan[k] for k in ("other_commands", "read_only_commands") if k in scan}
 
 

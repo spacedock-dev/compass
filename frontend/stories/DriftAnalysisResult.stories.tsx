@@ -364,7 +364,7 @@ export const WhatTheAnalysisReadFromAPromptGoal: Story = {
 };
 
 const READ_SECTION_CUTOFF =
-  'Read all 14 entries after your intent: 10 messages from the agent, 1 file write, 3 checks with no recorded result. All are from within the last hour. 7 other commands ran, 4 of them read-only, and Compass read only when they ran.';
+  'Read all 14 entries after your intent: 10 messages from the agent, 1 file write, 3 checks with no recorded result. All are from within the last hour. The session ran 7 other commands, 4 of them read-only; Compass did not read what they did.';
 
 async function openWhatItRead(canvasElement: HTMLElement): Promise<HTMLElement> {
   const drift = await card(canvasElement);
@@ -391,7 +391,7 @@ export const WhatTheAnalysisReadNamesTheCommandsItNeverSaw: Story = {
   play: async ({ canvasElement }) => {
     const read = await openWhatItRead(canvasElement);
     await expect(read).toHaveTextContent(
-      '7 other commands ran, 4 of them read-only, and Compass read only when they ran.',
+      'The session ran 7 other commands, 4 of them read-only; Compass did not read what they did.',
     );
     await expect(read).not.toHaveTextContent('was not recorded for this reading');
   },

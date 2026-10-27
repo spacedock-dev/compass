@@ -246,6 +246,8 @@ class TheCutoffNamesKindsAndOmissions(unittest.TestCase):
                 "tail_start": producer.NOW - 120,
                 "unlisted": 1000000,
                 "unread_checks": 1000000,
+                "other_commands": 2**53 - 1,
+                "read_only_commands": 2**53 - 2,
             },
         )
         text += reading._goal_note(adopted=True, source=None, goal="Saved excerpt", whole=False)
@@ -544,16 +546,31 @@ class TheCutoffCountsTheCommandsItNeverSaw(producer.AClaudeCodeReadingProducer):
         self.assertEqual(7, got["coverage"]["other_commands"])
         self.assertEqual(4, got["coverage"]["read_only_commands"])
         self.assertIn(
-            "7 other commands ran, 4 of them read-only, and Compass read only when they ran.",
+            "The session ran 7 other commands, 4 of them read-only; Compass did not read what they did.",
             got["cutoff"],
         )
 
     def test_one_command_and_none_are_worded_apart(self) -> None:
         one = self._read(lambda: {"other_commands": 1, "read_only_commands": 0})
-        self.assertIn("1 other command ran, none of them read-only,", one["cutoff"])
+        self.assertIn("The session ran 1 other command, none of them read-only;", one["cutoff"])
         none = self._read(lambda: {"other_commands": 0, "read_only_commands": 0})
         self.assertEqual(0, none["coverage"]["other_commands"])
         self.assertNotIn("other command", none["cutoff"])
+
+    def test_counts_beyond_the_entries_read_are_the_sessions_not_the_windows(self) -> None:
+        got = self._read(lambda: {"other_commands": 412, "read_only_commands": 300})
+        self.assertIn("The session ran 412 other commands, 300 of them read-only;", got["cutoff"])
+        self.assertNotIn("Compass read only when", got["cutoff"])
+
+    def test_a_scan_cut_from_the_tail_records_neither_count(self) -> None:
+        scan = {"harness": "claude", "sid": "s1", "other_commands": 3, "read_only_commands": 3}
+        whole = {"sources": {"work": {"tool_reports": [scan]}}}
+        cut = {"sources": {"work": {"tool_reports": [{**scan, "reads_from": 1.0}]}}}
+        self.assertEqual(
+            {"other_commands": 3, "read_only_commands": 3},
+            http_api._command_counts_of(whole, "claude", "s1"),
+        )
+        self.assertEqual({}, http_api._command_counts_of(cut, "claude", "s1"))
 
     def test_a_count_nobody_measured_is_left_out_not_written_as_zero(self) -> None:
         for lookup in (None, dict, lambda: {"other_commands": True, "read_only_commands": 0}):

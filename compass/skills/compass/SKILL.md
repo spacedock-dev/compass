@@ -527,8 +527,9 @@ each departure's own account under a departure, otherwise a failed check after y
 that a later pass of the same check, in the same directory, did not follow,
 "Can't tell", "Not reached at this stop", or "Nothing found against what it read". Coverage beside it names a measured partial
 message tail, unlisted passes or writes, checks that did not fit and an adopted-source fallback. The read
-sentence also counts the other commands the session ran, how many were read-only, and says Compass read only when
-they ran; an older reading says that count was not recorded.
+sentence also counts the other commands the session ran (session-wide, from a scan that read the whole transcript),
+how many were read-only, and says Compass did not read what they did; an older reading, or one whose scan was cut
+from the tail, says that count was not recorded.
 An older reading says coverage was not recorded. A tail starting inside the intent window tags
 every intent row "may be in the part not read"; claims stay independent. On Claude Code an Analyze
 press reads the session's messages back to the window start where it can, and says where it stopped
