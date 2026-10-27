@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
-from compass_runtime import project_scripts, tripwires
+from compass_runtime import project_context, project_scripts, reader_checks, tripwires
 
 if TYPE_CHECKING:
     from compass_runtime.aggregate import Application
@@ -142,6 +142,9 @@ def diagnose(application: Application) -> dict[str, Any]:
         # Declaring files (package.json, a Makefile, a justfile) the collection above found and
         # did not trust, with why. Names and a closed reason only, never a file's content.
         "project_scripts": project_scripts.problems(),
+        # The reader's own list of check commands: where it is, whether it could be read, and each
+        # entry that was ignored with its program and why. Never an argument or a path.
+        "reader_checks": reader_checks.report(config, project_context.listed_entry_refusal),
         "stores": {
             key: {
                 "primary": primary,
@@ -165,6 +168,26 @@ def _project_script_lines(problems: list[dict[str, str]]) -> list[str]:
     for problem in problems:
         lines.extend([f"  [  --] {problem['file']}", f"           {problem['reason']}"])
     return lines
+
+
+def _reader_check_lines(report: dict[str, Any] | None) -> list[str]:
+    return render_reader_checks(report).split("\n") if report else []
+
+
+def render_reader_checks(report: dict[str, Any]) -> str:
+    lines = ["", "Reader-listed checks", f"  file       {report['path']}"]
+    if report["error"]:
+        lines.append(f"  [  --] not read: {report['error']}")
+    elif not report["projects"]:
+        lines.append("  none listed")
+    else:
+        lines.append(
+            f"  {report['listed']} command(s) for {report['projects']} project(s) count as checks"
+        )
+    for item in report["ignored"]:
+        program = item["program"] or "an entry"
+        lines.extend([f"  [  --] {program}", f"           ignored: {item['reason']}"])
+    return "\n".join(lines)
 
 
 def render_diagnosis(report: dict[str, Any]) -> str:
@@ -207,6 +230,7 @@ def render_diagnosis(report: dict[str, Any]) -> str:
             lines.append(f"           {message}")
 
     lines.extend(_project_script_lines(report.get("project_scripts") or []))
+    lines.extend(_reader_check_lines(report.get("reader_checks")))
 
     lines.append("")
     lines.append("Stores searched (in order)")

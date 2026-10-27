@@ -1734,6 +1734,7 @@ def vocabulary() -> dict[str, Any]:
         "resultSubjects": sorted(reading.RESULT_SUBJECTS),
         "checkEarlierFailed": reading.CHECK_EARLIER_FAILED,
         "checkBeforeLastChange": reading.CHECK_BEFORE_LAST_CHANGE,
+        "checkListedByReader": reading.CHECK_LISTED_BY_READER,
         "checkNotRecordedReasons": dict(runtime_project_context.CHECK_NOT_RECORDED_REASONS),
         "results": list(reading.RESULTS),
         "promptSources": list(reading.PROMPT_SOURCES),

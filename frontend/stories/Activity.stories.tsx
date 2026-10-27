@@ -388,3 +388,33 @@ export const NotRecordedReasons: Story = {
     ).toHaveTextContent('No result: output is piped beside other commands');
   },
 };
+
+/* A check that counted only because the reader listed its command says so beside its result, and an
+   ordinary check says nothing of the kind. */
+export const ListedByReader: Story = {
+  render: () => (
+    <TooltipProvider delay={0}>
+      <div role="list">
+        <div role="listitem" data-story-entry="listed">
+          <ActivityHead
+            row={activityRow(1, { result: 'passed', resultSource: 'flag', listedByReader: true })}
+          />
+        </div>
+        <div role="listitem" data-story-entry="plain">
+          <ActivityHead row={activityRow(2, { result: 'passed', resultSource: 'flag' })} />
+        </div>
+      </div>
+    </TooltipProvider>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const listed = canvasElement.querySelector('[data-story-entry="listed"]') as HTMLElement;
+    const plain = canvasElement.querySelector('[data-story-entry="plain"]') as HTMLElement;
+    const mark = within(listed).getByLabelText('Counted because you listed it');
+    await expect(mark).toHaveTextContent('Listed by you');
+    await expect(mark.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'checks');
+    await expect(within(listed).getByLabelText('Passed, as the tool reported')).toBeVisible();
+    await expect(within(plain).queryByLabelText('Counted because you listed it')).toBeNull();
+    await expect(canvas.getAllByLabelText('Passed, as the tool reported')).toHaveLength(2);
+  },
+};

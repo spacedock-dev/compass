@@ -50,6 +50,8 @@ export interface WorkEntry {
   readonly readIncomplete: boolean;
   /** A command whose exit status says nothing about it (a later `|| true` forces it); absent on every other row. */
   readonly cannotFail?: boolean;
+  /** A check that counted because the reader listed its command for the project; absent on every other row. */
+  readonly listedByReader?: boolean;
   /** The server's fixed number for a message, or for the message a check or file follows. */
   readonly ordinal: number | null;
   /** A check or file's place after that message; null for a message. */
@@ -123,6 +125,7 @@ export function workEntries(session: Row, semantic: unknown): WorkEntry[] {
         changedAfter: fact['changed_after'] === true,
         readIncomplete: fact['read_incomplete'] === true,
         ...(fact['cannot_fail'] === true ? { cannotFail: true } : {}),
+        ...(fact['listed_by_reader'] === true ? { listedByReader: true } : {}),
         ordinal: positiveInteger(fact['ordinal']),
         ordinalSub: positiveInteger(fact['ordinal_sub']),
         source: [evidence['source'], evidence['confidence']]

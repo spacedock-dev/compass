@@ -39,7 +39,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
-from compass_runtime import git_status
+from compass_runtime import git_status, reader_checks
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -104,6 +104,10 @@ class Declarations:
     # work tree again without asking git.
     digests: Mapping[str, bytes] = field(default_factory=dict, repr=False, compare=False)
     memo: dict[Any, bool] = field(default_factory=dict, repr=False, compare=False)
+    # The words of each command the reader listed for this project (`reader_checks`), and whether
+    # the session wrote the file they were listed in, which withdraws them.
+    listed: frozenset[tuple[str, ...]] = frozenset()
+    listed_written: bool = False
 
     def at(self, directory: str) -> bool:
         """Whether `directory` is the toplevel itself, and not a folder under it."""
@@ -117,7 +121,8 @@ class Declarations:
     def without(self, written: frozenset[str]) -> Declarations:
         """These declarations less every kind whose declaring file the session wrote."""
         gone = {_kind(name) for name in written if name in DECLARING_FILES}
-        if not gone & {"package", "make", "just"}:
+        wrote_listing = reader_checks.FILENAME in written
+        if not gone & {"package", "make", "just"} and not wrote_listing:
             return self
         empty: dict[str, Script] = {}
         return Declarations(
@@ -130,6 +135,8 @@ class Declarations:
             self.files - written,
             self.real_toplevel,
             self.digests,
+            listed=frozenset() if wrote_listing else self.listed,
+            listed_written=self.listed_written or wrote_listing,
         )
 
     def kind(self, kind: str) -> Mapping[str, Script]:

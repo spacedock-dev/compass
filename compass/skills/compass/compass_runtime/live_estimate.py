@@ -529,7 +529,12 @@ def _replay(
         # declared checks starts the replay over.
         None
         if scan.declared is None
-        else (scan.declared.toplevel, scan.declared.commit, tuple(sorted(scan.declared.files))),
+        else (
+            scan.declared.toplevel,
+            scan.declared.commit,
+            tuple(sorted(scan.declared.files)),
+            tuple(sorted(scan.declared.listed)),
+        ),
     )
     calls = [
         call

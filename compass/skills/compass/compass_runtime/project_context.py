@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import hashlib
 import heapq
 import json
@@ -25,6 +26,7 @@ from . import (
     events,
     observer,
     project_scripts,
+    reader_checks,
     reading_route,
     records,
     semantic_history,
@@ -3378,6 +3380,78 @@ def _declared_check(
     return all(_script_is_check(declared, kind, name) for name in names)
 
 
+# Shell builtins: a listed one runs in the shell and tests nothing of the project's. `echo`, `true`,
+# `:`, `exit` and `printf` are refused as cannot-fail commands, with their own reason.
+_LISTED_BUILTINS = frozenset(
+    {"cd", "pushd", "popd", "source", ".", "alias", "unalias", "declare", "local", "readonly",
+     "read", "shift", "trap", "umask", "ulimit", "hash", "let", "bg", "fg", "jobs", "wait",
+     "type", "builtin", "command", "test", "[", "[["}
+)  # fmt: skip
+
+
+def _listed_words(entry: str) -> tuple[str, ...]:
+    """The words of one command a reader listed, as a session's segment would carry them, or none
+    where it is not one plain command."""
+    try:
+        parts = _call_parts(entry)
+    except Exception:  # noqa: BLE001 - any parser fault is an entry that does not count
+        return ()
+    if len(parts) != 1:
+        return ()
+    part = parts[0]
+    if (
+        not part.words
+        or part.hides_change
+        or part.background
+        or part.opens
+        or part.closes
+        or part.syntax
+        or part.redirects
+        or part.joiner
+    ):
+        return ()
+    return tuple(part.words)
+
+
+def listed_entry_refusal(entry: str) -> tuple[str, str]:
+    """Why a command a reader listed can never count as a check, and the program it names.
+
+    The reason is empty where it can. Whatever cannot fail or only reads never passes, whatever
+    its tier
+    ([DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)),
+    and a listed command is held to the same rules as a declared script's body: one plain command,
+    no redirect, no fixer.
+    """
+    words = _listed_words(entry)
+    program = os.path.basename(entry.split(None, 1)[0])[:32] if entry.split() else ""
+    if not words:
+        return reader_checks.NOT_ONE_COMMAND_REASON, program
+    program = os.path.basename(words[0])[:32]
+    listed = list(words)
+    reason = ""
+    if os.path.basename(words[0]) in _LISTED_BUILTINS:
+        reason = reader_checks.BUILTIN_REASON
+    elif _always_zero(listed):
+        reason = reader_checks.CANNOT_FAIL_REASON
+    elif _reads_only([], listed):
+        reason = reader_checks.READ_ONLY_REASON
+    elif _is_fixer(listed) or any(w.split("=", 1)[0] in _BODY_WRITING_ARGS for w in listed):
+        reason = reader_checks.WRITES_REASON
+    return reason, program
+
+
+def _listed_check(
+    declared: project_scripts.Declarations | None, words: list[str], raw: tuple[str, ...]
+) -> bool:
+    """Whether a segment is exactly a command the reader listed for this project."""
+    return (
+        declared is not None
+        and bool(declared.listed)
+        and not _steers_a_script(raw)
+        and tuple(words) in declared.listed
+    )
+
+
 def _harmless_redirect(redirect: _Redirect) -> bool:
     if redirect.kind == ">&" and (redirect.target.isdigit() or redirect.target == "-"):
         return True
@@ -4017,6 +4091,15 @@ class _ShellCall:
             and self.placed[i]
             and _declared_check(declared, self.directories[i], self.words[i][0], self.parts[i].raw)
         ]
+        # A command the reader listed is one too, and the page says it counted because they did.
+        self.listed_checks = {
+            i
+            for i in self.meaningful
+            if i not in self.checks
+            and i not in self.declared_checks
+            and _listed_check(declared, self.words[i][0], self.parts[i].raw)
+        }
+        self.declared_checks = sorted([*self.declared_checks, *self.listed_checks])
         self.checks = sorted([*self.checks, *self.declared_checks])
         # A check's own redirection into a file is a recorded write by the call
         # (DRC-4709), each target read from the directory its segment ran in,
@@ -4308,6 +4391,7 @@ class _ToolReportTally:
         self.orphan_unread = False
         self.scan: dict[str, Any] = {
             "last_changing_command_at": None,
+            **({"reader_checks_written": True} if declared and declared.listed_written else {}),
             **dict.fromkeys(
                 (
                     "shell_calls", "check_runs", "distinct_checks", "other_commands",
@@ -4649,6 +4733,7 @@ class _ToolReportTally:
                     # and which run is latest, never a change comparison.
                     "result_at": result_at if result is not None and not background else None,
                     "background": background,
+                    "listed": index in call.listed_checks,
                     # Held for the press only (`claude_check_tails`); never
                     # copied onto the published entry.
                     "tail": _scrubbed_tail(text, call.masked_values) if result is not None else "",
@@ -4898,6 +4983,8 @@ class _ToolReportTally:
             entry["result_at"] = latest["result_at"]
         if latest["worker"]:
             entry["worker_kind"] = latest["worker"]
+        if latest.get("listed"):
+            entry["listed_by_reader"] = True
         return entry
 
     def _histories(self) -> list[tuple[str, list[dict[str, Any]]]]:
@@ -5429,7 +5516,8 @@ def _written_declaring_files(
             if (
                 name in _WRITE_TOOLS
                 and isinstance(path, str)
-                and os.path.basename(path) in project_scripts.DECLARING_FILES
+                and os.path.basename(path)
+                in (*project_scripts.DECLARING_FILES, reader_checks.FILENAME)
             ):
                 found.add(os.path.basename(path))
     return frozenset(found)
@@ -5442,23 +5530,37 @@ def _declared_scripts(
     parent: list[dict[str, Any]],
     children: Sequence[list[dict[str, Any]]],
 ) -> project_scripts.Declarations | None:
-    """The project's own check scripts for the session, or None where none can be trusted.
+    """What counts as a check beyond the closed list for the session, or None where nothing can.
 
-    The base commit is the one HEAD was on at the transcript's first stamped record, since Compass
-    does not record the commit a session began on; a clipped read falls back to its oldest
-    record, which is later, and the work tree's byte comparison still refuses a file the session
-    changed.
+    The project's own scripts: the base commit is the one HEAD was on at the transcript's first
+    stamped record, since Compass does not record the commit a session began on; a clipped read
+    falls back to its oldest record, which is later, and the work tree's byte comparison still
+    refuses a file the session changed. And the commands the reader listed for the project, which
+    no git read is needed for.
     """
+    if not began_in:
+        return None
+    loaded: project_scripts.Declarations | None = None
     # `--no-git` means no git command runs in any repository, and this reader runs three.
-    if not config.git_probe_enabled or not began_in:
+    if config.git_probe_enabled:
+        start = claude_data.head_start(config, transcript_path) or _oldest_at(parent)
+        loaded = project_scripts.load(began_in, start) if start is not None else None
+        if loaded is not None and not loaded.files:
+            loaded = None
+    listed = frozenset(
+        words
+        for entry in reader_checks.for_project(config, began_in, listed_entry_refusal)
+        if (words := _listed_words(entry))
+    )
+    written = _written_declaring_files(parent, children)
+    wrote_listing = reader_checks.FILENAME in written
+    if loaded is None and not listed and not wrote_listing:
         return None
-    start = claude_data.head_start(config, transcript_path) or _oldest_at(parent)
-    if start is None:
-        return None
-    loaded = project_scripts.load(began_in, start)
-    if loaded is None or not loaded.files:
-        return None
-    return loaded.without(_written_declaring_files(parent, children))
+    if loaded is None:
+        loaded = project_scripts.Declarations("", "", {}, {}, {}, listed=listed)
+    elif listed:
+        loaded = dataclasses.replace(loaded, listed=listed, memo={})
+    return loaded.without(written)
 
 
 def _live_check_scan(
@@ -8101,6 +8203,7 @@ def _semantic_fact_from_event(
         "worker_kind",
         "subject",
         "check_id",
+        "listed_by_reader",
         "tier",
         "cannot_fail",
         "result",

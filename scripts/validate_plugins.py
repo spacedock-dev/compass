@@ -484,6 +484,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/interaction_prototype.py",
     "skills/compass/compass_runtime/project_context.py",
     "skills/compass/compass_runtime/project_scripts.py",
+    "skills/compass/compass_runtime/reader_checks.py",
     "skills/compass/compass_runtime/collectors/__init__.py",
     "skills/compass/compass_runtime/collectors/claude.py",
     "skills/compass/compass_runtime/collectors/codex.py",

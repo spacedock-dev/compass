@@ -364,6 +364,38 @@ Two traps in reading its output, both reproduced:
 - **The `overrides` line is narrower than it reads.** It lists only the per-harness store variables,
   so `COMPASS_HOME` can move everything Compass writes while that line still says `none`.
 
+## List a project's checks
+
+Compass counts a command as a check when it is a known test or lint runner, or a test, lint or build script
+that a project's own `package.json`, Makefile or justfile declares. A custom script or `bazel test //...` is
+neither, so a session that ran it reads as having run an ordinary command. To say it is a check, list it for the
+project in `compass-project-checks.json` in the Compass home (`~/.compass`, or `COMPASS_HOME` where you moved
+it). You write the file; Compass only reads it.
+
+```json
+{
+  "v": 1,
+  "projects": {
+    "~/code/widgets": ["bazel test //...", "./scripts/verify.sh"]
+  }
+}
+```
+
+A project is the absolute path of its repository (`~/` works, and a linked worktree counts as its repository),
+or the project key the board publishes for it. A command counts when a session in that project types exactly
+those words, from any folder. The page marks such a check "counted because you listed it".
+
+What does not count, however it is listed: a shell builtin, `echo`, `printf`, `true`, `:`, `exit`, a command that
+only reads (`ls`, `git status`), a command that writes (`--fix`, `--write`), and a line that is not one plain
+command (`&&`, a pipe, a redirect, a substitution). A `.compass` folder inside a repository is never read, and a
+session that writes this file has the listing withdrawn for that session. Check it with:
+
+```bash
+python3 "$SKILL/server.py" --diagnose
+```
+
+The `Reader-listed checks` section names the file, any read failure, and each ignored entry with its reason.
+
 ## Move it: ports, a second dashboard, and where state lives
 
 `--port` moves the listener. `COMPASS_HOME` moves everything Compass writes, which is its state

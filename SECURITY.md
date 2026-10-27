@@ -748,6 +748,19 @@ put back before the session ended is the one change neither the recorded write n
 comparison sees. [The ruling](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-projects-own-scripts-are-tier-2-checks)
 holds the rest.
 
+### The reader's list of check commands
+
+A reader can list commands that are checks for a project, in one file in the Compass home,
+`compass-project-checks.json`. It is a plain file read to a 64 KiB cap, the way the other stores are, and
+nothing is run to read it. The agent can write files in a repository, and a listing makes a command count as
+evidence, so a `.compass` folder inside a repository is never read. A recorded write by the session to a file of
+that name withdraws the listing for that session, and the page says so. An edit by a shell command is the one
+write this does not see. An entry that is a shell builtin, cannot fail, only reads, writes files or is not one
+plain command never counts, so a listing cannot turn `echo ok` into a pass. Nothing read from the file leaves
+the machine; the session's own command line is published as any check's is.
+[The ruling](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-reader-may-list-a-projects-checks)
+holds the rest.
+
 ## Reaching a session's terminal (the focus command)
 
 One feature asks the operating system to put a window in front of the operator. Compass already
