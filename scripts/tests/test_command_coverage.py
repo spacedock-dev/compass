@@ -170,7 +170,7 @@ class WhatTheReportNeverHolds(unittest.TestCase):
             ("rtk hunter2", "rtk"),
             ("pnpm exec hunter2", "pnpm exec"),
             ("FOO=1 npx hunter2", "npx"),
-            ("rtk git status", "git status"),
+            ("rtk git commit -m x", "git commit"),
         ):
             heads: collections.Counter[str] = collections.Counter()
             call = pc._ShellCall(0.0, "/", {"command": command})
