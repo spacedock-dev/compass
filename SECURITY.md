@@ -1941,7 +1941,8 @@ and one holding any value the call's masking hides, is counted and never publish
 read as a field, and no Edit or Write result body is read. At most 12 entries are listed and the
 rest are counted. The published entry carries the check segment, the result, where the result
 came from and, as `result_at`, when it arrived, and never the output itself. The output tail is read again at the press
-(`project_context.claude_check_press`), keyed by the call, and carried into that one prompt only:
+(`project_context.claude_check_press`), keyed by the call, and carried into that one prompt, and held in memory for the local search of the text a harness verdict quotes
+([below](#local-history-the-session-history-store)), which sends, stores and publishes nothing:
 Compass never writes it onto the fact, a row, the page or history. A departure's explanation is
 model prose, and the model may quote a line of the tail in it; that explanation is stored with the
 reading and shown on the page with credential-shape redaction and, since 2026-10-27, the values the
@@ -3634,12 +3635,12 @@ refuses the reading whole. The verdict never lowers a drift level and never coun
 reason that names nothing the record can show is "unconfirmed", never "disputed", because a capped listing
 cannot prove absence.
 
-The test also looks for text the reason puts in quotes in the output of a check the record holds: only the
+The test also looks for text the reason puts in double quotes in the output of a check the record holds: only the
 redacted last 180 characters the press already reads for one recorded check whose call ran that check and nothing
 else that may print, never a read, an `echo` or another command's output, and never more than the press already
 held. The search needs no grant, since it sends nothing, and keeps nothing: the stored answer is the check entries
 and a count of one to eight, never a span or any output. A quoted span that holds a credential shape is not
-searched, and a match only says where the text is, so the answer stays "unconfirmed" and never raises a level.
+searched, nor is one the check's own command line holds, and a match only says where the text is, so the answer stays "unconfirmed" and never raises a level.
 
 A Codex session that states a goal with `/goal` has it read from the rollout's own records the same way, into
 the same `session_goal`, `{text, at}`, with the same masking, the same 4,000-character bound, the same excerpt

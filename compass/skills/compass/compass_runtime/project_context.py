@@ -5497,8 +5497,9 @@ class _ToolReportTally:
         evaluator read the whole transcript, so its quote is in some tool output by construction,
         and only output a recorded check owns can show anything. A foreground latest run whose
         call ran that one check and nothing else that may print, with no later command that may
-        have changed files. An echo, a read, a second check in the call and a tier 3 command are
-        never here. Never published, stored or sent.
+        have changed files. A later Write or Edit tool call is not excluded here: the check
+        fact's own stale mark is, and the verdict test reads it. An echo, a read, a second
+        check in the call and a tier 3 command are never here. Never published, stored or sent.
         """
         found: dict[tuple[str, str], str] = {}
         for history in self.runs.values():

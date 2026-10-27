@@ -478,6 +478,9 @@ class TheVendorRuleDecidesWhatOutputLeaves(ClaudeChecksTestCase):
 
     def route_tails(self, provider: str) -> dict[str, str]:
         """The tails the real request handler hands a route of this provider."""
+        return dict(self.route_output(provider).tails)
+
+    def route_output(self, provider: str, destination: str = "Synthetic destination") -> Any:
         self.session.save(self.path)
         handler = SimpleNamespace(
             server=SimpleNamespace(
@@ -489,7 +492,7 @@ class TheVendorRuleDecidesWhatOutputLeaves(ClaudeChecksTestCase):
         route = {
             "harness": "claude",
             "provider": provider,
-            "destination": "Synthetic destination",
+            "destination": destination,
             "words_destination": "Synthetic destination",
             "label": "Claude Code",
             "model": "synthetic-model",
@@ -505,7 +508,19 @@ class TheVendorRuleDecidesWhatOutputLeaves(ClaudeChecksTestCase):
                 cast("Any", route),
                 cast("Any", hooks),
             )
-        return dict(arguments["tool_output"].tails)
+        return arguments["tool_output"]
+
+    def test_the_request_handler_hands_the_quote_search_the_press_output_on_both_routes(
+        self,
+    ) -> None:
+        self.session.bash("pytest -q", "SYNTHETICCHECKTAIL\n3 passed")
+        self.session.save(self.path)
+        press = project_context.claude_check_press(self.config, str(self.path))
+        self.assertTrue(press.quotable)
+        for destination in ("", "Synthetic destination"):
+            with self.subTest(destination=destination):
+                output = self.route_output("claude", destination)
+                self.assertEqual(dict(press.quotable), dict(output.quotable))
 
     def test_the_request_handler_sends_a_codex_route_no_tier_3_call_tail(self) -> None:
         self.session.bash("make deploy", "SYNTHETICTIER3TAIL", is_error=False)

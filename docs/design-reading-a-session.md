@@ -6486,9 +6486,12 @@ check Compass recorded, and says where it is.
 - **Why not anywhere in the transcript.** The evaluator read the transcript, so its quote is in some tool output by
   construction, and `echo "coverage-gate pass"` would satisfy a search of all of it. The only text that can say
   something is output a recorded check owns.
-- **Which spans.** Double or curly double quotes, backticks, and single quotes that no word character touches, so an
-  apostrophe is not a pair. A span must be 12 to 200 characters once whitespace is folded and case is ignored, and
-  at most eight are looked for. A span made only of result words ("pass", "ok", "all passed") is ignored. A span that
+- **Which spans.** Double or curly double quotes only: a reason sets a file, a command or an identifier in backticks
+  or single quotes far more often than a line a run printed, so those are not read. A span must be 12 to 180
+  characters (the output searched is only the last 180) once whitespace is folded and case is ignored, and at most
+  eight are looked for. A span made only of result words ("pass", "ok", "all checks passed", "no issues found") is
+  ignored. A span the check's own command line holds is not found there, and neither are the `> ` lines a package
+  runner echoes for its recipe; a line the script itself prints is still the check's output and is searched. A span that
   names a remote job (the shapes
   [the 2026-10-27 CI job amendment](#amended-2026-10-27-a-ci-job-named-in-the-reason-is-not-a-local-check) lists) is
   left to the pull request's CI facts. A span that holds a credential shape or a redaction marker is never searched.

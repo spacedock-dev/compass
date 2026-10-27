@@ -52,7 +52,7 @@ import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, NamedTuple, NotRequired, TypedDict
 
 from . import ci_read, observer, records, supervise
 from .config import validate_claude_reading_model
@@ -4573,6 +4573,13 @@ class RecordedCi:
     at: float
 
 
+class HeldOutput(NamedTuple):
+    """A check's command line, and the output tail its call owns."""
+
+    line: str
+    text: str
+
+
 @dataclass(frozen=True)
 class Recorded:
     """The writes, checks and created pull requests the session's record holds, whether or not a
@@ -4589,7 +4596,7 @@ class Recorded:
     ci: tuple[RecordedCi, ...] = ()
     # A recorded check's id to the output tail its own call owns, searched for a verdict's quotes
     # and never carried into a result.
-    outputs: Mapping[str, str] = field(default_factory=dict)
+    outputs: Mapping[str, HeldOutput] = field(default_factory=dict)
 
 
 def recorded_from(  # noqa: C901 - one branch per kind of fact the record holds
@@ -4611,7 +4618,7 @@ def recorded_from(  # noqa: C901 - one branch per kind of fact the record holds
     changed = tool_output.changed_after if tool_output is not None else frozenset()
     incomplete = tool_output.read_incomplete if tool_output is not None else frozenset()
     ci: list[RecordedCi] = []
-    outputs: dict[str, str] = {}
+    outputs: dict[str, HeldOutput] = {}
     quotable = tool_output.quotable if tool_output is not None else {}
     for fact in facts:
         if isinstance(fact, dict) and fact.get("type") == CI_CHECK_TYPE:
@@ -4665,7 +4672,7 @@ def recorded_from(  # noqa: C901 - one branch per kind of fact the record holds
                     )
                 )
                 if held and isinstance(row.get("id"), str):
-                    outputs[row["id"]] = held
+                    outputs[row["id"]] = HeldOutput(str(fact.get("summary") or ""), held)
     removals = tuple(
         RecordedRemoval(path, at, kind)
         for path, at, kind in (tool_output.removals if tool_output is not None else ())
@@ -4814,7 +4821,9 @@ GOAL_VERDICT_QUOTED_KEYS = ("quoted",)
 # folded: a shorter span ("ok", "4 passed") matches the output of nearly any check.
 MAX_QUOTED_SPANS = 8
 MIN_QUOTED_SPAN_CHARS = 12
-MAX_QUOTED_SPAN_CHARS = 200
+# The output searched is only the last `project_context.TOOL_REPORT_TAIL_CHARS` characters, so a
+# longer span could never match.
+MAX_QUOTED_SPAN_CHARS = 180
 # A file name the evaluator's prose names: a stem of at least two characters and a lettered
 # extension, so "e.g." and a version such as "2.1" are not read as files.
 _VERDICT_FILE = re.compile(r"(?:[\w\-]+/)*[\w\-]{2,}\.[A-Za-z][A-Za-z0-9]{0,4}")
@@ -4880,17 +4889,17 @@ def _verdict_check_kinds(reason: str) -> frozenset[str]:
 # Text a reason quotes is looked for only in a recorded check's output, never in the transcript at
 # large, where an echo would satisfy it:
 # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-27-owner-text-a-reason-quotes-found-in-a-recorded-checks-output)  # noqa: E501
-# A span the evaluator put in quotes, which it may have copied from a tool's output. Single quotes
-# count only where neither side is a word character, so an apostrophe ("didn't ... can't") is not
-# read as a pair.
-_QUOTED_SPAN = re.compile(
-    r"\"([^\"\n]+)\"|\u201c([^\u201d\n]+)\u201d|`([^`\n]+)`|(?<!\w)'([^'\n]+)'(?!\w)"
-)
+# A span the evaluator put in double or curly double quotes, which it may have copied from a tool's
+# output. Backticks and single quotes are not read: a reason sets a file, a command or an identifier
+# in them far more often than a line a run printed, and a name is no quote of output.
+_QUOTED_SPAN = re.compile(r"\"([^\"\n]+)\"|\u201c([^\u201d\n]+)\u201d")
 # The words that report a result and nothing else. A span made of them alone says how a run came out
 # and names nothing a run printed, so it is no quote.
 _QUOTED_FILLER = frozenset(
     {"pass", "passed", "passes", "passing", "ok", "okay", "green", "success", "succeeded",
-     "successful", "fail", "failed", "fails", "failing", "failure", "clean", "done", "all", "and"}
+     "successful", "successfully", "fail", "failed", "fails", "failing", "failure", "clean",
+     "done", "all", "and", "check", "checks", "test", "tests", "no", "issues", "errors", "found",
+     "ran", "zero"}
 )  # fmt: skip
 
 
@@ -4943,14 +4952,17 @@ def _quoted_in_checks(
         stamp = evidence_at(entry) or entry["at"]
         held = recorded.outputs.get(entry["id"])
         if (
-            not held
+            held is None
             or entry.get("changed_after") is True
             or entry.get("stale") is True
             or not set_at <= stamp <= verdict_at
         ):
             continue
-        text = _fold(held)
-        hits = [span for span in spans if span in text]
+        # A span the check's own command line holds is text the agent typed, and a runner's recipe
+        # echo (`> echo ...`) is the script's own text: neither shows the check printed it.
+        line = _fold(held.line)
+        text = _fold("\n".join(row for row in held.text.splitlines() if not row.startswith("> ")))
+        hits = [span for span in spans if span in text and span not in line]
         if hits:
             cited.append(entry["id"])
             seen.update(hits)

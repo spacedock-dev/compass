@@ -16,7 +16,7 @@ from compass_runtime import project_context, reading
 
 from . import test_reading as base
 from .test_ci_read import GOAL_URL, GREEN, record_with
-from .test_claude_checks import ClaudeChecksTestCase
+from .test_claude_checks import SHORT, ClaudeChecksTestCase
 from .test_goal_verdict import GOAL, VERDICT_AT, goal_row
 from .test_reading_record_guards import write_fact
 
@@ -60,6 +60,51 @@ class TheAttributedOutputOfARecordedCheckIsHeldForThePress(ClaudeChecksTestCase)
         self.session.bash("pytest", "first run output here", is_error=True)
         last = self.session.bash("pytest", OUTPUT)
         self.assertEqual({(last, "pytest"): OUTPUT}, self.quotable())
+
+    def test_a_tier_3_command_holds_nothing(self) -> None:
+        self.session.bash("./deploy.sh", OUTPUT)
+        self.assertEqual({}, self.quotable())
+
+    def test_a_background_check_holds_nothing(self) -> None:
+        self.session.bash("pytest", OUTPUT, run_in_background=True)
+        self.assertEqual({}, self.quotable())
+
+    def test_a_check_that_cannot_fail_holds_nothing(self) -> None:
+        self.session.bash("pytest || true", OUTPUT)
+        self.assertEqual({}, self.quotable())
+
+    def test_a_write_after_the_check_is_left_to_the_verdicts_stale_mark(self) -> None:
+        call = self.session.bash("pytest", OUTPUT)
+        write = self.session.call("Write", {"file_path": self.file("a.md"), "content": "x"})
+        self.session.result(write, "ok")
+        self.assertEqual({(call, "pytest"): OUTPUT}, self.quotable())
+
+    def test_the_press_output_reaches_a_verdict_through_the_real_facts(self) -> None:
+        call = self.session.bash("pytest -q", f"{OUTPUT}\n412 passed")
+        self.session.save(self.path)
+        events, _ = project_context.claude_tool_reports(self.config, str(self.path), SHORT)
+        facts = []
+        for event in events:
+            fact = project_context._semantic_fact_from_event(
+                event, event["kind"], project_context._SEMANTIC_FACT_TYPES[event["kind"]], ""
+            )
+            fact["source_session"] = {"harness": "claude", "sid": SHORT}
+            facts.append(fact)
+        press = project_context.claude_check_press(self.config, str(self.path))
+        self.assertEqual({(call, "pytest -q")}, set(press.quotable))
+        recorded = reading.recorded_from(
+            facts,
+            "claude",
+            SHORT,
+            tool_output=reading.ToolOutput(destination="", label="x", quotable=press.quotable),
+        )
+        (held,) = recorded.outputs.values()
+        self.assertEqual("pytest -q", held.line)
+        stamp = recorded.checks[0]["at"]
+        cited, count = reading._quoted_in_checks(
+            f'it printed "{OUTPUT}"', recorded, stamp - 1, stamp + 60
+        )
+        self.assertEqual(([recorded.checks[0]["id"]], 1), (cited, count))
 
     def test_a_credential_in_the_output_is_redacted_before_it_is_held(self) -> None:
         self.session.bash("pytest", f"token=ghp_{'a1B2c3D4e5' * 4} {OUTPUT}")
@@ -165,14 +210,67 @@ class AQuoteInARecordedChecksOutputIsSaidToBeThere(base.AClaudeCodeReadingProduc
                 self.assertNoQuote(verdict)
 
     def test_spans_of_only_result_words_and_short_spans_are_ignored(self) -> None:
-        for spans in (("pass",), ("ok", "passed"), ("All OK",), ("Ran 4",)):
+        for spans in (
+            ("pass",),
+            ("ok", "passed"),
+            ("All OK",),
+            ("Ran 4",),
+            ("All checks passed!",),
+            ("zero errors found",),
+            ("no issues found",),
+        ):
             with self.subTest(spans=spans):
                 _read, verdict = self._verdict(
                     [self._check()],
                     quoting(*spans),
-                    {self.CALL: "pass ok passed All OK tests ok Ran 4 tests"},
+                    {
+                        self.CALL: "pass ok passed All OK tests ok Ran 4 tests All checks passed! zero errors found no issues found"
+                    },
                 )
                 self.assertNoQuote(verdict)
+
+    def test_a_file_or_command_in_code_formatting_is_no_quote_of_output(self) -> None:
+        for text in (
+            "I created `docs/overview.md` as asked",
+            "see 'tests/test_retry.py' for it",
+            "ran `python -m pytest -q tests`",
+        ):
+            with self.subTest(text=text):
+                _read, verdict = self._verdict(
+                    [self._check()],
+                    text,
+                    {
+                        self.CALL: "docs/overview.md:1: ok tests/test_retry.py ... python -m pytest -q tests"
+                    },
+                )
+                self.assertNoQuote(verdict)
+
+    def test_a_span_the_checks_own_command_line_holds_is_not_found(self) -> None:
+        fact = base.check_fact(result="passed", at=130.0, summary=f"pytest -q '{OUTPUT}'")
+        _read, verdict = self._verdict(
+            [fact], quoting(OUTPUT), {("call-1", fact["summary"]): OUTPUT}
+        )
+        self.assertNoQuote(verdict)
+
+    def test_a_runners_recipe_echo_is_not_found_but_a_line_it_printed_is(self) -> None:
+        fact = base.check_fact(result="passed", at=130.0, summary="npm test")
+        key = ("call-1", "npm test")
+        _read, echoed = self._verdict(
+            [fact], quoting(OUTPUT), {key: f"> app@1.0.0 test\n> echo '{OUTPUT}'\n"}
+        )
+        self.assertNoQuote(echoed)
+        _read, printed = self._verdict(
+            [fact], quoting(OUTPUT), {key: f"> app@1.0.0 test\n> vitest\n{OUTPUT}\n"}
+        )
+        self.assertEqual(reading.GOAL_VERDICT_QUOTED, printed["why"])
+
+    def test_a_span_past_the_searched_tail_is_not_looked_for(self) -> None:
+        longer = "x" * (reading.MAX_QUOTED_SPAN_CHARS + 1)
+        self.assertEqual((), reading._quoted_spans(f'"{longer}"'))
+        fits = "y" * reading.MAX_QUOTED_SPAN_CHARS
+        self.assertEqual((fits,), reading._quoted_spans(f'"{fits}"'))
+        self.assertEqual(180, reading.MAX_QUOTED_SPAN_CHARS)
+        self.assertEqual(project_context.TOOL_REPORT_TAIL_CHARS, reading.MAX_QUOTED_SPAN_CHARS)
 
     def test_a_span_naming_a_remote_job_is_left_to_the_ci_facts(self) -> None:
         for span in ("coverage-gate pass", "server-unittest pass", "ci/lint passed"):
