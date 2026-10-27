@@ -15,7 +15,7 @@ from typing import Any, cast
 from compass_runtime import http_api, levels, project_context, reading
 
 from .test_claude_checks import ClaudeChecksTestCase, Transcript
-from .test_harness_records import PiRecord
+from .test_harness_records import PiRecord, exited
 from .test_levels import SAVE, a_reading, analyze, check, criterion, evidence, scan
 
 
@@ -77,6 +77,27 @@ class PisCheckCountsNeedAttributedOutput(PiRecord):
                 fact = self.one()
                 self.assertEqual("not-recorded", fact["result"])
                 self.assertNotIn("checks_passed", fact)
+
+    def test_a_negated_check_is_never_a_pass(self) -> None:
+        for command in (
+            "! pytest -q",
+            "if ! pytest -q; then echo broke; fi",
+            "ls && ! pytest -q",
+            "! (cd . && pytest -q)",
+            "! { cd . && pytest -q; }",
+            "! if true; then pytest -q; fi",
+        ):
+            for text, is_error in (
+                ("4 passed in 1s", False),
+                ("", False),
+                (exited("1 failed in 1s", 1), True),
+            ):
+                with self.subTest(command=command, text=text, is_error=is_error):
+                    self.records.clear()
+                    self.bash(command, text=text, is_error=is_error)
+                    fact = self.one()
+                    self.assertEqual("not-recorded", fact["result"])
+                    self.assertNotIn("checks_passed", fact)
 
     def test_a_trusted_flag_does_not_attribute_another_prints_count(self) -> None:
         for command in ("pytest && echo '5 passed'", "echo '5 passed'; pytest"):
