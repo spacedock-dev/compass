@@ -3599,16 +3599,23 @@ class ReadingRouteTest(unittest.TestCase):
 
     def test_the_notice_names_the_read_only_while_it_is_on(self) -> None:
         config, _state = self._runtime()
-        on = runtime_reading_route.resolve("pi", config=config)
+
+        # A route names its parts only when a model CLI is found; CI runners have none.
+        def found(name: str) -> str:
+            return f"/usr/local/bin/{name}"
+
+        on = runtime_reading_route.resolve("pi", config=config, binary_resolver=found)
         self.assertEqual("on", on["ci_read"])
         self.assertIn(runtime_reading_route.CI_READ_PART, on["disclosure_parts"])
         self.assertTrue(runtime_ci_read.set_setting(config, on=False))
-        off = runtime_reading_route.resolve("pi", config=config)
+        off = runtime_reading_route.resolve("pi", config=config, binary_resolver=found)
         self.assertEqual("off", off["ci_read"])
         self.assertNotIn(runtime_reading_route.CI_READ_PART, off["disclosure_parts"])
         # The unasked lane is never `on`: no network call happens without a press.
         self.assertTrue(runtime_ci_read.set_setting(config, on=True))
-        unasked = runtime_reading_route.resolve("pi", config=config, unasked=True)
+        unasked = runtime_reading_route.resolve(
+            "pi", config=config, unasked=True, binary_resolver=found
+        )
         self.assertNotEqual("on", unasked["ci_read"])
 
     def test_the_flag_holds_the_read_off_and_the_page_cannot_lift_it(self) -> None:
