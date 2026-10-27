@@ -4,8 +4,13 @@
 Each transcript goes through the runtime's own parser and tally, so the figures are what the board
 would have had to work with, not a second reading of the files. The report holds counts and command
 heads only: no argument, no output line and no path ever reaches it. A head is the command word, or
-the command word and its subcommand for the few tools that take one, and it is kept only when it
-looks like a name.
+the command word and its subcommand when the tool is on a closed list and the second word is one of
+that tool's own subcommands; any other second word is an argument and is dropped.
+
+Two bases differ. Session counts (Bash, check, CI poll) read the whole parent transcript. Check-run
+counts are what the board reads inside its scan budget, the newest `turn_scan_max_bytes` shared with
+the subagent transcripts beside the parent, so subagent runs are in the tally and not in the session
+counts.
 
 Default corpus: `$COMPASS_HOME/drift-replay/` (`~/.compass/drift-replay/` when unset). `--dir`
 points elsewhere, for example `~/.claude/projects`; `--days N` keeps transcripts modified in
@@ -38,20 +43,95 @@ _SKILL = str(_ROOT / "compass" / "skills" / "compass")
 
 SUBDIR = "drift-replay"
 TOP_HEADS = 25
+LABEL_WIDTH = 36
 
-# `gh pr checks`, `gh run view|watch|list`, `gh pr view ... statusCheckRollup` and `glab ci`.
-CI_POLL = re.compile(
-    r"\bgh\s+(pr\s+checks|run\s+(watch|view|list)|pr\s+view\b[^|;&]*statusCheckRollup)|\bglab\s+ci\b"
-)
+_SHELL_WRAPPERS = frozenset({"rtk"})
 
-# Tools whose second word is a subcommand: `gh pr` and `git diff` are told apart from `gh`, `git`.
-TWO_WORD_TOOLS = frozenset(
-    {
-        "gh", "git", "glab", "npm", "pnpm", "yarn", "uv", "go", "cargo", "docker", "kubectl", "mvn",
-        "./mvnw", "gradle", "./gradlew", "make", "dbt", "terraform", "aws", "python", "python3",
-        "rtk", "helm", "just", "bazel", "npx", "bun", "psql", "curl",
-    }
-)  # fmt: skip
+
+def _polls_ci(words: list[str]) -> bool:
+    """`gh pr checks`, `gh run view|watch|list`, `gh pr view ... statusCheckRollup`, `glab ci`.
+
+    Read from a parsed command's own words, so a commit message or an `echo` argument that names
+    one is not a poll.
+    """
+    while words and words[0] in _SHELL_WRAPPERS:
+        words = words[1:]
+    if words[:1] == ["glab"]:
+        return words[1:2] == ["ci"]
+    if words[:1] != ["gh"]:
+        return False
+    return (
+        words[1:3] == ["pr", "checks"]
+        or (words[1:2] == ["run"] and words[2:3] in (["view"], ["watch"], ["list"]))
+        or (words[1:3] == ["pr", "view"] and "statusCheckRollup" in words)
+    )
+
+
+# Tools whose second word is a subcommand, and the subcommands each one may name. A second word not
+# on its tool's list is an argument and never reaches the report: `psql hunter2db` stays `psql`.
+# `make` and `just` take targets and the interpreters take scripts, so they report the first word.
+SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "gh": frozenset(["pr", "run", "api", "issue", "repo", "workflow", "release", "auth"]),
+    "git": frozenset(
+        [
+            "status",
+            "diff",
+            "log",
+            "commit",
+            "push",
+            "pull",
+            "checkout",
+            "branch",
+            "merge",
+            "rebase",
+            "fetch",
+            "add",
+            "stash",
+            "worktree",
+            "show",
+            "reset",
+            "tag",
+            "remote",
+        ]
+    ),
+    "glab": frozenset(["ci", "mr", "api", "issue"]),
+    "npm": frozenset(
+        ["install", "run", "test", "build", "lint", "exec", "ci", "add", "publish", "typecheck"]
+    ),
+    "pnpm": frozenset(
+        [
+            "install",
+            "run",
+            "test",
+            "build",
+            "lint",
+            "exec",
+            "dlx",
+            "ci",
+            "add",
+            "publish",
+            "typecheck",
+        ]
+    ),
+    "yarn": frozenset(
+        ["install", "run", "test", "build", "lint", "exec", "dlx", "add", "publish", "typecheck"]
+    ),
+    "uv": frozenset(["run", "sync", "pip", "add", "lock"]),
+    "cargo": frozenset(
+        ["build", "test", "run", "check", "clippy", "fmt", "install", "publish", "add"]
+    ),
+    "go": frozenset(["build", "test", "run", "vet", "mod", "get", "install", "fmt", "generate"]),
+    "docker": frozenset(["build", "run", "compose", "push", "pull", "exec", "ps", "logs", "image"]),
+    "kubectl": frozenset(
+        ["get", "apply", "describe", "logs", "exec", "delete", "rollout", "port-forward", "config"]
+    ),
+    "terraform": frozenset(
+        ["init", "plan", "apply", "destroy", "validate", "fmt", "output", "state", "import"]
+    ),
+    "aws": frozenset(["s3", "ec2", "ecs", "iam", "sts", "lambda", "logs", "cloudformation", "ssm"]),
+    "helm": frozenset(["install", "upgrade", "template", "lint", "list", "repo", "uninstall"]),
+    "dbt": frozenset(["run", "test", "build", "compile", "seed", "snapshot", "docs", "deps"]),
+}
 # Shell words that are never a command a person would name.
 SHELL_WORDS = frozenset(
     {
@@ -60,7 +140,6 @@ SHELL_WORDS = frozenset(
     }
 )  # fmt: skip
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$")
-_SUBCOMMAND = re.compile(r"^[a-z][a-z0-9-]{0,23}$")
 # A withheld-result reason is a closed token; anything else is counted as `other`.
 _REASON = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 NO_TOKEN = "no token"  # noqa: S105 - a label for a blank reason, not a credential
@@ -96,7 +175,7 @@ def find_transcripts(
     """Parent transcripts under `root`, newest bound by mtime when `days` is given."""
     cut = None if days is None else (time.time() if now is None else now) - days * 86400
     found = []
-    for path in sorted(glob.glob(os.path.join(root, "**", "*.jsonl"), recursive=True)):
+    for path in sorted(glob.glob(os.path.join(glob.escape(root), "**", "*.jsonl"), recursive=True)):
         parts = pathlib.PurePath(os.path.relpath(path, root)).parts
         if "subagents" in parts:
             continue
@@ -115,7 +194,7 @@ def _head(words: list[str]) -> str | None:
     probe = first.removeprefix("./")
     if not _NAME.match(probe):
         return None
-    if first in TWO_WORD_TOOLS and len(words) > 1 and _SUBCOMMAND.match(words[1]):
+    if len(words) > 1 and words[1] in SUBCOMMANDS.get(first, ()):
         return f"{first} {words[1]}"
     return first
 
@@ -149,7 +228,11 @@ def _is_rewriting_hook(record: dict[str, Any]) -> bool:
         record.get("type") == "attachment"
         and isinstance(attachment, dict)
         and str(attachment.get("hookName", "")).startswith("PreToolUse:Bash")
-        and "updatedInput" in set(_walk_keys(attachment))
+        and (
+            "updatedInput" in set(_walk_keys(attachment))
+            # Real attachments carry the hook's JSON as text in `stdout`, not as nested keys.
+            or "updatedInput" in str(attachment.get("stdout", ""))
+        )
     )
 
 
@@ -162,7 +245,7 @@ def _scan_file(path: str, project_context: Any, heads: collections.Counter[str])
         return {}
     with handle:
         for line in handle:
-            if '"Bash"' not in line and '"updatedInput"' not in line:
+            if '"Bash"' not in line and "updatedInput" not in line:
                 continue
             try:
                 record = json.loads(line)
@@ -173,26 +256,28 @@ def _scan_file(path: str, project_context: Any, heads: collections.Counter[str])
             out["hook_rewrites"] += _is_rewriting_hook(record)
             for command in _bash_commands(record):
                 out["bash_calls"] += 1
-                out["ci_polls"] += bool(CI_POLL.search(command))
                 try:
                     call = project_context._ShellCall(0.0, "/", {"command": command})  # noqa: SLF001
                 except Exception:  # noqa: BLE001 - a command the parser refuses is not a head
                     out["unparsed"] += 1
                     continue
                 out["checks"] += bool(call.checks)
-                _count_heads(call, project_context, heads)
+                out["ci_polls"] += _count_heads(call, project_context, heads)
     return dict(out)
 
 
-def _count_heads(call: Any, project_context: Any, heads: collections.Counter[str]) -> None:
+def _count_heads(call: Any, project_context: Any, heads: collections.Counter[str]) -> bool:
+    """Count the unclassified heads of one command; True when any of its parts polls CI."""
     pc = project_context
+    polls = False
     for index in call.meaningful:
-        if index in call.checks:
-            continue
         words = call.words[index][0]
         if not words:
             continue
         words = pc._runner_words(words)  # noqa: SLF001
+        polls = polls or _polls_ci(words)
+        if index in call.checks:
+            continue
         if words[0] in pc._READ_ONLY_WORDS or " ".join(words[:2]) in pc._READ_ONLY_PAIRS:  # noqa: SLF001
             continue
         if words[0] in SHELL_WORDS:
@@ -200,6 +285,7 @@ def _count_heads(call: Any, project_context: Any, heads: collections.Counter[str
         head = _head(words)
         if head is not None:
             heads[head] += 1
+    return polls
 
 
 def _tally(path: str, cfg: Any, project_context: Any) -> dict[str, Any] | None:
@@ -281,22 +367,24 @@ def render(report: dict[str, Any]) -> str:
     runs = report["check_runs"]
     share = runs["recorded_share"]
     hook = report["output_rewriting_hook"]
+
+    def row(label: str, value: str) -> str:
+        return f"{label:<{LABEL_WIDTH}}{value}"
+
     lines = [
-        (
-            "transcripts                      "
-            f"{report['transcripts']} (unreadable {report['unreadable']})"
-        ),
-        f"sessions with Bash               {report['sessions_with_bash']}",
-        f"sessions with a closed-list check {report['sessions_with_closed_list_check']}",
-        f"sessions polling CI              {report['sessions_polling_ci']}",
-        (
-            "check runs                       "
+        row("transcripts", f"{report['transcripts']} (unreadable {report['unreadable']})"),
+        row("sessions with Bash", str(report["sessions_with_bash"])),
+        row("sessions with a closed-list check", str(report["sessions_with_closed_list_check"])),
+        row("sessions polling CI", str(report["sessions_polling_ci"])),
+        row(
+            "check runs",
             f"passed {runs['passed']}, failed {runs['failed']}, "
-            f"not recorded {runs['not_recorded']}, "
-            f"background {runs['background']}"
+            f"not recorded {runs['not_recorded']}, background {runs['background']}",
         ),
-        "recorded-result share            "
-        + ("n/a (no foreground runs)" if share is None else f"{share:.1%} of {runs['foreground']}"),
+        row(
+            "recorded-result share",
+            "n/a (no foreground runs)" if share is None else f"{share:.1%} of {runs['foreground']}",
+        ),
         "withheld by reason",
     ]
     lines += [
@@ -307,11 +395,13 @@ def render(report: dict[str, Any]) -> str:
         f"  {row['count']:5d}  {row['head']}" for row in report["top_unclassified_heads"]
     ] or ["  none"]
     lines.append(
-        "output-rewriting PreToolUse hook "
-        + (
-            f"present ({hook['records']} records in {hook['sessions']} sessions)"
-            if hook["present"]
-            else "absent"
+        row(
+            "output-rewriting PreToolUse hook",
+            (
+                f"present ({hook['records']} records in {hook['sessions']} sessions)"
+                if hook["present"]
+                else "absent"
+            ),
         )
     )
     return "\n".join(lines)

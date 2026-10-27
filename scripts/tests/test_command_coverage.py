@@ -21,9 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import command_coverage
 
 CORPUS = Path(__file__).resolve().parent / "fixtures" / "command_coverage"
-# The recorded-result share the corpus gives today: 5 of its 6 foreground check runs carry a result.
+# The recorded-result share the corpus gives today: 6 of its 7 foreground check runs carry a result.
 # A floor, not a pin: a change that reads more of these runs may raise it, and none may lower it.
-RECORDED_SHARE_FLOOR = Fraction(5, 6)
+RECORDED_SHARE_FLOOR = Fraction(6, 7)
 
 
 def _report() -> dict[str, Any]:
@@ -49,12 +49,17 @@ class TheFiguresOnTheFixtureCorpus(unittest.TestCase):
     def test_check_runs_by_result(self) -> None:
         runs = self.report["check_runs"]
         self.assertEqual(
-            {"passed": 4, "failed": 1, "not_recorded": 1, "background": 1, "foreground": 6},
+            {"passed": 5, "failed": 1, "not_recorded": 1, "background": 1, "foreground": 7},
             {
                 key: runs[key]
                 for key in ("passed", "failed", "not_recorded", "background", "foreground")
             },
         )
+
+    def test_a_subagents_check_run_is_in_the_tally_and_not_in_the_session_counts(self) -> None:
+        # `ruff format --check .` runs only in the subagent transcript beside proj-a's parent.
+        self.assertEqual(5, self.report["check_runs"]["passed"])
+        self.assertEqual(3, self.report["sessions_with_bash"])
 
     def test_a_blank_withheld_reason_is_counted_as_no_token(self) -> None:
         self.assertEqual({"no token": 1}, self.report["withheld_by_reason"])
@@ -62,14 +67,38 @@ class TheFiguresOnTheFixtureCorpus(unittest.TestCase):
     def test_unclassified_heads_are_first_words_or_a_tool_and_its_subcommand(self) -> None:
         heads = {row["head"]: row["count"] for row in self.report["top_unclassified_heads"]}
         self.assertEqual(2, heads["terraform plan"])
-        self.assertEqual(1, heads["make deploy"])
+        self.assertEqual(1, heads["make"])
+        self.assertEqual(1, heads["psql"])
+        self.assertEqual(1, heads["terraform apply"])
         self.assertNotIn("pytest", " ".join(heads))
         self.assertNotIn("git log", heads)
 
     def test_the_output_rewriting_hook_is_seen(self) -> None:
         self.assertEqual(
-            {"present": True, "records": 1, "sessions": 1}, self.report["output_rewriting_hook"]
+            {"present": True, "records": 2, "sessions": 2}, self.report["output_rewriting_hook"]
         )
+
+    def test_the_hook_is_seen_as_text_in_stdout_and_as_nested_keys(self) -> None:
+        # proj-b carries the shape a real transcript has (the hook's JSON as text in `stdout`);
+        # proj-a carries the second accepted form, `updatedInput` as a nested key.
+        stdout_form = {
+            "type": "attachment",
+            "attachment": {
+                "hookName": "PreToolUse:Bash",
+                "stdout": '{"hookSpecificOutput": {"updatedInput": {"command": "x"}}}',
+            },
+        }
+        nested_form = {
+            "type": "attachment",
+            "attachment": {
+                "hookName": "PreToolUse:Bash",
+                "hookSpecificOutput": {"updatedInput": {}},
+            },
+        }
+        plain = {"type": "attachment", "attachment": {"hookName": "PreToolUse:Bash", "stdout": ""}}
+        self.assertTrue(command_coverage._is_rewriting_hook(stdout_form))
+        self.assertTrue(command_coverage._is_rewriting_hook(nested_form))
+        self.assertFalse(command_coverage._is_rewriting_hook(plain))
 
     def test_the_text_report_carries_every_figure(self) -> None:
         text = command_coverage.render(self.report)
@@ -79,10 +108,10 @@ class TheFiguresOnTheFixtureCorpus(unittest.TestCase):
             "polling CI",
             "not recorded 1",
             "background 1",
-            "83.3%",
+            "85.7%",
             "no token",
             "terraform plan",
-            "PreToolUse hook present",
+            "present (2 records in 2 sessions)",
         ):
             self.assertIn(expected, text)
 
@@ -102,6 +131,7 @@ class WhatTheReportNeverHolds(unittest.TestCase):
         both = json.dumps(report) + command_coverage.render(report)
         for secret in (
             "FakePass99",
+            "hunter2db",
             "--password",
             "plan.bin",
             "tests/test_widgets.py",
@@ -114,6 +144,28 @@ class WhatTheReportNeverHolds(unittest.TestCase):
             self.assertIsNone(command_coverage._head(words), words)
         self.assertEqual("gh pr", command_coverage._head(["gh", "pr", "checks", "12"]))
         self.assertEqual("gh", command_coverage._head(["gh", "FakePass99"]))
+        self.assertEqual("git diff", command_coverage._head(["git", "diff", "--stat"]))
+
+    def test_a_lowercase_argument_never_becomes_part_of_a_head(self) -> None:
+        for words, expected in (
+            (["psql", "hunter2db", "-c", "select 1"], "psql"),
+            (["python3", "hunter2", "--x"], "python3"),
+            (["curl", "internalhost"], "curl"),
+            (["npx", "supersecrettoken"], "npx"),
+            (["uv", "run", "hunter2"], "uv run"),
+            (["make", "deploy"], "make"),
+        ):
+            head = command_coverage._head(words)
+            self.assertEqual(expected, head, words)
+            for argument in ("hunter2", "internalhost", "supersecrettoken", "deploy"):
+                self.assertNotIn(argument, head or "")
+
+    def test_prose_that_names_a_ci_command_is_not_a_poll(self) -> None:
+        polls = command_coverage._polls_ci
+        self.assertTrue(polls(["gh", "pr", "checks", "1"]))
+        self.assertTrue(polls(["rtk", "glab", "ci", "status"]))
+        self.assertFalse(polls(["echo", "glab ci status"]))
+        self.assertFalse(polls(["git", "commit", "-m", "see gh pr checks"]))
 
 
 class TheCommandLine(unittest.TestCase):
@@ -126,6 +178,22 @@ class TheCommandLine(unittest.TestCase):
         code, out = self._run("--dir", str(CORPUS), "--json")
         self.assertEqual(0, code)
         self.assertEqual(3, json.loads(out)["sessions_with_bash"])
+
+    def test_a_directory_name_with_glob_characters_is_read_literally(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            transcript = Path(tmp, "dir[1]", "s.jsonl")
+            transcript.parent.mkdir()
+            transcript.write_text("{}\n", encoding="utf-8")
+            self.assertEqual(
+                [str(transcript)],
+                command_coverage.find_transcripts(str(transcript.parent.parent / "dir[1]")),
+            )
+
+    def test_the_figures_line_up(self) -> None:
+        lines = command_coverage.render(_report()).splitlines()[:6]
+        for line in lines:
+            self.assertEqual(" ", line[35], line)
+            self.assertNotEqual(" ", line[36], line)
 
     def test_days_bounds_by_modification_time(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
