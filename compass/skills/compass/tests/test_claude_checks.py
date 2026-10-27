@@ -434,7 +434,7 @@ class WhatAReaderSeesOfTheChecksASessionRan(ClaudeChecksTestCase):
         for command, output, expected in (
             ("go test ./... | tail -2", "ok  \texample.com/retry\t0.2s", "not-recorded"),
             ("go test ./...", "ok  \texample.com/retry\t0.2s", "passed"),
-            ("python3 -m unittest 2>&1 | tail -1", "OK (skipped=1)", "not-recorded"),
+            ("python3 -m unittest 2>&1 | tail -1", "OK (skipped=1)", "passed"),
             ("python3 -m unittest 2>&1 | tail -1", "Ran 4 tests in 0.01s\n\nOK", "passed"),
         ):
             with self.subTest(command=command, output=output):
@@ -925,7 +925,8 @@ class WhichCheckAShellCallsResultBelongsTo(ClaudeChecksTestCase):
         found = results_by_title(events)
         self.assertEqual({"pytest", "ruff check ."}, set(found))
         self.assertNotEqual("passed", found["pytest"])
-        self.assertNotEqual("passed", found["ruff check ."])
+        # Ruff's own last line speaks for ruff, the last check; pytest's failure text above it does not.
+        self.assertEqual("passed", found["ruff check ."])
         self.assertEqual(3, scan["check_runs"])
 
     def test_a_passing_flag_through_and_alone_passes_every_check(self) -> None:  # R2, T1, T8
@@ -967,11 +968,13 @@ class WhichCheckAShellCallsResultBelongsTo(ClaudeChecksTestCase):
                     self.assertEqual("not-recorded", result, title)
 
     def test_output_belongs_to_a_check_only_when_the_call_holds_one(self) -> None:  # R3
+        # mypy is the last check and its own runner's summary is the last line, so it speaks for
+        # mypy alone; pytest, which is not last, stays unrecorded.
         self.session.bash(
             "pytest -q; mypy src | tail -1", "Found 2 errors in 1 file", is_error=False
         )
         self.assertEqual(
-            {"pytest -q": "not-recorded", "mypy src": "not-recorded"},
+            {"pytest -q": "not-recorded", "mypy src": "failed"},
             results_by_title(self.read()[0]),
         )
 
@@ -2210,3 +2213,285 @@ class WhyACheckHasNoRecordedResult(ClaudeChecksTestCase):
         run = runs[0][1]
         self.assertEqual("not-recorded", run["result"])
         self.assertEqual("piped_beside_other_commands", run["result_reason"])
+
+    def test_the_pi_collector_reads_the_last_line_and_the_error_flag(self) -> None:
+        for result, tail, expected in (
+            ({"status": "", "is_error": False}, "x\n3 passed in 1s", "passed"),
+            ({"status": "", "is_error": False}, "x\n3 failed in 1s", "failed"),
+            ({"status": "exited", "is_error": True}, "x\n3 passed in 1s", "not-recorded"),
+            ({"status": "exited", "is_error": True}, "x\n3 failed in 1s", "failed"),
+        ):
+            with self.subTest(result=result, tail=tail):
+                runs = project_context._pi_check_runs(
+                    "echo a; pytest -q | tail -3",
+                    call_key="pi-call-1",
+                    at=1.0,
+                    result={**result, "at": 2.0, "tail": tail},
+                    harness="pi",
+                    sid=SHORT,
+                )
+                self.assertEqual(expected, runs[0][1]["result"])
+
+
+class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase):
+    """The runner's own summary on the last line speaks for the last check (DEC-29)."""
+
+    def unflagged_bash(self, command: str, output: str) -> list[dict[str, Any]]:
+        self.session.result(self.session.call("Bash", {"command": command}), output)
+        return self.checks()
+
+    def results_of(self, command: str, output: str) -> dict[str, str]:
+        return {c["title"]: str(c["result"]) for c in self.unflagged_bash(command, output)}
+
+    def result_of(self, command: str, output: str) -> str:
+        # The entries come ranked by result, so the last check of the call is named, not indexed.
+        return list(self.results_of(command, output).values())[-1]
+
+    def test_a_setup_command_before_the_check_does_not_hide_its_summary(self) -> None:
+        self.assertEqual(
+            "passed",
+            self.result_of(
+                "source .venv/bin/activate && which python; pytest -q | tail -20",
+                "/x/.venv/bin/python\n.............\n14 passed in 1.97s",
+            ),
+        )
+
+    def test_a_failing_ruff_is_not_read_as_the_mypy_that_never_ran(self) -> None:
+        self.assertEqual(
+            {"ruff check .": "not-recorded", "mypy .": "not-recorded"},
+            self.results_of("ruff check . && mypy .", "Found 2 errors."),
+        )
+
+    def test_a_silent_runner_never_takes_another_commands_line(self) -> None:
+        self.assertEqual(
+            "not-recorded",
+            self.result_of("vitest run && tsc --noEmit | tail -5", "      Tests  5 passed (5)"),
+        )
+
+    def test_an_earlier_failure_in_the_window_does_not_fail_the_last_check(self) -> None:
+        self.assertEqual(
+            {"mypy .": "not-recorded", "ruff check .": "passed"},
+            self.results_of(
+                "echo go; mypy . 2>&1 | tail -5; ruff check . | tail -5",
+                "src/a.py:1: error: Missing return\nFound 1 error in 1 file\nAll checks passed!",
+            ),
+        )
+
+    def test_only_the_last_of_several_checks_is_recorded(self) -> None:
+        self.assertEqual(
+            {"mypy .": "not-recorded", "pytest -q": "passed"},
+            self.results_of("mypy . ; pytest -q | tail -3", "x\n3 passed in 0.10s"),
+        )
+
+    def test_a_summary_followed_by_another_command_is_not_the_checks(self) -> None:
+        self.assertEqual("not-recorded", self.result_of("pytest -q; echo done", "3 passed in 1s"))
+
+    def test_each_runner_reads_its_own_table(self) -> None:
+        for command, output, expected in (
+            ("echo a; mypy .", "Success: no issues found in 3 source files", "passed"),
+            ("echo a; mypy .", "Found 2 errors in 1 file (checked 3 source files)", "failed"),
+            ("echo a; ruff check .", "All checks passed!", "passed"),
+            ("echo a; ruff check .", "Found 2 errors.", "failed"),
+            ("echo a; ruff check .", "[*] 1 fixable with the `--fix` option.", "failed"),
+            ("echo a; vitest run", "      Tests  1 failed | 4 passed (5)", "failed"),
+            ("echo a; vitest run", "      Tests  5 passed (5)", "passed"),
+            (
+                "echo a; vitest run | tail -5",
+                (
+                    " Test Files  1 passed (1)\n      Tests  5 passed (5)\n"
+                    "   Start at  10:00:00\n   Duration  500ms"
+                ),
+                "passed",
+            ),
+            (
+                "echo a; vitest run | tail -5",
+                (
+                    " Test Files  1 failed (1)\n      Tests  2 failed | 3 passed (5)\n"
+                    "   Start at  10:00:00\n   Duration  500ms"
+                ),
+                "failed",
+            ),
+            ("echo a; python3 -m unittest", "Ran 4 tests in 0.01s\n\nOK", "passed"),
+            ("echo a; python3 -m unittest", "Ran 0 tests in 0.000s\n\nOK", "not-recorded"),
+            (
+                "echo a; python3 -m unittest 2>&1 | tail -3",
+                "Ran 0 tests in 0.000s\n\nOK",
+                "not-recorded",
+            ),
+            (
+                "echo a; python3 -m unittest",
+                "Ran 4 tests in 0.01s\n\nFAILED (failures=1)",
+                "failed",
+            ),
+            ("echo a; node --test", "\u2139 fail 0", "passed"),
+            ("echo a; node --test", "\u2139 fail 2", "failed"),
+            (
+                "echo a; node --test 2>&1 | tail -9",
+                (
+                    "\u2139 tests 3\n\u2139 suites 0\n\u2139 pass 3\n\u2139 fail 0\n\u2139 cancelled 0\n"
+                    "\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 52"
+                ),
+                "passed",
+            ),
+            (
+                "echo a; node --test 2>&1 | tail -9",
+                (
+                    "\u2139 tests 3\n\u2139 pass 1\n\u2139 fail 2\n\u2139 cancelled 0\n"
+                    "\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 52"
+                ),
+                "failed",
+            ),
+            ("echo a; pytest", "1 failed, 13 passed in 1.97s", "failed"),
+            ("echo a; pytest", "no tests ran in 0.01s", "not-recorded"),
+            ("echo a; pytest", "0 passed in 0.01s", "not-recorded"),
+            ("echo a; mypy .", "14 passed in 1.97s", "not-recorded"),
+            ("echo a; pytest", "Found 2 errors in 1 file", "not-recorded"),
+        ):
+            with self.subTest(command=command, output=output):
+                self.setUp()
+                self.assertEqual(expected, self.result_of(command, output))
+
+    def test_an_error_flag_is_not_outvoted_by_a_passing_summary(self) -> None:
+        # The failure may be the setup command, so the check is withheld, not passed.
+        for command in (
+            "echo a; pytest -q",
+            "echo a; pytest -q --cov --cov-fail-under=90",
+            "source .venv/bin/activate && which python; pytest -q | tail -20",
+        ):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, "14 passed in 1.97s", is_error=True)
+                self.assertEqual("not-recorded", list(self.checks())[-1]["result"])
+
+    def test_an_error_flag_beside_a_failing_summary_is_a_failure(self) -> None:
+        self.session.bash("echo a; pytest -q", "2 failed in 1.97s", is_error=True)
+        self.assertEqual("failed", list(self.checks())[-1]["result"])
+
+    def test_a_clean_unpiped_flag_yields_to_a_failing_summary(self) -> None:
+        for command in ("touch x; pytest -q", "make setup && pytest -q", "echo a; pytest -q"):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, "3 failed in 1s", is_error=False)
+                self.assertEqual("failed", list(self.checks())[-1]["result"])
+
+    def test_a_clean_flag_still_yields_to_a_failing_summary(self) -> None:
+        self.session.bash("echo a; pytest -q | tail -3", "3 failed in 1s", is_error=False)
+        self.assertEqual("failed", list(self.checks())[-1]["result"])
+
+    def test_a_substitution_before_the_check_withholds_its_summary(self) -> None:
+        self.assertEqual(
+            "not-recorded", self.result_of("echo $(touch marker); pytest -q", "3 passed in 1s")
+        )
+
+    def test_a_pipe_that_is_not_a_filter_withholds_the_summary(self) -> None:
+        for command in ("echo a; pytest -q | sort", "echo a; pytest -q | tee out.log"):
+            with self.subTest(command=command):
+                self.setUp()
+                self.assertEqual("not-recorded", self.result_of(command, "3 passed in 1s"))
+
+    def test_a_second_check_of_the_same_runner_is_never_read_from_the_last_line(self) -> None:
+        for command, output in (
+            ("pytest a {} pytest b", "1 failed in 0.1s"),
+            ("python3 -m unittest a {} python3 -m unittest b", "FAILED (failures=1)"),
+            ("ruff check . {} ruff check x", "Found 2 errors."),
+        ):
+            for joiner in ("&&", "||", ";"):
+                with self.subTest(command=command, joiner=joiner):
+                    self.setUp()
+                    results = self.results_of(command.format(joiner), output)
+                    self.assertNotIn("failed", results.values())
+
+    def test_a_line_of_repeated_counts_is_read_in_bounded_time(self) -> None:
+        line = "      Tests  " + "1 a1 " * 3000
+        self.assertEqual("", project_context._last_line_summary(["vitest", "run"], line))
+
+    def test_a_cancelled_node_test_after_fail_zero_is_never_a_pass(self) -> None:
+        info = project_context._INFO
+        for cancelled, expected in (("1", ""), ("0", "passed")):
+            text = (
+                f"{info} pass 4\n{info} fail 0\n{info} cancelled {cancelled}\n{info} duration_ms 12"
+            )
+            with self.subTest(cancelled=cancelled):
+                self.assertEqual(
+                    expected, project_context._last_line_summary(["node", "--test"], text)
+                )
+
+    def test_an_rtk_wrapped_check_stays_flag_only(self) -> None:
+        self.assertEqual("not-recorded", self.result_of("echo a; rtk pytest -q", "3 passed in 1s"))
+
+
+class WhatClaudeCodeAppendsToACommandsOutput(ClaudeChecksTestCase):
+    """Claude Code's own trailer lines are not the runner's output (DEC-29)."""
+
+    def result_of(self, command: str, output: str) -> str:
+        self.session.result(self.session.call("Bash", {"command": command}), output)
+        return str(self.only_check()["result"])
+
+    def test_a_cwd_reset_line_does_not_hide_the_summary(self) -> None:
+        self.assertEqual(
+            "passed", self.result_of("pytest -q", "14 passed in 1.97s\nShell cwd was reset to /x")
+        )
+
+    def test_a_modified_files_notice_does_not_hide_the_summary(self) -> None:
+        notice = (
+            "[This command modified 2 files you've previously read: a/b.py, c.py. "
+            "Call Read before editing.]"
+        )
+        self.assertEqual(
+            "passed",
+            self.result_of("pytest -q", f"14 passed in 1.97s\n{notice}\nShell cwd was reset to /x"),
+        )
+
+    def test_a_trailer_shaped_line_in_the_middle_of_the_output_is_kept(self) -> None:
+        self.assertEqual(
+            "failed", self.result_of("pytest -q", "Shell cwd was reset to /x\n1 failed in 0.1s\n")
+        )
+
+    def test_the_trailer_is_not_published_in_the_press_tail(self) -> None:
+        self.session.result(
+            self.session.call("Bash", {"command": "pytest -q"}),
+            "14 passed in 1.97s\nShell cwd was reset to /x",
+        )
+        self.session.save(self.path)
+        press = project_context.claude_check_press(self.config, str(self.path))
+        self.assertEqual(["14 passed in 1.97s"], list(press.tails.values()))
+
+    def test_unittest_ok_with_a_count_is_a_pass_and_failed_with_counts_a_failure(self) -> None:
+        for output, expected in (
+            ("OK (skipped=4)", "passed"),
+            ("OK (expected failures=1)", "passed"),
+            ("OK (skipped=2, expected failures=1)", "passed"),
+            ("FAILED (failures=1, skipped=2)", "failed"),
+        ):
+            with self.subTest(output=output):
+                self.setUp()
+                self.assertEqual(
+                    expected,
+                    self.result_of(
+                        "python3 -m unittest 2>&1 | tail -3", f"Ran 9 tests in 0.1s\n\n{output}"
+                    ),
+                )
+
+
+class EveryWithheldResultNamesItsReason(ClaudeChecksTestCase):
+    """No check shows "no token": each shape a rule withholds publishes a closed token (DEC-29)."""
+
+    def test_every_shape_the_attribution_rules_withhold_carries_a_reason(self) -> None:
+        for command, output in (
+            ("pytest -q && ruff check .", "2 failed, 3 passed in 1.2s"),
+            ("pytest a && pytest b", "2 failed, 3 passed in 1.2s"),
+            ('cd "$REPO" && pytest -q', "2 failed, 3 passed"),
+            ("echo start && pytest -q 2>&1 | tail -3", "2 failed, 3 passed"),
+            ("source .venv/bin/activate; pytest -q", "2 failed, 3 passed"),
+            ("git status; pytest -q", "2 failed, 3 passed"),
+            ("pytest -q; echo done", "2 failed, 3 passed"),
+            ("(echo a; pytest -q)", "2 failed, 3 passed"),
+        ):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.result(self.session.call("Bash", {"command": command}), output)
+                for check in self.checks():
+                    self.assertEqual("not-recorded", check["result"])
+                    self.assertIn(
+                        check["result_reason"], project_context.CHECK_NOT_RECORDED_REASONS
+                    )
