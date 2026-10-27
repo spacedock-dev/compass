@@ -4949,6 +4949,48 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(202, status)
         self.assertEqual(changed, seen[0].changed_after)
 
+    def _masked_values_seen_by_produce(self, config: Any, state: Any) -> frozenset[str]:
+        seen: list[Any] = []
+        real = runtime_reading.produce
+
+        def produce(*args: Any, **kwargs: Any) -> Any:
+            seen.append(kwargs.get("tool_output"))
+            return real(*args, **kwargs)
+
+        with (
+            mock.patch.object(runtime_reading, "produce", produce),
+            self._counting_model(("codex",), harness="claude", destination="OpenAI"),
+            self._serving(self._app(config, state, "claude")) as port,
+            mock.patch.object(
+                runtime_project_context,
+                "press_checks",
+                lambda *_a, **_k: runtime_project_context.PressChecks(
+                    {}, frozenset(), masked_values=frozenset({"FakePass99"})
+                ),
+            ),
+        ):
+            status, _body = self._post(port, self._claude_press())
+        self.assertEqual(202, status)
+        return frozenset(seen[0].masked_values)
+
+    def test_the_press_hands_the_reading_the_values_a_command_masked(self) -> None:
+        config, state = self._runtime()
+        # Without a grant the press still carries them, and so it does with one.
+        self.assertEqual(
+            frozenset({"FakePass99"}), self._masked_values_seen_by_produce(config, state)
+        )
+        reading_policy.set_consent(
+            config,
+            True,
+            now=1_700_000_100.0,
+            provider="codex",
+            tool_output="OpenAI",
+            destination="OpenAI",
+        )
+        self.assertEqual(
+            frozenset({"FakePass99"}), self._masked_values_seen_by_produce(config, state)
+        )
+
     def test_on_the_claude_code_route_the_checks_go_only_after_the_same_allow(self) -> None:
         config, state = self._runtime()
         both = ("codex", "claude")

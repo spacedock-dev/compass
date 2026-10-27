@@ -3821,7 +3821,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 application.config, application.state, harness, sid
             )
             tool_output = runtime_reading.ToolOutput(
-                destination="", label=route["label"], removals=press.removals
+                destination="",
+                label=route["label"],
+                removals=press.removals,
+                masked_values=press.masked_values,
             )
         elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
             press = runtime_project_context.press_checks(
@@ -3835,6 +3838,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 read_incomplete=press.read_incomplete,
                 passes_and_writes=press.passes_and_writes,
                 removals=press.removals,
+                masked_values=press.masked_values,
             )
         return {
             "tool_output": tool_output,

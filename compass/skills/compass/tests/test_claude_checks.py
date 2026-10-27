@@ -1525,6 +1525,37 @@ class WhatTheVerifierFoundAfterTheFirstRound(ClaudeChecksTestCase):
                     self.assertNotEqual("passed", result, title)
 
 
+class ThePressCarriesTheValuesACallMasked(ClaudeChecksTestCase):
+    """The press reads every masked value of the session, check or not."""
+
+    def press(self) -> project_context.PressChecks:
+        self.session.save(self.path)
+        return project_context.claude_check_press(self.config, str(self.path))
+
+    def test_a_curl_password_and_a_cookie_reach_the_press(self) -> None:
+        self.session.bash(
+            "curl -u alice:FakePass99 -H 'Cookie: sid=FakeSid99' https://x.example", "ok"
+        )
+        self.session.bash("pytest -q", "3 passed in 0.1s")
+        masked = self.press().masked_values
+        self.assertIn("FakePass99", masked)
+        self.assertTrue(any("FakeSid99" in value for value in masked))
+
+    def test_a_command_behind_the_rtk_prefix_is_masked_like_the_bare_command(self) -> None:
+        self.session.bash("rtk vault login hvs.FakeFake99", "ok")
+        self.session.bash("pytest -q", "3 passed in 0.1s")
+        self.assertIn("hvs.FakeFake99", self.press().masked_values)
+
+    def test_a_flag_that_only_looks_like_a_password_masks_nothing(self) -> None:
+        self.session.bash("docker run --rm -u 1000:1000 img pytest -q", "1000 passed in 2s")
+        self.session.bash("git push origin -u HEAD:main", "ok")
+        self.assertEqual(frozenset(), self.press().masked_values)
+
+    def test_a_session_that_masked_nothing_carries_nothing(self) -> None:
+        self.session.bash("pytest -q", "3 passed in 0.1s")
+        self.assertEqual(frozenset(), self.press().masked_values)
+
+
 if __name__ == "__main__":
     unittest.main()
 

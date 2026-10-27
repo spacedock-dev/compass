@@ -8,11 +8,15 @@ import json
 import math
 import os
 import re
+import shlex
 import string
 import unicodedata
 from bisect import bisect_left, bisect_right
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 # Private goal-source metadata; never part of the Analyze words or their cache.
 GOAL_SOURCE_CUT_FIELD: Final = "goal_source_cut"
@@ -211,6 +215,67 @@ _SECRET_SHAPES: Final = (
         False,
         r"://[^\s/:@]*:(?:[^\s/@]+(?=@)|(?![0-9]+$)[^\s/@]+$)",
     ),
+    # gcloud's OAuth access token, which `gcloud auth print-access-token` writes
+    # alone on a line. The `c.` second segment of the newer format carries dots,
+    # so the body admits them. The vendor documents no maximum: 1,024 is a bound
+    # chosen to be wider than any token seen, not a measured length.
+    ("gcloud", 5, True, r"ya29\.[A-Za-z0-9_.-]{20,1024}"),
+    # Secrets Manager's `get-secret-value` prints the secret as one JSON string,
+    # which is itself JSON, so its quotes arrive escaped: the body is a run of
+    # plain characters or backslash pairs, and a cued shape stopping at the first
+    # `\"` published every key after it. Name and quote stay, only the value goes.
+    # A Python repr spells the value in single quotes, so either quote opens it.
+    # Unbounded, because a bound is a cliff: past it the closing quote falls
+    # outside the window and the whole secret was returned (4,096, then 65,536;
+    # review, 2026-10-27). The run is linear: its two alternatives cannot both
+    # match a character, and a match always ends at the quote, the line or the text.
+    (
+        "secretstring",
+        0,
+        False,
+        (
+            r"(?i:\bsecretstring)[\"']?\s*:\s*(?P<ssq>[\"'])"
+            r"(?P<ssval>(?:(?!(?P=ssq))[^\\\n]|\\.)+)(?:(?P=ssq)|(?=\n)|$)"
+        ),
+    ),
+    # A `.netrc` entry: `machine <host>` or `default`, then `login <user>` and
+    # `password <value>`. The login is what separates it from prose, so a
+    # `machine` or `default` followed straight by `password` is taken only when
+    # the value has a digit or a capital in it ("machine learning password
+    # manager" and "default password reset" are sentences). A quoted value is
+    # taken whole.
+    (
+        "netrc",
+        0,
+        False,
+        (
+            r"(?<![\w-])(?:machine\s+\S+|default)\s+"
+            r"(?:login\s+\S+\s+password\s+|password\s+(?=[\"']?\S*[0-9A-Z]))"
+            r"(?P<netrcval>\"[^\"\n]{1,512}\"|'[^'\n]{1,512}'|\S{1,512})"
+        ),
+    ),
+    # A pre-signed URL's signature is the credential: whoever holds the URL holds
+    # the access until it expires. Only inside a query string (`?` or `&` in
+    # front, or the HTML and JSON spellings of `&`), because `sig=` and
+    # `signature=` are also ordinary code and prose. The value has to look like a
+    # signature: a digit, a base64 or percent character, or both cases of letter.
+    # `sig=overview` and `sig=handler_function_name` are words.
+    (
+        "querysig",
+        0,
+        False,
+        (
+            r"(?:(?<=[?&])|(?<=&amp;)|(?<=\\u0026))"
+            r"(?i:x-amz-signature|x-amz-security-token|x-goog-signature|signature|sig)"
+            # Flat lookaheads, one condition each: nesting one bounded run inside
+            # another cost about 2048 * 2048 steps per `sig=`, so repeated starts
+            # stalled on 10,000 characters (review, 2026-10-27). `?` ends a value, so
+            # one start's scan never runs on through the next `?sig=`.
+            r"=(?P<sigval>(?:(?=[^\s&#?\"'<>]{0,2048}[0-9%+/])"
+            r"|(?=[^\s&#?\"'<>]{0,2048}[A-Z])(?=[^\s&#?\"'<>]{0,2048}[a-z]))"
+            r"[^\s&#?\"'<>]{6,2048})"
+        ),
+    ),
     # A credential with no shape of its own, known only by the cue in front of
     # it: an `Authorization: Bearer` value, a `--password` flag, or a name such
     # as `password`, `DB_PASSWORD`, `PGPASSWORD`, `GITHUB_API_TOKEN` or
@@ -230,7 +295,7 @@ _SECRET_SHAPES: Final = (
             r"|(?P<cuebearer>(?i:\bbearer)\s+)"
             r"|(?P<cueflag>(?<![\w-])--(?i:password|passwd|token|secret|api-key|apikey)(?:=|\s+))"
             r"|(?P<cuename>(?<![A-Za-z0-9_])[A-Za-z0-9_]*"
-            r"(?i:password|passwd|pwd|token|secret|api_key|apikey|key))"
+            r"(?i:password|passwd|passphrase|pwd|token|secret|api_key|apikey|key))"
             r"[\"']?\s*(?P<cuesep>[=:])\s*)"
             r"(?:(?P<cueq>[\"'])(?P<cuedquoted>[^\"'\n]{1,512})(?P=cueq)"
             r"|(?P<cuedvalue>[^\s\"'`,;&)]{1,512}))"
@@ -251,6 +316,10 @@ _TOKEN_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_-")
 # credential to go and rotate; `…REDACTED` alone says nothing and takes the
 # words of the instruction with it.
 _SECRET_KEEP_TO_BODY: Final = {"aws_secret": 40}
+
+# The shapes whose value is a named group inside the match: the words around it
+# stay and only the group becomes the marker.
+_SECRET_VALUE_GROUP: Final = {"secretstring": "ssval", "netrc": "netrcval", "querysig": "sigval"}
 
 # The longest prefix any shape keeps in front of the marker, which is what the
 # bound in `redact_clip` has to be able to step over.
@@ -279,6 +348,7 @@ _SECRET_UNAMBIGUOUS: Final = {
     "aws": 20,  # `AKIA` plus 16 is the whole shape; it has no longer form.
     "github_fine": 51,  # `github_pat_` plus its 40.
     "linear": 48,  # `lin_api_` plus its 40, which is the only length it has.
+    "gcloud": 25,  # `ya29.` plus 20; no innocent text opens a token with it.
 }
 
 # The literal every shape opens with, scanned with `in` before the alternation
@@ -320,6 +390,13 @@ _SECRET_HINTS: Final = (
     "AIza",
     "eyJ",
     "-----BEGIN ",
+    "ya29.",
+    # A pre-signed URL's signature parameter, in the spellings the vendors use.
+    "sig=",
+    "Sig=",
+    "SIG=",
+    "ignature=",
+    "IGNATURE=",
     # The AWS secret key's cue, in the three spellings the vendor's own tooling
     # writes: the CLI's config file, the environment variable, and the SDKs'
     # camel case. Both cases spelled out rather than one case-insensitive scan,
@@ -336,6 +413,8 @@ _SECRET_HINTS: Final = (
     "EARER",
     "assw",
     "ASSW",
+    "assph",
+    "ASSPH",
     "wd",
     "WD",
     "ecret",
@@ -432,6 +511,10 @@ def _mark_secret(match: re.Match[str]) -> str | None:
         quoted = match.group("cuedquoted") is not None
         start = match.start("cuedquoted" if quoted else "cuedvalue") - match.start()
         return body[:start] + _SECRET_MARKER + (match.group("cueq") if quoted else "")
+    value_group = _SECRET_VALUE_GROUP.get(name)
+    if value_group is not None:
+        first, last = match.span(value_group)
+        return body[: first - match.start()] + _SECRET_MARKER + body[last - match.start() :]
     from_body = _SECRET_KEEP_TO_BODY.get(name)
     if from_body is not None:
         return body[:-from_body] + _SECRET_MARKER
@@ -597,6 +680,22 @@ _MASK_FLAGS: Final = frozenset(
         "-P",
     }
 )
+# The two header names the ruling named. They mask as a bare word anywhere, which
+# is what the check line has always done, and they are the only ones the prose
+# path reads: a sentence that says "the Set-Cookie: header" or "password:" is not
+# carrying a credential.
+_MASK_HEADER_NARROW: Final = r"(?:authorization|x-api-key)"
+# The wider set: the cookie and the vendor spellings a request carries
+# (`DD-API-KEY`, `X-Vault-Token`, `Private-Token`, `Ocp-Apim-Subscription-Key`).
+# Read only where a header is expected, after `-H`, `--header` or `extraheader=`,
+# because `Cookie:` and `password:` are also ordinary words in a command or a
+# sentence (`grep -n 'Authorization:' server.log` names no value).
+_MASK_HEADER_WIDE: Final = (
+    r"(?:authorization|proxy-authorization|cookie|set-cookie"
+    r"|[\w-]*(?:token|key|secret|password|passwd|credential))"
+)
+_MASK_HEADER_OPENERS: Final = r"(?:--header=|--proxy-header=|-H)"
+_MASK_HEADER_FLAGS: Final = frozenset({"-H", "--header", "--proxy-header"})
 _MASK_WORD_FORMS: Final = (
     # `--password=value` and the other named flags, `=` joined.
     re.compile(r"^(['\"]?--(?:password|token|api[-_]?key|apikey|secret|auth)=).+$", re.DOTALL),
@@ -605,38 +704,281 @@ _MASK_WORD_FORMS: Final = (
     # `NAME=value`: `PGPASSWORD=...`, `--env TOKEN=...`.
     re.compile(r"^(['\"]?[A-Za-z_][A-Za-z0-9_]*=).+$", re.DOTALL),
     # `Authorization: ...` and `X-Api-Key: ...` header values.
-    re.compile(r"^(['\"]?(?:authorization|x-api-key)\s*:\s*).+$", re.IGNORECASE | re.DOTALL),
+    re.compile(rf"^(['\"]?{_MASK_HEADER_NARROW}\s*:\s*).+$", re.IGNORECASE | re.DOTALL),
+    # `--cookie=value`, joined.
+    re.compile(r"^(['\"]?--cookie=).+$", re.DOTALL),
+)
+# The forms read only where a header is expected: the word after a header flag,
+# a header flag with its value joined (`--header='Cookie: a=b'`, `-H'X-Token: v'`),
+# and a git `extraheader` config key in any dotted spelling.
+_MASK_HEADER_VALUE_FORMS: Final = (
+    re.compile(rf"^(['\"]?{_MASK_HEADER_WIDE}\s*:\s*).+$", re.IGNORECASE | re.DOTALL),
+    re.compile(
+        rf"^({_MASK_HEADER_OPENERS}['\"]?{_MASK_HEADER_WIDE}\s*:\s*).+$", re.IGNORECASE | re.DOTALL
+    ),
+    re.compile(
+        rf"^(['\"]?[^\s=]*extraheader=['\"]?{_MASK_HEADER_WIDE}\s*:\s*).+$",
+        re.IGNORECASE | re.DOTALL,
+    ),
+)
+# A header name that ends its word, with the value in the words after it, as an
+# unquoted `-H Authorization: Bearer ...` or a split `extraheader=AUTHORIZATION:`
+# leaves it.
+_MASK_HEADER_ALONE: Final = re.compile(
+    rf"^['\"]?(?:{_MASK_HEADER_OPENERS}['\"]?|[^\s=]*extraheader=['\"]?)?{_MASK_HEADER_WIDE}\s*:$",
+    re.IGNORECASE,
+)
+# Segments exclude `.` so a run of dots cannot split many ways (exponential
+# backtracking on `Loading.....`). A dotted config key (`http.extraheader=`,
+# `credential.helper=`) whose last component names a credential. It starts with a
+# letter, so `--max-tokens=4096`, `--password-file=/x` and `--secrets-dir=...` are
+# flags and not keys. A `-D` or `--` prefix is allowed because the key must hold
+# a dot: `-Dspring.datasource.password=` and `--spring.datasource.password=` are
+# JVM and Spring properties, and no dot-free flag reaches this pattern.
+_MASK_DOTTED_KEY: Final = re.compile(
+    r"^(['\"]?(?:-D|--)?[A-Za-z][\w-]*(?:\.[^\s=.]+)+=).+$", re.DOTALL
+)
+_MASK_DOTTED_CREDENTIAL: Final = re.compile(
+    r"(?:extraheader|password|passwd|token|secret|apikey|api-key)$", re.IGNORECASE
 )
 # `user:password@host`, scheme optional, the password running to the LAST `@`
 # in the word so one holding `/`, `@` or whitespace is masked whole: a quoted
 # password with a space in it stopped `\S*` short of the `@` (DRC-4703).
 _MASK_USERINFO: Final = re.compile(r"((?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:).*@", re.DOTALL)
 
+# `user:password` flags, owned by the HTTP clients that take them. `-u` is also
+# `git push -u origin` and `docker run -u 1000:1000`, which name no credential,
+# so the flag is a password only for the program that owns it.
+_MASK_HTTP_PROGRAMS: Final = frozenset({"curl", "wget", "http", "https", "xh"})
+_MASK_USER_FLAGS: Final = frozenset({"-u", "--user", "--proxy-user"})
+_MASK_HTTPIE_PROGRAMS: Final = frozenset({"http", "https", "xh"})
+# curl takes `-u` inside a cluster of short flags (`-sSu`, `-fsSLu`).
+_MASK_CURL_USER_CLUSTER: Final = re.compile(r"^-[A-Za-z]*u$")
+_MASK_COOKIE_FLAGS: Final = frozenset({"--cookie"})
+# Joined spellings of the same flags, for the HTTP clients only.
+_MASK_HTTP_WORD_FORMS: Final = (
+    # `--user=name:value`; the user name stays.
+    re.compile(r"^(['\"]?--(?:user|proxy-user)=[^:]*:).+$", re.DOTALL),
+    # `-ualice:value`, curl's joined form.
+    re.compile(r"^(-u[^\s:]+:).+$", re.DOTALL),
+)
+# Flags that are a password only for the command that owns them: `redis-cli -a`
+# is a password and `ls -a` is not.
+_MASK_COMMAND_FLAGS: Final = {"redis-cli": frozenset({"-a", "--pass"})}
+_MASK_COMMAND_WORD_FORMS: Final = {
+    "redis-cli": (re.compile(r"^(-a).+$", re.DOTALL), re.compile(r"^(--pass=).+$", re.DOTALL))
+}
+_MASK_AUTH_WORDS: Final = frozenset({"bearer", "basic", "token", "digest", "negotiate"})
+# The words a command may open with before the program itself, each with the
+# flags that take a value of their own (`sudo -u bob`, `env -u NAME`).
+_MASK_WRAPPERS: Final = {
+    "sudo": {"-u": 1, "-g": 1, "-h": 1, "-p": 1, "-C": 1, "-D": 1, "-R": 1, "-T": 1, "-U": 1},
+    "env": {"-u": 1, "-S": 1, "-C": 1, "-P": 1},
+    "command": {},
+    "time": {"-f": 1, "-o": 1},
+    "exec": {},
+    "nohup": {},
+    "rtk": {},
+}
+# `uv run`, `pnpm exec` and the like: the program follows the second word.
+_MASK_RUNNERS: Final = {
+    "uv": "run",
+    "uvx": "",
+    "npx": "",
+    "bunx": "",
+    "pipx": "run",
+    "pnpm": "exec",
+    "npm": "exec",
+    "poetry": "run",
+}
+# A container runner takes a target before the program, with flags of its own.
+# The program is the first word that is one this module knows.
+_MASK_CONTAINER_RUNNERS: Final = frozenset({"docker", "podman", "kubectl", "nerdctl"})
+_MASK_KNOWN_PROGRAMS: Final = (
+    _MASK_HTTP_PROGRAMS | frozenset({"redis-cli", "vault", "aws"}) | _MASK_HTTPIE_PROGRAMS
+)
+# The flags of the two positional-credential programs that take a value, so the
+# value is not read as the name or the token.
+_MASK_ARG_FLAGS: Final = {
+    "vault": frozenset(
+        {"-address", "-namespace", "-method", "-path", "-format", "-ca-cert", "-ca-path", "-mount"}
+    ),
+    "aws": frozenset(
+        {
+            "--profile",
+            "--region",
+            "--endpoint-url",
+            "--output",
+            "--query",
+            "--ca-bundle",
+            "--color",
+            "--cli-read-timeout",
+            "--cli-connect-timeout",
+            "--cli-binary-format",
+        }
+    ),
+}
+_MASK_CONFIG_SECRET: Final = re.compile(r"secret|token|password|passwd|key", re.IGNORECASE)
 
-def mask_words(words: list[str]) -> list[str]:
+
+def _program(words: list[str]) -> int:
+    """The index of the program a segment runs, past assignments and wrappers.
+
+    The hook this owner runs rewrites ordinary commands to `rtk <cmd>`, so the
+    recorded command carries the prefix; `uv run`, `pnpm exec` and a container's
+    `exec` are looked through the same way, and `sudo -u bob` skips the user name.
+    """
+    index, count = 0, len(words)
+    while index < count:
+        word = words[index]
+        base = os.path.basename(word)
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", word):
+            index += 1
+        elif base in _MASK_WRAPPERS:
+            arity = _MASK_WRAPPERS[base]
+            index += 1
+            if base == "rtk" and index < count and words[index] == "proxy":
+                index += 1
+            while index < count and words[index].startswith("-"):
+                index += 1 + arity.get(words[index], 0)
+        elif base in _MASK_RUNNERS:
+            index += 1
+            subword = _MASK_RUNNERS[base]
+            if subword and index < count and words[index] == subword:
+                index += 1
+            while index < count and words[index].startswith("-"):
+                index += 1
+        elif base in _MASK_CONTAINER_RUNNERS:
+            for inner in range(index + 1, count):
+                if os.path.basename(words[inner]) in _MASK_KNOWN_PROGRAMS:
+                    return inner
+            return index
+        else:
+            return index
+    return count
+
+
+def _plain_words(words: list[str], at: int, program: str, *, skip_assignments: bool) -> list[int]:
+    """The indexes of the words after `at` that are neither a flag nor a flag's value."""
+    arg_flags = _MASK_ARG_FLAGS.get(program, frozenset())
+    found: list[int] = []
+    index = at + 1
+    while index < len(words):
+        word = words[index]
+        if word.startswith("-"):
+            index += 2 if word in arg_flags else 1
+            continue
+        if not (skip_assignments and "=" in word):
+            found.append(index)
+        index += 1
+    return found
+
+
+def _positional_credential(words: list[str], start: int, program: str) -> int:
+    """The index of a credential a program takes by position, or -1.
+
+    `vault login <token>` and `aws configure set <name> <value>`, read past the
+    flags that take a value of their own, so `--profile p` is not the name.
+    """
+    plain = _plain_words(words, start, program, skip_assignments=program != "aws")
+    if program == "vault" and plain[:1] and words[plain[0]] == "login":
+        return plain[1] if len(plain) > 1 else -1
+    if program == "aws" and [words[i] for i in plain[:2]] == ["configure", "set"]:
+        # plain[2] is the name and plain[3] its value.
+        name = words[plain[2]] if len(plain) > 2 else ""
+        if name and _MASK_CONFIG_SECRET.search(name) and len(plain) > 3:
+            return plain[3]
+    return -1
+
+
+def mask_words(words: list[str], *, prose: bool = False) -> list[str]:
     """Each word of a command with every value a named form carries replaced.
 
     Per word, before the words are joined and re-quoted, so a quoted value with
     whitespace in it is masked whole (review, 2026-09-24). A named flag masks
-    the word after it.
+    the word after it. `prose` reads a person's sentence rather than a command:
+    the forms that need a command around them (a header after `-H`, an HTTP
+    client's `-u`) are left out, so ordinary words are not taken for values.
     [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
     """
+    start = _program(words)
+    program = os.path.basename(words[start]) if start < len(words) else ""
+    flags = _MASK_FLAGS | _MASK_COMMAND_FLAGS.get(program, frozenset())
+    http = program in _MASK_HTTP_PROGRAMS
+    user_flags = _MASK_USER_FLAGS | {"-a"} if program in _MASK_HTTPIE_PROGRAMS else _MASK_USER_FLAGS
+    word_forms = _MASK_WORD_FORMS + (_MASK_HTTP_WORD_FORMS if http else ())
+    word_forms += _MASK_COMMAND_WORD_FORMS.get(program, ())
+    positional = _positional_credential(words, start, program)
     masked: list[str] = []
-    mask_next = False
-    for word in words:
+    mask_next = user_next = header_owed = scheme_next = False
+    for index, word in enumerate(words):
+        header_here = not prose and index > 0 and words[index - 1] in _MASK_HEADER_FLAGS
+        if header_owed:
+            if scheme_next and word.lower() in _MASK_AUTH_WORDS:
+                masked.append(word)
+                scheme_next = False
+                continue
+            masked.append(_SECRET_MARKER)
+            header_owed = scheme_next = False
+            continue
         if mask_next:
             masked.append(_SECRET_MARKER)
             mask_next = False
             continue
-        if word in _MASK_FLAGS:
+        if user_next:
+            user_next = False
+            user, colon, _rest = word.partition(":")
+            if colon:
+                masked.append(user + colon + _SECRET_MARKER)
+                continue
+        if index == positional:
+            masked.append(_SECRET_MARKER)
+            continue
+        if word in flags or word in _MASK_COOKIE_FLAGS:
             masked.append(word)
             mask_next = True
             continue
-        formed = next(
-            (m.group(1) + _SECRET_MARKER for p in _MASK_WORD_FORMS if (m := p.match(word))), word
-        )
-        masked.append(_MASK_USERINFO.sub(lambda m: m.group(1) + _SECRET_MARKER + "@", formed))
+        if http and (
+            word in user_flags or (program == "curl" and _MASK_CURL_USER_CLUSTER.match(word))
+        ):
+            masked.append(word)
+            user_next = True
+            continue
+        if not prose and _MASK_HEADER_ALONE.match(word) and _is_header_word(word, header_here):
+            masked.append(word)
+            header_owed = scheme_next = True
+            continue
+        masked.append(_mask_one_word(word, word_forms, header_here=header_here, prose=prose))
     return masked
+
+
+def _is_header_word(word: str, header_here: bool) -> bool:
+    """Whether a word sits where a header is expected: after a header flag, joined
+    to one, or carried by an `extraheader` key."""
+    return (
+        header_here
+        or word.startswith(("--header=", "--proxy-header=", "-H"))
+        or "extraheader=" in word
+    )
+
+
+def _mask_one_word(
+    word: str, word_forms: tuple[re.Pattern[str], ...], *, header_here: bool, prose: bool
+) -> str:
+    """One word with the first named form it matches masked, and a userinfo password."""
+    formed = word
+    if not prose and _is_header_word(word, header_here):
+        match = next((m for p in _MASK_HEADER_VALUE_FORMS if (m := p.match(word))), None)
+        if match is not None:
+            return match.group(1) + _SECRET_MARKER
+    match = next((m for p in word_forms if (m := p.match(word))), None)
+    if match is not None:
+        formed = match.group(1) + _SECRET_MARKER
+    else:
+        dotted = _MASK_DOTTED_KEY.match(word)
+        if dotted is not None and _MASK_DOTTED_CREDENTIAL.search(dotted.group(1).rstrip("=")):
+            formed = dotted.group(1) + _SECRET_MARKER
+    return _MASK_USERINFO.sub(lambda m: m.group(1) + _SECRET_MARKER + "@", formed)
 
 
 # A header name standing as its own word in prose, with the value in the words
@@ -709,12 +1051,16 @@ def mask_prose(text: str) -> str:
             and (named.group(1).strip("'\"").lower() not in _MASK_AUTH_SCHEMES)
         ):
             header = False
-    return " ".join(mask_words(words))
+    return " ".join(mask_words(words, prose=True))
 
 
 def masked_values(words: list[str]) -> list[str]:
     """The raw text `mask_words` replaced in each word, so a caller can remove
-    the same values from output that echoes the command."""
+    the same values from output that echoes the command.
+
+    A `NAME=secret` value (a cookie, `session=abc`) also reports the part after
+    each `=`, because an agent quotes the bare secret and not the pair.
+    """
     found = []
     for word, masked in zip(words, mask_words(words), strict=True):
         if word == masked:
@@ -726,7 +1072,13 @@ def masked_values(words: list[str]) -> list[str]:
         else:
             end = len(os.path.commonprefix([rest[::-1], masked_rest[::-1]]))
         found.append(rest[: len(rest) - end])
-    return [value for value in found if value]
+    values = [value for value in found if value]
+    for value in list(values):
+        for chunk in value.split(";"):
+            name, equals, bare = chunk.strip().partition("=")
+            if equals and re.fullmatch(r"[\w.-]+", name) and bare.strip("="):
+                values.append(bare.strip())
+    return values
 
 
 def safe_text(value: Any, limit: int) -> str:
@@ -1654,3 +2006,90 @@ def instruction_line(
     if not bounded or not label:
         return None
     return {"label": label, "text": bounded, "at": at if at and at > 0 else 0}
+
+
+# Shorter pieces of a masked value are not scrubbed from text: a two-letter piece
+# would wipe ordinary output, and the check line masks it anyway.
+SCRUB_MIN_CHARS: Final = 4
+
+# Words that name no credential even when a command line masked them: an
+# environment literal (`CI=true`, `NODE_ENV=production`), a branch, an auth scheme.
+_EXPLANATION_WORDS: Final = frozenset(
+    {"true", "false", "none", "null", "test", "dev", "prod", "production", "main", "master"}
+    | _MASK_AUTH_WORDS
+)
+
+
+def explanation_values(values: Iterable[str]) -> set[str]:
+    """The masked values worth removing from prose a reader will read.
+
+    A command line masks every `NAME=value`, so `CI=true` and `--env MODE=test`
+    put `true` and `test` in the set, and removing those from an explanation
+    would erase ordinary words. This keeps a value that can be a credential: not
+    an environment literal, an auth scheme, a bare number or a lowercase word.
+    A value with whitespace in it is cut into its words, and an auth scheme is
+    never one of them, so `Bearer <token>` costs the token and not `Bearer`.
+    The accepted loss is a lowercase-letters-only password, which the check
+    line still masks and the output tail still scrubs.
+    """
+    keep: set[str] = set()
+    for value in values:
+        pieces = value.split()
+        if len(pieces) > 1 and pieces[0].lower() not in _MASK_AUTH_WORDS:
+            pieces = [value, *pieces]
+        for piece in pieces:
+            if (
+                len(piece) >= SCRUB_MIN_CHARS
+                and piece.lower() not in _EXPLANATION_WORDS
+                and not piece.isdigit()
+                and not (piece.isalpha() and piece.islower())
+            ):
+                keep.add(piece)
+    return keep
+
+
+def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> str:
+    """`text` with every value a command line masked replaced by the marker.
+
+    A masked command line still leaves the value in two other places: an echoed
+    command in the output, and the agent's own words about it. This removes it
+    from either. Filename and path characters stay inside the word, so a password
+    `test` does not turn `test_a.py`, `test-file.py` or `src/test` into a
+    redacted name.
+
+    `prose` is for a sentence: there a `.`, `:` or `,` that ends the sentence, or
+    a bracket or quote around the word, does not make the value part of a longer
+    word, while `.`, `:` or `/` followed by a word character still does. The
+    output tail keeps the strict boundary because a filename ends in `.py`.
+    """
+    boundary = r"[\w./:@+\-]"
+    after = r"(?![\w@+\-]|[./:][\w/])" if prose else rf"(?!{boundary})"
+    spellings = {
+        spelling
+        for value in values
+        for piece in (value, *value.split())
+        if len(piece) >= SCRUB_MIN_CHARS
+        for spelling in (
+            piece,
+            shlex.quote(piece),
+            "'" + piece.replace("'", "'\\''") + "'",
+            piece.replace("'", "'\\''"),
+            piece.replace("'", "'\"'\"'"),
+        )
+    }
+    # In prose a `:` after a word is how `user:password` is quoted, so it does not
+    # make the value part of a longer word; a `/`, `.` or `@` still does.
+    before = r"(?<![\w./@+\-])" if prose else rf"(?<!{boundary})"
+    for spelling in sorted(spellings, key=len, reverse=True):
+        text = re.sub(rf"{before}{re.escape(spelling)}{after}", _SECRET_MARKER, text)
+        text = re.sub(
+            rf"(?<!{boundary})(-[pP]){re.escape(spelling)}{after}",
+            lambda match: match[1] + _SECRET_MARKER,
+            text,
+        )
+        text = re.sub(
+            rf"((?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:){re.escape(spelling)}(@)",
+            lambda match: match[1] + _SECRET_MARKER + match[2],
+            text,
+        )
+    return text
