@@ -4892,7 +4892,10 @@ def _verdict_check_kinds(reason: str) -> frozenset[str]:
 # A span the evaluator put in double or curly double quotes, which it may have copied from a tool's
 # output. Backticks and single quotes are not read: a reason sets a file, a command or an identifier
 # in them far more often than a line a run printed, and a name is no quote of output.
-_QUOTED_SPAN = re.compile(r"\"([^\"\n]+)\"|\u201c([^\u201d\n]+)\u201d")
+# The span is bounded so an unbalanced run of opening quotes costs a fixed scan per quote, not the
+# rest of the text (measured: 100,000 curly openers took 63 s unbounded). The bound is looser than
+# `MAX_QUOTED_SPAN_CHARS` because that limit is applied after whitespace is folded.
+_QUOTED_SPAN = re.compile(r"\"([^\"\n]{1,400})\"|\u201c([^\u201d\n]{1,400})\u201d")
 # The words that report a result and nothing else. A span made of them alone says how a run came out
 # and names nothing a run printed, so it is no quote.
 _QUOTED_FILLER = frozenset(

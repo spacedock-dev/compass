@@ -9,6 +9,7 @@ never as a pass.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, ClassVar, cast
 
 from compass_runtime import annotations as annotation_store
@@ -271,6 +272,13 @@ class AQuoteInARecordedChecksOutputIsSaidToBeThere(base.AClaudeCodeReadingProduc
         self.assertEqual((fits,), reading._quoted_spans(f'"{fits}"'))
         self.assertEqual(180, reading.MAX_QUOTED_SPAN_CHARS)
         self.assertEqual(project_context.TOOL_REPORT_TAIL_CHARS, reading.MAX_QUOTED_SPAN_CHARS)
+
+    def test_unbalanced_quotes_are_scanned_in_linear_time(self) -> None:
+        for unit in ("\u201c", "\u201c a", '\u201c"', '"', '" a'):
+            with self.subTest(unit=unit):
+                started = time.monotonic()
+                self.assertEqual((), reading._quoted_spans(unit * 20000))
+                self.assertLess(time.monotonic() - started, 2.0)
 
     def test_a_span_naming_a_remote_job_is_left_to_the_ci_facts(self) -> None:
         for span in ("coverage-gate pass", "server-unittest pass", "ci/lint passed"):
