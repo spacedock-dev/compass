@@ -2405,6 +2405,17 @@ class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase)
         line = "      Tests  " + "1 a1 " * 3000
         self.assertEqual("", project_context._last_line_summary(["vitest", "run"], line))
 
+    def test_a_cancelled_node_test_after_fail_zero_is_never_a_pass(self) -> None:
+        info = project_context._INFO
+        for cancelled, expected in (("1", ""), ("0", "passed")):
+            text = (
+                f"{info} pass 4\n{info} fail 0\n{info} cancelled {cancelled}\n{info} duration_ms 12"
+            )
+            with self.subTest(cancelled=cancelled):
+                self.assertEqual(
+                    expected, project_context._last_line_summary(["node", "--test"], text)
+                )
+
     def test_an_rtk_wrapped_check_stays_flag_only(self) -> None:
         self.assertEqual("not-recorded", self.result_of("echo a; rtk pytest -q", "3 passed in 1s"))
 

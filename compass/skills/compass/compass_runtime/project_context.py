@@ -3967,6 +3967,7 @@ _TRAILING_LINES: dict[str, re.Pattern[str]] = {
     "vitest": re.compile(r"\s*(?:Start at|Duration)\s"),
     "node": re.compile(rf"{_INFO} (?:cancelled|skipped|todo|duration_ms)\b"),
 }
+_NODE_CANCELLED = re.compile(rf"{_INFO} cancelled [1-9]\d*\s*")
 _UNITTEST_RAN = re.compile(r"Ran ([1-9]\d*) tests? in \S+")
 _LAST_LINE_MAX = 200
 
@@ -4012,15 +4013,18 @@ def _last_line_summary(words: list[str], text: str) -> str:
         return ""
     lines = [_ANSI_RE.sub("", line).rstrip() for line in lines[-6:]]
     trailing = _TRAILING_LINES.get(runner)
+    # A skipped trailer may still carry a verdict: node prints `fail 0` above a nonzero
+    # `cancelled` count when a test timed out, and that run exits 1 (review, 2026-10-27).
+    cancelled = False
     while trailing is not None and len(lines) > 1 and trailing.match(lines[-1]):
-        lines.pop()
+        cancelled = cancelled or bool(_NODE_CANCELLED.fullmatch(lines.pop()))
     last = lines[-1]
     if len(last) > _LAST_LINE_MAX:
         return ""
     passed, failed = _LAST_LINE_SUMMARIES[runner]
     if failed.fullmatch(last):
         return "failed"
-    if not passed.fullmatch(last):
+    if not passed.fullmatch(last) or cancelled:
         return ""
     # unittest prints `OK` after an empty discovery too, so a pass needs a real count before it.
     if runner == "unittest" and not (len(lines) > 1 and _UNITTEST_RAN.match(lines[-2])):
