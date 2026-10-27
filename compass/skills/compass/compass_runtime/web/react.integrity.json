@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2138107,
+    "bytes": 2138143,
     "file": "react.html",
-    "sha256": "e486bbafaf8b4415294c79521491b46026309071cf2664c92f49454d0a383979"
+    "sha256": "eb43c2166511f6591694ebf2fc77f5eec9f4a6beab83147aa31beaa87be60618"
   },
   "format": 1,
   "frontend": "react",
@@ -1091,7 +1091,7 @@
       },
       {
         "file": "frontend/src/sample/SampleSession.tsx",
-        "sha256": "f1334acf03d5bb2615e6c55cd807a22b1a0c4fa0ee90069bfa686613fd946830"
+        "sha256": "15b12107480a71ed0f5cad52de7eb795f771169e7aff4d76d7b24ceb720e7fd9"
       },
       {
         "file": "frontend/src/sample/ViewOnly.tsx",
@@ -1191,7 +1191,7 @@
       },
       {
         "file": "frontend/src/sessions/intent.ts",
-        "sha256": "529750e1a57d7ef16f477b6e7672f1451c68a61b016f98b69bf84ff354d20231"
+        "sha256": "a5cc34e4bc7d04a31ada45f23aa9ea3c2de4e9ffc4c1a05fbeb83f5c06ddd002"
       },
       {
         "file": "frontend/src/sessions/notes.ts",
