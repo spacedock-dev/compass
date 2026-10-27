@@ -640,7 +640,7 @@ metadata left the reading clean, while an untracked file beside the gitfile made
 selection and working-tree redirection are separate mechanisms. The probe retains its one-command
 design and does not confine either one.
 
-What is published, per session, is two fields and nothing else:
+What the probe publishes, per session, is two fields and nothing else:
 
     {dirty: bool | None, changed: int | None}
 
@@ -733,7 +733,7 @@ which is non-blocking and refuses a link, so a FIFO cannot block the read; the w
 equal the commit's blob byte for byte, so a file the session edited declares nothing, and a cached
 read is checked against the work tree again before it is used; a recorded
 write by a write tool withdraws that kind of file even if the session restored it. A file over the
-cap, with a line over 4,096 characters, with more than 500 scripts, that does not parse, or that is a Makefile using `include`,
+cap, with more than 5,000 lines, with a line over 4,096 characters, with more than 500 scripts, that does not parse, or that is a Makefile using `include`,
 conditionals, `define`, `.ONESHELL` or a custom `SHELL` adds nothing, and `--diagnose` lists it by
 path and a closed reason. The commit is the newest first-parent commit of HEAD no newer than the
 transcript's first record, since Compass does not record the commit a session began on. Workflow `run:`
@@ -4338,6 +4338,10 @@ carries or nothing at all, so a 120-character agent-authored string cannot reach
 unattributable question is announced as "An agent" rather than under a borrowed name.
 Verifying it would need a per-session secret that the sessions do not have and that the loopback
 boundary could not keep.
+
+`--diagnose` runs the same collection a served page does, so unless `--no-git` is given it may run the
+read-only `git` commands of [the committed-file read](#the-committed-file-read-project-check-scripts)
+for a Claude Code session's project. It still writes nothing and transmits nothing.
 
 `--diagnose` output is sensitive. It prints the home directory, the interpreter path, the *values* of
 the store relocation variables, every candidate store path, and per-path read errors. A recorded

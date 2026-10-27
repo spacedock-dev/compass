@@ -1184,7 +1184,7 @@ class GitProbeContractDocumentationTest(unittest.TestCase):
         # rather than to the whole file: a legitimate "is impossible" elsewhere in
         # the document is not this defect, and a whole-file ban would fail on it.
         opens = self.FLAT.index("The residual: the reading is about the repository")
-        closes = self.FLAT.index("What is published, per session")
+        closes = self.FLAT.index("What the probe publishes, per session")
         # Ordering asserted before slicing. A slice whose end precedes its start
         # is the empty string, and every assertNotIn below then passes on nothing:
         # reproduced by moving the residual after its own closing marker, which

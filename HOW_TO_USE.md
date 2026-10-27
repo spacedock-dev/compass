@@ -349,7 +349,8 @@ request overflow retains that session's wait until the plugin restarts. It remem
 
 A collector skips a store it cannot read rather than taking the dashboard down, so a wrong path and an
 idle machine look identical on the board. `--diagnose` is the only thing that tells them apart. It
-reads local paths, writes nothing, transmits nothing, and starts no server:
+reads local paths, may run the read-only local `git` commands that read a project's check scripts
+(`--no-git` stops them), writes nothing, transmits nothing, and starts no server:
 
 ```bash
 python3 "$SKILL/server.py" --diagnose
