@@ -1404,7 +1404,8 @@ default-off ruling.
 Claude Code uses the owner's 2026-10-02 producer acceptance, never described as a passed check,
 through `reading_policy.GuardedModel`, the same guarded seam as Codex and requested readings.
 The prompt remains words-only: typed goal and bounded reader messages, no agent messages, expected
-outcome lines or tool output. All eligibility gates, observed state-change trigger, quiet hours,
+outcome lines. The one exception is a failed check or command on Claude Code, which goes with its masked
+line, exit status and output tail ([the amendment](#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)). All eligibility gates, observed state-change trigger, quiet hours,
 delivery records, one-flight slot, fifteen-minute floor and caps (three per session, twelve per rolling
 day) remain. Only departures are raised. The preconditions for changing the default remain unmet.
 
@@ -3220,7 +3221,8 @@ from reaching a page or a stored reading and none changing what a check records.
   criterion's explanation before it is stored, with the same boundary and re-quoting rules the output
   tail uses (`records.scrub_values`), and then applies the shape redaction it always did. Before this
   the tail was scrubbed of a masked value and the model's prose about it was not. The unasked lane sends
-  no tool output and carries no masked values.
+  no tool output except a failed check or command on Claude Code, whose tail and masked values it
+  carries ([the amendment](#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)).
 
 #### Corrected after review, 2026-10-27
 
@@ -3363,6 +3365,34 @@ beside the entries read was not recorded for this reading" for any reading witho
 on a harness with no scan. A lone count, a count that is not a whole number, and a read-only count above the total
 refuse the reading, because a malformed count read as zero would say no command ran. No command text is stored or
 sent: both are integers, and the model's prompt does not change.
+
+### Amended 2026-10-27 (owner): the unasked lane reads failed results
+
+Item 10 ("the unasked lane never receives tool outcomes") is opened for failed results only, by
+[DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor), without waiting
+for DEC-18's rubric thresholds. This is the build.
+
+- **What the lane receives.** A tool report is listed in the unasked ledger only when its result is
+  `failed` and its subject is a check, a tier 3 command or a CI command
+  ([DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)), and
+  the command can fail. A pass, a run that recorded no result, a CI pass, a write, a pull request, a skill and
+  a command that cannot fail are never listed. The output tail rides with a failed row alone. The same rule
+  holds the ledger whatever the press read: `reading.build_ledger` takes `failed_only`, set by the lane and by
+  nothing else.
+- **Why failures and not passes.** The lane raises departures and never reassures. A failure adds signal
+  against the goal; a pass would add a comfort the lane may not give, and the ruling's evidence floor is why.
+  The reading says so in its cutoff, and the model's "no check found" stays unread rather than absent when a
+  report was left out.
+- **Where it applies.** Claude Code reading a Claude Code session, with a destination Compass can name.
+  No grant is asked for, as for a pressed reading. A Codex fallback keeps the words-only Allow it runs under,
+  which does not cover tool output, so it sends none. The output tail follows the vendor rule
+  (`reading_route.tails_for`); on the one route that sends, the session's own vendor, that is every tail.
+- **What stays.** The caps (three per session, twelve per rolling day, a fifteen-minute floor), the rule that
+  only a typed goal makes a session a candidate, and the lane's refusal to send the agent's messages or an
+  outcome line.
+- **What was rejected.** Listing every result so the model could weigh a pass against a failure: it is the
+  reassurance the lane is built not to give. Sending a failure's tail to Codex under a words-only Allow: it
+  widens an Allow past the content it disclosed.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
@@ -3523,7 +3553,8 @@ the later-direction floor (item 9).
     inside it ([the amendment](#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
 12. The unasked lane receives none of this: no outcome lines, no work evidence, no drafted or
     confirmed goal, no correction, no digest and no Not accurate token. None of them makes a
-    session eligible for the lane, or triggers, orders or gates it.
+    session eligible for the lane, or triggers, orders or gates it. A failed check or command on
+    Claude Code is the one exception ([the amendment](#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)).
 13. When an analysis may read, and against what. A session waiting at its prompt after a turn stop
     may be read through its last turn, saying so, and never as a reading of how it ended; a goal
     saved after the stop does not withhold it. The evidence window starts at the words' own time:

@@ -118,7 +118,12 @@ def history(subject: str) -> bool:
 
 
 def unasked_ledger(subject: str) -> bool:
-    return bool(reading.build_ledger([fact(subject)], "claude", "s1"))
+    # The lane reads a failed result and never a pass, so the probe feeds it the failure.
+    return bool(
+        reading.build_ledger(
+            [fact(subject, "failed")], "claude", "s1", tool_output={}, failed_only=True
+        )
+    )
 
 
 CONSUMERS: dict[str, Callable[[str], bool]] = {

@@ -224,7 +224,10 @@ harnesses prefer Claude Code, falling back only when the preferred provider is u
 unqualified. Codex needs permission for the current destination from "Allow Codex to run unasked
 checks" in the session's Drift card; Attention points to it when saved typed goals are waiting.
 Claude Code needs no separate grant. Revoking Codex permission, Pause model calls and
-`--no-observer-model` stop checks; Analyze and Resume never grant them. It stops at a per-session
+`--no-observer-model` stop checks; Analyze and Resume never grant them. On a Claude Code session an unasked
+check also reads the checks and commands that failed, with their output, so a failing test run against your
+goal can raise a departure while you are away. A check that passed is never sent, because the lane does not
+reassure. It stops at a per-session
 and a per-day limit, and a spent limit is stated rather than passed over, because a session nobody
 checked and a session checked and found clean are the two things you cannot tell apart from an empty
 board. The sentence is about your words rather than about the machine's history, so a check whose

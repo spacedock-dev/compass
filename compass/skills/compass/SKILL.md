@@ -630,7 +630,9 @@ provider, and Pause followed by Resume clears the Codex grant. With the startup 
 It checks on an observed state
 change rather than every turn, it raises a departure and never a reassurance, and it stops at a
 limit of three per session and twelve per rolling day, with a fifteen-minute floor. It reads your typed goal alone, never your expected outcome
-lines, and a session with lines and no goal is not checked this way. A spent limit is said out loud: a session nobody checked and a
+lines, and a session with lines and no goal is not checked this way. On a Claude Code session it also reads the checks
+and commands that failed, with their output, so a failing test or CI run against your goal can raise a departure while
+you are away; a check that passed is never sent, because the lane does not reassure. A spent limit is said out loud: a session nobody checked and a
 session checked and found clean are different sentences on the board, because you were not there to
 know which one you are looking at. Turning it off stops new checks and retracts nothing: what was
 already raised still shows on the session, in the review and in the Intent log, under a line saying

@@ -1633,8 +1633,9 @@ records their admission and publication shapes. No new session field is added.
   those uses for reader-started calls. Codex unasked checks require explicit `words.codex`
   coverage at the current destination; Claude Code uses the owner's acceptance without a separate
   grant. `unasked_routes[harness]`, published only while the lane is attached, is the route an
-  unasked check of that harness takes, and its `disclosure_parts` is the words-only disclosure,
-  excluding tool output, agent messages and outcome lines. The explicit toggle posts
+  unasked check of that harness takes, and its `disclosure_parts` is the words disclosure,
+  excluding agent messages and outcome lines, and excluding tool output except the failed results a Claude
+  Code unasked check of a Claude Code session sends, where Compass can name the destination. The explicit toggle posts
   `unasked_grant: bool` with the session identity, provider, model, `words_destination`, `press: true`
   and `observer_model: 1` to the existing reading route, returning `{ok, produced: false, reading}`, or `{ok: false, reason}` with 409 for a stale route.
   It does not Analyze or lift Pause. It is refused while disabled/paused, without the startup flag,
