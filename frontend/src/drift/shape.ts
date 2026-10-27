@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { claimMessage } from './claimWords';
 import { annotationLines, OUTCOME_LINES_MAX, type Annotation } from '../intent/annotation';
 import { conflictCandidates, type WorkEntry } from '../intent/work';
 import { isRecord, type Row } from '../observed';
@@ -510,7 +511,7 @@ export function criterion(
     /* The claims question carries no words of the reader's, and its heading names it, so it has no clause. */
     clause: claims ? '' : clause || CLAUSE_UNRETAINED,
     clauseKnown: !claims && Boolean(clause),
-    claimEntry: claims && result !== UNVERIFIABLE ? (claimSaid[0] ?? null) : null,
+    claimEntry: claims && result !== UNVERIFIABLE ? claimMessage(claimSaid) : null,
     recordEntry:
       claims && result !== UNVERIFIABLE
         ? (claimRecord.find(

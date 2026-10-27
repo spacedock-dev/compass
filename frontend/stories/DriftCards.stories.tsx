@@ -757,6 +757,50 @@ export const ClaimContradicted: Story = {
   },
 };
 
+/* The claims row quotes the cited message that holds a claim, not the first one cited: here the first is a
+   neutral statement and the second says a fix now passes. The first stays listed beneath as context. */
+export const ClaimQuotesTheMessageThatClaims: Story = {
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: LINE_CONSISTENT,
+        claims: {
+          result: 'not shown by the record',
+          cites: ['m5', 'm6'],
+          detail: 'Nothing on record shows the coverage gate passing.',
+          clause: '',
+        },
+      }),
+    ),
+    facts: [
+      PERSON,
+      fact('m5', 640, {
+        type: 'agent_message',
+        by: 'agent',
+        summary: 'The loop exited before CI had registered any checks for the new commit.',
+      }),
+      fact('m6', 660, {
+        type: 'agent_message',
+        by: 'agent',
+        summary: 'I fixed the one failing check on PR #7, the coverage gate, and it now passes.',
+      }),
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    const shown = await result(await card(canvasElement));
+    const claim = await waitFor(() => {
+      const node = quietRow(shown, 'claims');
+      expect(node).not.toBeNull();
+      return node;
+    });
+    await expect(claim).toHaveTextContent(
+      /^What the agent claimed · “I fixed the one failing check on PR #7, the coverage gate, and it now passes” is not shown by the record/,
+    );
+    await neverDone(shown);
+  },
+};
+
 /* A contradicted claim whose stored detail is empty or only whitespace still says no explanation was retained,
    and still lists each cited entry as one line of its own words with its number, with no Evidence fold. */
 const unexplained = (detail: string): Pick<Story, 'args' | 'play'> => ({

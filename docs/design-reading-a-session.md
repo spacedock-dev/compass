@@ -6392,6 +6392,16 @@ that changed the CI configuration carries the caution DEC-30 names, so the floor
 DEC-30 lets that fact stand. Later file writes in the transcript do not age a CI fact, and DEC-30 item 4's
 head-equals-HEAD test is the only ageing it has. The live estimate's floor (item 1) is not touched.
 
+### Amended 2026-10-27 (owner): the claims row quotes the cited message that claims
+
+The claims row used to quote the first agent message a reading cited. A reading may cite a neutral
+statement first and the message that makes the claim second, so the row put a sentence that claims nothing
+beside "is not shown by the record", which reads as doubt about the agent's honesty. The page now quotes the
+first cited agent message holding a word of the claims rule (running, done, merged, pushed, deployed,
+passing, passes, passed, fixed, sent, filed; whole words, any case), and the first cited message when none
+does. The other cited messages stay listed beneath. The word list lives in
+`frontend/src/drift/claimWords.ts` and mirrors `reading.CLAIMS_RULE`.
+
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
 Decided 2026-10-11 (DRC-4855), on the Actions Front and Center project, in the milestone "Intent
