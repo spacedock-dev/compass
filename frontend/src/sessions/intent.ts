@@ -47,6 +47,7 @@ export const READING_ASSESSMENT_KEYS: readonly string[] = [
   'evidence_through',
   'coverage',
   'goal_verdict',
+  'ci',
   'criteria',
 ];
 

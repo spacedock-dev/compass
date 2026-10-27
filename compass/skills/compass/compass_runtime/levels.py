@@ -603,10 +603,20 @@ class _LineTally:
         # that cites one reaches the floor with no pass (owner, 2026-10-24, extending the monitor's
         # floor):
         # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-24-owner-an-analyze-readings-none-or-low-may-rest-on-recorded-harness-facts)  # noqa: E501
+        # A CI check the press read counts the same way when it may settle: a pass on the session's
+        # commit with every check that counts green.
+        # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-ci-fact-is-a-recorded-harness-fact)  # noqa: E501
         done = [
             f
             for f in cited
-            if f.get("subject") in (reading.PR_SUBJECT, reading.SKILL_SUBJECT)
+            if (
+                f.get("subject") in (reading.PR_SUBJECT, reading.SKILL_SUBJECT)
+                or (
+                    f.get("subject") == reading.CI_CHECK_SUBJECT
+                    and f.get("result") == reading.CI_RESULT_PASSED
+                    and f.get("ci_counts") is True
+                )
+            )
             and f.get("work") is True
         ]
         if resolved.get("result") == reading.RESULT_CONSISTENT and not why and (passes or done):

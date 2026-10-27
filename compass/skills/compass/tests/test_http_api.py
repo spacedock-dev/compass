@@ -38,6 +38,8 @@ from compass_runtime import (
 )
 from compass_runtime import annotations as annotation_store
 from compass_runtime import asks as runtime_asks
+from compass_runtime import ci_read as runtime_ci_read
+from compass_runtime import git_status as runtime_git_status
 from compass_runtime import io as runtime_io
 from compass_runtime import observation as observation_module
 from compass_runtime import observer as runtime_observer
@@ -68,6 +70,7 @@ from .support import (
     store_patch,
     without_focus_meta,
 )
+from .test_ci_read import GOAL_URL, StubGh
 from .test_claude_checks import Transcript
 from .test_session_summary import Replies
 from .test_summary_jobs import wait_job
@@ -3537,6 +3540,116 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(1, len(calls), "the open gate did not reach the model")
         self.assertIn("ship the parser", calls[0], "the reader's goal was not sent")
         self.assertTrue(json.loads(body)["ok"])
+
+    @contextlib.contextmanager
+    def _github(self, config: Any, state: Any) -> Any:
+        """The route over one session whose goal names a pull request, with a stub `gh`.
+
+        `gh` resolves to the stub and its calls land in the stub's log, so what the press
+        started is read off a file and no real login or network is involved.
+        """
+        stub = StubGh(self)
+        # The floor is the process's, and the clock here never moves, so a read an earlier test made
+        # would answer this one.
+        runtime_ci_read.FLOOR.clear()
+        application = self._app(config, state)
+        annotation_store.annotate(
+            config, state, "pi", "s1", goal=f"Make CI green on {GOAL_URL}", output="", now=11.0
+        )
+        which = lambda name, _env: str(stub.bin / "gh") if name == "gh" else None  # noqa: E731
+        with (
+            mock.patch.object(runtime_git_status, "executable", which),
+            mock.patch.dict(os.environ, {"CI_STUB_DIR": str(stub.folder)}),
+            mock.patch.object(
+                annotation_store, "ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_PASSED
+            ),
+            self._counting_model() as calls,
+            self._serving(application) as port,
+        ):
+            self.stub, self.model_calls = stub, calls
+            yield port
+
+    def test_a_press_reads_the_goals_pull_request_and_stores_what_it_read(self) -> None:
+        config, state = self._runtime()
+        with self._github(config, state) as port:
+            status, _ = self._post(port, self._press())
+        self.assertEqual(202, status)
+        # A view, two listings and a second view of the one pull request, and one model call.
+        self.assertEqual(4, len(self.stub.calls))
+        self.assertEqual(1, len(self.model_calls))
+        self.assertIn("passed on the pull request", self.model_calls[0])
+        entry = annotation_store.find(annotation_store.load(config), "pi", "s1")
+        assert entry is not None
+        stored = entry["assessment"]["ci"]
+        self.assertEqual(("acme/widgets", 12), (stored["repository"], stored["number"]))
+        # A Pi session records no folder, so there is no commit to match and nothing settles.
+        self.assertFalse(stored["head_matches"])
+
+    def test_the_page_switch_turns_the_read_off_and_back_on(self) -> None:
+        config, state = self._runtime()
+        with self._github(config, state) as port:
+            for answer, expected in (("off", "off"), ("on", "on")):
+                status, body = self._post(
+                    port, {"ci_read": answer, "press": True, "observer_model": 1}
+                )
+                self.assertEqual((200, expected), (status, json.loads(body)["ci_read"]))
+                before = len(self.stub.calls)
+                self._post(port, self._press())
+                self.assertEqual(expected == "on", len(self.stub.calls) > before, answer)
+
+    def test_the_notice_names_the_read_only_while_it_is_on(self) -> None:
+        config, _state = self._runtime()
+
+        # A route names its parts only when a model CLI is found; CI runners have none.
+        def found(name: str) -> str:
+            return f"/usr/local/bin/{name}"
+
+        on = runtime_reading_route.resolve("pi", config=config, binary_resolver=found)
+        self.assertEqual("on", on["ci_read"])
+        self.assertIn(runtime_reading_route.CI_READ_PART, on["disclosure_parts"])
+        self.assertTrue(runtime_ci_read.set_setting(config, on=False))
+        off = runtime_reading_route.resolve("pi", config=config, binary_resolver=found)
+        self.assertEqual("off", off["ci_read"])
+        self.assertNotIn(runtime_reading_route.CI_READ_PART, off["disclosure_parts"])
+        # The unasked lane is never `on`: no network call happens without a press.
+        self.assertTrue(runtime_ci_read.set_setting(config, on=True))
+        unasked = runtime_reading_route.resolve(
+            "pi", config=config, unasked=True, binary_resolver=found
+        )
+        self.assertNotEqual("on", unasked["ci_read"])
+
+    def test_the_flag_holds_the_read_off_and_the_page_cannot_lift_it(self) -> None:
+        config, state = self._runtime(ci_read_enabled=False)
+        with self._github(config, state) as port:
+            status, body = self._post(port, {"ci_read": "on", "press": True, "observer_model": 1})
+            self.assertEqual((200, "flag-off"), (status, json.loads(body)["ci_read"]))
+            self._post(port, self._press())
+        self.assertEqual([], self.stub.calls)
+        self.assertEqual(1, len(self.model_calls))
+
+    def test_a_paused_press_reads_nothing_from_github(self) -> None:
+        config, state = self._runtime()
+        with self._github(config, state) as port:
+            self._post(port, {"consent": "off", "press": True, "observer_model": 1})
+            status, _ = self._post(port, self._press())
+        self.assertEqual(403, status)
+        self.assertEqual([], self.stub.calls)
+
+    def test_no_observer_model_reads_nothing_from_github(self) -> None:
+        config, state = self._runtime(model_calls_disabled=True)
+        with self._github(config, state) as port:
+            status, _ = self._post(port, self._press())
+        self.assertEqual(503, status)
+        self.assertEqual([], self.stub.calls)
+
+    def test_a_spent_day_reads_nothing_from_github(self) -> None:
+        config, state = self._runtime()
+        for index in range(reading_policy.DAILY_CAP):
+            reading_policy.reserve(config, now=1_700_000_000.0 + index, provider="codex")
+        with self._github(config, state) as port:
+            status, _ = self._post(port, self._press())
+        self.assertEqual(429, status)
+        self.assertEqual([], self.stub.calls)
 
     # DRC-4686: the press starts a job the server owns, and the page learns of
     # it only from the payload, so a reload is indistinguishable from staying.

@@ -1,4 +1,4 @@
-import { resumeModelCalls, turnOffReadings } from '../api/readings';
+import { resumeModelCalls, setCiRead, turnOffReadings } from '../api/readings';
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
 import type { ReadingRequest, SessionIdentity } from '../api/types';
@@ -32,6 +32,7 @@ import {
 } from './route';
 import {
   CANCEL_FAILED,
+  CI_SWITCH_FAILED,
   DESTINATION_CHANGED,
   PROVIDER_CHANGED,
   RESULT_MARK_UNSAVED,
@@ -365,6 +366,33 @@ export async function readingOff(ctx: DriftCtx, identity: SessionIdentity | null
 
 export async function readingOn(ctx: DriftCtx, identity: SessionIdentity | null): Promise<void> {
   return setModelPause(ctx, identity, false);
+}
+
+/* The switch for the GitHub read. Pressed once, saved on the server, and read back from the board: nothing
+   here decides what the read does, and a store that did not take it leaves the card as it was and says so. */
+export async function ciReadAnswer(
+  ctx: DriftCtx,
+  identity: SessionIdentity | null,
+  on: boolean,
+): Promise<void> {
+  const { intent, shell } = ctx;
+  const key = identity ? compatSessKey(identity) : '';
+  const control = `ci-read:${key}`;
+  const press = pendingStart(intent, control, 'Saving…', 'Saving the GitHub read setting.');
+  if (!press) return;
+  intent.held.notify();
+  try {
+    const reply = answered(await setCiRead(shell.runtime.client, on ? 'on' : 'off', press.signal));
+    const body = reply.kind === 'answered' && reply.ok ? (reply.body as Row | null) : null;
+    if (!body || body['ok'] !== true) throw new Error('setting not saved');
+    await refresh(intent);
+  } catch {
+    /* Its own note, apart from the reading's, so a failed save never speaks as the reading's feedback. */
+    if (key) intent.held.requests.set(control, { message: CI_SWITCH_FAILED });
+  } finally {
+    pendingEnd(intent, control, press);
+    requestFocus(ctx, control);
+  }
 }
 
 async function setModelPause(

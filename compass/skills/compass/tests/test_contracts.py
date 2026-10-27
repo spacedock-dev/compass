@@ -1390,6 +1390,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading",
             "compass_runtime.records",
             "compass_runtime.state",
+            "compass_runtime.ci_read",
         },
         # The observer analyzer: a read-only bystander that derives goal +
         # stage + block from a session transcript head and its workflow entity
@@ -1421,6 +1422,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_policy",
             "compass_runtime.records",
             "compass_runtime.supervise",
+            "compass_runtime.ci_read",
         },
         # The drift levels (DEC-26) read the producer's closed vocabulary: its
         # result sentences, `why` tokens and outcome-line names, spelt once
@@ -1460,6 +1462,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.annotations",
             "compass_runtime.observer",
             "compass_runtime.records",
+            "compass_runtime.ci_read",
         },
         "compass_runtime.observer": {
             "compass_runtime.config",
@@ -1587,6 +1590,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.records",
             "compass_runtime.snapshot",
             "compass_runtime.stream",
+            "compass_runtime.ci_read",
         },
         # Above aggregate, events and probe, and the module that starts the
         # runtime's standing threads (a reading job's thread is `reading_jobs`'). Nothing imports it except the assembly point and the
@@ -1769,6 +1773,15 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # The reader's own list of check commands, keyed by project: it reads one file in the
         # Compass home and resolves a session's directory to its project through `sessions`.
         "compass_runtime.reader_checks": {"compass_runtime.config", "compass_runtime.sessions"},
+        # The pull request CI read: it reuses the git probe's PATH scrub and binary lookup,
+        # the supervised runner for `gh`, and the bounded transcript reader. It imports nothing
+        # from `reading`, which imports it, and `config` only for a type.
+        "compass_runtime.ci_read": {
+            "compass_runtime.config",
+            "compass_runtime.git_status",
+            "compass_runtime.io",
+            "compass_runtime.supervise",
+        },
         # `history` imports `config` and `io` (for the shared owner-only write
         # helper; DRC-4345), which is narrower than `dismissals` beside it
         # (that one reaches `records` and `state`).

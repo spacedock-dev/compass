@@ -53,16 +53,19 @@ The posture rests on two invariants:
    and the MCP server refuse to reach anywhere but loopback, ignore proxy environment variables, and
    do not follow redirects. `--host` is the one way that first clause moves, it is an explicit
    argument nothing sets for you, and what it costs is under Known and accepted.
-   Three kinds of outbound request are implemented, and they are named apart rather than counted
+   Four kinds of outbound request are implemented, and they are named apart rather than counted
    together because they are not the same
    exposure. The quota poll carries a vendor token out and quota numbers back, and no session
-   content whatever. A harness invocation, described in Light harness usage below, can carry
+   content whatever. The pull request CI read, described in Pull request CI reads below, starts
+   your own `gh` when you press Analyze and sends GitHub a repository and a pull request number (or a pushed branch's name, where that bound
+   it); it carries no session text. A harness invocation, described in Light harness usage below, can carry
    session-derived text: it is the one pathway by which the operator's own words may leave this
    machine. A nudge to an endpoint the operator supplies, described in Off-machine nudges below,
    carries two counts and nothing that names a session. The observer model and reader-requested
-   readings implement the second pathway behind their own enablement and consent. Nudges stay off
+   readings implement the harness invocation pathway behind their own enablement and consent. Nudges stay off
    until an endpoint is configured. `--no-usage` stops the quota poll, `--no-harness-usage` refuses
-   model calls and `--no-reach` disables nudges, each for its own path and no other.
+   model calls, `--no-ci-read` stops the pull request read and `--no-reach` disables nudges,
+   each for its own path and no other.
    [What launches and what sends](#what-launches-and-what-sends) tables every switch against the
    test that fails when it leaks.
    Nothing else Compass does reaches the network. One further pathway is written down and reaches
@@ -282,10 +285,11 @@ Anything that weakens either invariant is a security bug: a bind reaching an add
 not ask for, a request admitted that the bind's own Host gate should have refused, file reads outside
 the documented store paths and the project-read contract below (however the path was derived),
 writes to harness stores, running any program inside a user's repository other than the probe
-described in Repository git reads (the end-of-session probe), running a program to reach a session's
+described in Repository git reads (the end-of-session probe) and the two press-time identity
+commands described in Pull request CI reads, running a program to reach a session's
 terminal other than the focus command described in Reaching a session's terminal (the focus
-command), or the hook client reaching a non-loopback destination. Those two exceptions are a
-whitelist of two scoped clauses and not a general permission to execute: written generally the
+command), or the hook client reaching a non-loopback destination. Those three exceptions are a
+whitelist of three scoped clauses and not a general permission to execute: written generally the
 sentence would make documented security bugs of three paths Compass already ships, the native
 notifier's `osascript`, `--daemon`'s respawn of the server, and the quota fetcher's Keychain read.
 
@@ -349,7 +353,8 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
-| The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose. Nothing leaves the machine. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` |
+| A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, the page's switch beside the notice, and the refusals every press meets first (`--no-observer-model`, Pause model calls, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise |
+| The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and, only inside an admitted Analyze press that reads a pull request's checks, two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`). Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
 | A native notification | On macOS, `/usr/bin/osascript` with text Compass composes. Other platforms have no native notifier. Nothing leaves the machine. | `--quiet-hours` holds it back inside a window you name. No switch turns it off outright. | None: the program is meant to launch. `test_notifications.NoNativeNotificationTest` only keeps this repository's own test run from launching one. |
@@ -489,7 +494,9 @@ Compass already records each session's working directory; when a session ends, t
 bounded git command there, so the board can show that a session stopped with work still in the tree.
 The second, below the probe's own contract, reads a project's check scripts as a commit held them.
 
-The probe is exactly this command, or there is no probe:
+The end-of-session probe is exactly this command, or there is no probe. The press-time identity read
+in [Pull request CI reads](#pull-request-ci-reads) runs two other fixed commands and never this
+probe:
 
     git -c core.fsmonitor= -c core.hooksPath=/dev/null -c status.showUntrackedFiles=normal --no-optional-locks status --porcelain
 
@@ -621,8 +628,8 @@ the first is the one to read before proposing anything here:
   repository-backed ones, and `null` means no reading available, so such a row could not even say why.
 - The targeted alternative reopens DEC-3. Refusing only when the resolved repository root is `$HOME`
   keeps the subdirectory case and closes the dotfiles case, but learning that root needs a second git
-  command, and this section's first bound is that the probe is exactly the one command above or there
-  is no probe.
+  command, and this section's first bound is that the end-of-session probe is exactly the one command above or
+  there is no probe.
 
 So the trade was a common correct reading against a hazard nobody here can currently reach, and the
 ruling keeps the reading. What it costs a reader is written down rather than left to be discovered: a
@@ -2342,6 +2349,61 @@ project cap kept rather than the 400,000-byte tail: the boolean is true when the
 window start, left an unread region inside it, or the read or the cap dropped an in-window message of the session, and
 the time is where the record is whole from. The keys, types and exposure are unchanged.
 
+### Pull request CI reads
+
+[The ruling](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)
+is the contract. When you press Analyze on a session whose goal names a pull request by its
+`https://github.com/OWNER/REPO/pull/N` URL, or whose Claude Code transcript records a `pr-link` or a
+pushed branch for the repository the session folder's own `origin` names, Compass starts your `gh`
+to read that pull request's checks. The records are read from the transcript's tail, bounded in
+bytes and rows: a `pr-link` row's `prRepository` and `prNumber`, and a result's
+`toolUseResult.gitOperation.push` (`branch`); never the command or its output. It sends GitHub the repository and the number, or, where a pushed branch is what bound it, the
+repository and that branch's name, and nothing else of the session's text. The repository, the number and the branch are identifiers taken from the session's records, not session text, and they leave the machine with your own login. A
+second `gh` call asks which checks the repository requires, and the checks that come back go to the
+reading model with the rest of the entries, so the model's own notice covers them.
+
+What runs: `gh pr view` for the head commit before the checks and again after them, so a head that
+moved in between matches nothing, and `gh pr checks` twice, with `--repo github.com/OWNER/REPO`
+always explicit. A pull request read within 30 seconds of the last is not read again. `github.com` is the only host in this build. Nothing runs without a press: not the
+Live monitor, the live estimate, a summary, the unasked lane or `--diagnose`.
+
+The launch keeps these bounds, each pinned by `test_ci_read`:
+
+- The binary is an absolute path resolved against a `PATH` with every relative element removed, as
+  the git probe does it, and a missing `gh` is said beside the reading.
+- It runs in an empty directory Compass made for it and removes afterwards, with stdin closed.
+- `GH_*`, `GITLAB_*` and `GL_*` are removed from its environment, so no override redirects the host,
+  repository, account or configuration, and `GH_PROMPT_DISABLED` and `GH_NO_UPDATE_NOTIFIER` are set.
+  The login it uses is the one stored for your account. A `GITHUB_TOKEN` in the environment is kept.
+- The owner, repository and number are checked against a closed pattern before anything starts, and
+  a pushed branch against another, so nothing in a transcript can become an option.
+- A hard timeout of 20 seconds kills the process group, and output is capped at 256 KiB.
+- Its output is read as JSON whatever the exit code, since `gh` exits 8 while a check is pending and
+  1 while one has failed, then checked against a closed schema. Anything else is one closed error
+  token. Its stderr is read only to choose that token and is then dropped.
+- To place the session, Compass runs `git rev-parse HEAD` and `git config --get remote.origin.url`
+  in the session folder, with the status probe's flags and the same scrubbed `PATH`. It keeps the
+  commit and the host and repository the remote names. Any user or token in the URL, and the URL
+  itself, are dropped by the parse and never returned. `--no-git` stops both commands, pinned by
+  `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing`. They run only inside
+  an admitted Analyze press, never at the end of a session and never from the Live monitor.
+- Compass keeps each check's name, bucket and completion time, the head commit and counts. A name is
+  writable by whoever writes the workflows, so it takes a closed character set and a clip, and it
+  reaches the model quoted. A description, a link or a log is never read.
+
+The record is stored with the reading (`ci` beside `criteria`), labelled with the time it was read,
+and read back only through a closed validator. Pending is never a pass. A skipped check counts as
+neither a pass nor a failure. A cancelled check is not a pass. No completed check is no result, and
+GitHub's required checks are preferred where it names any. CI counts only when the pull request's
+head is the commit the session folder is on, and a session that edited a workflow file or
+`.gitlab-ci.yml` carries a caution the model reads while it still settles.
+
+The off switches are `--no-ci-read` and a switch on the page, stored as one marker file in
+Compass's state directory. The flag wins over the page. `--no-observer-model`, Pause model calls and
+the rolling cap refuse the press before anything starts, because the read runs inside the admitted
+job. `--no-git` also leaves the read without a session commit, so it settles nothing. The one line
+naming the read is part of the notice a press shows, and a reader who turns the read off sees no such line.
+
 ### Session summary calls
 
 Ruled 2026-10-19 by the owner ([DEC-28](docs/design-session-summary.md)). Summary jobs run on a reader's open or press and keep finished parts as they arrive.
@@ -3143,7 +3205,7 @@ how hard, to anyone who can read the notification stream. That is stated here ra
 
 ## Process lifecycle: written paths, and `/api/shutdown`
 
-The server writes ten files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
+The server writes eleven files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
 authoritative when nonblank): `compass-<port>.json`, recording the running instance (`pid`, `port`,
 `started`, `log`, `python`); `compass-<port>.log`, where a detached (`--daemon`) instance's
 output goes; `compass-dismissals.json`, the sessions the reader marked handled, described in
@@ -3155,10 +3217,12 @@ them, named in invariant 2 above and turned off by `--no-annotations`;
 `compass-deliveries.json`, what became of each notification this board raised, described in
 Delivery records below; `compass-departures.json`, what an unasked reading raised, described in
 Unasked readings below and written only with that feature switched on; `compass-ends.json`, the
-session ends this board observed, described in Session ends below; and
+session ends this board observed, described in Session ends below; `ci-read-off`, the marker the
+page's switch for the pull request CI read leaves when it is off, described in Pull request CI reads
+above, which holds one line and is removed when the switch goes back on; and
 `semantic-work-history.json`, the operator-cockpit prototype's own store, described under the
-prototype below and not reached by `--forget`. One forwarder writes an
-eleventh, in the same directory and named in invariant 2 above:
+prototype below and not reached by `--forget`. One forwarder writes a
+twelfth, in the same directory and named in invariant 2 above:
 `statusline_hook.py` keeps `statusline-<harness>-<session>.json` per conversation, holding a
 normalized state name and a timestamp, so a status line that fires many times a turn posts once. The directory is created `0o700` because the log can carry local paths: uncaught
 tracebacks land there, not just Python-level prints. Nothing ever removes or rotates the log: a

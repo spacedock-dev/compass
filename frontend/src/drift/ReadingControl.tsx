@@ -32,6 +32,7 @@ import {
   WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
+import { CiReadSwitch } from './CiReadNote';
 import { ModelNotice, DisclosureParts, NoticeBody } from './ModelNotice';
 import { noticeContentParts, noticeLabel, sessionNotice } from './notice';
 
@@ -460,6 +461,7 @@ export function ReadingNotice() {
       parts={noticeParts(notice, model.route)}
     >
       <TurnOff />
+      <CiReadSwitch />
     </ModelNotice>
   );
 }
@@ -506,6 +508,7 @@ export function WhatIsSent({ about = '' }: { readonly about?: string }) {
         </p>
         {about ? <p className="next-cockpit-reading-why">{about}</p> : null}
         {off ? null : <TurnOff closes="reading-sent" />}
+        <CiReadSwitch />
       </Why>
     </SampleBeside>
   );

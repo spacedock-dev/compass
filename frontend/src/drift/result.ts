@@ -5,6 +5,7 @@ import { clock, type Row } from '../observed';
 import { revisionSuperseded } from '../sessions/rows';
 import { fmtDur } from './route';
 import {
+  CI_ENTRY_KIND,
   CLAIMS,
   CONSISTENT,
   DEPARTURE,
@@ -805,6 +806,7 @@ export function citedLine(entry: WorkEntry): string {
   if (entry.subject === 'write') return `File write: ${words}`;
   if (entry.subject === 'pr') return `Pull request created: ${words}`;
   if (entry.subject === 'skill') return `Skill used: ${words}`;
+  if (entry.subject === 'ci') return `${CI_ENTRY_KIND}: ${words}`;
   if (agentMessage(entry)) return `Agent said: “${words}”`;
   if (personAuthored(entry)) return `You said: “${words}”`;
   return citedKind(entry);

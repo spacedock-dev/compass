@@ -329,6 +329,13 @@ def _transcript_cwd(
     return ""
 
 
+def session_folder(
+    config: RuntimeConfig, state: RuntimeState, harness: str, transcript_path: str
+) -> str:
+    """The working directory a session's own transcript records, or an empty string."""
+    return _transcript_cwd(config, state, harness, transcript_path)
+
+
 def _project_workflow_discovery(
     config: RuntimeConfig,
     state: RuntimeState,

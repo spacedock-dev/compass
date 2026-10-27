@@ -68,6 +68,7 @@
     "evidence_through",
     "coverage",
     "goal_verdict",
+    "ci",
     "criteria"
   ],
   "checkBeforeLastChange": "before the last change",
@@ -86,6 +87,43 @@
     "passed flag": "passed, as the tool reported",
     "passed summary": "passed, per its summary line"
   },
+  "ciBuckets": [
+    "pass",
+    "fail",
+    "pending",
+    "skipping",
+    "cancel"
+  ],
+  "ciCaution": "this session changed the CI configuration",
+  "ciEntryResults": {
+    "cancel": "cancelled",
+    "fail": "failed",
+    "pass": "passed",
+    "pending": "pending",
+    "skipping": "skipped"
+  },
+  "ciEntrySource": "GitHub pull request check, read by Compass",
+  "ciEntryWords": {
+    "cancel": "cancelled on the pull request",
+    "fail": "failed on the pull request",
+    "pass": "passed on the pull request",
+    "pending": "still running on the pull request",
+    "skipping": "skipped on the pull request"
+  },
+  "ciHeadMoved": "the pull request head is not this session's commit",
+  "ciReadErrors": [
+    "gh-missing",
+    "gh-signed-out",
+    "pull-request-not-found",
+    "rate-limited",
+    "timeout",
+    "unreadable-output",
+    "gh-failed"
+  ],
+  "ciSources": [
+    "goal",
+    "record"
+  ],
   "commandNotRecorded": "ran, exit status not recorded",
   "commandResultWords": {
     "failed flag": "exited non-zero; Compass does not know what it checks",
@@ -124,6 +162,7 @@
     "written-before",
     "passed-before",
     "pr-created-before",
+    "ci-passed",
     "written-after",
     "deleted-after",
     "moved-after",

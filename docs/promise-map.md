@@ -177,6 +177,15 @@ status, and a pending one is not a pass. A reading by another vendor than the se
 command's line and exit status and no output
 ([DEC-29](design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes),
 [DEC-31](design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)).
+Pressing Analyze drift also reads one pull request's CI checks from GitHub with your own `gh` login
+when your goal names the pull request by its URL, or when a Claude Code session records one for the
+repository its folder points at
+([DEC-30](design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)).
+GitHub is sent the repository and the number, or, where a pushed branch is what bound it, the repository and that branch's name, and nothing else of the session. Checks still running,
+no completed check, a pull request head past the session's commit, and a cancelled check each settle
+nothing, and skipped checks count as neither a pass nor a failure. `--no-ci-read` and the switch beside
+the notice turn the read off, and a missing or signed-out `gh` is said beside the reading. Only
+`github.com` is read, and the Live monitor, the unasked lane and every refresh never read it.
 Session summaries are Claude Code only, and the outline beside them covers Claude Code and Codex.
 A summary has its own cap of 200 model calls in a rolling twenty-four hours, so it never spends
 Analyze's 100, and each one stops at 37 calls, 768 KiB sent and ten minutes.

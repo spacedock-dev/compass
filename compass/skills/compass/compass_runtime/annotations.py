@@ -40,8 +40,8 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, NotRequired, TypedDict, cast
 
+from compass_runtime import ci_read, reading, records
 from compass_runtime import io as runtime_io
-from compass_runtime import reading, records
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping, Sequence
@@ -873,6 +873,7 @@ class _VerdictKey(TypedDict, total=False):
     """The one optional key of a stored reading that `_provenance` does not carry."""
 
     goal_verdict: reading.GoalVerdictCheck
+    ci: dict[str, Any]
 
 
 def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
@@ -950,9 +951,11 @@ def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.As
     criteria = _criteria(value.get("criteria"), cap, goal_cap)
     coverage = reading.validate_coverage(value["coverage"]) if "coverage" in value else None
     verdict = _goal_verdict(value["goal_verdict"]) if "goal_verdict" in value else None
+    ci = ci_read.validate(value["ci"]) if "ci" in value else None
     if (
         criteria is None
         or ("goal_verdict" in value and verdict is None)
+        or ("ci" in value and ci is None)
         or (value.get("coverage") is not None and coverage is None)
         or any(not reading.result_in_scope(row.get("result"), scope) for row in criteria.values())
     ):
@@ -974,6 +977,8 @@ def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.As
             return None
         window = window_fields["window_start"]
     extra = _VerdictKey(goal_verdict=verdict) if verdict is not None else _VerdictKey()
+    if ci is not None:
+        extra["ci"] = ci
     assessment: reading.Assessment = {
         **provenance,
         "revision_read": revision,

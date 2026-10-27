@@ -136,8 +136,8 @@ def probe_environment(environ: Mapping[str, str]) -> dict[str, str]:
     return scrubbed
 
 
-def _executable(environ: Mapping[str, str]) -> str | None:
-    """Where `git` is, resolved once against the scrubbed PATH, or None.
+def executable(name: str, environ: Mapping[str, str]) -> str | None:
+    """Where the named program is, resolved once against the scrubbed PATH, or None.
 
     None means the same published thing as every other refusal in this module:
     not probed. `shutil.which` is given the scrubbed PATH explicitly rather than
@@ -151,10 +151,15 @@ def _executable(environ: Mapping[str, str]) -> str | None:
     answers with a path built from the PATH element it matched, so a driveless
     root reaching it would otherwise be handed straight to the child.
     """
-    resolved = shutil.which("git", path=environ.get("PATH"))
+    resolved = shutil.which(name, path=environ.get("PATH"))
     if resolved is None or not _rooted(resolved):
         return None
     return resolved
+
+
+def _executable(environ: Mapping[str, str]) -> str | None:
+    """Where `git` is; `executable` with the name this module runs."""
+    return executable("git", environ)
 
 
 @dataclass(frozen=True)
@@ -224,6 +229,113 @@ def probe(
         # deliberately not read, logged or returned: it quotes pathnames.
         return None
     return _reading(getattr(result, "stdout", b""))
+
+
+# What the pull request read needs of a session's folder: the commit it is on and where its own
+# `origin` points. Read-only plumbing with the same flags as the status probe that matter here,
+# because the hazards are the same program run in the same inspected directory. The remote URL can
+# carry a credential (`https://user:token@host/...`), so it is parsed here and only host and
+# repository leave this module; the raw string is never returned, logged or stored.
+HEAD_ARGV: Final[tuple[str, ...]] = (
+    "git",
+    "-c",
+    "core.fsmonitor=",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "--no-optional-locks",
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    "HEAD",
+)
+REMOTE_ARGV: Final[tuple[str, ...]] = (
+    "git",
+    "-c",
+    "core.fsmonitor=",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "--no-optional-locks",
+    "config",
+    "--get",
+    "remote.origin.url",
+)
+_HEAD_RE = re.compile(r"[0-9a-f]{40}")
+_REMOTE_FORMS = (
+    re.compile(r"https://(?:[^/@\s]+@)?(?P<host>[A-Za-z0-9.-]+)(?::\d+)?/(?P<repo>[^\s?#]+)"),
+    re.compile(r"ssh://(?:[^/@\s]+@)?(?P<host>[A-Za-z0-9.-]+)(?::\d+)?/(?P<repo>[^\s?#]+)"),
+    re.compile(r"(?:[^/@\s]+@)?(?P<host>[A-Za-z0-9.-]+):(?P<repo>[^\s?#/][^\s?#]*)"),
+)
+
+
+@dataclass(frozen=True)
+class GitIdentity:
+    """The commit a folder is on, and the host and repository its `origin` names (maybe empty)."""
+
+    head: str
+    host: str
+    repository: str
+
+
+def parse_remote(url: str) -> tuple[str, str]:
+    """`(host, "owner/repo")` from an `origin` URL, or two empty strings.
+
+    The user part, any port, a trailing `.git` and everything past the repository are dropped.
+    A URL with more or fewer than two path parts names no repository this module will hand on.
+    """
+    for form in _REMOTE_FORMS:
+        matched = form.fullmatch(url.strip())
+        if matched is None:
+            continue
+        parts = matched["repo"].removesuffix("/").removesuffix(".git").split("/")
+        if len(parts) == 2 and all(parts):
+            return matched["host"].lower(), f"{parts[0]}/{parts[1]}"
+    return "", ""
+
+
+def identity(
+    cwd: str,
+    *,
+    timeout_sec: float,
+    runner: Callable[..., Any] = subprocess.run,
+) -> GitIdentity | None:
+    """HEAD and the parsed `origin` of the repository at `cwd`, or None having run nothing.
+
+    None covers every cause the status probe's None does. A folder that is a repository with no
+    `origin` still answers, with an empty host and repository, so the caller can tell a folder it
+    cannot place from one it could not read.
+    """
+    if not os.path.isdir(cwd):
+        return None
+    environ = probe_environment(os.environ)
+    resolved = _executable(environ)
+    if resolved is None:
+        return None
+
+    def run(argv: tuple[str, ...]) -> str | None:
+        try:
+            result = runner(
+                (resolved, *argv[1:]),
+                cwd=cwd,
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=timeout_sec,
+                check=False,
+                env=environ,
+            )
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+        raw = getattr(result, "stdout", b"")
+        if getattr(result, "returncode", 1) != 0 or not isinstance(raw, (bytes, bytearray)):
+            return None
+        # Capped before decoding: a remote URL is one short line, and anything longer is not one.
+        return bytes(raw[:2048]).decode("utf-8", "replace").strip()
+
+    head = run(HEAD_ARGV)
+    if head is None or _HEAD_RE.fullmatch(head) is None:
+        return None
+    # An absent `origin` is exit 1 with no output, which `run` reports as None: the head stands.
+    host, repository = parse_remote(run(REMOTE_ARGV) or "")
+    return GitIdentity(head, host, repository)
 
 
 def _reading(stdout: object) -> GitStatus:

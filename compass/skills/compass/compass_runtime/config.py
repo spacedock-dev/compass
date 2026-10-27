@@ -202,6 +202,12 @@ class RuntimeConfig:
     # ruling, and off means no git command runs and
     # both published fields stay `None` — never a confident clean.
     git_probe_enabled: bool
+    # Whether an Analyze press may read a pull request's CI checks from GitHub with `gh`.
+    # `--no-ci-read` is the off switch
+    # [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)  # noqa: E501
+    # rules into the feature; the page has a setting of its own, and either one off means no `gh`
+    # runs.
+    ci_read_enabled: bool
     # Whether the focus command may run at all. `--no-focus` is the off switch
     # SECURITY.md's focus section made part of the feature, and off means no
     # command runs, no target is recorded, and the page is handed no capability
@@ -833,6 +839,7 @@ def build_runtime_config(
     claude_reading_model: str = CLAUDE_READING_DEFAULT_MODEL,
     claude_monitor_model: str = CLAUDE_MONITOR_DEFAULT_MODEL,
     git_probe_enabled: bool = True,
+    ci_read_enabled: bool = True,
     focus_enabled: bool = True,
     irreversible_enabled: bool = True,
     dismissals_enabled: bool = True,
@@ -895,6 +902,7 @@ def build_runtime_config(
         model_calls_disabled=model_calls_disabled,
         claude_reading_model=selected_claude_model,
         git_probe_enabled=git_probe_enabled,
+        ci_read_enabled=ci_read_enabled,
         focus_enabled=focus_enabled,
         irreversible_enabled=irreversible_enabled,
         dismissals_enabled=dismissals_enabled,

@@ -54,7 +54,7 @@ import unicodedata
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
-from . import observer, records, supervise
+from . import ci_read, observer, records, supervise
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
@@ -261,6 +261,7 @@ ASSESSMENT_KEYS = (
     "evidence_through",
     "coverage",
     "goal_verdict",
+    "ci",
     "criteria",
 )
 CRITERION_KEYS = ("result", "cites", "detail", "clause", "why")
@@ -434,6 +435,16 @@ PATH_WRITTEN = "file written"
 PR_SUBJECT = "pr"
 SKILL_SUBJECT = "skill"
 PR_CREATED = "pull request created"
+# A pull request's CI check, read from GitHub on the press and not recorded in the session, so it is
+# no tool report: its own fact type, which `build_ledger` lists whatever the tool-output grant says.
+# [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)  # noqa: E501
+CI_CHECK_TYPE = ci_read.FACT_TYPE
+# Not `CI_SUBJECT`: that is the command tiers' `ci_command`, a CI poll the session itself ran. A
+# check GitHub reported on the press is a different subject with different rights (see
+# CONSUMER_SUBJECTS).
+CI_CHECK_SUBJECT = ci_read.FACT_SUBJECT
+CI_RESULT_PASSED = "passed"
+CI_RESULT_FAILED = "failed"
 SKILL_USED = "skill used"
 # Priority inside the byte bound, after the reader's own messages: the tool
 # report ruling's item 4 order as amended on 2026-10-04, so a pass is never
@@ -459,7 +470,9 @@ COMMAND_RESULT_WORDS = {
 COMMAND_NOT_RECORDED = "ran, exit status not recorded"
 # Each consumer admits a subject from this table and from nowhere else, so a subject added later
 # reaches none of them until someone names it here. `test_subject_consumers` runs every subject
-# through every consumer and holds each consumer to its row.
+# through every consumer and holds each consumer to its row. A check GitHub reported on the press
+# (`CI_CHECK_TYPE`, subject `CI_CHECK_SUBJECT`) is no tool report and is read by its type in
+# `build_ledger`, `check_supports`, `levels` and the goal-verdict test, so it has no row here.
 CONSUMER_SUBJECTS: dict[str, frozenset[str]] = {
     # The `work` stamp on a ledger row, which the drift floor and a check-backed verdict read.
     "work_floor": frozenset({CHECK_SUBJECT, "write", "pr", "skill", COMMAND_SUBJECT, CI_SUBJECT}),
@@ -1127,6 +1140,9 @@ class LedgerEntry(TypedDict):
     # Whether this entry demonstrates work on its session's harness, stamped by
     # `build_ledger` from `WORK_EVIDENCE_BY_HARNESS`.
     work: NotRequired[bool]
+    # A CI check's own field: whether this check may carry a verdict (the pull request's head is
+    # the session folder's HEAD, and a pass needs every check that counts to be in and green).
+    ci_counts: NotRequired[bool]
 
 
 @dataclass(frozen=True)
@@ -1269,6 +1285,9 @@ class Assessment(TypedDict):
     # Compass's test of the harness's own "goal met" verdict, present only where the session holds
     # one. Beside the criteria and never among them, so it cannot move a level.
     goal_verdict: NotRequired[GoalVerdictCheck]
+    # What the press read of the bound pull request's CI checks from GitHub, as `ci_read.read`
+    # stores it, and absent where no pull request was bound or the reader turned the read off.
+    ci: NotRequired[dict[str, Any]]
     criteria: dict[str, Criterion]
 
 
@@ -1993,8 +2012,11 @@ def build_ledger(  # noqa: PLR0913 (each is one keyword its caller names)
             "at": stamp if stamp is not None and stamp > 0 else 0.0,
             "author": author,
             "source": _menu_field(records.safe_text(source, 160)),
-            "work": fact.get("type") in WORK_EVIDENCE_BY_HARNESS.get(harness, frozenset())
-            and _work_subject(fact),
+            "work": (
+                fact.get("type") in WORK_EVIDENCE_BY_HARNESS.get(harness, frozenset())
+                and _work_subject(fact)
+            )
+            or fact.get("type") == CI_CHECK_TYPE,
         }
         _add_person_words(row, fact)
         _add_agent_words(row, fact)
@@ -2002,6 +2024,8 @@ def build_ledger(  # noqa: PLR0913 (each is one keyword its caller names)
             _add_report_fields(row, fact, cap_chars, tool_output, changed_after, read_incomplete)
         elif fact.get("subject") == CHECK_SUBJECT:
             _add_check_fields(row, fact)
+        elif fact.get("type") == CI_CHECK_TYPE:
+            _add_ci_fields(row, fact)
         rows.append(row)
     rows.sort(key=lambda row: row["at"])
     return tuple(rows)
@@ -2188,6 +2212,13 @@ def _add_check_fields(row: LedgerEntry, fact: Mapping[str, Any]) -> None:
     result_at = _number(fact.get("result_at"))
     if result_at is not None and result_at > 0:
         row["result_at"] = result_at
+
+
+def _add_ci_fields(row: LedgerEntry, fact: Mapping[str, Any]) -> None:
+    """A CI check's verdict fields, which no session record carries and the code composed."""
+    row["subject"] = CI_CHECK_SUBJECT
+    row["result"] = str(fact.get("result") or "")
+    row["ci_counts"] = fact.get("ci_counts") is True
 
 
 STOP_HOOK = "hook"
@@ -2618,7 +2649,9 @@ def _cutoff_read(read: int, total: int, *, partial: bool) -> str:
 def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
     counts: dict[str, int] = {}
     for row in selected:
-        if row["type"] == TOOL_REPORT_TYPE:
+        if row["type"] == CI_CHECK_TYPE:
+            name = "CI check read from GitHub"
+        elif row["type"] == TOOL_REPORT_TYPE:
             subject, result = row.get("subject"), row.get("result")
             name = (
                 (
@@ -2668,6 +2701,7 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
         "file write": "file writes",
         "created pull request": "created pull requests",
         "used skill": "used skills",
+        "CI check read from GitHub": "CI checks read from GitHub",
         "launch": "launches",
     }
     return ", ".join(
@@ -2795,6 +2829,10 @@ def _priority(entry: LedgerEntry) -> int:  # noqa: PLR0911 - one return per kind
         return _CHECK_PRIORITY[RESULT_PASSED]
     if entry.get("subject") == SKILL_SUBJECT:
         return _WRITE_PRIORITY + 1
+    # A CI check is ranked as a check is: a failure first, a pass next, anything unsettled last
+    # among them, so a long matrix cannot push the failing job out of the prompt.
+    if entry.get("subject") == CI_CHECK_SUBJECT:
+        return {CI_RESULT_FAILED: 1, CI_RESULT_PASSED: 2}.get(str(entry.get("result")), 4)
     # The agent's messages last, below a write: a long session says far more
     # than it does, and a hundred newer messages dropped the older write that
     # showed what it did (review, 2026-10-03).
@@ -3620,6 +3658,19 @@ def check_supports(  # noqa: PLR0911 - one return per kind of entry
     code found the write inside or outside a folder the line names, so the write
     itself carries that one departure, and no other verdict.
     """
+    if str(entry.get("type") or "") == CI_CHECK_TYPE:
+        # Only a check the code marked as counting, and only for the one verdict its own result
+        # shows: a pass for a consistent, a failure for a departure. A pending, skipped or
+        # cancelled check, and any check on a head that moved, carries neither.
+        return (
+            entry.get("ci_counts") is True
+            and (evidence_at(entry) or 0.0) > 0
+            and not _before_window(entry, window_start)
+            and (
+                (result == RESULT_CONSISTENT and entry.get("result") == CI_RESULT_PASSED)
+                or (result == RESULT_DEPARTURE and entry.get("result") == CI_RESULT_FAILED)
+            )
+        )
     is_report = str(entry.get("type") or "") == TOOL_REPORT_TYPE
     if entry.get("subject") in (COMMAND_SUBJECT, CI_SUBJECT) and (
         not is_report or not admits("check_supports", entry.get("subject")) or cannot_fail(entry)
@@ -4506,6 +4557,18 @@ class RecordedPr:
 
 
 @dataclass(frozen=True)
+class RecordedCi:
+    """One CI check the press read from GitHub for a pull request, with whether it may settle."""
+
+    id: str
+    repository: str
+    number: int
+    result: str
+    counts: bool
+    at: float
+
+
+@dataclass(frozen=True)
 class Recorded:
     """The writes, checks and created pull requests the session's record holds, whether or not a
     prompt carried them.
@@ -4518,9 +4581,10 @@ class Recorded:
     checks: tuple[LedgerEntry, ...] = ()
     removals: tuple[RecordedRemoval, ...] = ()
     prs: tuple[RecordedPr, ...] = ()
+    ci: tuple[RecordedCi, ...] = ()
 
 
-def recorded_from(
+def recorded_from(  # noqa: C901 - one branch per kind of fact the record holds
     facts: Iterable[Mapping[str, Any]],
     harness: str,
     sid: str,
@@ -4538,7 +4602,13 @@ def recorded_from(
     prs: list[RecordedPr] = []
     changed = tool_output.changed_after if tool_output is not None else frozenset()
     incomplete = tool_output.read_incomplete if tool_output is not None else frozenset()
+    ci: list[RecordedCi] = []
     for fact in facts:
+        if isinstance(fact, dict) and fact.get("type") == CI_CHECK_TYPE:
+            found = _recorded_ci(fact, harness, sid)
+            if found is not None:
+                ci.append(found)
+            continue
         if isinstance(fact, dict) and fact.get("subject") == PR_SUBJECT:
             pr = _recorded_pr(fact, harness, sid)
             if pr is not None:
@@ -4581,7 +4651,33 @@ def recorded_from(
         RecordedRemoval(path, at, kind)
         for path, at, kind in (tool_output.removals if tool_output is not None else ())
     )
-    return Recorded(tuple(writes), tuple(checks), removals, tuple(prs))
+    return Recorded(tuple(writes), tuple(checks), removals, tuple(prs), tuple(ci))
+
+
+def _recorded_ci(fact: Mapping[str, Any], harness: str, sid: str) -> RecordedCi | None:
+    session = fact.get("source_session")
+    fact_id = records.safe_text(fact.get("fact_id"), 160).strip()
+    stamp, number = _number(fact.get("at")), fact.get("ci_number")
+    repository = str(fact.get("ci_repository") or "")
+    if (
+        isinstance(session, dict)
+        and (session.get("harness"), session.get("sid")) == (harness, sid)
+        and fact_id
+        and stamp is not None
+        and stamp > 0
+        and type(number) is int
+        and number > 0
+        and ci_read.valid_repository(repository)
+    ):
+        return RecordedCi(
+            fact_id,
+            repository.lower(),
+            number,
+            str(fact.get("result") or ""),
+            fact.get("ci_counts") is True,
+            stamp,
+        )
+    return None
 
 
 def _recorded_pr(fact: Mapping[str, Any], harness: str, sid: str) -> RecordedPr | None:
@@ -4666,12 +4762,16 @@ GOAL_VERDICT_FAILED = "check-failed"
 GOAL_VERDICT_DELETED_AFTER = "deleted-after"
 GOAL_VERDICT_MOVED_AFTER = "moved-after"
 GOAL_VERDICT_PR = "pr-created-before"
+# The pull request the verdict names had every check that counts pass on the session's commit,
+# as the press read them from GitHub. Its dispute is `GOAL_VERDICT_FAILED`.
+GOAL_VERDICT_CI = "ci-passed"
 GOAL_VERDICT_NOT_FOUND = "not-found"
 GOAL_VERDICT_NOTHING_CHECKABLE = "nothing-checkable"
 GOAL_VERDICT_WHYS = (
     GOAL_VERDICT_WRITTEN,
     GOAL_VERDICT_PASSED,
     GOAL_VERDICT_PR,
+    GOAL_VERDICT_CI,
     GOAL_VERDICT_WRITTEN_AFTER,
     GOAL_VERDICT_DELETED_AFTER,
     GOAL_VERDICT_MOVED_AFTER,
@@ -4723,6 +4823,10 @@ def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
         for number in re.findall(r"\d+", found["list"])
     )
     return tuple(dict.fromkeys(named))
+
+
+def _names_pr(named: Sequence[tuple[str, int]], repository: str, number: int) -> bool:
+    return any(n == number and r in ("", repository) for r, n in named)
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:
@@ -4836,15 +4940,19 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         if (evidence_at(entry) or entry["at"]) >= set_at
         and kinds & _check_kinds(_check_text(entry))
     ]
+    named_ci = [ci for ci in recorded.ci if _names_pr(named_prs, ci.repository, ci.number)]
     failed = [
         entry["id"]
         for entry in checks
         if entry.get("result") == RESULT_FAILED and not _superseded(entry, at, recorded.checks)
-    ]
+    ] + [ci.id for ci in named_ci if ci.counts and ci.result == CI_RESULT_FAILED]
     if failed:
         return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_FAILED, failed)
     if writes:
         return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_WRITTEN, [write.id for write in writes])
+    green = [ci.id for ci in named_ci if ci.counts and ci.result == CI_RESULT_PASSED]
+    if green:
+        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_CI, green)
     created = [
         pr.id
         for pr in recorded.prs
@@ -5362,6 +5470,7 @@ def produce(  # noqa: PLR0913
     settled_through: Any = None,
     open_call_lookup: Callable[[], float | None] | None = None,
     failures_only: bool = False,
+    ci: Mapping[str, Any] | None = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -5406,6 +5515,10 @@ def produce(  # noqa: PLR0913
     also reads mid-flight, but nothing is running there, so an unanswered call is an
     interruption and no call in flight excuses a departure; only work recorded after the words can.
 
+    `ci` is the reading route's: the press's read of the bound pull request (`ci_read.read`).
+    Its checks join the facts as `ci_check` entries, listed whatever the tool-output grant says
+    because GitHub said them and no session did, and the record is stored on the assessment.
+
     `on_phase` is a reading job's, told `PHASE_CHECKING` once a reply arrived
     and never otherwise, so a published phase is one that really happened.
 
@@ -5428,8 +5541,8 @@ def produce(  # noqa: PLR0913
     if record_withheld:
         return None, record_withheld, False
     latest = revisions[-1]
-    facts = list(facts)
     harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
+    facts = [*facts, *ci_read.facts(ci, harness, sid)]
     tails = tool_output.tails if tool_output is not None and tool_output.destination else None
     admitted = tails is not None
     ledger = build_ledger(
@@ -5587,6 +5700,8 @@ def produce(  # noqa: PLR0913
         "criteria": criteria,
         "coverage": coverage,
     }
+    if ci is not None:
+        assessment["ci"] = dict(ci)
     if latest.get("goal_source") in PROMPT_SOURCES:
         assessment["goal_source"] = str(latest["goal_source"])
         assessment["goal_source_at"] = baseline_at(latest)
@@ -5675,7 +5790,9 @@ def _ledger_to_read(
     # Decided over the whole ledger, before the stop cut: that sentence says
     # nothing is after the words, which a turn the cut removed contradicts
     # (review F1).
-    if all(_before_window(entry, opened) for entry in ledger):
+    # A CI check is read at the press and is never in the window for want of anything to read, so
+    # it does not stand in for a session that did nothing since the words.
+    if all(_before_window(entry, opened) for entry in ledger if entry["type"] != CI_CHECK_TYPE):
         return (), None, left_out, WITHHELD_WINDOW_EMPTY
     # Through the last turn means through the observed stop. A resumed turn
     # whose state update lags leaves the row idle at the old stop while the
@@ -5687,13 +5804,20 @@ def _ledger_to_read(
     for entry in ledger:
         if _before_window(entry, opened):
             left_out["untimed" if (evidence_at(entry) or 0.0) <= 0 else "earlier"] += 1
-        elif stopped is not None and entry["at"] > stopped:
+        elif stopped is not None and entry["at"] > stopped and entry["type"] != CI_CHECK_TYPE:
+            # A CI check is the pull request's state at the press, never an event of the turn, so
+            # the stop does not cut it; its commit tie (the head test) is what places it.
             left_out["after_stop"] += 1
         else:
             kept.append(entry)
     # Entries after the words exist, so an empty list here is a turn not yet
     # stopped, never an empty record (owner, 2026-09-27).
-    return tuple(kept), stopped, left_out, "" if kept else WITHHELD_AFTER_STOP
+    return (
+        tuple(kept),
+        stopped,
+        left_out,
+        "" if any(entry["type"] != CI_CHECK_TYPE for entry in kept) else WITHHELD_AFTER_STOP,
+    )
 
 
 def _call_failed(model: Callable[..., tuple[str, str]], status: str) -> tuple[str, bool] | None:
@@ -5727,6 +5851,7 @@ def _newest(
         at
         for fact in facts
         if isinstance(fact, dict)
+        and fact.get("type") != CI_CHECK_TYPE
         and isinstance(fact.get("source_session"), dict)
         and (fact["source_session"].get("harness"), fact["source_session"].get("sid"))
         == (harness, sid)

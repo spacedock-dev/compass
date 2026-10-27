@@ -177,6 +177,8 @@ export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
   'passed-before': 'a check of the kind its reason names is recorded as passing before the verdict',
   'pr-created-before':
     'the pull request its reason names is recorded as created before the verdict',
+  'ci-passed':
+    'the pull request its reason names had every check that counts pass on this session’s commit',
   'written-after': 'the file its reason names was written again after the verdict',
   'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
   'moved-after': 'a file its reason or the goal names was moved away after the verdict',
@@ -190,6 +192,8 @@ export const GOAL_VERDICT_WHY_GOAL: Readonly<Record<string, string>> = {
   'written-before': 'the file the goal names is recorded as written before the verdict',
   'passed-before': 'a check of the kind the goal names is recorded as passing before the verdict',
   'pr-created-before': 'the pull request the goal names is recorded as created before the verdict',
+  'ci-passed':
+    'the pull request the goal names had every check that counts pass on this session’s commit',
   'written-after': 'the file the goal names was written again after the verdict',
   'deleted-after': 'a file the goal names was deleted after the verdict',
   'moved-after': 'a file the goal names was moved away after the verdict',
@@ -198,6 +202,71 @@ export const GOAL_VERDICT_WHY_GOAL: Readonly<Record<string, string>> = {
   'nothing-checkable':
     'the claim gives no reason, and the goal names no file or check Compass can look for',
 };
+/* The pull request's CI checks a press read from GitHub (`ci_read`), as the stored record holds them. The
+   tokens are the producer's closed sets, and the sentences are Compass's: nothing the CLI said reaches the
+   page through them
+   ([DEC-30](../../../docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)). */
+export const CI_BUCKETS: readonly string[] = ['pass', 'fail', 'pending', 'skipping', 'cancel'];
+export const CI_SOURCES: readonly string[] = ['goal', 'record'];
+export const CI_READ_ERRORS: Readonly<Record<string, string>> = {
+  'gh-missing': 'the gh command was not found on this machine',
+  'gh-signed-out': 'gh is not signed in, so run gh auth login to let Compass read them',
+  'pull-request-not-found': 'GitHub does not show that pull request to your gh login',
+  'rate-limited': 'GitHub is rate limiting your gh login',
+  timeout: 'GitHub did not answer in time',
+  'unreadable-output': 'gh answered in a shape Compass does not read',
+  'gh-failed': 'gh failed',
+};
+export const CI_READ_LABEL = 'Pull request checks';
+/* The entry a stored CI check is, as the producer's fact words it (`ci_read.facts`), so a citation of one
+   resolves on this page as it did when the reading was made. */
+export const CI_ENTRY_SOURCE = 'GitHub pull request check, read by Compass · recorded';
+export const CI_ENTRY_WORDS: Readonly<Record<string, string>> = {
+  pass: 'passed on the pull request',
+  fail: 'failed on the pull request',
+  pending: 'still running on the pull request',
+  skipping: 'skipped on the pull request',
+  cancel: 'cancelled on the pull request',
+};
+export const CI_ENTRY_RESULT: Readonly<Record<string, string>> = {
+  pass: 'passed',
+  fail: 'failed',
+  pending: 'pending',
+  skipping: 'skipped',
+  cancel: 'cancelled',
+};
+export const CI_ENTRY_KIND = 'GitHub check';
+export const CI_BUCKET_WORDS: Readonly<Record<string, string>> = {
+  pass: 'passed',
+  fail: 'failed',
+  pending: 'still running',
+  skipping: 'skipped',
+  cancel: 'cancelled',
+};
+export const ciReadFailed = (reason: string): string =>
+  `Pull request checks were not read from GitHub: ${reason}.`;
+export const ciReadFrom = (at: string, pr: string, counts: string): string =>
+  `Read from GitHub at ${at}: ${pr}, ${counts}.`;
+export const CI_NO_CHECKS = 'no checks reported';
+export const CI_SETTLES = 'Every check that counts passed on this session’s commit.';
+export const CI_FAILING = 'A failing check on this session’s commit counts against the work.';
+export const CI_RUNNING = 'Checks are still running, so they settle nothing.';
+export const CI_NONE_DONE = 'No check has completed, so they settle nothing.';
+export const CI_CANCELLED = 'A cancelled check keeps them from settling anything.';
+export const CI_HEAD_MOVED =
+  'The pull request head is not this session’s commit, so they settle nothing.';
+export const CI_HEAD_UNKNOWN =
+  'Compass could not read this session’s commit, so they settle nothing.';
+export const CI_CAUTION = 'This session changed the CI configuration.';
+export const CI_REQUIRED_ONLY = 'Only the checks GitHub requires are counted.';
+/* The switch beside the notice. `flag-off` is the run's own `--no-ci-read`, which the page cannot lift. */
+export const CI_SWITCH_ON =
+  'Pull request checks are read from GitHub with your gh login when you press Analyze.';
+export const CI_SWITCH_OFF = 'Pull request checks are not read from GitHub.';
+export const CI_SWITCH_FLAG =
+  'Pull request checks are not read from GitHub for this run (--no-ci-read).';
+export const CI_SWITCH_FAILED = 'Could not save that. Try again.';
+
 /* "the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict":
    the pull request fact the test confirmed, named from the entry it cites. */
 export const goalVerdictPullRequest = (name: string, byGoal = false): string =>

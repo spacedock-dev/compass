@@ -13,6 +13,14 @@ import {
   BLOCKER_LINES,
   CORRECTION_CAP,
   CRITERION_KEYS,
+  CI_BUCKETS,
+  CI_CAUTION,
+  CI_ENTRY_RESULT,
+  CI_ENTRY_SOURCE,
+  CI_ENTRY_WORDS,
+  CI_HEAD_MOVED,
+  CI_READ_ERRORS,
+  CI_SOURCES,
   GOAL_VERDICT_CHECKS,
   GOAL_VERDICT_KEYS,
   GOAL_VERDICT_REMOVAL_KEYS,
@@ -61,6 +69,14 @@ interface Vocabulary {
   readonly goalVerdictWhys: string[];
   readonly goalVerdictRemovalKeys: string[];
   readonly goalVerdictRemovalWhys: string[];
+  readonly ciBuckets: string[];
+  readonly ciSources: string[];
+  readonly ciReadErrors: string[];
+  readonly ciEntryResults: Record<string, string>;
+  readonly ciEntryWords: Record<string, string>;
+  readonly ciEntrySource: string;
+  readonly ciHeadMoved: string;
+  readonly ciCaution: string;
   readonly workEvidenceByHarness: Record<string, string[]>;
   readonly checkResultWords: Record<string, string>;
   readonly checkNotRecorded: string;
@@ -124,6 +140,22 @@ describe('the reading vocabulary', () => {
     expect(sorted(Object.keys(GOAL_VERDICT_WHY))).toEqual(sorted(vocabulary.goalVerdictWhys));
     expect(sorted(GOAL_VERDICT_REMOVAL_KEYS)).toEqual(sorted(vocabulary.goalVerdictRemovalKeys));
     expect(sorted(GOAL_VERDICT_REMOVAL_WHYS)).toEqual(sorted(vocabulary.goalVerdictRemovalWhys));
+  });
+
+  it('spells the pull request check read as the producer does, with a sentence for every error', () => {
+    expect(sorted(CI_BUCKETS)).toEqual(sorted(vocabulary.ciBuckets));
+    expect(sorted(CI_SOURCES)).toEqual(sorted(vocabulary.ciSources));
+    expect(sorted(Object.keys(CI_READ_ERRORS))).toEqual(sorted(vocabulary.ciReadErrors));
+  });
+
+  it('words a stored check entry as the producer does, up to the page capitals and suffixes', () => {
+    expect(CI_ENTRY_RESULT).toEqual(vocabulary.ciEntryResults);
+    expect(CI_ENTRY_WORDS).toEqual(vocabulary.ciEntryWords);
+    const opens = (page: string, producer: string): boolean =>
+      page.replaceAll('\u2019', "'").toLowerCase().startsWith(producer.toLowerCase());
+    expect(opens(CI_ENTRY_SOURCE, vocabulary.ciEntrySource)).toBe(true);
+    expect(opens(CI_HEAD_MOVED, vocabulary.ciHeadMoved)).toBe(true);
+    expect(opens(CI_CAUTION, vocabulary.ciCaution)).toBe(true);
   });
 
   it('agrees on which entries demonstrate work, for every harness', () => {

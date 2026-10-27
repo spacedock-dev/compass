@@ -22,6 +22,7 @@ from urllib.parse import ParseResult, parse_qs, urlparse
 from compass_runtime import annotations as annotation_store
 from compass_runtime import asks as runtime_asks
 from compass_runtime import (
+    ci_read,
     copied_corrections,
     correction,
     departures,
@@ -628,6 +629,88 @@ def _with_levels(
     return {**context, "sources": {**sources, "work": work}}
 
 
+def _read_ci(
+    application: Any,
+    row: dict[str, Any],
+    entry: annotation_store.Annotation,
+    transcript: str,
+    facts: list[Any],
+    hooks: runtime_reading_jobs.Hooks,
+) -> dict[str, Any] | None:
+    """`_bind_and_read_ci`, which can never cost the reader their reading.
+
+    The checks are an extra read beside the one the reader pressed for, and a reading's capacity
+    is spent after this returns, so an unexpected failure here is no reason to lose the press.
+    """
+    try:
+        return _bind_and_read_ci(application, row, entry, transcript, facts, hooks)
+    except Exception as exc:  # noqa: BLE001 - the read is best effort; the reading goes ahead without it
+        runtime_io.diag(
+            f"Compass: the pull request check read failed ({exc.__class__.__name__}).",
+            application.diagnostic_sink,
+        )
+        return None
+
+
+def _bind_and_read_ci(
+    application: Any,
+    row: dict[str, Any],
+    entry: annotation_store.Annotation,
+    transcript: str,
+    facts: list[Any],
+    hooks: runtime_reading_jobs.Hooks,
+) -> dict[str, Any] | None:
+    """The bound pull request's CI checks, read from GitHub on this press, or None.
+
+    Runs only inside an admitted Analyze job, so the pause, the cap and `--no-observer-model`
+    have already refused the press before this launches anything, and `ci_read.setting` is
+    the off switch beside them. Nothing here is reached from the Live monitor, the live
+    estimate, a summary, the unasked lane or `--diagnose`.
+    [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)
+    """
+    config = application.config
+    harness = str(row.get("harness"))
+    if config.model_calls_disabled or ci_read.setting(config) != ci_read.SETTING_ON:
+        return None
+    folder = (
+        runtime_project_context.session_folder(config, application.state, harness, transcript)
+        if transcript
+        else ""
+    )
+    identity = ci_read.probe_session(config, folder)
+    links, pushes = (
+        ci_read.scan_records(config, transcript) if harness == "claude" and transcript else ((), ())
+    )
+    goal = row.get("session_goal")
+    revisions = entry["revisions"]
+    binding = ci_read.bind(
+        [
+            str(goal.get("text") or "") if isinstance(goal, dict) else "",
+            str(revisions[-1]["goal"]) if revisions else "",
+        ],
+        links,
+        pushes,
+        (identity.host, identity.repository) if identity else ("", ""),
+    )
+    # Last, so a Cancel that landed while the folder and the records were read launches nothing.
+    if binding is None or hooks.cancelled():
+        return None
+    written = (
+        str(fact.get("summary") or "")
+        for fact in facts
+        if isinstance(fact, dict)
+        and fact.get("type") == runtime_reading.TOOL_REPORT_TYPE
+        and fact.get("subject") == runtime_reading.WRITE_SUBJECT
+    )
+    return ci_read.read(
+        binding,
+        session_head=identity.head if identity else "",
+        caution=ci_read.changed_ci_configuration(written),
+        now=application.clock(),
+        floor=ci_read.FLOOR,
+    )
+
+
 def _line_requests(
     entry: annotation_store.Annotation | None, facts: list[Any], row: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
@@ -683,6 +766,9 @@ def _analysis_levels(
         and (fact["source_session"].get("harness"), fact["source_session"].get("sid"))
         == (harness, sid)
     )
+    # The CI checks this reading stored, as the facts the press numbered them as, so a citation
+    # of one resolves here and a head that has since moved does not unsettle what was read.
+    mine = (*mine, *ci_read.facts(assessment.get("ci"), harness, sid))
     scan = _scan_of(context, harness, sid)
     evidence = levels.Evidence(
         mine,
@@ -2378,16 +2464,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
-        refusal = self._reading_refusal(payload, off=payload.get("consent") in ("off", "on"))
+        refusal = self._reading_refusal(
+            payload,
+            off=payload.get("consent") in ("off", "on") or payload.get("ci_read") in ("off", "on"),
+        )
         if refusal is not None:
             self._reject(refusal)
             return
-        if payload.get("consent") == "off":
-            self._pause_model_calls()
-            return
-        if payload.get("consent") == "on":
-            answer = reading_policy.resume(config, now=application.clock())
-            self._reading_permission_reply(answer, off=True)
+        if self._reading_setting(payload):
             return
         harness, sid = payload.get("harness"), payload.get("sid")
         if not isinstance(harness, str) or not isinstance(sid, str) or not harness or not sid:
@@ -2397,6 +2481,40 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._unasked_grant(harness, payload)
             return
         self._reading_press(harness, sid, payload)
+
+    def _reading_setting(self, payload: dict[str, Any]) -> bool:
+        """Answer the body variants that change a setting, not a reading. True when one did."""
+        application = self.server.application
+        if "ci_read" in payload:
+            self._ci_read_setting(payload["ci_read"])
+        elif payload.get("consent") == "off":
+            self._pause_model_calls()
+        elif payload.get("consent") == "on":
+            answer = reading_policy.resume(application.config, now=application.clock())
+            self._reading_permission_reply(answer, off=True)
+        else:
+            return False
+        return True
+
+    def _ci_read_setting(self, answer: Any) -> None:
+        """The page's switch for the GitHub read: `on` or `off`, nothing else.
+
+        Guarded as the route is, so a lured navigation or a cross-site fetch cannot flip it. It
+        writes one marker and reads nothing, and `--no-ci-read` holds it off whatever is sent.
+        [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)
+        """
+        config = self.server.application.config
+        if answer not in ("on", "off"):
+            self._reject(400)
+            return
+        if config.ci_read_enabled and not ci_read.set_setting(config, on=answer == "on"):
+            self._reject(503)
+            return
+        self.server.application.state.snapshot.clear()
+        self._send(
+            json.dumps({"ok": True, "ci_read": ci_read.setting(config)}).encode(),
+            "application/json",
+        )
 
     def _pause_model_calls(self) -> None:
         application = self.server.application
@@ -3716,11 +3834,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
         context = _session_context(application, row, reach)
         # What the press read back and the project cap kept, where it read back; else the tail's.
         reached = (context.get("sources") or {}).get("message_reach")
+        facts = _facts_of(context)
         return runtime_reading.produce(
             application.config,
             row,
             entry["revisions"],
-            _facts_of(context),
+            facts,
+            ci=_read_ci(application, row, entry, transcript, facts, hooks),
             settled_through=settled["through"] if (settled := entry.get("settled")) else None,
             open_call_lookup=(
                 (

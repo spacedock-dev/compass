@@ -7603,6 +7603,50 @@ request number are session content, and they leave the machine with the reader's
 **Built by**, in words: the layers that follow add the binder, the guarded launcher for `gh` and `glab`, the
 fact and its store, the page setting and `--no-ci-read`, and the notice line.
 
+### Amended 2026-10-27 (owner): the `gh` read is built, for `github.com`
+
+This layer builds the ruling for GitHub only. `glab` and a host from the tool's own hosts file are not
+built, so the known hosts are `github.com` and nothing else, and a goal that names another host
+contributes no pull request, and the session's own records may still bind one. The ruling's other items stand as written, and these are the choices it left open.
+
+- **One fact per check, built from the stored record.** A `ci_check` entry carries the check's name,
+  bucket and completion time, and Compass's own word for whether it may settle (`ci_counts`). The record
+  is stored beside `criteria` as `ci` and the entries are rebuilt from it every time, so a citation
+  resolves in the prompt, in the stored reading and in the level, with the same ids. The entry's time
+  is the read's, because the pull request's state at the press is no event of the session. A last-turn
+  reading's stop therefore does not cut it, and the head test of item 4 is what ties it to the session. For
+  the same reason a read never stands in for a session that did nothing since the reader's words: the
+  window and the stop are tested over the session's own entries, and a reading with none still withholds.
+  The page rebuilds the same entries from the stored record (`ciEntries`) so a citation of one resolves and
+  a line resting on a check that does not count is refused there as it was here. They are in no list and no
+  numbering.
+- **What counts.** A pass counts when the pull request's head is the session folder's HEAD and every
+  check that counts has passed, with none pending, failed or cancelled and at least one passed. A failure
+  counts when the head matches. Where GitHub names required checks, only those are listed and counted.
+  Anything else is listed so the reading can say it, and settles nothing. A session folder that cannot
+  be read (`--no-git`, a missing directory) gives no head to match, so nothing settles.
+- **Binding order.** A goal that names exactly one pull request by URL binds, and one that names two
+  binds none. Otherwise the newest `pr-link` record of the folder's own `origin` binds, and then the
+  newest pushed branch of it, which is looked up once for its number. That look-up sends GitHub the
+  branch's name once, the one place a push-bound read sends more than the repository and the number. A record naming another
+  repository binds nothing, because a transcript can say anything and only the folder's own remote says
+  it is this one.
+- **The harness's own verdict.** A goal verdict that names the bound pull request agrees when its CI
+  counts as passed and is disputed when a failing check counts. The goal's own words are read when the
+  reason is empty, as for a created pull request.
+- **A caution, not a block.** A write to a workflow file or `.gitlab-ci.yml` puts the caution on every
+  `ci_check` entry the model reads, and the reading still settles.
+- **The page's setting is a marker file** in the state directory, so every dashboard of this account
+  and every tab reads one answer. `--no-ci-read` wins and the page cannot lift it.
+- **One read per pull request, and a floor.** A press reads a pull request once: the head, the checks, the
+  required checks, then the head again, because `gh pr checks` names no commit and a push between the first
+  look and the listing would put the new commit's checks under the old head. A pull request read within 30
+  seconds is not read again, and only a read that answered is kept, so a reader who fixes a missing or
+  signed-out `gh` is not told the old answer.
+- **The notice carries one line** about the read, only while the read is on, and the page's switch sits
+  under the list. The notice's content epoch is not bumped, so a reader who has seen the notice before sees
+  the new line in the route's disclosure under What is sent and is not shown the notice again.
+
 ## DEC-31: the text of a command that is not a check may leave the machine, by vendor
 
 Decided by the owner on 2026-10-27 (DRC-4987). This layer writes the ruling down; the layers that follow build

@@ -25,6 +25,7 @@
       "produced": false,
       "reason": "page-outdated",
       "route": {
+        "ci_read": "on",
         "destination": "Anthropic",
         "disclosure": "",
         "disclosure_parts": [],
@@ -42,7 +43,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "728",
+      "Content-Length": "743",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

@@ -389,6 +389,9 @@ class ProductionFinalLookupParity(unittest.TestCase):
                 mock.patch.object(observer, "resolve_transcript", return_value=str(transcript)),
                 mock.patch.object(http_api, "_session_context", return_value={}),
                 mock.patch.object(http_api, "_facts_of", return_value=facts),
+                # The press-time CI read is no part of the study's prompt, and needs an
+                # application this stand-in does not carry.
+                mock.patch.object(http_api, "_read_ci", return_value=None),
                 mock.patch.object(reading, "record_withheld", return_value=""),
                 mock.patch.object(project_context, "transcript_tail_coverage", return_value={}),
                 mock.patch.object(project_context, "transcript_user_facts", return_value=[]),

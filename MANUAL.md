@@ -118,6 +118,7 @@ These features are enabled by default. An off switch suppresses the named featur
 | `--no-events` | Disable the event coordinator, event overlays and coarse store probe. Fixed-interval collection continues. Also disables terminal focus, command-shape reporting and reading/writing recorded session ends. Observation history is independent. |
 | `--no-irreversible` | Disable hook command-shape matching, report ingress and publication. Ordinary lifecycle hints remain available unless `--no-events` is also set. |
 | `--no-git` | Do not run end-of-session Git probes in session repositories, and do not read a project's `package.json`, Makefile or justfile from git to count its test and lint scripts as checks. Dirty/changed fields stay empty; empty is not a finding that the tree is clean. |
+| `--no-ci-read` | Do not read a pull request's CI checks from GitHub when Analyze drift is pressed. No `gh` command runs, and a reading goes without those checks. The page also has a setting of its own; either one off stops the read. |
 | `--no-focus` | Do not record terminal identities, publish a focus capability or raise session terminals. `--no-events` also turns this off. |
 | `--no-ask` | Disable session-to-reader questions: register, poll and answer routes refuse, and the page offers no ask control. |
 
@@ -191,6 +192,7 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-summaries.json` | Stored session summaries and word-free source comparison metadata. Independent of annotations; Delete summary removes one session and `--forget` deletes the store. |
 | `compass-dismissals.json` | Sessions marked handled. |
 | `compass-project-checks.json` | Commands you list as checks for a project. You write it; Compass only reads it. [How to list one](HOW_TO_USE.md#list-a-projects-checks). |
+| `ci-read-off` | One-line marker the page's pull request CI read switch leaves while it is off. It is removed when the switch goes back on. |
 | `compass-tripwires.json` | Saved workflow stage conditions. |
 | `compass-copied-corrections.json` | Digests recording copied corrections, without their text. |
 | `compass-reading-permission.sqlite3` | Reading permissions, the model-call pause, the session-summary switch, the one-time notices shown, and the spend admission timestamps for readings and for session summaries, kept apart. |

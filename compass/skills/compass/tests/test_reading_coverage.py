@@ -66,6 +66,9 @@ class ThePressMeasuresTheMessageTail(checks.ClaudeChecksTestCase):
                 self.subTest(changed=changed),
                 mock.patch.object(http_api, "_session_context", side_effect=collected),
                 mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+                # This measures the message tail; the GitHub read has its own tests and needs
+                # a real state this stand-in does not hold.
+                mock.patch.object(http_api, "_read_ci", return_value=None),
             ):
                 compose: Any = http_api._RequestHandler._compose_reading
                 got, why, spent = compose(

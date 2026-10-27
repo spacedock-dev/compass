@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from urllib.parse import urlsplit
 
 from . import annotations as annotation_store
+from . import ci_read, observer, records
 from . import config as runtime_config
-from . import observer, records
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Iterable, Mapping
@@ -101,6 +101,10 @@ class Route(TypedDict):
     # for the words is bound to it (owner, 2026-10-02): a press carries it, and
     # the policy covers the press only while it is unchanged.
     words_destination: str
+    # Whether a press on this route reads the bound pull request's CI checks from GitHub:
+    # `on`, `off` (the page's setting) or `flag-off` (`--no-ci-read`). The unasked lane is
+    # never `on`, because no network call happens without a press.
+    ci_read: str
 
 
 # The harness whose observed record lists checks (`project_context.
@@ -569,6 +573,17 @@ _WORDS_CAP = 1_000
 _FINAL_REPLY_BYTES = 4_096
 
 
+# The one line a press's notice carries for the GitHub read, as the ruling asks:
+# [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)  # noqa: E501
+# What goes to GitHub is the repository and the number, or the repository and a pushed branch's
+# name where that branch is what bound the read; the checks that come back go to the model
+# beside the rest of the entries, so the `To:` item above covers them.
+CI_READ_PART = (
+    "GitHub: a pull request your goal or session names has its checks read with your gh login, "
+    "sending its repository and number or branch. --no-ci-read or the switch below stops it."
+)
+
+
 def _state(provider: str, which: Callable[[str], Any]) -> str:
     # The gate first: a provider this build may not offer is never looked up.
     if not annotation_store.provider_enabled(provider):
@@ -597,6 +612,7 @@ def _route(
     fallback: bool,
     where: Callable[[str], str],
     claude_model: str,
+    ci: str = ci_read.SETTING_OFF,
 ) -> Route:
     # Where the words go, on every harness; tool output, only where checks exist.
     to = where(provider) if provider else ""
@@ -606,6 +622,7 @@ def _route(
         [
             note,
             *_base_parts(provider, to, harness=harness, tool_output=sentence, model=claude_model),
+            *([CI_READ_PART] if ci == ci_read.SETTING_ON else []),
             CAVEAT,
         ]
         if provider
@@ -625,6 +642,7 @@ def _route(
         "destination": reached,
         "tool_output": sentence,
         "words_destination": to,
+        "ci_read": ci,
     }
 
 
@@ -653,6 +671,15 @@ def resolve(
     def where(provider: str) -> str:
         return destination(provider, environ=environ, root=root)
 
+    # Never on the unasked lane: no network call happens without a press.
+    ci = (
+        ci_read.SETTING_OFF
+        if unasked
+        else ci_read.SETTING_ON
+        if config is None
+        else ci_read.setting(config)
+    )
+
     # The unasked lane prefers Claude Code where no own producer exists (owner,
     # 2026-10-20); Analyze keeps Codex there, which that ruling did not change.
     preferred = (
@@ -677,6 +704,7 @@ def resolve(
                 fallback=False,
                 where=where,
                 claude_model=claude_model,
+                ci=ci,
             )
         return _route(
             harness,
@@ -686,6 +714,7 @@ def resolve(
             fallback=False,
             where=where,
             claude_model=claude_model,
+            ci=ci,
         )
     second = _state(other, which)
     if second == "usable":
@@ -699,6 +728,7 @@ def resolve(
             fallback=True,
             where=where,
             claude_model=claude_model,
+            ci=ci,
         )
     # The harness's own lack stands as a sentence of its own, so the two
     # machine facts after it join with one "and" rather than a chain of them.
@@ -715,6 +745,7 @@ def resolve(
         fallback=False,
         where=where,
         claude_model=claude_model,
+        ci=ci,
     )
 
 
