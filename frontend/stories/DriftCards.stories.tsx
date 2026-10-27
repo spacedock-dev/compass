@@ -778,12 +778,12 @@ export const ClaimQuotesTheMessageThatClaims: Story = {
       fact('m5', 640, {
         type: 'agent_message',
         by: 'agent',
-        summary: 'The loop exited before CI had registered any checks for the new commit.',
+        summary: 'The worker stopped before the queue had registered the new job.',
       }),
       fact('m6', 660, {
         type: 'agent_message',
         by: 'agent',
-        summary: 'I fixed the one failing check on PR #7, the coverage gate, and it now passes.',
+        summary: 'I fixed the one failing check on the widget guard, and it now passes.',
       }),
     ],
   }),
@@ -795,7 +795,11 @@ export const ClaimQuotesTheMessageThatClaims: Story = {
       return node;
     });
     await expect(claim).toHaveTextContent(
-      /^What the agent claimed · “I fixed the one failing check on PR #7, the coverage gate, and it now passes” is not shown by the record/,
+      /^What the agent claimed · “I fixed the one failing check on the widget guard, and it now passes” is not shown by the record/,
+    );
+    // The earlier cited message stays listed beneath as context.
+    await expect(claim).toHaveTextContent(
+      'The worker stopped before the queue had registered the new job.',
     );
     await neverDone(shown);
   },

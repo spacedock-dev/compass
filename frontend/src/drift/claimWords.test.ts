@@ -1,16 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { claimMessage, holdsClaimWord } from './claimWords';
 
 const entry = (id: string, summary: string) => ({ id, summary }) as never;
 
 describe('claimMessage', () => {
-  const exited = entry(
-    'm1',
-    'The loop exited before CI had registered any checks for the new commit.',
-  );
+  const exited = entry('m1', 'The worker stopped before the queue had registered the new job.');
   const fixed = entry(
     'm2',
-    'I fixed the one failing check on PR #7, the coverage gate, and it now passes.',
+    'I fixed the one failing check on the widget guard, and it now passes.',
   );
 
   it('quotes the message that holds a claim word, not the first cited', () => {
@@ -35,5 +33,33 @@ describe('holdsClaimWord', () => {
     expect(holdsClaimWord('PASSED locally')).toBe(true);
     expect(holdsClaimWord('the sender fixedpoint undone')).toBe(false);
     expect(holdsClaimWord('')).toBe(false);
+  });
+});
+
+/* The page's word list is a hand copy of the two rules the model is told, so read the rules from the producer
+   and hold every word they name. A word added or dropped there fails here. */
+describe('the claim words match the producer rules', () => {
+  const source = readFileSync(
+    new URL('../../../compass/skills/compass/compass_runtime/reading.py', import.meta.url),
+    'utf8',
+  );
+  const full = /compare agent states \(([^)]*)\)/.exec(source.replace(/'\s*\n\s*"/g, ''));
+  const short = /only assertions of ([a-z/]+),/.exec(source);
+  const words = (list: string): string[] =>
+    list
+      .split(/[,/]/)
+      .map((word) => word.trim())
+      .filter(Boolean);
+
+  it('finds both rules', () => {
+    expect(full).not.toBeNull();
+    expect(short).not.toBeNull();
+  });
+
+  it('holds every word of both rules, passing in its three forms', () => {
+    const named = [...words(full?.[1] ?? ''), ...words(short?.[1] ?? '')];
+    expect(named.length).toBeGreaterThanOrEqual(9);
+    for (const word of named) expect(holdsClaimWord(`it is ${word} now`)).toBe(true);
+    for (const form of ['passing', 'passes', 'passed']) expect(holdsClaimWord(form)).toBe(true);
   });
 });

@@ -1286,7 +1286,7 @@ prompt, what the reading sends and the shape contract's seven rules are unchange
    correction quotes it (`reading.claim_title`, its closing stop dropped). Under a claim the record
    does not show the row says where the agent made it and that the record read is the board's recent
    tail. "Claim to check at #13 · 4m ago" is gone from beside Steer back: it read as an instruction,
-   and the claims row already says which claim and where.
+   and the claims row already says which claim and where. (Amended 2026-10-27: see the amendment at the end of this DEC for which cited message is quoted.)
 7. **The how-to says it.** It had said a reading cannot settle a folder limit. It now says a recorded
    write breaking one also departs, in no more words, since the popup is held to 150.
 
@@ -1299,6 +1299,20 @@ kind a misread path can hurt, because a forbidden-folder rule needs a write unde
 The guards are held by `test_reading_record_guards.py` and the stories `A recorded write settles a
 line that rules out its folder`, `A model's departure on a write alone is still withdrawn` and `Every
 Can't tell line says its own reason`.
+
+### Amended 2026-10-27 (owner): the claims row quotes the cited message that claims
+
+The claims row used to quote the first agent message a reading cited. A reading may cite a neutral
+statement first and the message that makes the claim second, so the row put a sentence that claims nothing
+beside "is not shown by the record", which reads as doubt about the agent's honesty. The page now quotes the
+first cited agent message holding a word of the claims rule (running, done, merged, pushed, deployed,
+passing, passes, passed, fixed, sent, filed; whole words, any case), and the first cited message when none
+does. The other cited messages stay listed beneath. The word list lives in
+`frontend/src/drift/claimWords.ts` and mirrors `reading.CLAIMS_RULE`.
+
+The word rule only picks which already cited agent message the page quotes. It is a display choice and
+never changes a result, a citation or a verdict, so the ruling that no English keyword classifier is added,
+and the amendment that a word list is a judgement, still hold for verdicts.
 
 ### Repeated calls
 
@@ -6391,16 +6405,6 @@ never a pass, a head that moved past the session's commit does not settle the se
 that changed the CI configuration carries the caution DEC-30 names, so the floor rests on a CI fact only when
 DEC-30 lets that fact stand. Later file writes in the transcript do not age a CI fact, and DEC-30 item 4's
 head-equals-HEAD test is the only ageing it has. The live estimate's floor (item 1) is not touched.
-
-### Amended 2026-10-27 (owner): the claims row quotes the cited message that claims
-
-The claims row used to quote the first agent message a reading cited. A reading may cite a neutral
-statement first and the message that makes the claim second, so the row put a sentence that claims nothing
-beside "is not shown by the record", which reads as doubt about the agent's honesty. The page now quotes the
-first cited agent message holding a word of the claims rule (running, done, merged, pushed, deployed,
-passing, passes, passed, fixed, sent, filed; whole words, any case), and the first cited message when none
-does. The other cited messages stay listed beneath. The word list lives in
-`frontend/src/drift/claimWords.ts` and mirrors `reading.CLAIMS_RULE`.
 
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
