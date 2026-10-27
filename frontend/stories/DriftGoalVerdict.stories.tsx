@@ -120,6 +120,35 @@ export const ClaimConfirmedByTheCreatedPullRequest: Story = {
   },
 };
 
+/* The reason quotes text, and a check Compass recorded printed it. The card says where the text is, by the check's
+   number, and stays unconfirmed: output that holds a phrase is not a passing check, and the level is untouched. */
+export const ClaimQuotedTextFoundInACheckOutput: Story = {
+  ...scenario({
+    session: {
+      session_goal: {
+        ...GOAL,
+        verdict: { met: true, at: VERDICT_AT, reason: 'the log reads “Ran 412 tests in 3.1s”' },
+      },
+      ...checked('unconfirmed', 'quoted-in-check', VERDICT_AT, { cites: ['c2'], quoted: 1 }),
+    },
+    facts: FACTS,
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'unconfirmed');
+    await waitFor(() =>
+      expect(node).toHaveTextContent(
+        /Compass could not confirm it: the quoted text is in the output of check #\d+\./,
+      ),
+    );
+    await expect(node).toHaveTextContent('This does not change the level.');
+    await expect(node).not.toHaveTextContent('Compass agrees');
+    // The quote the evaluator gave stays the harness's words; the output it matched is never on the page.
+    await expect(node).toHaveTextContent('Its reason: “the log reads “Ran 412 tests in 3.1s””');
+  },
+};
+
 export const ClaimDisputedWhereTheRecordUndoesIt: Story = {
   ...scenario({
     session: { ...claimed, ...checked('disputed', 'written-after') },

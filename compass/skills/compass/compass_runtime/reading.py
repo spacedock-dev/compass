@@ -579,6 +579,10 @@ class ToolOutput:
     # Every value a shell call's command line masked, read at the press. It
     # scrubs the explanation a reading stores and goes no further.
     masked_values: frozenset[str] = frozenset()
+    # (record id, check line) to the output tail the one check that call ran owns, read at the
+    # press to find the text a harness verdict quotes. Searched and dropped: it is never sent to a
+    # model, stored or published, so a missing grant does not blind that test either.
+    quotable: Mapping[tuple[str, str], str] = field(default_factory=dict)
 
 
 SCOPE_MID_FLIGHT = "mid-flight"
@@ -1241,6 +1245,7 @@ class GoalVerdictCheck(TypedDict):
     cites: tuple[str, ...]
     path: NotRequired[str]
     changed_at: NotRequired[float]
+    quoted: NotRequired[int]
 
 
 class Assessment(TypedDict):
@@ -4582,6 +4587,9 @@ class Recorded:
     removals: tuple[RecordedRemoval, ...] = ()
     prs: tuple[RecordedPr, ...] = ()
     ci: tuple[RecordedCi, ...] = ()
+    # A recorded check's id to the output tail its own call owns, searched for a verdict's quotes
+    # and never carried into a result.
+    outputs: Mapping[str, str] = field(default_factory=dict)
 
 
 def recorded_from(  # noqa: C901 - one branch per kind of fact the record holds
@@ -4603,6 +4611,8 @@ def recorded_from(  # noqa: C901 - one branch per kind of fact the record holds
     changed = tool_output.changed_after if tool_output is not None else frozenset()
     incomplete = tool_output.read_incomplete if tool_output is not None else frozenset()
     ci: list[RecordedCi] = []
+    outputs: dict[str, str] = {}
+    quotable = tool_output.quotable if tool_output is not None else {}
     for fact in facts:
         if isinstance(fact, dict) and fact.get("type") == CI_CHECK_TYPE:
             found = _recorded_ci(fact, harness, sid)
@@ -4647,11 +4657,20 @@ def recorded_from(  # noqa: C901 - one branch per kind of fact the record holds
                     fact.get("changed_after") is True
                 )
                 checks.append(row)
+                branch = fact.get("branch")
+                held = quotable.get(
+                    (
+                        str(branch.get("record_id") if isinstance(branch, dict) else ""),
+                        str(fact.get("summary") or ""),
+                    )
+                )
+                if held and isinstance(row.get("id"), str):
+                    outputs[row["id"]] = held
     removals = tuple(
         RecordedRemoval(path, at, kind)
         for path, at, kind in (tool_output.removals if tool_output is not None else ())
     )
-    return Recorded(tuple(writes), tuple(checks), removals, tuple(prs), tuple(ci))
+    return Recorded(tuple(writes), tuple(checks), removals, tuple(prs), tuple(ci), outputs)
 
 
 def _recorded_ci(fact: Mapping[str, Any], harness: str, sid: str) -> RecordedCi | None:
@@ -4765,6 +4784,9 @@ GOAL_VERDICT_PR = "pr-created-before"
 # The pull request the verdict names had every check that counts pass on the session's commit,
 # as the press read them from GitHub. Its dispute is `GOAL_VERDICT_FAILED`.
 GOAL_VERDICT_CI = "ci-passed"
+# The text the reason quotes is in the output of a check the record holds. Said as where the text
+# is: the answer stays `unconfirmed`, because output that holds a phrase is no pass.
+GOAL_VERDICT_QUOTED = "quoted-in-check"
 GOAL_VERDICT_NOT_FOUND = "not-found"
 GOAL_VERDICT_NOTHING_CHECKABLE = "nothing-checkable"
 GOAL_VERDICT_WHYS = (
@@ -4776,6 +4798,7 @@ GOAL_VERDICT_WHYS = (
     GOAL_VERDICT_DELETED_AFTER,
     GOAL_VERDICT_MOVED_AFTER,
     GOAL_VERDICT_FAILED,
+    GOAL_VERDICT_QUOTED,
     GOAL_VERDICT_NOT_FOUND,
     GOAL_VERDICT_NOTHING_CHECKABLE,
 )
@@ -4785,6 +4808,13 @@ GOAL_VERDICT_KEYS = ("at", "check", "why", "cites")
 VERDICT_PATH_CAP_CHARS = 240
 GOAL_VERDICT_REMOVAL_KEYS = ("path", "changed_at")
 GOAL_VERDICT_REMOVAL_WHYS = (GOAL_VERDICT_DELETED_AFTER, GOAL_VERDICT_MOVED_AFTER)
+# The quoted-text answer carries how many distinct quoted spans were found, and nothing of them.
+GOAL_VERDICT_QUOTED_KEYS = ("quoted",)
+# At most this many spans of a reason are looked for, each between these lengths once whitespace is
+# folded: a shorter span ("ok", "4 passed") matches the output of nearly any check.
+MAX_QUOTED_SPANS = 8
+MIN_QUOTED_SPAN_CHARS = 12
+MAX_QUOTED_SPAN_CHARS = 200
 # A file name the evaluator's prose names: a stem of at least two characters and a lettered
 # extension, so "e.g." and a version such as "2.1" are not read as files.
 _VERDICT_FILE = re.compile(r"(?:[\w\-]+/)*[\w\-]{2,}\.[A-Za-z][A-Za-z0-9]{0,4}")
@@ -4845,6 +4875,86 @@ def _verdict_check_kinds(reason: str) -> frozenset[str]:
     return frozenset(
         kind for kind in _LINE_KINDS if _claims_result(reason, kind, remote_aware=True)
     )
+
+
+# Text a reason quotes is looked for only in a recorded check's output, never in the transcript at
+# large, where an echo would satisfy it:
+# [DEC-26](docs/design-reading-a-session.md#amended-2026-10-27-owner-text-a-reason-quotes-found-in-a-recorded-checks-output)  # noqa: E501
+# A span the evaluator put in quotes, which it may have copied from a tool's output. Single quotes
+# count only where neither side is a word character, so an apostrophe ("didn't ... can't") is not
+# read as a pair.
+_QUOTED_SPAN = re.compile(
+    r"\"([^\"\n]+)\"|\u201c([^\u201d\n]+)\u201d|`([^`\n]+)`|(?<!\w)'([^'\n]+)'(?!\w)"
+)
+# The words that report a result and nothing else. A span made of them alone says how a run came out
+# and names nothing a run printed, so it is no quote.
+_QUOTED_FILLER = frozenset(
+    {"pass", "passed", "passes", "passing", "ok", "okay", "green", "success", "succeeded",
+     "successful", "fail", "failed", "fails", "failing", "failure", "clean", "done", "all", "and"}
+)  # fmt: skip
+
+
+def _fold(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def _quoted_spans(reason: str) -> tuple[str, ...]:
+    """The folded text a reason quotes that a check's output could be asked for.
+
+    Not read: a span that names a remote job (left to the CI facts), one that holds a credential
+    shape (never searched, and never carried), one too short or too long, and one made only of
+    result words. At most `MAX_QUOTED_SPANS`, in the order the reason gives them.
+    """
+    found: list[str] = []
+    for match in _QUOTED_SPAN.finditer(reason):
+        raw = next(group for group in match.groups() if group is not None)
+        span = _fold(raw)
+        if (
+            not MIN_QUOTED_SPAN_CHARS <= len(span) <= MAX_QUOTED_SPAN_CHARS
+            or span in found
+            or all(word.strip(".,:;!()[]") in _QUOTED_FILLER for word in span.split())
+            or records.redact_secrets(raw) != raw
+            or records.SECRET_MARKER in raw
+            or _REMOTE_JOB.sub(_drop_remote_job, raw) != raw
+            or _REMOTE_CLAUSE.search(raw)
+        ):
+            continue
+        found.append(span)
+    return tuple(found[:MAX_QUOTED_SPANS])
+
+
+def _quoted_in_checks(
+    reason: str, recorded: Recorded, set_at: float, verdict_at: float
+) -> tuple[list[str], int]:
+    """The recorded checks whose own output holds text the reason quotes, and how many distinct
+    spans were found.
+
+    Only a check run no later than the verdict (a quote cannot come from output that did not yet
+    exist), no earlier than the goal, and with no change to files after it: the output
+    `recorded.outputs` holds is already only what its call attributes to that one check. The
+    searched text is not kept: the answer is entry ids and a count.
+    """
+    spans = _quoted_spans(reason)
+    if not spans or not recorded.outputs:
+        return [], 0
+    cited: list[str] = []
+    seen: set[str] = set()
+    for entry in sorted(recorded.checks, key=lambda row: row["at"]):
+        stamp = evidence_at(entry) or entry["at"]
+        held = recorded.outputs.get(entry["id"])
+        if (
+            not held
+            or entry.get("changed_after") is True
+            or entry.get("stale") is True
+            or not set_at <= stamp <= verdict_at
+        ):
+            continue
+        text = _fold(held)
+        hits = [span for span in spans if span in text]
+        if hits:
+            cited.append(entry["id"])
+            seen.update(hits)
+    return cited, len(seen)
 
 
 def _removed_after(
@@ -4918,6 +5028,14 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
             "cites": tuple(cites[:MAX_RECORDED_CITES]),
         }
 
+    def unconfirmed(why: str) -> GoalVerdictCheck:
+        # Where nothing else settles it, text the reason quotes that a recorded check printed is the
+        # one thing worth saying. It never agrees: output that holds a phrase is no passing check.
+        cited, count = _quoted_in_checks(reason, recorded, set_at, verdict_at)
+        if not cited:
+            return result(GOAL_VERDICT_UNCONFIRMED, why)
+        return {**result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_QUOTED, cited), "quoted": count}
+
     # A claim with no reason (Codex records none) is tested against what the goal itself names: the
     # claim is that the goal is met, so the goal's files and checks are what it says is done.
     basis = reason if reason.strip() else str(goal.get("text") or "")
@@ -4937,7 +5055,7 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
             "changed_at": taken.at,
         }
     if not files and not kinds and not named_prs:
-        return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOTHING_CHECKABLE)
+        return unconfirmed(GOAL_VERDICT_NOTHING_CHECKABLE)
     writes = [
         write
         for write in recorded.writes
@@ -4985,7 +5103,7 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
     ]
     if passed:
         return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_PASSED, passed)
-    return result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_NOT_FOUND)
+    return unconfirmed(GOAL_VERDICT_NOT_FOUND)
 
 
 # The words of a line that say which kind of check would show it, and the words of a check's own

@@ -876,6 +876,38 @@ class _VerdictKey(TypedDict, total=False):
     ci: dict[str, Any]
 
 
+def _verdict_extras_whole(value: dict[str, Any]) -> bool:
+    """Whether the keys a stored test carries beyond its four always-present ones are a whole set.
+
+    The file and the moment a removal dispute names come together, and only with a removal token.
+    The count of quoted spans comes alone, and only with its own token, which never lacks it.
+    """
+    extra = set(value) - set(reading.GOAL_VERDICT_KEYS)
+    removal = extra & set(reading.GOAL_VERDICT_REMOVAL_KEYS)
+    quoted = extra & set(reading.GOAL_VERDICT_QUOTED_KEYS)
+    if set(reading.GOAL_VERDICT_KEYS) - set(value) or extra - removal - quoted:
+        return False
+    if removal and quoted:
+        return False
+    if removal:
+        return (
+            removal == set(reading.GOAL_VERDICT_REMOVAL_KEYS)
+            and value["why"] in reading.GOAL_VERDICT_REMOVAL_WHYS
+            and isinstance(value["path"], str)
+            and bool(value["path"].strip())
+            and not isinstance(value["changed_at"], bool)
+            and isinstance(value["changed_at"], (int, float))
+            and value["changed_at"] > 0
+        )
+    if quoted:
+        return (
+            value["why"] == reading.GOAL_VERDICT_QUOTED
+            and type(value["quoted"]) is int
+            and 0 < value["quoted"] <= reading.MAX_QUOTED_SPANS
+        )
+    return bool(value["why"] != reading.GOAL_VERDICT_QUOTED)
+
+
 def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     """One stored test of the harness's goal verdict, or nothing.
 
@@ -885,21 +917,9 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     """
     if not isinstance(value, dict):
         return None
-    removal = set(value) - set(reading.GOAL_VERDICT_KEYS)
-    # The file and the moment a removal dispute names come together, and only with a removal token.
-    if set(value) - set(reading.GOAL_VERDICT_KEYS) - set(reading.GOAL_VERDICT_REMOVAL_KEYS) or (
-        set(reading.GOAL_VERDICT_KEYS) - set(value)
-    ):
-        return None
-    if removal and (
-        removal != set(reading.GOAL_VERDICT_REMOVAL_KEYS)
-        or value["why"] not in reading.GOAL_VERDICT_REMOVAL_WHYS
-        or not isinstance(value["path"], str)
-        or not value["path"].strip()
-        or isinstance(value["changed_at"], bool)
-        or not isinstance(value["changed_at"], (int, float))
-        or value["changed_at"] <= 0
-    ):
+    removal = set(value) & set(reading.GOAL_VERDICT_REMOVAL_KEYS)
+    quoted = set(value) & set(reading.GOAL_VERDICT_QUOTED_KEYS)
+    if not _verdict_extras_whole(value):
         return None
     at, cites = value["at"], value["cites"]
     if (
@@ -922,6 +942,8 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     if removal:
         checked["path"] = records.safe_text(value["path"], reading.VERDICT_PATH_CAP_CHARS)
         checked["changed_at"] = float(value["changed_at"])
+    if quoted:
+        checked["quoted"] = value["quoted"]
     return checked
 
 

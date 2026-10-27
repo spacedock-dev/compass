@@ -3,10 +3,12 @@ import { isRecord, type Row } from '../observed';
 import {
   GOAL_VERDICT_LABEL,
   GOAL_VERDICT_LINES,
+  GOAL_VERDICT_QUOTED_WHY,
   GOAL_VERDICT_WHY,
   GOAL_VERDICT_WHY_GOAL,
   goalVerdictClaim,
   goalVerdictPullRequest,
+  goalVerdictQuoted,
   goalVerdictRemoval,
 } from './sentences';
 import type { WorkEntry } from '../intent/work';
@@ -76,6 +78,8 @@ export function verdictNote(input: {
   readonly changedClock?: string;
   /** The entries the test cited, by fact id, so a confirmed pull request can be named. */
   readonly cited?: ReadonlyMap<string, WorkEntry>;
+  /** The numbers the card gives entries, so a check the quoted text was found in can be named by its number. */
+  readonly numbers?: ReadonlyMap<string, string>;
   /** The row's harness, which the claim names. */
   readonly harness?: string;
 }): VerdictNote {
@@ -91,14 +95,23 @@ export function verdictNote(input: {
     tested?.why === 'pr-created-before'
       ? tested.cites.map((id) => input.cited?.get(id)).find((entry) => entry?.subject === 'pr')
       : undefined;
+  const quotedIn =
+    tested?.why === GOAL_VERDICT_QUOTED_WHY
+      ? tested.cites.flatMap((id) => {
+          const n = input.numbers?.get(id);
+          return n ? [n] : [];
+        })
+      : [];
   // A claim with no reason was tested against the goal's words, so the sentence names the goal.
   const byGoal = verdict.reason === '';
   const why = tested
     ? tested.path && input.changedClock
       ? goalVerdictRemoval(tested.why, tested.path, input.changedClock)
-      : pr?.summary
-        ? goalVerdictPullRequest(pr.summary, byGoal)
-        : ((byGoal ? GOAL_VERDICT_WHY_GOAL : GOAL_VERDICT_WHY)[tested.why] ?? '')
+      : quotedIn.length
+        ? goalVerdictQuoted(quotedIn)
+        : pr?.summary
+          ? goalVerdictPullRequest(pr.summary, byGoal)
+          : ((byGoal ? GOAL_VERDICT_WHY_GOAL : GOAL_VERDICT_WHY)[tested.why] ?? '')
     : '';
   const line = GOAL_VERDICT_LINES[state];
   return {

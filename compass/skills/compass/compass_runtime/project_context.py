@@ -4978,6 +4978,8 @@ class _ToolReportTally:
                     # and which run is latest, never a change comparison.
                     "result_at": result_at if result is not None and not background else None,
                     "background": background,
+                    # Whether the call's output is this one check's own, for the quoted-text test.
+                    "attributable": attributable,
                     "listed": index in call.listed_checks,
                     # Held for the press only (`claude_check_tails`); never
                     # copied onto the published entry.
@@ -5487,6 +5489,30 @@ class _ToolReportTally:
                 tails.setdefault(run["record_id"], run["tail"])
         return tails
 
+    def quotable(self) -> dict[tuple[str, str], str]:
+        """(call id, check line) to the redacted output tail the call's rules attribute to that
+        one check, for the press alone.
+
+        The text a harness verdict's reason quotes is looked for here and nowhere else: the
+        evaluator read the whole transcript, so its quote is in some tool output by construction,
+        and only output a recorded check owns can show anything. A foreground latest run whose
+        call ran that one check and nothing else that may print, with no later command that may
+        have changed files. An echo, a read, a second check in the call and a tier 3 command are
+        never here. Never published, stored or sent.
+        """
+        found: dict[tuple[str, str], str] = {}
+        for history in self.runs.values():
+            run = history[self._latest(history)]
+            if (
+                run["tail"]
+                and run.get("attributable") is True
+                and run["recorded"]
+                and not run["background"]
+                and not self._changed_after(run)
+            ):
+                found[(run["record_id"], run["title"])] = run["tail"]
+        return found
+
     def tier3_calls(self) -> frozenset[str]:
         """The call ids that ever held a listed foreground run of a tier 3 command, not only the
         latest: a command that re-ran in a later call leaves the earlier call's output tail behind,
@@ -5555,6 +5581,9 @@ class PressChecks(NamedTuple):
     # The calls whose tail belongs to a tier 3 command, which only the session's own vendor may
     # be sent: a tail of another call is a tier 1 or 2 tail.
     tier3_calls: frozenset[str] = frozenset()
+    # (call id, check line) to the tail of the one check that call attributes its output to, read
+    # to find the text a harness verdict quotes (`_ToolReportTally.quotable`). Press only.
+    quotable: Mapping[tuple[str, str], str] = {}
 
 
 def claude_check_press(
@@ -5583,6 +5612,7 @@ def _press(tally: _ToolReportTally) -> PressChecks:
         tally.removals(),
         frozenset(tally.masked_values),
         tally.tier3_calls(),
+        tally.quotable(),
     )
 
 

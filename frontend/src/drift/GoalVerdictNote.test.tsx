@@ -168,6 +168,62 @@ describe('the harness verdict on the Drift card', () => {
     );
   });
 
+  it('says where quoted text was found, by the number of the check, and stays unconfirmed', async () => {
+    const page = mountDrift({
+      session: {
+        ...withVerdict({
+          verdict: { met: true, at: VERDICT_AT, reason: 'it printed “Ran 412 tests”' },
+        }),
+        ...checked('unconfirmed', 'quoted-in-check', VERDICT_AT, { cites: ['c2'], quoted: 1 }),
+      },
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    expect(state()).toBe('unconfirmed');
+    const text = textOf('[data-next-goal-verdict]');
+    expect(text).toMatch(
+      /Compass could not confirm it: the quoted text is in the output of check #\d+\. This does not change the level\./,
+    );
+    expect(text).not.toContain('Compass agrees');
+    expect(text).not.toContain('passing check');
+  });
+
+  it('says it in general words where the cited check is not numbered', async () => {
+    const page = mountDrift({
+      session: {
+        ...withVerdict(),
+        ...checked('unconfirmed', 'quoted-in-check', VERDICT_AT, { cites: ['gone'], quoted: 2 }),
+      },
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    expect(textOf('[data-next-goal-verdict]')).toContain(
+      'the quoted text is in the output of a check Compass recorded',
+    );
+  });
+
+  it.each([
+    ['a count with another token', 'not-found', { quoted: 1 }],
+    ['the token without a count', 'quoted-in-check', {}],
+    ['a count of zero', 'quoted-in-check', { quoted: 0 }],
+    ['a count that is no whole number', 'quoted-in-check', { quoted: 1.5 }],
+    [
+      'a count beside a removal pair',
+      'quoted-in-check',
+      { quoted: 1, path: 'a.md', changed_at: 5 },
+    ],
+  ])('does not read %s', async (_name, why, extra) => {
+    const page = mountDrift({
+      session: { ...withVerdict(), ...checked('unconfirmed', why, VERDICT_AT, extra) },
+      facts: FACTS,
+    });
+    await page.settle();
+    await page.settle();
+    expect(textOf('[data-next-goal-verdict]')).not.toContain('the quoted text is in the output');
+  });
+
   it('says disputed where the record undoes it, and the level stays the analysis', async () => {
     const page = mountDrift({
       session: { ...withVerdict(), ...checked('disputed', 'written-after') },

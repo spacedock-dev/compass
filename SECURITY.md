@@ -3634,6 +3634,13 @@ refuses the reading whole. The verdict never lowers a drift level and never coun
 reason that names nothing the record can show is "unconfirmed", never "disputed", because a capped listing
 cannot prove absence.
 
+The test also looks for text the reason puts in quotes in the output of a check the record holds: only the
+redacted last 180 characters the press already reads for one recorded check whose call ran that check and nothing
+else that may print, never a read, an `echo` or another command's output, and never more than the press already
+held. The search needs no grant, since it sends nothing, and keeps nothing: the stored answer is the check entries
+and a count of one to eight, never a span or any output. A quoted span that holds a credential shape is not
+searched, and a match only says where the text is, so the answer stays "unconfirmed" and never raises a level.
+
 A Codex session that states a goal with `/goal` has it read from the rollout's own records the same way, into
 the same `session_goal`, `{text, at}`, with the same masking, the same 4,000-character bound, the same excerpt
 keys and the same 8 MiB forward read. The goal is the objective a `thread_goal_updated` event carries, timed by

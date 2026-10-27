@@ -25,6 +25,9 @@ import {
   GOAL_VERDICT_CHECKS,
   GOAL_VERDICT_KEYS,
   GOAL_VERDICT_REMOVAL_KEYS,
+  GOAL_VERDICT_QUOTED_KEYS,
+  GOAL_VERDICT_QUOTED_MAX,
+  GOAL_VERDICT_QUOTED_WHY,
   GOAL_VERDICT_REMOVAL_WHYS,
   GOAL_VERDICT_WHY,
   REASON_LINES,
@@ -70,6 +73,9 @@ interface Vocabulary {
   readonly goalVerdictWhys: string[];
   readonly goalVerdictRemovalKeys: string[];
   readonly goalVerdictRemovalWhys: string[];
+  readonly goalVerdictQuotedKeys: string[];
+  readonly goalVerdictQuotedWhy: string;
+  readonly goalVerdictQuotedMax: number;
   readonly ciBuckets: string[];
   readonly ciSources: string[];
   readonly ciReadErrors: string[];
@@ -142,6 +148,9 @@ describe('the reading vocabulary', () => {
     expect(sorted(Object.keys(GOAL_VERDICT_WHY))).toEqual(sorted(vocabulary.goalVerdictWhys));
     expect(sorted(GOAL_VERDICT_REMOVAL_KEYS)).toEqual(sorted(vocabulary.goalVerdictRemovalKeys));
     expect(sorted(GOAL_VERDICT_REMOVAL_WHYS)).toEqual(sorted(vocabulary.goalVerdictRemovalWhys));
+    expect(sorted(GOAL_VERDICT_QUOTED_KEYS)).toEqual(sorted(vocabulary.goalVerdictQuotedKeys));
+    expect(GOAL_VERDICT_QUOTED_WHY).toBe(vocabulary.goalVerdictQuotedWhy);
+    expect(GOAL_VERDICT_QUOTED_MAX).toBe(vocabulary.goalVerdictQuotedMax);
   });
 
   it('spells the pull request check read as the producer does, with a sentence for every error', () => {
