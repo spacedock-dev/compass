@@ -7079,7 +7079,7 @@ were never evidence. May a result from outside the list count, and how far may e
    decide it, so the 2026-09-30 rejection of keyword relevance stands.
 3. **A command that cannot fail never counts as a pass, whatever its tier**, and the server enforces it, not the
    prompt: `echo`, `printf`, `true`, `:`, `exit 0`, anything ending `|| true` or `; exit 0`, and any command on
-   the read-only list.
+   the read-only list, except the CI-reading commands (see item 6).
 4. **Tier and ageing are independent.** Every command that is not on the read-only list ages an earlier pass
    ([DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) item 3's blocker), whatever
    tier its own result has.
@@ -7090,9 +7090,13 @@ were never evidence. May a result from outside the list count, and how far may e
 6. **The read-only list grows.** `sleep`, `gh pr checks`, `gh pr view`, `gh run view`, `gh run list`,
    `gh run watch` and `glab ci status` join DEC-23 item 3's list, with their writing options excluded.
    The read-only list governs ageing and the fields read, and item 3's never-a-pass clause applies to every
-   command on it except the three tier-2 CI commands (`gh pr checks`, `gh run view`, `glab ci status`), which
-   can fail and whose recorded result counts. `sleep`, `gh pr view`, `gh run list` and `gh run watch` are
-   read-only and never pass. A CI command the agent ran counts only by its recorded result as
+   command on it except the three tier-2 CI commands, which can report a failure. `sleep`, `gh pr view`,
+   `gh run list` and `gh run watch` are read-only and never pass. For the three, only the exit status counts.
+   `gh pr checks` counts by its exit status, which is non-zero on failing or pending checks, so pending is never
+   a pass. `gh run view` exits 0 on a failed run, so it counts only with `--exit-status`; without it the command
+   is read-only and records no result. `glab ci status` counts only if a later layer measures that it exits
+   non-zero on a failed pipeline; until then it records no result. A CI command the agent ran counts only by its
+   recorded result as
    [DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work) item 2 defines it, never by
    rows parsed from its output, and the provider read in
    [DEC-30](#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze) is the stronger
@@ -7108,7 +7112,8 @@ were never evidence. May a result from outside the list count, and how far may e
 
 **What it reopens.** DEC-23 item 3, whose closed-list rule ("a runner not named here is not a check") is written
 in [the closed lists](#the-closed-lists), and
-[the 2026-10-23 PR and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts) that restates it. It does not reopen the 2026-09-30 rejection of keyword overlap for relevance.
+[the 2026-10-23 PR and skill amendment](#amended-2026-10-23-owner-pr-and-skill-facts) that restates it. It does
+not reopen the 2026-09-30 rejection of keyword overlap for relevance.
 
 **What was rejected, and why.**
 
