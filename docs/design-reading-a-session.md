@@ -1128,7 +1128,8 @@ to the provider and moves a [SECURITY.md](../SECURITY.md#observer-model-calls) b
 
    Owner, 2026-10-01 (Q7): item 4 has one exception. Up to five of the reader's own messages are
    published on the focused project context as `prompt_choices`, each clipped to the goal's
-   240-character cap, so "Use your prompt" can offer them
+   cap (240 then, 1,000 since [2026-10-27](#amended-2026-10-27-owner-the-goal-holds-1000-characters)),
+   so "Use your prompt" can offer them
    ([amendment](#amended-2026-10-01-up-to-five-of-your-prompts-may-be-chosen)). The words field
    itself, and anything past that cap, is still neither stored nor published, and
    `test_reader_words` holds both halves.
@@ -1996,8 +1997,9 @@ of the reader's own prompts from the session's observed record, offered by "Use 
   that `reading.author_of` calls the person's, with a valid time and its whole words. A correction
   copied from Compass, a harness control and a local command are refused exactly as the
   first-prompt draft refuses them; a local command already reaches the record with no words.
-- Each is resolved whole: its words as a reading reads them, clipped to the goal's 240-character
-  cap with `cut` saying the offer is an excerpt. The text offered is the text an adoption stores.
+- Each is resolved whole: its words as a reading reads them, clipped to the goal's cap (1,000
+  characters since [2026-10-27](#amended-2026-10-27-owner-the-goal-holds-1000-characters))
+  with `cut` saying the offer is an excerpt. The text offered is the text an adoption stores.
 - It is published only on the focused `/api/project-context` as `prompt_choices`, beside the
   levels, and never on `/api/data`. It is not stored, not in session history and not a history
   field. Only an adopted choice's words become `annotation_goal`, the path the first and latest
@@ -2125,6 +2127,33 @@ in one session cut off the instruction that mattered and in another kept only pl
 What is sent does not change in kind: the reader's own messages already go whole up to 1,000
 characters ([the 2026-10-01 amendment](#amended-2026-10-01-a-reading-sees-the-readers-whole-message)),
 and the adopted prompt is one of them.
+
+### Amended 2026-10-27 (owner): the goal holds 1,000 characters
+
+The owner, 2026-10-27, after choosing a prompt from "Use your prompt" and finding it cut at 240
+characters mid-sentence, with the `/goal` instruction inside it out of reach. The ruling: Compass
+works for the person using it, and a bound on their own words that makes it harder to use is not
+needed. It relaxes the 2026-10-01 ruling that let "Use your prompt" publish only 240 characters of
+each prompt.
+
+- The goal has its own cap, `RuntimeConfig.annotation_goal_cap_chars`, 1,000 characters. That is
+  `reading.LEDGER_WORDS_CAP_CHARS`, the most of an adopted prompt a reading already read in the
+  clip's place (the amendment above), so a chosen prompt is now shown, saved and read as one string.
+  Before, editing a clipped goal turned it into typed words and the reading went back to the 240.
+- An expected outcome line keeps its 240, and so does every stored reading detail. The page
+  receives the goal's cap as `annotate_goal_cap` beside `annotate_cap`, and its counter, its box
+  and its "Shortened to fit" note read it; a page served without it falls back to the line's cap.
+- Everything that offers a goal takes the goal's cap: `prompt_choices`, a later direction's
+  `goal_choice`, a `/goal` condition's `offered` excerpt, and Find goal's answer. Session history
+  keeps its own 256-character field, so a long goal is recorded there as its opening.
+- Three budgets sized against a 240-character goal grew with it. Steer back's lines went from
+  2,000 to 2,760 characters, the 760 the goal gained, so no correction that composed before is
+  refused; the cap is 2,760 + 8 × 277 + 7 × 132 = 5,900. The Live monitor sends the whole goal
+  where it sent 600 characters. The annotation store's 16 MiB read limit did not move: 256
+  sessions at 16 revisions of a 1,000-character goal and six full lines, with the widest fact ids,
+  measured 13.6 MB.
+- Not done: the first-prompt draft still comes from the row's 140-character `first_prompt`, so a
+  long first prompt is drafted as its opening and read whole by Analyze, as before.
 
 ### Amended 2026-10-04 (owner): recover listed messages inside the window
 
@@ -5127,7 +5156,8 @@ stay as they are.
   outcome lines). The cap is 2,000 + 8 × 277 + 7 × 132 = 5,140, held in one place
   (`copied_corrections.CORRECTION_CAP_CHARS`) and mirrored by the page's `CORRECTION_CAP` and the
   vocabulary fixture; `test_correction` composes the worst case to exactly 5,140 and refuses it at
-  one more character of lines.
+  one more character of lines. The lines' 2,000 became 2,760, and the cap 5,900, when the goal's
+  own cap rose to 1,000 ([2026-10-27](#amended-2026-10-27-owner-the-goal-holds-1000-characters)).
 - **Where Steer back stands.** While departures are listed, Steer back stays beside them, labelled
   "from the check at HH:MM" with the reading's `read_at` in the reader's zone, including when the
   session has gone idle and while a later direction's question stands (the question keeps the
@@ -5510,7 +5540,7 @@ DRC-4947, owner rulings of the same date. The page uses a detected goal and does
   moment the saved words stand at, as `direction_floor` reads it: an adopted goal by its source's time, typed
   words by when they were saved. Use this goal fills the box as a pending adoption, so Save intent records the
   new source and time; Keep my goal declines that `/goal` and any older one, and a later one asks again.
-- A condition over the Goal field's 240 characters is offered as the server's excerpt with a note that it
+- A condition over the Goal field's 1,000 characters (240 before 2026-10-27) is offered as the server's excerpt with a note that it
   was cut. The row carries `offered` and `cut` only for such a goal, and `prompt_candidate` resolves `offered`,
   so the words on screen, the words an adoption names and the words the store keeps are one string. The page
   never clips on its own, and an adoption naming the whole words is refused.
@@ -5537,7 +5567,7 @@ and offers the goal when it can tie it to the reader's own words.
   from. Each quote must be verbatim, whitespace aside, in the prompt it names, in the text Compass sent
   (masked and clipped as sent); one paraphrased quote drops the goal, and so does a quote filed under another
   prompt's number. The model must also call the goal clear. The prompt carries the same end-state
-  wording as a reading's `reading.GOAL_UNCLEAR_RULE`, without importing it; a test holds the shared phrase. A goal over the Goal field's 240 characters is dropped and never cut.
+  wording as a reading's `reading.GOAL_UNCLEAR_RULE`, without importing it; a test holds the shared phrase. A goal over the Goal field's 1,000 characters is dropped and never cut.
 - The vague-goal test is the model's judgement made in the same call. No keyword or length rule makes it,
   as for a saved goal, and a second model call over the same words would double the cost of a press. The
   limit is accepted and written in SECURITY.md: a finder more lenient than a later analysis can show a goal
@@ -5735,7 +5765,7 @@ keeps the model working through a stop hook until the model writes `<!-- GOAL_CO
   (`ANTIGRAVITY_GOAL_CAP_CHARS`). The 4,000 the other two use is their own harness's limit; agy accepted 5,000
   and refused nothing, so a shared 4,000 published nothing for a real goal. 16,000 is well above anything
   measured and still keeps a pasted document from riding every board payload. A longer condition publishes
-  nothing, and anything over the Goal field's 240 is offered as its excerpt, as for the other two.
+  nothing, and anything over the Goal field's 1,000 is offered as its excerpt, as for the other two.
 - The server adopts `session-goal` from an Antigravity row and nothing else from it: its prompts were never
   adoptable, and this does not change that.
 - Rejected: reading the `GOAL_COMPLETE` marker as a verdict. It is the working model's own claim, and one

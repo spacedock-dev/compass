@@ -1361,7 +1361,7 @@ later sentence that redaction does not recognize. The owner accepted that, becau
 dropped the point of a measured correction
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-01-a-reading-sees-the-readers-whole-message)).
 A goal adopted from one of those messages is sent as that message's whole field too, from the same
-half, in place of the goal box's 240 characters; the goal stored and shown stays the excerpt
+half, in place of the goal box's 1,000 characters; the goal stored and shown stays the excerpt
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-04-owner-an-adopted-goal-is-read-whole)).
 The owner, approving the Analyze drift plan, amended the source lookup on 2026-10-04. A reader's
 press can find that adopted source outside the recent transcript tail: a forward scan reads at
@@ -1410,8 +1410,10 @@ neither stored nor published: the history stores' field allowlists do not name i
 `/api/project-context` drops it (`project_context.for_page`), so the page still shows the first
 sentence and `/api/data` never carried it. One bounded copy is the exception, by the owner's ruling
 of 2026-10-01: the focused project context's `prompt_choices` offers up to five of the reader's own
-messages for adoption as the goal, each the field clipped to the goal's 240 characters, and the
-rest of the field past that cap is not published (Prompt-derived text, below). What the model writes back is a different matter. A
+messages for adoption as the goal, each the field clipped to the goal's 1,000 characters, and the
+rest of the field past that cap is not published (Prompt-derived text, below). The owner raised that
+bound from 240 on 2026-10-27, so a prompt chosen as the goal is offered whole
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-27-owner-the-goal-holds-1000-characters)). What the model writes back is a different matter. A
 reading's `detail` is the model's own sentence under a cited departure or unfinished-work result,
 and it is stored with the reading and published
 on the page, as it was before; the model can now paraphrase or quote a later sentence of a message
@@ -2091,7 +2093,7 @@ unknown session answer one `409 not-running` body, so the route says nothing abo
 exist. It writes no consent and reserves nothing.
 
 The copied-correction route. `POST /api/correction/copied` names a session
-and the exact text the reader copied, at most 5,140 characters, and the server records its digest:
+and the exact text the reader copied, at most 5,900 characters, and the server records its digest:
 a SHA-256 of the text after one normalisation, applied to both sides, which is what Claude Code
 2.1.283 was measured doing to a paste: CRLF and CR become LF, a tab becomes four spaces, and
 whitespace is trimmed at both ends. It also records a second digest of the same text with every run of
@@ -2175,9 +2177,9 @@ exactly the redaction and neutralising the explanation takes, so the agent can f
 A command, a check name, a path and tool output are still never quoted. Each entry travels as its
 time, drawn in the zone the page sends (`utc_offset_minutes`, refused unless a whole offset within
 16 hours of UTC, and the server's own clock when absent), and a placeholder holding its fact id,
-which the page draws as nothing. A reply's lines are at most 2,000 characters, each of at most
+which the page draws as nothing. A reply's lines are at most 2,760 characters, each of at most
 eight explanations has 277 more and each of at most seven quotes 132 more, so a reply is at most
-5,140 characters and is never truncated: lines over their 2,000 drop the consistent ones and then answer a refusal sentence. It stores nothing of
+5,900 characters and is never truncated: lines over their 2,760 drop the consistent ones and then answer a refusal sentence. It stores nothing of
 its own: it reads, and the collection it runs to read the session may rewrite the semantic history
 store, as `POST /api/direction`'s does. It is guarded as `POST /api/direction` is, reads Claude Code sessions only, and answers one body for an
 unknown session, another harness, and a session with nothing to steer from alike. The reader edits
@@ -3314,8 +3316,8 @@ A field carrying prompt-derived text may be kept only when every one of these ho
 The allowlist, one line per field:
 
 - `annotation_goal`, for the outcome baseline DEC-15b admits. What the reader typed one session
-  should achieve, at most 240 characters as the annotation store bounds it and at most 256 as this
-  store does. Published on every row, redacted by `records.safe_text` inside
+  should achieve, at most 1,000 characters as the annotation store bounds it and at most 256 as this
+  store does, which keeps a longer goal's opening. Published on every row, redacted by `records.safe_text` inside
   `annotations.annotate` before either bound is applied, and kept so the words a reading was read
   against reopen after a restart and after the live row leaves the board.
 - `annotation_line_1`, the first line of the expected outcome: one thing the reader typed the
@@ -3336,7 +3338,7 @@ an explicitly adopted latest or first prompt as `annotation_goal`, and, since th
 2026-10-01 ([amended](docs/design-reading-a-session.md#amended-2026-10-01-up-to-five-of-your-prompts-may-be-chosen)),
 one of up to five of the reader's own prompts chosen from the observed record, under the closed
 source token `chosen-prompt`. The five are published as `prompt_choices` on the focused project
-context only, each redacted by `records.safe_text` before it is bounded to the same 240 characters,
+context only, each redacted by `records.safe_text` before it is bounded to the goal's 1,000 characters,
 and they are neither stored nor admitted here: no history field holds the list, and only the one
 the reader adopts is kept, as `annotation_goal`. A choice is resolved again on the server by its
 fact id, and refused unless its displayed text and time still match an offered source; a copied
@@ -3344,7 +3346,7 @@ correction, a harness control and a local command are never offered. Authorship 
 harness user-message shape and injected-prompt filter, which fails open; it is not proof a person
 wrote the message. The server resolves the published source again, requires its displayed text and
 source time to match, and refuses implicit adoption over an existing goal. Adoption uses the same
-240-character, one-line annotation writer. Its closed source token and source time survive with
+1,000-character, one-line annotation writer for the goal. Its closed source token and source time survive with
 the revision and the reading that used it; an explicit goal save makes typed words instead.
 
 Amended by the owner, approving the Analyze drift plan, 2026-10-04: the menu's five choices are
@@ -3390,7 +3392,7 @@ verdict, which Claude Code writes for a goal it gave up on, is not a verdict, an
 showed it ends the goal: Compass stops holding the goal, publishes the give-up as its own claim
 (`session_goal_gave_up`, `{at, reason}`) and never calls it met. The condition
 is published as `session_goal`, `{text, at}`, masked by the same prose masking a later direction
-gets and folded to one line, and a condition over 4,000 characters, the limit Claude Code itself enforces, publishes nothing. A condition longer than the Goal field holds (240 characters) also carries `offered`, the
+gets and folded to one line, and a condition over 4,000 characters, the limit Claude Code itself enforces, publishes nothing. A condition longer than the Goal field holds (1,000 characters) also carries `offered`, the
 bounded excerpt an adoption stores, and `cut: true`, so the page marks it cut and an adoption names
 exactly the words the store keeps; a shorter one carries neither key. A subagent's record is never the session's goal. Once the evaluator has decided, the latest `met: true`
 verdict joins the goal as `verdict`, `{met, at, reason}`. The reason is the evaluator model's own
@@ -3924,7 +3926,7 @@ of carriers rather than a list of every published string that could hold what th
 more prompt text reaches the page through `records.safe_text` on the way, including the observer's
 derived goal, the ask question and its options, a Codex `title`, which is a prompt because Codex
 writes no generated title, the focused project context's `prompt_choices[].text`, up to five of
-the reader's prompts at 240 characters each, and since 2026-10-03 the first sentence of each of the
+the reader's prompts at 1,000 characters each (240 before 2026-10-27), and since 2026-10-03 the first sentence of each of the
 agent's messages, as the `summary` of an `agent_message` fact on `/api/project-context`, at most
 112 characters. Some of what those carriers hold came from a tool call's input rather
 than from a prompt directly: a Claude plan's first line, an `AskUserQuestion` question, and a Codex

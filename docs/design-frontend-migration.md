@@ -212,6 +212,9 @@ so the cap rose again, to 5,140. A placeholder is now drawn as nothing, where th
 "(#n in Compass)" and "(#n)". `correction.differential.test.ts` compares the recorded correction text
 through `recordedWithoutNumbers`, which removes the recorded numbers, in place of the
 `recordedNumbering` projection of 2026-10-14; the recorded cap is still passed as `RECORDED_CAP`.
+On 2026-10-27 the cap rose to 5,900 when the goal's own cap rose to 1,000
+([the amendment](design-reading-a-session.md#amended-2026-10-27-owner-the-goal-holds-1000-characters)),
+and the refusal sentence now names 2,760.
 On the same day the owner allowed Analyze drift on an idle Claude Code session with no recorded turn
 finish, so Claude Code lost its own idle press line ("Last turn isn't recorded as finished. Run
 another turn to open Analyze." on the retired page). `route.differential.test.ts` maps that recorded
@@ -423,7 +426,7 @@ session." The source line moved from beside the count to directly above the box,
 and says what the words are rather than where they were found: "Drafted from your first prompt · not saved"
 (latest, or "the prompt you chose"), "Your edit of your first prompt · not saved", "From your /goal at 11:53 ·
 not saved" or "· saved", "Found in your prompts at 23:11 · not saved", "You typed this · not saved" or "· saved
-at 18:54", and "From your first prompt · saved". A cut /goal appends "· Shortened to fit 240 characters; Analyze
+at 18:54", and "From your first prompt · saved". A cut /goal appends "· Shortened to fit 1,000 characters; Analyze
 reads this shortened goal" (the box's own cap) and a cut prompt "· Shortened here; Analyze reads the whole
 prompt". The cleared note no longer names the draft ("; the draft below is ..."): the source line directly
 under it does. `intentEditorDeviations` projects the recorded badge onto the new source-line wording, and the cap sentence it
