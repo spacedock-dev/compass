@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-from compass_runtime import departures, reading, reading_route, unasked
+from compass_runtime import cli, departures, reading, reading_route, unasked
 from compass_runtime.config import build_runtime_config
 from compass_runtime.project_context import PressChecks
 from compass_runtime.state import build_runtime_state
@@ -68,7 +68,7 @@ class OnlyAFailedResultReachesTheLedger(unittest.TestCase):
             for result in ("failed", "passed", ""):
                 with self.subTest(subject=subject, result=result):
                     row = {**fact(subject, result or "passed"), "source_session": dict(SESSION)}
-                    row["result"] = result if subject in reading.RESULT_SUBJECTS else ""
+                    row["result"] = result
                     listed = bool(_ledger([row]))
                     self.assertEqual(
                         listed,
@@ -115,6 +115,28 @@ class OnlyAFailedResultReachesTheLedger(unittest.TestCase):
             [_report("ok", "passed", 4_100.0)], "claude", "s-1", tool_output={}
         )
         self.assertEqual(["ok"], [row["id"] for row in rows])
+
+
+class AFailureALaterPassSupersededIsNotListed(unittest.TestCase):
+    def _facts(self, later: str) -> list[dict[str, Any]]:
+        passed = _report("later", "passed", 4_300.0, summary=f"python3 -m pytest {later}".strip())
+        return [WORDS, _report("bad", "failed", 4_200.0), passed]
+
+    def test_a_later_whole_suite_pass_drops_the_failure_and_is_never_listed(self) -> None:
+        rows = _ledger(self._facts("."))
+        self.assertEqual(["w1"], [row["id"] for row in rows])
+
+    def test_a_later_narrower_pass_leaves_the_failure_listed(self) -> None:
+        rows = _ledger(self._facts("tests"))
+        self.assertEqual(["w1", "bad"], [row["id"] for row in rows])
+
+    def test_a_pass_before_the_failure_leaves_it_listed(self) -> None:
+        facts = [
+            WORDS,
+            _report("ok", "passed", 4_100.0, summary="python3 -m pytest ."),
+            _report("bad", "failed", 4_200.0),
+        ]
+        self.assertEqual(["w1", "bad"], [row["id"] for row in _ledger(facts)])
 
 
 class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
@@ -262,6 +284,30 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
 
         self.assertIn("failed checks and commands", seen[0]["cutoff"])
 
+    def test_a_superseded_failure_makes_no_model_call_citing_it(self) -> None:
+        facts = [
+            WORDS,
+            _report("bad", "failed", 4_200.0),
+            _report("later", "passed", 4_300.0, summary="python3 -m pytest ."),
+        ]
+        lane = self._lane(facts, {"goal": {"result": "unverifiable", "cites": []}})
+
+        self._consider(lane)
+
+        for prompt in self.prompts:
+            self.assertNotIn("tests/bad.py", prompt)
+            self.assertNotIn(PASS_TAIL, prompt)
+        self.assertEqual([], [c for c in departures.load(self.config) if c.get("constraint")])
+
+    def test_the_prompt_says_passes_are_withheld_and_a_pressed_reading_does_not(self) -> None:
+        facts = [WORDS, _report("bad", "failed", 4_200.0)]
+        lane = self._lane(facts, {"goal": {"result": "unverifiable", "cites": []}})
+        self._consider(lane)
+        (prompt,) = self.prompts
+        self.assertIn(reading.FAILURES_ONLY_RULE, prompt)
+        pressed, _ = reading.build_prompt(_ledger(facts), goal="add retry", max_bytes=20_000)
+        self.assertNotIn(reading.FAILURES_ONLY_RULE, pressed)
+
     def test_a_destination_that_cannot_be_named_sends_no_check(self) -> None:
         facts = [WORDS, _report("bad", "failed", 4_200.0)]
         lane = self._lane(facts, {"goal": {"result": "unverifiable", "cites": []}})
@@ -283,6 +329,47 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
             self._consider(lane)
 
         self.assertIsNone(self.kwargs[0]["tool_output"])
+
+
+class TheCutoffAndTheUnreadFlagSayWhatWasWithheld(unittest.TestCase):
+    def _produce(self, facts: list[dict[str, Any]]) -> tuple[Any, ...]:
+        tail = {"call-bad": TAIL, "call-ok": PASS_TAIL}
+        ledger = _ledger(facts)
+        note = reading._unsent_checks_note(
+            cast("Any", object()),
+            facts,
+            "claude",
+            "s-1",
+            True,
+            True,
+            sent_failure=any(row["type"] == "tool_report" for row in ledger),
+        )
+        unsent = reading._has_unsent_reports(facts, "claude", "s-1", ledger, True, True)
+        del tail
+        return note, unsent
+
+    def test_a_failure_with_a_pass_leaves_the_pass_unsent(self) -> None:
+        note, unsent = self._produce(
+            [WORDS, _report("ok", "passed", 4_100.0), _report("bad", "failed", 4_200.0)]
+        )
+        self.assertTrue(unsent)
+        self.assertIn("Only the failed checks and commands", note)
+
+    def test_a_session_with_no_report_has_nothing_unsent(self) -> None:
+        _, unsent = self._produce([WORDS])
+        self.assertFalse(unsent)
+
+    def test_passes_only_says_no_failure_was_recorded(self) -> None:
+        note, unsent = self._produce([WORDS, _report("ok", "passed", 4_100.0)])
+        self.assertTrue(unsent)
+        self.assertIn("No failed check or command was recorded", note)
+
+
+class TheOperatorHelpDoesNotDenyTheFailureTail(unittest.TestCase):
+    def test_the_flag_help_says_a_failed_check_goes_and_a_pass_never_does(self) -> None:
+        help_text = " ".join(cli.build_parser().format_help().split())
+        self.assertNotIn("outcome lines or tool output", help_text)
+        self.assertIn("one that passed never does", help_text)
 
 
 class TheDisclosureNamesWhatTheLaneSends(unittest.TestCase):

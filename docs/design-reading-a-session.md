@@ -1404,7 +1404,8 @@ default-off ruling.
 Claude Code uses the owner's 2026-10-02 producer acceptance, never described as a passed check,
 through `reading_policy.GuardedModel`, the same guarded seam as Codex and requested readings.
 The prompt remains words-only: typed goal and bounded reader messages, no agent messages, expected
-outcome lines or tool output. All eligibility gates, observed state-change trigger, quiet hours,
+outcome lines. The one exception is a failed check or command on Claude Code, which goes with its masked
+line, exit status and output tail ([the amendment](#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)). All eligibility gates, observed state-change trigger, quiet hours,
 delivery records, one-flight slot, fifteen-minute floor and caps (three per session, twelve per rolling
 day) remain. Only departures are raised. The preconditions for changing the default remain unmet.
 
@@ -3220,7 +3221,8 @@ from reaching a page or a stored reading and none changing what a check records.
   criterion's explanation before it is stored, with the same boundary and re-quoting rules the output
   tail uses (`records.scrub_values`), and then applies the shape redaction it always did. Before this
   the tail was scrubbed of a masked value and the model's prose about it was not. The unasked lane sends
-  no tool output and carries no masked values.
+  no tool output except a failed check or command on Claude Code, whose tail and masked values it
+  carries ([the amendment](#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)).
 
 #### Corrected after review, 2026-10-27
 
@@ -3551,7 +3553,8 @@ the later-direction floor (item 9).
     inside it ([the amendment](#amended-2026-10-20-owner-the-correction-carries-the-explanation)).
 12. The unasked lane receives none of this: no outcome lines, no work evidence, no drafted or
     confirmed goal, no correction, no digest and no Not accurate token. None of them makes a
-    session eligible for the lane, or triggers, orders or gates it.
+    session eligible for the lane, or triggers, orders or gates it. A failed check or command on
+    Claude Code is the one exception ([the amendment](#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)).
 13. When an analysis may read, and against what. A session waiting at its prompt after a turn stop
     may be read through its last turn, saying so, and never as a reading of how it ended; a goal
     saved after the stop does not withhold it. The evidence window starts at the words' own time:

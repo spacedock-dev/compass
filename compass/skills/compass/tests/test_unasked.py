@@ -1453,18 +1453,6 @@ class TheUnaskedLaneNeverSendsACheckTest(unittest.TestCase):
         self.assertNotIn("pytest", prompts[0])
         self.assertNotIn("tool_report", prompts[0])
 
-    def test_the_lane_admits_tool_output_only_as_failures(self) -> None:
-        # DEC-31 opened the ruling's item 10 for failed results. The lane hands the producer a
-        # `ToolOutput` only with `failures_only`, which `build_ledger` turns into a ledger of
-        # failures; `test_unasked_failures` holds the ledger to that, and this holds the lane
-        # to asking for it and to the press that reads nothing a pass could add.
-        source = Path(unasked.__file__).read_text(encoding="utf-8")
-        self.assertIn("failures_only=True", source)
-        self.assertNotIn("passes_and_writes", source)
-        for name in ("press_check_tails", "claude_check_tails"):
-            with self.subTest(name=name):
-                self.assertNotIn(name, source)
-
 
 class TheGuardedReadingCallersKnowTheClaudeCodeProducerTest(unittest.TestCase):
     """Admitting the unasked lane does not admit an arbitrary new model caller.

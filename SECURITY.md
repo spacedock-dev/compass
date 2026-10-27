@@ -3246,8 +3246,10 @@ A record holds a harness key, a session id, the server's clock, and the annotati
 evidence window it read against. A check that raised something also holds the constraint and clause
 that departed, the model's own sentence about it, and the evidence ids it cited. That sentence is
 prose a model wrote about your session, which is the same class of content the annotation store
-already holds and is bounded the same way. Nothing sends it anywhere. With the switch off the file is
-never created.
+already holds and is bounded the same way. On a Claude Code session it may quote a line of a failed
+check's output; it is scrubbed as a pressed reading's explanation is, of credential shapes and of the
+call's masked values, and the same text reaches the local notification. Nothing sends it anywhere.
+With the switch off the file is never created.
 
 The switch governs writing, not reading. A file that already exists is read on every collection and
 on every `GET /api/annotations` whether or not `--unasked-readings` was passed, and every raise it
