@@ -103,6 +103,7 @@
       "reading_jobs": {},
       "reading_routes": {
         "claude": {
+          "ci_read": "on",
           "destination": "",
           "disclosure": "",
           "disclosure_parts": [],
@@ -119,6 +120,7 @@
           "words_destination": ""
         },
         "codex": {
+          "ci_read": "on",
           "destination": "",
           "disclosure": "",
           "disclosure_parts": [],
@@ -620,7 +622,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "23119",
+      "Content-Length": "23153",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

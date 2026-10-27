@@ -190,7 +190,7 @@ describe('the result stage says what the legacy page says', () => {
       note(`answer:${answerB.kind}`);
       const foundAnswer = firstDifference(
         canonical(answerA),
-        canonical(withoutKey(withoutKey(answerB, 'unloaded'), 'goalVerdict')),
+        canonical(withoutKey(withoutKey(withoutKey(answerB, 'unloaded'), 'goalVerdict'), 'ci')),
       );
       if (foundAnswer) failures.push(`seed ${String(seed)} answer: ${foundAnswer}`);
       const drawn = legacy.call<unknown[]>('nextCockpitClaimsDrawn', legacyShape).length;
@@ -294,10 +294,11 @@ describe('the result stage says what the legacy page says', () => {
 
 /* The legacy functions read plain fields off the shape, and the React shape has the same names. */
 /* The shape the retired page's functions are called with. `unloaded` is this page's own count of cited ids
-   it holds no entry for; the retired page had no such field and its recorded answers are keyed by their
+   it holds no entry for, and `ci` is what a press read of the pull request's CI checks; the retired page had
+   neither field and its recorded answers are keyed by their
    arguments, so it is dropped here (docs/design-frontend-migration.md#held-to-recorded-answers). */
 function legacyShape2(shape: unknown): unknown {
-  return retiredWording(withoutKey(withoutKey(shape, 'unloaded'), 'goalVerdict'));
+  return retiredWording(withoutKey(withoutKey(withoutKey(shape, 'unloaded'), 'goalVerdict'), 'ci'));
 }
 
 /* A named departure from the retired page. Its goal-source sentence said "Analyze read up to 1,000

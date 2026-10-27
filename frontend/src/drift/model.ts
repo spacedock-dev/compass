@@ -23,6 +23,7 @@ import { endedAt, type Row } from '../observed';
 import type { RecordEntry } from '../store/board';
 import { harnessLabels } from '../sessions/rows';
 import { analysisLevel, liveEstimate, type Contexts, type DriftLevel } from './level';
+import { ciEntries } from './ciRead';
 import { readingJob, readingRoute } from './route';
 import { LEVEL_SCALE } from './sentences';
 import { lineRequestFloors, readingShape, type Shape } from './shape';
@@ -299,7 +300,17 @@ export function buildModel(input: ModelInput): DriftModel {
     numbers,
     labels,
     outside,
-    byId: new Map(entries.map((entry) => [String(entry.id || ''), entry])),
+    /* The CI checks a reading cites resolve beside the session's entries, and are in no list or numbering. */
+    byId: new Map(
+      [
+        ...entries,
+        ...ciEntries(
+          shape?.ci ?? null,
+          String(session['harness'] ?? ''),
+          String(session['sid'] ?? ''),
+        ),
+      ].map((entry) => [String(entry.id || ''), entry]),
+    ),
     generated,
     limit,
     unsettled,

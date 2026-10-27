@@ -47,6 +47,7 @@ export function routeOf(harness: string, fields: RouteFields): Record<string, un
     destination: claude ? 'api' : '',
     tool_output: claude ? 'Tool output goes to the api.' : '',
     words_destination: reads ? 'api' : '',
+    ci_read: 'on',
   };
 }
 
@@ -152,6 +153,8 @@ export interface Scenario {
   readonly work?: Record<string, unknown>;
   /** The route for this harness, where a story is about a machine that is not the healthy one. */
   readonly route?: Record<string, unknown>;
+  /** Every `POST /api/reading` body that set the GitHub read, for a story about its page switch. */
+  readonly ciPosts?: Record<string, unknown>[];
   /** Whether `POST /api/annotate` keeps a Not accurate mark, as the store does, so the next board carries it. */
   readonly keepsMarks?: boolean;
   /** What `POST /api/correction` answers, as `correction.compose` would for this session. */
@@ -244,6 +247,11 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
     let marked: boolean | null = null;
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     let job: Record<string, unknown> | null = null;
+    /* The page's switch for the GitHub read: a server that holds it, and `flag-off` is the run's own flag,
+       which a press cannot lift. */
+    let ciRead = String(scenario.route?.['ci_read'] ?? 'on');
+    const ciPosts = scenario.ciPosts;
+    if (ciPosts) ciPosts.length = 0;
     let reading = scenario.payload?.['reading'] ?? POLICY;
     if (scenario.reading) scenario.reading.posts.length = 0;
     const shell = createShell({
@@ -256,6 +264,14 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
       reducedMotion: () => true,
       ...(scenario.clipboard ? { clipboard: () => ({ writeText: async () => undefined }) } : {}),
       fetch: async (url, init) => {
+        if (url.startsWith('/api/reading') && ciPosts) {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          if (typeof body['ci_read'] === 'string') {
+            ciPosts.push(body);
+            if (ciRead !== 'flag-off') ciRead = body['ci_read'];
+            return json({ ok: true, ci_read: ciRead });
+          }
+        }
         if (url.startsWith('/api/reading') && scenario.reading) {
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
           const index = scenario.reading.posts.length;
@@ -327,7 +343,9 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
             annotate_cap: 240,
             annotate_goal_cap: 1000,
             reading_check: 'passed',
-            reading_routes: { [harness]: scenario.route ?? healthyRoute(harness) },
+            reading_routes: {
+              [harness]: { ...(scenario.route ?? healthyRoute(harness)), ci_read: ciRead },
+            },
             ...(scenario.payload ?? {}),
             reading,
             ...(job ? { reading_jobs: { [`${harness}:s1`]: job } } : {}),

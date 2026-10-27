@@ -949,6 +949,15 @@ One more departure, 2026-10-22. The shape carries `goalVerdict`, Compass's test 
 (`reading.goal_verdict`), which the retired page never had, so `shape.differential.test.ts` and
 `result.differential.test.ts` drop it with `withoutKey` as they drop `unloaded`. No recorded answer changes.
 
+One more, 2026-10-27. The shape carries `ci`, what an Analyze press read of the bound pull request's CI checks
+from GitHub (`reading.ci`, stored beside `criteria`), which the retired page never had, so the same two files drop
+it with `withoutKey`. The card says where the checks came from and when under the goal verdict note
+(`CiReadNote.tsx`), and the "What is sent" disclosure carries the page's switch for the read. The page rebuilds the
+checks as entries from the stored record (`ciEntries`) and reads a reading's citations against them beside the
+session's own, so a line that rests on a counting pass holds and one that rests on a pending check or a moved head
+is refused, as `reading.check_supports` refuses it. They join no list and no numbering. Both are held by the
+`Drift/Pull request CI read` stories. No recorded answer changes.
+
 Departures the drift proof restates, 2026-10-21, with the recording unchanged. The retired page printed
 "N of M left today" under each reading; commit 4f6512bb removed that line, and under the cap the page prints no
 budget (`ReadingResult.test.tsx`). `session-deviations.mjs` retracts the sentence from the recorded side of the

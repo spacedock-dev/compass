@@ -57,6 +57,8 @@ export interface WorkEntry {
   /** A check or file's place after that message; null for a message. */
   readonly ordinalSub: number | null;
   readonly source: string;
+  /** A CI check the press read from GitHub: whether the producer marked it as one that may settle a line. */
+  readonly ciCounts?: boolean;
 }
 
 function factSessionKey(fact: Row | null | undefined): string {

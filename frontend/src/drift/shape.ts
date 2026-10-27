@@ -4,6 +4,7 @@ import { annotationLines, OUTCOME_LINES_MAX, type Annotation } from '../intent/a
 import { conflictCandidates, type WorkEntry } from '../intent/work';
 import { isRecord, type Row } from '../observed';
 import { PROMPT_SOURCES, SESSION_GOAL } from '../sessions/intent';
+import { ciEntries } from './ciRead';
 import {
   ASSISTANT_ONLY,
   BASELINE_OPEN,
@@ -13,6 +14,9 @@ import {
   CLAIMS,
   CLAUSE_UNRETAINED,
   CONSISTENT,
+  CI_BUCKETS,
+  CI_READ_ERRORS,
+  CI_SOURCES,
   CRITERION_KEYS,
   DEPARTURE,
   DERIVED_ONLY,
@@ -211,6 +215,20 @@ export function checkSupports(
   windowStart: number | null,
   recordedWrite = false,
 ): boolean {
+  if (String(entry.type || '') === 'ci_check') {
+    /* A GitHub check the press read: only one the producer marked as counting, and only for the verdict its
+       own result shows, a pass for a consistent and a failure for a departure
+       ([DEC-30](../../../docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)). */
+    const at = evidenceAt(entry);
+    return (
+      entry.ciCounts === true &&
+      at !== null &&
+      at > 0 &&
+      !beforeWindow(entry, windowStart) &&
+      ((result === CONSISTENT && entry.result === 'passed') ||
+        (result === DEPARTURE && entry.result === 'failed'))
+    );
+  }
   const report = String(entry.type || '') === 'tool_report';
   if (
     (entry.subject === 'command' || entry.subject === 'ci_command') &&
@@ -644,6 +662,85 @@ export function readingGoalVerdict(raw: unknown): GoalVerdictCheck | null {
   return raw as unknown as GoalVerdictCheck;
 }
 
+/* What the press read of the bound pull request's CI checks from GitHub, as `ci_read.read` stores it. Every
+   key is closed: tokens and counts, never a sentence of the CLI's, so a record rewritten to say something else
+   is a reading this build cannot read ([DEC-30](../../../docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)). */
+export interface CiRead {
+  readonly read_at: number;
+  readonly error: string;
+  readonly source: string;
+  readonly repository: string;
+  readonly number: number;
+  readonly head: string;
+  readonly session_head: string;
+  readonly head_matches: boolean;
+  readonly required_only: boolean;
+  readonly counts: Readonly<Record<string, number>>;
+  readonly caution: boolean;
+  readonly checks: readonly {
+    readonly name: string;
+    readonly bucket: string;
+    readonly completed_at: number | null;
+  }[];
+}
+
+const CI_KEYS = [
+  'read_at',
+  'error',
+  'source',
+  'repository',
+  'number',
+  'head',
+  'session_head',
+  'head_matches',
+  'required_only',
+  'counts',
+  'caution',
+  'checks',
+];
+const CI_HEAD = /^(?:[0-9a-f]{40})?$/;
+
+export function readingCi(raw: unknown): CiRead | null {
+  if (!isRecord(raw) || Object.keys(raw).length !== CI_KEYS.length) return null;
+  if (CI_KEYS.some((key) => !Object.hasOwn(raw, key))) return null;
+  const counts = raw['counts'];
+  const checks = raw['checks'];
+  const at = raw['read_at'];
+  if (
+    typeof at !== 'number' ||
+    !Number.isFinite(at) ||
+    at <= 0 ||
+    (raw['error'] !== '' && !Object.hasOwn(CI_READ_ERRORS, raw['error'] as string)) ||
+    !CI_SOURCES.includes(raw['source'] as string) ||
+    typeof raw['repository'] !== 'string' ||
+    typeof raw['number'] !== 'number' ||
+    !Number.isInteger(raw['number']) ||
+    typeof raw['head'] !== 'string' ||
+    !CI_HEAD.test(raw['head']) ||
+    typeof raw['session_head'] !== 'string' ||
+    !CI_HEAD.test(raw['session_head']) ||
+    typeof raw['head_matches'] !== 'boolean' ||
+    typeof raw['required_only'] !== 'boolean' ||
+    typeof raw['caution'] !== 'boolean' ||
+    !isRecord(counts) ||
+    Object.keys(counts).length !== CI_BUCKETS.length ||
+    CI_BUCKETS.some(
+      (bucket) => !Number.isInteger(counts[bucket]) || (counts[bucket] as number) < 0,
+    ) ||
+    !Array.isArray(checks) ||
+    checks.some(
+      (check) =>
+        !isRecord(check) ||
+        typeof check['name'] !== 'string' ||
+        !CI_BUCKETS.includes(check['bucket'] as string) ||
+        !(check['completed_at'] === null || typeof check['completed_at'] === 'number'),
+    )
+  ) {
+    return null;
+  }
+  return raw as unknown as CiRead;
+}
+
 export function windowPartial(shape: {
   readonly coverage: Coverage | null;
   readonly windowStart: number | null;
@@ -708,6 +805,8 @@ export interface Shape {
   readonly promptSource: boolean;
   /** Compass's test of the harness's goal verdict, where the reading made one. */
   readonly goalVerdict: GoalVerdictCheck | null;
+  /** What the press read of the bound pull request's CI checks from GitHub, where it read any. */
+  readonly ci: CiRead | null;
   readonly readClauses: readonly (readonly [string, string])[];
   readonly stamp: string;
   readonly cutoff: string;
@@ -731,6 +830,7 @@ export const ASSESSMENT_KEYS = [
   'evidence_through',
   'coverage',
   'goal_verdict',
+  'ci',
   'criteria',
 ];
 
@@ -754,9 +854,12 @@ export function readingShape(
   }
   const goalVerdict = readingGoalVerdict(source['goal_verdict']);
   if (source['goal_verdict'] !== undefined && !goalVerdict) unknown.push('goal_verdict');
+  const ci = readingCi(source['ci']);
+  if (source['ci'] !== undefined && !ci) unknown.push('ci');
   if (unknown.length) {
     return {
       goalVerdict: null,
+      ci: null,
       criteria: [],
       departures: [],
       malformed: unknown.slice(0, 4).join(', '),
@@ -772,6 +875,13 @@ export function readingShape(
       scope: '',
     };
   }
+  /* The CI checks the press read are citable beside the session's own entries, as they were in the prompt. */
+  const held = ci
+    ? [
+        ...entries,
+        ...ciEntries(ci, String(annotation?.['harness'] ?? ''), String(annotation?.['sid'] ?? '')),
+      ]
+    : entries;
   const rows: Row = isRecord(source['criteria']) ? source['criteria'] : {};
   const revisionRead = nextNumber(source['revision_read']);
   const current = nextNumber(annotation?.['revision']);
@@ -812,7 +922,7 @@ export function readingShape(
           : lineLabel(key, label, row, annotation, historical, lineSource),
         readingClause(key, row, annotation, historical),
         row,
-        entries,
+        held,
         isOutcomeLine(key) || key === CLAIMS ? limit : '',
         unsettled,
         windowStart,
@@ -845,6 +955,7 @@ export function readingShape(
     coverage,
     promptSource,
     goalVerdict,
+    ci,
     /* The reader's words only: the claims question has none to show. */
     readClauses: constraints
       .filter(([key]) => key !== CLAIMS)

@@ -110,12 +110,15 @@ describe('the reading shape contract holds as the legacy producer holds it', () 
       const own = theirs.malformed
         ? Object.fromEntries(Object.keys(theirs).map((key) => [key, (mine as never)[key]]))
         : mine;
-      /* `unloaded` is this page's own count of cited ids it holds no entry for, and `goalVerdict` carries
-         Compass's test of the harness's goal verdict; the retired page had neither field
+      /* `unloaded` is this page's own count of cited ids it holds no entry for, `goalVerdict` carries
+         Compass's test of the harness's goal verdict, and `ci` what a press read of the pull request's CI
+         checks; the retired page had none of the three fields
          (docs/design-frontend-migration.md#held-to-recorded-answers). */
       const found = firstDifference(
         canonical(theirs),
-        canonical(retiredWording(withoutKey(withoutKey(own, 'unloaded'), 'goalVerdict'))),
+        canonical(
+          retiredWording(withoutKey(withoutKey(withoutKey(own, 'unloaded'), 'goalVerdict'), 'ci')),
+        ),
       );
       if (found) failures.push(`seed ${String(seed)}: ${found}`);
     }

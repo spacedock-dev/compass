@@ -42,8 +42,9 @@
         }
       },
       "route": {
+        "ci_read": "on",
         "destination": "Anthropic",
-        "disclosure": "This session's own harness reads it. Sent: your goal and a bounded set of the session's entries, with your messages and the agent's messages up to 1,000 characters each, and your expected outcome lines. The agent's newest final reply, as its transcript records one, goes whole instead where it fits 4,096 bytes. Tool output is included by default: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote, the repository and number of a pull request it created, and the names of skills it used; agent messages may quote it. Other commands go too, with their output. To: Anthropic, off this machine, with credential shapes redacted, through your Claude Code CLI and its sign-in using claude-sonnet-5-5, spending your capacity. That CLI also sends its working directory, platform, shell, OS version, date and device identifier, and under a Claude account sign-in your email address and account ID. A reading is a model's account of the evidence, never a verification that the work was done.",
+        "disclosure": "This session's own harness reads it. Sent: your goal and a bounded set of the session's entries, with your messages and the agent's messages up to 1,000 characters each, and your expected outcome lines. The agent's newest final reply, as its transcript records one, goes whole instead where it fits 4,096 bytes. Tool output is included by default: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote, the repository and number of a pull request it created, and the names of skills it used; agent messages may quote it. Other commands go too, with their output. To: Anthropic, off this machine, with credential shapes redacted, through your Claude Code CLI and its sign-in using claude-sonnet-5-5, spending your capacity. That CLI also sends its working directory, platform, shell, OS version, date and device identifier, and under a Claude account sign-in your email address and account ID. GitHub: a pull request your goal or the session names has its checks read with your gh login, sending GitHub its repository and number. --no-ci-read or the switch below stops it. A reading is a model's account of the evidence, never a verification that the work was done.",
         "disclosure_parts": [
           "This session's own harness reads it.",
           "Sent: your goal and a bounded set of the session's entries, with your messages and the agent's messages up to 1,000 characters each, and your expected outcome lines.",
@@ -51,6 +52,7 @@
           "Tool output is included by default: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote, the repository and number of a pull request it created, and the names of skills it used; agent messages may quote it. Other commands go too, with their output.",
           "To: Anthropic, off this machine, with credential shapes redacted, through your Claude Code CLI and its sign-in using claude-sonnet-5-5, spending your capacity.",
           "That CLI also sends its working directory, platform, shell, OS version, date and device identifier, and under a Claude account sign-in your email address and account ID.",
+          "GitHub: a pull request your goal or the session names has its checks read with your gh login, sending GitHub its repository and number. --no-ci-read or the switch below stops it.",
           "A reading is a model's account of the evidence, never a verification that the work was done."
         ],
         "fallback": false,
@@ -67,7 +69,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "2962",
+      "Content-Length": "3337",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

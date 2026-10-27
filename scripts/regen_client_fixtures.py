@@ -54,6 +54,7 @@ VOCABULARY = FIXTURES.parent / "vocabulary.json"
 sys.path.insert(0, str(SKILL))
 from compass_runtime import aggregate as runtime_aggregate  # noqa: E402 - skill runtime path
 from compass_runtime import annotations as annotation_store  # noqa: E402 - skill runtime path
+from compass_runtime import ci_read as runtime_ci_read  # noqa: E402 - skill runtime path
 from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
@@ -1724,6 +1725,9 @@ def vocabulary() -> dict[str, Any]:
         "goalVerdictWhys": list(reading.GOAL_VERDICT_WHYS),
         "goalVerdictRemovalKeys": list(reading.GOAL_VERDICT_REMOVAL_KEYS),
         "goalVerdictRemovalWhys": list(reading.GOAL_VERDICT_REMOVAL_WHYS),
+        "ciBuckets": list(runtime_ci_read.BUCKETS),
+        "ciSources": list(runtime_ci_read.SOURCES),
+        "ciReadErrors": list(runtime_ci_read.ERRORS),
         "workEvidenceByHarness": {
             harness: sorted(types) for harness, types in reading.WORK_EVIDENCE_BY_HARNESS.items()
         },

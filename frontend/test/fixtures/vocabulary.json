@@ -68,6 +68,7 @@
     "evidence_through",
     "coverage",
     "goal_verdict",
+    "ci",
     "criteria"
   ],
   "checkBeforeLastChange": "before the last change",
@@ -86,6 +87,26 @@
     "passed flag": "passed, as the tool reported",
     "passed summary": "passed, per its summary line"
   },
+  "ciBuckets": [
+    "pass",
+    "fail",
+    "pending",
+    "skipping",
+    "cancel"
+  ],
+  "ciReadErrors": [
+    "gh-missing",
+    "gh-signed-out",
+    "pull-request-not-found",
+    "rate-limited",
+    "timeout",
+    "unreadable-output",
+    "gh-failed"
+  ],
+  "ciSources": [
+    "goal",
+    "record"
+  ],
   "commandNotRecorded": "ran, exit status not recorded",
   "commandResultWords": {
     "failed flag": "exited non-zero; Compass does not know what it checks",
@@ -124,6 +145,7 @@
     "written-before",
     "passed-before",
     "pr-created-before",
+    "ci-passed",
     "written-after",
     "deleted-after",
     "moved-after",

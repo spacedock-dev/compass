@@ -15,6 +15,7 @@ import {
 } from './correction';
 import { LiveMonitorNote } from './LiveMonitorNote';
 import { DriftLevelView } from './DriftLevelView';
+import { CiReadNote } from './CiReadNote';
 import { GoalVerdictNote } from './GoalVerdictNote';
 import type { Board } from './flip';
 import {
@@ -138,6 +139,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       <LiveMonitorNote />
       <DriftLevelView />
       <GoalVerdictNote />
+      <CiReadNote />
     </>
   );
   /* The answer first, then the level, in every state: a later direction's question once drew above the level,

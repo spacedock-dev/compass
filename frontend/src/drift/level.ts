@@ -9,6 +9,7 @@ import { entryKind, localRecordedTime, recordedTime } from './result';
 import { fmtDur } from './route';
 import {
   BLOCKER_LINES,
+  CI_ENTRY_KIND,
   CLAIMS,
   CONSISTENT,
   DEPARTURE,
@@ -280,9 +281,11 @@ export function evidenceRows(
             ? 'Pull request created'
             : entry.subject === 'skill'
               ? 'Skill used'
-              : agentMessage(entry)
-                ? 'Agent message'
-                : String(entry.type || 'Recorded entry');
+              : entry.subject === 'ci'
+                ? CI_ENTRY_KIND
+                : agentMessage(entry)
+                  ? 'Agent message'
+                  : String(entry.type || 'Recorded entry');
     return {
       id: String(entry.id || ''),
       label: [
