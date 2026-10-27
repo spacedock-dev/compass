@@ -7677,6 +7677,15 @@ as written, and these are the choices it left open.
   own status disagrees with its jobs, as when a trigger job's child failed, is listed as a check named
   `pipeline`, so a green set of jobs never stands over a failed pipeline. A pipeline replaced between
   the two looks matches nothing, as a moved head does.
+- **The pipeline must have run the request's head.** The merge request answer's `head_pipeline`
+  carries the `sha` the pipeline ran. A pass counts only when that equals the request's head and the
+  session's commit, both looks, so a pipeline that lags a new push, was skipped by rules, or ran a
+  merged-results commit is listed and settles nothing.
+- **A host whose configuration redirects the call is not read.** `glab` resolves `--hostname`
+  through `api_protocol`, `api_host` and `skip_tls_verify` in the host block. A host whose block
+  sets a protocol other than https, an API host other than itself, or skipped TLS verification is
+  dropped, so it reads as `host-not-configured` and launches nothing. Only those three values are
+  read, and no token.
 - **A repository is stored with its host.** A GitLab repository is `host/group/.../project`, and no
   GitHub `owner/repo` holds a dot, so the stored record, the fact and the page tell the providers
   apart from that one field and the record gains no key. The facts say `gitlab`, the source

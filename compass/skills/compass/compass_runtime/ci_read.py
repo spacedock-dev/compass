@@ -394,8 +394,10 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
     """The hosts glab's own configuration names, read from its file and never by launching glab.
 
     Only the keys under `hosts:` are read: the values hold the reader's tokens, and this reader
-    never keeps one. A host that is not a plain dotted name (an IP literal, one with a port) is
-    dropped, so the set can only hold hosts a launch may name. Unreadable or absent is empty.
+    never keeps one (only `api_protocol`, `api_host` and `skip_tls_verify` are read, as values to
+    refuse a host that redirects the call). A host that is not a plain dotted name (an IP literal,
+    one with a port) is dropped, so the set can only hold hosts a launch may name. Unreadable or
+    absent is empty.
     """
     base = environ.get("XDG_CONFIG_HOME", "") or (
         environ.get("APPDATA", "")
@@ -411,7 +413,8 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
     except OSError:
         return frozenset()
     hosts: set[str] = set()
-    inside, depth = False, 0
+    redirected: set[str] = set()
+    inside, depth, current = False, 0, ""
     for line in raw.decode("utf-8", "replace").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -425,10 +428,21 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
             continue
         depth = depth or indent
         if indent == depth and stripped.endswith(":"):
-            name = stripped[:-1].strip().strip("'\"").lower()
-            if valid_host(name):
-                hosts.add(name)
-    return frozenset(hosts)
+            current = stripped[:-1].strip().strip("'\"").lower()
+            if valid_host(current):
+                hosts.add(current)
+            continue
+        key, _, value = stripped.partition(":")
+        key, value = key.strip(), value.strip().strip("'\"").lower()
+        # glab resolves `--hostname` through these three keys, so a host that sends the call over
+        # http, to another address or without certificate checks is not one this read may name.
+        if (
+            (key == "api_protocol" and value != "https")
+            or (key == "api_host" and value != current)
+            or (key == "skip_tls_verify" and value in {"true", "yes", "on", "1"})
+        ):
+            redirected.add(current)
+    return frozenset(hosts - redirected)
 
 
 _SIGNED_OUT = re.compile(
@@ -766,8 +780,8 @@ def _gitlab_bucket(status: Any, *, allow_failure: bool = False) -> str:
     return BUCKET_SKIPPING if bucket == BUCKET_FAIL and allow_failure else bucket
 
 
-def _merge_request(value: Any, number: int) -> tuple[str, int, str]:
-    """`(head, pipeline id, pipeline status)` of a merge request answer; id 0 when it has none."""
+def _merge_request(value: Any, number: int) -> tuple[str, int, str, str]:
+    """`(head, pipeline id, status, pipeline sha)` of a merge request answer; id 0 when none."""
     head = value.get("sha") if isinstance(value, dict) else None
     if (
         not isinstance(head, str)
@@ -778,13 +792,20 @@ def _merge_request(value: Any, number: int) -> tuple[str, int, str]:
         raise _FailureError(ERROR_OUTPUT)
     pipeline = value.get("head_pipeline")
     if pipeline is None:
-        return head, 0, ""
+        return head, 0, "", ""
     identifier = pipeline.get("id") if isinstance(pipeline, dict) else None
     status = pipeline.get("status") if isinstance(pipeline, dict) else None
-    if type(identifier) is not int or not 0 < identifier <= 2**53 or not isinstance(status, str):
+    ran = pipeline.get("sha") if isinstance(pipeline, dict) else None
+    if (
+        type(identifier) is not int
+        or not 0 < identifier <= 2**53
+        or not isinstance(status, str)
+        or not isinstance(ran, str)
+        or _HEAD_RE.fullmatch(ran) is None
+    ):
         raise _FailureError(ERROR_OUTPUT)
     _gitlab_bucket(status)
-    return head, identifier, status
+    return head, identifier, status, ran
 
 
 def _parse_jobs(pages: Sequence[Any]) -> list[dict[str, Any]]:
@@ -850,7 +871,7 @@ def _read_gitlab(
 
     merge_request = f"{project}/merge_requests/{binding.number}"
     try:
-        head, pipeline, status = _merge_request(call(merge_request), binding.number)
+        head, pipeline, status, ran = _merge_request(call(merge_request), binding.number)
         rows: list[dict[str, Any]] = []
         if pipeline:
             pages = _job_pages(call, project, pipeline)
@@ -862,14 +883,18 @@ def _read_gitlab(
                 row["bucket"] == overall for row in rows
             ):
                 rows.append({"name": "pipeline", "bucket": overall, "completed_at": None})
-        later, later_pipeline, _ = _merge_request(call(merge_request), binding.number)
+        later, later_pipeline, _, later_ran = _merge_request(call(merge_request), binding.number)
     except _FailureError as failure:
         return {**record, "error": failure.token}
-    moved = later != head or later_pipeline != pipeline
+    moved = later != head or later_pipeline != pipeline or later_ran != ran
+    # The pipeline must have run the request's head itself. A merged-results pipeline runs a merge
+    # commit, so it fails safe to "not this session's commit".
+    ran_head = not pipeline or later_ran == later
     return {
         **record,
         "head": later,
         "head_matches": not moved
+        and ran_head
         and bool(record["session_head"])
         and later == record["session_head"],
         "counts": _counts(rows),

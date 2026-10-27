@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import types
 import unittest
 from typing import TYPE_CHECKING, Any, cast
@@ -70,13 +71,20 @@ GREEN = [job("lint", "success"), job("unit-tests", "success"), job("docs", "skip
 
 
 def merge_request(
-    head: str = SESSION_HEAD, *, iid: int = 12, pipeline: int | None = 77, status: str = "success"
+    head: str = SESSION_HEAD,
+    *,
+    iid: int = 12,
+    pipeline: int | None = 77,
+    status: str = "success",
+    pipeline_sha: str | None = None,
 ) -> dict[str, Any]:
     return {
         "iid": iid,
         "sha": head,
         "state": "opened",
-        "head_pipeline": None if pipeline is None else {"id": pipeline, "status": status},
+        "head_pipeline": None
+        if pipeline is None
+        else {"id": pipeline, "status": status, "sha": pipeline_sha or head},
     }
 
 
@@ -254,6 +262,39 @@ class GlabsOwnConfigurationNamesTheHosts(unittest.TestCase):
         self.assertEqual(frozenset({"other.example.org"}), ci_read.glab_hosts(environ))
 
 
+class AHostWhoseConfigurationRedirectsTheCallIsNotRead(unittest.TestCase):
+    """glab resolves `--hostname` through these keys, so the read must not trust a redirected one."""
+
+    def setUp(self) -> None:
+        self.stub = StubGlab(self)
+
+    def host_block(self, *lines: str) -> None:
+        body = "".join(f"        {line}\n" for line in lines)
+        self.stub.configure(f"hosts:\n    {HOST}:\n        token: FakePass99\n{body}")
+
+    def refused(self) -> None:
+        self.assertNotIn(HOST, ci_read.glab_hosts(self.stub.environ))
+        self.assertEqual(ci_read.ERROR_HOST, read(self.stub)["error"])
+        self.assertEqual([], self.stub.calls)
+
+    def test_a_plain_http_protocol_is_refused(self) -> None:
+        self.host_block("api_protocol: http")
+        self.refused()
+
+    def test_another_api_host_is_refused(self) -> None:
+        self.host_block("api_host: 10.0.0.9")
+        self.refused()
+
+    def test_skipped_tls_verification_is_refused(self) -> None:
+        self.host_block("skip_tls_verify: true")
+        self.refused()
+
+    def test_an_https_protocol_and_the_same_api_host_still_read(self) -> None:
+        self.host_block("api_protocol: 'HTTPS'", f"api_host: {HOST}", "skip_tls_verify: false")
+        self.assertIn(HOST, ci_read.glab_hosts(self.stub.environ))
+        self.assertEqual("", read(self.stub)["error"])
+
+
 class TheLaunchKeepsEverySafeguard(unittest.TestCase):
     def setUp(self) -> None:
         self.stub = StubGlab(self)
@@ -379,6 +420,24 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
     def test_a_new_pipeline_on_the_same_head_matches_nothing(self) -> None:
         self.stub.set(mr_second=merge_request(pipeline=78))
         self.assertFalse(read(self.stub)["head_matches"])
+
+    def test_a_pipeline_of_another_commit_than_the_request_head_matches_nothing(self) -> None:
+        self.stub.set(mr=merge_request(pipeline_sha=OTHER_HEAD))
+        record = read(self.stub)
+        self.assertFalse(record["head_matches"])
+        facts = ci_read.facts(record, "claude", "s1")
+        self.assertTrue(facts)
+        self.assertEqual({False}, {f["ci_counts"] for f in facts})
+
+    def test_a_pipeline_whose_commit_changed_between_the_looks_matches_nothing(self) -> None:
+        self.stub.set(mr_second=merge_request(pipeline_sha=OTHER_HEAD))
+        self.assertFalse(read(self.stub)["head_matches"])
+
+    def test_a_pipeline_with_no_valid_commit_is_unreadable(self) -> None:
+        bad = merge_request()
+        bad["head_pipeline"]["sha"] = "not-a-sha"
+        self.stub.set(mr=bad)
+        self.assertEqual(ci_read.ERROR_OUTPUT, read(self.stub)["error"])
 
     def test_a_head_past_the_session_commit_is_named_and_does_not_match(self) -> None:
         self.stub.set(mr=merge_request(OTHER_HEAD))
@@ -628,6 +687,20 @@ class ADoneMergeRequestSettlesTheGoal(base.AClaudeCodeReadingProducer):
         self.stub.set(mr=merge_request(OTHER_HEAD))
         row = self.produce(read(self.stub))["criteria"]["line_1"]
         self.assertNotEqual(reading.RESULT_CONSISTENT, row["result"])
+
+    def test_a_pipeline_that_never_ran_the_session_commit_cannot_carry_a_consistent(self) -> None:
+        self.stub.set(mr=merge_request(pipeline_sha=OTHER_HEAD))
+        row = self.produce(read(self.stub))["criteria"]["line_1"]
+        self.assertNotEqual(reading.RESULT_CONSISTENT, row["result"])
+
+    def test_a_long_dotted_token_in_a_verdict_is_matched_in_linear_time(self) -> None:
+        started = time.monotonic()
+        self.assertEqual((), reading._verdict_prs("a." * 2000))
+        self.assertLess(time.monotonic() - started, 0.5)
+        found = reading._verdict_prs(
+            f"green on {MR_URL} and on gitlab.com/g/s/p/-/merge_requests/3"
+        )
+        self.assertEqual(((REPOSITORY, 12), ("gitlab.com/g/s/p", 3)), found)
 
     def test_the_harness_verdict_naming_the_merge_request_agrees(self) -> None:
         for reason in (

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ciEntries, ciReadNote } from './ciRead';
+import { ciReadReason } from './sentences';
 import { readingCi, readingShape, type CiRead } from './shape';
 
 const HEAD = 'a'.repeat(40);
@@ -56,6 +57,19 @@ describe('the pull request check read, as the card says it', () => {
       'x',
     );
     expect(unlisted.lines[0]).toContain('does not name that GitLab host');
+  });
+
+  it('names glab, never gh, when a GitLab read comes back in a shape Compass does not read', () => {
+    expect(ciReadReason('unreadable-output', 'GitLab')).toContain('glab');
+    expect(ciReadReason('unreadable-output', 'GitLab')).not.toMatch(/\bgh\b/);
+    for (const token of [
+      'pull-request-not-found',
+      'rate-limited',
+      'timeout',
+      'unreadable-output',
+    ]) {
+      expect(ciReadReason(token, 'GitLab')).not.toMatch(/\bgh\b/);
+    }
   });
 
   it('rebuilds a GitLab read’s entries as GitLab words, so a cited job resolves', () => {

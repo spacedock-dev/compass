@@ -226,6 +226,7 @@ const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
   'pull-request-not-found': 'GitLab does not show that merge request to your glab login',
   'rate-limited': 'GitLab is rate limiting your glab login',
   timeout: 'GitLab did not answer in time',
+  'unreadable-output': 'glab answered in a shape Compass does not read',
 };
 export type CiProvider = 'GitHub' | 'GitLab';
 /* Which provider a stored repository names. A GitLab one is stored as `host/group/project`, and no GitHub

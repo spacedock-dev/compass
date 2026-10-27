@@ -24,7 +24,7 @@ was run here:
   stored for that host, and prints the response body. On an HTTP error it exits non-zero and the
   body holds the refusal. The read classifies a non-zero exit and never parses that body as data.
 - `GET projects/:path/merge_requests/:iid` answers an object with `iid`, `sha` (the source branch's
-  head commit) and `head_pipeline`, which is `null` or an object with `id` and `status`.
+  head commit) and `head_pipeline`, which is `null` or an object with `id`, `status` and `sha` (the commit the pipeline ran).
 - `GET projects/:path/pipelines/:id/jobs?per_page=100&page=N` answers an array of jobs with `name`,
   `status`, `allow_failure` and `finished_at`. Retried jobs are left out by default.
 - A pipeline status and a job status come from a closed set: `created`, `waiting_for_resource`,
@@ -36,8 +36,12 @@ was run here:
   are never kept. Where this build reads the file differently from `glab`, for example a
   `GLAB_CONFIG_DIR` the reader set, the child does not see that variable either, so both use the
   default location.
-- A merged-results pipeline carries a merge commit as its own `sha`. The read compares the merge
-  request's `sha`, not the pipeline's, so it still matches the session's commit.
+- A merged-results pipeline carries a merge commit as its own `sha`. The read requires the
+  pipeline's `sha` to equal the merge request's `sha` and the session's commit, so a merged-results
+  pipeline is listed and settles nothing. Not measured, and chosen to fail safe.
+- `glab` sends `--hostname HOST` through the host block's `api_protocol`, `api_host` and
+  `skip_tls_verify` keys. The read refuses a host whose block sets a protocol other than https, an
+  API host other than the host itself, or skipped TLS verification.
 - A trigger job's child pipeline is not a job of the parent. A parent whose own status disagrees
   with its jobs is listed as one check named `pipeline`.
 

@@ -2390,7 +2390,11 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   reads normally. Before anything is launched Compass reads the host names under `hosts:` in glab's
   own configuration file (`glab-cli/config.yml` in `XDG_CONFIG_HOME`, else `~/.config`, else
   `%APPDATA%` on Windows), keeps no value from it, and reads only a host that matches one exactly, over
-  https, as a dotted name that is never an IP literal and carries no port. A goal URL that names any
+  https, as a dotted name that is never an IP literal and carries no port. A host whose block sets
+  `api_protocol` to anything but https, `api_host` to another address, or `skip_tls_verify` on is
+  not read either (those three values are read from the block, and no token). A pipeline counts only when
+  it ran the merge request's head, which is the session's commit; a merged-results pipeline settles
+  nothing. A goal URL that names any
   other host starts no process and says so beside the reading. Only a goal URL binds a merge request:
   what Claude Code writes for one is not measured
   ([the capture note](docs/captures/claude/gitlab-merge-request-read-unmeasured.md)).

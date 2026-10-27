@@ -4814,7 +4814,9 @@ _VERDICT_PR_LIST = re.compile(
 # A GitLab merge request by its URL, which names the host and the project the way `ci_read` stores
 # them, so a verdict that names another project's merge request number does not match this one.
 _VERDICT_MR_URL = re.compile(
-    r"(?:https://)?(?P<repo>[\w.-]+\.[\w.-]+/[\w.-]+(?:/[\w.-]+)+)/-/merge_requests/(?P<number>\d+)\b",
+    r"(?<![\w.-])(?:https://)?"
+    r"(?P<repo>(?:[A-Za-z0-9-]{1,63}\.){1,10}[A-Za-z0-9-]{1,63}(?:/[\w.-]{1,100}){2,20})"
+    r"/-/merge_requests/(?P<number>\d+)\b",
     re.IGNORECASE,
 )
 
