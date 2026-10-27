@@ -9,7 +9,7 @@ import { entryKind, localRecordedTime, recordedTime } from './result';
 import { fmtDur } from './route';
 import {
   BLOCKER_LINES,
-  CI_ENTRY_KIND,
+  ciEntryKind,
   CLAIMS,
   CONSISTENT,
   DEPARTURE,
@@ -282,7 +282,7 @@ export function evidenceRows(
             : entry.subject === 'skill'
               ? 'Skill used'
               : entry.subject === 'ci'
-                ? CI_ENTRY_KIND
+                ? ciEntryKind(String(entry.by || ''))
                 : agentMessage(entry)
                   ? 'Agent message'
                   : String(entry.type || 'Recorded entry');

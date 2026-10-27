@@ -660,7 +660,7 @@ def _bind_and_read_ci(
     facts: list[Any],
     hooks: runtime_reading_jobs.Hooks,
 ) -> dict[str, Any] | None:
-    """The bound pull request's CI checks, read from GitHub on this press, or None.
+    """The bound pull request's CI checks, read from GitHub or GitLab on this press, or None.
 
     Runs only inside an admitted Analyze job, so the pause, the cap and `--no-observer-model`
     have already refused the press before this launches anything, and `ci_read.setting` is
@@ -2497,7 +2497,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         return True
 
     def _ci_read_setting(self, answer: Any) -> None:
-        """The page's switch for the GitHub read: `on` or `off`, nothing else.
+        """The page's switch for the GitHub and GitLab read: `on` or `off`, nothing else.
 
         Guarded as the route is, so a lured navigation or a cross-site fetch cannot flip it. It
         writes one marker and reads nothing, and `--no-ci-read` holds it off whatever is sent.

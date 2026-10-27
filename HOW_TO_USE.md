@@ -562,7 +562,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-spacedock` | Reading Spacedock workflow state out of a project; saved stage conditions remain readable but suspended |
 | `--no-tripwires` | Workflow stage conditions and every read or write of their saved store |
 | `--no-git` | The end-of-session git probe and the read of a project's check scripts. No git command runs inside any repository |
-| `--no-ci-read` | Reading a pull request's CI checks from GitHub when you press Analyze drift. No `gh` command runs, and the page's switch for it is held off |
+| `--no-ci-read` | Reading a pull request's or merge request's CI checks from GitHub or GitLab when you press Analyze drift. No `gh` or `glab` command runs, and the page's switch for it is held off |
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
 | `--no-annotations` | The goal and expected outcome lines you typed against a session. Nothing is shown or saved, and the page offers no field |
 | `--no-focus` | Raising a session's terminal. No focus command runs, no terminal identity is recorded, and the page is offered no raise control. `--no-events` turns it off as well |

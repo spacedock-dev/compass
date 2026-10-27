@@ -1,18 +1,27 @@
-"""A pull request's CI checks, read from GitHub when a reader presses Analyze.
+"""A pull request's or merge request's CI checks, read when a reader presses Analyze.
 
 [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)
-is the ruling and this module is its launcher. It is the one place that runs `gh`, and it runs it
-only on an admitted press, for one bound pull request, with every launch safeguard the ruling
-lists: an absolute binary resolved against a PATH with no relative element, a private empty working
-directory, no `GH_*`, `GITLAB_*` or `GL_*` override, an owner, repository and number checked against
-a closed pattern before any subprocess, `github.com` only, a hard timeout that kills the process
-group, JSON that is parsed whatever the exit code (`gh pr checks` exits 8 while a check is pending
-and 1 while one has failed), size-capped and schema-checked, and stderr reduced to a closed token.
+is the ruling and this module is its launcher. It is the one place that runs `gh` or `glab`, and it
+runs one only on an admitted press, for one bound pull request, with every launch safeguard the
+ruling lists: an absolute binary resolved against a PATH with no relative element, a private empty
+working directory, no `GH_*`, `GITLAB_*` or `GL_*` override, an owner, repository and number checked
+against a closed pattern before any subprocess, a known host only, a hard timeout that kills the
+process group, JSON that is parsed whatever the exit code (`gh pr checks` exits 8 while a check is
+pending and 1 while one has failed), size-capped and schema-checked, and stderr reduced to a closed
+token.
 
 What leaves this module is a plain record (`validate` is its shape) and the facts built from it
 (`facts`). The record carries each check's name, bucket and completion time and nothing else the
 CLI said: no description, link, log or workflow text. A check name is writable by whoever writes
 the workflows, so it takes a closed character set and a clip here.
+
+GitLab is read through `glab api` with fixed, read-only endpoints, and only on a host that glab's
+own configuration already names (`glab_hosts`), read from its file before anything is launched.
+A merge request is bound by its goal URL alone: whether Claude Code writes a `pr-link` for a
+GitLab merge request is not measured
+(`docs/captures/claude/gitlab-merge-request-read-unmeasured.md`).
+A GitLab repository is stored as `host/group/.../project`, which no GitHub `owner/repo` can be,
+because a GitHub owner holds no dot.
 
 This module imports nothing from `reading`, which imports it.
 """
@@ -28,6 +37,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
+from urllib.parse import quote
 
 from . import git_status, supervise
 from . import io as runtime_io
@@ -61,6 +71,11 @@ ERROR_RATE_LIMITED: Final = "rate-limited"
 ERROR_TIMEOUT: Final = "timeout"
 ERROR_OUTPUT: Final = "unreadable-output"
 ERROR_FAILED: Final = "gh-failed"
+ERROR_GLAB_MISSING: Final = "glab-missing"
+ERROR_GLAB_SIGNED_OUT: Final = "glab-signed-out"
+ERROR_GLAB_FAILED: Final = "glab-failed"
+# A goal URL named a GitLab host that glab's configuration does not hold: nothing is launched.
+ERROR_HOST: Final = "host-not-configured"
 ERRORS: Final = (
     ERROR_MISSING,
     ERROR_SIGNED_OUT,
@@ -69,6 +84,10 @@ ERRORS: Final = (
     ERROR_TIMEOUT,
     ERROR_OUTPUT,
     ERROR_FAILED,
+    ERROR_GLAB_MISSING,
+    ERROR_GLAB_SIGNED_OUT,
+    ERROR_GLAB_FAILED,
+    ERROR_HOST,
 )
 
 TIMEOUT_SEC: Final = 20.0
@@ -95,15 +114,43 @@ _PR_URL_RE = re.compile(
     r"/pull/(?P<number>[1-9][0-9]{0,7})(?![0-9])",
     re.IGNORECASE,
 )
+# A GitLab host: dotted labels ending in a name, so a bare IPv4 address, `localhost` and a port all
+# fail it. An IPv6 literal carries brackets and colons, which no label holds.
+_HOST_RE = re.compile(
+    r"(?=.{4,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?"
+)
+_GROUP_SEGMENT_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,254}")
+_MR_URL_RE = re.compile(
+    r"https://(?P<host>[A-Za-z0-9.-]{4,253})/(?P<path>[A-Za-z0-9._/-]{3,600}?)"
+    r"/-/merge_requests/(?P<number>[1-9][0-9]{0,7})(?![0-9])",
+    re.IGNORECASE,
+)
+_GITLAB_STATUS_BUCKET: Final = {
+    "success": BUCKET_PASS,
+    "failed": BUCKET_FAIL,
+    "canceled": BUCKET_CANCEL,
+    "canceling": BUCKET_CANCEL,
+    "skipped": BUCKET_SKIPPING,
+    "created": BUCKET_PENDING,
+    "pending": BUCKET_PENDING,
+    "running": BUCKET_PENDING,
+    "preparing": BUCKET_PENDING,
+    "scheduled": BUCKET_PENDING,
+    "waiting_for_resource": BUCKET_PENDING,
+    "waiting_for_callback": BUCKET_PENDING,
+}
 _NAME_CHARS = re.compile(r"[^A-Za-z0-9 ._/:()+#@,\[\]-]")
 _WORKFLOW_PATH = re.compile(r"(?:^|/)(?:\.github/workflows/[^/]+|\.gitlab-ci\.yml)$")
-_REMOVED_ENV = ("GH_", "GITLAB_", "GL_")
+# `GLAB_CONFIG_DIR` moves the configuration the hosts check reads, and `OAUTH_TOKEN` and
+# `REMOTE_ALIAS` each steer glab to another account or remote, so none reaches the child.
+_REMOVED_ENV = ("GH_", "GITLAB_", "GL_", "GLAB_", "OAUTH_TOKEN", "REMOTE_ALIAS")
 
 
 @dataclass(frozen=True)
 class Binding:
     """The one pull request a press reads, and what bound it."""
 
+    # `owner/repo` for GitHub, `host/group/.../project` for GitLab (`host_of` tells them apart).
     repository: str
     number: int
     source: str
@@ -111,8 +158,7 @@ class Binding:
     branch: str = ""
 
 
-def valid_repository(repository: str) -> bool:
-    """Whether this is an `owner/repo` a launch may be built from."""
+def _github_repository(repository: str) -> bool:
     owner, _, repo = repository.partition("/")
     return bool(
         _OWNER_RE.fullmatch(owner)
@@ -123,12 +169,50 @@ def valid_repository(repository: str) -> bool:
     )
 
 
+def valid_host(host: str) -> bool:
+    """Whether this is a lower case dotted host name a GitLab read may be built for, never an IP."""
+    return host == host.lower() and _HOST_RE.fullmatch(host) is not None
+
+
+def _gitlab_repository(repository: str) -> bool:
+    host, _, path = repository.partition("/")
+    segments = path.split("/")
+    return (
+        valid_host(host)
+        and 2 <= len(segments) <= 21
+        and all(
+            _GROUP_SEGMENT_RE.fullmatch(segment)
+            and set(segment) != {"."}
+            and not segment.endswith((".git", ".atom"))
+            for segment in segments
+        )
+    )
+
+
+def valid_repository(repository: str) -> bool:
+    """Whether this is a repository a launch may be built from, on either provider."""
+    return _github_repository(repository) or _gitlab_repository(repository)
+
+
+def host_of(repository: str) -> str:
+    """The host a stored repository names: `github.com`, or the first part of a GitLab one."""
+    return repository.partition("/")[0] if _gitlab_repository(repository) else HOST
+
+
 def pull_request_urls(text: str) -> tuple[tuple[str, int], ...]:
-    """Every distinct `(owner/repo, number)` a text names by its pull request URL."""
+    """Every distinct `(repository, number)` a text names by a pull or merge request URL."""
     found: dict[tuple[str, int], None] = {}
     for matched in _PR_URL_RE.finditer(text):
         repository = f"{matched['owner']}/{matched['repo']}"
-        if valid_repository(repository) and int(matched["number"]) <= _NUMBER_MAX:
+        if _github_repository(repository) and int(matched["number"]) <= _NUMBER_MAX:
+            found[(repository, int(matched["number"]))] = None
+    for matched in _MR_URL_RE.finditer(text):
+        repository = f"{matched['host'].lower()}/{matched['path']}"
+        if (
+            matched["host"].lower() != HOST
+            and _gitlab_repository(repository)
+            and int(matched["number"]) <= _NUMBER_MAX
+        ):
             found[(repository, int(matched["number"]))] = None
     return tuple(found)
 
@@ -145,7 +229,9 @@ def bind(
     different pull requests binds none rather than guessing. Failing that, the newest `pr-link`
     record whose repository is the session folder's own `origin`, and failing that the newest
     pushed branch of that repository. A record naming another repository binds nothing: a
-    transcript can say anything, and only the folder's own remote says it is this one.
+    transcript can say anything, and only the folder's own remote says it is this one. A GitLab
+    merge request binds by the goal's URL alone; no record binds one, because what Claude Code
+    writes for a merge request is not measured.
     """
     named = dict.fromkeys(url for text in goal_texts for url in pull_request_urls(text))
     if len(named) == 1:
@@ -154,7 +240,7 @@ def bind(
     if named:
         return None
     host, repository = remote
-    if host != HOST or not valid_repository(repository):
+    if host != HOST or not _github_repository(repository):
         return None
     for linked, number in links:
         if linked.lower() == repository.lower() and 0 < number <= _NUMBER_MAX:
@@ -194,7 +280,7 @@ def scan_records(
         repository, number = record.get("prRepository"), record.get("prNumber")
         if (
             isinstance(repository, str)
-            and valid_repository(repository)
+            and _github_repository(repository)
             and type(number) is int
             and 0 < number <= _NUMBER_MAX
         ):
@@ -286,6 +372,65 @@ def environment(environ: Mapping[str, str]) -> dict[str, str]:
     return kept
 
 
+def glab_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """`environment` for glab: the same scrub, with glab's prompt, telemetry and update checks off.
+
+    `GITLAB_TOKEN` applies to whatever host a command names, so a goal that names another host
+    would be sent the reader's token if it survived. Stripping it means a reader who signs in to
+    glab by that variable alone reads nothing, and one signed in through `glab auth login` (the
+    stored login, which glab keys by host) reads normally.
+    """
+    kept = environment(environ)
+    for key in ("GH_PROMPT_DISABLED", "GH_NO_UPDATE_NOTIFIER"):
+        kept.pop(key, None)
+    kept.update(NO_PROMPT="1", GLAB_SEND_TELEMETRY="false", GLAB_CHECK_UPDATE="false")
+    return kept
+
+
+_HOSTS_FILE_BYTES: Final = 65_536
+
+
+def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
+    """The hosts glab's own configuration names, read from its file and never by launching glab.
+
+    Only the keys under `hosts:` are read: the values hold the reader's tokens, and this reader
+    never keeps one. A host that is not a plain dotted name (an IP literal, one with a port) is
+    dropped, so the set can only hold hosts a launch may name. Unreadable or absent is empty.
+    """
+    base = environ.get("XDG_CONFIG_HOME", "") or (
+        environ.get("APPDATA", "")
+        if os.name == "nt"
+        else os.path.join(environ.get("HOME", ""), ".config")
+    )
+    if not base or not os.path.isabs(base):
+        return frozenset()
+    try:
+        raw = runtime_io.read_prefix_bytes(
+            os.path.join(base, "glab-cli", "config.yml"), max_bytes=_HOSTS_FILE_BYTES
+        )
+    except OSError:
+        return frozenset()
+    hosts: set[str] = set()
+    inside, depth = False, 0
+    for line in raw.decode("utf-8", "replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            inside = stripped.rstrip() == "hosts:"
+            depth = 0
+            continue
+        if not inside:
+            continue
+        depth = depth or indent
+        if indent == depth and stripped.endswith(":"):
+            name = stripped[:-1].strip().strip("'\"").lower()
+            if valid_host(name):
+                hosts.add(name)
+    return frozenset(hosts)
+
+
 _SIGNED_OUT = re.compile(
     r"gh auth login|not logged in|authentication required|bad credentials", re.IGNORECASE
 )
@@ -293,19 +438,28 @@ _NOT_FOUND = re.compile(
     r"could not resolve to a pull\s?request|no pull requests? found|not found", re.IGNORECASE
 )
 _RATE = re.compile(r"rate limit", re.IGNORECASE)
+_GL_SIGNED_OUT = re.compile(
+    r"\b401\b|unauthori[sz]ed|glab auth login|not (?:logged in|authenticated)|invalid token",
+    re.IGNORECASE,
+)
+_GL_NOT_FOUND = re.compile(r"\b40[34]\b|not found|forbidden", re.IGNORECASE)
+_GL_RATE = re.compile(r"\b429\b|rate limit|too many requests", re.IGNORECASE)
 _NO_CHECKS = re.compile(r"no (?:required )?checks reported", re.IGNORECASE)
 
 
-def _error_token(stderr: str) -> str:
+def _error_token(stderr: str, *, glab: bool = False) -> str:
     """The one closed token a CLI failure becomes. The text it came from is dropped here."""
     for pattern, token in (
-        (_SIGNED_OUT, ERROR_SIGNED_OUT),
-        (_RATE, ERROR_RATE_LIMITED),
-        (_NOT_FOUND, ERROR_NOT_FOUND),
+        (
+            _GL_SIGNED_OUT if glab else _SIGNED_OUT,
+            ERROR_GLAB_SIGNED_OUT if glab else ERROR_SIGNED_OUT,
+        ),
+        (_GL_RATE if glab else _RATE, ERROR_RATE_LIMITED),
+        (_GL_NOT_FOUND if glab else _NOT_FOUND, ERROR_NOT_FOUND),
     ):
         if pattern.search(stderr):
             return token
-    return ERROR_FAILED
+    return ERROR_GLAB_FAILED if glab else ERROR_FAILED
 
 
 class _FailureError(Exception):
@@ -319,8 +473,15 @@ def _run(
     binary: str,
     argv: Sequence[str],
     environ: Mapping[str, str],
+    *,
+    glab: bool = False,
 ) -> Any:
-    """One `gh` call: its JSON whatever the exit code, or a `_FailureError` with a closed token."""
+    """One `gh` call: its JSON whatever the exit code, or a `_FailureError` with a closed token.
+
+    A `glab api` call is the other way round: it exits non-zero only when the server refused, and
+    the body it then prints is the refusal, so a non-zero exit is classified and never read.
+    """
+    failed = ERROR_GLAB_FAILED if glab else ERROR_FAILED
     with (
         tempfile.TemporaryDirectory(prefix="compass-ci-cwd-") as cwd,
         tempfile.TemporaryDirectory(prefix="compass-ci-out-") as out_dir,
@@ -352,21 +513,27 @@ def _run(
         except supervise.OversizedError:
             raise _FailureError(ERROR_OUTPUT) from None
         except (OSError, subprocess.SubprocessError):
-            raise _FailureError(ERROR_FAILED) from None
+            raise _FailureError(failed) from None
         stdout = runtime_io.read_prefix_bytes(out_path, max_bytes=OUTPUT_LIMIT_BYTES + 1)
         stderr = runtime_io.read_prefix_bytes(err_path, max_bytes=STDERR_LIMIT_BYTES)
     if len(stdout) > OUTPUT_LIMIT_BYTES:
         raise _FailureError(ERROR_OUTPUT)
+    text = stderr.decode("utf-8", "replace")
+    exit_code = getattr(result, "returncode", 1)
+    if glab and exit_code:
+        # The refusal's own message is classified here and dropped, as stderr is.
+        raise _FailureError(
+            _error_token(f"{text} {stdout[:4096].decode('utf-8', 'replace')}", glab=True)
+        )
     try:
         return json.loads(stdout)
     except (ValueError, RecursionError):
         pass
-    text = stderr.decode("utf-8", "replace")
     if not stdout.strip() and _NO_CHECKS.search(text):
         return []
     if stdout.strip():
         raise _FailureError(ERROR_OUTPUT)
-    raise _FailureError(_error_token(text) if getattr(result, "returncode", 1) else ERROR_OUTPUT)
+    raise _FailureError(_error_token(text, glab=glab) if exit_code else ERROR_OUTPUT)
 
 
 def clean_name(value: Any) -> str:
@@ -525,6 +692,8 @@ def _read_once(
         or (binding.number == 0 and _usable_branch(binding.branch))
     ):
         return {**record, "error": ERROR_FAILED}
+    if host_of(binding.repository) != HOST:
+        return _read_gitlab(binding, record, environ, runner)
     env = environment(os.environ if environ is None else environ)
     binary = git_status.executable("gh", env)
     if binary is None:
@@ -573,6 +742,136 @@ def _read_once(
         and bool(record["session_head"])
         and head == record["session_head"],
         "required_only": bool(required),
+        "counts": _counts(rows),
+        "checks": _listed(rows),
+    }
+
+
+_PIPELINE_PAGE: Final = 100
+_PIPELINE_PAGES: Final = 10
+
+
+def _gitlab_bucket(status: Any, *, allow_failure: bool = False) -> str:
+    """The bucket a GitLab status becomes, from a closed table. Anything else is unreadable.
+
+    A job allowed to fail that failed does not fail the pipeline, and a manual job nobody ran
+    blocks it only when it may not be skipped, so the first counts as neither and the second as
+    pending. Treating either as a failure or a pass would say what GitLab does not.
+    """
+    if status == "manual":
+        return BUCKET_SKIPPING if allow_failure else BUCKET_PENDING
+    bucket = _GITLAB_STATUS_BUCKET.get(status) if isinstance(status, str) else None
+    if bucket is None:
+        raise _FailureError(ERROR_OUTPUT)
+    return BUCKET_SKIPPING if bucket == BUCKET_FAIL and allow_failure else bucket
+
+
+def _merge_request(value: Any, number: int) -> tuple[str, int, str]:
+    """`(head, pipeline id, pipeline status)` of a merge request answer; id 0 when it has none."""
+    head = value.get("sha") if isinstance(value, dict) else None
+    if (
+        not isinstance(head, str)
+        or _HEAD_RE.fullmatch(head) is None
+        or value.get("iid") != number
+        or type(value.get("iid")) is not int
+    ):
+        raise _FailureError(ERROR_OUTPUT)
+    pipeline = value.get("head_pipeline")
+    if pipeline is None:
+        return head, 0, ""
+    identifier = pipeline.get("id") if isinstance(pipeline, dict) else None
+    status = pipeline.get("status") if isinstance(pipeline, dict) else None
+    if type(identifier) is not int or not 0 < identifier <= 2**53 or not isinstance(status, str):
+        raise _FailureError(ERROR_OUTPUT)
+    _gitlab_bucket(status)
+    return head, identifier, status
+
+
+def _parse_jobs(pages: Sequence[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for page in pages:
+        if not isinstance(page, list):
+            raise _FailureError(ERROR_OUTPUT)
+        for item in page:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                raise _FailureError(ERROR_OUTPUT)
+            allowed = item.get("allow_failure", False)
+            if type(allowed) is not bool:
+                raise _FailureError(ERROR_OUTPUT)
+            rows.append(
+                {
+                    "name": clean_name(item["name"]),
+                    "bucket": _gitlab_bucket(item.get("status"), allow_failure=allowed),
+                    "completed_at": _epoch(item.get("finished_at")),
+                }
+            )
+    if len(rows) > MAX_COUNTED:
+        raise _FailureError(ERROR_OUTPUT)
+    return rows
+
+
+def _job_pages(call: Callable[[str], Any], project: str, pipeline: int) -> list[Any]:
+    pages: list[Any] = []
+    for index in range(1, _PIPELINE_PAGES + 1):
+        page = call(f"{project}/pipelines/{pipeline}/jobs?per_page={_PIPELINE_PAGE}&page={index}")
+        pages.append(page)
+        if not isinstance(page, list) or len(page) < _PIPELINE_PAGE:
+            return pages
+    # Ten full pages is more jobs than a reading can use, and listing some of them could let a
+    # pass stand over a failure that was not listed.
+    raise _FailureError(ERROR_OUTPUT)
+
+
+def _read_gitlab(
+    binding: Binding,
+    record: dict[str, Any],
+    environ: Mapping[str, str] | None,
+    runner: Callable[..., Any],
+) -> dict[str, Any]:
+    """One merge request's pipeline, through `glab api` on a host glab's own configuration names.
+
+    The hosts file is read before anything is launched, so a goal that names another host starts
+    no process at all. Every call is a fixed GET of the merge request or of its pipeline's jobs;
+    the project path is percent-encoded from a validated name and the numbers are integers.
+    """
+    source = os.environ if environ is None else environ
+    host, _, path = binding.repository.partition("/")
+    if host not in glab_hosts(source):
+        return {**record, "error": ERROR_HOST}
+    env = glab_environment(source)
+    binary = git_status.executable("glab", env)
+    if binary is None:
+        return {**record, "error": ERROR_GLAB_MISSING}
+    project = f"projects/{quote(path, safe='')}"
+
+    def call(endpoint: str) -> Any:
+        argv = ["api", endpoint, "--hostname", host, "--method", "GET"]
+        return _run(runner, binary, argv, env, glab=True)
+
+    merge_request = f"{project}/merge_requests/{binding.number}"
+    try:
+        head, pipeline, status = _merge_request(call(merge_request), binding.number)
+        rows: list[dict[str, Any]] = []
+        if pipeline:
+            pages = _job_pages(call, project, pipeline)
+            rows = _parse_jobs(pages)
+            # A trigger job whose child pipeline failed is no job of this pipeline, so a pipeline
+            # that disagrees with its own jobs is named as a check of its own.
+            overall = _gitlab_bucket(status)
+            if overall in (BUCKET_FAIL, BUCKET_PENDING, BUCKET_CANCEL) and not any(
+                row["bucket"] == overall for row in rows
+            ):
+                rows.append({"name": "pipeline", "bucket": overall, "completed_at": None})
+        later, later_pipeline, _ = _merge_request(call(merge_request), binding.number)
+    except _FailureError as failure:
+        return {**record, "error": failure.token}
+    moved = later != head or later_pipeline != pipeline
+    return {
+        **record,
+        "head": later,
+        "head_matches": not moved
+        and bool(record["session_head"])
+        and later == record["session_head"],
         "counts": _counts(rows),
         "checks": _listed(rows),
     }
@@ -681,6 +980,7 @@ _RESULT = {
     BUCKET_CANCEL: "cancelled",
 }
 SOURCE_TEXT: Final = "GitHub pull request check, read by Compass"
+SOURCE_TEXT_GITLAB: Final = "GitLab merge request pipeline job, read by Compass"
 HEAD_MOVED_TEXT: Final = "the pull request head is not this session's commit"
 CAUTION_TEXT: Final = "this session changed the CI configuration"
 
@@ -712,6 +1012,7 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
     if not isinstance(record, dict) or record.get("error") or not record.get("checks"):
         return []
     at = float(record["read_at"])
+    gitlab = host_of(record["repository"]) != HOST
     whole = green(record)
     out: list[dict[str, Any]] = []
     for index, row in enumerate(record["checks"]):
@@ -735,7 +1036,7 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
                 "fact_id": f"ci:{record['number']}:{index}",
                 "type": FACT_TYPE,
                 "subject": FACT_SUBJECT,
-                "by": "github",
+                "by": "gitlab" if gitlab else "github",
                 "summary": summary,
                 "at": at,
                 "result": _RESULT[bucket],
@@ -744,7 +1045,10 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
                 "ci_repository": record["repository"],
                 "ci_number": record["number"],
                 "source_session": {"harness": harness, "sid": sid},
-                "evidence": {"source": SOURCE_TEXT, "confidence": "recorded"},
+                "evidence": {
+                    "source": SOURCE_TEXT_GITLAB if gitlab else SOURCE_TEXT,
+                    "confidence": "recorded",
+                },
             }
         )
     return out

@@ -7647,6 +7647,45 @@ contributes no pull request, and the session's own records may still bind one. T
   under the list. The notice's content epoch is not bumped, so a reader who has seen the notice before sees
   the new line in the route's disclosure under What is sent and is not shown the notice again.
 
+### Amended 2026-10-27 (owner): the `glab` read is built, for a goal URL on a host glab names
+
+This layer builds the GitLab half of the ruling on the `gh` read above. The ruling's other items stand
+as written, and these are the choices it left open.
+
+- **Binding is the goal's URL alone.** A goal that names exactly one merge request by
+  `https://HOST/GROUP/.../PROJECT/-/merge_requests/N` binds it, and one that names two requests binds
+  none, across both providers. No transcript record binds a GitLab merge request, because whether
+  Claude Code writes a `pr-link` for one is not measured
+  ([the note](captures/claude/gitlab-merge-request-read-unmeasured.md)). A goal that names a GitHub pull
+  request and a GitLab merge request binds none.
+- **Hosts come from glab's own file, before anything starts.** The host names under `hosts:` in
+  `glab-cli/config.yml` are the only hosts read; no value in that file is kept. A goal URL on any other
+  host binds, because the reader's words name it, and then launches nothing and is said beside the
+  reading as `host-not-configured`. A host is read only when it is a dotted name, exactly equal to one
+  in the file, over https, and never an IP literal or one carrying a port. This is the ruling's item
+  10, "known hosts only", as it applies to a tool whose hosts the reader configured.
+- **No token reaches a host it was not given for.** `GITLAB_TOKEN` applies to any host a command
+  names, so it is stripped with `GITLAB_HOST`, `GL_HOST`, `GLAB_*`, `OAUTH_TOKEN` and `REMOTE_ALIAS`.
+  The cost is that a reader who signs in by `GITLAB_TOKEN` alone reads nothing; `glab auth login` keys
+  its stored login by host and works.
+- **The same fact, with a closed status table.** `glab api` makes fixed GETs: the merge request for
+  its head commit and pipeline, the pipeline's jobs (a hundred a page, ten pages, and more than that
+  is unreadable and never a pass), and the merge request again for the head. A job's status maps to
+  the bucket vocabulary the GitHub read defines. A job allowed to fail counts as neither a pass nor a
+  failure, a manual job is pending unless it may be skipped, and a status outside the table makes the
+  read unreadable. GitLab names no required checks, so `required_only` stays false. A pipeline whose
+  own status disagrees with its jobs, as when a trigger job's child failed, is listed as a check named
+  `pipeline`, so a green set of jobs never stands over a failed pipeline. A pipeline replaced between
+  the two looks matches nothing, as a moved head does.
+- **A repository is stored with its host.** A GitLab repository is `host/group/.../project`, and no
+  GitHub `owner/repo` holds a dot, so the stored record, the fact and the page tell the providers
+  apart from that one field and the record gains no key. The facts say `gitlab`, the source
+  `GitLab merge request pipeline job, read by Compass`, and the page names the merge request by `!N`.
+  A harness verdict that names the merge request by its URL, `MR !N` or `merge request N` agrees or
+  is disputed as it does for a pull request.
+- **The notice line and the switch name both providers.** `--no-ci-read` and the page's switch govern
+  both, and the line under What is sent says GitHub or GitLab.
+
 ## DEC-31: the text of a command that is not a check may leave the machine, by vendor
 
 Decided by the owner on 2026-10-27 (DRC-4987). This layer writes the ruling down; the layers that follow build

@@ -103,6 +103,7 @@
     "skipping": "skipped"
   },
   "ciEntrySource": "GitHub pull request check, read by Compass",
+  "ciEntrySourceGitlab": "GitLab merge request pipeline job, read by Compass",
   "ciEntryWords": {
     "cancel": "cancelled on the pull request",
     "fail": "failed on the pull request",
@@ -118,7 +119,11 @@
     "rate-limited",
     "timeout",
     "unreadable-output",
-    "gh-failed"
+    "gh-failed",
+    "glab-missing",
+    "glab-signed-out",
+    "glab-failed",
+    "host-not-configured"
   ],
   "ciSources": [
     "goal",

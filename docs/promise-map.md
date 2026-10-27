@@ -184,8 +184,11 @@ repository its folder points at
 GitHub is sent the repository and the number, or, where a pushed branch is what bound it, the repository and that branch's name, and nothing else of the session. Checks still running,
 no completed check, a pull request head past the session's commit, and a cancelled check each settle
 nothing, and skipped checks count as neither a pass nor a failure. `--no-ci-read` and the switch beside
-the notice turn the read off, and a missing or signed-out `gh` is said beside the reading. Only
-`github.com` is read, and the Live monitor, the unasked lane and every refresh never read it.
+the notice turn the read off, and a missing or signed-out `gh` is said beside the reading. The same
+read works for a GitLab merge request your goal names by its URL, through your own `glab` and only on a
+host `glab`'s own configuration already names; a session record never binds a merge request, because
+what Claude Code writes for one is not measured. Otherwise only `github.com` is read, and the Live
+monitor, the unasked lane and every refresh never read it.
 Session summaries are Claude Code only, and the outline beside them covers Claude Code and Codex.
 A summary has its own cap of 200 model calls in a rolling twenty-four hours, so it never spends
 Analyze's 100, and each one stops at 37 calls, 768 KiB sent and ten minutes.

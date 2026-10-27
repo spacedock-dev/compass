@@ -333,8 +333,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-ci-read",
         action="store_true",
         help=(
-            "do not read a pull request's CI checks from GitHub when Analyze drift is pressed "
-            "(no `gh` command runs, and a reading goes without those checks)"
+            "do not read a pull request's or merge request's CI checks from GitHub or GitLab when "
+            "Analyze drift is pressed (no `gh` or `glab` command runs, and a reading goes "
+            "without those checks)"
         ),
     )
     parser.add_argument(

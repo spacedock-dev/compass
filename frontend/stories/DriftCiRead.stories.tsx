@@ -121,6 +121,45 @@ export const GreenChecksCarryAConsistentLine: Story = {
   },
 };
 
+/* The same answer for a reader on GitLab: the card names the provider and the merge request by its own
+   number sign, and a cited job resolves as a GitLab job. */
+const GITLAB = 'gitlab.example.com/acme/widgets';
+
+export const GreenOnAGitlabMergeRequest: Story = {
+  ...citing(record({ repository: GITLAB })),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-ci-read-state', 'settles');
+    await expect(node).toHaveTextContent(
+      /Read from GitLab at (\d{4}-\d{2}-\d{2} )?\d{1,2}:\d{2}: gitlab\.example\.com\/acme\/widgets!12, 2 passed, 1 skipped\./,
+    );
+    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await waitFor(() => expect(card).toHaveTextContent('GitLab job'));
+    await expect(card).not.toHaveTextContent('Can’t tell');
+    await expect(card).not.toHaveTextContent("Can't tell");
+  },
+};
+
+export const AGitlabHostGlabDoesNotNameSaysSo: Story = {
+  ...read(
+    record({
+      repository: GITLAB,
+      error: 'host-not-configured',
+      head: '',
+      head_matches: false,
+      counts: { pass: 0, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+      checks: [],
+    }),
+  ),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-ci-read-state', 'failed');
+    await expect(node).toHaveTextContent(
+      'Merge request checks were not read from GitLab: glab’s own configuration does not name that GitLab host.',
+    );
+  },
+};
+
 export const ChecksOnAMovedHeadCannotCarryALine: Story = {
   ...citing(record({ head: OTHER, head_matches: false })),
   play: async ({ canvasElement }) => {
@@ -229,20 +268,22 @@ export const TheSwitchTurnsTheReadOffAndBackOn: Story = {
     });
     await expect(node).toHaveAttribute('data-next-ci-switch', 'on');
     await expect(node).toHaveTextContent(
-      'Pull request checks are read from GitHub with your gh login when you press Analyze.',
+      'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Analyze.',
     );
-    await userEvent.click(within(node).getByRole('button', { name: 'Turn off the GitHub read' }));
+    await userEvent.click(
+      within(node).getByRole('button', { name: 'Turn off the pull request read' }),
+    );
     // Saved on the server and read back from the board: the sentence follows the answer, not the press.
     await waitFor(() =>
       expect(dialog.querySelector(SWITCH)).toHaveAttribute('data-next-ci-switch', 'off'),
     );
     await expect(posts).toEqual([{ ci_read: 'off', press: true, observer_model: 1 }]);
     await expect(dialog.querySelector(SWITCH)).toHaveTextContent(
-      'Pull request checks are not read from GitHub.',
+      'Pull request checks are not read from GitHub or GitLab.',
     );
     await userEvent.click(
       within(dialog.querySelector<HTMLElement>(SWITCH) as HTMLElement).getByRole('button', {
-        name: 'Turn on the GitHub read',
+        name: 'Turn on the pull request read',
       }),
     );
     await waitFor(() =>
