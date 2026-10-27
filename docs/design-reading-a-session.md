@@ -3284,10 +3284,18 @@ object, over 64 KiB, or whose command is missing, empty or not a string is no re
 stands. Nothing else in the attachment is read, and the join is by id only, so a rewrite of one call never
 reaches another. The masking and clipping of a check line are unchanged and apply to the command that ran.
 
-Measured against RTK 1.1.0 on synthetic projects: of eight condensed outputs (pytest, ruff and go test, each
-passing, failing and finding nothing to run), none matched a summary rule wrongly. Four matched a rule for the
+Measured against RTK 1.1.0 on synthetic projects: of eight condensed outputs (pytest and go test, each
+passing, failing and finding nothing to run, and ruff passing and failing; ruff with nothing to run was not
+run), none matched a summary rule wrongly. Four matched a rule for the
 right reason, which the `rtk` rule would ignore anyway. Jest, cargo and tsc were not installed, so their
 condensed formats are unmeasured.
+
+A hook may also normalise the invocation, not only wrap it. RTK 1.1.0 rewrites `python3 -m pytest tests` to
+`rtk pytest tests`, `npx vitest run` to `rtk vitest` and `npx eslint .` to `rtk lint .`. The check's title and
+identity are those of the command that ran, so a session where a hook was added part-way lists one check under
+two identities. Compass reads `rtk lint` as the eslint runner, including `--fix` as a change, and a bare `lint`
+is still no runner. The rewrite is also applied to a call carried from an earlier page of the transcript, so a
+read in pages and a read of the whole file agree.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

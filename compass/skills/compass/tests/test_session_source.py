@@ -16,7 +16,7 @@ from compass_runtime import project_context, record_pages
 from compass_runtime.config import build_runtime_config
 
 from . import test_record_pages
-from .test_claude_checks import Transcript
+from .test_claude_checks import Transcript, hook_stdout
 
 
 class SessionSourceTest(unittest.TestCase):
@@ -206,6 +206,27 @@ class SessionSourceTest(unittest.TestCase):
         self.save()
         self.changes(previous, "changed_earlier", "check_result")
         self.assertEqual("passed", self.read(after=previous.snapshot.cursor).entries[0].result)
+
+    def test_a_hook_rewrite_on_a_later_page_reads_as_the_whole_file_does(self) -> None:
+        for split_result in (False, True):
+            with self.subTest(split_result=split_result):
+                self.setUp()
+                call = self.session.call("Bash", {"command": "pytest"})
+                self.save()
+                previous = self.read()
+                self.session.hook_rewrite(call, hook_stdout("rtk pytest"))
+                if split_result:
+                    self.save()
+                    previous = self.read(after=previous.snapshot.cursor)
+                self.session.result(call, "1 failed", is_error=False)
+                self.save()
+                incremental = self.read(after=previous.snapshot.cursor)
+                whole = self.read()
+                self.assertEqual(
+                    [e.result for e in whole.entries if e.kind == "check"],
+                    [e.result for e in incremental.entries if e.kind == "check"],
+                )
+                self.assertEqual(["not-recorded"], [e.result for e in whole.entries])
 
     def test_late_message_keeps_file_order_and_reports_reordering(self) -> None:
         self.path.write_text(json.dumps(test_record_pages.RecordPagesTest.record(5)) + "\n")

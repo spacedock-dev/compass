@@ -2252,14 +2252,22 @@ def _skip_options(words: list[str], takes_value: frozenset[str]) -> list[str]:
     return words
 
 
+def _unwrap_rtk(words: list[str]) -> list[str]:
+    """The words behind a leading `rtk`. `rtk lint` is rtk's own name for the eslint runner
+    (`rtk rewrite 'eslint .'` prints `rtk lint .`); a bare `lint` stays no runner."""
+    if words[1:2] == ["proxy"]:
+        return words[2:]
+    return ["eslint", *words[2:]] if words[1:2] == ["lint"] else words[1:]
+
+
 def _stripped(words: list[str]) -> tuple[list[str], bool]:
     """Item 3's stripping, and whether `rtk` wrapped the runner (owner, 2026-09-24)."""
     rtk = False
     while words:
         if _ASSIGNMENT_RE.match(words[0]):
             words = words[1:]
-        elif words[:2] == ["rtk", "proxy"] or words[0] == "rtk":
-            words, rtk = words[2:] if words[1:2] == ["proxy"] else words[1:], True
+        elif words[0] == "rtk":
+            words, rtk = _unwrap_rtk(words), True
         elif words[:2] == ["uv", "run"]:
             words = _skip_options(words[2:], _UV_VALUE_OPTIONS)
         elif words[:2] in _WRAPPER_PAIRS:

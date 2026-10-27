@@ -654,6 +654,16 @@ def _tools(
     sidechain = stream != "parent"
     results = context._tool_result_blocks(read.rows, sidechain=sidechain)  # noqa: SLF001
     calls = {call.call_id: call for call in previous if call.stream == stream}
+    # A hook's rewrite arrives after the call it rewrites, so on a later page than a carried call.
+    rewrites = context._hook_rewritten_commands(read.rows)  # noqa: SLF001
+    for call_id, call in calls.items():
+        if call.name == "Bash" and call_id in rewrites:
+            calls[call_id] = replace(
+                call,
+                input_json=json.dumps(
+                    {**json.loads(call.input_json), "command": rewrites[call_id]}
+                ),
+            )
     calls.update({call.call_id: call for call in _pending_calls(read.rows, stream)})
     positions, result_rows = _rows_of(read.rows, sidechain)
     pending: list[PendingCall] = []

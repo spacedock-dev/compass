@@ -1115,11 +1115,42 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
         self.assertTrue(check["title"].startswith("pytest"))
         self.assertEqual("not-recorded", check["result"])
 
+    def test_a_rewritten_check_reads_its_result_from_the_flag_alone(self) -> None:  # R12
+        """Typed `ruff check x` ran as `rtk ruff check x`: failure text with no flag is withheld."""
+        call_id = self.session.call("Bash", {"command": "ruff check x"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk ruff check x"))
+        self.session.result(call_id, "x.py:1 1 failed", is_error=False)
+        self.assertEqual("not-recorded", self.only_check()["result"])
+
     def test_a_rewritten_check_with_a_failing_flag_fails_on_the_flag(self) -> None:  # R12
         call_id = self.session.call("Bash", {"command": "ruff check x"})
         self.session.hook_rewrite(call_id, hook_stdout("rtk ruff check x"))
         self.session.result(call_id, "Exit code 1\nRuff: 2 issues", is_error=True)
         self.assertEqual("failed", self.only_check()["result"])
+
+    def test_rtk_lint_is_the_eslint_check(self) -> None:  # R12
+        """rtk prints `rtk lint .` for `npx eslint .`; the check and its read-only status survive."""
+        call_id = self.session.call("Bash", {"command": "npx eslint ."})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk lint ."))
+        self.session.result(call_id, "", is_error=False)
+        events, scan = self.read()
+        checks = [e for e in events if e["subject"] == "check"]
+        self.assertEqual(1, len(checks), checks)
+        self.assertTrue(checks[0]["title"].startswith(("eslint", "lint")))
+        self.assertEqual("passed", checks[0]["result"])
+        self.assertIsNone(scan["last_changing_command_at"])
+
+    def test_rtk_lint_with_fix_is_a_check_and_a_change(self) -> None:  # R12
+        call_id = self.session.call("Bash", {"command": "eslint . --fix"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk lint . --fix"))
+        self.session.result(call_id, "", is_error=False)
+        events, scan = self.read()
+        self.assertEqual(1, len([e for e in events if e["subject"] == "check"]))
+        self.assertIsNotNone(scan["last_changing_command_at"])
+
+    def test_lint_alone_is_not_a_runner(self) -> None:  # R12
+        self.session.bash("lint .", "", is_error=False)
+        self.assertEqual([], self.checks())
 
     def test_a_rewrite_that_does_not_read_as_a_command_leaves_the_typed_one(self) -> None:  # R12
         for stdout in (
