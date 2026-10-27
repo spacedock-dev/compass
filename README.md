@@ -170,11 +170,12 @@ once what is sent and where, and tells you again if the destination or content t
 `--no-observer-model` refuses them at startup. Turn off summaries affects session summaries only,
 is disabled while paused, and keeps its saved answer through pause and resume. Unasked drift checks remain a separate opt-in.
 Dashboard assets, including the optional terminal's vendored xterm files, need no external fetch.
-A third outbound pathway sends counts-only nudges to an operator-supplied endpoint. It stays off
-until you configure a URL, and `--no-reach` disables it. A fourth starts your own `gh` when you press
+A third outbound pathway starts your own `gh` when you press
 Analyze drift on a session tied to a pull request, sends GitHub the repository and the number (or, where a pushed
 branch bound it, the repository and that branch's name), and
-reads that pull request's checks; `--no-ci-read` and a switch beside the notice turn it off. See
+reads that pull request's checks; `--no-ci-read` and a switch beside the notice turn it off. A fourth sends
+counts-only nudges to an operator-supplied endpoint. It stays off
+until you configure a URL, and `--no-reach` disables it. See
 [SECURITY.md](SECURITY.md#scope) for all four, and before you use `--host`; its [model-call policy](SECURITY.md#observer-model-calls)
 owns the disclosures and bounds.
 

@@ -62,7 +62,7 @@ The posture rests on two invariants:
    session-derived text: it is the one pathway by which the operator's own words may leave this
    machine. A nudge to an endpoint the operator supplies, described in Off-machine nudges below,
    carries two counts and nothing that names a session. The observer model and reader-requested
-   readings implement the second pathway behind their own enablement and consent. Nudges stay off
+   readings implement the harness invocation pathway behind their own enablement and consent. Nudges stay off
    until an endpoint is configured. `--no-usage` stops the quota poll, `--no-harness-usage` refuses
    model calls, `--no-ci-read` stops the pull request read and `--no-reach` disables nudges,
    each for its own path and no other.
@@ -2358,7 +2358,7 @@ pushed branch for the repository the session folder's own `origin` names, Compas
 to read that pull request's checks. The records are read from the transcript's tail, bounded in
 bytes and rows: a `pr-link` row's `prRepository` and `prNumber`, and a result's
 `toolUseResult.gitOperation.push` (`branch`); never the command or its output. It sends GitHub the repository and the number, or, where a pushed branch is what bound it, the
-repository and that branch's name, and nothing else of the session's text. Both are session content, and they leave the machine with your own login. A
+repository and that branch's name, and nothing else of the session's text. The repository, the number and the branch are identifiers taken from the session's records, not session text, and they leave the machine with your own login. A
 second `gh` call asks which checks the repository requires, and the checks that come back go to the
 reading model with the rest of the entries, so the model's own notice covers them.
 
@@ -3205,7 +3205,7 @@ how hard, to anyone who can read the notification stream. That is stated here ra
 
 ## Process lifecycle: written paths, and `/api/shutdown`
 
-The server writes ten files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
+The server writes eleven files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
 authoritative when nonblank): `compass-<port>.json`, recording the running instance (`pid`, `port`,
 `started`, `log`, `python`); `compass-<port>.log`, where a detached (`--daemon`) instance's
 output goes; `compass-dismissals.json`, the sessions the reader marked handled, described in
@@ -3217,10 +3217,12 @@ them, named in invariant 2 above and turned off by `--no-annotations`;
 `compass-deliveries.json`, what became of each notification this board raised, described in
 Delivery records below; `compass-departures.json`, what an unasked reading raised, described in
 Unasked readings below and written only with that feature switched on; `compass-ends.json`, the
-session ends this board observed, described in Session ends below; and
+session ends this board observed, described in Session ends below; `ci-read-off`, the marker the
+page's switch for the pull request CI read leaves when it is off, described in Pull request CI reads
+above, which holds one line and is removed when the switch goes back on; and
 `semantic-work-history.json`, the operator-cockpit prototype's own store, described under the
-prototype below and not reached by `--forget`. One forwarder writes an
-eleventh, in the same directory and named in invariant 2 above:
+prototype below and not reached by `--forget`. One forwarder writes a
+twelfth, in the same directory and named in invariant 2 above:
 `statusline_hook.py` keeps `statusline-<harness>-<session>.json` per conversation, holding a
 normalized state name and a timestamp, so a status line that fires many times a turn posts once. The directory is created `0o700` because the log can carry local paths: uncaught
 tracebacks land there, not just Python-level prints. Nothing ever removes or rotates the log: a
