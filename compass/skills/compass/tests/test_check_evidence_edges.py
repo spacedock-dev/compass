@@ -15,7 +15,7 @@ from typing import Any, cast
 from compass_runtime import http_api, levels, project_context, reading
 
 from .test_claude_checks import ClaudeChecksTestCase, Transcript
-from .test_harness_records import PiRecord
+from .test_harness_records import PiRecord, exited
 from .test_levels import SAVE, a_reading, analyze, check, criterion, evidence, scan
 
 
@@ -90,7 +90,7 @@ class PisCheckCountsNeedAttributedOutput(PiRecord):
             for text, is_error in (
                 ("4 passed in 1s", False),
                 ("", False),
-                ("1 failed in 1s", True),
+                (exited("1 failed in 1s", 1), True),
             ):
                 with self.subTest(command=command, text=text, is_error=is_error):
                     self.records.clear()
