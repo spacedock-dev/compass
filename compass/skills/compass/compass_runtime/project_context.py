@@ -3380,13 +3380,46 @@ def _declared_check(
     return all(_script_is_check(declared, kind, name) for name in names)
 
 
-# Shell builtins: a listed one runs in the shell and tests nothing of the project's. `echo`, `true`,
-# `:`, `exit` and `printf` are refused as cannot-fail commands, with their own reason.
+# Every bash and zsh builtin: a listed one runs in the shell and tests nothing of the project's.
+# The whole set rather than a hand-picked subset, because an owner ruling names the class and a
+# missing name (`shopt`, `exec`, `exit 1`) counted as a check. `echo`, `true`, `:` and `printf` are
+# refused first, as cannot-fail commands with their own reason.
 _LISTED_BUILTINS = frozenset(
-    {"cd", "pushd", "popd", "source", ".", "alias", "unalias", "declare", "local", "readonly",
-     "read", "shift", "trap", "umask", "ulimit", "hash", "let", "bg", "fg", "jobs", "wait",
-     "type", "builtin", "command", "test", "[", "[["}
+    {"alias", "bg", "bind", "break", "builtin", "caller", "cd", "command", "compgen", "complete",
+     "compopt", "continue", "coproc", "declare", "dirs", "disown", "echo", "enable", "eval", "exec",
+     "exit", "export", "false", "fc", "fg", "getopts", "hash", "help", "history", "jobs", "kill",
+     "let", "local", "logout", "mapfile", "popd", "printf", "pushd", "pwd", "read", "readarray",
+     "readonly", "return", "set", "shift", "shopt", "source", "suspend", "test", "times", "trap",
+     "true", "type", "typeset", "ulimit", "umask", "unalias", "unset", "wait", "[", "[[", ".", ":"}
 )  # fmt: skip
+
+# Programs that run another command: a listed `nice true` is judged as `true`. Each with the
+# options that take a value of their own.
+_LISTED_WRAPPERS: dict[str, frozenset[str]] = {
+    "nice": frozenset({"-n", "--adjustment"}),
+    "nohup": frozenset(),
+    "ionice": frozenset({"-c", "-n", "-p", "-P", "-u"}),
+    "sudo": frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"}),
+    "xargs": frozenset({"-n", "-I", "-P", "-d", "-L", "-s", "-E", "-a"}),
+}
+
+
+def _listed_inner(words: list[str]) -> list[str]:
+    """The command a listed entry runs once its wrappers are looked through.
+
+    The stripping the rest of the reader applies to a session's command (`env`, `timeout`,
+    `time`, `uv run`, assignments), then the wrappers above, repeated until neither changes it.
+    """
+    current = list(words)
+    for _ in range(8):
+        stripped, _rtk = _stripped(current)
+        if stripped and os.path.basename(stripped[0]) in _LISTED_WRAPPERS:
+            takes = _LISTED_WRAPPERS[os.path.basename(stripped[0])]
+            stripped = _skip_options(stripped[1:], takes)
+        if stripped == current or not stripped:
+            return stripped or current
+        current = stripped
+    return current
 
 
 def _listed_words(entry: str) -> tuple[str, ...]:
@@ -3423,16 +3456,15 @@ def listed_entry_refusal(entry: str) -> tuple[str, str]:
     no redirect, no fixer.
     """
     words = _listed_words(entry)
-    program = os.path.basename(entry.split(None, 1)[0])[:32] if entry.split() else ""
     if not words:
-        return reader_checks.NOT_ONE_COMMAND_REASON, program
-    program = os.path.basename(words[0])[:32]
-    listed = list(words)
+        return reader_checks.NOT_ONE_COMMAND_REASON, reader_checks.program_of(entry.split(None, 16))
+    program = reader_checks.program_of(words)
+    listed = _listed_inner(list(words))
     reason = ""
-    if os.path.basename(words[0]) in _LISTED_BUILTINS:
-        reason = reader_checks.BUILTIN_REASON
-    elif _always_zero(listed):
+    if _always_zero(listed):
         reason = reader_checks.CANNOT_FAIL_REASON
+    elif os.path.basename(listed[0]) in _LISTED_BUILTINS:
+        reason = reader_checks.BUILTIN_REASON
     elif _reads_only([], listed):
         reason = reader_checks.READ_ONLY_REASON
     elif _is_fixer(listed) or any(w.split("=", 1)[0] in _BODY_WRITING_ARGS for w in listed):
@@ -3441,15 +3473,33 @@ def listed_entry_refusal(entry: str) -> tuple[str, str]:
 
 
 def _listed_check(
-    declared: project_scripts.Declarations | None, words: list[str], raw: tuple[str, ...]
+    declared: project_scripts.Declarations | None,
+    words: list[str],
+    raw: tuple[str, ...],
+    directory: str,
 ) -> bool:
-    """Whether a segment is exactly a command the reader listed for this project."""
-    return (
-        declared is not None
-        and bool(declared.listed)
-        and not _steers_a_script(raw)
-        and tuple(words) in declared.listed
-    )
+    """Whether a segment is exactly a command the reader listed for this project.
+
+    `directory` is where the segment ran, or empty where that cannot be placed.
+
+    A program on the PATH, or by an absolute path, counts from any folder. A relative path
+    (`./check.sh`) is a file of the project, so it counts only where it ran from the project's
+    root, and never when the session wrote that file: the agent could have written the script it
+    then ran.
+    """
+    if (
+        declared is None
+        or not declared.listed
+        or _steers_a_script(raw)
+        or tuple(words) not in declared.listed
+    ):
+        return False
+    program = words[0]
+    if "/" not in program:
+        return True
+    if os.path.basename(program) in declared.listing_writes:
+        return False
+    return os.path.isabs(program) or declared.at_listed_root(directory)
 
 
 def _harmless_redirect(redirect: _Redirect) -> bool:
@@ -4097,7 +4147,12 @@ class _ShellCall:
             for i in self.meaningful
             if i not in self.checks
             and i not in self.declared_checks
-            and _listed_check(declared, self.words[i][0], self.parts[i].raw)
+            and _listed_check(
+                declared,
+                self.words[i][0],
+                self.parts[i].raw,
+                self.directories[i] if self.placed[i] else "",
+            )
         }
         self.declared_checks = sorted([*self.declared_checks, *self.listed_checks])
         self.checks = sorted([*self.checks, *self.declared_checks])
@@ -5498,28 +5553,64 @@ class _CheckScan(NamedTuple):
     declared: project_scripts.Declarations | None = None
 
 
+# Programs whose arguments name the files they change, for a listed script's own name.
+_NAMING_WRITERS = frozenset(
+    {"cp", "mv", "tee", "chmod", "install", "ln", "sed", "dd", "rsync", "touch", "truncate"}
+)
+
+
+def _shell_names(command: str, names: frozenset[str]) -> set[str]:
+    """Which of `names` a shell command writes by name: a redirect target, or an argument of a
+    program that changes the files it is given. The file is matched by its name alone, so a copy
+    in another folder withdraws it too."""
+    try:
+        parts = _call_parts(command)
+    except Exception:  # noqa: BLE001 - a command that will not parse names nothing
+        return set()
+    found: set[str] = set()
+    for part in parts:
+        named = {os.path.basename(t) for t in _file_targets(part.redirects)}
+        if part.words and os.path.basename(part.words[0]) in _NAMING_WRITERS:
+            named |= {os.path.basename(w) for w in part.words[1:]}
+        found |= names & named
+    return found
+
+
 def _written_declaring_files(
-    parent: list[dict[str, Any]], children: Sequence[list[dict[str, Any]]]
+    parent: list[dict[str, Any]],
+    children: Sequence[list[dict[str, Any]]],
+    *,
+    also: frozenset[str] = frozenset(),
 ) -> frozenset[str]:
-    """The declaring-file names any write tool of the session targeted, in any folder.
+    """The declaring-file names, the reader's listing and each name in `also` that the session
+    wrote, in any folder.
 
     By file name alone, so a write anywhere withdraws that kind: a session that wrote a
-    `package.json` is not trusted to have left another one alone. A write by a shell command is
-    not seen here; the work tree's bytes decide it (`project_scripts`). Read through
-    `_claude_tool_uses`, the one place a tool call's input is read.
+    `package.json` is not trusted to have left another one alone. A write tool names its file. A
+    shell command that names the listing anywhere in its text counts as writing it: a redirect, a
+    `cp`, a `tee`, a `sed -i` or an interpreter's argument all do, and a read of it withdraws the
+    listing too, which fails closed. What it does not see is a script or a variable that builds the
+    path. A shell write of a declaring file is decided by the work tree's bytes
+    (`project_scripts`); a shell write of a name in `also` is read from the call's redirects and
+    its `cp`, `mv`, `tee` and `chmod` arguments. Read through `_claude_tool_uses`, the one place a
+    tool call's input is read.
     """
+    watched = frozenset((*project_scripts.DECLARING_FILES, reader_checks.FILENAME, *also))
     found: set[str] = set()
     streams = [_claude_tool_uses(parent), *(_claude_tool_uses(c, sidechain=True) for c in children)]
     for stream in streams:
         for _at, _cwd, _call_id, name, tool_input, _worker in stream:
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
-            if (
-                name in _WRITE_TOOLS
-                and isinstance(path, str)
-                and os.path.basename(path)
-                in (*project_scripts.DECLARING_FILES, reader_checks.FILENAME)
-            ):
-                found.add(os.path.basename(path))
+            if name in _WRITE_TOOLS and isinstance(path, str):
+                if os.path.basename(path) in watched:
+                    found.add(os.path.basename(path))
+                continue
+            command = tool_input.get("command")
+            if name == "Bash" and isinstance(command, str):
+                if reader_checks.FILENAME in command:
+                    found.add(reader_checks.FILENAME)
+                if also:
+                    found |= _shell_names(command, also)
     return frozenset(found)
 
 
@@ -5529,6 +5620,8 @@ def _declared_scripts(
     began_in: str,
     parent: list[dict[str, Any]],
     children: Sequence[list[dict[str, Any]]],
+    *,
+    prior_writes: frozenset[str] = frozenset(),
 ) -> project_scripts.Declarations | None:
     """What counts as a check beyond the closed list for the session, or None where nothing can.
 
@@ -5536,7 +5629,8 @@ def _declared_scripts(
     stamped record, since Compass does not record the commit a session began on; a clipped read
     falls back to its oldest record, which is later, and the work tree's byte comparison still
     refuses a file the session changed. And the commands the reader listed for the project, which
-    no git read is needed for.
+    no git read is needed for. A page of the paged reader holds only its own rows, so the names an
+    earlier page saw written ride in as `prior_writes`, since no byte comparison covers them.
     """
     if not began_in:
         return None
@@ -5552,15 +5646,24 @@ def _declared_scripts(
         for entry in reader_checks.for_project(config, began_in, listed_entry_refusal)
         if (words := _listed_words(entry))
     )
-    written = _written_declaring_files(parent, children)
-    wrote_listing = reader_checks.FILENAME in written
-    if loaded is None and not listed and not wrote_listing:
+    scripts = frozenset(os.path.basename(w[0]) for w in listed if "/" in w[0])
+    written = _written_declaring_files(parent, children, also=scripts) | prior_writes
+    # A listing the reader never made is not withdrawn, and the page does not say it was.
+    wrote_listing = reader_checks.FILENAME in written and bool(listed)
+    if loaded is None and not listed:
         return None
     if loaded is None:
-        loaded = project_scripts.Declarations("", "", {}, {}, {}, listed=listed)
-    elif listed:
-        loaded = dataclasses.replace(loaded, listed=listed, memo={})
-    return loaded.without(written)
+        loaded = project_scripts.Declarations("", "", {}, {}, {})
+    if listed:
+        root = runtime_sessions.project_root(began_in)
+        loaded = dataclasses.replace(
+            loaded,
+            listed=listed,
+            listed_root=os.path.realpath(root) if root else "",
+            listing_writes=written & (scripts | {reader_checks.FILENAME}),
+            memo={},
+        )
+    return loaded.without(written, withdraw_listing=wrote_listing)
 
 
 def _live_check_scan(

@@ -128,6 +128,7 @@ export const MARK_LEGEND = [
   RESULT_MARKS.failed,
   STALE_MARK,
   EARLIER_FAILED_MARK,
+  LISTED_BY_READER_MARK,
 ];
 
 /* A tier 2 CI read or a tier 3 command, drawn with the words the server composed for it: a CI read says

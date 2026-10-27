@@ -184,9 +184,13 @@ def render_reader_checks(report: dict[str, Any]) -> str:
         lines.append(
             f"  {report['listed']} command(s) for {report['projects']} project(s) count as checks"
         )
+    if report.get("projects_dropped"):
+        lines.append(f"  [  --] {report['projects_dropped']} project(s) past the cap were not read")
     for item in report["ignored"]:
         program = item["program"] or "an entry"
         lines.extend([f"  [  --] {program}", f"           ignored: {item['reason']}"])
+    if report.get("ignored_more"):
+        lines.append(f"  [  --] and {report['ignored_more']} more ignored")
     return "\n".join(lines)
 
 

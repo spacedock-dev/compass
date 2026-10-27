@@ -83,8 +83,8 @@ meaning of your intent. An analysis shows its level, each outcome line against t
 what the agent said with its source, where files were written, and why a result is stale. Recorded
 checks and file paths include subagent work, labelled as such. A project's own test, lint and
 build scripts count as checks only when the script is a known runner, read from the commit the
-session began on, and so does a command you list for the project in a file in your Compass home;
-a runner Compass does not know and a workflow file leave the command an ordinary one. On Claude Code sessions, What the
+session began on; a command you list for the project in a file in your Compass home counts too,
+and a runner Compass does not know, or a workflow file, leaves the command an ordinary one. On Claude Code sessions, What the
 session has done tells the session as a short story in phases, each line citing the entries it rests
 on, written by a model through your own Claude Code. A finished session is summarized when you open
 it and a running one when you press Summarize or Update summary; the first summary says what is sent

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
@@ -29,12 +30,12 @@ if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
 
 FILENAME: Final = "compass-project-checks.json"
-SCHEMA_VERSION: Final = 1
 MAX_FILE_BYTES: Final = 64 * 1024
 MAX_PROJECTS: Final = 64
 MAX_COMMANDS: Final = 32
 MAX_COMMAND_CHARS: Final = 512
 MAX_KEY_CHARS: Final = 512
+MAX_IGNORED: Final = 64
 _PROGRAM_CHARS: Final = 32
 
 UNREADABLE_REASON: Final = "could not be parsed"
@@ -47,6 +48,7 @@ READ_ONLY_REASON: Final = "only reads, so it is never a check"
 NOT_ONE_COMMAND_REASON: Final = "is not one plain command"
 WRITES_REASON: Final = "changes files, so it is never a check"
 LENGTH_REASON: Final = "is over the length cap"
+COUNT_REASON: Final = "is over the count cap for its project"
 NOT_TEXT_REASON: Final = "is not text"
 
 # What `refuse` answers for one entry: the reason it cannot count ("" when it can) and the program
@@ -65,6 +67,7 @@ class Stored(NamedTuple):
 
     projects: dict[str, list[Any]]
     error: str | None
+    dropped: int = 0
 
 
 def store_path(config: RuntimeConfig) -> str:
@@ -126,12 +129,36 @@ def read_store(config: RuntimeConfig) -> Stored:
         isinstance(key, str) and isinstance(commands, list) for key, commands in projects.items()
     ):
         return Stored({}, SHAPE_REASON)
-    return Stored(dict(list(projects.items())[:MAX_PROJECTS]), None)
+    kept = dict(list(projects.items())[:MAX_PROJECTS])
+    return Stored(kept, None, len(projects) - len(kept))
+
+
+_BARE_PROGRAM = re.compile(r"[A-Za-z0-9_.+:\[-]+")
+_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def published_program(word: str) -> str:
+    """The one word `--diagnose` may print of an entry: a bare program name, else nothing.
+
+    A leading `NAME=value` is an argument that can hold a credential, and a path can name one,
+    so neither is published: a path is reduced to its program and anything else to nothing.
+    """
+    if "=" in word:
+        return ""
+    base = os.path.basename(word)
+    return base[:_PROGRAM_CHARS] if _BARE_PROGRAM.fullmatch(base) else ""
+
+
+def program_of(words: list[str] | tuple[str, ...]) -> str:
+    """`published_program` of the first word that is not an assignment."""
+    for word in words:
+        if not _ASSIGNMENT.match(word):
+            return published_program(word)
+    return ""
 
 
 def _program(entry: str) -> str:
-    words = entry.split(None, 1)
-    return words[0][:_PROGRAM_CHARS] if words else ""
+    return program_of(entry.split(None, 16))
 
 
 def _vetted(
@@ -150,6 +177,8 @@ def _vetted(
                 ignored.append(Ignored(project, program, reason))
             elif len(accepted) < MAX_COMMANDS:
                 accepted.append(entry.strip())
+            else:
+                ignored.append(Ignored(project, program, COUNT_REASON))
     return accepted, ignored
 
 
@@ -201,6 +230,11 @@ def report(config: RuntimeConfig, refuse: Callable[[str], Refusal]) -> dict[str,
         "path": store_path(config),
         "error": stored.error,
         "projects": len(stored.projects),
+        "projects_dropped": stored.dropped,
         "listed": listed,
-        "ignored": [item._asdict() for item in ignored],
+        # A program and a reason only: never a project's path or an entry's arguments.
+        "ignored": [
+            {"program": item.program, "reason": item.reason} for item in ignored[:MAX_IGNORED]
+        ],
+        "ignored_more": max(0, len(ignored) - MAX_IGNORED),
     }

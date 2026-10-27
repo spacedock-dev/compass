@@ -7468,28 +7468,36 @@ A project's check is sometimes something no rule finds: a custom script, `bazel 
   moves every store). It is the reader's. Nothing is ever read from a `.compass` folder inside a
   repository, because a repository's files are the agent's to write and a listing is what makes the agent's
   own command count as evidence.
-- **Shape.** `{"v": 1, "projects": {"<project>": ["<command>", ...]}}`. A project is named by the absolute path
+- **Shape.** `{"projects": {"<project>": ["<command>", ...]}}`; a `v` key is neither required nor read. A project is named by the absolute path
   of its repository (`~/` works, and a linked worktree is its repository's project), or by the key the board
   publishes for it. At most 64 projects, 32 commands each and 512 characters a command. The file is read to a
   64 KiB cap as the other stores are: one that will not parse, is over the cap or has the wrong shape lists
   nothing, is never repaired, and `--diagnose` says why.
-- **What counts.** A command typed in a session of that project, from any folder, whose words equal a listed
-  entry's, is a tier 2 check, with the result of its exit status read as any check's is. `bazel test //...`
+- **What counts.** A command typed in a session of that project whose words equal a listed entry's is a
+  tier 2 check. A program on the PATH or by an absolute path counts from any folder; a script named by a
+  relative path (`./check.sh`) is a file of the project, so it counts only where it ran from the project's
+  root, and not when the session wrote that file by a write tool or by a shell command that names it. A
+  listing keyed by a path the session's folder no longer has (a deleted worktree) matches nothing. Such a check
+  is a tier 2 check, with the result of its exit status read as any check's is. `bazel test //...`
   listed does not make `bazel test //other/...` one. Such a check is published with `listed_by_reader`, and the
   page and the row the model reads both say "counted because you listed it", so a pass is never read as a runner
   Compass knows.
-- **What never counts, however it is listed.** A shell builtin, `echo`, `printf`, `true`, `:`, `exit` and
-  anything else that cannot fail, a command on the read-only list, a fixer (`--fix`, `--write`, `format`
+- **What never counts, however it is listed.** A shell builtin (the whole bash and zsh set), `echo`, `printf`,
+  `true`, `:`, `exit` in any form and anything else that cannot fail, judged through `sudo`, `nice`, `nohup`,
+  `ionice`, `xargs`, `env`, `time` and `timeout`, a command on the read-only list, a fixer (`--fix`, `--write`, `format`
   without `--check`), and any line that is not one plain command (a `&&` chain, a pipe, a redirect into a file,
   a substitution). Item 3's never-a-pass clause is not a thing a listing overrides. `--diagnose` names each
-  ignored entry by the program it starts with and the reason, never its arguments.
+  ignored entry by a bare program name and the reason, and nothing else: an assignment (`NAME=value`) or a
+  path is never printed, the list is capped at 64 rows with the rest counted, and entries or projects past the
+  caps are reported rather than dropped quietly.
 - **Ageing is unchanged.** A listed command is still a command that is not read-only, so it ages the passes
   before it, and its own pass stands until a later change (item 4).
 - **A session that writes the file.** A recorded write by a write tool to a file of that name, in any folder,
-  withdraws every listed command for that session, and the page says the session wrote the file where the
-  reader lists checks. The shell write that a byte comparison would catch for a committed file has nothing to
-  compare against here, so an edit made by a shell command is the case this does not see; the reader's file is
-  theirs, and a session that edits it by a shell command is the one residual.
+  or a shell command whose text names that file at all (a redirect, `cp`, `tee`, an interpreter's argument, or
+  a read, which fails closed), withdraws every listed command for that session, and the page says the session
+  wrote the file where the reader lists checks, but only when the reader had listed something. The paged
+  reader carries that fact across pages, so it agrees with a whole read. The residual is an indirect write: a
+  script or a variable that builds the path.
 - **`--no-git` does not stop it.** No git command runs for a listing; it is one file read.
 - **What was rejected.** Reading a `.compass/` folder in the repository, so a team could share a list: the
   file would be one the agent can write. A listing keyed by project name alone, which two repositories share.

@@ -1765,10 +1765,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.git_status": set(),
         # A project's declaring files as the commit a session began on held them: it reads them
         # through `git_status`'s committed-file read and owns every bound on what it parses.
-        "compass_runtime.project_scripts": {
-            "compass_runtime.git_status",
-            "compass_runtime.reader_checks",
-        },
+        "compass_runtime.project_scripts": {"compass_runtime.git_status"},
         # The reader's own list of check commands, keyed by project: it reads one file in the
         # Compass home and resolves a session's directory to its project through `sessions`.
         "compass_runtime.reader_checks": {"compass_runtime.config", "compass_runtime.sessions"},

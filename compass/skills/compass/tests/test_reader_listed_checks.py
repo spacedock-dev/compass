@@ -11,7 +11,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from compass_runtime import diagnostics, project_context, reader_checks, reading, sessions
+from compass_runtime import (
+    diagnostics,
+    project_context,
+    reader_checks,
+    reading,
+    session_source,
+    sessions,
+)
 
 from .test_claude_checks import ClaudeChecksTestCase
 
@@ -23,10 +30,10 @@ class ReaderChecksTestCase(ClaudeChecksTestCase):
         super().setUp()
         self.store = Path(reader_checks.store_path(self.config))
 
-    def list_checks(self, projects: dict[str, Any] | None = None, *, v: int = 1) -> None:
+    def list_checks(self, projects: dict[str, Any] | None = None) -> None:
         self.store.parent.mkdir(parents=True, exist_ok=True)
         listed = {str(self.cwd): [BAZEL]} if projects is None else projects
-        self.store.write_text(json.dumps({"v": v, "projects": listed}), encoding="utf-8")
+        self.store.write_text(json.dumps({"projects": listed}), encoding="utf-8")
 
     def titles(self, subject: str = "check") -> list[str]:
         return [e["title"] for e in self.read()[0] if e["subject"] == subject]
@@ -88,14 +95,11 @@ class NothingIsReadFromTheRepository(ReaderChecksTestCase):
         inside = self.cwd / ".compass"
         inside.mkdir()
         (inside / self.store.name).write_text(
-            json.dumps({"v": 1, "projects": {str(self.cwd): [BAZEL]}}), encoding="utf-8"
+            json.dumps({"projects": {str(self.cwd): [BAZEL]}}), encoding="utf-8"
         )
         self.session.bash(BAZEL, "ok")
         self.assertEqual([], self.titles())
         self.assertEqual([BAZEL], self.titles("command"))
-
-    def test_the_file_is_read_from_the_compass_home_only(self) -> None:
-        self.assertEqual(Path(self.config.state_home), self.store.parent)
 
 
 class WhatCannotBeACheckIsIgnoredAndDiagnoseSaysSo(ReaderChecksTestCase):
@@ -131,6 +135,25 @@ class WhatCannotBeACheckIsIgnoredAndDiagnoseSaysSo(ReaderChecksTestCase):
             {reader_checks.NOT_ONE_COMMAND_REASON}, {i["reason"] for i in report["ignored"]}
         )
 
+    def test_exit_and_a_wrapped_command_that_cannot_fail_are_ignored(self) -> None:
+        entries = ["exit 1", "return 1", "nice true", "sudo true", "xargs echo hi", "sudo ls"]
+        self.list_checks({str(self.cwd): [*entries, BAZEL]})
+        report = self.report()
+        self.assertEqual(len(entries), len(report["ignored"]))
+        self.assertEqual(1, report["listed"])
+        for entry in entries:
+            self.session.bash(entry, "ok")
+        self.assertEqual([], self.titles())
+
+    def test_every_shell_builtin_is_refused_bare_and_with_an_argument(self) -> None:
+        for name in sorted(project_context._LISTED_BUILTINS):
+            for entry in (name, f"{name} x"):
+                with self.subTest(entry=entry):
+                    reason, _program = project_context.listed_entry_refusal(entry)
+                    self.assertNotEqual("", reason)
+        for name in ("shopt", "bind", "typeset", "exec", "compgen", "history", "exit", "kill"):
+            self.assertIn(name, project_context._LISTED_BUILTINS)
+
     def test_a_fixer_is_ignored(self) -> None:
         self.list_checks({str(self.cwd): ["ruff check --fix ."]})
         self.assertEqual(
@@ -138,21 +161,51 @@ class WhatCannotBeACheckIsIgnoredAndDiagnoseSaysSo(ReaderChecksTestCase):
         )
 
 
+class NoPublishedProgramIsAnArgumentOrAPath(ReaderChecksTestCase):
+    SECRET = "FakePass99"  # noqa: S105
+
+    def test_an_assignment_or_a_long_entry_never_publishes_its_value(self) -> None:
+        long_entry = f"/home/x/{self.SECRET}/run " + "a" * reader_checks.MAX_COMMAND_CHARS
+        entries = [
+            f"API_TOKEN={self.SECRET} make a && make b",
+            f"PGPASSWORD={self.SECRET} psql -c x | cat",
+            f"API_TOKEN={self.SECRET} " + "b" * reader_checks.MAX_COMMAND_CHARS,
+            long_entry,
+        ]
+        self.list_checks({str(self.cwd): entries})
+        report = self.report()
+        self.assertEqual(4, len(report["ignored"]))
+        self.assertNotIn(self.SECRET, json.dumps(report))
+        self.assertNotIn(self.SECRET, diagnostics.render_reader_checks(report))
+        self.assertEqual({"make", "psql"}, {i["program"] for i in report["ignored"][:2]})
+
+    def test_an_ignored_item_names_a_program_and_a_reason_and_no_project(self) -> None:
+        self.list_checks({str(self.cwd): ["ls"]})
+        self.assertEqual({"program", "reason"}, set(self.report()["ignored"][0]))
+        self.assertNotIn(str(self.cwd), json.dumps(self.report()))
+
+    def test_the_ignored_list_is_capped_and_the_rest_counted(self) -> None:
+        self.list_checks({str(self.cwd): ["ls"] * (reader_checks.MAX_IGNORED + 5)})
+        report = self.report()
+        self.assertEqual(reader_checks.MAX_IGNORED, len(report["ignored"]))
+        self.assertEqual(5, report["ignored_more"])
+
+
 class AnUnreadableFileIsDiscardedNotRepaired(ReaderChecksTestCase):
     def test_corrupt_json_lists_nothing_and_diagnose_says_so(self) -> None:
         self.store.parent.mkdir(parents=True, exist_ok=True)
-        self.store.write_text('{"v": 1, "projects": {', encoding="utf-8")
+        self.store.write_text('{"projects": {', encoding="utf-8")
         self.session.bash(BAZEL, "ok")
         self.assertEqual([], self.titles())
         self.assertEqual(reader_checks.UNREADABLE_REASON, self.report()["error"])
-        self.assertEqual('{"v": 1, "projects": {', self.store.read_text(encoding="utf-8"))
+        self.assertEqual('{"projects": {', self.store.read_text(encoding="utf-8"))
 
     def test_a_file_over_the_cap_lists_nothing(self) -> None:
         self.store.parent.mkdir(parents=True, exist_ok=True)
         self.store.write_text(" " * (reader_checks.MAX_FILE_BYTES + 1), encoding="utf-8")
         self.assertEqual(reader_checks.SIZE_REASON, self.report()["error"])
 
-    def test_a_symlink_or_a_folder_is_not_a_regular_file(self) -> None:
+    def test_a_folder_is_not_a_regular_file(self) -> None:
         self.store.parent.mkdir(parents=True, exist_ok=True)
         self.store.mkdir()
         self.assertEqual(reader_checks.NOT_REGULAR_REASON, self.report()["error"])
@@ -167,14 +220,29 @@ class AnUnreadableFileIsDiscardedNotRepaired(ReaderChecksTestCase):
         self.assertEqual(0, self.report()["listed"])
         self.assertEqual(reader_checks.SHAPE_REASON, self.report()["error"])
 
-    def test_the_counts_are_bounded(self) -> None:
+    def test_the_counts_are_bounded_and_the_overflow_is_reported(self) -> None:
         many = {str(self.cwd): [f"make t{i}" for i in range(reader_checks.MAX_COMMANDS + 5)]}
         self.list_checks(many)
-        self.assertEqual(reader_checks.MAX_COMMANDS, self.report()["listed"])
+        report = self.report()
+        self.assertEqual(reader_checks.MAX_COMMANDS, report["listed"])
+        self.assertEqual([reader_checks.COUNT_REASON] * 5, [i["reason"] for i in report["ignored"]])
+        projects = {f"/p/{i}": [BAZEL] for i in range(reader_checks.MAX_PROJECTS + 3)}
+        self.list_checks(projects)
+        report = self.report()
+        self.assertEqual(reader_checks.MAX_PROJECTS, report["projects"])
+        self.assertEqual(3, report["projects_dropped"])
+        self.assertIn("3", diagnostics.render_reader_checks(report))
         long_entry = "make " + "x" * reader_checks.MAX_COMMAND_CHARS
         self.list_checks({str(self.cwd): [long_entry]})
         self.assertEqual(0, self.report()["listed"])
         self.assertEqual(1, len(self.report()["ignored"]))
+
+    def test_a_version_key_is_neither_required_nor_read(self) -> None:
+        self.store.parent.mkdir(parents=True, exist_ok=True)
+        self.store.write_text(
+            json.dumps({"v": 9, "projects": {str(self.cwd): [BAZEL]}}), encoding="utf-8"
+        )
+        self.assertEqual(1, self.report()["listed"])
 
 
 class ASessionThatWroteTheFileIsFlaggedAndNothingCounts(ReaderChecksTestCase):
@@ -185,6 +253,26 @@ class ASessionThatWroteTheFileIsFlaggedAndNothingCounts(ReaderChecksTestCase):
         events, scan = self.read()
         self.assertEqual([], [e for e in events if e["subject"] == "check"])
         self.assertIs(True, scan["reader_checks_written"])
+
+    def test_a_shell_command_naming_the_file_withdraws_the_listing_too(self) -> None:
+        for command in (
+            f"echo hi > {self.store}",
+            f"cp /tmp/x {self.store}",
+            f"echo hi | tee {self.store}",
+        ):
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks()
+                self.session.bash(command)
+                self.session.bash(BAZEL, "ok")
+                events, scan = self.read()
+                self.assertEqual([], [e for e in events if e["subject"] == "check"])
+                self.assertIs(True, scan["reader_checks_written"])
+
+    def test_a_write_with_nothing_listed_is_not_flagged(self) -> None:
+        self.session.write(str(self.cwd / reader_checks.FILENAME), "{}")
+        self.session.bash("pytest -q", "1 passed in 0.1s")
+        self.assertNotIn("reader_checks_written", self.read()[1])
 
     def test_a_session_that_did_not_write_it_carries_no_flag(self) -> None:
         self.list_checks()
@@ -229,3 +317,66 @@ class TheModelAndThePublishedFactSayTheReaderListedIt(ReaderChecksTestCase):
             "",
         )
         self.assertNotIn("listed_by_reader", plain)
+
+
+class AListedScriptThePathNamesNeedsTheProjectRootAndAnUntouchedFile(ReaderChecksTestCase):
+    SCRIPT = "./check.sh"
+
+    def test_the_script_run_from_the_project_root_counts(self) -> None:
+        self.list_checks({str(self.cwd): [self.SCRIPT]})
+        self.session.bash(self.SCRIPT, "ok")
+        self.assertEqual([self.SCRIPT], self.titles())
+
+    def test_a_script_the_session_wrote_or_edited_does_not_count(self) -> None:
+        self.list_checks({str(self.cwd): [self.SCRIPT]})
+        self.session.write(str(self.cwd / "check.sh"), "exit 0")
+        self.session.bash(self.SCRIPT, "ok")
+        self.assertEqual([], self.titles())
+
+    def test_a_script_the_shell_wrote_does_not_count(self) -> None:
+        for command in ("echo 'exit 0' > check.sh", "cp /tmp/x check.sh", "chmod +x check.sh"):
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks({str(self.cwd): [self.SCRIPT]})
+                self.session.bash(command)
+                self.session.bash(self.SCRIPT, "ok")
+                self.assertEqual([], self.titles())
+
+    def test_a_script_run_in_another_folder_does_not_count(self) -> None:
+        self.list_checks({str(self.cwd): [self.SCRIPT]})
+        self.session.bash(f"cd {self.root / 'elsewhere'} && {self.SCRIPT}", "ok")
+        self.assertEqual([], self.titles())
+
+    def test_a_program_on_the_path_still_counts_from_any_folder(self) -> None:
+        self.list_checks()
+        self.session.bash(f"cd {self.root / 'elsewhere'} && {BAZEL}", "ok")
+        self.assertEqual([BAZEL], self.titles())
+
+
+class EveryReaderOfTheListingAgrees(ReaderChecksTestCase):
+    def test_a_paged_read_withdraws_the_listing_a_session_wrote_as_a_whole_read_does(self) -> None:
+        self.list_checks()
+        self.session.write(str(self.store), "{}")
+        for _ in range(30):
+            self.session.bash("ls", "a b c")
+        self.session.bash(BAZEL, "ok")
+        self.session.save(self.path)
+        whole = session_source.read(
+            self.config, str(self.path), "claude", "root", max_bytes=self.path.stat().st_size * 4
+        )
+        self.assertEqual([], [e.title for e in whole.entries if e.kind == "check"])
+        size = self.path.stat().st_size
+        cursor = None
+        pages = 0
+        found: list[str] = []
+        while True:
+            page = session_source.read(
+                self.config, str(self.path), "claude", "root", after=cursor, max_bytes=size // 4
+            )
+            pages += 1
+            found.extend(e.title for e in page.entries if e.kind == "check")
+            cursor = page.next
+            if cursor is None or pages > 40:
+                break
+        self.assertGreater(pages, 2)
+        self.assertEqual([], found)

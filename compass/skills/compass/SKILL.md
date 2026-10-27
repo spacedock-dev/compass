@@ -384,8 +384,8 @@ after it. Each entry shows who wrote it, its own type and the source that publis
 list states the limit under it: demonstrated work results are read on Pi, and on
 Claude Code the record also lists the checks a session ran and the files it wrote, each result as
 the tool reported it and counted from the whole transcript read (a project's own test, lint or build script counts as a check
-when its body is a known runner, read from the commit the session began on, so a script the session edited counts for nothing,
-and so does a command you list for the project in `compass-project-checks.json` under the Compass home, which the page marks "counted because you listed it"), every other command that is not a
+when its body is a known runner, read from the commit the session began on, so a script the session edited counts for nothing;
+a command you list for the project in `compass-project-checks.json` under the Compass home also counts, and the page marks it "counted because you listed it"), every other command that is not a
 read with its exit status and the words "Compass does not know what it checks" (an exit of 0 may settle a
 line, and one that cannot fail, such as `echo` or an exit a trailing `|| true` forces, never does), and what the agent said, each of
 its messages an entry marked "Agent said". A reading you press for sends the agent's messages as

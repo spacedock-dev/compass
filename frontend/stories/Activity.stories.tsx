@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within, waitFor } from 'storybook/test';
 import { useState } from 'react';
-import { ActivityMarks } from '../src/drift/ActivityMarks';
+import { ActivityLegend, ActivityMarks } from '../src/drift/ActivityMarks';
 import { ActivityHead } from '../src/drift/ActivityHead';
 import { CheckRun } from '../src/drift/CheckRun';
 import { activityRow } from '../src/drift/activity.test.helper';
@@ -386,6 +386,16 @@ export const NotRecordedReasons: Story = {
     await expect(
       canvas.getByLabelText('Ran, result not recorded: output is piped beside other commands'),
     ).toHaveTextContent('No result: output is piped beside other commands');
+  },
+};
+
+/* The legend explains every mark a row can carry, the one for a check the reader listed included. */
+export const LegendNamesTheListedMark: Story = {
+  render: () => <ActivityLegend />,
+  play: async ({ canvasElement }) => {
+    const legend = canvasElement.querySelector('[data-activity-legend]') as HTMLElement;
+    await expect(within(legend).getByText('Counted because you listed it')).toBeVisible();
+    await expect(within(legend).getAllByRole('listitem')).toHaveLength(MARK_LEGEND.length);
   },
 };
 

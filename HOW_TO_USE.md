@@ -374,7 +374,6 @@ it). You write the file; Compass only reads it.
 
 ```json
 {
-  "v": 1,
   "projects": {
     "~/code/widgets": ["bazel test //...", "./scripts/verify.sh"]
   }
@@ -383,12 +382,16 @@ it). You write the file; Compass only reads it.
 
 A project is the absolute path of its repository (`~/` works, and a linked worktree counts as its repository),
 or the project key the board publishes for it. A command counts when a session in that project types exactly
-those words, from any folder. The page marks such a check "counted because you listed it".
+those words. A program found on the PATH (`bazel`) counts from any folder. A script named by a relative path
+(`./scripts/verify.sh`) counts only when it runs from the project's root, and not when the session wrote or
+edited that file. The page marks such a check "counted because you listed it". A listing applies only while the
+session's folder still exists: a deleted folder or worktree matches nothing.
 
 What does not count, however it is listed: a shell builtin, `echo`, `printf`, `true`, `:`, `exit`, a command that
 only reads (`ls`, `git status`), a command that writes (`--fix`, `--write`), and a line that is not one plain
-command (`&&`, a pipe, a redirect, a substitution). A `.compass` folder inside a repository is never read, and a
-session that writes this file has the listing withdrawn for that session. Check it with:
+command (`&&`, a pipe, a redirect, a substitution), including such a command behind `sudo`, `nice` or `env`.
+A `.compass` folder inside a repository is never read. A session that writes this file, with a write tool or by
+a shell command that names it, has the listing withdrawn for that session, and the page says so. Check it with:
 
 ```bash
 python3 "$SKILL/server.py" --diagnose
