@@ -993,9 +993,10 @@ AGENT_MESSAGE_TYPE = "agent_message"
 # cap, 240, and the counted sentence alone runs to about 180, so the clauses
 # saying the checks were not sent, or had no room, were cut off in the store
 # (review, 2026-09-24). Composed by the code from counts, never model prose.
-# The newest-final fallback clause raises the measured seven-digit count case
-# to 697 characters. Keep all loss clauses rather than clipping their tail.
-CUTOFF_CAP_CHARS = 768
+# The newest-final fallback clause and the largest accepted command counts raise
+# the measured worst case to 825 characters. Keep all loss clauses rather than
+# clipping their tail.
+CUTOFF_CAP_CHARS = 832
 
 
 class LedgerEntry(TypedDict):
@@ -2311,10 +2312,45 @@ def cutoff_text(
         omissions.append(
             f"{unread_checks} check{'s' if unread_checks != 1 else ''} had no room in the prompt"
         )
+    commands = _commands_note(measured)
     if not omissions:
-        return opening
+        return opening + commands
     tail = "; ".join(omissions)
-    return f"{opening} {tail[0].upper()}{tail[1:]}."
+    return f"{opening} {tail[0].upper()}{tail[1:]}.{commands}"
+
+
+def _commands_note(measured: Mapping[str, Any]) -> str:
+    """The commands that ran beside the entries read, which no entry carries.
+
+    Compass reads only the time of the latest command that can change files, to
+    age an earlier pass, item 3 of
+    [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work),
+    and nothing about the read-only ones, so a session whose goal was
+    proved by a command that is not a check would read as fully covered. The
+    counts are the session's, not the window's. A count that was not recorded,
+    or is malformed, says nothing here rather than reading as zero: the page
+    says it was not recorded.
+    """
+    counts = _command_counts(measured)
+    if counts is None or not counts[0]:
+        return ""
+    other, read_only = counts
+    ran = f"The session ran {other} other command{'s' if other != 1 else ''}"
+    apart = f"{read_only} of them read-only" if read_only else "none of them read-only"
+    return f" {ran}, {apart}; Compass did not read what they did."
+
+
+def _counted(lookup: Callable[[], Mapping[str, Any]] | None) -> dict[str, int]:
+    """Both counts or neither, so a scan that did not measure them is "not recorded", not zero."""
+    counts = _command_counts(lookup() if lookup else {})
+    return {} if counts is None else dict(zip(COVERAGE_COMMAND_KEYS, counts, strict=True))
+
+
+def _command_counts(measured: Mapping[str, Any]) -> tuple[int, int] | None:
+    other, read_only = measured.get("other_commands"), measured.get("read_only_commands")
+    if type(other) is not int or type(read_only) is not int:
+        return None
+    return (other, read_only) if 0 <= read_only <= other < 2**53 else None
 
 
 def _cutoff_window(selected: Sequence[LedgerEntry], now: float) -> str:
@@ -2400,27 +2436,43 @@ COVERAGE_KEYS = ("tail_truncated", "tail_start", "unlisted", "unread_checks", "g
 COVERAGE_GOAL_SOURCES = ("typed", "whole", "excerpt", "unroomed", "unknown")
 
 
+COVERAGE_COMMAND_KEYS = ("other_commands", "read_only_commands")
+
+
 def validate_coverage(value: Any) -> dict[str, Any] | None:
-    """Count/time metadata only; malformed measurement is never a reassuring default."""
-    if not isinstance(value, dict) or set(value) != set(COVERAGE_KEYS):
+    """Count/time metadata only; malformed measurement is never a reassuring default.
+
+    A reading stored before the command counts carries the first five keys alone and
+    stays valid, saying the count was not recorded. A newer one carries both counts or
+    neither: one alone, or a count that cannot be true, refuses the reading.
+    """
+    if not isinstance(value, dict):
         return None
-    if value["tail_truncated"] is not None and type(value["tail_truncated"]) is not bool:
+    keys = set(value)
+    older = set(COVERAGE_KEYS)
+    counted = keys == older | set(COVERAGE_COMMAND_KEYS) and _command_counts(value) is not None
+    if keys != older and not counted:
         return None
+    return dict(value) if _coverage_fields_valid(value) else None
+
+
+def _coverage_fields_valid(value: Mapping[str, Any]) -> bool:
     at = value["tail_start"]
     # The same representable range as the page: dates through year 9999 and
     # exact integer counts. Check the range before converting an arbitrary int.
-    if at is not None and (
-        isinstance(at, bool) or not isinstance(at, (int, float)) or not 0 < at <= 253402300799
-    ):
-        return None
-    if any(
-        type(value[k]) is not int or not 0 <= value[k] < 2**53
-        for k in ("unlisted", "unread_checks")
-    ):
-        return None
-    if value["goal_source"] not in COVERAGE_GOAL_SOURCES:
-        return None
-    return dict(value)
+    return (
+        (value["tail_truncated"] is None or type(value["tail_truncated"]) is bool)
+        and (
+            at is None
+            or (
+                isinstance(at, (int, float)) and not isinstance(at, bool) and 0 < at <= 253402300799
+            )
+        )
+        and all(
+            type(value[k]) is int and 0 <= value[k] < 2**53 for k in ("unlisted", "unread_checks")
+        )
+        and value["goal_source"] in COVERAGE_GOAL_SOURCES
+    )
 
 
 # Said only when the prompt carries a check, beside the untrusted-data line it
@@ -5021,6 +5073,7 @@ def produce(  # noqa: PLR0913
         Callable[[Sequence[LedgerEntry]], Sequence[Mapping[str, Any]]] | None
     ) = None,
     record_coverage_lookup: Callable[[], Mapping[str, Any]] | None = None,
+    command_counts_lookup: Callable[[], Mapping[str, Any]] | None = None,
     final_source_lookup: FinalLookup | None = None,
     settled_through: Any = None,
     open_call_lookup: Callable[[], float | None] | None = None,
@@ -5159,6 +5212,7 @@ def produce(  # noqa: PLR0913
             else "unroomed"
         ),
     }
+    coverage.update(_counted(command_counts_lookup))
     raw, status = model(prompt, output_cap_bytes=REPLY_CAP_BYTES)
     # A reply that reached the cap is the one a cut can explain. The exec layer
     # decodes with "replace" and strips, so a cut reply can come back a little

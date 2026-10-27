@@ -580,6 +580,7 @@ describe('What the analysis read', () => {
       'Everything up to the session’s end.',
       'Read all 4 entries after your intent: 1 from you, 3 messages from the agent.',
       'The oldest is from about 13h ago.',
+      'How many other commands ran beside the entries read was not recorded for this reading.',
     ]);
     expect(section('not-read').textContent).toContain('Files, diffs, test results');
     // The retired wording is gone.

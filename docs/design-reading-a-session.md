@@ -3338,6 +3338,32 @@ pytest check is shown whatever it is; credential-shaped values are still redacte
 and the call's masked-value set keep the unconditional `-p` mask, so a shown plugin word can still be erased from
 an echoed tail: that side only over-masks.
 
+### Amended 2026-10-27 (owner): the cutoff counts the commands the reading never received
+
+"Read all 14 entries after your intent" read as everything, when the session had also run seven Bash calls that
+are not checks, among them the CI polls that proved the goal. Compass reads only the time of the latest command
+that can change files, to age an earlier pass (item 3), and nothing about the read-only ones. The cutoff now adds
+one sentence when any ran: "The session ran 7 other commands, 4 of them read-only; Compass did not read what they
+did." The sentence names the session and not the window, so a long session can read "412 other commands" beside
+three listed entries. The two counts come from the session scan, are stored only when that scan read the whole
+transcript, and are left unrecorded when the scan was cut from the tail, because a cut scan counted only the
+commands after the cut. They sit beside the
+[measured coverage](#amended-2026-10-04-owner-disclose-measured-reading-coverage) the reading already stores.
+Read-only is the scan's own test of whether the command could change a file. A session that ran none says
+nothing.
+
+The figure counts foreground Bash calls that hold no check. Background launches, calls that did not balance or
+never ran, and a call that also runs a check are not in it, and a call that holds several commands counts once, so
+it is a count of calls and a floor. A reading from the unasked-check lane carries no counts, so the page says they
+were not recorded.
+
+The stored `coverage` mapping gains `other_commands` and `read_only_commands`, both or neither, so a reading
+stored before this change keeps its five keys and still validates. The page says "How many other commands ran
+beside the entries read was not recorded for this reading" for any reading without them, which includes a session
+on a harness with no scan. A lone count, a count that is not a whole number, and a read-only count above the total
+refuse the reading, because a malformed count read as zero would say no command ran. No command text is stored or
+sent: both are integers, and the model's prompt does not change.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
@@ -4901,8 +4927,8 @@ come from an older scan, so the tail start does not describe the check listing. 
 passed, failed and unrecorded runs, files written, launches, person messages, agent messages and
 derived entries. Omitted pass and write counts cover only the reading's window through its stop,
 not the session-wide count; checks the prompt could not fit have their own count. Loss and source
-clauses fit the stored cutoff's 768-character bound without truncation. The newest-final
-fallback raises the measured large-count case to 697 characters; this keeps every loss clause.
+clauses fit the stored cutoff's 832-character bound without truncation. The newest-final
+fallback and the largest accepted command counts raise the measured large-count case to 825 characters; this keeps every loss clause.
 
 Coverage stores only an optional closed mapping of counts, a time, a boolean and the source state.
 It changes no model prompt. A found adopted source already equal to the saved goal was read whole,

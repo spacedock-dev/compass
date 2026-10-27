@@ -6,7 +6,7 @@ import os
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 from unittest import mock
 
 from compass_runtime import annotations as annotation_store
@@ -246,6 +246,8 @@ class TheCutoffNamesKindsAndOmissions(unittest.TestCase):
                 "tail_start": producer.NOW - 120,
                 "unlisted": 1000000,
                 "unread_checks": 1000000,
+                "other_commands": 2**53 - 1,
+                "read_only_commands": 2**53 - 2,
             },
         )
         text += reading._goal_note(adopted=True, source=None, goal="Saved excerpt", whole=False)
@@ -522,3 +524,99 @@ class CoverageSurvivesTheStoreWithoutNewWords(producer.AClaudeCodeReadingProduce
             with self.subTest(patch=patch):
                 forged = {**value, "coverage": {**value["coverage"], **patch}}
                 self.assertIsNone(annotation_store._assessment(forged, 240))
+
+
+class TheCutoffCountsTheCommandsItNeverSaw(producer.AClaudeCodeReadingProducer):
+    def _read(self, counts: Any) -> dict[str, Any]:
+        got, _, _ = reading.produce(
+            cast("Any", self.config),
+            {"harness": "claude", "sid": "s1", "state": "working"},
+            [{"n": 1, "at": 50.0, "goal": "Keep retry", "output": "Tests pass"}],
+            [producer.fact(at=110.0, source_session={"harness": "claude", "sid": "s1"})],
+            now=200.0,
+            stamp_text="read",
+            model=self._model(),
+            read_lines=True,
+            command_counts_lookup=counts,
+        )
+        return cast("dict[str, Any]", got)
+
+    def test_seven_other_commands_are_named_and_split_by_whether_they_were_read_only(self) -> None:
+        got = self._read(lambda: {"other_commands": 7, "read_only_commands": 4})
+        self.assertEqual(7, got["coverage"]["other_commands"])
+        self.assertEqual(4, got["coverage"]["read_only_commands"])
+        self.assertIn(
+            "The session ran 7 other commands, 4 of them read-only; Compass did not read what they did.",
+            got["cutoff"],
+        )
+
+    def test_one_command_and_none_are_worded_apart(self) -> None:
+        one = self._read(lambda: {"other_commands": 1, "read_only_commands": 0})
+        self.assertIn("The session ran 1 other command, none of them read-only;", one["cutoff"])
+        none = self._read(lambda: {"other_commands": 0, "read_only_commands": 0})
+        self.assertEqual(0, none["coverage"]["other_commands"])
+        self.assertNotIn("other command", none["cutoff"])
+
+    def test_counts_beyond_the_entries_read_are_the_sessions_not_the_windows(self) -> None:
+        got = self._read(lambda: {"other_commands": 412, "read_only_commands": 300})
+        self.assertIn("The session ran 412 other commands, 300 of them read-only;", got["cutoff"])
+        self.assertNotIn("Compass read only when", got["cutoff"])
+
+    def test_a_scan_cut_from_the_tail_records_neither_count(self) -> None:
+        scan = {"harness": "claude", "sid": "s1", "other_commands": 3, "read_only_commands": 3}
+        whole = {"sources": {"work": {"tool_reports": [scan]}}}
+        cut = {"sources": {"work": {"tool_reports": [{**scan, "reads_from": 1.0}]}}}
+        self.assertEqual(
+            {"other_commands": 3, "read_only_commands": 3},
+            http_api._command_counts_of(whole, "claude", "s1"),
+        )
+        self.assertEqual({}, http_api._command_counts_of(cut, "claude", "s1"))
+
+    def test_a_count_nobody_measured_is_left_out_not_written_as_zero(self) -> None:
+        for lookup in (None, dict, lambda: {"other_commands": True, "read_only_commands": 0}):
+            with self.subTest(lookup=lookup):
+                got = self._read(lookup)
+                self.assertNotIn("other_commands", got["coverage"])
+                self.assertNotIn("other command", got["cutoff"])
+
+    def test_the_http_reading_takes_the_counts_from_this_sessions_scan(self) -> None:
+        scans = [
+            {"harness": "claude", "sid": "other", "other_commands": 9, "read_only_commands": 9},
+            {"harness": "claude", "sid": "s1", "other_commands": 7, "read_only_commands": 4},
+        ]
+        got = http_api._command_counts_of(
+            {"sources": {"work": {"tool_reports": scans}}}, "claude", "s1"
+        )
+        self.assertEqual({"other_commands": 7, "read_only_commands": 4}, got)
+        self.assertEqual({}, http_api._command_counts_of({}, "claude", "s1"))
+
+
+class CoverageAcceptsBothShapesAndRefusesAMalformedCount(unittest.TestCase):
+    OLD: ClassVar[dict[str, Any]] = {
+        "tail_truncated": False,
+        "tail_start": 100.0,
+        "unlisted": 0,
+        "unread_checks": 0,
+        "goal_source": "typed",
+    }
+
+    def test_an_older_reading_still_validates_and_gains_no_counts(self) -> None:
+        self.assertEqual(self.OLD, reading.validate_coverage(dict(self.OLD)))
+
+    def test_a_newer_reading_validates_with_both_counts(self) -> None:
+        new = {**self.OLD, "other_commands": 7, "read_only_commands": 4}
+        self.assertEqual(new, reading.validate_coverage(dict(new)))
+
+    def test_a_malformed_or_lone_count_is_refused_not_read_as_zero(self) -> None:
+        for patch in (
+            {"other_commands": 7},
+            {"read_only_commands": 4},
+            {"other_commands": True, "read_only_commands": 0},
+            {"other_commands": -1, "read_only_commands": 0},
+            {"other_commands": 2**53, "read_only_commands": 0},
+            {"other_commands": "7", "read_only_commands": 4},
+            {"other_commands": None, "read_only_commands": None},
+            {"other_commands": 3, "read_only_commands": 4},
+        ):
+            with self.subTest(patch=patch):
+                self.assertIsNone(reading.validate_coverage({**self.OLD, **patch}))

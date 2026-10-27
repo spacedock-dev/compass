@@ -540,6 +540,9 @@ export function criterion(
 }
 
 const COVERAGE_KEYS = ['tail_truncated', 'tail_start', 'unlisted', 'unread_checks', 'goal_source'];
+/* The two counts of the commands that ran beside the entries read: both or neither. A reading stored before
+   they were measured has the first five keys alone, and says the count was not recorded. */
+const COVERAGE_COMMAND_KEYS = ['other_commands', 'read_only_commands'];
 const COVERAGE_GOALS = ['typed', 'whole', 'excerpt', 'unroomed', 'unknown'];
 
 export interface Coverage {
@@ -548,15 +551,24 @@ export interface Coverage {
   readonly unlisted: number;
   readonly unread_checks: number;
   readonly goal_source: string;
+  readonly other_commands?: number;
+  readonly read_only_commands?: number;
 }
 
 export function readingCoverage(raw: unknown): Coverage | null {
-  if (
-    !isRecord(raw) ||
-    Object.keys(raw).length !== COVERAGE_KEYS.length ||
-    COVERAGE_KEYS.some((key) => !Object.hasOwn(raw, key))
-  ) {
-    return null;
+  if (!isRecord(raw) || COVERAGE_KEYS.some((key) => !Object.hasOwn(raw, key))) return null;
+  const counted = Object.keys(raw).length === COVERAGE_KEYS.length + COVERAGE_COMMAND_KEYS.length;
+  if (Object.keys(raw).length !== COVERAGE_KEYS.length && !counted) return null;
+  if (counted) {
+    const [other, readOnly] = COVERAGE_COMMAND_KEYS.map((key) => raw[key]);
+    if (
+      !Number.isSafeInteger(other) ||
+      !Number.isSafeInteger(readOnly) ||
+      (readOnly as number) < 0 ||
+      (other as number) < (readOnly as number)
+    ) {
+      return null;
+    }
   }
   const truncated = raw['tail_truncated'];
   if (truncated !== null && typeof truncated !== 'boolean') return null;

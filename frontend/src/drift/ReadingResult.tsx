@@ -21,6 +21,7 @@ import {
   claimReason,
   claimsDrawn,
   constraintName,
+  commandCountNote,
   coverageLimits,
   driftAnswer,
   earlyLine,
@@ -649,6 +650,7 @@ function Baseline({
   const session = [
     idleLine(shape, raw) || readScopeLine(shape.scope, shape.scopeText),
     ...readSentences(shape.cutoff),
+    commandCountNote(shape),
     level?.range ? `Entries read: ${level.range}.` : '',
     level?.reasons?.first ?? '',
     goalSourceLine(shape, raw['goal_source'] === SESSION_GOAL),
