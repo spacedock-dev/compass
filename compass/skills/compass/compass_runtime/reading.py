@@ -2042,11 +2042,31 @@ def _failures_not_since_passed(
         )
         and fact.get("type") == TOOL_REPORT_TYPE
     }
+    # `_superseded` re-reads every pass for every failure, which is quadratic over a whole
+    # session; the latest eligible whole-suite pass per family answers the same question once.
+    latest_pass: dict[str, float] = {}
+    for other in full:
+        if (
+            other.get("subject") != CHECK_SUBJECT
+            or other["type"] != TOOL_REPORT_TYPE
+            or other.get("result") == RESULT_FAILED
+            or other.get("earlier_failed") is True
+        ):
+            continue
+        later_family, later_targets = check_scope(_check_text(other))
+        if later_family and _whole_suite(later_targets):
+            latest_pass[later_family] = max(latest_pass.get(later_family, other["at"]), other["at"])
+
+    def stale(row: LedgerEntry) -> bool:
+        if row.get("subject") != CHECK_SUBJECT:
+            return False
+        family = check_family(_check_text(row))
+        return bool(family) and (evidence_at(row) or row["at"]) < latest_pass.get(family, -math.inf)
+
     return tuple(
         row
         for row in full
-        if row["type"] != TOOL_REPORT_TYPE
-        or (row["id"] in failed and not _superseded(row, float("inf"), full))
+        if row["type"] != TOOL_REPORT_TYPE or (row["id"] in failed and not stale(row))
     )
 
 

@@ -11,6 +11,7 @@ import dataclasses
 import json
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -319,6 +320,30 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
         for prompt in self.prompts:
             self.assertNotIn("tests/bad.py", prompt)
 
+    def _unread_flags(self, facts: list[dict[str, Any]]) -> list[bool]:
+        seen: list[bool] = []
+        real = reading._resolve_one
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            seen.append(kwargs["checks_unread"])
+            return real(*args, **kwargs)
+
+        lane = self._lane(facts, {"goal": {"result": "unverifiable", "cites": []}})
+        with mock.patch.object(reading, "_resolve_one", spy):
+            self._consider(lane)
+        return seen
+
+    def test_produce_flags_the_checks_it_left_out_as_unread(self) -> None:
+        facts = [WORDS, _report("ok", "passed", 4_100.0), _report("bad", "failed", 4_200.0)]
+        flags = self._unread_flags(facts)
+        self.assertTrue(flags)
+        self.assertTrue(all(flags))
+
+    def test_produce_flags_nothing_unread_when_every_report_was_sent(self) -> None:
+        flags = self._unread_flags([WORDS, _report("bad", "failed", 4_200.0)])
+        self.assertTrue(flags)
+        self.assertFalse(any(flags))
+
     def test_the_codex_fallback_stays_on_the_words_its_allow_covers(self) -> None:
         facts = [WORDS, _report("bad", "failed", 4_200.0)]
         lane = self._lane(facts, {"goal": {"result": "unverifiable", "cites": []}})
@@ -363,6 +388,22 @@ class TheCutoffAndTheUnreadFlagSayWhatWasWithheld(unittest.TestCase):
         note, unsent = self._produce([WORDS, _report("ok", "passed", 4_100.0)])
         self.assertTrue(unsent)
         self.assertIn("No failed check or command was recorded", note)
+
+
+class TheStalenessCheckStaysLinear(unittest.TestCase):
+    def test_a_long_session_of_failures_and_passes_is_decided_quickly(self) -> None:
+        facts = [WORDS]
+        for i in range(1_500):
+            facts.append(
+                _report(f"f{i}", "failed", 4_100.0 + i, summary=f"python3 -m pytest tests/f{i}.py")
+            )
+            facts.append(
+                _report(f"p{i}", "passed", 4_100.5 + i, summary=f"python3 -m pytest tests/p{i}.py")
+            )
+        started = time.monotonic()
+        rows = _ledger(facts)
+        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertEqual(1_500, len([r for r in rows if r["type"] == "tool_report"]))
 
 
 class TheOperatorHelpDoesNotDenyTheFailureTail(unittest.TestCase):
