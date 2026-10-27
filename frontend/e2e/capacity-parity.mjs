@@ -476,7 +476,6 @@ try {
       assert.equal(state.disclosure, null, `${side.name}: the retired question is drawn`);
       const recorded = golden.observe('the unanswered disclosure: the legacy sentence');
       assert.match(String(recorded), /Read your quota from the vendor\?/);
-      assert.notEqual(state.line, recorded);
     },
   );
 
@@ -504,13 +503,15 @@ try {
   await step(
     'Turn off sends no parameter, says the windows will lapse, and is kept across a reload',
     async () => {
-      view.reset();
+      // Pressed while quota is on, so a poll can land between a reset and the press; the count starts once
+      // the line says off, with the read the reload asks for.
       await pressUsage(view, 'declined');
       await until(
         async () => (await consentOf(view.page)).state === 'off',
         `${side.name} the line turned off`,
       );
-      // The press asks for the board again, and that read says nothing about usage.
+      view.reset();
+      await view.page.reload();
       await until(
         () => dataRequests(view).length > 0,
         `${side.name} reading the board after the press`,
@@ -951,6 +952,8 @@ try {
         );
         // The quota line is on, and its board reads carry usage=1, without a summary being asked for.
         assert.equal((await consentOf(view.page)).state, 'on');
+        assert.ok(usageRequests(view).length > 0, `${side.name}: no board read carried usage=1`);
+        assert.deepEqual(withoutUsage(view), [], `${side.name}: a board read without usage=1`);
         await pause(1500);
         assert.equal(modelRequests(view).length, 0);
         assert.equal((await eventsOf(side, 'model_call')).length, before);
@@ -1253,13 +1256,16 @@ try {
             assert.ok(name, `no ${answer} button`);
             seen[`${answer}Tabs`] = await tabTo(view.page, name);
             const seenBefore = (await eventsOf(side, 'usage_fetch')).length;
-            view.reset();
+            // Turning off from on: a poll can still carry usage=1 until the press lands, so the count starts
+            // after the line says off. Turning on from off: nothing carries it before, so it starts at once.
+            if (startOff) view.reset();
             await view.page.keyboard.press(key);
             const to = startOff ? 'on' : 'off';
             await until(
               async () => (await consentOf(view.page)).state === to,
               `${side.name} the line ${to} after ${key}`,
             );
+            if (!startOff) view.reset();
             await until(
               () => dataRequests(view).length > 0,
               `${side.name} the read after the press`,

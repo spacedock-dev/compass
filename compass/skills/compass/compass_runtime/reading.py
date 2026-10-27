@@ -4422,7 +4422,8 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
     """Test the harness's `met` verdict on a session's goal against what the record holds.
 
     The facts the evaluator's reason cites are the files it names, the kinds of check it says
-    passed, and a pull request it names by number that the record shows created. A cited
+    passed, and a pull request it names by number that the record shows created. A verdict with
+    an empty reason, which is every Codex verdict, is read the same way against the goal's words. A cited
     file the record shows written, or a check of a claimed kind that passed, at or
     before the verdict and since undone by nothing, agrees. A cited file written after the verdict,
     or a check of a claimed kind whose latest run failed (and that no later whole-suite run before
@@ -4449,8 +4450,11 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
             "cites": tuple(cites[:MAX_RECORDED_CITES]),
         }
 
-    files, kinds = _verdict_files(reason), _verdict_check_kinds(reason)
-    named_prs = _verdict_prs(reason)
+    # A claim with no reason (Codex records none) is tested against what the goal itself names: the
+    # claim is that the goal is met, so the goal's files and checks are what it says is done.
+    basis = reason if reason.strip() else str(goal.get("text") or "")
+    files, kinds = _verdict_files(basis), _verdict_check_kinds(basis)
+    named_prs = _verdict_prs(basis)
     # The condition names files too ("the file docs/e2e/notes.md exists"), and a file it names that
     # the record shows taken away after the verdict contradicts the claim whatever the reason said.
     named = tuple(dict.fromkeys((*files, *_verdict_files(str(goal.get("text") or "")))))

@@ -238,6 +238,29 @@ describe('the harness verdict on the Drift card', () => {
     expect(textOf('[data-next-goal-verdict]')).not.toContain('disputes');
   });
 
+  it('words a Codex claim, which gives no reason, by what the goal names', async () => {
+    for (const [why, said] of [
+      ['written-before', 'the file the goal names is recorded as written before the verdict'],
+      ['not-found', 'the record Compass read does not show what the goal names'],
+    ] as const) {
+      const page = mountDrift({
+        hash: '#n=session:alpha%2Fapp:codex:s1',
+        session: {
+          harness: 'codex',
+          session_goal: { ...GOAL, verdict: { met: true, at: VERDICT_AT, reason: '' } },
+          ...checked(why === 'not-found' ? 'unconfirmed' : 'agrees', why),
+        },
+        facts: FACTS,
+      });
+      await page.settle();
+      await page.settle();
+      const text = textOf('[data-next-goal-verdict]');
+      expect(text).toContain(said);
+      expect(text).not.toContain('its reason');
+      page.unmount();
+    }
+  });
+
   it('leaves a verdict newer than the reading unchecked, and says to analyze again', async () => {
     const page = mountDrift({
       session: { ...withVerdict(), ...checked('agrees', 'written-before', VERDICT_AT - 50) },

@@ -5708,8 +5708,9 @@ same `session_goal` field, the same `session-goal` adoption token, and the same 
   model marks its own goal complete, so it is a weaker claim than Claude Code's separate evaluator, and it is
   published the same way, as `session_goal.verdict` with an empty reason, and tested the same way. It
   attaches only where the file's row has the session's thread id and the goal's set time and words: an edit
-  rewrites both, a replace starts a new row, and a clear deletes it, so a completion never lands on the wrong
-  goal. Only `complete` is read. `blocked`, `usage_limited` and `budget_limited` were not captured, and a
+  keeps the set time and rewrites the words, a replace starts a new row, and a clear deletes it, so a
+  completion never lands on the wrong goal. A claim with no reason is tested against what the goal names, so
+  a Codex verdict can agree, and the page words that answer by the goal rather than by a reason. Only `complete` is read. `blocked`, `usage_limited` and `budget_limited` were not captured, and a
   status the record has not shown is not published as an ending.
 
 ### What reading an Antigravity `/goal` decided, 2026-10-27

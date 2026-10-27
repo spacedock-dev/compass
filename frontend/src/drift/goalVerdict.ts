@@ -4,6 +4,7 @@ import {
   GOAL_VERDICT_LABEL,
   GOAL_VERDICT_LINES,
   GOAL_VERDICT_WHY,
+  GOAL_VERDICT_WHY_GOAL,
   goalVerdictClaim,
   goalVerdictPullRequest,
   goalVerdictRemoval,
@@ -90,12 +91,14 @@ export function verdictNote(input: {
     tested?.why === 'pr-created-before'
       ? tested.cites.map((id) => input.cited?.get(id)).find((entry) => entry?.subject === 'pr')
       : undefined;
+  // A claim with no reason was tested against the goal's words, so the sentence names the goal.
+  const byGoal = verdict.reason === '';
   const why = tested
     ? tested.path && input.changedClock
       ? goalVerdictRemoval(tested.why, tested.path, input.changedClock)
       : pr?.summary
-        ? goalVerdictPullRequest(pr.summary)
-        : (GOAL_VERDICT_WHY[tested.why] ?? '')
+        ? goalVerdictPullRequest(pr.summary, byGoal)
+        : ((byGoal ? GOAL_VERDICT_WHY_GOAL : GOAL_VERDICT_WHY)[tested.why] ?? '')
     : '';
   const line = GOAL_VERDICT_LINES[state];
   return {

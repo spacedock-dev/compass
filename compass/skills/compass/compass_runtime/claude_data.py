@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
@@ -498,7 +498,7 @@ def _codex_goals_path(config: RuntimeConfig) -> str:
 
 def _codex_completed_goals(
     config: RuntimeConfig, state: RuntimeState
-) -> dict[str, tuple[str, float, float]]:
+) -> Mapping[str, tuple[str, float, float]]:
     """Every completed goal in Codex's goal file, by thread id: `(objective, set, completed)`.
 
     Opened read-only and never written. Cached on the file's own size and mtime and on its `-wal`
@@ -519,7 +519,7 @@ def _codex_completed_goals(
     with state.cache_lock:
         cached = state.metadata_cache.get(key)
     if cached is not None and cached.get("version") == version:
-        return dict(cached["rows"])
+        return cast("Mapping[str, tuple[str, float, float]]", cached["rows"])
     rows: dict[str, tuple[str, float, float]] = {}
     if runtime_io.sqlite_available():
         try:
@@ -556,7 +556,7 @@ def _codex_completed_goals(
             {"version": version, "rows": rows},
             limit=config.max_cache_entries,
         )
-    return dict(rows)
+    return rows
 
 
 def codex_goal_verdict(
@@ -567,8 +567,8 @@ def codex_goal_verdict(
     The working model marks its own goal complete with `update_goal`, so this is a weaker claim
     than Claude Code's separate evaluator, and it is published the same way: as the harness's
     claim, which a reading tests. It carries no reason, because Codex records none. It is this
-    goal's only when the row's set time and words match the file's: an edit rewrites both, a
-    replace makes a new row, and a clear deletes it.
+    goal's only when the row's set time and words match the file's: an edit keeps the set time and
+    rewrites the words, a replace makes a new row, and a clear deletes it.
     """
     if goal is None or not sid:
         return None
