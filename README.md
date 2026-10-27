@@ -160,7 +160,7 @@ server reads local harness session stores read-only, meaning transcripts, task f
 databases, and assembles the HTML, CSS and JavaScript under `compass_runtime/web/` into a
 self-refreshing dashboard at `http://127.0.0.1:4553/`. The server binds to 127.0.0.1 unless you ask
 for another address with `--host`, which has no authentication behind it. Session content stays on
-the machine by default. The quota poll requires disclosure consent, carries a vendor token and no
+the machine by default. The quota poll is on until you turn it off in the page, carries a vendor token and no
 session content, and can be disabled with `--no-usage`. Model calls can send session content
 through an installed Claude Code or Codex CLI. Analyze drift runs on your press, Codex goal
 summaries when you press Summarize this session in Console, and a Claude Code session summary when you

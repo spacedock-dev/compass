@@ -17,6 +17,18 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-27, the quota fetch is on until turned off
+([the amendment](../SECURITY.md#usage-quota-reads-the-quota-fetcher)). The recorded capacity answers hold the
+retired page's question ("Read your quota from the vendor?", Read my quota and No thanks) and its switch
+("Vendor quota fetch: on"), and the page now draws one line, "Quota is read with the Claude Code and Cursor
+logins on this machine. No session content is sent.", with Turn off, or "Quota reading is off. ..." with Turn
+on. No golden file is changed. `CapacityStrip.differential.test.tsx` leaves the quota line out of both trees and
+still compares every row, model line, count and prospect; its Console rail comparison, which was only that
+question and switch, is gone, and the test declares those recorded answers unread. `UsageConsent.test.tsx` and
+the `Capacity/Quota line` story hold the new line and the requests it changes. The on-demand capacity browser
+proof (`pnpm test:capacity:browser`) was not edited or run for this change and will report the old question
+until it is restated.
+
 2026-10-23, the Live monitor switch drives a lease the server holds and is not remembered
 ([the amendment](design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)).
 Two recorded answers depart, and neither golden file is changed. First, the switch's hint: the recording says

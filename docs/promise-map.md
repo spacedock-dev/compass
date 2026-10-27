@@ -275,7 +275,7 @@ fetching is macOS only, and Cursor's cycle has no published start, so its row sh
 clock. There is no per-session cost figure anywhere on the board, and no ranking of which session is
 burning fastest right now: every rate the board publishes is a mean over one ten-minute window, and
 it names that window rather than claiming an immediacy the arithmetic does not have.
-Credential-backed fetching happens only once the disclosure is answered, `--no-usage` refuses it for
+Credential-backed fetching is on until you turn it off in the page, `--no-usage` refuses it for
 a run, and the token is never written, logged, or served. Quota that is expired, rejected, missing,
 or stale is withheld rather than rendered as zero.
 

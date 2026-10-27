@@ -339,7 +339,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 
 | Path | What it can carry | Stopped by | Fails if it leaks |
 |---|---|---|---|
-| Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. Off until the disclosure is answered. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
+| Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. On until the reader turns it off in the page. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
 | Reach nudge | Two counts, to an endpoint you configure. Nothing is sent without one. | `--no-reach` | `test_reach.ReachNudgeTest.test_no_reach_flag_never_attempts_post`, `test_reach.ReachNudgeTest.test_no_reach_switch_disables_url_resolution` |
 | A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. With a session summary, one of the two paths that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--unasked-readings` | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
 | A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause model calls) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |
@@ -1109,14 +1109,22 @@ Token handling is read-only, one way, and never expands:
   loopback endpoint must not carry it, in any form.
 - Reading the token adds no write access anywhere. Harness stores stay read-only.
 
-Consent and the off switch: the feature is disclosed before it acts, and it does not act until the
-disclosure is answered. The first time the dashboard opens with the feature available, a banner explains the token read and
-the request above, and carries the switch that turns the feature off. The setting can be changed
-later from that same switch, which sits in the capacity strip below the session groups on Session operations, and
-`--no-usage` disables the feature for a run regardless of the stored setting. With the feature off, Compass's network surface is exactly the
-three loopback-bound kinds of component described above, and nothing is fetched.
+Consent and the off switch: the feature is on until the reader turns it off, and the line saying so is
+on screen whenever it can act. Wherever the quota windows are drawn, on Session operations below the
+session groups and in the Console rail, one line says the quota is read with the Claude Code and Cursor
+logins on this machine and that no session content is sent, beside a Turn off button. Turned off, the line
+says so and offers Turn on. `--no-usage` disables the feature for a run regardless of the stored setting.
+With the feature off, Compass's network surface is exactly the three loopback-bound kinds of component
+described above, and nothing is fetched.
 
-**Answered, not assumed, and that is a change of 2026-09-04.** The mechanism is the `usage=1`
+**Amended 2026-10-27 (owner): on until turned off.** The page now adds `usage=1` to every request unless
+the stored answer is `declined`, so an unanswered page, an unrecognisable stored value and storage the
+browser will not read all fetch. The four-sentence question that used to stand before the first fetch is
+gone; the one line above replaces it. Nothing else in this section moved: what is sent, the endpoints, the
+token handling, the five-minute floor, the server's refusal of the parameter on a document navigation, and
+`--no-usage` are unchanged. The paragraph below records the rule this replaced.
+
+**Answered, not assumed, a change of 2026-09-04, replaced 2026-10-27 by the amendment above.** The mechanism is the `usage=1`
 parameter: the server fires the fetch for no request that omits it, and the page adds it only while
 the stored answer is `granted`. So an unanswered disclosure reads no credential and makes no
 request, and neither does a declined one, and an unrecognisable stored value counts as unanswered.

@@ -20,7 +20,7 @@ import {
   type Spread,
   type StripRow,
 } from './model';
-import { UsageDisclosure, UsageSwitch } from './UsageConsent';
+import { UsageSwitch } from './UsageConsent';
 import './capacity.css';
 
 /* The capacity strip: each quota window the board published as the budget spent against the clock spent,
@@ -298,12 +298,7 @@ export function CapacityStrip() {
     if (read) lane.set(selectedKey);
   }, [lane, read, selectedKey]);
   if (!picked) {
-    return (
-      <>
-        <UsageDisclosure />
-        <UsageSwitch />
-      </>
-    );
+    return <UsageSwitch />;
   }
   const { selected, shown } = picked;
   const generated = nextNumber(payload['generated']);
@@ -314,7 +309,6 @@ export function CapacityStrip() {
   const seen = new Map<string, number>();
   return (
     <>
-      <UsageDisclosure />
       <section className="next-capacity" data-next-capacity="" aria-label="Capacity">
         {/* Decorative: every cell below carries its own label, which is what keeps the narrow layout readable when this row is hidden. */}
         <div className="next-capacity-head" aria-hidden="true">

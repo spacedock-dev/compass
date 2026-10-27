@@ -217,10 +217,10 @@ sit side by side and the comparison is yours.
 
 Quota evidence also appears in Attention, raised either by a level at or above 70 percent or by a
 pace whose projected end falls before the reset. Codex reads rate-limit snapshots from its own
-session files. Claude and Cursor use the harness credential only after the first-run disclosure in
-the page is answered, poll their vendor endpoint at most once per five minutes while a page is open,
-and never refresh, write, log, or serve the token. Until that disclosure is answered no credential
-is read and no request is made, and the strip carries a switch that changes the answer later.
+session files. Claude and Cursor use the harness credential to poll their vendor endpoint at most once
+per five minutes while a page is open, and never refresh, write, log, or serve the token. This is on
+until you turn it off: one line beside the windows says the quota is read with the logins on this
+machine and that no session content is sent, with a Turn off button, and turning it off sends nothing.
 Cursor fetching is macOS-only, and because Cursor publishes a cycle end with no start, its row shows
 a level and no clock.
 Copilot contributes per-session AI Units from disk but no percentage because its entitlement is not

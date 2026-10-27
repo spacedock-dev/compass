@@ -557,15 +557,14 @@ afterwards brings nothing with it.
 
 ## Usage and quota
 
-Usage quota reads and operator-configured reach nudges are the outbound requests Compass can make,
-and neither sends anything until you configure it. The first time the dashboard opens on a machine
-where a harness could be asked, a banner on Session operations, below the session groups, explains that answering yes lets
-Compass read the credential that harness already stored and send it to that vendor for your usage
-numbers. Until you answer, nothing is read and nothing is sent. The request carries the vendor's own
-token and nothing else, behind a five minute floor.
+Usage quota reads and operator-configured reach nudges are the outbound requests Compass can make.
+Reach nudges send nothing until you configure one. Quota reads are on: where a harness could be asked,
+Compass reads the credential that harness already stored and sends it to that vendor for your usage
+numbers. The request carries the vendor's own token and nothing else, behind a five minute floor, and no
+session content is sent.
 
-Changing your mind takes one click: the capacity strip carries a switch that turns the fetch on or
-off without a restart. `--no-usage` refuses it for a whole run whatever is stored in the page.
+Turning it off takes one click: the line under the quota windows on Session operations carries a Turn off
+button, and Turn on brings it back, without a restart. `--no-usage` refuses it for a whole run whatever is stored in the page.
 [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns the contract, including what is
 sent, what comes back, and what is never touched.
 

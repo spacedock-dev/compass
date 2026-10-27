@@ -90,7 +90,8 @@ export function heldFor(runtime: BrowserRuntime): Held {
   return lane;
 }
 
-/** The consent this origin has recorded: `null` is unanswered, and unanswered is never granted. */
+/** The consent this origin has recorded: `null` is unanswered. The quota fetch reads unanswered as on; nothing
+    else reads it as granted. */
 export function useConsent(kind: 'usage' | 'observer'): Consent {
   const lane = heldFor(useShell().runtime)[kind];
   return useSyncExternalStore(lane.subscribe, lane.read);

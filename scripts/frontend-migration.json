@@ -561,7 +561,7 @@
         "frontend/src/capacity/UsageConsent.test.tsx",
         "frontend/e2e/capacity-parity.mjs"
       ],
-      "contract": "Usage fetching is offered with disclosure; declined/unanswered consent sends no usage parameter and reads no credential."
+      "contract": "Usage fetching is on until turned off, with one line saying no session content is sent; declined consent sends no usage parameter and reads no credential (amended 2026-10-27)."
     },
     {
       "name": "notification-permission-and-ownership",

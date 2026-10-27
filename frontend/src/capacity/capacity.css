@@ -10,7 +10,6 @@
 .next-usage-consent-actions button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 .next-usage-consent p.next-usage-consent-note{margin-top:11px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-body);line-height:1.45}
 .next-usage-switch{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:12px;color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label)}
-.next-usage-switch strong{color:var(--ink2);font-weight:400}
 .next-capacity{margin-top:22px;border-top:1px solid var(--rule)}
 .next-capacity-head{display:grid}
 .next-capacity-head,.next-capacity-row{align-items:center;grid-template-columns:190px 56px minmax(0,1fr) 74px 190px 92px;gap:0 14px}
@@ -59,7 +58,6 @@
 .next-capacity-pct.mid{color:var(--ink2)}
 .next-capacity-pct.high{color:var(--amber)}
 .next-capacity-prospect>p:nth-child(2){color:var(--ink)}
-.next-usage-lapse{color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label)}
 @media (max-width: 980px) {
   .next-capacity-head{display:none}
   /* The head row is gone, so each value states its own column the way the session cards do. */

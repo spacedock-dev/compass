@@ -423,9 +423,9 @@ describe('failure states', () => {
 describe('request shape', () => {
   it('sends all=1 only for the exact query value', async () => {
     for (const [search, expected] of [
-      ['?all=1', '/api/data?all=1'],
-      ['?all=true', '/api/data'],
-      ['?x=1&all=1', '/api/data?all=1'],
+      ['?all=1', '/api/data?all=1&usage=1'],
+      ['?all=true', '/api/data?usage=1'],
+      ['?x=1&all=1', '/api/data?all=1&usage=1'],
     ] as const) {
       const { api, runtime } = runtimeFor({ search });
       runtime.start();
@@ -435,7 +435,7 @@ describe('request shape', () => {
     }
   });
 
-  it('adds usage=1 only while quota consent is granted', async () => {
+  it('adds usage=1 unless quota reading was turned off', async () => {
     const { api, hub, storage, clock, runtime } = runtimeFor();
     runtime.start();
     await flush();
@@ -447,7 +447,7 @@ describe('request shape', () => {
     await flush();
     expect(hub.usage).toBe('granted');
     expect(api.requests.map((request) => request.url)).toEqual([
-      '/api/data',
+      '/api/data?usage=1',
       '/api/data',
       '/api/data?usage=1',
     ]);
