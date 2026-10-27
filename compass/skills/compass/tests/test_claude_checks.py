@@ -105,19 +105,21 @@ class Transcript:
         self.result(call_id, output, is_error=is_error)
         return call_id
 
-    def hook_rewrite(self, call_id: str, stdout: str) -> None:
+    def hook_rewrite(
+        self, call_id: str, stdout: str, *, hook: str = "PreToolUse:Bash", sidechain: bool = False
+    ) -> None:
         """The record Claude Code writes when a PreToolUse hook answers a Bash call."""
         self.rows.append(
             {
                 "type": "attachment",
-                "isSidechain": False,
+                "isSidechain": sidechain,
                 "cwd": self.cwd,
                 "sessionId": SID,
                 "timestamp": self._stamp(),
                 "attachment": {
                     "type": "hook_success",
-                    "hookName": "PreToolUse:Bash",
-                    "hookEvent": "PreToolUse",
+                    "hookName": hook,
+                    "hookEvent": hook.split(":", 1)[0],
                     "toolUseID": call_id,
                     "stdout": stdout,
                     "exitCode": 0,
@@ -1168,6 +1170,27 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
                 self.session.hook_rewrite(call_id, stdout)
                 self.session.result(call_id, "1 failed", is_error=False)
                 self.assertEqual("failed", self.only_check()["result"])
+
+    def test_only_a_pre_tool_use_bash_hook_rewrites_a_command(self) -> None:  # R12
+        for hook in ("PreToolUse:Edit", "PostToolUse:Bash", "PreToolUse"):
+            with self.subTest(hook=hook):
+                self.setUp()
+                call_id = self.session.call("Bash", {"command": "pytest"})
+                self.session.hook_rewrite(call_id, hook_stdout("rtk pytest"), hook=hook)
+                self.session.result(call_id, "1 failed", is_error=False)
+                self.assertEqual("failed", self.only_check()["result"])
+
+    def test_a_subagent_transcripts_rewrite_is_read_the_same_way(self) -> None:  # R12
+        self.session.bash("true", "", is_error=False)
+        child = Transcript(self.root)
+        child.calls = 10  # call ids are shared across streams, so the child's must not repeat
+        call_id = child.call("Bash", {"command": "pytest"}, sidechain=True)
+        child.hook_rewrite(call_id, hook_stdout("rtk pytest"), sidechain=True)
+        child.result(call_id, "1 failed", is_error=False)
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        self.assertEqual("not-recorded", self.only_check()["result"])
 
     def test_a_rewrite_of_another_call_does_not_reach_this_one(self) -> None:  # R12
         other = self.session.call("Bash", {"command": "ls"})

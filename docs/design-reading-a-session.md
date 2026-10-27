@@ -3294,8 +3294,12 @@ A hook may also normalise the invocation, not only wrap it. RTK 1.1.0 rewrites `
 `rtk pytest tests`, `npx vitest run` to `rtk vitest` and `npx eslint .` to `rtk lint .`. The check's title and
 identity are those of the command that ran, so a session where a hook was added part-way lists one check under
 two identities. Compass reads `rtk lint` as the eslint runner, including `--fix` as a change, and a bare `lint`
-is still no runner. The rewrite is also applied to a call carried from an earlier page of the transcript, so a
-read in pages and a read of the whole file agree.
+is still no runner. The rewrite is also applied to a call carried from an earlier page of the transcript.
+A page read before the hook's record arrives has already published the fact for the typed command, and a
+rewrite that changes the check's title gives it a different id, so the pages alone keep that earlier fact.
+The source comparison names it as changed, whether the later read is a continuation or a whole read, and a
+reader that acts on a change by reading the whole file again ends with the same checks as a read of the
+whole file. Until it does, a reader holding only the earlier pages still has the typed command's check.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

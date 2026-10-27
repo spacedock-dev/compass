@@ -228,6 +228,21 @@ class SessionSourceTest(unittest.TestCase):
                 )
                 self.assertEqual(["not-recorded"], [e.result for e in whole.entries])
 
+    def test_a_rewrite_that_renames_the_check_retires_the_typed_fact(self) -> None:
+        # `python3 -m pytest tests` ran as `rtk pytest tests`, which titles the check `pytest tests`,
+        # so the fact read from the typed command has an id the whole-file read never produces.
+        call = self.session.call("Bash", {"command": "python3 -m pytest tests"})
+        self.save()
+        previous = self.read()
+        self.assertEqual(["python3 -m pytest tests"], [e.title for e in previous.entries])
+        self.session.hook_rewrite(call, hook_stdout("rtk pytest tests"))
+        self.save()
+        for page in (self.read(), self.read(after=previous.snapshot.cursor)):
+            change = self.source.compare(previous.snapshot, page)
+            self.assertEqual("changed_earlier", change.kind)
+            self.assertIn((previous.entries[0].fact_id, "check_result"), change.changed)
+        self.assertEqual(["pytest tests"], [e.title for e in self.read().entries])
+
     def test_late_message_keeps_file_order_and_reports_reordering(self) -> None:
         self.path.write_text(json.dumps(test_record_pages.RecordPagesTest.record(5)) + "\n")
         previous = self.read()
