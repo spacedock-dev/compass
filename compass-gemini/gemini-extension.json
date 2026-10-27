@@ -1,5 +1,5 @@
 {
   "name": "compass",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Agnostic agent cartography and visualization — a live local dashboard mapping coding-agent sessions across Claude Code, Codex, Pi, Gemini, Antigravity, Copilot, OpenCode, Cursor, Goose, and Droid"
 }
