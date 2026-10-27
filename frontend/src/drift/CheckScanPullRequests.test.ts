@@ -23,3 +23,18 @@ describe('the check scan sentence beside a pull request or a skill', () => {
     );
   });
 });
+
+describe('the check scan sentence beside a listing the session wrote', () => {
+  it('says the commands the reader listed did not count, even where no check ran', () => {
+    expect(checkScan({ reader_checks_written: true })).toBe(
+      'No check ran in the part of the transcript read. The session wrote the file where you list checks, so none of the commands you listed counted as checks.',
+    );
+  });
+
+  it('says it after the rest of the sentence, and is silent without the flag', () => {
+    expect(checkScan({ check_runs: 1, distinct_checks: 1, reader_checks_written: true })).toMatch(
+      /The session wrote the file where you list checks/,
+    );
+    expect(checkScan({ check_runs: 1, distinct_checks: 1 })).not.toContain('you list checks');
+  });
+});

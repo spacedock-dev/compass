@@ -65,7 +65,7 @@ them and ignores the other flags, though their values must still parse.
 | `--daemon` | Detach and keep serving after the starting shell exits. Reports the URL, process ID and log path. Without it, serving stays in the foreground. On Windows the launcher starts a detached child; see [platform notes](#platform-notes). |
 | `--status` | Report whether Compass answers on the selected port, then exit. Distinguishes a running dashboard, no dashboard, stale state and a port held by another process. |
 | `--stop` | Ask Compass on the selected port to shut down and wait for the port to be free. A foreign process is left alone. If nothing is running, remove stale instance state if present. |
-| `--diagnose` | Report the local store paths searched, whether they are readable and what was found, and any project script file it skipped and why; exit without serving, writing history or making model calls. Use it first when a harness is missing. |
+| `--diagnose` | Report the local store paths searched, whether they are readable and what was found, any project script file it skipped and why, and where your list of check commands is, whether it could be read and which entries were ignored; exit without serving, writing history or making model calls. Use it first when a harness is missing. |
 | `--json` | Format `--diagnose` as JSON. Does not change status output or make the dashboard's normal output JSON. |
 | `--window-hours HOURS` | Hide sessions with no activity within this many hours. Default: `24`. Accepts a floating-point number. This display window is separate from history retention. |
 
@@ -190,6 +190,7 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-annotations.json` | Saved reader goals, outcome lines, readings and discard records. |
 | `compass-summaries.json` | Stored session summaries and word-free source comparison metadata. Independent of annotations; Delete summary removes one session and `--forget` deletes the store. |
 | `compass-dismissals.json` | Sessions marked handled. |
+| `compass-project-checks.json` | Commands you list as checks for a project. You write it; Compass only reads it. [How to list one](HOW_TO_USE.md#list-a-projects-checks). |
 | `compass-tripwires.json` | Saved workflow stage conditions. |
 | `compass-copied-corrections.json` | Digests recording copied corrections, without their text. |
 | `compass-reading-permission.sqlite3` | Reading permissions, the model-call pause, the session-summary switch, the one-time notices shown, and the spend admission timestamps for readings and for session summaries, kept apart. |

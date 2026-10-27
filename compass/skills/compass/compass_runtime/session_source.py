@@ -125,6 +125,9 @@ class SourceCursor:
     seen: tuple[tuple[str, str, float], ...] = ()
     subjects: tuple[tuple[str, str, str], ...] = ()
     message_ids: tuple[str, ...] = ()
+    # The names of the files a listing depends on that an earlier page saw the session write. A
+    # page holds only its own rows, and no work tree byte comparison covers a listing.
+    listing_writes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -878,7 +881,12 @@ def _finish(
     # its own rows, so a write on an earlier page is seen by the work tree's bytes alone.
     declared = (
         context._declared_scripts(  # noqa: SLF001
-            config, path, session_dir, parent.rows, [stream.rows for stream in streams[1:]]
+            config,
+            path,
+            session_dir,
+            parent.rows,
+            [stream.rows for stream in streams[1:]],
+            prior_writes=after.listing_writes if after else frozenset(),
         )
         if harness == "claude"
         else None
@@ -911,6 +919,7 @@ def _finish(
         after.seen if after else (),
         after.subjects if after else (),
         after.message_ids if after else (),
+        declared.listing_writes if declared else (after.listing_writes if after else frozenset()),
     )
     notes = (
         ("codex_agent_words_not_admitted", "codex_checks_and_files_not_admitted")

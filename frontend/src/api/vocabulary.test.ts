@@ -26,6 +26,7 @@ import {
 } from '../drift/sentences';
 import { CUE_TTL_MS } from '../controls/keyedState';
 import {
+  CHECK_LISTED_BY_READER,
   CHECK_NOT_RECORDED_REASONS,
   COMMAND_NOT_RECORDED,
   COMMAND_RESULTS,
@@ -69,6 +70,7 @@ interface Vocabulary {
   readonly checkNotRecordedReasons: Record<string, string>;
   readonly checkEarlierFailed: string;
   readonly checkBeforeLastChange: string;
+  readonly checkListedByReader: string;
   readonly results: string[];
   readonly promptSources: string[];
   readonly promptChosen: string;
@@ -184,6 +186,14 @@ describe('the words beside a check', () => {
     expect(toolReportLine(entry('', '', { earlierFailed: true, beforeLastChange: true }))).toBe(
       `Agent · check · ${vocabulary.checkNotRecorded} · ${vocabulary.checkEarlierFailed} · ${vocabulary.checkBeforeLastChange}`,
     );
+  });
+
+  it("says a check counted because the reader listed it, in the producer's words", () => {
+    expect(CHECK_LISTED_BY_READER).toBe(vocabulary.checkListedByReader);
+    expect(toolReportLine(entry('passed', 'flag', { listedByReader: true }))).toBe(
+      `Agent · check · passed, as the tool reported · ${vocabulary.checkListedByReader}`,
+    );
+    expect(toolReportLine(entry('passed', 'flag'))).not.toContain(vocabulary.checkListedByReader);
   });
 
   it('names the rule that withheld a result in the words the producer publishes, and no other', () => {

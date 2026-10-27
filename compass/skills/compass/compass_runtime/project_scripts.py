@@ -36,7 +36,7 @@ import subprocess
 import threading
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Final
 
 from compass_runtime import git_status
@@ -104,6 +104,22 @@ class Declarations:
     # work tree again without asking git.
     digests: Mapping[str, bytes] = field(default_factory=dict, repr=False, compare=False)
     memo: dict[Any, bool] = field(default_factory=dict, repr=False, compare=False)
+    # The words of each command the reader listed for this project (`reader_checks`), and whether
+    # the session wrote the file they were listed in, which withdraws them.
+    listed: frozenset[tuple[str, ...]] = frozenset()
+    listed_written: bool = False
+    # The project's root, which a listed relative path must run from, and the names of the files a
+    # session wrote that a listing depends on: the listing file and each listed script's name.
+    listed_root: str = ""
+    listing_writes: frozenset[str] = frozenset()
+
+    def at_listed_root(self, directory: str) -> bool:
+        if not directory or not self.listed_root:
+            return False
+        try:
+            return os.path.realpath(directory) == self.listed_root
+        except (OSError, ValueError):
+            return False
 
     def at(self, directory: str) -> bool:
         """Whether `directory` is the toplevel itself, and not a folder under it."""
@@ -114,22 +130,22 @@ class Declarations:
         except (OSError, ValueError):
             return False
 
-    def without(self, written: frozenset[str]) -> Declarations:
-        """These declarations less every kind whose declaring file the session wrote."""
+    def without(self, written: frozenset[str], *, withdraw_listing: bool = False) -> Declarations:
+        """These declarations less every kind whose declaring file the session wrote, and the
+        listing when `withdraw_listing` says the session wrote it."""
         gone = {_kind(name) for name in written if name in DECLARING_FILES}
-        if not gone & {"package", "make", "just"}:
+        if not gone & {"package", "make", "just"} and not withdraw_listing:
             return self
         empty: dict[str, Script] = {}
-        return Declarations(
-            self.toplevel,
-            self.commit,
-            empty if "package" in gone else self.package,
-            empty if "make" in gone else self.make,
-            empty if "just" in gone else self.just,
-            self.skipped,
-            self.files - written,
-            self.real_toplevel,
-            self.digests,
+        return replace(
+            self,
+            package=empty if "package" in gone else self.package,
+            make=empty if "make" in gone else self.make,
+            just=empty if "just" in gone else self.just,
+            files=self.files - written,
+            memo={},
+            listed=frozenset() if withdraw_listing else self.listed,
+            listed_written=self.listed_written or withdraw_listing,
         )
 
     def kind(self, kind: str) -> Mapping[str, Script]:

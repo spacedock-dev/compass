@@ -71,6 +71,12 @@ const COMMAND_SHORT: Readonly<Record<'unrecorded' | 'passed' | 'failed', string>
   failed: 'Exited non-zero',
 };
 
+/* Said beside a check that counted only because the reader listed its command for the project, so a pass
+   is never read as a runner Compass knows. `vocabulary.json` pins it to the producer's (`CHECK_LISTED_BY_READER`). */
+export const LISTING_WRITTEN =
+  'The session wrote the file where you list checks, so none of the commands you listed counted as checks.';
+export const CHECK_LISTED_BY_READER = 'counted because you listed it';
+
 /* Why a rule withheld a check's result, in the reader's words, keyed by the closed token the collector publishes
    as `result_reason` (`CHECK_NOT_RECORDED_REASONS` in project_context.py). `vocabulary.json` pins the two together. */
 export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
@@ -83,7 +89,7 @@ export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
    notes at the right edge, as a reader's flag is, and `toolReportLine` is the same words in one line. */
 export type CheckResult = 'unrecorded' | 'passed' | 'failed';
 export interface ActivityMark {
-  readonly icon: CheckResult | 'command' | 'stale' | 'earlier-failed';
+  readonly icon: CheckResult | 'command' | 'stale' | 'earlier-failed' | 'checks';
   readonly short: string;
   readonly words: string;
 }
@@ -110,6 +116,11 @@ export const EARLIER_FAILED_MARK: ActivityMark = {
   short: '',
   words: 'An earlier run failed',
 };
+export const LISTED_BY_READER_MARK: ActivityMark = {
+  icon: 'checks',
+  short: 'Listed by you',
+  words: 'Counted because you listed it',
+};
 export const LAST_TURN_MARK = { short: 'Last turn', words: 'from the last turn' };
 export const MARK_LEGEND = [
   RESULT_MARKS.unrecorded,
@@ -117,6 +128,7 @@ export const MARK_LEGEND = [
   RESULT_MARKS.failed,
   STALE_MARK,
   EARLIER_FAILED_MARK,
+  LISTED_BY_READER_MARK,
 ];
 
 /* A tier 2 CI read or a tier 3 command, drawn with the words the server composed for it: a CI read says
@@ -210,6 +222,7 @@ export function toolReportParts(entry: WorkEntry): {
   const words = notes.join(': ');
   if (entry.earlierFailed) notes.push('an earlier run failed');
   if (entry.beforeLastChange) notes.push('before the last change');
+  if (entry.listedByReader) notes.push(CHECK_LISTED_BY_READER);
   return {
     actor: 'Agent',
     type: 'check',
@@ -227,6 +240,7 @@ export function toolReportParts(entry: WorkEntry): {
         },
         ...(entry.earlierFailed ? [EARLIER_FAILED_MARK] : []),
         ...(entry.beforeLastChange ? [STALE_MARK] : []),
+        ...(entry.listedByReader ? [LISTED_BY_READER_MARK] : []),
       ],
     },
   };
@@ -260,8 +274,11 @@ export function checkScan(scan: Row | null | undefined): string {
   const outside = nextNumber(scan['outside_paths']) || 0;
   const pulls = nextNumber(scan['pull_requests']) || 0;
   const skills = nextNumber(scan['skills_used']) || 0;
+  /* The file where the reader lists checks was written by the session, so none of its entries counted. Said
+     whatever else was found, because a reader who listed a command is owed the reason it read as a command. */
+  const listing = scan['reader_checks_written'] === true ? ` ${LISTING_WRITTEN}` : '';
   if (!runs && !background && !written && !other && !outside && !pulls && !skills) {
-    return 'No check ran in the part of the transcript read.';
+    return `No check ran in the part of the transcript read.${listing}`;
   }
   /* The latest results, always, so a failure is never left for the listed rows alone to carry; the files are a
      sentence of their own, so they never read as a latest-run result. */
@@ -288,7 +305,10 @@ export function checkScan(scan: Row | null | undefined): string {
     (files.length ? ` ${files.join(', ').replace(/^./, (c) => c.toUpperCase())}.` : '') +
     (done.length ? ` ${done.join(', ').replace(/^./, (c) => c.toUpperCase())}.` : '') +
     (counted.length ? ` Counted and not listed: ${counted.join('; ')}.` : '') +
-    (more ? ` Failures are listed first, and ${String(more)} more are counted and not listed.` : '')
+    (more
+      ? ` Failures are listed first, and ${String(more)} more are counted and not listed.`
+      : '') +
+    listing
   );
 }
 

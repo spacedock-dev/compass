@@ -425,6 +425,8 @@ CHECK_EARLIER_FAILED = "an earlier run failed"
 # they are the tool's report, not the model stating that the work landed.
 CHECK_REPORT_WORDS = frozenset({"passed", "passes", "passing"})
 CHECK_BEFORE_LAST_CHANGE = "before the last change"
+# Said of a check that counted only because the reader listed its command for the project.
+CHECK_LISTED_BY_READER = "counted because you listed it"
 PATH_WRITTEN = "file written"
 # Two more subjects of a tool report, read from Claude Code's structured records only (owner,
 # 2026-10-23):
@@ -1862,6 +1864,8 @@ def _tool_report_summary(
             words.append(CHECK_EARLIER_FAILED)
         if fact.get("before_last_change") is True:
             words.append(CHECK_BEFORE_LAST_CHANGE)
+        if fact.get("listed_by_reader") is True:
+            words.append(CHECK_LISTED_BY_READER)
         if read_incomplete or fact.get("read_incomplete") is True:
             words.append("part of the work record was not read")
         suffix = f" ({'; '.join(words)})"
