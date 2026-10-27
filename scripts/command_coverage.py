@@ -199,6 +199,22 @@ def _head(words: list[str]) -> str | None:
     return first
 
 
+def _unwrapped_head_words(call: Any, index: int, words: list[str], pc: Any) -> list[str]:
+    """The words a head is read from.
+
+    The runtime strips `npx`, `uv run`, `rtk` and `pnpm exec` before a rule reads a
+    command, so after the strip the first word can be the runner's positional
+    argument, which may be a secret. Unless the stripped-to word is a closed known
+    tool, the head is read from the words as written, so the runner is the head.
+    """
+    if words[0] in SUBCOMMANDS:
+        return words
+    raw = list(getattr(call.parts[index], "raw", ()) or ())
+    while raw and pc._ASSIGNMENT_RE.match(raw[0]):  # noqa: SLF001
+        raw = raw[1:]
+    return raw or words
+
+
 def _walk_keys(value: Any) -> Iterable[str]:
     if isinstance(value, dict):
         for key, inner in value.items():
@@ -282,7 +298,7 @@ def _count_heads(call: Any, project_context: Any, heads: collections.Counter[str
             continue
         if words[0] in SHELL_WORDS:
             continue
-        head = _head(words)
+        head = _head(_unwrapped_head_words(call, index, words, pc))
         if head is not None:
             heads[head] += 1
     return polls

@@ -160,6 +160,23 @@ class WhatTheReportNeverHolds(unittest.TestCase):
             for argument in ("hunter2", "internalhost", "supersecrettoken", "deploy"):
                 self.assertNotIn(argument, head or "")
 
+    def test_a_runner_argument_stripped_by_the_runtime_is_never_the_head(self) -> None:
+        import collections  # noqa: PLC0415
+
+        _config, pc = command_coverage._runtime()
+        for command, expected in (
+            ("npx supersecrettoken", "npx"),
+            ("uv run hunter2", "uv run"),
+            ("rtk hunter2", "rtk"),
+            ("pnpm exec hunter2", "pnpm"),
+            ("FOO=1 npx hunter2", "npx"),
+            ("rtk git status", "git status"),
+        ):
+            heads: collections.Counter[str] = collections.Counter()
+            call = pc._ShellCall(0.0, "/", {"command": command})  # noqa: SLF001
+            command_coverage._count_heads(call, pc, heads)
+            self.assertEqual({expected}, set(heads), command)
+
     def test_prose_that_names_a_ci_command_is_not_a_poll(self) -> None:
         polls = command_coverage._polls_ci
         self.assertTrue(polls(["gh", "pr", "checks", "1"]))
