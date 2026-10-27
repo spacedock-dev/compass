@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { claimMessage, holdsClaimWord } from './claimWords';
 
@@ -40,7 +41,7 @@ describe('holdsClaimWord', () => {
    and hold every word they name. A word added or dropped there fails here. */
 describe('the claim words match the producer rules', () => {
   const source = readFileSync(
-    new URL('../../../compass/skills/compass/compass_runtime/reading.py', import.meta.url),
+    resolve(process.cwd(), 'compass/skills/compass/compass_runtime/reading.py'),
     'utf8',
   );
   const full = /compare agent states \(([^)]*)\)/.exec(source.replace(/'\s*\n\s*"/g, ''));
