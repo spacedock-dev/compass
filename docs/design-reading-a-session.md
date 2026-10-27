@@ -6927,7 +6927,7 @@ titled "Correction to copy". The correction joined a line ending in a stop to it
   it; a long unbroken URL or path in What is cut after its last "/" rather than inside a name. The
   correction dates and quotes the same entry the card titles (`correction._headline`, a write or a check before
   a message), where it took the first cite.
-- **What is one sentence.** "At 11:25 the agent changed `<path>`." or "At 11:25 the agent said “…”.", about the
+- **What is one sentence.** "At 11:25 the agent changed `<path>`." or `At 11:25 the agent said “…”.`, about the
   same entry, with each cited entry's number after it. A quote ends on a whole word before its ellipsis wherever
   the cut falls; a single unbroken word longer than the bound, a URL, is still cut where it stands.
 - **Steer back is a section.** It follows the departures and the quiet rows: a heading, "Compass writes a
