@@ -1253,6 +1253,8 @@ class MaskCommandTest(unittest.TestCase):
         for line in (
             "rtk vault login hvs.FakeFake99",
             "rtk proxy aws configure set aws_secret_access_key FakeFake99",
+            "rtk bypass aws configure set aws_secret_access_key FakeFake99",
+            "rtk bypass vault login hvs.FakeFake99",
             "sudo -u bob vault login hvs.FakeFake99",
             "env -i vault login hvs.FakeFake99",
             "uv run vault login hvs.FakeFake99",
