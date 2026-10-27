@@ -2432,15 +2432,17 @@ qualifies the producer against it.
    shell line (the owner narrowed this on review the same day, as part of this ruling), after
    credential redaction and masking, word by word, of the forms redaction cannot recognise: a
    `NAME=value` assignment; the value after `--password`, `--token`, `--api-key`, `--secret`,
-   `--auth`, `-p` or `-P`, joined by `=` or in the next word; an `Authorization:` or `X-Api-Key:`
-   header value; and the password in `user:password@`, up to the last `@`. These forms and no
-   others, as SECURITY.md says. A substituted command is shown as `$(…)` and a trailing comment is
-   dropped. Clipped to 120 characters; the last 180 characters of
-   output, the existing ledger cap, with redaction run over the whole read window first; a
-   written path relative to the session's working directory, the folder it began in, which a later
-   `cd` does not move; and, for a segment that is neither a check nor
-   on the read-only list, its time only, never its text, used on this machine. No file content is read as a field, and never an
-   Edit or Write result body; the output tail is whatever the runner printed.
+   `--auth`, `-p` or `-P`, joined by `=` or in the next word (pytest's `-p no:<plugin>` is shown; see
+   [the 2026-10-27 amendment](#amended-2026-10-27-owner-pytests--p-no-is-shown)); an
+   `Authorization:` or `X-Api-Key:` header value; and the password in `user:password@`, up to
+   the last `@`. These forms and no others, as SECURITY.md says. A substituted command is shown
+   as `$(…)` and a trailing comment is dropped. Clipped to 120 characters; the last 180
+   characters of output, the existing ledger cap, with redaction run over the whole read window
+   first; a written path relative to the session's working directory, the folder it began in,
+   which a later `cd` does not move; and, for a segment that is neither a check nor on the
+   read-only list, its time only, never its text, used on this machine. No file content is read
+   as a field, and never an Edit or Write result body; the output tail is whatever the runner
+   printed.
 6. Where it lives: the observed record only, as a new fact type the reading counts as work. It is
    kept out of the semantic history store and out of every session row field, and it is named in
    `history.PROMPT_DERIVED_CARRIERS`. SECURITY.md adds it to the named reads, moving the count
@@ -3300,6 +3302,27 @@ rewrite that changes the check's title gives it a different id, so the pages alo
 The source comparison names it as changed, whether the later read is a continuation or a whole read, and a
 reader that acts on a change by reading the whole file again ends with the same checks as a read of the
 whole file. Until it does, a reader holding only the earlier pages still has the typed command's check.
+
+### Amended 2026-10-27 (owner): `rtk proxy` is not a wrapper that rewrites output
+
+[The closed lists](#the-closed-lists) name `rtk` as a wrapper whose checks read the error flag alone. `rtk proxy`
+is RTK's unfiltered mode: [the capture](captures/rtk/proxy-passthrough-1.1.0-macos.jsonl) shows a pass summary
+printed unchanged with the command's own exit status, so `rtk proxy <runner>` is stripped to `<runner>` and read
+from its output as if `rtk` were absent, and bare `rtk <runner>` keeps the flag-only rule. A different program,
+Rust Type Kit, is also installed as `rtk`; the capture's version line reads `rtk X.Y.Z` for the one measured.
+rtk 1.1.0 renamed `rtk proxy` to `rtk bypass` and kept `proxy` as a deprecated alias; `rtk bypass` is not yet read as
+unfiltered, so a check run through it fails toward no recorded result.
+
+### Amended 2026-10-27 (owner): pytest's `-p no:<plugin>` is shown
+
+Item 5 of this ruling masks the word after `-p` as a password for every runner, and a pytest check then read
+`-p …REDACTED` where the agent had passed a plugin flag. After wrappers are stripped, a pytest runner (`pytest`,
+`py.test`, `python -m pytest`) shows the word after `-p`, or the joined `-pno:<name>`, only when it is `no:` and an
+identifier of letters, digits, `_` and `.`. Any other word stays masked, because `-p hunter2` cannot be told from
+`-p myplugin`, and every other runner and `-P` keep the mask. A word deliberately spelled `no:<identifier>` after `-p` in a
+pytest check is shown whatever it is; credential-shaped values are still redacted by shape. The output-tail scrub
+and the call's masked-value set keep the unconditional `-p` mask, so a shown plugin word can still be erased from
+an echoed tail: that side only over-masks.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

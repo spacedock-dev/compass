@@ -1863,30 +1863,35 @@ it is named in `history.PROMPT_DERIVED_CARRIERS`.
 
 Masking is by named form, word by word, and covers these forms and no others: a `NAME=value`
 assignment; the value after `--password`, `--token`, `--api-key`, `--secret`, `--auth`, `-p` or
-`-P`, joined by `=` or in the next word; an `Authorization:` or `X-Api-Key:` header value anywhere;
-and, only where a header is expected (the word after `-H`, `--header` or `--proxy-header`, a header
-joined to its flag, or an `extraheader=` key), a `Proxy-Authorization:`, `Cookie:` or `Set-Cookie:`
-value or one whose name holds `token`, `key`, `secret`, `password`, `passwd` or `credential`
-(`X-Vault-Token:`, `Private-Token:`, `DD-API-KEY:`, `Ocp-Apim-Subscription-Key:`), including a
-header name standing alone with its value in the words after it, so `grep -n 'Authorization:' log`
-masks nothing; for `curl`, `wget`, `http`, `https` and `xh` only, the password of `-u`, `--user` or
-`--proxy-user` (also inside a cluster of short flags such as `curl -sSu`, and `-a` for the
-`http` clients; the user name stays, and only a word with a colon is masked, so `git push -u`,
-`docker run -u 1000:1000` and `tar -su` read as typed); the value of `--cookie`; the value of a
-dotted config key whose last part is `extraheader`, `password`, `passwd`, `token`, `secret`, `apikey`
-or `api-key` (`http.extraheader=`, and the key GitHub Actions writes, `http.https://github.com/.extraheader=`),
-while a flag such as `--max-tokens=4096` or `--password-file=/x` is not a key; the word after `-a`,
-`-a<value>`, `--pass` or `--pass=` for `redis-cli` only; the token word of `vault login`; the value
-of `aws configure set` for a name holding `secret`, `token`, `password`, `passwd` or `key`, read past
-`--profile` and the other flags that take a value; and the
-password in `user:password@`, up to the last `@` in the word, so one holding `/`, `@` or whitespace
-is masked whole. A program is found behind `rtk`, `sudo`, `env`, `uv run`, `pnpm exec` and the
-like, and behind `docker`, `podman` or `kubectl exec`. The words are the ones the program receives: quotes removed, `$'…'` escapes
-decoded and backslash-newline continuations joined before masking and redaction run, so a value is
-masked whole however it was quoted, and an escaped key such as `$'\x41KIA…'` reaches redaction as
-the key it is. Redirections, a named descriptor such as `{fd}>` included, are set apart first, so a
-flag and its value are masked as a pair even with a redirection between them, and a NUL decoded from `$'…'` ends the argument as it does for the
-program. A value after any other flag is published as typed unless it has a credential shape.
+`-P`, joined by `=` or in the next word, except that a pytest check shows `-p no:<plugin>` (or
+`-pno:<plugin>`) for an identifier and masks any other word after `-p` (a word spelled
+`no:<identifier>` is shown whatever it is, and credential shapes are still redacted by shape; the
+output-tail scrub keeps the plain `-p` mask); an `Authorization:` or `X-Api-Key:` header value
+anywhere; and, only where a header is expected (the word after `-H`, `--header` or
+`--proxy-header`, a header joined to its flag, or an `extraheader=` key), a `Proxy-Authorization:`,
+`Cookie:` or `Set-Cookie:` value or one whose name holds `token`, `key`, `secret`, `password`,
+`passwd` or `credential` (`X-Vault-Token:`, `Private-Token:`, `DD-API-KEY:`,
+`Ocp-Apim-Subscription-Key:`), including a header name standing alone with its value in the words
+after it, so `grep -n 'Authorization:' log` masks nothing; for `curl`, `wget`, `http`, `https` and
+`xh` only, the password of `-u`, `--user` or `--proxy-user` (also inside a cluster of short flags
+such as `curl -sSu`, and `-a` for the `http` clients; the user name stays, and only a word with a
+colon is masked, so `git push -u`, `docker run -u 1000:1000` and `tar -su` read as typed); the
+value of `--cookie`; the value of a dotted config key whose last part is `extraheader`, `password`,
+`passwd`, `token`, `secret`, `apikey` or `api-key` (`http.extraheader=`, and the key GitHub Actions
+writes, `http.https://github.com/.extraheader=`), while a flag such as `--max-tokens=4096` or
+`--password-file=/x` is not a key; the word after `-a`, `-a<value>`, `--pass` or `--pass=` for
+`redis-cli` only; the token word of `vault login`; the value of `aws configure set` for a name
+holding `secret`, `token`, `password`, `passwd` or `key`, read past `--profile` and the other flags
+that take a value; and the password in `user:password@`, up to the last `@` in the word, so one
+holding `/`, `@` or whitespace is masked whole. A program is found behind `rtk`, `sudo`, `env`, `uv
+run`, `pnpm exec` and the like, and behind `docker`, `podman` or `kubectl exec`. The words are the
+ones the program receives: quotes removed, `$'…'` escapes decoded and backslash-newline
+continuations joined before masking and redaction run, so a value is masked whole however it was
+quoted, and an escaped key such as `$'\x41KIA…'` reaches redaction as the key it is. Redirections,
+a named descriptor such as `{fd}>` included, are set apart first, so a flag and its value are
+masked as a pair even with a redirection between them, and a NUL decoded from `$'…'` ends the
+argument as it does for the program. A value after any other flag is published as typed unless it
+has a credential shape.
 
 The output tail is covered by credential-shape redaction, and by one more step: each named value
 masked anywhere in the call, assignments, wrapper arguments and executed substitutions included,

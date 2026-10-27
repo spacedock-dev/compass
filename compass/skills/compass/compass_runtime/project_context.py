@@ -2267,7 +2267,10 @@ def _stripped(words: list[str]) -> tuple[list[str], bool]:
         if _ASSIGNMENT_RE.match(words[0]):
             words = words[1:]
         elif words[0] == "rtk":
-            words, rtk = _unwrap_rtk(words), True
+            # `rtk proxy` is unfiltered: the runner's own output and status pass
+            # through, so only another `rtk` form reads the flag alone.
+            proxied = words[1:2] == ["proxy"]
+            words, rtk = _unwrap_rtk(words), rtk or not proxied
         elif words[:2] == ["uv", "run"]:
             words = _skip_options(words[2:], _UV_VALUE_OPTIONS)
         elif words[:2] in _WRAPPER_PAIRS:
@@ -3561,13 +3564,21 @@ def _flag_result(flag: object, *, last: bool, all_and: bool, alone: bool) -> str
     return "passed" if last or all_and else ""
 
 
+def _is_pytest(words: list[str]) -> bool:
+    if not words:
+        return False
+    if os.path.basename(words[0]) in ("pytest", "py.test"):
+        return True
+    return bool(_PYTHON_RE.match(os.path.basename(words[0]))) and words[1:3] == ["-m", "pytest"]
+
+
 def _check_line(words: list[str]) -> str:
     """The runner form and the rest of its own segment, masked, redacted, clipped.
 
     Its own segment only, never the rest of the shell line (owner, 2026-09-24).
     Each word is masked before the words are joined and re-quoted.
     """
-    masked = records.mask_words(words)
+    masked = records.mask_words(words, pytest=_is_pytest(words))
     line = " ".join(shlex.quote(word) if re.search(r"\s", word) else word for word in masked)
     bounded = records.redact_clip(line, TOOL_REPORT_LINE_CHARS)
     return records.safe_text(bounded, len(bounded))
@@ -3701,7 +3712,9 @@ class _ShellCall:
             for target in _file_targets(redirects)
         ]
         # Every value masking hides anywhere in the call, as the tail scrub
-        # reads them (review W1).
+        # reads them (review W1). Deliberately not pytest-aware: the scrub keeps
+        # the unconditional `-p` mask, so a shown `-p no:<plugin>` can still be
+        # erased from an echoed output tail (it fails closed).
         self.masked_values = {
             value
             for part in self.parts

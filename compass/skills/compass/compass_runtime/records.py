@@ -666,7 +666,8 @@ def redact_clip(text: str, limit: int) -> str:
 # check lines item 5 of the ruling `mask_words` cites asks for, widened on
 # review (2026-09-24) to the flags below. These named forms and no others:
 # SECURITY.md says so. Over-masking is the accepted direction: `-p` is also
-# `mkdir -p` and `pytest -p`, and losing that word costs a reader nothing.
+# `mkdir -p`, and losing that word costs a reader nothing. The one shown form
+# is pytest's `-p no:<plugin>` (see `_PYTEST_PLUGIN_OFF`).
 _MASK_FLAGS: Final = frozenset(
     {
         "--password",
@@ -891,14 +892,22 @@ def _positional_credential(words: list[str], start: int, program: str) -> int:
     return -1
 
 
-def mask_words(words: list[str], *, prose: bool = False) -> list[str]:
+# `pytest -p no:cacheprovider` names a plugin to disable; nothing else after
+# `-p` is shown, since `-p hunter2` reads the same as `-p myplugin`.
+_PYTEST_PLUGIN_OFF: Final = re.compile(r"no:[A-Za-z_][A-Za-z0-9_.]*")
+
+
+def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
+    words: list[str], *, prose: bool = False, pytest: bool = False
+) -> list[str]:
     """Each word of a command with every value a named form carries replaced.
 
     Per word, before the words are joined and re-quoted, so a quoted value with
     whitespace in it is masked whole (review, 2026-09-24). A named flag masks
-    the word after it. `prose` reads a person's sentence rather than a command:
-    the forms that need a command around them (a header after `-H`, an HTTP
-    client's `-u`) are left out, so ordinary words are not taken for values.
+    the word after it, except that a pytest runner's `-p no:<name>` is shown.
+    `prose` reads a person's sentence rather than a command: the forms that need
+    a command around them (a header after `-H`, an HTTP client's `-u`) are left
+    out, so ordinary words are not taken for values.
     [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
     """
     start = _program(words)
@@ -910,7 +919,7 @@ def mask_words(words: list[str], *, prose: bool = False) -> list[str]:
     word_forms += _MASK_COMMAND_WORD_FORMS.get(program, ())
     positional = _positional_credential(words, start, program)
     masked: list[str] = []
-    mask_next = user_next = header_owed = scheme_next = False
+    mask_next = user_next = header_owed = scheme_next = plugin_flag = False
     for index, word in enumerate(words):
         header_here = not prose and index > 0 and words[index - 1] in _MASK_HEADER_FLAGS
         if header_owed:
@@ -922,7 +931,8 @@ def mask_words(words: list[str], *, prose: bool = False) -> list[str]:
             header_owed = scheme_next = False
             continue
         if mask_next:
-            masked.append(_SECRET_MARKER)
+            shown = plugin_flag and _PYTEST_PLUGIN_OFF.fullmatch(word)
+            masked.append(word if shown else _SECRET_MARKER)
             mask_next = False
             continue
         if user_next:
@@ -937,6 +947,10 @@ def mask_words(words: list[str], *, prose: bool = False) -> list[str]:
         if word in flags or word in _MASK_COOKIE_FLAGS:
             masked.append(word)
             mask_next = True
+            plugin_flag = pytest and word == "-p"
+            continue
+        if pytest and word.startswith("-p") and _PYTEST_PLUGIN_OFF.fullmatch(word[2:]):
+            masked.append(word)
             continue
         if http and (
             word in user_flags or (program == "curl" and _MASK_CURL_USER_CLUSTER.match(word))
