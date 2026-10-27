@@ -1832,8 +1832,9 @@ estimate's floor only until a later check or command passes. A call whose result
 its command line. A quoted word the masking cannot read word by word, such as the script of a `bash -c`
 call that did not parse, is published as `…`, so half of a value is never shown. The same rules decide the
 last 180 characters of output the press reads. The vendor of the session decides what leaves the machine:
-a Claude Code session read through Claude Code, the Live monitor's Haiku check included, may be sent every
-command's masked line and redacted tail, since that vendor already received them. Another vendor (Codex
+a Claude Code session read through Claude Code may be sent every command's masked line and redacted tail,
+since that vendor already received them. The Live monitor's Haiku check is the exception: it is sent a
+command's line and its result words only, never a tail. Another vendor (Codex
 reading a Claude Code session) is sent each command's line and status, and tails for checks and CI reads
 only: a tail whose call also holds a command is withheld whole, because it is the whole call's output.
 The notice names it in one sentence. The residual: redaction is by named form and shape and is best
