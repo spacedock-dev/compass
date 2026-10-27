@@ -2434,8 +2434,8 @@ qualifies the producer against it.
    `NAME=value` assignment; the value after `--password`, `--token`, `--api-key`, `--secret`,
    `--auth`, `-p` or `-P`, joined by `=` or in the next word (pytest's `-p no:<plugin>` is shown; see
    [the 2026-10-27 amendment](#amended-2026-10-27-owner-pytests--p-no-is-shown)); an
-   `Authorization:` or `X-Api-Key:` header value; and the password in `user:password@`, up to the last `@`. These forms and no
-   others, as SECURITY.md says. A substituted command is shown as `$(…)` and a trailing comment is
+   `Authorization:` or `X-Api-Key:` header value; and the password in `user:password@`, up to the
+   last `@`. These forms and no others, as SECURITY.md says. A substituted command is shown as `$(…)` and a trailing comment is
    dropped. Clipped to 120 characters; the last 180 characters of
    output, the existing ledger cap, with redaction run over the whole read window first; a
    written path relative to the session's working directory, the folder it began in, which a later
@@ -3309,6 +3309,8 @@ is RTK's unfiltered mode: [the capture](captures/rtk/proxy-passthrough-1.1.0-mac
 printed unchanged with the command's own exit status, so `rtk proxy <runner>` is stripped to `<runner>` and read
 from its output as if `rtk` were absent, and bare `rtk <runner>` keeps the flag-only rule. A different program,
 Rust Type Kit, is also installed as `rtk`; the capture's version line reads `rtk X.Y.Z` for the one measured.
+rtk 1.1.0 renamed `rtk proxy` to `rtk bypass` and kept `proxy` as a deprecated alias; `rtk bypass` is not yet read as
+unfiltered, so a check run through it fails toward no recorded result.
 
 ### Amended 2026-10-27 (owner): pytest's `-p no:<plugin>` is shown
 
