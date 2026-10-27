@@ -2252,14 +2252,22 @@ def _skip_options(words: list[str], takes_value: frozenset[str]) -> list[str]:
     return words
 
 
+def _unwrap_rtk(words: list[str]) -> list[str]:
+    """The words behind a leading `rtk`. `rtk lint` is rtk's own name for the eslint runner
+    (`rtk rewrite 'eslint .'` prints `rtk lint .`); a bare `lint` stays no runner."""
+    if words[1:2] == ["proxy"]:
+        return words[2:]
+    return ["eslint", *words[2:]] if words[1:2] == ["lint"] else words[1:]
+
+
 def _stripped(words: list[str]) -> tuple[list[str], bool]:
     """Item 3's stripping, and whether `rtk` wrapped the runner (owner, 2026-09-24)."""
     rtk = False
     while words:
         if _ASSIGNMENT_RE.match(words[0]):
             words = words[1:]
-        elif words[:2] == ["rtk", "proxy"] or words[0] == "rtk":
-            words, rtk = words[2:] if words[1:2] == ["proxy"] else words[1:], True
+        elif words[0] == "rtk":
+            words, rtk = _unwrap_rtk(words), True
         elif words[:2] == ["uv", "run"]:
             words = _skip_options(words[2:], _UV_VALUE_OPTIONS)
         elif words[:2] in _WRAPPER_PAIRS:
@@ -3440,6 +3448,43 @@ def _tool_result_blocks(
     return results
 
 
+# Past this a hook's stdout is not read: a rewritten command is a line, and an output that size
+# is something else wearing the attachment's name.
+_HOOK_STDOUT_MAX_CHARS = 64 * 1024
+
+
+def _hook_rewritten_commands(transcript: list[dict[str, Any]]) -> dict[str, str]:
+    """The command each PreToolUse hook substituted for a Bash call, by call id.
+
+    Claude Code keeps the command the agent typed in the `tool_use` block and records the hook's
+    rewrite beside it, as an attachment whose `stdout` carries `updatedInput.command`. The output
+    the call returned is the rewritten command's, so a check is the command that ran
+    (`docs/design-reading-a-session.md#amended-2026-10-27-the-command-a-hook-rewrote-is-the-command-that-ran`).
+    A stdout that is not a JSON object, or carries no non-empty string command, is no rewrite.
+    """
+    found: dict[str, str] = {}
+    for record in transcript:
+        attachment = record.get("attachment")
+        if (
+            record.get("type") != "attachment"
+            or not isinstance(attachment, dict)
+            or attachment.get("hookName") != "PreToolUse:Bash"
+        ):
+            continue
+        call_id, stdout = attachment.get("toolUseID"), attachment.get("stdout")
+        if not isinstance(call_id, str) or not isinstance(stdout, str):
+            continue
+        if not stdout or len(stdout) > _HOOK_STDOUT_MAX_CHARS:
+            continue
+        output = _json_dict(stdout.encode("utf-8", "replace"))
+        specific = output.get("hookSpecificOutput") if output else None
+        updated = specific.get("updatedInput") if isinstance(specific, dict) else None
+        command = updated.get("command") if isinstance(updated, dict) else None
+        if isinstance(command, str) and command.strip():
+            found[call_id] = command
+    return found
+
+
 def _claude_tool_uses(
     transcript: list[dict[str, Any]], *, sidechain: bool = False
 ) -> Iterator[tuple[float, str, str, str, dict[str, Any], str]]:
@@ -3448,6 +3493,7 @@ def _claude_tool_uses(
     is `SUBAGENT_WORKER`. A sidechain record inside a parent's own file is
     read by neither (none in 300 parent transcripts measured, 2026-09-28)."""
     worker = SUBAGENT_WORKER if sidechain else ""
+    rewritten = _hook_rewritten_commands(transcript)
     for record in transcript:
         if (
             record.get("type") != "assistant"
@@ -3464,6 +3510,8 @@ def _claude_tool_uses(
                 continue
             call_id, name, tool_input = block.get("id"), block.get("name"), block.get("input")
             if isinstance(call_id, str) and isinstance(name, str) and isinstance(tool_input, dict):
+                if name == "Bash" and call_id in rewritten:
+                    tool_input = {**tool_input, "command": rewritten[call_id]}
                 yield at, cwd if isinstance(cwd, str) else "", call_id, name, tool_input, worker
 
 

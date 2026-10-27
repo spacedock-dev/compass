@@ -105,6 +105,28 @@ class Transcript:
         self.result(call_id, output, is_error=is_error)
         return call_id
 
+    def hook_rewrite(
+        self, call_id: str, stdout: str, *, hook: str = "PreToolUse:Bash", sidechain: bool = False
+    ) -> None:
+        """The record Claude Code writes when a PreToolUse hook answers a Bash call."""
+        self.rows.append(
+            {
+                "type": "attachment",
+                "isSidechain": sidechain,
+                "cwd": self.cwd,
+                "sessionId": SID,
+                "timestamp": self._stamp(),
+                "attachment": {
+                    "type": "hook_success",
+                    "hookName": hook,
+                    "hookEvent": hook.split(":", 1)[0],
+                    "toolUseID": call_id,
+                    "stdout": stdout,
+                    "exitCode": 0,
+                },
+            }
+        )
+
     def write(self, path: str, content: str = "print('hello')\n") -> None:
         call_id = self.call("Write", {"file_path": path, "content": content})
         self.result(call_id, f"File created successfully at: {path}")
@@ -116,6 +138,20 @@ class Transcript:
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(json.dumps(row) for row in self.rows) + "\n", encoding="utf-8")
+
+
+def hook_stdout(command: str) -> str:
+    """What an output-rewriting hook prints: the call, with its command replaced."""
+    return json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": "auto-rewrite",
+                "updatedInput": {"command": command},
+            }
+        }
+    )
 
 
 class ClaudeChecksTestCase(unittest.TestCase):
@@ -1071,6 +1107,98 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
                 check = self.only_check()
                 self.assertTrue(check["title"].startswith("pytest"))
                 self.assertEqual(expected, check["result"])
+
+    def test_a_command_a_hook_rewrote_is_the_command_that_ran(self) -> None:  # R12
+        """The agent typed `pytest`; the hook ran `rtk pytest`, whose output no rule may read."""
+        call_id = self.session.call("Bash", {"command": "pytest"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk pytest"))
+        self.session.result(call_id, "1 failed", is_error=False)
+        check = self.only_check()
+        self.assertTrue(check["title"].startswith("pytest"))
+        self.assertEqual("not-recorded", check["result"])
+
+    def test_a_rewritten_check_reads_its_result_from_the_flag_alone(self) -> None:  # R12
+        """Typed `ruff check x` ran as `rtk ruff check x`: failure text with no flag is withheld."""
+        call_id = self.session.call("Bash", {"command": "ruff check x"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk ruff check x"))
+        self.session.result(call_id, "x.py:1 1 failed", is_error=False)
+        self.assertEqual("not-recorded", self.only_check()["result"])
+
+    def test_a_rewritten_check_with_a_failing_flag_fails_on_the_flag(self) -> None:  # R12
+        call_id = self.session.call("Bash", {"command": "ruff check x"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk ruff check x"))
+        self.session.result(call_id, "Exit code 1\nRuff: 2 issues", is_error=True)
+        self.assertEqual("failed", self.only_check()["result"])
+
+    def test_rtk_lint_is_the_eslint_check(self) -> None:  # R12
+        """rtk prints `rtk lint .` for `npx eslint .`; the check and its read-only status survive."""
+        call_id = self.session.call("Bash", {"command": "npx eslint ."})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk lint ."))
+        self.session.result(call_id, "", is_error=False)
+        events, scan = self.read()
+        checks = [e for e in events if e["subject"] == "check"]
+        self.assertEqual(1, len(checks), checks)
+        self.assertTrue(checks[0]["title"].startswith(("eslint", "lint")))
+        self.assertEqual("passed", checks[0]["result"])
+        self.assertIsNone(scan["last_changing_command_at"])
+
+    def test_rtk_lint_with_fix_is_a_check_and_a_change(self) -> None:  # R12
+        call_id = self.session.call("Bash", {"command": "eslint . --fix"})
+        self.session.hook_rewrite(call_id, hook_stdout("rtk lint . --fix"))
+        self.session.result(call_id, "", is_error=False)
+        events, scan = self.read()
+        self.assertEqual(1, len([e for e in events if e["subject"] == "check"]))
+        self.assertIsNotNone(scan["last_changing_command_at"])
+
+    def test_lint_alone_is_not_a_runner(self) -> None:  # R12
+        self.session.bash("lint .", "", is_error=False)
+        self.assertEqual([], self.checks())
+
+    def test_a_rewrite_that_does_not_read_as_a_command_leaves_the_typed_one(self) -> None:  # R12
+        for stdout in (
+            "{not json",
+            "[]",
+            json.dumps({"hookSpecificOutput": {"updatedInput": "rtk pytest"}}),
+            json.dumps({"hookSpecificOutput": {"updatedInput": {"command": ["rtk", "pytest"]}}}),
+            json.dumps({"hookSpecificOutput": {"updatedInput": {"command": ""}}}),
+            json.dumps({"hookSpecificOutput": {"permissionDecision": "allow"}}),
+            hook_stdout("rtk pytest " + "x" * 70000),
+        ):
+            with self.subTest(stdout=stdout[:60]):
+                self.setUp()
+                call_id = self.session.call("Bash", {"command": "pytest"})
+                self.session.hook_rewrite(call_id, stdout)
+                self.session.result(call_id, "1 failed", is_error=False)
+                self.assertEqual("failed", self.only_check()["result"])
+
+    def test_only_a_pre_tool_use_bash_hook_rewrites_a_command(self) -> None:  # R12
+        for hook in ("PreToolUse:Edit", "PostToolUse:Bash", "PreToolUse"):
+            with self.subTest(hook=hook):
+                self.setUp()
+                call_id = self.session.call("Bash", {"command": "pytest"})
+                self.session.hook_rewrite(call_id, hook_stdout("rtk pytest"), hook=hook)
+                self.session.result(call_id, "1 failed", is_error=False)
+                self.assertEqual("failed", self.only_check()["result"])
+
+    def test_a_subagent_transcripts_rewrite_is_read_the_same_way(self) -> None:  # R12
+        self.session.bash("true", "", is_error=False)
+        child = Transcript(self.root)
+        child.calls = 10  # call ids are shared across streams, so the child's must not repeat
+        call_id = child.call("Bash", {"command": "pytest"}, sidechain=True)
+        child.hook_rewrite(call_id, hook_stdout("rtk pytest"), sidechain=True)
+        child.result(call_id, "1 failed", is_error=False)
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        self.assertEqual("not-recorded", self.only_check()["result"])
+
+    def test_a_rewrite_of_another_call_does_not_reach_this_one(self) -> None:  # R12
+        other = self.session.call("Bash", {"command": "ls"})
+        self.session.hook_rewrite(other, hook_stdout("rtk ls"))
+        self.session.result(other, "a", is_error=False)
+        call_id = self.session.bash("pytest", "1 failed", is_error=False)
+        self.assertTrue(call_id)
+        self.assertEqual("failed", self.only_check()["result"])
 
     def test_paths_options_and_subshells_are_stripped(self) -> None:  # R13
         for command, title in (

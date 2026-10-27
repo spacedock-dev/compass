@@ -654,6 +654,21 @@ def _tools(
     sidechain = stream != "parent"
     results = context._tool_result_blocks(read.rows, sidechain=sidechain)  # noqa: SLF001
     calls = {call.call_id: call for call in previous if call.stream == stream}
+    # A hook's rewrite arrives after the call it rewrites, so on a later page than a carried call.
+    rewrites = context._hook_rewritten_commands(read.rows)  # noqa: SLF001
+    # The carried call's facts were published from the typed command, and a rewrite can change the
+    # check's title and so its fact id. The whole-file read has only the rewritten fact, so a call
+    # whose command changed here is reported with the resolved calls, which makes `compare` name its
+    # earlier facts as changed and send the reader back to a full read.
+    rewritten: list[str] = []
+    for call_id, call in calls.items():
+        if call.name == "Bash" and call_id in rewrites:
+            input_data = json.loads(call.input_json)
+            if input_data.get("command") != rewrites[call_id]:
+                rewritten.append(call_id)
+            calls[call_id] = replace(
+                call, input_json=json.dumps({**input_data, "command": rewrites[call_id]})
+            )
     calls.update({call.call_id: call for call in _pending_calls(read.rows, stream)})
     positions, result_rows = _rows_of(read.rows, sidechain)
     pending: list[PendingCall] = []
@@ -690,7 +705,14 @@ def _tools(
                 pending.append(
                     replace(call, fact_ids=tuple(e.fact_id for e in entries[first_entry:]))
                 )
-    read.result_calls = tuple(call_id for call_id in results if result_rows.get(call_id, 0) < cut)
+    read.result_calls = tuple(
+        dict.fromkeys(
+            (
+                *(call_id for call_id in results if result_rows.get(call_id, 0) < cut),
+                *(call_id for call_id in rewritten if call_id not in results),
+            )
+        )
+    )
     return entries, pending
 
 
@@ -966,6 +988,16 @@ def _content_change(
         if (call.stream, call.call_id) in resolved
         for fact_id in call.fact_ids
     ]
+    if page.coverage is not None and page.coverage.complete:
+        # A whole read lists every check the call yields now. A carried call's fact that is not
+        # among them was read from a command a hook has since rewritten to another title.
+        listed = {entry.fact_id for entry in page.entries}
+        changed.extend(
+            (fact_id, "check_result")
+            for call in previous.cursor.pending
+            for fact_id in call.fact_ids
+            if fact_id not in listed
+        )
     appended = []
     for entry in page.entries:
         old = known.get(entry.fact_id)

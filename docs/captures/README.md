@@ -34,6 +34,13 @@ every record is a sidechain carrying the parent's `sessionId`, and the parent's 
 carries `toolUseResult.agentId`, which names the file. The meta file beside it carries
 `toolUseId` and `spawnDepth`. DEC-23's amendment of 2026-09-28 reads these.
 
+[Claude PreToolUse rewrite shape](claude/pretooluse-rewrite-shape-2.1.311-macos.jsonl) is taken the same
+way, by field name and type name only, from Claude Code 2.1.311 sessions on this machine that ran an
+output-rewriting hook. The transcript keeps the agent's typed command in the `tool_use` block and records the
+hook's answer as a top-level `attachment` row whose `toolUseID` names that call and whose `stdout` is a JSON
+object carrying `hookSpecificOutput.updatedInput.command`. The result's output is the rewritten command's.
+DEC-23's amendment of 2026-10-27 reads it.
+
 ## What is in a record, and what is deliberately not
 
 Each line is one hook invocation, written by `scripts/capture_hook.py`. It records the **names** of
