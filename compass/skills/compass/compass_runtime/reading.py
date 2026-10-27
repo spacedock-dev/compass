@@ -440,6 +440,94 @@ SKILL_USED = "skill used"
 WRITE_SUBJECT = "write"
 _WRITE_PRIORITY = 3
 _CHECK_PRIORITY = {RESULT_FAILED: 1, RESULT_PASSED: 2, "not-recorded": 4}
+# Tier 3 reserves room after everything else a record holds but the agent's messages: it never
+# displaces the reader's words, a check, a write, a pull request, a skill or a tier 2 CI read.
+_COMMAND_PRIORITY = 5
+# Two more subjects, apart from `check` (never reusing it): a CI read that carries an exit status
+# (tier 2) and any other command (tier 3):
+# [DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)  # noqa: E501
+COMMAND_SUBJECT = "command"
+CI_SUBJECT = "ci_command"
+# The subjects whose fact carries a recorded exit status.
+RESULT_SUBJECTS = frozenset({CHECK_SUBJECT, COMMAND_SUBJECT, CI_SUBJECT})
+COMMAND_RESULT_WORDS = {
+    "passed flag": "exited 0; Compass does not know what it checks",
+    "failed flag": "exited non-zero; Compass does not know what it checks",
+}
+COMMAND_NOT_RECORDED = "ran, exit status not recorded"
+# Each consumer admits a subject from this table and from nowhere else, so a subject added later
+# reaches none of them until someone names it here. `test_subject_consumers` runs every subject
+# through every consumer and holds each consumer to its row.
+CONSUMER_SUBJECTS: dict[str, frozenset[str]] = {
+    # The `work` stamp on a ledger row, which the drift floor and a check-backed verdict read.
+    "work_floor": frozenset({CHECK_SUBJECT, "write", "pr", "skill", COMMAND_SUBJECT, CI_SUBJECT}),
+    # Which cited entry may carry a verdict.
+    "check_supports": frozenset(
+        {CHECK_SUBJECT, "write", "pr", "skill", COMMAND_SUBJECT, CI_SUBJECT}
+    ),
+    # The model-free level: a tier 3 command only blocks the floor, since its own call is a
+    # changing command and so can never show a later pass unchanged.
+    "live_level": frozenset({CHECK_SUBJECT, "write", COMMAND_SUBJECT, CI_SUBJECT}),
+    # The stored reading's level: a failed CI read counts as a failed check does. A tier 3 command
+    # is the live level's blocker alone, since nothing there judges whether it mattered.
+    "analysis_level": frozenset({CHECK_SUBJECT, CI_SUBJECT}),
+    "monitor_turn": frozenset({CHECK_SUBJECT, "write", COMMAND_SUBJECT, CI_SUBJECT}),
+    # Keyword overlap decides what a command covers there, and the command tiers ruling rejects
+    # that for a command whose purpose Compass does not know.
+    "goal_verdict": frozenset({CHECK_SUBJECT, "write", "pr"}),
+    # The history store and the unasked lane keep no tool report at all;
+    # the unasked lane's failed commands are a later layer's.
+    "history": frozenset(),
+    "unasked_ledger": frozenset(),
+}
+
+
+def admits(consumer: str, subject: object) -> bool:
+    """Whether this consumer reads facts of this subject."""
+    return subject in CONSUMER_SUBJECTS.get(consumer, frozenset())
+
+
+# What can never fail, by its text: a program whose status is 0 whatever it does, a command on
+# the read-only list, and a line that ends by forcing a 0 status. The producer sets `cannot_fail`
+# from the parsed call and always publishes it, so this reads the published line only for an older
+# stored fact that lacks the key. The words are a copy of `project_context`'s lists, plus the
+# program names `records.ALWAYS_ZERO_WORDS` holds; a test holds each one to the producer.
+_NEVER_FAILS_WORDS = frozenset(
+    {"ls", "cat", "head", "tail", "grep", "rg", "find", "wc", "pwd", "echo", "which", "file",
+     "stat", "tree", "less", "sleep", "seq", "test", "[", "[["}
+)  # fmt: skip
+_NEVER_FAILS_PAIRS = frozenset(
+    {"git status", "git log", "git diff", "git show", "git rev-parse", "git merge-base"}
+)
+_NEVER_FAILS_TRIPLES = frozenset({"gh pr view", "gh run list", "gh run watch", "glab ci status"})
+_STATUS_FORCED = re.compile(r"(?:\|\||;)\s*(?:true|:|exit\s+0)\s*$")
+
+
+def cannot_fail(entry: Mapping[str, Any]) -> bool:
+    """Whether a command's recorded exit status says nothing about it.
+
+    A command fact is withdrawn from every verdict and level on either ground: the producer
+    marked it, or its published line names a command that cannot fail. `false` is not here:
+    it always exits non-zero, which is a result, so it is left off the list.
+    """
+    if entry.get("subject") not in (COMMAND_SUBJECT, CI_SUBJECT):
+        return False
+    flag = entry.get("cannot_fail")
+    if isinstance(flag, bool):
+        return flag
+    if entry.get("subject") == CI_SUBJECT:
+        return False
+    line = str(entry.get("summary") or "").rsplit(" (", 1)[0].strip()
+    words = records.launched_words(line.split())
+    if not words:
+        return False
+    return bool(
+        _STATUS_FORCED.search(line)
+        or records.always_zero(words)
+        or words[0] in _NEVER_FAILS_WORDS
+        or " ".join(words[:2]) in _NEVER_FAILS_PAIRS
+        or " ".join(words[:3]) in _NEVER_FAILS_TRIPLES
+    )
 
 
 @dataclass(frozen=True)
@@ -1024,6 +1112,8 @@ class LedgerEntry(TypedDict):
     read_incomplete: NotRequired[bool]
     # When a check's result arrived, where one did (DRC-4702).
     result_at: NotRequired[float]
+    # A command whose exit status says nothing about it, set by `build_ledger`.
+    cannot_fail: NotRequired[bool]
     tail: NotRequired[str]
     # A person's message whole, which the prompt sends in place of the summary
     # only inside `WORDS_SHARE_DIVISOR`'s share. Absent on every other row.
@@ -1727,6 +1817,31 @@ def _menu_field(value: str) -> str:
     return value.replace(MENU_SEPARATOR, " - ")
 
 
+def result_words(fact: Mapping[str, Any]) -> str:
+    """The first of a command's result words: its exit status, as Compass labels it."""
+    return _command_words(fact, read_incomplete=False)[0]
+
+
+def _command_words(fact: Mapping[str, Any], *, read_incomplete: bool) -> list[str]:
+    """The result words beside a tier 2 CI read or a tier 3 command.
+
+    A tier 3 command says what Compass does not know, so its pass never reads as a test pass; a
+    CI read says what the tool reported, as a check does.
+    """
+    key = f"{fact.get('result') or ''} {fact.get('result_source') or ''}"
+    if fact.get("subject") == CI_SUBJECT:
+        words = [CHECK_RESULT_WORDS.get(key, CHECK_NOT_RECORDED)]
+    else:
+        words = [COMMAND_RESULT_WORDS.get(key, COMMAND_NOT_RECORDED)]
+    if fact.get("earlier_failed") is True:
+        words.append(CHECK_EARLIER_FAILED)
+    if fact.get("before_last_change") is True:
+        words.append(CHECK_BEFORE_LAST_CHANGE)
+    if read_incomplete or fact.get("read_incomplete") is True:
+        words.append("part of the work record was not read")
+    return words
+
+
 def _tool_report_summary(
     fact: Mapping[str, Any], cap_chars: int, *, read_incomplete: bool = False
 ) -> str:
@@ -1750,6 +1865,8 @@ def _tool_report_summary(
         if read_incomplete or fact.get("read_incomplete") is True:
             words.append("part of the work record was not read")
         suffix = f" ({'; '.join(words)})"
+    elif fact.get("subject") in (COMMAND_SUBJECT, CI_SUBJECT):
+        suffix = f" ({'; '.join(_command_words(fact, read_incomplete=read_incomplete))})"
     elif fact.get("subject") == PR_SUBJECT:
         suffix = f" ({PR_CREATED})"
     elif fact.get("subject") == SKILL_SUBJECT:
@@ -1847,7 +1964,8 @@ def build_ledger(
             "at": stamp if stamp is not None and stamp > 0 else 0.0,
             "author": author,
             "source": _menu_field(records.safe_text(source, 160)),
-            "work": fact.get("type") in WORK_EVIDENCE_BY_HARNESS.get(harness, frozenset()),
+            "work": fact.get("type") in WORK_EVIDENCE_BY_HARNESS.get(harness, frozenset())
+            and _work_subject(fact),
         }
         _add_person_words(row, fact)
         _add_agent_words(row, fact)
@@ -1858,6 +1976,13 @@ def build_ledger(
         rows.append(row)
     rows.sort(key=lambda row: row["at"])
     return tuple(rows)
+
+
+def _work_subject(fact: Mapping[str, Any]) -> bool:
+    """Whether a tool report's subject is work, and not a command that cannot fail."""
+    if fact.get("type") != TOOL_REPORT_TYPE:
+        return True
+    return admits("work_floor", fact.get("subject")) and not cannot_fail(fact)
 
 
 def _listed(fact: Any, harness: str, sid: str, *, reports: bool, said: bool) -> bool:
@@ -1931,15 +2056,17 @@ def _add_report_fields(
     branch = fact.get("branch")
     record_id = branch.get("record_id") if isinstance(branch, dict) else None
     tail = tool_output.get(record_id) if isinstance(record_id, str) else None
-    if row["subject"] == CHECK_SUBJECT and tail:
+    if row["subject"] in RESULT_SUBJECTS and tail:
         row["tail"] = _tail_field(tail)
+    if cannot_fail(fact):
+        row["cannot_fail"] = True
     row["changed_after"] = (record_id, fact.get("summary")) in changed_after
     row["read_incomplete"] = (
         fact.get("read_incomplete") is True or (record_id, fact.get("summary")) in read_incomplete
     )
     row["summary"] = _tool_report_summary(fact, cap_chars, read_incomplete=row["read_incomplete"])
     result_at = _number(fact.get("result_at"))
-    if row["subject"] == CHECK_SUBJECT and result_at is not None and result_at > 0:
+    if row["subject"] in RESULT_SUBJECTS and result_at is not None and result_at > 0:
         row["result_at"] = result_at
 
 
@@ -2396,7 +2523,15 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
                     if result == "failed"
                     else "check with no recorded result"
                 )
-                if subject == CHECK_SUBJECT
+                if subject in (CHECK_SUBJECT, CI_SUBJECT)
+                else (
+                    "passed command"
+                    if result == "passed"
+                    else "failed command"
+                    if result == "failed"
+                    else "command with no recorded result"
+                )
+                if subject == COMMAND_SUBJECT
                 else (
                     "file write"
                     if subject == WRITE_SUBJECT
@@ -2422,6 +2557,9 @@ def _cutoff_mix(selected: Sequence[LedgerEntry]) -> str:
         "passed check": "passed checks",
         "failed check": "failed checks",
         "check with no recorded result": "checks with no recorded result",
+        "passed command": "passed commands",
+        "failed command": "failed commands",
+        "command with no recorded result": "commands with no recorded result",
         "file write": "file writes",
         "created pull request": "created pull requests",
         "used skill": "used skills",
@@ -2528,7 +2666,9 @@ def _priority(entry: LedgerEntry) -> int:  # noqa: PLR0911 - one return per kind
     """Which entries the byte bound reserves first (lower is earlier)."""
     if entry["author"] == AUTHOR_PERSON:
         return 0
-    if entry.get("subject") == CHECK_SUBJECT:
+    if entry.get("subject") == COMMAND_SUBJECT:
+        return _COMMAND_PRIORITY
+    if entry.get("subject") in (CHECK_SUBJECT, CI_SUBJECT):
         # A run with no result whose earlier run failed is ranked with the
         # failures, as the collector lists it (item 4, amended 2026-10-04).
         if entry.get("result") == "not-recorded" and entry.get("earlier_failed") is True:
@@ -3278,8 +3418,12 @@ def failed_checks_after_person(
     *,
     anchor: float | None = None,
     floor: float = 0.0,
+    subjects: frozenset[str] = frozenset({CHECK_SUBJECT}),
 ) -> list[Mapping[str, Any]]:
     """A named failure whose result arrived after the person's last message.
+
+    `subjects` names the report subjects that count: a check by default, and the level also
+    admits a tier 2 CI read, which a check's failure rules apply to as they stand.
 
     Unknown times and unlisted counts block reassurance but cannot raise High.
     [DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)
@@ -3293,7 +3437,8 @@ def failed_checks_after_person(
         f
         for f in facts
         if f.get("type") == TOOL_REPORT_TYPE
-        and f.get("subject") == CHECK_SUBJECT
+        and f.get("subject") in subjects
+        and not (f.get("subject") != CHECK_SUBJECT and cannot_fail(f))
         and f.get("result") == RESULT_FAILED
         and (at := evidence_at(f)) is not None
         and at > start
@@ -3342,6 +3487,11 @@ def check_supports(  # noqa: PLR0911 - one return per kind of entry
     itself carries that one departure, and no other verdict.
     """
     is_report = str(entry.get("type") or "") == TOOL_REPORT_TYPE
+    if entry.get("subject") in (COMMAND_SUBJECT, CI_SUBJECT) and (
+        not is_report or not admits("check_supports", entry.get("subject")) or cannot_fail(entry)
+    ):
+        # A command that cannot fail carries nothing, whichever verdict is asked for.
+        return False
     if not is_report and entry.get("subject") != CHECK_SUBJECT:
         return not _subjectless_pi_check(entry)
     if entry.get("subject") in (PR_SUBJECT, SKILL_SUBJECT):
@@ -3353,7 +3503,7 @@ def check_supports(  # noqa: PLR0911 - one return per kind of entry
             and (evidence_at(entry) or 0.0) > 0
             and not _before_window(entry, window_start)
         )
-    if entry.get("subject") != CHECK_SUBJECT:
+    if entry.get("subject") not in RESULT_SUBJECTS:
         return (
             recorded_write
             and result == RESULT_DEPARTURE
@@ -3401,7 +3551,7 @@ def _changed_after_pass(entry: Mapping[str, Any], window_start: float) -> bool:
 
 def _failed_in_window(entry: Mapping[str, Any], window_start: float) -> bool:
     """A check whose latest run failed inside the window: what a departure may rest on."""
-    return entry.get("subject") == CHECK_SUBJECT and check_supports(
+    return entry.get("subject") in RESULT_SUBJECTS and check_supports(
         entry, RESULT_DEPARTURE, window_start
     )
 

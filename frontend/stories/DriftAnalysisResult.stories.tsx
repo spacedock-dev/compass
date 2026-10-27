@@ -77,6 +77,73 @@ async function noBudgetLine(root: HTMLElement) {
   await expect(root.textContent).not.toMatch(/of \d+ left/);
 }
 
+/* A reading stored before commands were recorded cites checks and files only, and its facts carry no tier and
+   no forced-status field. It still renders its departure and the failed check it cites, with the check's own
+   words and not a command's. */
+export const AnOlderReadingWithoutTiersStillRenders: Story = {
+  ...scenario(RESULT),
+  play: async ({ canvasElement }) => {
+    const root = await card(canvasElement);
+    await foot(root);
+    await expect(root).toHaveTextContent('It stopped running the tests.');
+    await expect(canvasElement.textContent).not.toMatch(/Compass does not know what it checks/);
+    await expect(canvasElement.querySelector('[data-next-result-mark]')).not.toBeNull();
+  },
+};
+
+/* A departure that rests on a failed command, and a consistent line that rests on a command that exited 0: the
+   title and the sentence name a command, never a check, and the consistent line says what Compass does not
+   know. */
+const COMMAND_READING = {
+  ...READING,
+  criteria: {
+    goal: {
+      result: 'departure',
+      cites: ['k1'],
+      detail: 'The release step failed.',
+      clause: 'Ship the queue',
+    },
+    line_1: {
+      result: 'consistent with the evidence read',
+      cites: ['k2'],
+      detail: '',
+      clause: 'Tests pass',
+    },
+  },
+};
+export const ACommandCitedInADepartureAndInAConsistentLine: Story = {
+  ...scenario({
+    session: { ...STORED_READING, annotation_assessment: COMMAND_READING },
+    facts: [
+      written('w1', 220, 'src/queue/worker.ts'),
+      fact('k1', 500, {
+        subject: 'command',
+        tier: 3,
+        result: 'failed',
+        result_source: 'flag',
+        summary: 'make release',
+      }),
+      fact('k2', 600, {
+        subject: 'command',
+        tier: 3,
+        result: 'passed',
+        result_source: 'flag',
+        summary: 'make stage',
+      }),
+    ],
+    work: { analysis_levels: [analysisRow('claude')] },
+  }),
+  play: async ({ canvasElement }) => {
+    const root = await card(canvasElement);
+    await foot(root);
+    await expect(root.textContent).toMatch(/A command exited non-zero/);
+    await expect(root.textContent).not.toMatch(/A check failed/);
+    await expect(root.textContent).toMatch(
+      /the command exited 0 and Compass does not know what it checks/,
+    );
+  },
+};
+
 export const UnderTheLimitSaysNothingAboutIt: Story = {
   ...scenario(RESULT),
   play: async ({ canvasElement }) => {

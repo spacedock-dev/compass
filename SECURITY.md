@@ -346,7 +346,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
 | A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
 | The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model. | No switch needed | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class, process start and connection |
-| A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
+| A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
 | The git probe | One bounded `git` command, in a repository you chose. Nothing leaves the machine. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all` |
@@ -361,7 +361,8 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 
 Tool output is included by default in a reader-pressed Claude Code reading when Compass can name
 its destination: a check's command, result, last 180 characters of output, written paths, the
-repository and number of a pull request it created, and the names of skills it used.
+repository and number of a pull request it created, and the names of skills it used, and, for each
+other command, its masked line and exit status (and its tail, when the session's own vendor reads it).
 [Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns the content bounds.
 `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do nothing for one release;
 they will be removed in a later release. They write no grant and need no forwarding on respawn.
@@ -1814,6 +1815,32 @@ error, and published as its name alone, in a closed character set of at most 80 
 command, an output tail or a skill's arguments. Like a check, each reaches a prompt only under the same
 grant for a named destination, and the unasked lane never receives them.
 
+Commands join it by the owner's rulings of 2026-10-27
+([DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)
+and [DEC-31](docs/design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)).
+A foreground shell command that is neither a closed-list check nor on the read-only list is published as
+a command: its line, masked and clipped as a check line is, and its exit status where the call's status
+speaks for it. `gh pr checks` and `gh run view --exit-status` are published as CI reads. `gh pr checks`
+records a failure only on exit 1 with checks reported, and no result on exit 8 (pending), 2, 4 or a pull
+request with no checks. `gh run view --exit-status` exits 0 for a run still in progress, so only its failure
+counts. A command that cannot fail (`echo`, `printf`, `true`, `:`, `export`, `unset`, `set`, `eval`, `tee`,
+`exit 0`, `return 0`, by any spelling such as a path or `command true`) is never published, and one whose
+status a later `|| true` or `; exit 0` forces is published with no result and withdrawn from every verdict
+and level. A stage after a `|` that follows other work, such as `tee` or `sed`, records no result, since the
+call's status speaks for the filter and not for the program before it. A tier 3 failure blocks the live
+estimate's floor only until a later check or command passes. A call whose result carries Claude Code's structured git record publishes that record only, never
+its command line. A quoted word the masking cannot read word by word, such as the script of a `bash -c`
+call that did not parse, is published as `…`, so half of a value is never shown. The same rules decide the
+last 180 characters of output the press reads. The vendor of the session decides what leaves the machine:
+a Claude Code session read through Claude Code may be sent every command's masked line and redacted tail,
+since that vendor already received them. The Live monitor's Haiku check is the exception: it is sent a
+command's line and its result words only, never a tail. Another vendor (Codex
+reading a Claude Code session) is sent each command's line and status, and tails for checks and CI reads
+only: a tail whose call also holds a command is withheld whole, because it is the whole call's output.
+The notice names it in one sentence. The residual: redaction is by named form and shape and is best
+effort, so a credential in a form it does not name can reach the provider, and across vendors the command
+line is the one place that can. The unasked lane and the history store receive no command.
+
 The content class is what a Claude Code transcript recorded about the checks a session ran and the
 files it wrote. Since 2026-09-28 that includes the session's subagents, read from their own
 transcripts under the session's directory. One check-evidence scan spends at most the configured
@@ -1998,8 +2025,8 @@ it names, not the one the disclosure named. The output tail is whatever the runn
 assertion diff or a printed setting can carry source lines, file content or a secret that has no
 recognisable shape, and output gets credential-shape redaction only, because the command-line masks
 do not apply to it. It leaves the machine under the destination rule above. The command field is
-the check's own segment, so other commands on the same line are never recorded as a field or sent;
-the live estimate only classifies them on this machine, by time.
+the check's own segment. Any other command on the same line is a separate command fact, which
+[Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns.
 
 ### Analyze drift, Cancel and copied corrections
 
@@ -2342,7 +2369,8 @@ minute and produces the live drift level. It is a call the reader starts, under
 with a `monitor` notice shown before the first charged call.
 
 - What is sent. The saved goal, and, redacted and clipped first, the person's own messages, the
-  agent's replies, the commands of checks with their result, and the paths of files written, from
+  agent's replies, the commands of checks with their result, every other command as its masked line
+  with its exit status (a command that cannot fail is left out), and the paths of files written, from
   this session's own record only. The recent window is sent again by each later check, and again each
   time the switch is turned off and on. Where Compass cannot name the destination, checks and paths are
   not sent, as for Analyze. No command output, file contents or other tool output is sent.

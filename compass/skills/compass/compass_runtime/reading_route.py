@@ -28,7 +28,7 @@ from . import config as runtime_config
 from . import observer, records
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Collection, Iterable, Mapping
 
 CODEX = "codex"
 CLAUDE = "claude"
@@ -394,6 +394,34 @@ def destinations(
     return {provider: destination(provider, environ=environ, root=root) for provider in PROVIDERS}
 
 
+def same_vendor(provider: str, harness: str) -> bool:
+    """Whether the provider reading a session is the vendor of the harness that ran it.
+
+    A session read by its own vendor has already sent every command and its output to that
+    vendor, so a reading through it exposes nothing new; another vendor has received none of it
+    (the vendor rule).
+    """
+    return OWN_HARNESS.get(provider) == harness
+
+
+# Item 2 of the vendor rule:
+# [DEC-31](docs/design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)  # noqa: E501
+def tails_for(
+    provider: str,
+    harness: str,
+    tails: Mapping[str, str],
+    tier3_calls: Collection[str],
+) -> dict[str, str]:
+    """The output tails this provider may be sent for a session of this harness.
+
+    Another vendor's reading gets a tier 3 command's line and exit status and no output, and a
+    call that holds one sends no tail at all, since its tail is the whole call's output.
+    """
+    if same_vendor(provider, harness):
+        return dict(tails)
+    return {call: tail for call, tail in tails.items() if call not in tier3_calls}
+
+
 def _tool_output_sentence(provider: str, harness: str, where: str) -> str:
     """What a check sends, or that none is sent; where it goes is the `To:` item after it.
 
@@ -412,11 +440,16 @@ def _tool_output_sentence(provider: str, harness: str, where: str) -> str:
             "Tool output is not sent, because Compass cannot name where it would go, though "
             "the agent's messages may quote it."
         )
+    commands = (
+        "Other commands go too, with their output"
+        if same_vendor(provider, harness)
+        else "Other commands go with their exit status and no output"
+    )
     return (
         "Tool output is included by default: a check's command, result and last "
         f"{TOOL_OUTPUT_TAIL_CHARS} characters of output as printed, the paths of the files it "
         "wrote, the repository and number of a pull request it created, and the names of skills "
-        "it used; agent messages may quote it."
+        f"it used; agent messages may quote it. {commands}."
     )
 
 

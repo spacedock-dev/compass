@@ -14,6 +14,7 @@ import {
   PiCopy,
   PiInfo,
   PiListChecks,
+  PiTerminal,
   PiWarning,
   PiX,
   PiXCircle,
@@ -22,6 +23,7 @@ import {
 export type IconName =
   | 'unrecorded'
   | 'passed'
+  | 'command'
   | 'failed'
   | 'stale'
   | 'earlier-failed'
@@ -35,6 +37,7 @@ export type IconName =
 const ICONS = {
   unrecorded: PiCircle,
   passed: PiCheckCircle,
+  command: PiTerminal,
   failed: PiXCircle,
   stale: PiClockCounterClockwise,
   'earlier-failed': PiWarning,

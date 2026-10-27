@@ -277,6 +277,51 @@ def _checks(evidence: Evidence) -> list[Mapping[str, Any]]:
     return [f for f in evidence.facts if f.get("subject") == reading.CHECK_SUBJECT]
 
 
+def _ci_reads(evidence: Evidence, consumer: str = "live_level") -> list[Mapping[str, Any]]:
+    """Tier 2 CI reads, which a check's pass and failure rules apply to as they stand."""
+    return [
+        f
+        for f in evidence.facts
+        if f.get("subject") == reading.CI_SUBJECT
+        and reading.admits(consumer, reading.CI_SUBJECT)
+        and not reading.cannot_fail(f)
+    ]
+
+
+def _commands(evidence: Evidence) -> list[Mapping[str, Any]]:
+    """Tier 3 commands. Only a failure of one is read here, as a blocker of the floor: a
+    command's own call is a changing command, so a later pass of it is never unchanged."""
+    return [
+        f
+        for f in evidence.facts
+        if f.get("subject") == reading.COMMAND_SUBJECT
+        and reading.admits("live_level", reading.COMMAND_SUBJECT)
+        and not reading.cannot_fail(f)
+    ]
+
+
+_NOT_RECORDED = "not-recorded"
+
+
+def _uncovered_command_failure(evidence: Evidence) -> bool:
+    """Whether a listed tier 3 failure has no later passing check or command after it.
+
+    Commands supersede one another by identical text only, so a failure a later, different
+    command or check recovered from would otherwise block the floor for the whole session.
+    """
+    passes = [
+        t
+        for f in (*_checks(evidence), *_commands(evidence))
+        if f.get("result") == reading.RESULT_PASSED and (t := _at(f)) is not None
+    ]
+    last = max(passes, default=None)
+    return any(
+        f.get("result") == reading.RESULT_FAILED
+        and (last is None or (_at(f) is None) or last <= (_at(f) or 0.0))
+        for f in _commands(evidence)
+    )
+
+
 def _writes(evidence: Evidence) -> list[Mapping[str, Any]]:
     return [f for f in evidence.facts if f.get("subject") == _WRITE_SUBJECT]
 
@@ -331,7 +376,7 @@ def live_level(evidence: Evidence, intent: Intent) -> Level:
     if not intent.saved:
         return Level(NO_LIVE_LEVEL, SOURCE_LIVE, (REASON_DRAFT_UNSAVED,))
     scan = evidence.scan
-    checks = _checks(evidence)
+    checks = [*_checks(evidence), *_ci_reads(evidence)]
     passes = [f for f in checks if f.get("result") == reading.RESULT_PASSED]
     aged = [f for f in passes if f.get("before_last_change") is True]
 
@@ -345,7 +390,11 @@ def live_level(evidence: Evidence, intent: Intent) -> Level:
     some_outside = share is not None and share.outside > 0
     most_outside = share is not None and share.outside * 2 > share.total
 
-    anchored = reading.failed_checks_after_person(evidence.facts, anchor=scan.get("last_user_at"))
+    anchored = reading.failed_checks_after_person(
+        evidence.facts,
+        anchor=scan.get("last_user_at"),
+        subjects=frozenset({reading.CHECK_SUBJECT, reading.CI_SUBJECT}),
+    )
     fresh = [f for f in anchored if not reading.failure_followed_by_write(f, evidence.facts)]
     failing = bool(fresh)
     aging_failure = bool(anchored) and not fresh
@@ -371,7 +420,16 @@ def live_level(evidence: Evidence, intent: Intent) -> Level:
         blockers = _live_floor_blockers(evidence, passes)
         reasons.extend(blockers or [REASON_FLOOR_MET])
         cites.extend(
-            _ids([*passes, *(f for f in checks if f.get("result") == reading.RESULT_FAILED)])
+            _ids(
+                [
+                    *passes,
+                    *(
+                        f
+                        for f in (*checks, *_commands(evidence))
+                        if f.get("result") == reading.RESULT_FAILED
+                    ),
+                ]
+            )
         )
         level = NOT_ENOUGH if blockers else NONE_OR_LOW
     return Level(
@@ -390,15 +448,26 @@ def _live_floor_blockers(evidence: Evidence, passes: list[Mapping[str, Any]]) ->
     blockers: list[str] = []
     if not scan_complete(scan):
         blockers.append(REASON_SCAN_INCOMPLETE)
-    if _count(scan, "failed") or any(
-        f.get("result") == reading.RESULT_FAILED for f in _checks(evidence)
+    if (
+        _count(scan, "failed")
+        or _count(scan, "ci_failed")
+        or _count(scan, "command_failed")
+        or any(
+            f.get("result") == reading.RESULT_FAILED
+            for f in (*_checks(evidence), *_ci_reads(evidence))
+        )
+        or _uncovered_command_failure(evidence)
     ):
         blockers.append(REASON_FAILED_CHECK)
-    passed = _count(scan, "passed")
+    passed = _count(scan, "passed") + _count(scan, "ci_passed")
     if not passed:
         # Zero is too little: at least one check whose latest run passed.
         blockers.append(REASON_NO_PASSING_CHECK)
-    if _count(scan, "not_recorded"):
+    if (
+        _count(scan, "not_recorded")
+        or _count(scan, "ci_not_recorded")
+        or any(f.get("result") == _NOT_RECORDED for f in _ci_reads(evidence))
+    ):
         blockers.append(REASON_CHECK_NOT_RECORDED)
     if _count(scan, "background_unpaired" if "background_unpaired" in scan else "background"):
         # Old saved scans lack completion pairing and retain their conservative floor.
@@ -513,7 +582,7 @@ class _LineTally:
         passes = [
             f
             for f in cited
-            if f.get("subject") == "check"
+            if f.get("subject") in reading.RESULT_SUBJECTS
             and f.get("result") == reading.RESULT_PASSED
             and f.get("work") is True
         ]
@@ -661,15 +730,20 @@ def analysis_level(
             requested_at=(line_requests or {}).get(name) if reading.is_outcome_line(name) else None,
         )
 
-    failed = [f for f in _checks(evidence) if f.get("result") == reading.RESULT_FAILED]
+    failed = [
+        f
+        for f in (*_checks(evidence), *_ci_reads(evidence, "analysis_level"))
+        if f.get("result") == reading.RESULT_FAILED
+    ]
     in_window = reading.failed_checks_after_person(
         evidence.facts,
         anchor=evidence.scan.get("last_user_at"),
         floor=window or 0.0,
+        subjects=frozenset({reading.CHECK_SUBJECT, reading.CI_SUBJECT}),
     )
     fresh = [f for f in in_window if not reading.failure_followed_by_write(f, evidence.facts)]
     # A failure the counts hold and the listing dropped has no time to place.
-    unplaced = _count(evidence.scan, "failed") > len(failed)
+    unplaced = _count(evidence.scan, "failed") + _count(evidence.scan, "ci_failed") > len(failed)
     reasons = [
         reason
         for reason, holds in (

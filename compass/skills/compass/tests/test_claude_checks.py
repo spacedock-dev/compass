@@ -452,7 +452,13 @@ class WhatAReaderSeesOfTheChecksASessionRan(ClaudeChecksTestCase):
         self.session.bash("find . -name '*.pyc' -delete", "", is_error=False)
         self.session.bash("pip install requests", "", is_error=False)
         events, scan = self.read()
-        self.assertEqual([], events)
+        # The two that may change things are tier 3 commands, listed apart from any check; a
+        # redirect of `echo` and the reads are not.
+        self.assertEqual({"command"}, {event["subject"] for event in events})
+        self.assertCountEqual(
+            ["pip install requests", "find . -name *.pyc -delete"],
+            [event["title"] for event in events],
+        )
         self.assertEqual(6, scan["other_commands"])
         self.assertEqual(3, scan["read_only_commands"])
         self.assertIsNotNone(scan["last_changing_command_at"])
@@ -523,14 +529,19 @@ class WhatAReaderSeesOfTheChecksASessionRan(ClaudeChecksTestCase):
         self.assertEqual(1, scan["background"])
         self.assertIsNotNone(scan["last_changing_command_at"])
 
-    def test_commands_off_the_closed_list_are_counted_and_never_listed(self) -> None:
+    def test_commands_off_the_closed_list_are_counted_and_listed_only_as_commands(self) -> None:
         self.session.bash("grep -rn retry_after src", "", is_error=True)
         self.session.bash("ls docs/missing.md", "ls: docs/missing.md: No such file", is_error=True)
         self.session.bash("test -f setup.cfg && echo yes", "", is_error=True)
         self.session.bash("[ -d build ] || mkdir build", "", is_error=False)
         self.session.bash("ruff format .", "3 files reformatted", is_error=False)
         events, scan = self.read()
-        self.assertEqual([], events)
+        # Only the two that may change files are commands: the reads are on the read-only list.
+        self.assertEqual(
+            [("mkdir build", "not-recorded"), ("ruff format .", "passed")],
+            sorted((event["title"], event["result"]) for event in events),
+        )
+        self.assertEqual({"command"}, {event["subject"] for event in events})
         self.assertEqual(5, scan["shell_calls"])
         self.assertEqual(5, scan["other_commands"])
         self.assertEqual(0, scan["check_runs"])

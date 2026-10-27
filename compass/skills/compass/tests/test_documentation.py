@@ -1799,7 +1799,8 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         }
         # `observer.py` reads the question tool's own result and `project_context.py` three others
         # besides the pull request read; each is another place a result's structured field is read.
-        self.assertEqual({"observer.py": 1, "project_context.py": 5}, found)
+        # The sixth is the command listing's exemption for a call that carries the record.
+        self.assertEqual({"observer.py": 1, "project_context.py": 6}, found)
         for phrase in (
             "the `skill` name of a `Skill` call",
             "`toolUseResult.gitOperation.pr` (`number`, `url`, `action`)",

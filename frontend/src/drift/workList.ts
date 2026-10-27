@@ -56,6 +56,21 @@ const CHECK_RESULTS: Readonly<Record<string, string>> = {
   'failed marker': 'failed, per a failure line in its output',
 };
 
+/* A tier 3 command's result words: the exit status, and what Compass does not know. A command is any shell
+   command that is neither a closed-list check nor a read, so a pass of one is never a pass of a test
+   ([DEC-29](../../../docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)).
+   `vocabulary.json` pins these to the producer's. */
+export const COMMAND_RESULTS: Readonly<Record<string, string>> = {
+  'passed flag': 'exited 0; Compass does not know what it checks',
+  'failed flag': 'exited non-zero; Compass does not know what it checks',
+};
+export const COMMAND_NOT_RECORDED = 'ran, exit status not recorded';
+const COMMAND_SHORT: Readonly<Record<'unrecorded' | 'passed' | 'failed', string>> = {
+  unrecorded: 'No status',
+  passed: 'Exited 0',
+  failed: 'Exited non-zero',
+};
+
 /* Why a rule withheld a check's result, in the reader's words, keyed by the closed token the collector publishes
    as `result_reason` (`CHECK_NOT_RECORDED_REASONS` in project_context.py). `vocabulary.json` pins the two together. */
 export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
@@ -68,11 +83,13 @@ export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
    notes at the right edge, as a reader's flag is, and `toolReportLine` is the same words in one line. */
 export type CheckResult = 'unrecorded' | 'passed' | 'failed';
 export interface ActivityMark {
-  readonly icon: CheckResult | 'stale' | 'earlier-failed';
+  readonly icon: CheckResult | 'command' | 'stale' | 'earlier-failed';
   readonly short: string;
   readonly words: string;
 }
 export interface CheckMarks {
+  /** True for a tier 2 CI read or a tier 3 command, which a run of checks never folds. */
+  readonly command?: true;
   readonly result: CheckResult;
   readonly stale: boolean;
   readonly earlierFailed: boolean;
@@ -102,12 +119,68 @@ export const MARK_LEGEND = [
   EARLIER_FAILED_MARK,
 ];
 
+/* A tier 2 CI read or a tier 3 command, drawn with the words the server composed for it: a CI read says
+   what the tool reported, as a check does, and a command says its exit status and what Compass does not
+   know. Neither folds into a run of checks, and neither reads as a test pass. */
+function commandParts(entry: WorkEntry): {
+  readonly actor: string;
+  readonly type: string;
+  readonly notes: readonly string[];
+  readonly check: CheckMarks | null;
+} {
+  const ci = entry.subject === 'ci_command';
+  const table = ci ? CHECK_RESULTS : COMMAND_RESULTS;
+  const key = `${entry.result} ${entry.resultSource}`;
+  const recorded = Object.hasOwn(table, key);
+  const result: CheckResult =
+    recorded && key.startsWith('failed')
+      ? 'failed'
+      : recorded && key.startsWith('passed')
+        ? 'passed'
+        : 'unrecorded';
+  const phrase = recorded
+    ? (table[key] as string)
+    : ci
+      ? 'ran, result not recorded'
+      : COMMAND_NOT_RECORDED;
+  const reason = entry.cannotFail ? 'a later command forces the exit status to 0' : '';
+  const notes = reason ? [phrase, reason] : [phrase];
+  const words = notes.join(': ');
+  if (entry.earlierFailed) notes.push('an earlier run failed');
+  if (entry.beforeLastChange) notes.push('before the last change');
+  const short = ci ? RESULT_MARKS[result].short : COMMAND_SHORT[result];
+  return {
+    actor: 'Agent',
+    type: ci ? 'CI check' : 'command',
+    notes,
+    check: {
+      command: true,
+      result,
+      stale: Boolean(entry.beforeLastChange),
+      earlierFailed: Boolean(entry.earlierFailed),
+      marks: [
+        {
+          ...RESULT_MARKS[result],
+          /* A command that exited 0 draws its own glyph, never a check's tick: a pass of a command
+             Compass does not know proves nothing the tick would say. A failure keeps the failed glyph. */
+          icon: !ci && result === 'passed' ? 'command' : RESULT_MARKS[result].icon,
+          short: reason ? `${short}: ${reason}` : short,
+          words: words[0]?.toUpperCase() + words.slice(1),
+        },
+        ...(entry.earlierFailed ? [EARLIER_FAILED_MARK] : []),
+        ...(entry.beforeLastChange ? [STALE_MARK] : []),
+      ],
+    },
+  };
+}
+
 export function toolReportParts(entry: WorkEntry): {
   readonly actor: string;
   readonly type: string;
   readonly notes: readonly string[];
   readonly check: CheckMarks | null;
 } {
+  if (entry.subject === 'command' || entry.subject === 'ci_command') return commandParts(entry);
   if (entry.subject !== 'check')
     return {
       actor: 'Agent',
@@ -400,6 +473,7 @@ export function foldRuns(
     if (
       row.entry.type === 'tool_report' &&
       check &&
+      !check.command &&
       check.result !== 'failed' &&
       !check.earlierFailed &&
       !row.flags.includes('cited') &&

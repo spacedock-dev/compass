@@ -237,6 +237,10 @@ def _checkpoint(tally: pc._ToolReportTally) -> pc._ToolReportTally:
         _cached_identity(identity, tally): [{**run, "tail": ""} for run in history]
         for identity, history in tally.runs.items()
     }
+    saved.commands = {
+        _cached_identity(identity, tally): [{**run, "tail": ""} for run in history]
+        for identity, history in tally.commands.items()
+    }
     saved.writes = {path: dict(write) for path, write in tally.writes.items()}
     saved.launches = {key: dict(row) for key, row in tally.launches.items()}
     saved.completed_launch_calls = dict(tally.completed_launch_calls)
@@ -251,6 +255,7 @@ def _checkpoint(tally: pc._ToolReportTally) -> pc._ToolReportTally:
     saved._entry_cache = {  # noqa: SLF001
         _cached_identity(identity, tally): dict(entry)
         for identity, entry in tally._entry_cache.items()  # noqa: SLF001
+        if not identity.startswith("command:")
     }
     return saved
 
