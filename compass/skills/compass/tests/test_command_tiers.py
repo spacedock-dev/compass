@@ -9,6 +9,7 @@ the vendor rule. Every command and path below is synthetic.
 from __future__ import annotations
 
 import json
+import time
 import unittest
 from types import SimpleNamespace
 from typing import Any, cast
@@ -156,6 +157,24 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
         self.session.bash("make deploy", "done", is_error=False)
         self.session.bash("find build -delete", "", is_error=False)
         self.assertEqual([False, False], [c["cannot_fail"] for c in self.commands()])
+
+    def test_a_huge_exit_argument_neither_raises_nor_reads_as_a_failure(self) -> None:
+        zeros = "0" * 5000
+        self.assertTrue(project_context._always_zero(["exit", zeros]))
+        self.assertFalse(project_context._always_zero(["exit", zeros + "1"]))
+        reading.cannot_fail({"summary": "exit " + zeros})
+        self.assertEqual(
+            ("failed", "x"), project_context._ci_outcome("pr_checks", "failed", "x", "Exit code 1")
+        )
+        project_context._ci_outcome("pr_checks", "failed", "x", "Exit code " + zeros)
+
+    def test_listing_many_segments_stays_linear(self) -> None:
+        command = "make x; " * 6000
+        started = time.monotonic()
+        call = project_context._ShellCall(0.0, "/", {"command": command})
+        masked = [call.status_masked(i) for i in range(len(call.parts))]
+        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertFalse(any(masked[-1:]))
 
     def test_the_resolvers_never_fails_words_are_the_producers_read_only_words(self) -> None:
         for word in reading._NEVER_FAILS_WORDS:

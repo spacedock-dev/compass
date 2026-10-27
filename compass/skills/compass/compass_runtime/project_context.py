@@ -3590,7 +3590,7 @@ def _ci_outcome(ci: str, outcome: str, source: str, text: str) -> tuple[str, str
         # Only exit 1 is a failing check. 8 is pending, 2 a cancelled run and 4 a missing login,
         # and exit 1 also reports a pull request with no CI or a request that failed.
         exited = _EXIT_CODE_RE.match(text)
-        if not exited or int(exited[1]) != 1 or _NOT_A_CI_FAILURE.search(text):
+        if not exited or exited[1].lstrip("0") != "1" or _NOT_A_CI_FAILURE.search(text):
             return "not-recorded", ""
     elif ci == "run_view" and outcome == "passed":
         # Exit 0 also means a run still in progress, so only its failure counts.
@@ -3895,7 +3895,26 @@ class _ShellCall:
         return _written_path(os.path.join(self.directories[at] or "/", target), cwd, session_dir)
 
     def joiners(self) -> list[str]:
-        return [part.joiner for part in self.parts]
+        cached = self.__dict__.get("_joiners")
+        if cached is None:
+            cached = self.__dict__["_joiners"] = [part.joiner for part in self.parts]
+        return cached
+
+    def _forced_from(self) -> list[bool]:
+        """Per segment, whether it or any later one forces the call's status to 0. One backward
+        pass: asking each segment to rescan the ones after it was quadratic, a minute on a
+        100,000-character command."""
+        cached = self.__dict__.get("_forced")
+        if cached is None:
+            joiners = self.joiners()
+            count = len(self.parts)
+            cached = [False] * (count + 1)
+            for j in range(count - 1, 0, -1):
+                cached[j] = cached[j + 1] or (
+                    joiners[j - 1] in ("||", ";", "\n") and _always_zero(self.parts[j].words)
+                )
+            self.__dict__["_forced"] = cached
+        return cached
 
     def output_attributable(self) -> bool:
         """A read-only command may print its own summary; only pipe filters
@@ -3980,11 +3999,7 @@ class _ShellCall:
     def status_masked(self, index: int) -> bool:
         """Whether a later segment forces the call's exit status to 0 (`|| true`, `; true`,
         `; exit 0`), so the status no longer says whether this segment failed."""
-        joiners = self.joiners()
-        return any(
-            _always_zero(self.parts[j].words) and joiners[j - 1] in ("||", ";", "\n")
-            for j in range(index + 1, len(self.parts))
-        )
+        return self._forced_from()[index + 1]
 
     def changes(self) -> bool:
         """Whether any segment may change files without a recorded write."""

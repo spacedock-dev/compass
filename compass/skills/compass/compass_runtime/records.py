@@ -852,7 +852,7 @@ def always_zero(words: list[str]) -> bool:
     if rest[0] in ALWAYS_ZERO_WORDS:
         return True
     return rest[0] in {"exit", "return"} and (
-        len(rest) == 1 or (_DIGITS.fullmatch(rest[1]) is not None and int(rest[1]) == 0)
+        len(rest) == 1 or (_DIGITS.fullmatch(rest[1]) is not None and not rest[1].strip("0"))
     )
 
 
