@@ -369,6 +369,7 @@ export function SummaryPage({
             generated: generation++,
             annotate: true,
             annotate_cap: 240,
+            annotate_goal_cap: 1000,
             reading_check: 'passed',
             reading: {
               consent: !script.paused,

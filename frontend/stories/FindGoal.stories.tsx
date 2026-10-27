@@ -135,6 +135,7 @@ function Harness({ setup }: { readonly setup?: Setup }) {
             generated: 1_760_001_000,
             annotate: true,
             annotate_cap: 240,
+            annotate_goal_cap: 1000,
             reading_check: 'passed',
             intent_revision: 'r1',
             reading: { ...POLICY, ...(setup?.policy ?? {}) },

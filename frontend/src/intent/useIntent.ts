@@ -43,6 +43,7 @@ export interface Panel {
   readonly projectKey: string;
   readonly source: WorkSource;
   readonly cap: number;
+  readonly goalCap: number;
 }
 
 export const PanelContext = createContext<Panel | null>(null);

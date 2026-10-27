@@ -10,7 +10,7 @@ import {
 import { createDriftState, type DriftCtx } from './state';
 
 /* The correction box's native-editor glue, over a real textarea in jsdom. jsdom has no undo stack, so what is
-   proven here is the page's own decisions: what a composition that crosses the 5,140 code point cap leaves in
+   proven here is the page's own decisions: what a composition that crosses the 5,900 code point cap leaves in
    the box and in the held draft, and what is said when the browser cannot undo it. That the browser's own undo
    history, caret and composition survive is `drift-parity.mjs`'s, in Chromium. */
 
@@ -90,7 +90,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-describe('a composition that crosses the 5,140 code point cap', () => {
+describe('a composition that crosses the 5,900 code point cap', () => {
   it('keeps none of the inserted text, in the box or in the held draft, and says so', () => {
     const r = rig();
     compose(r, ROOM + '😀'.repeat(20));

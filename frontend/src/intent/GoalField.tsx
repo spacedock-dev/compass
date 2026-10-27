@@ -90,7 +90,7 @@ function GoalUpdateOffer() {
 
 export function GoalField() {
   const boxId = useId();
-  const { ctx, input, session, cap } = usePanel();
+  const { ctx, input, session, goalCap: cap } = usePanel();
   const { held } = ctx;
   const key = goalKey(session);
   const drafted = intentDraft(input);

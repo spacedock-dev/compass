@@ -1005,6 +1005,7 @@ class Application:
                     {
                         "annotate": True,
                         "annotate_cap": config.annotation_text_cap_chars,
+                        "annotate_goal_cap": config.annotation_goal_cap_chars,
                         "reading_check": annotation_store.published_check(),
                         # Who reads each harness's sessions, and the words to
                         # show BEFORE the press, one route per harness on the

@@ -588,7 +588,7 @@ class TheStoreNeverOutgrowsItsReadLimitTest(_StoreCase):
                     {
                         "n": n,
                         "at": NOW + index + n / 100,
-                        "goal": text,
+                        "goal": char * self.config.annotation_goal_cap_chars,
                         "lines": tuple({"text": text, "source": "typed"} for _ in range(6)),
                     }
                     for n in range(1, 17)

@@ -108,9 +108,9 @@ describe('Steer back', () => {
     await act(async () => {
       fireEvent.input(field);
     });
-    expect(textOf('[data-next-correction-count]')).toBe('1000/5140');
+    expect(textOf('[data-next-correction-count]')).toBe('1000/5900');
     const before = field.value;
-    field.value = `${before}${'x'.repeat(4500)}`;
+    field.value = `${before}${'x'.repeat(5000)}`;
     await act(async () => {
       fireEvent.input(field);
     });
@@ -341,7 +341,7 @@ describe('a correction the reader opened follows the record, honestly', () => {
     /* Untouched, the box follows the record and is rebuilt in place: it stays mounted and only its text is
        re-keyed, so the count has to follow the new text and not the one it was first given. */
     const first = [...(box()?.value ?? '')].length;
-    expect(textOf('[data-next-correction-count]')).toBe(`${String(first)}/5140`);
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(first)}/5900`);
     const moved = { ...ASSESSMENT, read_at: 1100 };
     await page.poll({
       ...driftBoard({ session: { ...session, annotation_assessment: moved } }),
@@ -350,7 +350,7 @@ describe('a correction the reader opened follows the record, honestly', () => {
     await page.settle();
     const now = [...(box()?.value ?? '')].length;
     expect(now).toBeGreaterThan(first);
-    expect(textOf('[data-next-correction-count]')).toBe(`${String(now)}/5140`);
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(now)}/5900`);
   });
 
   it('asks once while the recomposition is out, however many boards arrive meanwhile', async () => {

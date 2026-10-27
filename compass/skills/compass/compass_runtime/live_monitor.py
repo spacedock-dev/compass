@@ -51,7 +51,9 @@ MONITOR_SYSTEM_PROMPT = (
     "You never judge whether the work is done."
 )
 REASON_CAP_CHARS = 240
-GOAL_CAP_CHARS = 600
+# The whole saved goal: `RuntimeConfig.annotation_goal_cap_chars` at its default
+# (owner, 2026-10-27). A monitor reading a cut goal would call drift on the part it never saw.
+GOAL_CAP_CHARS = 1_000
 # Fact ids a session remembers having sent. Bounded: it only keeps a later tick from re-sending
 # turns it already counted as new, and an id past the bound is at worst counted new again.
 SEEN_LIMIT = 512

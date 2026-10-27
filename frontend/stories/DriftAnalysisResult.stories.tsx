@@ -333,7 +333,7 @@ export const WhatTheAnalysisReadFromAPromptGoal: Story = {
     ...RESULT,
     session: {
       ...RESULT.session,
-      annotation_goal: 'x'.repeat(240),
+      annotation_goal: 'x'.repeat(1000),
       annotation_goal_source: 'first-prompt',
       annotation_assessment: {
         ...READING,
@@ -342,7 +342,7 @@ export const WhatTheAnalysisReadFromAPromptGoal: Story = {
         coverage: { ...READING.coverage, goal_source: 'whole' },
         criteria: {
           ...READING.criteria,
-          goal: { ...READING.criteria.goal, clause: 'x'.repeat(240) },
+          goal: { ...READING.criteria.goal, clause: 'x'.repeat(1000) },
         },
       },
     },
@@ -357,7 +357,7 @@ export const WhatTheAnalysisReadFromAPromptGoal: Story = {
     });
     await expect(intent).toHaveTextContent(/drafted from your prompt/);
     await expect(intent).toHaveTextContent(
-      'Shown cut at 240 characters; the analysis read the whole prompt, up to 1,000 characters.',
+      'Shown cut at 1,000 characters; the analysis read the whole prompt, up to 1,000 characters.',
     );
   },
 };

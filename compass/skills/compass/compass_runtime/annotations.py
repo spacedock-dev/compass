@@ -794,7 +794,7 @@ def _lines(value: Mapping[str, Any], cap: int) -> tuple[OutcomeLine, ...] | None
     return tuple(line for line in parsed if line is not None and line["text"].strip())
 
 
-def _revision(value: Any, cap: int) -> Revision | None:
+def _revision(value: Any, cap: int, goal_cap: int | None = None) -> Revision | None:
     """One untrusted revision, or nothing.
 
     Through `records.safe_text`, which redacts before it clips. The order is
@@ -824,7 +824,9 @@ def _revision(value: Any, cap: int) -> Revision | None:
         # Type-checked here as well as on the way in. Any local process can
         # rewrite this file, so a dict here would publish its repr exactly as one
         # arriving over the endpoint would.
-        "goal": records.safe_text(raw_goal, cap) if isinstance(raw_goal, str) else "",
+        "goal": records.safe_text(raw_goal, cap if goal_cap is None else goal_cap)
+        if isinstance(raw_goal, str)
+        else "",
         "lines": lines,
     }
 
@@ -1095,7 +1097,9 @@ def _discard_record(value: dict[str, Any], harness: str, sid: str) -> Annotation
     return entry
 
 
-def _entry(value: Any, *, text_cap: int, revision_cap: int) -> Annotation | None:
+def _entry(
+    value: Any, *, text_cap: int, revision_cap: int, goal_cap: int | None = None
+) -> Annotation | None:
     """One untrusted record as an annotation, or nothing.
 
     A record whose revisions all fail validation is dropped whole unless it
@@ -1124,7 +1128,9 @@ def _entry(value: Any, *, text_cap: int, revision_cap: int) -> Annotation | None
         # Dropping just this revision could restore older typed words and
         # authorize the unasked lane against a baseline we no longer know.
         return None
-    parsed = [rev for rev in (_revision(item, text_cap) for item in raw) if rev is not None]
+    parsed = [
+        rev for rev in (_revision(item, text_cap, goal_cap) for item in raw) if rev is not None
+    ]
     _drop_unbound_request_ages(parsed, harness, sid)
     kept = tuple(sorted(parsed, key=lambda rev: rev["n"])[-revision_cap:]) if revision_cap else ()
     if not kept:
@@ -1401,6 +1407,7 @@ def _read_store(config: RuntimeConfig) -> _Store:
             value,
             text_cap=config.annotation_text_cap_chars,
             revision_cap=config.annotation_max_revisions,
+            goal_cap=config.annotation_goal_cap_chars,
         )
         if entry is not None:
             parsed.append(entry)
@@ -2383,7 +2390,9 @@ def _annotate(  # noqa: PLR0913
     # the two would make a client that posts only the goal silently destroy
     # the outcome lines beside it, which is the opposite of the independence
     # the two are documented to have.
-    new_goal = records.safe_text(goal, cap) if isinstance(goal, str) else None
+    new_goal = (
+        records.safe_text(goal, config.annotation_goal_cap_chars) if isinstance(goal, str) else None
+    )
     new_texts = None if lines is None else _typed_lines(lines, cap)
     stamp = time.time() if now is None else now
     options = adoption or {}

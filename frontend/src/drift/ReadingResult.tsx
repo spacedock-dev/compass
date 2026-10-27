@@ -6,6 +6,7 @@ import { contextKey } from '../api/identity';
 import { useDisplayed } from '../shell/context';
 import { useFocusKey } from '../controls';
 import { ActionButton } from '../intent/ActionButton';
+import { goalCap } from '../intent/annotation';
 import { entryWindow, olderEntriesRemain, type WorkEntry } from '../intent/work';
 import { markNotAccurate } from './actions';
 import { SESSION_GOAL } from '../sessions/intent';
@@ -613,7 +614,8 @@ function Baseline({
   readonly arrived: string;
 }) {
   const { model } = useDrift();
-  const cap = nextNumber(model.payload['annotate_cap']);
+  /* The Goal is the only clause this cut note is drawn on, so the goal's own cap. */
+  const cap = goalCap(model.payload);
   /* With no time it said "time not recorded"; adopted words were saved rather than typed, so their missing
      time is the save's. */
   const meta =
@@ -666,8 +668,7 @@ function Baseline({
             <ul className={READ_LIST}>
               {shape.readClauses.map(([label, clause]) => {
                 const name = intentLabel(label, lines);
-                const cut =
-                  name === 'Goal' && shape.promptSource && cap !== null && clause.length >= cap;
+                const cut = name === 'Goal' && shape.promptSource && clause.length >= cap;
                 return (
                   <li key={label}>
                     <span className="font-semibold text-foreground">{name}</span>{' '}
@@ -681,8 +682,8 @@ function Baseline({
                     {cut ? (
                       <span>
                         {shape.coverage?.goal_source === 'whole'
-                          ? ` Shown cut at ${String(cap)} characters; the analysis read the whole prompt, up to 1,000 characters.`
-                          : ` Cut at ${String(cap)} characters.`}
+                          ? ` Shown cut at ${cap.toLocaleString('en-US')} characters; the analysis read the whole prompt, up to 1,000 characters.`
+                          : ` Cut at ${cap.toLocaleString('en-US')} characters.`}
                       </span>
                     ) : null}
                   </li>

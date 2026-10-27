@@ -325,6 +325,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
             generated: generation++,
             annotate: true,
             annotate_cap: 240,
+            annotate_goal_cap: 1000,
             reading_check: 'passed',
             reading_routes: { [harness]: scenario.route ?? healthyRoute(harness) },
             ...(scenario.payload ?? {}),

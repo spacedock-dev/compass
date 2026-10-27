@@ -343,7 +343,7 @@ def session_instruction(
 # The longest `/goal` condition published whole: the 4,000 characters Claude Code documents. The
 # record reader's 2,000-character message cap was the first choice and was an interpretation, not a
 # limit of the command: a condition between 2,000 and 4,000 was a real goal that published nothing.
-# The Goal field holds 240 and `_with_excerpt` already offers a longer one cut and marked, so the
+# The Goal field holds 1,000 and `_with_excerpt` already offers a longer one cut and marked, so the
 # whole words travel and nothing is clipped silently. Over the limit the record is not a goal
 # Claude Code could have accepted, and publishes nothing.
 GOAL_CAP_CHARS = 4000
@@ -831,7 +831,7 @@ def session_goal(
     if harness == "antigravity":
         # agy records no end to a goal, so a later set says nothing true about the one before it.
         goal = {key: value for key, value in goal.items() if key != "earlier"}
-    return _with_excerpt(goal, config.annotation_text_cap_chars)
+    return _with_excerpt(goal, config.annotation_goal_cap_chars)
 
 
 _GOAL_READERS = {"codex": _codex_goal_event, "antigravity": _antigravity_goal_event}
