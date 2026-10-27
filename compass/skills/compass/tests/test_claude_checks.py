@@ -1097,9 +1097,6 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
     def test_an_rtk_check_reads_its_result_from_the_flag_alone(self) -> None:  # R12
         for command, output, flag, expected in (
             ("rtk pytest", "", True, "failed"),
-            # `rtk proxy` is RTK's unfiltered mode, so its output is the runner's own.
-            ("rtk proxy python -m pytest -q", "14 passed in 1.0s", False, "passed"),
-            ("rtk proxy python -m pytest -q", "1 failed, 3 passed", False, "failed"),
             ("rtk pytest 2>&1 | tail -2", "5 passed", False, "not-recorded"),
             ("rtk pytest", "1 failed", False, "not-recorded"),
         ):
@@ -1107,7 +1104,22 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
                 self.setUp()
                 self.session.bash(command, output, is_error=flag)
                 check = self.only_check()
-                self.assertIn("pytest", check["title"])
+                self.assertTrue(check["title"].startswith("pytest"))
+                self.assertEqual(expected, check["result"])
+
+    def test_rtk_proxy_reads_the_runners_own_output(self) -> None:
+        # `rtk proxy` is RTK's unfiltered mode, so its output is the runner's own.
+        for output, flag, expected in (
+            ("14 passed in 1.0s", False, "passed"),
+            ("1 failed, 3 passed", False, "failed"),
+            ("1 failed, 3 passed", True, "failed"),
+            ("14 passed in 1.0s", True, "failed"),  # the error flag still fails it
+        ):
+            with self.subTest(output=output, flag=flag):
+                self.setUp()
+                self.session.bash("rtk proxy python -m pytest -q", output, is_error=flag)
+                check = self.only_check()
+                self.assertEqual("python -m pytest -q", check["title"])
                 self.assertEqual(expected, check["result"])
 
     def test_a_command_a_hook_rewrote_is_the_command_that_ran(self) -> None:  # R12
@@ -1208,6 +1220,8 @@ class WhichFormsAreStripped(ClaudeChecksTestCase):
             ("uv run pytest -p no:randomly", "pytest -p no:randomly"),
             ("python3 -m pytest tests/x.py -q -pno:cacheprovider", None),
             ("pytest -p myplugin", "pytest -p \u2026REDACTED"),
+            ("py.test -p no:randomly", "py.test -p no:randomly"),
+            ("pytest -P no:x", "pytest -P \u2026REDACTED"),
         ):
             with self.subTest(command=command):
                 self.setUp()

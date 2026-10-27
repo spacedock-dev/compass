@@ -666,7 +666,8 @@ def redact_clip(text: str, limit: int) -> str:
 # check lines item 5 of the ruling `mask_words` cites asks for, widened on
 # review (2026-09-24) to the flags below. These named forms and no others:
 # SECURITY.md says so. Over-masking is the accepted direction: `-p` is also
-# `mkdir -p` and `pytest -p`, and losing that word costs a reader nothing.
+# `mkdir -p`, and losing that word costs a reader nothing. The one shown form
+# is pytest's `-p no:<plugin>` (see `_PYTEST_PLUGIN_OFF`).
 _MASK_FLAGS: Final = frozenset(
     {
         "--password",

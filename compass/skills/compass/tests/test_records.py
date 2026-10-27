@@ -1323,6 +1323,14 @@ class MaskCommandTest(unittest.TestCase):
             "no:cacheprovider", " ".join(records.mask_words(["mysql", "-p", "no:cacheprovider"]))
         )
 
+    def test_a_mysql_password_flag_stays_masked(self) -> None:
+        self.assertNotIn("secret", " ".join(records.mask_words(["mysql", "-p", "secret"])))
+
+    def test_the_tail_scrub_keeps_the_plain_plugin_flag_mask(self) -> None:
+        self.assertEqual(
+            ["no:cacheprovider"], records.masked_values(["pytest", "-p", "no:cacheprovider"])
+        )
+
     def test_a_command_with_nothing_to_mask_reads_as_it_was_typed(self) -> None:
         line = "python3 -m pytest tests/test_retry.py -q 2>&1 | tail -20"
         self.assertEqual(line, mask(line))

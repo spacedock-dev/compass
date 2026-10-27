@@ -5,9 +5,11 @@ semantics gate in
 [`../design-event-driven-observation.md`](../design-event-driven-observation.md).
 A gate that says "measured" should be able to show its measurement.
 
-Most files here are hook payloads. One is not: `claude/usage-endpoint-macos.jsonl` records the shape
+Most files here are hook payloads. Two are not. `rtk/proxy-passthrough-1.1.0-macos.jsonl` is a
+recorder-less probe of typed synthetic command text: its strings are the probe's own, not a person's
+or a model's. And `claude/usage-endpoint-macos.jsonl` records the shape
 of a vendor HTTP response, and the claims it backs live in
-[`../design-usage-quota.md`](../design-usage-quota.md). It is kept here because it obeys the rule
+[`../design-usage-quota.md`](../design-usage-quota.md). The usage file is kept here because it obeys the rule
 this directory exists for — shapes, never values.
 
 C6's shape-only captures use a one-off recorder: [Claude](claude/command-shapes-2.1.270-macos.jsonl)

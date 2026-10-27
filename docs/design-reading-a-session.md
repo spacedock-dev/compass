@@ -2432,8 +2432,9 @@ qualifies the producer against it.
    shell line (the owner narrowed this on review the same day, as part of this ruling), after
    credential redaction and masking, word by word, of the forms redaction cannot recognise: a
    `NAME=value` assignment; the value after `--password`, `--token`, `--api-key`, `--secret`,
-   `--auth`, `-p` or `-P`, joined by `=` or in the next word; an `Authorization:` or `X-Api-Key:`
-   header value; and the password in `user:password@`, up to the last `@`. These forms and no
+   `--auth`, `-p` or `-P`, joined by `=` or in the next word (pytest's `-p no:<plugin>` is shown; see
+   [the 2026-10-27 amendment](#amended-2026-10-27-owner-pytests--p-no-is-shown)); an
+   `Authorization:` or `X-Api-Key:` header value; and the password in `user:password@`, up to the last `@`. These forms and no
    others, as SECURITY.md says. A substituted command is shown as `$(…)` and a trailing comment is
    dropped. Clipped to 120 characters; the last 180 characters of
    output, the existing ledger cap, with redaction run over the whole read window first; a
@@ -3315,7 +3316,10 @@ Item 5 of this ruling masks the word after `-p` as a password for every runner, 
 `-p …REDACTED` where the agent had passed a plugin flag. After wrappers are stripped, a pytest runner (`pytest`,
 `py.test`, `python -m pytest`) shows the word after `-p`, or the joined `-pno:<name>`, only when it is `no:` and an
 identifier of letters, digits, `_` and `.`. Any other word stays masked, because `-p hunter2` cannot be told from
-`-p myplugin`, and every other runner and `-P` keep the mask.
+`-p myplugin`, and every other runner and `-P` keep the mask. A word deliberately spelled `no:<identifier>` after `-p` in a
+pytest check is shown whatever it is; credential-shaped values are still redacted by shape. The output-tail scrub
+and the call's masked-value set keep the unconditional `-p` mask, so a shown plugin word can still be erased from
+an echoed tail: that side only over-masks.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

@@ -3712,7 +3712,9 @@ class _ShellCall:
             for target in _file_targets(redirects)
         ]
         # Every value masking hides anywhere in the call, as the tail scrub
-        # reads them (review W1).
+        # reads them (review W1). Deliberately not pytest-aware: the scrub keeps
+        # the unconditional `-p` mask, so a shown `-p no:<plugin>` can still be
+        # erased from an echoed output tail (it fails closed).
         self.masked_values = {
             value
             for part in self.parts
