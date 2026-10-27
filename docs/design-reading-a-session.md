@@ -2434,14 +2434,15 @@ qualifies the producer against it.
    `NAME=value` assignment; the value after `--password`, `--token`, `--api-key`, `--secret`,
    `--auth`, `-p` or `-P`, joined by `=` or in the next word (pytest's `-p no:<plugin>` is shown; see
    [the 2026-10-27 amendment](#amended-2026-10-27-owner-pytests--p-no-is-shown)); an
-   `Authorization:` or `X-Api-Key:` header value; and the password in `user:password@`, up to the
-   last `@`. These forms and no others, as SECURITY.md says. A substituted command is shown as `$(…)` and a trailing comment is
-   dropped. Clipped to 120 characters; the last 180 characters of
-   output, the existing ledger cap, with redaction run over the whole read window first; a
-   written path relative to the session's working directory, the folder it began in, which a later
-   `cd` does not move; and, for a segment that is neither a check nor
-   on the read-only list, its time only, never its text, used on this machine. No file content is read as a field, and never an
-   Edit or Write result body; the output tail is whatever the runner printed.
+   `Authorization:` or `X-Api-Key:` header value; and the password in `user:password@`, up to
+   the last `@`. These forms and no others, as SECURITY.md says. A substituted command is shown
+   as `$(…)` and a trailing comment is dropped. Clipped to 120 characters; the last 180
+   characters of output, the existing ledger cap, with redaction run over the whole read window
+   first; a written path relative to the session's working directory, the folder it began in,
+   which a later `cd` does not move; and, for a segment that is neither a check nor on the
+   read-only list, its time only, never its text, used on this machine. No file content is read
+   as a field, and never an Edit or Write result body; the output tail is whatever the runner
+   printed.
 6. Where it lives: the observed record only, as a new fact type the reading counts as work. It is
    kept out of the semantic history store and out of every session row field, and it is named in
    `history.PROMPT_DERIVED_CARRIERS`. SECURITY.md adds it to the named reads, moving the count
