@@ -116,8 +116,10 @@ types, Biome lints (JavaScript, TypeScript and React rules) and checks formattin
 `pnpm lint`, with `pnpm format` rewriting what it reports, Vitest with Testing Library checks visible
 behavior, and Storybook checks components and views in Chromium. Vitest runs `.ts` tests under Node and
 `.tsx` tests in jsdom; a `.ts` test that needs a DOM starts with an `@vitest-environment jsdom` comment, and
-one that forgets fails on a missing `document`. `pnpm test:coverage` runs the same suite under coverage and
-fails below the thresholds in `vitest.config.mts`. The rule set and what it deliberately
+one that forgets fails on a missing `document`. The jsdom tests run on VM workers, which give each file its
+own context only when there are at least two, so the config never runs fewer and `--no-file-parallelism`
+stops with an error. `pnpm test:coverage` runs the same suite under coverage and fails below the thresholds
+in `vitest.config.mts`. The rule set and what it deliberately
 does not cover are in the [migration contract](docs/design-frontend-migration.md#lint-and-format). Vite and its React plugin own the build and hot
 refresh. Shared controls use vendored shadcn components backed by Base UI; routing and state remain
 owned by the page. Node and pnpm are build tools: the shipped
