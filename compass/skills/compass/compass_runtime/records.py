@@ -883,7 +883,7 @@ _MASK_CONFIG_SECRET: Final = re.compile(r"secret|token|password|passwd|key", re.
 ALWAYS_ZERO_WORDS: Final = frozenset(
     {"true", ":", "printf", "echo", "export", "unset", "set", "eval", "tee"}
 )
-_LAUNCH_WRAPPERS: Final = frozenset({"command", "builtin", "nohup", "exec", "time"})
+LAUNCH_WRAPPERS: Final = frozenset({"command", "builtin", "nohup", "exec", "time"})
 _DIGITS: Final = re.compile(r"[0-9]+")
 
 
@@ -891,7 +891,7 @@ def launched_words(words: list[str]) -> list[str]:
     """The words of the program a segment launches: past `command`, `nohup`, `time` and their
     `-p`, with a path (`/bin/true`) reduced to its program name."""
     at = 0
-    while at < len(words) and os.path.basename(words[at]) in _LAUNCH_WRAPPERS:
+    while at < len(words) and os.path.basename(words[at]) in LAUNCH_WRAPPERS:
         at += 1
         while at < len(words) and words[at] == "-p":
             at += 1

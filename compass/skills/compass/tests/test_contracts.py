@@ -1437,6 +1437,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.live_estimate": {
             "compass_runtime.config",
             "compass_runtime.correction",
+            # A type-only import of the checked-out head the estimate is keyed on.
+            "compass_runtime.git_status",
             "compass_runtime.levels",
             "compass_runtime.project_context",
         },
@@ -1629,12 +1631,15 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # Read-only project composition sits above the bounded observer,
         # Spacedock, and record readers. The HTTP route is its only caller.
         "compass_runtime.project_context": {
+            # A recorded CI poll is bound to the folder's remote and the session's own pull request.
+            "compass_runtime.ci_read",
             "compass_runtime.claude_data",
             # The focused session's message index, for the fixed position of each check and file.
             "compass_runtime.entry_numbers",
             # Exact parent-source binding shares the canonical collector-key normalizer.
             "compass_runtime.events",
             "compass_runtime.config",
+            "compass_runtime.git_status",
             "compass_runtime.io",
             "compass_runtime.observer",
             # A project's own check scripts, read from the commit a session began on.
@@ -1805,6 +1810,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.state": {
             "compass_runtime.asks",
             "compass_runtime.config",
+            "compass_runtime.git_status",
             "compass_runtime.snapshot",
             "compass_runtime.stream",
         },

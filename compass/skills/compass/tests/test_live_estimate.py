@@ -27,6 +27,8 @@ from unittest import mock
 
 from compass_runtime import annotations as annotation_store
 from compass_runtime import (
+    ci_read,
+    git_status,
     http_api,
     levels,
     live_estimate,
@@ -37,7 +39,7 @@ from compass_runtime import (
 )
 
 from .support import make_server, serve_until_closed
-from .test_claude_checks import SHORT, START
+from .test_claude_checks import SHORT, SID, START
 from .test_copied_corrections import _App
 from .test_subagent_checks import Subagent
 
@@ -310,6 +312,88 @@ class TheLiveEstimateTest(_Replay):
             levels.Intent(saved=True, goal=GOAL, lines=(LINE,)),
         )
         self.assertEqual(direct.level, self.estimate()["level"])
+
+
+class ACiPollMovesTheLiveLevelOnlyWhenTheSessionIsBoundToIt(_Replay):
+    """The live replay binds a recorded CI poll as the collection does, from the saved row's own
+    goal texts. The folder's remote is stubbed, so no git runs."""
+
+    FAILED = "Exit code 1\nbuild\tfail"
+    OWN_PR = "https://github.com/acme/widgets/pull/1"
+
+    def setUp(self) -> None:
+        super().setUp()
+        identity = git_status.GitIdentity("a" * 40, "github.com", "acme/widgets")
+        patch = mock.patch.object(ci_read, "probe_session", return_value=identity)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.session.write(self.session.cwd + "/src/a.py")
+
+    def test_a_failed_poll_of_another_repository_moves_no_level(self) -> None:
+        before = self.estimate(saved_row(annotation_goal=f"{GOAL} {self.OWN_PR}"))
+        self.session.bash("gh pr checks 99 --repo other/old", self.FAILED, is_error=True)
+        after = self.estimate(saved_row(annotation_goal=f"{GOAL} {self.OWN_PR}"))
+        self.assertEqual(levels.MEDIUM, before["level"])
+        self.assertEqual(levels.MEDIUM, after["level"])
+        self.assertNotIn(levels.REASON_FAILED_CHECK, after["reasons"])
+
+    def test_a_failed_poll_of_the_pull_request_the_goal_names_raises_it(self) -> None:
+        self.session.bash("gh pr checks 1", self.FAILED, is_error=True)
+        answer = self.estimate(saved_row(annotation_goal=f"{GOAL} {self.OWN_PR}"))
+        self.assertEqual(levels.HIGH, answer["level"])
+        self.assertIn(levels.REASON_FAILED_CHECK, answer["reasons"])
+
+    def test_a_poll_the_saved_words_do_not_name_binds_nothing_in_the_live_level(self) -> None:
+        self.session.bash("gh pr checks 1", self.FAILED, is_error=True)
+        self.assertEqual(levels.MEDIUM, self.estimate()["level"])
+
+    def test_a_pull_request_only_the_session_goal_names_binds_the_poll_here_and_in_collect(
+        self,
+    ) -> None:
+        self.session.bash("gh pr checks 1", self.FAILED, is_error=True)
+        row = saved_row(session_goal={"text": f"Land {self.OWN_PR}", "at": 1.0})
+        self.assertEqual(levels.HIGH, self.estimate(row)["level"])
+        self.session.save(self.path)
+        events, scan = project_context.claude_tool_reports(
+            self.config,
+            str(self.path),
+            SHORT,
+            goal_texts=project_context.goal_texts_of(row),
+        )
+        self.assertEqual(1, scan["ci_failed"])
+        self.assertEqual(
+            ["ci_command"], [e["subject"] for e in events if e["title"] == "gh pr checks 1"]
+        )
+
+    def test_a_checkpointed_replay_keeps_the_binding_of_the_scan_it_came_from(self) -> None:
+        row = saved_row(
+            annotation_goal=f"{GOAL} {self.OWN_PR} https://github.com/acme/widgets/pull/2"
+        )
+        self.session.bash("gh pr checks 1", self.FAILED, is_error=True)
+        self.assertEqual(levels.HIGH, self.estimate(row)["level"])
+        self.session.bash("gh pr checks 2", self.FAILED, is_error=True)
+        again = self.estimate(row)
+        self.assertEqual(levels.HIGH, again["level"])
+        self.assertIn(levels.REASON_FAILED_CHECK, again["reasons"])
+
+    def test_the_session_goal_is_part_of_what_the_cached_level_was_read_with(self) -> None:
+        self.session.bash("gh pr checks 1", self.FAILED, is_error=True)
+        self.assertEqual(levels.MEDIUM, self.estimate(saved_row())["level"])
+        row = saved_row(session_goal={"text": self.OWN_PR, "at": 1.0})
+        self.assertEqual(levels.HIGH, self.estimate(row)["level"])
+
+    def test_a_frozen_read_counts_a_poll_only_by_the_sessions_own_records(self) -> None:
+        def polls() -> list[str]:
+            self.session.save(self.path)
+            facts, _press = project_context.frozen_claude_checks(
+                self.config, str(self.path), SID, until=START.timestamp() + 1e6
+            )
+            return [f["subject"] for f in facts if f.get("subject") in ("command", "ci_command")]
+
+        self.session.bash("gh pr checks 1", self.FAILED, is_error=True)
+        self.assertEqual(["command"], polls())
+        self.session.rows.append({"type": "pr-link", "prNumber": 1, "prRepository": "acme/widgets"})
+        self.assertEqual(["ci_command"], polls())
 
 
 class TheReplayIsBoundedTest(_Replay):

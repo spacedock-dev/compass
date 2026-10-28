@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from compass_runtime import asks as runtime_asks
+from compass_runtime import git_status as runtime_git_status
 from compass_runtime import snapshot as runtime_snapshot
 from compass_runtime import stream as runtime_stream
 
@@ -114,6 +115,9 @@ class RuntimeState:
     delegated_work_cache: dict[
         str, tuple[tuple[tuple[str, int, int], ...], list[dict[str, Any]], bool, float]
     ] = field(default_factory=dict)
+    # A folder's `origin`, so a session holding a CI poll starts no git on a collect or a live
+    # replay that finds its repository unchanged (`ci_read.folder_remote`).
+    ci_remotes: runtime_git_status.StampCache = field(default_factory=runtime_git_status.StampCache)
     cwd_cache: dict[str, str] = field(default_factory=dict)
     pi_scan: dict[str, dict[str, Any]] = field(default_factory=dict)
     turn_scan: dict[str, Any] = field(default_factory=dict)

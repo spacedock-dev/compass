@@ -362,6 +362,7 @@ const NOT_RECORDED_REASONS = [
   ['directory_not_placeable', 'directory not placeable'],
   ['piped_beside_other_commands', 'output is piped beside other commands'],
   ['printed_beside_other_commands', 'output is printed beside other commands'],
+  ['ci_poll_unbound', 'a CI poll of a pull request or repository this session is not bound to'],
 ] as const;
 export const NotRecordedReasons: Story = {
   render: () => (
@@ -390,6 +391,34 @@ export const NotRecordedReasons: Story = {
     await expect(
       canvas.getByLabelText('Ran, result not recorded: output is printed beside other commands'),
     ).toHaveTextContent('No result: output is printed beside other commands');
+  },
+};
+
+/* A poll of another pull request's CI keeps its exit status and says why it counts for nothing. */
+export const UnboundCiPollSaysWhy: Story = {
+  render: () => (
+    <RunExample
+      rows={[
+        activityRow(1, {
+          subject: 'command',
+          result: 'passed',
+          resultSource: 'flag',
+          cannotFail: true,
+          resultReason: 'ci_poll_unbound',
+          summary: 'gh pr checks 99 --repo other/old',
+        }),
+      ]}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByLabelText(
+        'Exited 0; Compass does not know what it checks: a CI poll of a pull request or repository this session is not bound to',
+      ),
+    ).toBeVisible();
+    await expect(canvasElement.textContent).not.toMatch(/Passed, as the tool reported/);
+    await expect(canvasElement.textContent).not.toMatch(/forces the exit status/);
   },
 };
 

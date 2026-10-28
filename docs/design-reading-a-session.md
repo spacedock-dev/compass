@@ -7920,6 +7920,76 @@ told the session had written it, and an interpreter that rewrote a listed script
   the scan for these names. A longer call is parsed each time it is asked for, so the process-wide memo does
   not hold a pasted script.
 
+### Amended 2026-10-28 (owner): a CI poll counts only when it reads the session's own pull request
+
+Item 6 made `gh pr checks` and `gh run view --exit-status` a tier 2 `ci_command` fact and asked for no binding,
+so `gh pr checks 99 --repo other/old` exiting 0 counted as a CI pass toward the live floor although that pull
+request has nothing to do with the session. A pass the reader's session did not earn is the false pass the
+tiers exist to refuse.
+
+- **The rule.** A poll counts only when its repository is the `origin` of the folder the session began in and,
+  where it names a pull request number or a branch, the session is bound to that one. The repository is the
+  poll's `--repo` or `-R`, a `GH_REPO=` prefix on the poll itself (which `gh` reads the same way), or a pull request or run URL; a URL that disagrees with `--repo` binds nothing. An earlier
+  `export GH_REPO=` in the same call, like `GH_HOST` or `GH_ENTERPRISE_TOKEN`, binds nothing. A
+  poll that names a repository is compared with the session folder's remote wherever the call ran, so
+  `cd <other clone> && gh pr checks 3 -R <the session's repository>` counts. A poll that names none reads the
+  call's own directory, which must be the session folder or a checkout whose remote equals the session folder's
+  (a worktree or subdirectory), so `cd <other clone> && gh pr checks` does not count. A directory the shell
+  decides (a variable, a command substitution, a conditional `cd`) is not placed, and an unplaced directory
+  binds nothing: the session's folder is never substituted for it. `GH_HOST` and `GH_ENTERPRISE_TOKEN`, on the
+  poll or exported earlier in the call, point `gh` at another host and bind nothing. A variable exported in an
+  earlier call is not seen, which is accepted: the poll then reads as the session's own when it was not.
+  Git runs only in the session folder and in a directory a poll ran in.
+- **What binds a number or a branch.** The sources
+  [DEC-30](#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze) uses for the press:
+  the reader's goal naming the pull request by its URL, a `pr-link` record or a pull request the session
+  created, each for the folder's own repository, and a branch the session pushed. `ci_read.poll_bound` reuses
+  that module's URL, repository and branch checks and its record scan, and `git_status.identity` for the remote.
+  A press binds one pull request, the newest. A poll may be any the session is bound to, so a session that opened
+  two pull requests keeps both polls. A poll that names neither a number nor a branch reads the current
+  branch's, and binds with the repository.
+- **A run names no pull request.** `gh run view <id> --exit-status` counts when its repository (`--repo`, or the
+  one a `https://github.com/<owner>/<repo>/actions/runs/<id>` URL carries) is absent or equals the folder's
+  remote; any other operand binds nothing. Nothing further can bind a run id without a network call, so a run of another workflow in the
+  same repository counts. That residual is accepted: the failure it permits is a run of the session's own
+  repository.
+- **No network, and fail safe.** Collection never calls the network, so a binding that needs one is not
+  established. With the git probe off (`--no-git`), no `origin`, a remote that is not on `github.com`, or a
+  poll that cannot be read (two repositories, two targets, a word outside the closed patterns), the poll is
+  listed as a tier 3 command: its exit status stays on the row, it is published with `cannot_fail` and
+  `result_reason` `ci_poll_unbound`, and no verdict, level or scan count reads it. The page says "a CI poll of a
+  pull request or repository this session is not bound to". The goal's URL binds only at the scan that is given
+  the goal, which is every collection and live estimate and not the frozen abstention packet, which therefore
+  counts a poll only by the session's own records.
+- **A goal URL in another repository.** It binds the press (`bind`), where the reader's words name what to read,
+  and does not bind a poll, which must also be in the folder's own repository.
+- **What leaves the machine.** An output tail of a poll that falls to a plain command is a tier 3 tail, sent
+  only to the session's own vendor
+  ([DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)). The press
+  decides it with the same binding as the published entry, from the session row's goal texts, and with none an
+  unverifiable poll is withheld and never bound.
+- **Ordering.** The binding is decided when the entries are chosen and not when the run is read, because a
+  `pr-link` or a created pull request is often recorded after the first poll and the entry cache never sees one
+  arrive. The live estimate replays each call position, so a poll made before the record shows unbound there
+  until the next replay, and the stored reading reads the full transcript.
+- **Edges closed 2026-10-28.** `gh pr checks --web` (or `-w`) only opens a browser and exits 0 whatever the
+  checks say, so it is not a CI read, as `gh run view` without `--exit-status` is not. `command cd` and
+  `builtin cd` run the builtin and move the directory like `cd`. A call that runs `eval` or a variable's value
+  before the poll leaves the poll's directory unplaced, as a `cd` to a variable does, so a poll that names no
+  repository binds nothing there; one that names the session's repository still counts. The folder's remote is
+  read once and kept in memory on the runtime state, keyed by the stat of the repository's `HEAD` and `config`
+  (a linked worktree's common directory included), so a collection or live replay that finds both unchanged
+  starts no git. A global git config that moves a remote is not seen until one of those two files moves,
+  which is accepted. The `earlier` words of a call are built once per call and not once per poll segment.
+  A later pass closed the shapes left: a short-flag cluster holding `-w` (`-wi 5`) is a browser open, a call
+  that runs `source` or `.` before the poll leaves its directory unplaced like `eval`, an all-digit operand too
+  long to be a pull request number binds to nothing, and the stamp adds the inode so a same-size rewrite in
+  the same clock tick reads as changed. The stamp opens only regular files, without waiting, so a named pipe
+  where `.git` or `commondir` belongs cannot block a collection, and it is not computed at all under `--no-git`.
+- **What was rejected.** Dropping the unbound poll from the list: a reader looking at a session that polled
+  something sees nothing, and "ran" is the honest word. Asking `gh` which pull request a branch or run belongs
+  to: that is a network call at collection time.
+
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
 Decided by the owner on 2026-10-27 (DRC-4973). This layer writes the ruling down; the layers that follow build

@@ -29,6 +29,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tokenize
 import tracemalloc
@@ -41,7 +42,7 @@ from unittest import mock
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-from compass_runtime import git_status
+from compass_runtime import ci_read, git_status
 
 GIT = shutil.which("git")
 
@@ -441,6 +442,84 @@ def _repo(root: Path, *, fsmonitor_log: Path | None = None) -> Path:
     time.sleep(0.01)
     (root / "a.txt").write_text("one\n")
     return root
+
+
+class RemoteStampTest(unittest.TestCase):
+    """`remote_stamp` keys a cached `origin` on two stats and starts no program, so a hand-built
+    `.git` stands in for a repository and nothing here needs git."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.git_dir = self.root / ".git"
+        self.git_dir.mkdir()
+        (self.git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        self.config = self.git_dir / "config"
+        self.config.write_text('[remote "origin"]\n\turl = a\n', encoding="utf-8")
+
+    def test_a_same_size_rewrite_in_the_same_tick_changes_the_stamp(self) -> None:
+        before = git_status.remote_stamp(str(self.root))
+        seen = self.config.stat()
+        swap = self.git_dir / "config.new"
+        swap.write_text('[remote "origin"]\n\turl = b\n', encoding="utf-8")
+        os.utime(swap, ns=(seen.st_atime_ns, seen.st_mtime_ns))
+        swap.replace(self.config)
+        os.utime(self.config, ns=(seen.st_atime_ns, seen.st_mtime_ns))
+        after = git_status.remote_stamp(str(self.root))
+        self.assertEqual(seen.st_size, self.config.stat().st_size)
+        self.assertNotEqual(before, after)
+
+    def test_a_fifo_where_the_git_file_belongs_never_blocks_the_reader(self) -> None:
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("no named pipes here")
+        shutil.rmtree(self.git_dir)
+        fifo = self.root / ".git"
+        os.mkfifo(fifo)
+        found: list[object] = []
+        # Measured at well under a millisecond; a blocked open waits for ever, so the bound is a
+        # loaded runner's allowance and not a speed claim.
+        worker = threading.Thread(
+            target=lambda: found.append(git_status.remote_stamp(str(self.root))), daemon=True
+        )
+        worker.start()
+        worker.join(5)
+        if worker.is_alive():
+            with contextlib.suppress(OSError):
+                os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        self.assertFalse(worker.is_alive(), "remote_stamp blocked on a named pipe")
+        self.assertEqual([None], found)
+
+    def test_a_fifo_for_commondir_never_blocks_the_reader(self) -> None:
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("no named pipes here")
+        shutil.rmtree(self.git_dir)
+        tree = self.root / "tree"
+        tree.mkdir()
+        gitdir = self.root / "wt-gitdir"
+        gitdir.mkdir()
+        (tree / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
+        os.mkfifo(gitdir / "commondir")
+        found: list[object] = []
+        worker = threading.Thread(
+            target=lambda: found.append(git_status.remote_stamp(str(tree))), daemon=True
+        )
+        worker.start()
+        worker.join(5)
+        if worker.is_alive():
+            with contextlib.suppress(OSError):
+                os.close(os.open(gitdir / "commondir", os.O_WRONLY | os.O_NONBLOCK))
+        self.assertFalse(worker.is_alive(), "remote_stamp blocked on a named pipe")
+
+    def test_no_git_computes_no_stamp(self) -> None:
+        config = SimpleNamespace(git_probe_enabled=False)
+        with mock.patch.object(git_status, "remote_stamp") as stamp:
+            remote = ci_read.folder_remote(
+                config,  # type: ignore[arg-type]
+                str(self.root),
+                git_status.StampCache(),
+            )
+        self.assertEqual(("", ""), remote)
+        stamp.assert_not_called()
 
 
 @unittest.skipIf(GIT is None, "git is not on PATH")

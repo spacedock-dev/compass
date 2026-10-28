@@ -114,6 +114,11 @@ _PR_URL_RE = re.compile(
     r"/pull/(?P<number>[1-9][0-9]{0,7})(?![0-9])",
     re.IGNORECASE,
 )
+_RUN_URL_RE = re.compile(
+    r"https://github\.com/(?P<owner>[A-Za-z0-9-]{1,39})/(?P<repo>[A-Za-z0-9._-]{1,100})"
+    r"/actions/runs/[1-9][0-9]{0,19}(?:/job/[1-9][0-9]{0,19})?",
+    re.IGNORECASE,
+)
 # A GitLab host: dotted labels ending in a name, so a bare IPv4 address, `localhost` and a port all
 # fail it. An IPv6 literal carries brackets and colons, which no label holds.
 _HOST_RE = re.compile(
@@ -251,11 +256,209 @@ def bind(
     return None
 
 
+@dataclass(frozen=True)
+class Poll:
+    """What a recorded CI poll names: its repository, and the pull request or branch it reads.
+
+    `repository` is empty when the command names none (it then reads the folder's own remote).
+    `number` and `branch` are both empty when it names no pull request, which for `gh pr checks`
+    means the current branch's. `valid` is False when a word it names is not one this module will
+    compare, so the poll binds to nothing.
+    """
+
+    repository: str = ""
+    number: int = 0
+    branch: str = ""
+    valid: bool = True
+
+
+# Options that take a value, by command: the word after one is not the positional target.
+_POLL_VALUE_FLAGS: Final = {
+    "pr_checks": frozenset({"-i", "--interval", "--json", "-q", "--jq", "-t", "--template"}),
+    "run_view": frozenset(
+        {"-j", "--job", "-a", "--attempt", "--json", "-q", "--jq", "-t", "--template"}
+    ),
+}
+_REPO_FLAGS: Final = ("-R", "--repo")
+
+
+def _poll_repository(value: str) -> str | None:
+    """`owner/repo` for a `--repo` value, or the value itself when it names another host.
+
+    A repository on another host is kept as written so it never equals a GitHub `origin`;
+    None is a value that names no repository at all.
+    """
+    text = value.strip()
+    if "://" in text or text.startswith("git@"):
+        host, repository = git_status.parse_remote(text)
+        if not repository:
+            return None
+        return repository if host == HOST and _github_repository(repository) else text
+    parts = text.split("/")
+    if len(parts) == 3 and parts[0].lower() == HOST and _github_repository("/".join(parts[1:])):
+        return "/".join(parts[1:])
+    if len(parts) == 3 and _HOST_RE.fullmatch(parts[0].lower()):
+        return text
+    return text if len(parts) == 2 and _github_repository(text) else None
+
+
+def _poll_operands(kind: str, rest: Sequence[str]) -> tuple[list[str], list[str]]:
+    """The `--repo` values and the positional words among a poll's arguments."""
+    repos: list[str] = []
+    positional: list[str] = []
+    value_flags = _POLL_VALUE_FLAGS[kind]
+    at = 0
+    while at < len(rest):
+        word = rest[at]
+        at += 1
+        flag, equals, inline = word.partition("=")
+        if word == "--":
+            positional.extend(rest[at:])
+            break
+        if flag in _REPO_FLAGS:
+            if not equals and at < len(rest):
+                inline, at = rest[at], at + 1
+            repos.append(inline)
+        elif word.startswith("-R") and not word.startswith("--"):
+            repos.append(word[2:])
+        elif flag in value_flags:
+            at += 0 if equals else 1
+        elif not word.startswith("-"):
+            positional.append(word)
+    return repos, positional
+
+
+# Environment names that point `gh` at another repository or host. Any word of the call that
+# sets one, in the poll's own segment or an earlier one, leaves the poll bound to nothing.
+_POLL_ENVIRONMENT: Final = ("GH_REPO=", "GH_HOST=", "GH_ENTERPRISE_TOKEN=")
+
+
+def _ascii_number(text: str) -> bool:
+    """Whether `int(text)` is safe: ASCII digits only, short of the interpreter's digit limit."""
+    return text.isascii() and text.isdigit() and len(text) <= 19
+
+
+def _all_digits(text: str) -> bool:
+    return text.isascii() and text.isdigit()
+
+
+def _run_view_target(positional: str, repository: str) -> Poll:
+    """What a `gh run view` operand names: a run id, or a run URL carrying its own repository."""
+    if not positional or (_ascii_number(positional) and 0 < int(positional) <= _NUMBER_MAX):
+        return Poll(repository=repository)
+    matched = _RUN_URL_RE.fullmatch(positional)
+    if matched is None:
+        return Poll(valid=False)
+    url_repository = f"{matched['owner']}/{matched['repo']}"
+    if not _github_repository(url_repository):
+        return Poll(valid=False)
+    if repository and repository.lower() != url_repository.lower():
+        return Poll(valid=False)
+    return Poll(url_repository)
+
+
+def _pull_request_target(target: str, repository: str) -> Poll:
+    """What a `gh pr checks` operand names: a number, a pull request URL, a branch, or nothing."""
+    if not target:
+        return Poll(repository=repository)
+    if _ascii_number(target):
+        number = int(target)
+        return Poll(repository, number) if 0 < number <= _NUMBER_MAX else Poll(valid=False)
+    if _all_digits(target):
+        # Too long to be a pull request number, and a bare number is never a branch.
+        return Poll(valid=False)
+    urls = pull_request_urls(target) if target.startswith("https://") else ()
+    if len(urls) == 1:
+        url_repository, number = urls[0]
+        if repository and repository.lower() != url_repository.lower():
+            return Poll(valid=False)
+        return Poll(url_repository, number)
+    return Poll(repository, branch=target) if _usable_branch(target) else Poll(valid=False)
+
+
+def sets_poll_environment(word: str) -> bool:
+    """Whether a raw word assigns an environment name that points `gh` elsewhere."""
+    return word.startswith(_POLL_ENVIRONMENT)
+
+
+def parse_poll(
+    kind: str,
+    words: Sequence[str],
+    raw: Sequence[str] = (),
+    earlier: Sequence[str] = (),
+    *,
+    earlier_sets_environment: bool = False,
+) -> Poll:
+    """The repository and target a `gh pr checks` or `gh run view` command names.
+
+    `kind` is `pr_checks` or `run_view`; `words` are the program's words after any wrapper, and
+    `raw` the segment's words before wrappers and assignments were stripped, so a `GH_REPO=...`
+    prefix, which points `gh` at another repository, is read like `--repo`. `earlier` is every raw
+    word of the call's earlier segments: one that sets `GH_REPO`, `GH_HOST` or
+    `GH_ENTERPRISE_TOKEN` (an `export`, a plain assignment) leaves the poll bound to nothing, as
+    does `GH_HOST` or the token on the poll itself. A variable exported in an earlier call is not
+    seen. A caller with many polls in one call passes `earlier_sets_environment`, decided once for
+    the call, instead of `earlier`: scanning every earlier word for every poll is quadratic.
+    """
+    if (
+        earlier_sets_environment
+        or any(word.startswith(_POLL_ENVIRONMENT[1:]) for word in raw)
+        or any(sets_poll_environment(word) for word in earlier)
+    ):
+        return Poll(valid=False)
+    repos, positional = _poll_operands(kind, words[3:])
+    repos.extend(word.partition("=")[2] for word in raw if word.startswith("GH_REPO="))
+    named = {_poll_repository(value) for value in repos}
+    if len(named) > 1 or None in named or len(positional) > 1:
+        return Poll(valid=False)
+    repository = next(iter(named), "") or ""
+    if kind == "run_view":
+        return _run_view_target(positional[0] if positional else "", repository)
+    return _pull_request_target(positional[0] if positional else "", repository)
+
+
+def poll_bound(
+    poll: Poll,
+    remote: tuple[str, str],
+    goal_texts: Iterable[str],
+    links: Sequence[tuple[str, int]],
+    pushes: Sequence[str],
+) -> bool:
+    """Whether a recorded CI poll reads this session's own pull request or repository.
+
+    The poll's repository, its own or the folder's where it names none, must be the folder's
+    `origin`; a poll that names a number or a branch must name one the session is bound to, by
+    [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)'s
+    sources: the goal's own URL, a `pr-link` or created-pull-request record, or a pushed branch.
+    A poll naming neither is the current branch's, and binds with the repository. No remote, or one
+    that is not a GitHub repository, binds nothing: a recorded run cannot be checked further
+    without a network call.
+    """
+    host, repository = remote
+    if not poll.valid or host != HOST or not _github_repository(repository):
+        return False
+    folded = repository.lower()
+    if poll.repository and poll.repository.lower() != folded:
+        return False
+    if poll.number:
+        named = {
+            number
+            for text in goal_texts
+            for linked, number in pull_request_urls(text)
+            if linked.lower() == folded
+        }
+        named.update(number for linked, number in links if linked.lower() == folded)
+        return poll.number in named
+    if poll.branch:
+        return poll.branch in pushes
+    return True
+
+
 def _usable_branch(branch: str) -> bool:
     return bool(
         _BRANCH_RE.fullmatch(branch)
         # A bare number is how `gh pr view` names a pull request; a branch never is one.
-        and not branch.isdigit()
+        and not _all_digits(branch)
         and ".." not in branch
         and not branch.endswith((".lock", "/", "."))
     )
@@ -1088,3 +1291,26 @@ def probe_session(
     if not config.git_probe_enabled or not folder:
         return None
     return git_status.identity(folder, timeout_sec=config.git_probe_timeout_sec, runner=runner)
+
+
+def folder_remote(
+    config: RuntimeConfig, folder: str, held: git_status.StampCache | None = None
+) -> tuple[str, str]:
+    """The folder's `origin` as a host and repository, two empty strings where nothing is read.
+
+    With `held` (the runtime's, so every collect and live replay of a session that polled CI
+    shares one reading) a folder whose `HEAD` and `config` stats have not moved starts no git
+    process. A folder with no stamp, and one whose probe read nothing, is read afresh each time.
+    """
+    if not config.git_probe_enabled:
+        return "", ""
+    stamp = git_status.remote_stamp(folder) if held is not None and folder else None
+    if held is not None and stamp is not None:
+        kept = held.get(folder, stamp)
+        if kept is not None:
+            return kept
+    found = probe_session(config, folder)
+    remote = (found.host, found.repository) if found else ("", "")
+    if held is not None and stamp is not None and found is not None:
+        held.put(folder, stamp, remote)
+    return remote

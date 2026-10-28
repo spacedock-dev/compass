@@ -84,6 +84,7 @@ export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
   directory_not_placeable: 'directory not placeable',
   piped_beside_other_commands: 'output is piped beside other commands',
   printed_beside_other_commands: 'output is printed beside other commands',
+  ci_poll_unbound: 'a CI poll of a pull request or repository this session is not bound to',
 };
 
 /* A check's or a file's own line in parts: who, what it was, and the notes about its result. The row draws the
@@ -156,7 +157,13 @@ function commandParts(entry: WorkEntry): {
     : ci
       ? 'ran, result not recorded'
       : COMMAND_NOT_RECORDED;
-  const reason = entry.cannotFail ? 'a later command forces the exit status to 0' : '';
+  /* A command whose status says nothing about the work is withdrawn for one of two reasons, and the producer says
+     which: a CI poll of a pull request the session is not bound to names itself, and any other is a later `|| true`. */
+  const reason = entry.cannotFail
+    ? Object.hasOwn(CHECK_NOT_RECORDED_REASONS, entry.resultReason)
+      ? (CHECK_NOT_RECORDED_REASONS[entry.resultReason] as string)
+      : 'a later command forces the exit status to 0'
+    : '';
   const notes = reason ? [phrase, reason] : [phrase];
   const words = notes.join(': ');
   if (entry.earlierFailed) notes.push('an earlier run failed');

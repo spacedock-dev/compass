@@ -1046,3 +1046,115 @@ class ThePressTimeIdentityReadsTheFolder(unittest.TestCase):
                 [],
                 cast("Any", hooks),
             )
+
+
+class ARecordedCiPollIsReadForWhatItNames(unittest.TestCase):
+    """`parse_poll` reads the repository and target of a poll, and `poll_bound` decides whether
+    the session's own records bind it. Nothing here runs `gh`."""
+
+    REMOTE = ("github.com", REPO)
+
+    def poll(self, line: str, raw: tuple[str, ...] = ()) -> ci_read.Poll:
+        words = line.split()
+        kind = "pr_checks" if words[1] == "pr" else "run_view"
+        return ci_read.parse_poll(kind, words, raw)
+
+    def test_the_repository_is_read_from_every_spelling_gh_takes(self) -> None:
+        for flag in ("--repo other/old", "-R other/old", "--repo=other/old", "-Rother/old"):
+            self.assertEqual("other/old", self.poll(f"gh pr checks 4 {flag}").repository, flag)
+        self.assertEqual(REPO, self.poll(f"gh pr checks --repo github.com/{REPO}").repository)
+        self.assertEqual(
+            REPO, self.poll(f"gh pr checks --repo https://github.com/{REPO}.git").repository
+        )
+        self.assertEqual("", self.poll("gh pr checks 4").repository)
+
+    def test_the_target_is_the_one_positional_word_past_the_options_values(self) -> None:
+        self.assertEqual(4, self.poll("gh pr checks --watch --interval 5 4").number)
+        self.assertEqual(4, self.poll("gh pr checks 4 --json name,state").number)
+        self.assertEqual("fix/widget-guard", self.poll("gh pr checks fix/widget-guard").branch)
+        url = self.poll(f"gh pr checks https://github.com/{REPO}/pull/8")
+        self.assertEqual((REPO, 8), (url.repository, url.number))
+        self.assertEqual(ci_read.Poll(), self.poll("gh pr checks"))
+        self.assertEqual(ci_read.Poll(), self.poll("gh run view 123 --exit-status"))
+
+    def test_a_poll_it_cannot_read_binds_to_nothing(self) -> None:
+        for line in (
+            "gh pr checks 1 2",
+            "gh pr checks 0",
+            "gh pr checks --repo nowhere",
+            "gh pr checks 4 --repo a/b -R c/d",
+            f"gh pr checks https://github.com/{REPO}/pull/8 --repo other/old",
+            "gh pr checks ../etc",
+        ):
+            self.assertFalse(self.poll(line).valid, line)
+
+    def test_an_operand_int_cannot_parse_binds_to_nothing_without_raising(self) -> None:
+        for operand in ("\u00b2", "\u0663", "9" * 5000):
+            self.assertFalse(self.poll(f"gh pr checks {operand}").valid, operand)
+            run = ci_read.parse_poll("run_view", ["gh", "run", "view", operand, "--exit-status"])
+            self.assertFalse(run.valid, operand)
+
+    def test_an_all_digit_operand_too_long_to_be_a_number_binds_to_nothing(self) -> None:
+        for operand in ("9" * 25, "0" * 30):
+            poll = self.poll(f"gh pr checks {operand}")
+            self.assertEqual((False, ""), (poll.valid, poll.branch), operand)
+
+    def test_a_gh_repo_assignment_is_a_repository_the_poll_names(self) -> None:
+        self.assertEqual(
+            "other/old", self.poll("gh pr checks 4", raw=("GH_REPO=other/old", "gh")).repository
+        )
+
+    def test_a_run_view_names_a_run_id_or_a_run_url_and_nothing_else(self) -> None:
+        url = f"https://github.com/{REPO}/actions/runs/5"
+        self.assertEqual(REPO, self.poll(f"gh run view {url} --exit-status").repository)
+        self.assertEqual(REPO, self.poll(f"gh run view {url}/job/9").repository)
+        self.assertEqual(
+            "other/old",
+            self.poll("gh run view https://github.com/other/old/actions/runs/5").repository,
+        )
+        self.assertEqual("other/old", self.poll("gh run view 5 -R other/old").repository)
+        for line in (
+            "gh run view other-url --exit-status",
+            "gh run view https://example.com/acme/widgets/actions/runs/5",
+            f"gh run view {url} --repo other/old",
+            "gh run view 5 6",
+            "gh run view 0",
+        ):
+            self.assertFalse(self.poll(line).valid, line)
+
+    def test_an_environment_pointing_gh_at_another_host_or_repository_binds_nothing(self) -> None:
+        for name in ("GH_HOST=ghe.example.com", "GH_ENTERPRISE_TOKEN=FakePass99"):
+            self.assertFalse(self.poll("gh pr checks 4", raw=(name, "gh")).valid, name)
+        for word in ("GH_REPO=other/old", "GH_HOST=ghe.example.com", "GH_ENTERPRISE_TOKEN=x"):
+            poll = ci_read.parse_poll(
+                "pr_checks", ["gh", "pr", "checks", "4"], (), ("export", word)
+            )
+            self.assertFalse(poll.valid, word)
+        clean = ci_read.parse_poll("pr_checks", ["gh", "pr", "checks", "4"], (), ("export", "A=1"))
+        self.assertTrue(clean.valid)
+
+    def test_a_poll_binds_only_inside_the_folders_own_repository(self) -> None:
+        goal = [f"https://github.com/{REPO}/pull/3"]
+        bound = ci_read.poll_bound
+        self.assertTrue(bound(self.poll("gh pr checks 3"), self.REMOTE, goal, [], []))
+        self.assertTrue(
+            bound(self.poll(f"gh pr checks 3 -R {REPO.upper()}"), self.REMOTE, goal, [], [])
+        )
+        self.assertFalse(bound(self.poll("gh pr checks 3 -R other/old"), self.REMOTE, goal, [], []))
+        self.assertFalse(bound(self.poll("gh pr checks 4"), self.REMOTE, goal, [], []))
+        self.assertTrue(bound(self.poll("gh pr checks 4"), self.REMOTE, [], [(REPO, 4)], []))
+        self.assertFalse(
+            bound(self.poll("gh pr checks 4"), self.REMOTE, [], [("other/old", 4)], [])
+        )
+        self.assertTrue(bound(self.poll("gh pr checks fix/one"), self.REMOTE, [], [], ["fix/one"]))
+        self.assertFalse(bound(self.poll("gh pr checks fix/two"), self.REMOTE, [], [], ["fix/one"]))
+        self.assertTrue(bound(self.poll("gh pr checks"), self.REMOTE, [], [], []))
+        self.assertTrue(bound(self.poll("gh run view 9 --exit-status"), self.REMOTE, [], [], []))
+
+    def test_a_goal_url_in_another_repository_does_not_bind_a_poll_here(self) -> None:
+        goal = ["https://github.com/other/old/pull/3"]
+        self.assertFalse(ci_read.poll_bound(self.poll("gh pr checks 3"), self.REMOTE, goal, [], []))
+
+    def test_no_remote_or_a_foreign_one_binds_nothing(self) -> None:
+        for remote in (("", ""), ("gitlab.example.net", REPO), ("github.com", "")):
+            self.assertFalse(ci_read.poll_bound(self.poll("gh pr checks"), remote, [], [], []))

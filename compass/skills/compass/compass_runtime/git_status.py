@@ -53,7 +53,9 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
@@ -290,6 +292,107 @@ def parse_remote(url: str) -> tuple[str, str]:
         if len(parts) == 2 and all(parts):
             return matched["host"].lower(), f"{parts[0]}/{parts[1]}"
     return "", ""
+
+
+def _read_regular(path: str, limit: int = 1024) -> str | None:
+    """The first `limit` bytes of a regular file, or None for anything else or on any error.
+
+    A named pipe, a device or a socket planted where a git file belongs would block a plain
+    `open` for ever and the thread collecting a board with it, so the type is checked first and
+    the file is opened without waiting, then checked again on the descriptor it gave.
+    """
+    try:
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            return None
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        return os.read(descriptor, limit).decode("utf-8", "replace").strip()
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
+
+
+def _gitdir_of(dot_git: str) -> tuple[str, str] | None:
+    """The git directory and the common directory a `.git` entry stands for, or None.
+
+    A linked worktree's `.git` is a one-line file naming its own directory, whose `commondir`
+    file names the repository's, where the shared `config` and so the remotes live.
+    """
+    if os.path.isdir(dot_git):
+        return dot_git, dot_git
+    line = _read_regular(dot_git)
+    if line is None or not line.startswith("gitdir:"):
+        return None
+    base = os.path.dirname(dot_git)
+    gitdir = os.path.normpath(os.path.join(base, line[len("gitdir:") :].strip()))
+    common = _read_regular(os.path.join(gitdir, "commondir"))
+    if common is None:
+        return gitdir, gitdir
+    return gitdir, os.path.normpath(os.path.join(gitdir, common))
+
+
+def remote_stamp(folder: str) -> tuple[Any, ...] | None:
+    """What a cached `origin` reading of `folder` is keyed on, or None where it cannot be.
+
+    The stat of the repository's `HEAD` and of the `config` that names its remotes, found by
+    walking up to the nearest `.git`, a linked worktree's included. It reads two stats and one
+    short file and runs no program. A global or included config can also move a remote, which
+    this does not see: a reading is then stale until one of those two files moves, which is the
+    price of starting no git for a folder that has not changed.
+    """
+    current = os.path.abspath(folder)
+    while True:
+        found = _gitdir_of(os.path.join(current, ".git"))
+        if found is not None:
+            break
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
+    stats: list[tuple[int, int, int]] = []
+    for path in (os.path.join(found[0], "HEAD"), os.path.join(found[1], "config")):
+        try:
+            seen = os.stat(path)
+        except OSError:
+            return None
+        # The inode is in the stamp because a same-size rewrite inside one clock tick keeps the
+        # other two; an editor or `git config` that replaces the file gets a new one.
+        stats.append((seen.st_mtime_ns, seen.st_size, seen.st_ino))
+    return (found, *stats)
+
+
+# Folders with a poll are the session folders plus the few a call `cd`s into, so a few hundred
+# only bounds a process that runs for weeks.
+STAMP_CACHE_ENTRIES: Final = 256
+
+
+class StampCache:
+    """Readings of a folder's `origin`, each kept while `remote_stamp` of its folder is unchanged.
+
+    Held on `RuntimeState`. It lives here, and not with the reader that fills it, because the
+    state module is imported by the one that reads.
+    """
+
+    def __init__(self, limit: int = STAMP_CACHE_ENTRIES) -> None:
+        self._limit = max(1, limit)
+        self._lock = threading.Lock()
+        self._held: dict[str, tuple[tuple[Any, ...], tuple[str, str]]] = {}
+
+    def get(self, folder: str, stamp: tuple[Any, ...]) -> tuple[str, str] | None:
+        with self._lock:
+            held = self._held.get(folder)
+        return held[1] if held is not None and held[0] == stamp else None
+
+    def put(self, folder: str, stamp: tuple[Any, ...], remote: tuple[str, str]) -> None:
+        with self._lock:
+            if folder not in self._held and len(self._held) >= self._limit:
+                self._held.pop(next(iter(self._held)))
+            self._held[folder] = (stamp, remote)
 
 
 def identity(

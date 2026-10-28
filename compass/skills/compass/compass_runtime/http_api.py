@@ -529,7 +529,13 @@ def _lease_inputs(
     facts = _facts_of(_session_context(application, dict(row)))
     floor = annotation_store.direction_floor(entry, row)
     estimate = live_estimate.for_session(
-        config, row, transcript, facts, floor=floor, now=application.clock()
+        config,
+        row,
+        transcript,
+        facts,
+        floor=floor,
+        now=application.clock(),
+        remotes=application.state.ci_remotes,
     )
     words = " ".join(part for part in (saved.goal, *saved.lines) if part.strip())
     return live_lease.Inputs(transcript, facts, words if saved.saved else "", estimate)
@@ -623,7 +629,13 @@ def _with_levels(
     transcript = runtime_observer.resolve_transcript(config, application.state, harness, sid)
     if transcript:
         live = live_estimate.for_session(
-            config, row, transcript, _facts_of(context), floor=floor, now=application.clock()
+            config,
+            row,
+            transcript,
+            _facts_of(context),
+            floor=floor,
+            now=application.clock(),
+            remotes=application.state.ci_remotes,
         )
         work["live_levels"] = [live]
     return {**context, "sources": {**sources, "work": work}}
@@ -3931,7 +3943,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # The shell's removals are read here too: they test the harness's own verdict against
             # the record and go to no model, so a missing grant does not blind that test.
             press = runtime_project_context.press_checks(
-                application.config, application.state, harness, sid
+                application.config,
+                application.state,
+                harness,
+                sid,
+                runtime_project_context.goal_texts_of(row),
             )
             tool_output = runtime_reading.ToolOutput(
                 destination="",
@@ -3943,7 +3959,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
         elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
             press = runtime_project_context.press_checks(
-                application.config, application.state, harness, sid
+                application.config,
+                application.state,
+                harness,
+                sid,
+                runtime_project_context.goal_texts_of(row),
             )
             tails = runtime_reading_route.tails_for(
                 route["provider"], harness, press.tails, press.tier3_calls

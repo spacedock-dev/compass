@@ -36,8 +36,9 @@ from . import correction, levels
 from . import project_context as pc
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, Sequence
 
+    from . import git_status
     from .config import RuntimeConfig
 
 HARNESSES = frozenset({"claude"})
@@ -150,6 +151,7 @@ def for_session(
     *,
     floor: float | None,
     now: float,
+    remotes: git_status.StampCache | None = None,
 ) -> dict[str, Any]:
     """The live level for one session now, and where it last rose from.
 
@@ -172,12 +174,30 @@ def for_session(
         level = levels.live_level(levels.Evidence((), {}, 0), intent)
         return {**answer, "level": level.level, "reasons": list(level.reasons)}
     unsettled = correction.unsettled_directions(row, facts, floor=floor)
-    key = (transcript_path, harness, sid, answer["revision"], intent.goal, intent.lines, unsettled)
+    goal_texts = pc.goal_texts_of(row)
+    key = (
+        transcript_path,
+        harness,
+        sid,
+        answer["revision"],
+        intent.goal,
+        intent.lines,
+        unsettled,
+        goal_texts,
+    )
     while True:
         signature = _live_signature(config, transcript_path)
         if signature is None:
             uncertain = _replay(
-                config, transcript_path, sid, intent, unsettled, None, force_incomplete=True
+                config,
+                transcript_path,
+                sid,
+                intent,
+                unsettled,
+                None,
+                force_incomplete=True,
+                goal_texts=goal_texts,
+                remotes=remotes,
             )
             return {**answer, **uncertain.found}
         with _cache_lock:
@@ -194,12 +214,29 @@ def for_session(
             flight.wait()
             continue
         try:
-            replayed = _replay(config, transcript_path, sid, intent, unsettled, previous)
+            replayed = _replay(
+                config,
+                transcript_path,
+                sid,
+                intent,
+                unsettled,
+                previous,
+                goal_texts=goal_texts,
+                remotes=remotes,
+            )
             after = _live_signature(config, transcript_path)
             if after != signature:
                 # A moving file cannot support a complete cached assurance.
                 uncertain = _replay(
-                    config, transcript_path, sid, intent, unsettled, None, force_incomplete=True
+                    config,
+                    transcript_path,
+                    sid,
+                    intent,
+                    unsettled,
+                    None,
+                    force_incomplete=True,
+                    goal_texts=goal_texts,
+                    remotes=remotes,
                 )
                 return {**answer, **uncertain.found}
             replayed.published = {**answer, **replayed.found}
@@ -231,7 +268,9 @@ def _reusable(previous: _Replayed | None, marks: list[bytes]) -> int:
 
 def _checkpoint(tally: pc._ToolReportTally) -> pc._ToolReportTally:
     """Copy only normalized check state; never retain raw results or tails."""
-    saved = pc._ToolReportTally({}, tally.session_dir, tally.declared)  # noqa: SLF001
+    saved = pc._ToolReportTally(  # noqa: SLF001
+        {}, tally.session_dir, tally.declared, tally.ci_binding
+    )
     saved._hash_identities = True  # noqa: SLF001
     saved.runs = {
         _cached_identity(identity, tally): [{**run, "tail": ""} for run in history]
@@ -469,7 +508,9 @@ def _prefix_replay(  # noqa: PLR0913, PLR0917
 def _new_tally(
     scan: pc._CheckScan, results: dict[str, Any], *, force_incomplete: bool
 ) -> pc._ToolReportTally:
-    tally = pc._ToolReportTally(results, scan.session_dir, scan.declared)  # noqa: SLF001
+    tally = pc._ToolReportTally(  # noqa: SLF001
+        results, scan.session_dir, scan.declared, scan.ci_binding
+    )
     tally.completed_launch_calls = pc._stream_completed_background_calls(scan.parent, scan.children)  # noqa: SLF001
     tally.reads_from = scan.horizon
     tally.scan["last_user_at"] = pc._last_person_at(scan.parent)  # noqa: SLF001
@@ -501,7 +542,7 @@ def _replay_seed(
     return _new_tally(scan, results, force_incomplete=force_incomplete), 0, [], False
 
 
-def _replay(
+def _replay(  # noqa: PLR0913
     config: RuntimeConfig,
     transcript_path: str,
     sid: str,
@@ -510,9 +551,13 @@ def _replay(
     previous: _Replayed | None,
     *,
     force_incomplete: bool = False,
+    goal_texts: Sequence[str] = (),
+    remotes: git_status.StampCache | None = None,
 ) -> _Replayed:
     """The level now and where it rose, over the last `LIVE_REPLAY_STEPS` moving calls."""
-    scan = pc._live_check_scan(config, transcript_path)  # noqa: SLF001
+    scan = pc._live_check_scan(  # noqa: SLF001
+        config, transcript_path, goal_texts=goal_texts, remotes=remotes
+    )
     cwd = scan.session_dir
     results = pc._merged_check_results(scan.parent, scan.children)  # noqa: SLF001
     context = (
@@ -579,6 +624,8 @@ def _replay(
     tally, start_position, safe_head, shifted = _replay_seed(
         scan, results, previous, marks, context, first, force_incomplete=force_incomplete
     )
+    # A checkpoint carries the binding of the scan it came from, whose records are read once.
+    tally.ci_binding = scan.ci_binding
     kept = previous.steps if previous is not None and valid and not shifted else {}
     # The last call's step is always asked afresh, because `current` is whatever the
     # loop asked last: kept from a longer transcript that lost its tail, it left the

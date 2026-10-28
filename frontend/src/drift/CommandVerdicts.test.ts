@@ -4,6 +4,7 @@ import { driftReasons } from './level';
 import { departureTitle, departureWhat, titledEntry } from './result';
 import { CONSISTENT, DEPARTURE } from './sentences';
 import { checkSupports } from './shape';
+import { toolReportParts } from './workList';
 
 /* A tier 3 command and a tier 2 CI read carry a verdict the way a check does, and the page words them as what
    they are
@@ -60,5 +61,27 @@ describe('a failed command or CI read that holds the live floor', () => {
       expect.stringMatching(/^CI check gh pr checks 7 failed .* ago/),
     ]);
     expect(reasons(entry('command', 'failed')).join()).not.toMatch(/not listed/);
+  });
+});
+
+describe('a CI poll of a pull request the session is not bound to', () => {
+  const unbound = entry('command', 'passed', {
+    resultSource: 'flag',
+    cannotFail: true,
+    resultReason: 'ci_poll_unbound',
+    summary: 'gh pr checks 99 --repo other/old',
+  });
+  it('keeps its exit status and says why it counts for nothing', () => {
+    expect(toolReportParts(unbound).notes).toEqual([
+      'exited 0; Compass does not know what it checks',
+      'a CI poll of a pull request or repository this session is not bound to',
+    ]);
+    expect(checkSupports(unbound, CONSISTENT, 100)).toBe(false);
+  });
+  it('still gives a forced status its own reason', () => {
+    const forced = entry('command', 'not-recorded', { cannotFail: true });
+    expect(toolReportParts(forced).notes.at(-1)).toBe(
+      'a later command forces the exit status to 0',
+    );
   });
 });

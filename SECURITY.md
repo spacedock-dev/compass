@@ -285,10 +285,11 @@ Anything that weakens either invariant is a security bug: a bind reaching an add
 not ask for, a request admitted that the bind's own Host gate should have refused, file reads outside
 the documented store paths and the project-read contract below (however the path was derived),
 writes to harness stores, running any program inside a user's repository other than the probe
-described in Repository git reads (the end-of-session probe) and the two press-time identity
-commands described in Pull request CI reads, running a program to reach a session's
-terminal other than the focus command described in Reaching a session's terminal (the focus
-command), or the hook client reaching a non-loopback destination. Those three exceptions are a
+described in Repository git reads (the end-of-session probe) and the two identity commands
+described in Pull request CI reads (at an Analyze press, and where a recorded CI poll needs
+binding), running a program to reach a session's terminal other than the focus command described
+in Reaching a session's terminal (the focus command), or the hook client reaching a
+non-loopback destination. Those three exceptions are a
 whitelist of three scoped clauses and not a general permission to execute: written generally the
 sentence would make documented security bugs of three paths Compass already ships, the native
 notifier's `osascript`, `--daemon`'s respawn of the server, and the quota fetcher's Keychain read.
@@ -349,12 +350,12 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause model calls) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |
 | An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
 | A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
-| The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model, and writes nothing. Its only process is the read-only committed-file `git` read of a project's check scripts. | `--no-git` stops that read | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class and connection, and refuses any process but that git read |
+| The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model, and writes nothing. Its processes are the read-only committed-file `git` read of a project's check scripts and, for a recorded CI poll, the two fixed identity `git` commands (`rev-parse HEAD`, `config --get remote.origin.url`). | `--no-git` stops both reads | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class and connection, and refuses any process but the four committed-file `git` reads (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`); its session holds no CI poll, so it does not reach the identity commands. For a session that holds a poll, `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` pins that `--no-git` starts no process, and `test_command_tiers.ACiPollInRealCheckouts` runs the identity reads against real repositories |
 | A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
 | A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, the page's switch beside the notice, and the refusals every press meets first (`--no-observer-model`, Pause model calls, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
-| The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and, only inside an admitted Analyze press that reads a pull request's checks, two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`). Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` |
+| The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`), inside an admitted Analyze press that reads a pull request's checks and, at collection and in the Live monitor's estimate, only when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding, in the session folder and in a directory such a poll ran in. Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
 | A native notification | On macOS, `/usr/bin/osascript` with text Compass composes. Other platforms have no native notifier. Nothing leaves the machine. | `--quiet-hours` holds it back inside a window you name. No switch turns it off outright. | None: the program is meant to launch. `test_notifications.NoNativeNotificationTest` only keeps this repository's own test run from launching one. |
@@ -494,7 +495,7 @@ Compass already records each session's working directory; when a session ends, t
 bounded git command there, so the board can show that a session stopped with work still in the tree.
 The second, below the probe's own contract, reads a project's check scripts as a commit held them.
 
-The end-of-session probe is exactly this command, or there is no probe. The press-time identity read
+The end-of-session probe is exactly this command, or there is no probe. The identity read
 in [Pull request CI reads](#pull-request-ci-reads) runs two other fixed commands and never this
 probe:
 
@@ -1903,7 +1904,20 @@ a command: its line, masked and clipped as a check line is, and its exit status 
 speaks for it. `gh pr checks` and `gh run view --exit-status` are published as CI reads. `gh pr checks`
 records a failure only on exit 1 with checks reported, and no result on exit 8 (pending), 2, 4 or a pull
 request with no checks. `gh run view --exit-status` exits 0 for a run still in progress, so only its failure
-counts. A command that cannot fail (`echo`, `printf`, `true`, `:`, `export`, `unset`, `set`, `eval`, `tee`,
+counts. A CI read counts only when it reads the session's own repository, which is the `origin` of the
+folder the session began in, and, where it names a pull request or a branch, one the session is bound to by
+your goal's URL, a recorded pull request link or created pull request, or a pushed branch of that repository.
+A poll that names a repository (`--repo`, `-R`, a `GH_REPO=` prefix, or a URL) is held to the session
+folder's `origin` wherever the call ran. One that names none counts only when the call ran in the session
+folder or a checkout of the same remote, so a `cd` into another clone does not count (`command cd` and
+`builtin cd` move the directory as `cd` does), and a directory the shell decides (a variable, a command
+substitution, a conditional `cd`, or an `eval`, `source`, `.` or a variable's value run earlier in the call) binds nothing.
+`gh pr checks --web` only opens a browser, so it reads nothing and is not published as a CI read. A poll set up by
+`GH_HOST`, `GH_ENTERPRISE_TOKEN` or an exported `GH_REPO` in the same call binds nothing; a variable
+exported in an earlier call is not seen. Any other poll, and every poll in a folder with no `origin` on
+`github.com` or when `--no-git` is set, is published as a plain command with its exit status and counts for
+nothing, and its output goes only to the session's own vendor. A command that cannot fail (`echo`,
+`printf`, `true`, `:`, `export`, `unset`, `set`, `eval`, `tee`,
 `exit 0`, `return 0`, by any spelling such as a path or `command true`) is never published, and one whose
 status a later `|| true` or `; exit 0` forces is published with no result and withdrawn from every verdict
 and level. A stage after a `|` that follows other work, such as `tee` or `sed`, records no result, since the
@@ -2114,8 +2128,8 @@ an instruction in that output is held to the same shape rules as any other. The 
 it for a failed result alone. The live drift estimate (DEC-26) reads
 the check results and written paths on this machine, never the output tail, and publishes a derived
 level on the focused session's project context only: never on a row, in history, in the reading
-route's context or in any off-machine payload. It starts no model and writes nothing, and its only process is the read-only committed-file
-git read of a project's check scripts, which `--no-git` stops. Whether the reader turned it on is kept in the browser and never sent.
+route's context or in any off-machine payload. It starts no model and writes nothing, and its only processes are the read-only committed-file
+git read of a project's check scripts and, for a recorded CI poll, the two identity git commands, which `--no-git` stops. Whether the reader turned it on is kept in the browser and never sent.
 
 What it cannot remove: a reported success is what the tool said, not an inspection of the work, and
 a reading labels it that way. Two settings sources are not read and so cannot be named or refused:
@@ -2435,8 +2449,14 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   in the session folder, with the status probe's flags and the same scrubbed `PATH`. It keeps the
   commit and the host and repository the remote names. Any user or token in the URL, and the URL
   itself, are dropped by the parse and never returned. `--no-git` stops both commands, pinned by
-  `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing`. They run only inside
-  an admitted Analyze press, never at the end of a session and never from the Live monitor.
+  `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and, for a session
+  that holds a CI poll, `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll`.
+  They run inside an admitted Analyze press, and also at collection and in the Live monitor's
+  estimate when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding to the
+  session's repository (see below). There they run only in the session folder and in a directory
+  such a poll ran in, and never at the end of a session. A folder's reading is kept in memory and
+  reused while the stat (time, size and inode) of its `.git/HEAD` and `.git/config` is unchanged, so a session that holds a
+  poll starts no git on a later collection or estimate; nothing is written to disk.
 - Compass keeps each check's name, bucket and completion time, the head commit and counts. A name is
   writable by whoever writes the workflows, so it takes a closed character set and a clip, and it
   reaches the model quoted. A description, a link or a log is never read.

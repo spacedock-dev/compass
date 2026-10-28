@@ -14,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import json
+import os
 import re
 import shlex
 import tempfile
@@ -22,12 +23,24 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-from compass_runtime import levels, observer, project_context, reading, semantic_history
+from compass_runtime import (
+    ci_read,
+    git_status,
+    levels,
+    observer,
+    project_context,
+    reading,
+    semantic_history,
+)
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
 SID = "4a1c9e7d-0000-4000-8000-000000000001"
 SHORT = SID[:8]
+# The synthetic repository every session below works in, and the goal that names its pull requests 1
+# to 30, so a CI poll of any of them is one the session is bound to unless a test says otherwise.
+REMOTE = ("github.com", "acme/widgets")
+BOUND_GOAL = " ".join(f"https://github.com/acme/widgets/pull/{n}" for n in range(1, 31))
 START = dt.datetime(2026, 9, 24, 3, 0, 0, tzinfo=dt.UTC)
 # Synthetic, and deliberately obvious: a real prefix followed by a run of one letter.
 FAKE_KEY = "sk-ant-api03-" + "Q" * 95
@@ -171,13 +184,29 @@ class ClaudeChecksTestCase(unittest.TestCase):
         )
         self.session = Transcript(self.cwd)
         self.session.prompt("Add retry with backoff to the webhook handler.")
+        # No git here: the folder's remote is stubbed, and None stands for a folder with none.
+        self.remote: tuple[str, str] | None = REMOTE
+        self.goal_texts: tuple[str, ...] = (BOUND_GOAL,)
+        # A folder other than the session's that has its own remote, by normalized path.
+        self.folder_remotes: dict[str, tuple[str, str] | None] = {}
+        self.probe_patch = mock.patch.object(ci_read, "probe_session", side_effect=self._identity)
+        self.probe_patch.start()
+        self.addCleanup(self.probe_patch.stop)
+
+    def _identity(
+        self, _config: Any, folder: str = "", *_args: Any, **_kwargs: Any
+    ) -> git_status.GitIdentity | None:
+        remote = self.folder_remotes.get(os.path.normpath(folder), self.remote)
+        return git_status.GitIdentity("a" * 40, *remote) if remote else None
 
     def file(self, name: str) -> str:
         return str(self.cwd / name)
 
     def read(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         self.session.save(self.path)
-        return project_context.claude_tool_reports(self.config, str(self.path), SHORT)
+        return project_context.claude_tool_reports(
+            self.config, str(self.path), SHORT, goal_texts=self.goal_texts
+        )
 
     def checks(self) -> list[dict[str, Any]]:
         return [event for event in self.read()[0] if event["subject"] == "check"]
