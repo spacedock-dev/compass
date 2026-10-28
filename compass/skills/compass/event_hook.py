@@ -462,6 +462,8 @@ def command_shape(command: str) -> str | None:
         command = command[3:].lstrip()
         if command.startswith(("proxy ", "proxy\t")):
             command = command[5:].lstrip()
+        elif command.startswith(("bypass ", "bypass\t")):
+            command = command[6:].lstrip()
         tokens = command.split()
     if "'" in command or '"' in command:
         return _sql_shape(command)

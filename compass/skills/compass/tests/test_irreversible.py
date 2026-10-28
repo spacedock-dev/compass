@@ -107,6 +107,8 @@ NEGATIVES = (
     "env PRIVATE=1 git push --force",
     "/usr/bin/git push --force",
     "rtk proxy proxy git push --force",
+    "rtk bypass bypass git push --force",
+    "rtk proxy bypass git push --force",
     "rtk",
     "rtk proxy",
     "git push '--force'",
@@ -445,6 +447,12 @@ raise SystemExit(status)
 
     def test_every_literal_under_rtk_proxy_reaches_only_fixed_reports_claude(self) -> None:
         self.assert_literals_report_over_the_socket("claude", "rtk proxy ")
+
+    def test_every_literal_under_rtk_bypass_reaches_only_fixed_reports_claude(self) -> None:
+        self.assert_literals_report_over_the_socket("claude", "rtk bypass ")
+
+    def test_every_literal_under_rtk_bypass_reaches_only_fixed_reports_codex(self) -> None:
+        self.assert_literals_report_over_the_socket("codex", "rtk bypass ")
 
     def test_every_literal_reaches_only_fixed_reports_over_a_socket_codex(self) -> None:
         self.assert_literals_report_over_the_socket("codex", "")

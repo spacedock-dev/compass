@@ -2434,7 +2434,7 @@ class _ShellLexer:
         # word after a withheld brace word may be a named form's value.
         hide_next = False
         while self.pos < len(self.text):
-            if (not words or words == ["for"]) and self.text.startswith("((", self.pos):
+            if _before_loop_arithmetic(words) and self.text.startswith("((", self.pos):
                 # An arithmetic command, or the C-style `for ((init; test; step))` header,
                 # whose semicolons are not separators: `<<` in it is a shift, not a heredoc.
                 self.pos += 1
@@ -2443,7 +2443,7 @@ class _ShellLexer:
                 continue
             if self._parenthesis(words, found) or self._skip_space() or self._pattern_alternative():
                 continue
-            joiner = self._joiner()
+            joiner = self._joiner() or self._do_after_header(words)
             if joiner is None:
                 redirect = self._redirection()
                 if redirect is None:
@@ -2464,6 +2464,14 @@ class _ShellLexer:
         if words or self.redirects or self.bodies or self.syntax:
             found.append(self._segment(words, ""))
         return found
+
+    def _do_after_header(self, words: list[str]) -> str | None:
+        """A `;` that was never typed: `for i do` and `for ((...)) do` need no separator, so
+        the `do` ends the header. It is left unread and then parses as the syntax word it is."""
+        if not _bare_for_header(words) or not self.text.startswith("do", self.pos):
+            return None
+        after = self._at(2)
+        return ";" if after == "" or after.isspace() or after == ";" else None
 
     def _add_word(self, words: list[str], *, hide_next: bool) -> bool:
         start = self.pos
@@ -3616,10 +3624,39 @@ def _reads_only(redirects: list[_Redirect], words: list[str]) -> bool:
     )
 
 
+# `time -p for ((…))` is the longest header that can precede a `do` without a separator.
+_LOOP_HEADER_WORDS = 4
+
+
+def _time_less(words: list[str]) -> list[str]:
+    """The words without a leading `time` or `time -p`, which time the loop and run nothing."""
+    if words[:2] == ["time", "-p"]:
+        return words[2:]
+    return words[1:] if words[:1] == ["time"] else words
+
+
+def _before_loop_arithmetic(words: list[str]) -> bool:
+    """Where a `((` starts an arithmetic command or a C-style `for` header."""
+    # The length guard keeps the lexer linear: this runs once per character on a long
+    # word list, and `_time_less` copies it.
+    return not words or (len(words) <= _LOOP_HEADER_WORDS and _time_less(words) == ["for"])
+
+
+def _bare_for_header(words: list[str]) -> bool:
+    """`for NAME` and `for ((…))` with no `in`: the forms whose `do` may follow without a `;`."""
+    if len(words) > _LOOP_HEADER_WORDS:
+        return False
+    header = _time_less(words)
+    return header[:1] == ["for"] and (
+        header[1:] == [_ARITHMETIC] or (len(header) == 2 and _NAME_RE.match(header[1]) is not None)
+    )
+
+
 def _for_header(words: list[str]) -> bool:
     """`for NAME in WORDS`, bare `for NAME` and C-style `for ((…))`: each assigns a variable
     and runs nothing itself. A substitution in the word list is read on its own, by
     `_body_facts`."""
+    words = _time_less(words)
     if words[:1] != ["for"]:
         return False
     if words[1:] == [_ARITHMETIC]:

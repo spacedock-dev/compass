@@ -3835,7 +3835,7 @@ a match nor its absence establishes success.
 | `sql_drop_table` / DROP TABLE | `psql -c 'DROP TABLE name;'`, `mysql -e 'DROP TABLE name;'`, or `sqlite3 database 'DROP TABLE name;'`; optional `IF EXISTS`, case-insensitive SQL words, optional final semicolon | One unquoted SQL identifier only, optionally dotted; no client flags, multiple statements, comments or quoted identifiers. Double quotes may delimit the whole SQL argument too. |
 | `recursive_delete` / recursive delete | `rm` followed by `-r`, `-R`, `-rf`, `-fr`, `-Rf`, or `-fR`, optionally `-f` and `--`, then plain paths | A path beginning `/tmp/`, `/private/tmp/`, or `/var/tmp/` is excluded. No report if every path is excluded. `..` path components abstain everywhere; prefixes say nothing about symlinks or filesystem resolution. |
 
-Each whole command may have one `rtk` or `rtk proxy` prefix. No other wrappers,
+Each whole command may have one `rtk`, `rtk proxy` or `rtk bypass` prefix. No other wrappers,
 executable paths, environment assignments, shell composition, expansion, redirects,
 escapes or multiline commands are accepted. Plain tokens contain only ASCII letters,
 digits and `_./:@%+=,-`; quotes are reserved for the SQL argument. Commands over
