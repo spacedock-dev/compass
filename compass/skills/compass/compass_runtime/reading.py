@@ -4366,7 +4366,9 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     # them, so the prose is not stored: a fixed sentence saying so stands in, so the page shows
     # why there is no reason rather than an empty one, and a leaked value is never the cost.
     detail = (
-        SCRUB_WITHHELD_DETAIL if scrub_partial else records.safe_text(scrubbed, detail_cap_chars)
+        (SCRUB_WITHHELD_DETAIL if raw_detail else "")
+        if scrub_partial
+        else records.safe_text(scrubbed, detail_cap_chars)
     )
     if not scrub_partial and detail and len(scrubbed) > len(detail):
         # A cut sentence loses its qualifier, and the qualifier is always last.
