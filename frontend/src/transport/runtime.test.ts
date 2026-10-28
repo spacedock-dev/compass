@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import type { FetchLike } from '../api/client';
 import type { PayloadData } from '../api/types';

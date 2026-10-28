@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { createXtermLoader, XTERM_CSS, XTERM_JS, type XtermConstructor } from './xterm';
 

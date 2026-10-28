@@ -18,13 +18,36 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': fileURLToPath(new URL('./frontend/src', import.meta.url)) } },
   test: {
-    environment: 'jsdom',
-    include: ['frontend/**/*.test.ts', 'frontend/**/*.test.tsx'],
     setupFiles: ['frontend/test/setup.ts'],
+    /* Two projects by file kind. A `.tsx` test renders React and needs jsdom; a `.ts` test is logic, and building
+       a jsdom window for each of those files was about a third of the suite's environment time (measured
+       2026-10-28: 92 of the 108 `.ts` files pass unchanged under Node). A `.ts` file that does need a DOM says so
+       with an `@vitest-environment jsdom` comment, and one that forgets fails on a missing `document` rather than
+       passing. `include` lives on each project because a project's arrays are appended to the root's.
+
+       The jsdom project runs in VM contexts inside long-lived workers. Each file still gets its own jsdom window
+       and module graph, but jsdom and the source files are loaded once per worker rather than once per file:
+       the whole suite went from 101 to 63 seconds on two workers (measured 2026-10-28). The logic project stays
+       on plain forks, because a VM context gives it a second realm: `toBeInstanceOf(Array)` failed on an array
+       built in the test, and Vite's native bundler refused plugin objects made inside the context. */
+    projects: [
+      {
+        extends: true,
+        test: { name: 'logic', environment: 'node', include: ['frontend/**/*.test.ts'] },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'dom',
+          environment: 'jsdom',
+          include: ['frontend/**/*.test.tsx'],
+          pool: 'vmForks',
+        },
+      },
+    ],
     coverage: {
       exclude: ['frontend/stories/**', 'frontend/.storybook/**', 'frontend/storybook/**'],
     },
-    maxWorkers: 2,
     // A hosted Windows runner took longer than the default five seconds on a generated-board test that
     // takes about one second here; a hang still ends, only later.
     testTimeout: 30_000,

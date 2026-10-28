@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { blockedBackend } from '../../test/storage_backends';
 import type { FetchLike } from '../api/client';

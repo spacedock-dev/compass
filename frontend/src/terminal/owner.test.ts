@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import type { ApiResult, InteractionOrigin, SessionIdentity } from '../api/types';
 import { createFakeClock } from '../transport/testing';

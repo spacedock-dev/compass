@@ -101,16 +101,57 @@ test('two clean builds in distinct paths and a plugin-version-only bump match', 
   });
 });
 
-test('check mode leaves tracked outputs untouched and rejects a stale artifact', async () => {
+/* One copied tree for every check-mode case: each one damages a single output, asserts, and puts the bytes back.
+   A copy and a fresh build per case made this file the slowest in `pnpm test` (measured 2026-10-28). */
+test('check mode leaves outputs untouched and rejects each stale one without rewriting it', async (t) => {
   await copiedSource('compass-package-check-', async (copy, web) => {
     await packageFrontend({ root: copy });
-    const file = join(copy, web, 'react.html');
-    const before = await stat(file);
-    await packageFrontend({ root: copy, check: true });
-    assert.equal((await stat(file)).mtimeMs, before.mtimeMs);
-    await writeFile(file, 'corrupt artifact\n');
-    await assert.rejects(packageFrontend({ root: copy, check: true }), /stale tracked react.html/);
-    assert.equal(await readFile(file, 'utf8'), 'corrupt artifact\n');
+    const damage = async (name, bytes, verify) => {
+      const file = join(copy, web, name);
+      const original = await readFile(file);
+      await writeFile(file, bytes(original));
+      try {
+        await verify(file);
+      } finally {
+        await writeFile(file, original);
+      }
+    };
+    await t.test('a current tree passes and is left untouched', async () => {
+      const file = join(copy, web, 'react.html');
+      const before = await stat(file);
+      await packageFrontend({ root: copy, check: true });
+      assert.equal((await stat(file)).mtimeMs, before.mtimeMs);
+    });
+    await t.test('a stale react.html is rejected and kept', () =>
+      damage(
+        'react.html',
+        () => Buffer.from('corrupt artifact\n'),
+        async (file) => {
+          await assert.rejects(
+            packageFrontend({ root: copy, check: true }),
+            /stale tracked react.html/,
+          );
+          assert.equal(await readFile(file, 'utf8'), 'corrupt artifact\n');
+        },
+      ),
+    );
+    for (const name of ['react.html', 'react.integrity.json', 'react-licenses.txt'])
+      await t.test(`a BOM in ${name} is rejected without rewriting bytes`, () =>
+        damage(
+          name,
+          (original) => Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), original]),
+          async (file) => {
+            const changed = await readFile(file);
+            const before = await stat(file);
+            await assert.rejects(
+              packageFrontend({ root: copy, check: true }),
+              new RegExp('stale tracked ' + name.replaceAll('.', '\\.')),
+            );
+            assert.deepEqual(await readFile(file), changed);
+            assert.equal((await stat(file)).mtimeMs, before.mtimeMs);
+          },
+        ),
+      );
   });
 });
 
@@ -190,22 +231,3 @@ test('an actual autocrlf checkout preserves the served page and every candidate 
     await rm(temporary, { recursive: true, force: true });
   }
 });
-
-for (const name of ['react.html', 'react.integrity.json', 'react-licenses.txt']) {
-  test(`check mode rejects a BOM in ${name} without rewriting bytes`, async () => {
-    await copiedSource('compass-package-bom-', async (copy, web) => {
-      await packageFrontend({ root: copy });
-      const file = join(copy, web, name);
-      const original = await readFile(file);
-      const changed = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), original]);
-      await writeFile(file, changed);
-      const before = await stat(file);
-      await assert.rejects(
-        packageFrontend({ root: copy, check: true }),
-        new RegExp('stale tracked ' + name.replaceAll('.', '\\.')),
-      );
-      assert.deepEqual(await readFile(file), changed);
-      assert.equal((await stat(file)).mtimeMs, before.mtimeMs);
-    });
-  });
-}
