@@ -2114,7 +2114,7 @@ _CHECK_WORDS = frozenset(
     {
         "pytest", "py.test", "nose2", "tox", "nox", "jest", "vitest", "mocha", "rspec",
         "phpunit", "ctest", "flake8", "pylint", "eslint", "stylelint", "golangci-lint",
-        "rubocop", "shellcheck", "mypy", "pyright", "tsc",
+        "rubocop", "shellcheck", "mypy", "pyright", "tsc", "test-storybook",
     }
 )  # fmt: skip
 _CHECK_PAIRS = frozenset(
@@ -2126,13 +2126,17 @@ _CHECK_PAIRS = frozenset(
         ("pnpm", "build"), ("yarn", "build"), ("cargo", "build"), ("go", "build"),
         ("make", "build"), ("mvn", "package"), ("gradle", "build"), ("./gradlew", "build"),
         ("dotnet", "build"), ("swift", "build"), ("vite", "build"), ("ruff", "check"),
-        ("cargo", "clippy"), ("cargo", "check"), ("go", "vet"),
+        ("cargo", "clippy"), ("cargo", "check"), ("go", "vet"), ("biome", "check"), ("biome", "ci"),
+        ("storybook", "test"), ("gradle", "check"), ("./gradlew", "check"),
+        ("pnpm", "test:stories"), ("yarn", "test:stories"),
     }
 )  # fmt: skip
 _CHECK_TRIPLES = frozenset(
     {
         ("bundle", "exec", "rspec"), ("npm", "run", "test"), ("pnpm", "run", "test"),
         ("npm", "run", "build"), ("pnpm", "run", "build"), ("bun", "run", "build"),
+        ("npm", "run", "test:stories"), ("pnpm", "run", "test:stories"),
+        ("yarn", "run", "test:stories"),
     }
 )  # fmt: skip
 # Runners that are checks only with `--check` among their words.
@@ -2140,6 +2144,15 @@ _CHECK_FLAGGED = frozenset({("black",), ("prettier",), ("ruff", "format")})
 # A check that rewrites files is a change too, and ages every pass, its own
 # included (review, 2026-09-24).
 _FIX_FLAGS = frozenset({"--fix", "--write", "--fix-only", "--unsafe-fixes"})
+# Runners that are fixers only with their own spellings of it, which another runner may use for
+# something else (`-u` is a user for `curl`). Biome's `--apply` and `--unsafe` rewrite files, and
+# a storybook test run with `-u` rewrites its snapshots:
+# [DEC-23](docs/design-reading-a-session.md#amended-2026-10-28-owner-biome-storybook-and-gradle-check-runners-join-the-closed-list)  # noqa: E501
+_RUNNER_FIX_FLAGS = {
+    "biome": frozenset({"--write", "--fix", "--apply", "--apply-unsafe", "--unsafe"}),
+    "storybook": frozenset({"-u", "--updateSnapshot", "--update-snapshot"}),
+    "test-storybook": frozenset({"-u", "--updateSnapshot", "--update-snapshot"}),
+}
 _INTERPRETERS = frozenset({"node", "bash", "sh", "zsh"})
 _SHELL_BUILTINS = frozenset({"test", "[", "[["})
 _INFO = "\u2139"  # node's summary glyph, written as an escape so review can read it
@@ -2272,10 +2285,19 @@ _CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
 _WRITE_OPERATORS = frozenset({"&>>", "&>", ">>", ">&", ">|", "<>", ">"})
 
 
+# `pnpm biome check` is `pnpm exec biome check`, and a bare `pnpm biome` or `pnpm storybook dev`
+# is not a runner, so these are matched as pairs.
+_SHORTHAND_PAIRS = frozenset({("biome", "check"), ("biome", "ci"), ("storybook", "test")})
+
+
 def _is_pnpm_shorthand(words: list[str]) -> bool:
     """`pnpm vitest` is `pnpm exec vitest` for a closed runner (owner, 2026-10-23;
     [DEC-23](docs/design-reading-a-session.md#amended-2026-10-23-owner-pnpm-shorthand-for-a-closed-runner-is-a-check))."""
-    return words[:1] == ["pnpm"] and words[1:2] != [] and words[1] in _CHECK_WORDS
+    return (
+        words[:1] == ["pnpm"]
+        and words[1:2] != []
+        and (words[1] in _CHECK_WORDS or tuple(words[1:3]) in _SHORTHAND_PAIRS)
+    )
 
 
 def _skip_options(words: list[str], takes_value: frozenset[str]) -> list[str]:
@@ -4009,6 +4031,23 @@ _LAST_LINE_SUMMARIES: dict[str, tuple[re.Pattern[str], re.Pattern[str]]] = {
         re.compile(r"\s*Tests\s+(?:\d+ \w+ \| )*[1-9]\d* failed(?: \| \d+ \w+)*(?: \(\d+\))?\s*"),
     ),
     "node": (re.compile(rf"{_INFO} fail 0"), re.compile(rf"{_INFO} fail [1-9]\d*")),
+    # Biome's last line, measured on 2.5 with and without colour: `Checked N files in Xms. No
+    # fixes applied.` for a run that found nothing to report, and either `Found N errors.` or the
+    # closing `Some errors were emitted while running checks.` (glyph `x` or a cross) for one that
+    # did. Which of the two ends a failing run depends on how the streams interleave.
+    "biome": (
+        re.compile(r"Checked [1-9]\d* files? in \S+\. No fixes (?:applied|needed)\."),
+        re.compile(
+            r"Found [1-9]\d* errors?\.|\s*[\u00d7\u2716] Some errors were emitted while running"
+            r" checks\."
+        ),
+    ),
+    # Gradle's own build verdict, which `gradle check` and `gradle test` share. Its `N actionable
+    # tasks` line comes after it, so `_TRAILING_LINES` skips that.
+    "gradle": (
+        re.compile(r"BUILD SUCCESSFUL in (?:\d+(?:ms|[hms]) ?)+"),
+        re.compile(r"BUILD FAILED in (?:\d+(?:ms|[hms]) ?)+"),
+    ),
 }
 
 
@@ -4016,6 +4055,15 @@ _LAST_LINE_SUMMARIES: dict[str, tuple[re.Pattern[str], re.Pattern[str]]] = {
 _TRAILING_LINES: dict[str, re.Pattern[str]] = {
     "vitest": re.compile(r"\s*(?:Start at|Duration)\s"),
     "node": re.compile(rf"{_INFO} (?:cancelled|skipped|todo|duration_ms)\b"),
+    "gradle": re.compile(
+        r"\d+ actionable tasks?:.*|Configuration cache entry (?:stored|reused)\.?|"
+        r"Consider enabling configuration cache.*"
+    ),
+}
+# A pass line is refused when an earlier line of the window already records a failure, because a
+# runner whose two streams interleave can print its pass line last.
+_FAILS_ANYWHERE: dict[str, re.Pattern[str]] = {
+    "biome": re.compile(r"Found [1-9]\d* errors?\.|[\u00d7\u2716] Some errors were emitted"),
 }
 _NODE_CANCELLED = re.compile(rf"{_INFO} cancelled [1-9]\d*\s*")
 _UNITTEST_RAN = re.compile(r"Ran ([1-9]\d*) tests? in \S+")
@@ -4033,8 +4081,19 @@ def _summary_runner(words: list[str]) -> str:
         return "pytest"
     if words[0] in ("mypy", "vitest"):
         return words[0]
-    if words[:2] == ["ruff", "check"]:
-        return "ruff"
+    return _SUMMARY_PREFIXES.get(tuple(words[:2]), _node_or_gradle_runner(words))
+
+
+_SUMMARY_PREFIXES: dict[tuple[str, ...], str] = {
+    ("ruff", "check"): "ruff",
+    ("biome", "check"): "biome",
+    ("biome", "ci"): "biome",
+}
+
+
+def _node_or_gradle_runner(words: list[str]) -> str:
+    if os.path.basename(words[0]) in ("gradle", "gradlew") and words[1:2] in (["check"], ["test"]):
+        return "gradle"
     return "node" if words[0] == "node" and "--test" in words else ""
 
 
@@ -4076,10 +4135,15 @@ def _last_line_summary(words: list[str], text: str) -> str:
         return "failed"
     if not passed.fullmatch(last) or cancelled:
         return ""
+    return "" if _pass_is_refused(runner, lines) else "passed"
+
+
+def _pass_is_refused(runner: str, lines: list[str]) -> bool:
+    anywhere = _FAILS_ANYWHERE.get(runner)
+    if anywhere is not None and any(anywhere.search(line) for line in lines[:-1]):
+        return True
     # unittest prints `OK` after an empty discovery too, so a pass needs a real count before it.
-    if runner == "unittest" and not (len(lines) > 1 and _UNITTEST_RAN.match(lines[-2])):
-        return ""
-    return "passed"
+    return runner == "unittest" and not (len(lines) > 1 and _UNITTEST_RAN.match(lines[-2]))
 
 
 def _ran_nothing(tail: str) -> bool:
@@ -4314,6 +4378,10 @@ def _is_fixer(words: list[str]) -> bool:
     words = _runner_words(words)
     flags = {word.split("=", 1)[0] for word in words[1:]}
     if _FIX_FLAGS & flags:
+        return True
+    if flags & _RUNNER_FIX_FLAGS.get(words[0], frozenset()) and (
+        words[0] != "storybook" or words[1:2] == ["test"]
+    ):
         return True
     if words[0] == "black" or words[:2] == ["ruff", "format"]:
         return "--check" not in flags

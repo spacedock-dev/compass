@@ -2527,7 +2527,8 @@ Runners, matched on the first word or words of a stripped segment:
   `python3 -m unittest`, `nose2`, `tox`, `nox`, `node --test`, `npm test`, `npm run test`,
   `pnpm test`, `pnpm run test`, `yarn test`, `bun test`, `deno test`, `jest`, `vitest`, `mocha`,
   `go test`, `cargo test`, `cargo nextest`, `mvn test`, `gradle test`, `./gradlew test`,
-  `dotnet test`, `rspec`, `bundle exec rspec`, `rake test`, `phpunit`, `swift test`, `ctest`,
+  `gradle check`, `./gradlew check`, `storybook test`, `test-storybook`, `pnpm test:stories`,
+  `npm run test:stories`, `yarn test:stories`, `dotnet test`, `rspec`, `bundle exec rspec`, `rake test`, `phpunit`, `swift test`, `ctest`,
   `make test`, `make check`, and a program file whose name holds `test` or `tests` as a word of its
   own, with the name split on `_`, `-` and `.`: `run_tests.py`, `./test.sh` and
   `python3 scripts/run_tests.py` count, and `runtests.py` and `fetch_latest_creds.py` do not. Never
@@ -2536,7 +2537,7 @@ Runners, matched on the first word or words of a stripped segment:
   `cargo build`, `go build`, `make build`, `mvn package`, `gradle build`, `./gradlew build`,
   `dotnet build`, `swift build`, `vite build`, and `tsc` without `--noEmit`.
 - Lint: `ruff check`, `ruff format --check`, `flake8`, `pylint`, `black --check`, `eslint`,
-  `prettier --check`, `stylelint`, `golangci-lint`, `cargo clippy`, `rubocop`, `shellcheck`.
+  `biome check`, `biome ci`, `prettier --check`, `stylelint`, `golangci-lint`, `cargo clippy`, `rubocop`, `shellcheck`.
 - Type-check: `mypy`, `pyright`, `tsc --noEmit`, `cargo check`, `go vet`.
 
 Read-only commands, matched the same way, for segments that are not checks: `git status`,
@@ -3420,6 +3421,34 @@ file. Under-coverage of this kind keeps a pass aged and never makes a false one.
 - **What still ages a pass.** A redirect on any of them, a substitution inside them that writes, and every
   body command that is not read-only, so `for ((;;)); do rm x; done` and `for ((i=0;i<3;i++)); do echo x > f;
   done` still count as changes. A check inside the loop is still found and listed.
+
+### Amended 2026-10-28 (owner): Biome, Storybook and Gradle check runners join the closed list
+
+A reader on a Java project, or on a monorepo that runs Biome or Storybook tests, saw those runs listed as
+commands with no result. The closed list in item 3 grows by these runners, matched the same way as the rest
+(first words of a stripped segment, with `pnpm exec`, `pnpm` shorthand, `npx` and the other wrappers removed):
+
+- **Lint.** `biome check` and `biome ci`.
+- **Test.** `storybook test`, `test-storybook`, and the `test:stories` script spelled `pnpm test:stories`,
+  `pnpm run test:stories`, `npm run test:stories` and `yarn test:stories`; `gradle check` and `./gradlew check`.
+  `gradle test` and `./gradlew test` were already named. `gradle build` is not added for its check form: it
+  was already a build, and it stays one.
+- **Fixer spellings.** `biome check` or `biome ci` with `--write`, `--fix`, `--apply`, `--apply-unsafe` or
+  `--unsafe`, `biome format --write`, and a Storybook test run with `-u`, `--updateSnapshot` or
+  `--update-snapshot` rewrite files. A run with one is a fixer that ages every earlier pass, as `eslint --fix`
+  is, and a declared script whose body holds one is not a check. `-u` is read as a fixer only for the
+  Storybook runners, because other programs use it for something else.
+- **Last-line summaries.** The table in
+  [DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes) gains
+  two rows, each from output measured or documented. Biome prints `Checked N files in Xms. No fixes
+  applied.` for a run with nothing to report, and a failing run ends on `Found N errors.` or on `Some errors
+  were emitted while running checks.`, which one depending on how its streams interleave; a pass line is
+  refused when either failure line sits above it, and a run that checked no files is not a pass. Gradle ends
+  on `BUILD SUCCESSFUL in Ns` or `BUILD FAILED in Ns`, then an `N actionable tasks` line that is skipped from
+  the end. Storybook's runners have no row: `test:stories` is a project script whose wrapper may print after
+  the test runner's own summary, and the exit status alone speaks for them.
+- **What was rejected.** Reading `Tests` lines for `storybook test` because it runs vitest: the line that ends
+  the output belongs to whatever the project wraps around it, which a closed table cannot know.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

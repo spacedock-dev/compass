@@ -127,6 +127,21 @@ class ADeclaredScriptReadsAsACheck(ProjectScriptTestCase):
             self.ran(command)
         self.assertEqual({"pnpm check", "pnpm test:unit"}, set(self.titles()))
 
+    def test_a_body_that_is_biome_storybook_or_gradle_counts(self) -> None:
+        self.commit(
+            {
+                "package.json": package(
+                    lint="biome check --error-on-warnings",
+                    **{"check:ci": "biome ci ."},
+                    **{"test:stories": "storybook test", "test:sb": "test-storybook --ci"},
+                    **{"test:java": "./gradlew check", "test:g": "gradle test"},
+                )
+            }
+        )
+        for name in ("lint", "check:ci", "test:stories", "test:sb", "test:java", "test:g"):
+            self.ran(f"pnpm run {name}")
+        self.assertEqual(6, len(self.checks()))
+
     def test_a_make_target_and_a_just_recipe_count_the_same_way(self) -> None:
         self.commit(
             {
@@ -219,6 +234,23 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
             "lint:b",
             "typecheck",
         ):
+            self.ran(f"pnpm run {name}")
+        self.assertEqual([], self.titles())
+
+    def test_a_body_that_fixes_biome_or_updates_storybook_snapshots_never_counts(self) -> None:
+        self.commit(
+            {
+                "package.json": package(
+                    **{
+                        "lint:a": "biome check --write",
+                        "lint:b": "biome check --apply --unsafe",
+                        "test:a": "storybook test -u",
+                        "test:b": "test-storybook --updateSnapshot",
+                    }
+                )
+            }
+        )
+        for name in ("lint:a", "lint:b", "test:a", "test:b"):
             self.ran(f"pnpm run {name}")
         self.assertEqual([], self.titles())
 
