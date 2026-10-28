@@ -6189,6 +6189,21 @@ def _stdin_text_withdraws(
     # A heredoc inside a substitution is in no segment, only its `$(...)` placeholder is, so a
     # command with a heredoc that hands a placeholder to a program is judged by the program.
     has_heredoc = "<<" in command
+    # `fed[i]` is whether a run of pipe-joined segments ending just before `i` carries the text.
+    # Built once left to right: walking back from each segment is quadratic in a long pipeline.
+    fed = [False] * len(parts)
+    carries = False
+    for i, part in enumerate(parts):
+        fed[i] = carries
+        carries = part.joiner.startswith("|") and (
+            carries
+            or (in_body and any(r.operator.endswith(_STDIN_OPERATORS) for r in part.redirects))
+            or bool(
+                part.words
+                and not _runs_script(part.words, name)
+                and any(_names_word(w, name) for w in (*part.words, *part.raw))
+            )
+        )
     for i, part in enumerate(parts):
         words = part.words
         if not words or tuple(words) in listed or words[0] in {"cd", "pushd"}:
@@ -6205,18 +6220,8 @@ def _stdin_text_withdraws(
             return True
         if has_heredoc and in_body and any("(…)" in w or "`" in w for w in words[1:]):
             return True
-        j = i - 1
-        while j >= 0 and parts[j].joiner.startswith("|"):
-            feeder = parts[j]
-            if in_body and any(r.operator.endswith(_STDIN_OPERATORS) for r in feeder.redirects):
-                return True
-            if (
-                feeder.words
-                and not _runs_script(feeder.words, name)
-                and any(_names_word(w, name) for w in (*feeder.words, *feeder.raw))
-            ):
-                return True
-            j -= 1
+        if fed[i]:
+            return True
     return False
 
 

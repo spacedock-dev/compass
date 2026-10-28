@@ -11,6 +11,7 @@ import dataclasses
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -649,3 +650,14 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.names(command), {"check.sh"})
+
+    def test_a_long_pipeline_is_judged_in_linear_time(self) -> None:
+        started = time.monotonic()
+        for command, expected in (
+            ("x|" * 5000 + "check.sh", set()),
+            ("check.sh|" + "x|" * 5000 + "y", set()),
+            ("echo 'open(\"check.sh\")' | " + "x | " * 5000 + "python3", {"check.sh"}),
+        ):
+            with self.subTest(command=command[:30]):
+                self.assertEqual(self.names(command), expected)
+        self.assertLess(time.monotonic() - started, 5.0)
