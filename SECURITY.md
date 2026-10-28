@@ -2452,7 +2452,7 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   counts as not false) is
   not read either (those three values are read from the block, and no token), and neither is one whose
   block holds a quoted key spelling one of them as well as a line this reader cannot place a key in (a
-  tab, a flow mapping, a tag), and an anchor, alias or merge key anywhere under `hosts:` leaves no host read. `GLAB_CONFIG_DIR` is not followed: the file is read from
+  tab, a flow mapping or sequence, a complex key, a tag, a block scalar), and an anchor, alias or merge key anywhere under `hosts:` leaves no host read. `GLAB_CONFIG_DIR` is not followed: the file is read from
   `XDG_CONFIG_HOME` when set, otherwise `%APPDATA%` on Windows or `~/.config` elsewhere, so a configuration that lives only under a
   folder that variable names reads as `host-not-configured` ([HOW_TO_USE.md](HOW_TO_USE.md#read-a-gitlab-merge-requests-pipeline) gives the way out). A pipeline counts only when
   it ran the merge request's head, which is the session's commit; a merged-results pipeline settles
