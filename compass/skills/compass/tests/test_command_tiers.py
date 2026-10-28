@@ -223,6 +223,43 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
         for number in (14, 15, 16):
             self.assertEqual("not-recorded", by_title[f"gh pr checks {number}"])
 
+    def test_a_failing_run_keeps_its_failure_whatever_a_line_among_its_check_rows_says(
+        self,
+    ) -> None:
+        rows = "build\tfail\t1m2s\thttps://example.test/run/1"
+        self.session.bash(
+            "gh pr checks 9",
+            f"Exit code 1\nretrying (HTTP 502)\n{rows}",
+            is_error=True,
+        )
+        self.session.bash(
+            "gh pr checks 10",
+            f"Exit code 1\nci: authentication step\n{rows}\nHTTP 500 in the log (HTTP 500)",
+            is_error=True,
+        )
+        self.session.bash(
+            "gh pr checks 11",
+            "Exit code 1\nauthentication\tfail\t3s\thttps://example.test/run/2",
+            is_error=True,
+        )
+        by_title = {e["title"]: e["result"] for e in self.commands("ci_command")}
+        for number in (9, 10, 11):
+            self.assertEqual("failed", by_title[f"gh pr checks {number}"], number)
+
+    def test_a_whole_output_that_is_one_gh_error_records_no_failure(self) -> None:
+        errors = {
+            24: "HTTP 404: Not Found (https://api.github.com/repos/acme/widgets/pulls/24)",
+            25: "GraphQL: Could not resolve to a PullRequest with the number of 25. (repository.pullRequest)",
+            26: "failed to run: error connecting to api.github.com (HTTP 502)",
+            27: "To get started with GitHub CLI, please run:  gh auth login",
+            28: "no checks reported on the 'fix/widget-guard' branch",
+        }
+        for number, message in errors.items():
+            self.session.bash(f"gh pr checks {number}", f"Exit code 1\n{message}", is_error=True)
+        by_title = {e["title"]: e["result"] for e in self.commands("ci_command")}
+        for number in errors:
+            self.assertEqual("not-recorded", by_title[f"gh pr checks {number}"], number)
+
     def test_the_stages_before_the_last_of_a_pipe_record_no_result(self) -> None:
         for command in (
             "pytest -q | tee out.log",

@@ -4351,20 +4351,29 @@ def _ci_run_kind(words: list[str]) -> str:
     return ""
 
 
-# gh's own error lines, which start the line and carry no tab. A check row is tab-separated
-# (name, state, time, link), so a check named `authentication` or a link holding `HTTP 500` text
-# is never read as the command failing to reach GitHub, and a failing run keeps its failure.
+# gh's own error shapes. gh prints an error and no check rows, and a check row is tab-separated
+# (name, state, time, link), so output holding a tab is a run that reported checks, whatever a
+# check name or a line among the rows looks like, and a failing run keeps its failure.
 _NOT_A_CI_FAILURE = re.compile(
     r"^(?:\w+: )*(?:no checks reported|HTTP \d{3}\b|could not resolve|authentication\b"
     r"|.*\bgh auth login\b|.*\(HTTP \d{3}\)$)",
     re.IGNORECASE,
 )
+# gh's longest error is the login prompt, three lines; more than this is not one message.
+_GH_ERROR_MAX_LINES = 4
 _EXIT_CODE_RE = re.compile(r"\AExit code (\d+)\b")
 
 
 def _gh_error_line(text: str) -> bool:
-    return any(
-        "\t" not in line and _NOT_A_CI_FAILURE.match(line.strip()) for line in text.splitlines()
+    """Whether the whole output is one gh error message: short, tab-free, opening on an error."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines and _EXIT_CODE_RE.match(lines[0]):
+        lines = lines[1:]
+    return (
+        bool(lines)
+        and len(lines) <= _GH_ERROR_MAX_LINES
+        and "\t" not in text
+        and _NOT_A_CI_FAILURE.match(lines[0]) is not None
     )
 
 

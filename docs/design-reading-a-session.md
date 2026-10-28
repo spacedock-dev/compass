@@ -8014,7 +8014,10 @@ had set aside. None produced a false pass. Each is closed below.
    reads a line only when it carries no tab, which a check row always does, and starts with gh's error shapes,
    after any number of `word: ` prefixes such as `gh: `, `error: ` or `GraphQL: `: `no checks reported`,
    `HTTP <status>`, `could not resolve`, `authentication`, a hint naming `gh auth login`, or a line ending in
-   `(HTTP <status>)` such as `gh: Not Found (HTTP 404)`.
+   `(HTTP <status>)` such as `gh: Not Found (HTTP 404)`. That widened reading still withdrew a failure for any
+   tab-free line among the check rows that looked like one, so it is narrowed to gh's own shape: the whole output
+   is one short error message (at most four lines after the exit code) with no tab anywhere, because gh prints an
+   error and no check rows. Output that holds a check row keeps its failure whatever else it says.
 5. **The last stage of a pipe speaks for itself.** A command after a pipe was blanked whenever a working stage
    came before it, although the call's status is the last stage's own. It now follows the rule a check follows:
    a pass speaks for the last stage and a failure only for a call of one segment. The stages before it still

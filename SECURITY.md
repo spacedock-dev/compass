@@ -1903,7 +1903,9 @@ A foreground shell command that is neither a closed-list check nor on the read-o
 a command: its line, masked and clipped as a check line is, and its exit status where the call's status
 speaks for it. `gh pr checks` and `gh run view --exit-status` are published as CI reads. `gh pr checks`
 records a failure only on exit 1 with checks reported, and no result on exit 8 (pending), 2, 4 or a pull
-request with no checks. `gh run view --exit-status` exits 0 for a run still in progress, so only its failure
+request with no checks. Output that is one `gh` error message (a request that failed, a login prompt, no
+checks reported) records none, but a failing run keeps its failure whatever a line among its tab-separated
+check rows says. `gh run view --exit-status` exits 0 for a run still in progress, so only its failure
 counts. A CI read counts only when it reads the session's own repository, which is the `origin` of the
 folder the session began in, and, where it names a pull request or a branch, one the session is bound to by
 your goal's URL, a recorded pull request link or created pull request, or a pushed branch of that repository.
