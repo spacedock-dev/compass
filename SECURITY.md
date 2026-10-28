@@ -739,7 +739,9 @@ file in the commit's tree is refused by its mode, and one in the work tree by `l
 which is non-blocking and refuses a link, so a FIFO cannot block the read; the work-tree file must
 equal the commit's blob for the declaration in question, one script, target or recipe at a time, so
 a session that rewrote a script's body leaves that script a command while an unrelated later edit, a
-dependency bump, leaves the others alone, and a cached read is checked against the work tree again before it is used; a recorded
+dependency bump, leaves the others alone (a package.json keeps its scripts through a change to its dependencies, version or other
+publishing fields, and loses them all through a change to tool configuration such as `jest` or `eslintConfig`; a Makefile or justfile loses
+every declaration through any change outside its recipes, such as an assignment, `export` or `.IGNORE`), and a cached read is checked against the work tree again before it is used; a recorded
 write by a write tool withdraws that kind of file even if the session restored it. `make` reads the first of
 `GNUmakefile`, `makefile` and `Makefile`, and so does this read. A file over the
 cap, with more than 5,000 lines, with a line over 4,096 characters, with more than 500 scripts, that does not parse, or that is a Makefile using `include`,

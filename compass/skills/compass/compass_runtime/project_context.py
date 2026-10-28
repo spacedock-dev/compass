@@ -3312,6 +3312,7 @@ def _package_invocation(
         or _SCRIPT_NAME_RE.fullmatch(name) is None
         or any(arg.startswith("-") for arg in own)
         or any(arg.split("=", 1)[0] in _SCRIPT_WRITING_ARGS for arg in (*own, *forwarded))
+        or _exits_zero_by_flag(forwarded)
     ):
         return None
     return "package", [name]
@@ -3338,9 +3339,12 @@ _EXIT_CODE_FLAG = "--issues-exit-code"
 def _exits_zero_by_flag(words: list[str]) -> bool:
     """Whether a command's own arguments make it exit zero (`ruff check --exit-zero`,
     `golangci-lint run --issues-exit-code=0`), which `|| true` and `exit 0` do from outside."""
+    # `-e` is ruff's short spelling, and means something else to other tools, so it counts only
+    # in a command that names ruff (`uv run ruff check -e .`).
+    names_ruff = any(os.path.basename(word) == "ruff" for word in words)
     for index, word in enumerate(words):
         flag, _, value = word.partition("=")
-        if flag == _EXIT_ZERO_FLAG:
+        if flag == _EXIT_ZERO_FLAG or (names_ruff and word == "-e"):
             return True
         if flag == _EXIT_CODE_FLAG:
             given = value if "=" in word else (words[index + 1] if index + 1 < len(words) else "")
@@ -6072,10 +6076,10 @@ def _written_declaring_files(
     shell command that names the listing anywhere in its text counts as writing it: a redirect, a
     `cp`, a `tee`, a `sed -i` or an interpreter's argument all do, and a read of it withdraws the
     listing too, which fails closed. What it does not see is a script or a variable that builds the
-    path. A shell write of a declaring file is decided by the work tree's bytes
-    (`project_scripts`); a shell write of a name in `also` is read from the call's redirects and
-    its `cp`, `mv`, `tee` and `chmod` arguments. Read through `_claude_tool_uses`, the one place a
-    tool call's input is read.
+    path. A shell write of a declaring file is decided by the work tree's contents, compared with
+    the base commit's (`project_scripts`); a shell write of a name in `also` is read from the
+    call's redirects and its `cp`, `mv`, `tee` and `chmod` arguments. Read through
+    `_claude_tool_uses`, the one place a tool call's input is read.
     """
     watched = frozenset((*project_scripts.DECLARING_FILES, reader_checks.FILENAME, *also))
     found: set[str] = set()
@@ -6109,15 +6113,18 @@ def _declared_scripts(
 
     The project's own scripts: the base commit is the one HEAD was on at the transcript's first
     stamped record, since Compass does not record the commit a session began on; a clipped read
-    falls back to its oldest record, which is later, and the work tree's byte comparison still
-    refuses a file the session changed. And the commands the reader listed for the project, which
-    no git read is needed for. A page of the paged reader holds only its own rows, so the names an
-    earlier page saw written ride in as `prior_writes`, since no byte comparison covers them.
+    falls back to its oldest record, which is later, and the work tree comparison still refuses
+    a changed declaration (one script at a time for a `package.json`; for a Makefile or justfile,
+    any change outside the recipes withdraws the file). And the commands the reader listed for the
+    project, which no git read is needed for. A page of the paged reader holds only its own rows,
+    so the names an earlier page saw written ride in as `prior_writes`, since no work tree
+    comparison covers them.
     """
     if not began_in:
         return None
     loaded: project_scripts.Declarations | None = None
-    # `--no-git` means no git command runs in any repository, and this reader runs three.
+    # `--no-git` means no git command runs in any repository, and this reader runs git reads of
+    # its own (`git_status.read_committed`).
     if config.git_probe_enabled:
         start = claude_data.head_start(config, transcript_path) or _oldest_at(parent)
         loaded = project_scripts.load(began_in, start) if start is not None else None

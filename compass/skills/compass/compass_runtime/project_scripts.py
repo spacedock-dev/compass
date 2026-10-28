@@ -11,8 +11,11 @@ this module reads it only where it cannot have been changed by the session:
 - and only for a declaration whose body in the work tree equals its body at that commit, in a
   file that is a regular file. A later change to something else in the file (a dependency bump in
   `package.json`) leaves a script's declaration alone; a changed body withdraws that script, and
-  so does a changed or added `pre` or `post` hook around it. A file the session wrote and then
-  restored is caught by the recorded write (`project_context`), which a comparison cannot see.
+  so does a changed or added `pre` or `post` hook around it. A change to a `package.json` key
+  that is not a dependency or publishing field, or to anything outside the recipes of a Makefile
+  or justfile (an assignment, `export`, `.IGNORE`, `set`), withdraws the whole file. A file the
+  session wrote and then restored is caught by the recorded write (`project_context`), which a
+  comparison cannot see.
   `make` reads the first of `GNUmakefile`, `makefile` and `Makefile`, and so does this module.
   The rule is in
   [DEC-29](docs/design-reading-a-session.md#amended-2026-10-28-owner-a-declaration-is-compared-one-script-at-a-time).
@@ -121,6 +124,8 @@ class Declarations:
     # session wrote that a listing depends on: the listing file and each listed script's name.
     listed_root: str = ""
     listing_writes: frozenset[str] = frozenset()
+    # The Makefile the load trusted, so a cached load notices a file make would now read first.
+    make_file: str | None = None
 
     def at_listed_root(self, directory: str) -> bool:
         if not directory or not self.listed_root:
@@ -244,6 +249,8 @@ def _still_committed(held: Declarations) -> bool:
     that window would be one the session wrote. No git run is needed: the digests are held, and are
     of the work tree's bytes at load, so a later edit of any kind runs the load again.
     """
+    if held.make_file is not None and _first_make(held.toplevel) != held.make_file:
+        return False
     for name, digest in held.digests.items():
         working, reason = _working_bytes(os.path.join(held.toplevel, name))
         if reason is not None or working is None or hashlib.sha256(working).digest() != digest:
@@ -299,6 +306,7 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
         frozenset(trusted),
         real,
         digests,
+        make_file=committed_make,
     )
 
 
@@ -341,10 +349,78 @@ def _compare(
     now, _why = _parse(name, working)
     if now is None:
         return None, None, EDITED_REASON
-    carried = _carry(_kind(name), parsed, now)
+    kind = _kind(name)
+    if _outside_declarations(kind, content) != _outside_declarations(kind, working):
+        return None, None, EDITED_REASON
+    carried = _carry(kind, parsed, now)
     if parsed and all(script.withdrawn for script in carried.values()):
         return None, None, EDITED_REASON
     return carried, working, None
+
+
+# Top-level `package.json` keys a later edit may change without withdrawing the file. Anything
+# else (`jest`, `eslintConfig`, `mocha`) configures the tool a script runs and can turn a failing
+# check into a passing one, so a change there withdraws every script in the file.
+_PACKAGE_FREE_KEYS: Final = frozenset(
+    {"dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "version",
+     "name", "description", "keywords", "license", "author", "homepage", "repository", "bugs",
+     "packageManager", "engines", "files", "main", "module", "types", "exports", "bin",
+     "private", "scripts"}
+)  # fmt: skip
+
+
+def _outside_declarations(kind: str, data: bytes) -> object:
+    """What a file says beyond its declarations, which a later edit may not change."""
+    return _package_outside_scripts(data) if kind == "package" else _directives(kind, data)
+
+
+def _package_outside_scripts(data: bytes) -> object:
+    try:
+        parsed = json.loads(data.decode("utf-8"))
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return {key: value for key, value in parsed.items() if key not in _PACKAGE_FREE_KEYS}
+
+
+def _directives(kind: str, data: bytes) -> tuple[str, ...]:
+    """The lines of a Makefile or justfile that are not blank, a comment, a recipe line or an
+    ordinary recipe header: assignments, `export`, `.IGNORE` and the like, `set`, `alias`. Each
+    changes what a recipe means without touching the recipe, so a work tree whose set differs from
+    the commit's withdraws the whole file. `.PHONY` is left out: naming one more is harmless."""
+    try:
+        text = data.decode("utf-8")
+        lines = _logical_lines(text) if kind == "make" else text.splitlines()
+    except (UnicodeDecodeError, _LineTooLong):
+        return ("\0",)
+    found: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or line[:1] in ("\t", " "):
+            continue
+        ordinary = _make_ordinary(stripped) if kind == "make" else _just_ordinary(stripped)
+        if not ordinary:
+            found.append(stripped)
+    return tuple(found)
+
+
+def _make_ordinary(line: str) -> bool:
+    if _MAKE_ASSIGNMENT.match(line):
+        return False
+    rule = _make_rule(line)
+    if rule is None:
+        return False
+    names, colons, _rest = rule
+    return names == [".PHONY"] or (
+        len(names) == 1 and colons == ":" and not names[0].startswith(".")
+    )
+
+
+def _just_ordinary(line: str) -> bool:
+    if line.startswith(("alias ", "set ", "export ", "unexport ")) or _JUST_ATTRIBUTE.match(line):
+        return bool(_JUST_ATTRIBUTE.match(line))
+    return _just_header(line) is not None
 
 
 def _committed_refusal(entry: git_status.CommittedEntry) -> str | None:

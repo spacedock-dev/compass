@@ -74,6 +74,12 @@ class ProjectScriptTestCase(ClaudeChecksTestCase):
         self.addCleanup(project_scripts.reset)
         git(self.cwd, "init", "-q")
 
+    def fresh_repo(self) -> None:
+        """A new repository in the same folder, for a subtest that commits again."""
+        project_scripts.reset()
+        shutil.rmtree(self.cwd / ".git")
+        git(self.cwd, "init", "-q")
+
     def commit(self, files: dict[str, str], *, when: str = BEFORE_THE_SESSION) -> None:
         for name, text in files.items():
             (self.cwd / name).write_text(text, encoding="utf-8")
@@ -644,6 +650,137 @@ class ALaterEditToTheFileDoesNotWithdrawADeclarationItDidNotChange(ProjectScript
         (self.cwd / "package.json").write_text("{", encoding="utf-8")
         self.ran("pnpm typecheck")
         self.assertEqual([], self.titles())
+
+
+class ALaterEditOutsideTheRecipesWithdrawsAMakefileOrJustfile(ProjectScriptTestCase):
+    MAKEFILE = ".PHONY: lint\nlint:\n\truff check .\n"
+    JUSTFILE = "typecheck:\n    mypy .\n"
+
+    def rewritten(self, name: str, committed: str, working: str, command: str) -> list[str]:
+        self.commit({name: committed})
+        (self.cwd / name).write_text(working, encoding="utf-8")
+        self.ran(command)
+        return self.titles()
+
+    def test_a_directive_added_to_a_makefile_withdraws_its_targets(self) -> None:
+        for working in (
+            ".IGNORE:\n" + self.MAKEFILE,
+            self.MAKEFILE + ".IGNORE:\n",
+            "MAKEFLAGS += -n\n" + self.MAKEFILE,
+            "export PATH := /tmp/fake:$(PATH)\n" + self.MAKEFILE,
+            "SHELL_X = y\n" + self.MAKEFILE,
+        ):
+            with self.subTest(working=working):
+                self.fresh_repo()
+                self.assertEqual(
+                    [], self.rewritten("Makefile", self.MAKEFILE, working, "make lint")
+                )
+
+    def test_a_directive_added_to_a_justfile_withdraws_its_recipes(self) -> None:
+        for working in (
+            "export PATH := '/tmp/fake'\n" + self.JUSTFILE,
+            "set allow-duplicate-recipes\n" + self.JUSTFILE + "typecheck:\n    true\n",
+            "alias tc := typecheck\n" + self.JUSTFILE,
+        ):
+            with self.subTest(working=working):
+                self.fresh_repo()
+                self.assertEqual(
+                    [], self.rewritten("justfile", self.JUSTFILE, working, "just typecheck")
+                )
+
+    def test_a_new_target_a_comment_or_a_phony_name_keeps_the_others(self) -> None:
+        working = "# a note\n.PHONY: lint docs\nlint:\n\truff check .\ndocs:\n\tmkdocs build\n"
+        self.assertEqual(
+            ["make lint"], self.rewritten("Makefile", self.MAKEFILE, working, "make lint")
+        )
+
+    def test_a_new_recipe_keeps_a_justfile_check(self) -> None:
+        working = "# note\n" + self.JUSTFILE + "docs:\n    mkdocs build\n"
+        self.assertEqual(
+            ["just typecheck"], self.rewritten("justfile", self.JUSTFILE, working, "just typecheck")
+        )
+
+    def test_a_crlf_checkout_keeps_the_check(self) -> None:
+        working = self.MAKEFILE.replace("\n", "\r\n")
+        self.commit({"Makefile": self.MAKEFILE})
+        (self.cwd / "Makefile").write_bytes(working.encode())
+        self.ran("make lint")
+        self.assertEqual(["make lint"], self.titles())
+
+
+class ATopLevelKeyOtherThanDependenciesWithdrawsAPackageFile(ProjectScriptTestCase):
+    def package_with(self, **top: Any) -> str:
+        return json.dumps({"name": "widgets", "scripts": {"typecheck": "tsc --noEmit"}, **top})
+
+    def test_a_dependency_or_version_bump_keeps_the_check(self) -> None:
+        self.commit({"package.json": self.package_with(version="1.0.0", dependencies={"a": "1"})})
+        (self.cwd / "package.json").write_text(
+            self.package_with(version="1.1.0", dependencies={"a": "2"}, devDependencies={"b": "1"}),
+            encoding="utf-8",
+        )
+        self.ran("pnpm typecheck")
+        self.assertEqual(["pnpm typecheck"], self.titles())
+
+    def test_tool_configuration_added_after_the_base_withdraws_every_script(self) -> None:
+        for extra in (
+            {"jest": {"passWithNoTests": True}},
+            {"eslintConfig": {"ignorePatterns": ["*"]}},
+        ):
+            with self.subTest(extra=extra):
+                self.fresh_repo()
+                self.commit({"package.json": self.package_with()})
+                (self.cwd / "package.json").write_text(self.package_with(**extra), encoding="utf-8")
+                self.ran("pnpm typecheck")
+                self.assertEqual([], self.titles())
+
+
+class AnExitZeroFlagIsRefusedWhereverItIsWritten(ProjectScriptTestCase):
+    def test_ruff_short_flag_in_a_declared_body_is_refused(self) -> None:
+        for body in ("ruff check -e .", "ruff check . -e", "uv run ruff check -e ."):
+            with self.subTest(body=body):
+                project_scripts.reset()
+                self.commit({"package.json": package(lint=body)})
+                self.ran("pnpm lint")
+                self.assertEqual([], self.titles())
+
+    def test_the_short_flag_on_another_tool_is_not_an_exit_zero(self) -> None:
+        self.commit({"package.json": package(lint="eslint -e .")})
+        self.ran("pnpm lint")
+        self.assertEqual(["pnpm lint"], self.titles())
+
+    def test_a_forwarded_exit_zero_argument_is_refused(self) -> None:
+        self.commit({"package.json": package(lint="ruff check .")})
+        for command in (
+            "pnpm lint -- --exit-zero",
+            "npm run lint -- --exit-zero",
+            "pnpm lint -- --issues-exit-code=0",
+            "pnpm lint -- --issues-exit-code 0",
+        ):
+            self.ran(command)
+        self.assertEqual([], self.titles())
+
+    def test_a_forwarded_path_argument_still_counts(self) -> None:
+        self.commit({"package.json": package(lint="ruff check")})
+        self.ran("pnpm lint -- src")
+        self.assertEqual(["pnpm lint -- src"], self.titles())
+
+    def test_a_listed_ruff_short_flag_is_refused(self) -> None:
+        reason, _program = project_context.listed_entry_refusal("ruff check -e .")
+        self.assertTrue(reason)
+
+
+class AFileMakeWouldReadFirstAppearingInsideTheCacheWindow(ProjectScriptTestCase):
+    def test_a_gnumakefile_added_after_a_load_withdraws_the_targets(self) -> None:
+        self.commit({"Makefile": ".PHONY: lint\nlint:\n\truff check .\n"})
+        at = 1_790_000_000.0
+        first = project_scripts.load(str(self.cwd), at)
+        assert first is not None
+        self.assertIn("lint", first.make)
+        (self.cwd / "GNUmakefile").write_text("lint:\n\ttrue\n", encoding="utf-8")
+        again = project_scripts.load(str(self.cwd), at)
+        assert again is not None
+        self.assertEqual({}, dict(again.make))
+        self.assertIn(("Makefile", project_scripts.SHADOWED_REASON), again.skipped)
 
 
 class AFileThatIsLaterRepairedIsNoLongerReported(ProjectScriptTestCase):

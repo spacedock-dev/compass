@@ -7786,7 +7786,18 @@ This amendment replaces that comparison and hardens the read around it. Where th
 
 - **A declaration counts when its own body is unchanged.** The body of that script, target or recipe in the
   work tree must equal its body at the session's base commit, and the session must have made no recorded
-  write to the declaring file. A changed `dependencies` block no longer disqualifies `scripts.test`. A
+  write to the declaring file. A changed `dependencies` block no longer disqualifies `scripts.test`. For a
+  `package.json`, the keys that may change without withdrawing the file are `dependencies`,
+  `devDependencies`, `peerDependencies`, `optionalDependencies`, `version`, `name`, `description`,
+  `keywords`, `license`, `author`, `homepage`, `repository`, `bugs`, `packageManager`, `engines`, `files`,
+  `main`, `module`, `types`, `exports`, `bin` and `private`; a change to any other top-level key (`jest`,
+  `eslintConfig`, `mocha`) configures the tool a script runs and withdraws every script in the file. For a
+  Makefile or a justfile, anything outside the recipes is compared as a whole: an assignment, `export`,
+  `include`, a special target such as `.IGNORE`, and in a justfile `set` and `alias`. Any change there
+  withdraws every declaration in the file, while a new ordinary target or recipe, a comment, a `.PHONY`
+  line or a line-ending change does not. The Windows line-ending skip in the 2026-10-27 bullets above
+  (a CRLF checkout differing byte for byte) no longer applies, and the whole-file byte wording there is
+  replaced by this rule. A
   changed body withdraws that one declaration, and a script that names a withdrawn one, or that a `pre` or
   `post` hook wraps where the hook was added or changed, is withdrawn with it. A work-tree file that will not
   parse, or that has no declaration left standing, declares nothing and `--diagnose` says it differs from the
@@ -7806,8 +7817,8 @@ This amendment replaces that comparison and hardens the read around it. Where th
 - **More spellings refuse.** A steering variable (`MAKEFLAGS`, `GNUMAKEFLAGS`, `MFLAGS`, `MAKEFILES`,
   `MAKEOVERRIDES`, `MAKE`, `npm_config_*`, `JUST_*`, `YARN_*`) set by an earlier segment of the same call
   (`export MAKEFLAGS=-n; make lint`) leaves every later script a command, as one set on the segment itself
-  already did. A body that tells its linter to exit zero (`--exit-zero`, `--issues-exit-code=0`) never counts,
-  and neither does a reader-listed command that does.
+  already did. A body that tells its linter to exit zero (`--exit-zero`, `--issues-exit-code=0`, ruff's `-e`)
+  never counts, and neither does a reader-listed command that does or a call that forwards one after `--`.
 - **What `--diagnose` shows.** A file that is later repaired, or removed from the commit, stops being listed.
   Paths under the home folder are shown from it (`~/...`), and a Makefile or justfile over the line cap says it
   has too many lines instead of reading "over the byte cap".
