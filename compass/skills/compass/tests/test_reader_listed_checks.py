@@ -11,6 +11,7 @@ import dataclasses
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -693,12 +694,16 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
                 self.assertEqual(self.names(command), set())
 
     def test_a_hostile_sed_program_is_read_in_linear_time(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         program = "".join(" s" + chr(0x4E00 + i) + "y" for i in range(25000))
         started = time.process_time()
         self.names(f"sed -n '{program}' check.sh")
         self.assertLess(time.process_time() - started, 10.0)
 
     def test_a_long_pipeline_is_judged_in_linear_time(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         started = time.process_time()
         for command, expected in (
             ("x|" * 5000 + "check.sh", set()),
