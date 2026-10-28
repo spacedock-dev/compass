@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 from typing import Any, ClassVar, cast
 
 from compass_runtime import annotations as annotation_store
@@ -523,7 +524,11 @@ class TheStoredCheckIsValidatedOnTheWayBackIn(base.AClaudeCodeReadingProducer):
                 self.assertEqual(check, back["goal_verdict"]["check"])
 
     def test_the_producer_and_the_validator_read_one_table(self) -> None:
-        self.assertEqual(set(reading.GOAL_VERDICT_WHYS), set(reading.GOAL_VERDICT_PAIRS))
+        fixture = Path(__file__).resolve().parents[4] / "frontend/test/fixtures/vocabulary.json"
+        self.assertEqual(
+            json.loads(fixture.read_text(encoding="utf-8"))["goalVerdictWhys"],
+            list(reading.GOAL_VERDICT_PAIRS),
+        )
         self.assertEqual(
             set(reading.GOAL_VERDICT_CHECKS),
             {check for check, _ in reading.GOAL_VERDICT_PAIRS.values()},
@@ -539,6 +544,18 @@ class TheStoredCheckIsValidatedOnTheWayBackIn(base.AClaudeCodeReadingProducer):
         ):
             with self.subTest(check=check, why=why):
                 back = annotation_store._assessment(self._pair(check, why, cites), 240)
+                assert back is not None
+                self.assertNotIn("goal_verdict", back)
+
+    def test_an_unhashable_or_untyped_why_drops_the_check_and_keeps_the_reading(self) -> None:
+        whys: tuple[Any, ...] = (["x"], {}, None, 5)
+        for why in whys:
+            with self.subTest(why=why):
+                value = {"at": 5.0, "check": "agrees", "why": why, "cites": ["w"]}
+                self.assertIsNone(annotation_store._goal_verdict(value))
+                stored = self._pair("agrees", "ci-passed", ["w"])
+                stored["goal_verdict"] = value
+                back = annotation_store._assessment(stored, 240)
                 assert back is not None
                 self.assertNotIn("goal_verdict", back)
 

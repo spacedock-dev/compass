@@ -924,7 +924,8 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
         return None
     at, cites = value["at"], value["cites"]
     if (
-        isinstance(at, bool)
+        not isinstance(value["why"], str)
+        or isinstance(at, bool)
         or not isinstance(at, (int, float))
         or at <= 0
         or value["why"] not in reading.GOAL_VERDICT_PAIRS

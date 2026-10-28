@@ -4957,22 +4957,14 @@ def _quoted_spans(reason: str) -> tuple[str, ...]:
     return tuple(found[:MAX_QUOTED_SPANS])
 
 
-# A package runner's own first lines: npm, pnpm and yarn print `> <pkg>@<version> <script>` and then
-# `> <command>` before the script runs. Only a block that opens with the first shape is the echo:
-# pytest prints its failing source lines as `>       assert x == 1`, which is output the check
-# printed and must stay searchable.
-_RUNNER_ECHO_OPENER = re.compile(r"^> \S+@\S+(?:\s|$)")
+# A package runner (npm, pnpm, yarn) prints `> <text>` lines before each script it runs, once per
+# package in a workspace, and a tail can start inside one. pytest prints its failing source lines as
+# `>` and then two or more spaces, which is output the check printed and must stay searchable.
+_RUNNER_ECHO_LINE = re.compile(r"^> \S")
 
 
 def _without_runner_echo(text: str) -> str:
-    lines = text.splitlines()
-    start = next((index for index, row in enumerate(lines) if row.strip()), len(lines))
-    if start == len(lines) or not _RUNNER_ECHO_OPENER.match(lines[start]):
-        return text
-    end = start
-    while end < len(lines) and lines[end].startswith("> "):
-        end += 1
-    return "\n".join(lines[end:])
+    return "\n".join(row for row in text.splitlines() if not _RUNNER_ECHO_LINE.match(row))
 
 
 def _quoted_in_checks(

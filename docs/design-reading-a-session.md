@@ -6681,10 +6681,9 @@ Two gaps in the verdict test, both measured against the producer rather than ass
   The stored pull request CI facts keep their own whole refusal.
 - **Only the runner's own echo is stripped from a check's output.** The quote search removed every line starting
   with `> `, which also removed pytest's failing-source lines (`>       assert x == 1`) and made a quote of one
-  unfindable. It now removes only the block npm, pnpm and yarn print before a script runs: the first non-blank line
-  of the output has the shape `> <package>@<version> <script>`, and the contiguous `> ` lines after it are the
-  echoed command. Output that does not open that way keeps every line, and a `>` line after the echo's blank line
-  is the check's own.
+  unfindable. It now removes each line of the form `> ` and a non-space, wherever it sits: npm, pnpm and yarn print
+  one per package and script, so a workspace run has several blocks, and the searched tail can start inside one.
+  pytest keeps `>` and two or more spaces, so its source lines stay searchable, as does every line the script printed.
 - **Rejected:** stripping nothing (the recipe echo would make a command's own text count as printed output);
   stripping by line count (a runner may print one or two lines).
 
