@@ -464,6 +464,33 @@ export const WhatTheAnalysisReadNamesTheCommandsItNeverSaw: Story = {
   },
 };
 
+export const WhatTheAnalysisReadSaysAtLeastWhenTheScanBeganLate: Story = {
+  ...scenario({
+    ...RESULT,
+    session: {
+      ...RESULT.session,
+      annotation_assessment: {
+        ...READING,
+        cutoff:
+          'Read all 14 entries after your intent: 10 messages from the agent, 1 file write, 3 checks with no recorded result. All are from within the last hour. The session ran at least 412 other commands, at least 300 of them read-only; Compass did not read what they did.',
+        coverage: {
+          ...READING.coverage,
+          other_commands: 412,
+          read_only_commands: 300,
+          commands_floor: true,
+        },
+      },
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const read = await openWhatItRead(canvasElement);
+    await expect(read).toHaveTextContent(
+      'The session ran at least 412 other commands, at least 300 of them read-only; Compass did not read what they did.',
+    );
+    await expect(read).not.toHaveTextContent('was not recorded for this reading');
+  },
+};
+
 export const WhatTheAnalysisReadSaysAnOlderReadingNeverCountedThem: Story = {
   ...scenario({
     ...RESULT,

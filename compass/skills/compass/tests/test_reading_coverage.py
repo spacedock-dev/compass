@@ -251,6 +251,7 @@ class TheCutoffNamesKindsAndOmissions(unittest.TestCase):
                 "unread_checks": 1000000,
                 "other_commands": 2**53 - 1,
                 "read_only_commands": 2**53 - 2,
+                "commands_floor": True,
             },
         )
         text += reading._goal_note(adopted=True, source=None, goal="Saved excerpt", whole=False)
@@ -565,7 +566,7 @@ class TheCutoffCountsTheCommandsItNeverSaw(producer.AClaudeCodeReadingProducer):
         self.assertIn("The session ran 412 other commands, 300 of them read-only;", got["cutoff"])
         self.assertNotIn("Compass read only when", got["cutoff"])
 
-    def test_a_scan_cut_from_the_tail_records_neither_count(self) -> None:
+    def test_a_scan_cut_short_records_its_counts_as_a_floor(self) -> None:
         scan = {"harness": "claude", "sid": "s1", "other_commands": 3, "read_only_commands": 3}
         whole = {"sources": {"work": {"tool_reports": [scan]}}}
         cut = {"sources": {"work": {"tool_reports": [{**scan, "reads_from": 1.0}]}}}
@@ -573,7 +574,60 @@ class TheCutoffCountsTheCommandsItNeverSaw(producer.AClaudeCodeReadingProducer):
             {"other_commands": 3, "read_only_commands": 3},
             http_api._command_counts_of(whole, "claude", "s1"),
         )
+        self.assertEqual(
+            {"other_commands": 3, "read_only_commands": 3, "commands_floor": True},
+            http_api._command_counts_of(cut, "claude", "s1"),
+        )
+
+    def test_a_floor_of_zero_is_not_recorded(self) -> None:
+        zero = {"other_commands": 0, "read_only_commands": 0}
+        cut = {
+            "sources": {
+                "work": {
+                    "tool_reports": [{"harness": "claude", "sid": "s1", "reads_from": 1.0, **zero}]
+                }
+            }
+        }
+        whole = {
+            "sources": {"work": {"tool_reports": [{"harness": "claude", "sid": "s1", **zero}]}}
+        }
         self.assertEqual({}, http_api._command_counts_of(cut, "claude", "s1"))
+        self.assertEqual(zero, http_api._command_counts_of(whole, "claude", "s1"))
+        got = self._read(lambda: {**zero, "commands_floor": True})
+        self.assertNotIn("other_commands", got["coverage"])
+        self.assertNotIn("commands_floor", got["coverage"])
+
+    def test_a_floor_is_stored_and_worded_as_at_least(self) -> None:
+        got = self._read(
+            lambda: {"other_commands": 7, "read_only_commands": 4, "commands_floor": True}
+        )
+        self.assertIs(True, got["coverage"]["commands_floor"])
+        self.assertIn(
+            "The session ran at least 7 other commands, at least 4 of them read-only; "
+            "Compass did not read what they did.",
+            got["cutoff"],
+        )
+        none = self._read(
+            lambda: {"other_commands": 1, "read_only_commands": 0, "commands_floor": True}
+        )
+        self.assertIn("at least 1 other command, none known to be read-only;", none["cutoff"])
+        self.assertLessEqual(len(got["cutoff"]), reading.CUTOFF_CAP_CHARS)
+
+    def test_a_whole_count_carries_no_floor_key(self) -> None:
+        got = self._read(lambda: {"other_commands": 7, "read_only_commands": 4})
+        self.assertNotIn("commands_floor", got["coverage"])
+        self.assertNotIn("at least", got["cutoff"])
+
+    def test_a_floor_without_counts_or_not_true_is_left_out(self) -> None:
+        for lookup in (
+            lambda: {"commands_floor": True},
+            lambda: {"other_commands": 7, "read_only_commands": 4, "commands_floor": False},
+            lambda: {"other_commands": 7, "read_only_commands": 4, "commands_floor": 1},
+        ):
+            with self.subTest(lookup=lookup):
+                got = self._read(lookup)
+                self.assertNotIn("commands_floor", got["coverage"])
+                self.assertNotIn("at least", got["cutoff"])
 
     def test_a_count_nobody_measured_is_left_out_not_written_as_zero(self) -> None:
         for lookup in (None, dict, lambda: {"other_commands": True, "read_only_commands": 0}):
@@ -609,6 +663,21 @@ class CoverageAcceptsBothShapesAndRefusesAMalformedCount(unittest.TestCase):
     def test_a_newer_reading_validates_with_both_counts(self) -> None:
         new = {**self.OLD, "other_commands": 7, "read_only_commands": 4}
         self.assertEqual(new, reading.validate_coverage(dict(new)))
+
+    def test_a_floor_validates_only_beside_both_counts_and_only_as_true(self) -> None:
+        floor = {**self.OLD, "other_commands": 7, "read_only_commands": 4, "commands_floor": True}
+        self.assertEqual(floor, reading.validate_coverage(dict(floor)))
+        for patch in (
+            {"commands_floor": False},
+            {"commands_floor": 1},
+            {"commands_floor": None},
+        ):
+            with self.subTest(patch=patch):
+                self.assertIsNone(reading.validate_coverage({**floor, **patch}))
+        self.assertIsNone(reading.validate_coverage({**self.OLD, "commands_floor": True}))
+        self.assertIsNone(
+            reading.validate_coverage({**self.OLD, "other_commands": 7, "commands_floor": True})
+        )
 
     def test_a_malformed_or_lone_count_is_refused_not_read_as_zero(self) -> None:
         for patch in (

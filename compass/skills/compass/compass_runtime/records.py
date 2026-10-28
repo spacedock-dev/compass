@@ -29,6 +29,10 @@ SESSION_GOAL: Final = "session-goal"
 # `/goal` the reader set; no other harness writes one Compass reads. The page holds the same three.
 SESSION_GOAL_HARNESSES: Final = ("claude", "codex", "antigravity")
 PROMPT_SOURCES: Final = ("latest-prompt", "first-prompt", PROMPT_CHOSEN, SESSION_GOAL)
+# Present, and True, beside a stored reading's other-command counts when the scan that counted them
+# began after the start of the session, so both are lower bounds. Spelt here because
+# `project_context` sets it and may not import `reading`.
+COMMANDS_FLOOR_KEY: Final = "commands_floor"
 
 # C0 and DEL, the zero-width space, the two directional marks, and the bidi
 # embedding and isolate ranges. Listed one by one across U+200B to U+200F rather

@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from compass_runtime import http_api, levels, observer, project_context, reading
 from compass_runtime import io as runtime_io
-from compass_runtime import levels, observer, project_context, reading
 from compass_runtime.state import build_runtime_state
 
 from .test_claude_checks import SHORT, SID, START, ClaudeChecksTestCase, Transcript
@@ -183,6 +183,29 @@ class ASubagentsCheckIsTheParents(SubagentChecksTestCase):
         self.assertEqual({e["record_id"] for e in passes}, {i for i, _ in press.read_incomplete})
         self.save_all = lambda: None  # type: ignore[method-assign]
         self.assertEqual(levels.NOT_ENOUGH, self.live().level)
+
+    def test_a_named_child_without_a_transcript_makes_the_command_counts_a_floor(self) -> None:
+        self.session.bash("make deploy", "done", is_error=False)
+        self.session.bash("ls -la", "", is_error=False)
+        self.returns(self.delegate())
+        self.session.save(self.path)
+        _events, scan = project_context.claude_tool_reports(self.config, str(self.path), SHORT)
+        self.assertEqual(1, scan["subagent_transcripts_unread"])
+        # The scan read its whole transcript, so nothing marks it as cut; the child's own commands
+        # are what it could not count, which makes the counts a lower bound all the same.
+        self.assertNotIn("reads_from", scan)
+        context = {
+            "sources": {"work": {"tool_reports": [{"harness": "claude", "sid": SHORT, **scan}]}}
+        }
+        counts = http_api._command_counts_of(context, "claude", SHORT)
+        self.assertGreater(counts["other_commands"], 0)
+        self.assertIs(True, counts["commands_floor"])
+        # With every child read, the same counts stay exact.
+        exact = {**scan, "subagent_transcripts_unread": 0}
+        whole = {
+            "sources": {"work": {"tool_reports": [{"harness": "claude", "sid": SHORT, **exact}]}}
+        }
+        self.assertNotIn("commands_floor", http_api._command_counts_of(whole, "claude", SHORT))
 
     def test_repeated_legacy_task_result_counts_one_missing_child(self) -> None:
         self.session.bash("pytest", "5 passed", is_error=False)

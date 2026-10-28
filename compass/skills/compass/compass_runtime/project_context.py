@@ -6251,15 +6251,26 @@ def scan_of(context: dict[str, Any], harness: str, sid: str) -> dict[str, Any]:
 
 
 def command_counts_of(context: dict[str, Any], harness: str, sid: str) -> dict[str, Any]:
-    """The other-command counts this session's full scan measured, or nothing.
+    """The other-command counts this session's scan measured, or nothing.
 
-    A scan cut from the tail counted only the commands after the cut, so neither
-    count is a measurement of the session and both are left out.
+    A scan that began after the start of the session (cut from the tail, or kept from an unread
+    subagent transcript's horizon) counted only the commands after that point, and one that could
+    not read a named subagent's transcript never counted that subagent's commands, though its
+    horizon may not have moved. Either way its counts are lower bounds, so they are kept and
+    marked as a floor rather than dropped or passed off as the session's.
     """
     scan = scan_of(context, harness, sid)
-    if scan.get("reads_from") is not None:
-        return {}
-    return {k: scan[k] for k in ("other_commands", "read_only_commands") if k in scan}
+    counts: dict[str, Any] = {
+        k: scan[k] for k in ("other_commands", "read_only_commands") if k in scan
+    }
+    unread = scan.get("subagent_transcripts_unread")
+    if counts and (scan.get("reads_from") is not None or (isinstance(unread, int) and unread > 0)):
+        # A floor of zero says nothing: the late scan saw no commands, which is not the same
+        # as none having run, so it stays "not recorded".
+        if counts.get("other_commands") == 0:
+            return {}
+        counts[records.COMMANDS_FLOOR_KEY] = True
+    return counts
 
 
 def session_tail_coverage(

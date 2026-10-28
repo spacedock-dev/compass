@@ -272,6 +272,30 @@ def request_clock(payload: Mapping[str, Any]) -> Callable[[float], str] | None:
     return clock_text if zone is None else zone_clock(zone)
 
 
+# The words of `reading.CLAIMS_RULE` and `reading.NONFINAL_CLAIMS_RULE`, "passing" read as its three
+# forms. The resolver cannot tell a claim's kind, so the correction quotes the cited message that
+# holds one of them, as the page's claims row does (`frontend/src/drift/claimWords.ts`). A test
+# reads both rules and fails when this list and they drift.
+CLAIM_WORDS = (
+    "running",
+    "done",
+    "merged",
+    "pushed",
+    "deployed",
+    "passing",
+    "passes",
+    "passed",
+    "fixed",
+    "sent",
+    "filed",
+)
+_CLAIM_WORD = re.compile(r"\b(?:" + "|".join(CLAIM_WORDS) + r")\b", re.IGNORECASE)
+
+
+def holds_claim_word(text: object) -> bool:
+    return _CLAIM_WORD.search(text if isinstance(text, str) else "") is not None
+
+
 def _placeholder(fact: Mapping[str, Any]) -> dict[str, str]:
     return {"entry": str(fact.get("fact_id") or "")}
 
@@ -563,21 +587,32 @@ class _Rows:
             return None
         kept = {str(c) for c in resolved["cites"]}
         standing = [
-            fact
+            (entry, fact)
             for entry, fact in pairs
             if entry["id"] in kept and reading.valid_prompt_time(fact.get("at")) is not None
         ]
+        # The page quotes the first message in the row's stored cite order, not in time order,
+        # so the claiming message is chosen from that order too.
+        position: dict[str, int] = {}
+        for k, cite in enumerate(raw if isinstance(raw, list) else []):
+            if isinstance(cite, str):
+                position.setdefault(cite, k)
         said = [
-            f
-            for f in standing
-            if f.get("type") == reading.AGENT_MESSAGE_TYPE and reading.claim_title(f)
+            fact
+            for entry, fact in sorted(
+                standing, key=lambda pair: position.get(pair[0]["id"], len(position))
+            )
+            if fact.get("type") == reading.AGENT_MESSAGE_TYPE and reading.claim_title(fact)
         ]
         if not said:
             return None
-        record = [f for f in standing if f.get("type") != reading.AGENT_MESSAGE_TYPE]
+        record = [f for _entry, f in standing if f.get("type") != reading.AGENT_MESSAGE_TYPE]
         checks = [f for f in record if f.get("subject") == reading.CHECK_SUBJECT]
         found = checks or record
-        return str(result), said[0], found[0] if found else None
+        # The claiming message, as the page's claims row quotes it: the first cited that holds a
+        # claim word, else the first cited, so the offered question names the sentence shown.
+        claiming = next((f for f in said if holds_claim_word(f.get("summary"))), said[0])
+        return str(result), claiming, found[0] if found else None
 
 
 def _saved_lines(row: Mapping[str, Any]) -> list[tuple[int, str]]:

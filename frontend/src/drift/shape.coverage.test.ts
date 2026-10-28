@@ -19,6 +19,19 @@ describe('a stored reading is held to one of two coverage shapes', () => {
     expect(readingCoverage(counted)).toEqual(counted);
   });
 
+  it('keeps a floor beside both counts and refuses one that is not true or has no counts', () => {
+    const floor = { ...OLD, other_commands: 7, read_only_commands: 4, commands_floor: true };
+    expect(readingCoverage(floor)).toEqual(floor);
+    for (const bad of [
+      { ...floor, commands_floor: false },
+      { ...floor, commands_floor: 1 },
+      { ...OLD, commands_floor: true },
+      { ...OLD, other_commands: 7, commands_floor: true },
+    ]) {
+      expect(readingCoverage(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
   it('refuses a lone, malformed or impossible count rather than reading it as zero', () => {
     for (const patch of [
       { other_commands: 7 },
