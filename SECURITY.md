@@ -2390,7 +2390,7 @@ the reading.
 Reading coverage, owner amendment of 2026-10-04. A pressed reading may store and publish an
 optional `coverage` mapping beside its existing assessment: whether the bounded transcript tail
 was truncated (boolean or unknown), its earliest time (or unknown), counts of unlisted passes or
-writes and checks with no prompt room, the counts of other commands that ran and of those that were read-only (both or neither; session-wide from a scan that read the whole transcript, or a lower bound marked by a boolean when the scan began late, cut from the tail or pushed to a later horizon by an unread subagent transcript; an older reading has neither and says the count was not recorded), and a closed adopted-source state. The state is `typed`,
+writes and checks with no prompt room, the counts of other commands that ran and of those that were read-only (both or neither; session-wide from a scan that read the whole transcript, or a lower bound marked by a boolean when the scan began late, cut from the tail, pushed to a later horizon by an unread subagent transcript, or missing a named subagent's transcript; an older reading has neither and says the count was not recorded), and a closed adopted-source state. The state is `typed`,
 `whole`, `excerpt`, `unroomed` or `unknown`; it holds no source words. The file identity used to
 bind the measurement to fact collection stays in memory and is not part of that mapping. Missing
 legacy coverage stays unknown. The metadata is never sent to a model, copied into session history

@@ -1318,9 +1318,9 @@ and the amendment that a word list is a judgement, still hold for verdicts.
 
 The correction Steer back offers asks about the same sentence. It quoted the first cited message, so
 "Can you show evidence for ..." could name the neutral statement while the claims row quoted the claiming one.
-`correction.py` now picks the cited agent message by the same rule, in the row's stored cite order, with its own copy of the word list
-(`correction.CLAIM_WORDS`), and a test reads both claims rules from `reading.py` and fails when that list and
-they drift, as the page's test does for its own.
+`correction.py` now picks the cited agent message by the same rule, in the row's stored cite order, with its
+own copy of the word list (`correction.CLAIM_WORDS`), and a test reads both claims rules from `reading.py` and
+fails when that list and they drift, as the page's test does for its own.
 
 ### Repeated calls
 
@@ -3585,10 +3585,15 @@ or an unread subagent transcript pushed its horizon forward. The 2026-10-27 amen
 those scans, so the sessions that ran the most commands said "not recorded". The counts the scan did measure are
 true of what it read, so they are a lower bound on the session, and a lower bound is worth saying. The cutoff
 now reads "The session ran at least 412 other commands, at least 300 of them read-only; Compass did not read
-what they did", and "none known to be read-only" where the floor of read-only calls is zero. A floor of zero is not stored, since a late scan that saw no commands says nothing about the
-session, so it stays "not recorded". A scan that read
-the whole transcript still says the plain counts, and a reading stored earlier still says the count was not
-recorded.
+what they did", and "none known to be read-only" where the floor of read-only calls is zero. A floor of zero
+is not stored, since a late scan that saw no commands says nothing about the session, so it stays "not
+recorded". A scan that read the whole transcript still says the plain counts, and a reading stored earlier
+still says the count was not recorded.
+
+A scan can also be late without having moved: a named subagent whose transcript was never saved leaves the
+scan's horizon where it was, and its own commands uncounted. The scan publishes how many subagent transcripts
+it could not read, so a count with one or more of them unread is stored as a floor too, and the plain counts
+are said only where every named subagent was read.
 
 The stored `coverage` mapping may carry one more optional key, `commands_floor`, only as `true` and only beside
 both counts. A `false`, a non-boolean or a floor with no counts refuses the reading. The cutoff's bound rose

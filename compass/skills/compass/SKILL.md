@@ -534,7 +534,7 @@ that a later pass of the same check, in the same directory, did not follow,
 message tail, unlisted passes or writes, checks that did not fit and an adopted-source fallback. The read
 sentence also counts the other commands the session ran (session-wide from a scan that read the whole transcript,
 or "at least" that many when the scan began late, because it was cut from the tail or an unread subagent
-transcript moved where it starts),
+transcript moved where it starts, or a named subagent left no transcript to count),
 how many were read-only, and says Compass did not read what they did; an older reading says that count was not recorded.
 An older reading says coverage was not recorded. A tail starting inside the intent window tags
 every intent row "may be in the part not read"; claims stay independent. On Claude Code an Analyze
