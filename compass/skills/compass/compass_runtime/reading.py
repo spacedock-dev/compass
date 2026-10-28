@@ -4813,19 +4813,24 @@ GOAL_VERDICT_CI = "ci-passed"
 GOAL_VERDICT_QUOTED = "quoted-in-check"
 GOAL_VERDICT_NOT_FOUND = "not-found"
 GOAL_VERDICT_NOTHING_CHECKABLE = "nothing-checkable"
-GOAL_VERDICT_WHYS = (
-    GOAL_VERDICT_WRITTEN,
-    GOAL_VERDICT_PASSED,
-    GOAL_VERDICT_PR,
-    GOAL_VERDICT_CI,
-    GOAL_VERDICT_WRITTEN_AFTER,
-    GOAL_VERDICT_DELETED_AFTER,
-    GOAL_VERDICT_MOVED_AFTER,
-    GOAL_VERDICT_FAILED,
-    GOAL_VERDICT_QUOTED,
-    GOAL_VERDICT_NOT_FOUND,
-    GOAL_VERDICT_NOTHING_CHECKABLE,
-)
+# The one table of what the producer can say: each `why` with the `check` it always comes with and
+# whether it always carries cites. The producer builds its result from it and the stored-check
+# validator reads it, so a stored pair the producer cannot emit (`agrees` with `not-found`) or a
+# pass with no fact behind it is refused instead of drawn.
+GOAL_VERDICT_PAIRS: dict[str, tuple[str, bool]] = {
+    GOAL_VERDICT_WRITTEN: (GOAL_VERDICT_AGREES, True),
+    GOAL_VERDICT_PASSED: (GOAL_VERDICT_AGREES, True),
+    GOAL_VERDICT_PR: (GOAL_VERDICT_AGREES, True),
+    GOAL_VERDICT_CI: (GOAL_VERDICT_AGREES, True),
+    GOAL_VERDICT_WRITTEN_AFTER: (GOAL_VERDICT_DISPUTED, True),
+    GOAL_VERDICT_DELETED_AFTER: (GOAL_VERDICT_DISPUTED, False),
+    GOAL_VERDICT_MOVED_AFTER: (GOAL_VERDICT_DISPUTED, False),
+    GOAL_VERDICT_FAILED: (GOAL_VERDICT_DISPUTED, True),
+    GOAL_VERDICT_QUOTED: (GOAL_VERDICT_UNCONFIRMED, True),
+    GOAL_VERDICT_NOT_FOUND: (GOAL_VERDICT_UNCONFIRMED, False),
+    GOAL_VERDICT_NOTHING_CHECKABLE: (GOAL_VERDICT_UNCONFIRMED, False),
+}
+GOAL_VERDICT_WHYS = tuple(GOAL_VERDICT_PAIRS)
 GOAL_VERDICT_KEYS = ("at", "check", "why", "cites")
 # A dispute that rests on a file taken away names the file and the moment, so the card can say which
 # and when. Both or neither, and only beside the two removal tokens.
@@ -4952,6 +4957,16 @@ def _quoted_spans(reason: str) -> tuple[str, ...]:
     return tuple(found[:MAX_QUOTED_SPANS])
 
 
+# A package runner (npm, pnpm, yarn) prints `> <text>` lines before each script it runs, once per
+# package in a workspace, and a tail can start inside one. pytest prints its failing source lines as
+# `>` and then two or more spaces, which is output the check printed and must stay searchable.
+_RUNNER_ECHO_LINE = re.compile(r"^> \S")
+
+
+def _without_runner_echo(text: str) -> str:
+    return "\n".join(row for row in text.splitlines() if not _RUNNER_ECHO_LINE.match(row))
+
+
 def _quoted_in_checks(
     reason: str, recorded: Recorded, set_at: float, verdict_at: float
 ) -> tuple[list[str], int]:
@@ -4981,7 +4996,7 @@ def _quoted_in_checks(
         # A span the check's own command line holds is text the agent typed, and a runner's recipe
         # echo (`> echo ...`) is the script's own text: neither shows the check printed it.
         line = _fold(held.line)
-        text = _fold("\n".join(row for row in held.text.splitlines() if not row.startswith("> ")))
+        text = _fold(_without_runner_echo(held.text))
         hits = [span for span in spans if span in text and span not in line]
         if hits:
             cited.append(entry["id"])
@@ -5052,7 +5067,11 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
 
     verdict_at: float = at
 
-    def result(check: str, why: str, cites: Sequence[str] = ()) -> GoalVerdictCheck:
+    def result(why: str, cites: Sequence[str] = ()) -> GoalVerdictCheck:
+        check, cited = GOAL_VERDICT_PAIRS[why]
+        if cited != bool(cites):
+            msg = f"a {why} verdict {'needs' if cited else 'never carries'} cites"
+            raise ValueError(msg)
         return {
             "at": verdict_at,
             "check": check,
@@ -5065,8 +5084,8 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         # one thing worth saying. It never agrees: output that holds a phrase is no passing check.
         cited, count = _quoted_in_checks(reason, recorded, set_at, verdict_at)
         if not cited:
-            return result(GOAL_VERDICT_UNCONFIRMED, why)
-        return {**result(GOAL_VERDICT_UNCONFIRMED, GOAL_VERDICT_QUOTED, cited), "quoted": count}
+            return result(why)
+        return {**result(GOAL_VERDICT_QUOTED, cited), "quoted": count}
 
     # A claim with no reason (Codex records none) is tested against what the goal itself names: the
     # claim is that the goal is met, so the goal's files and checks are what it says is done.
@@ -5080,7 +5099,6 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
     if taken is not None:
         return {
             **result(
-                GOAL_VERDICT_DISPUTED,
                 GOAL_VERDICT_DELETED_AFTER if taken.kind == "deleted" else GOAL_VERDICT_MOVED_AFTER,
             ),
             "path": records.safe_text(taken.path, VERDICT_PATH_CAP_CHARS),
@@ -5095,7 +5113,7 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
     ]
     later = [write.id for write in writes if write.at > at]
     if later:
-        return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_WRITTEN_AFTER, later)
+        return result(GOAL_VERDICT_WRITTEN_AFTER, later)
     checks = [
         entry
         for entry in recorded.checks
@@ -5109,12 +5127,12 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         if entry.get("result") == RESULT_FAILED and not _superseded(entry, at, recorded.checks)
     ] + [ci.id for ci in named_ci if ci.counts and ci.result == CI_RESULT_FAILED]
     if failed:
-        return result(GOAL_VERDICT_DISPUTED, GOAL_VERDICT_FAILED, failed)
+        return result(GOAL_VERDICT_FAILED, failed)
     if writes:
-        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_WRITTEN, [write.id for write in writes])
+        return result(GOAL_VERDICT_WRITTEN, [write.id for write in writes])
     green = [ci.id for ci in named_ci if ci.counts and ci.result == CI_RESULT_PASSED]
     if green:
-        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_CI, green)
+        return result(GOAL_VERDICT_CI, green)
     created = [
         pr.id
         for pr in recorded.prs
@@ -5125,7 +5143,7 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         )
     ]
     if created:
-        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_PR, created)
+        return result(GOAL_VERDICT_PR, created)
     passed = [
         entry["id"]
         for entry in checks
@@ -5134,7 +5152,7 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         and entry.get("changed_after") is not True
     ]
     if passed:
-        return result(GOAL_VERDICT_AGREES, GOAL_VERDICT_PASSED, passed)
+        return result(GOAL_VERDICT_PASSED, passed)
     return unconfirmed(GOAL_VERDICT_NOT_FOUND)
 
 

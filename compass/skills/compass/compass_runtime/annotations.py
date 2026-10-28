@@ -911,9 +911,10 @@ def _verdict_extras_whole(value: dict[str, Any]) -> bool:
 def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     """One stored test of the harness's goal verdict, or nothing.
 
-    Closed tokens only, as a criterion's `why` is: the page maps a token to its own sentence, so a
-    sidecar rewritten to say something else refuses the reading whole rather than speaking for
-    Compass.
+    Closed tokens only, as a criterion's `why` is: the page maps a token to its own sentence. The
+    pair has to be one the producer emits (`reading.GOAL_VERDICT_PAIRS`) with the cites it always
+    gives, so a sidecar rewritten to say something else is dropped and the reading renders without
+    a verdict, which the card already says is unchecked, rather than speaking for Compass.
     """
     if not isinstance(value, dict):
         return None
@@ -923,15 +924,18 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
         return None
     at, cites = value["at"], value["cites"]
     if (
-        isinstance(at, bool)
+        not isinstance(value["why"], str)
+        or isinstance(at, bool)
         or not isinstance(at, (int, float))
         or at <= 0
-        or value["check"] not in reading.GOAL_VERDICT_CHECKS
-        or value["why"] not in reading.GOAL_VERDICT_WHYS
+        or value["why"] not in reading.GOAL_VERDICT_PAIRS
         or not isinstance(cites, (list, tuple))
         or len(cites) > reading.MAX_RECORDED_CITES
         or not all(isinstance(cite, str) for cite in cites)
     ):
+        return None
+    check, cited = reading.GOAL_VERDICT_PAIRS[value["why"]]
+    if value["check"] != check or cited != bool(cites):
         return None
     checked: reading.GoalVerdictCheck = {
         "at": float(at),
@@ -950,10 +954,12 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
 def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.Assessment | None:
     """One untrusted reading, or nothing at all.
 
-    Dropped WHOLE on any failure. A half-parsed reading is the worst of the
+    Dropped WHOLE on any failure, except that a malformed `goal_verdict` is
+    not a failure of the reading: `_goal_verdict` drops that one block and the
+    rest of the reading stands. A half-parsed reading is the worst of the
     three outcomes: the page renders whatever survived, and what survives is
     whichever half happened to be well-formed rather than whichever half is
-    true. Nothing here repairs a field.
+    true. Nothing else here repairs a field.
 
     Type-checked on the way out as well as on the way in, for `_revision`'s
     reason: any local process can rewrite this file, and a dict arriving here
@@ -976,7 +982,6 @@ def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.As
     ci = ci_read.validate(value["ci"]) if "ci" in value else None
     if (
         criteria is None
-        or ("goal_verdict" in value and verdict is None)
         or ("ci" in value and ci is None)
         or (value.get("coverage") is not None and coverage is None)
         or any(not reading.result_in_scope(row.get("result"), scope) for row in criteria.values())

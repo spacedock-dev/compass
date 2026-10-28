@@ -3659,8 +3659,9 @@ is in session history, and a read that starts mid-file publishes none of it, sin
 
 The verdict is a claim and Compass tests it. The test is code over the writes and checks the record already
 holds, with no model call and nothing new sent anywhere. It is stored beside a reading's criteria as
-`goal_verdict`, three closed values and a list of at most three fact ids, and a stored value outside them
-refuses the reading whole. The verdict never lowers a drift level and never counts as a passing check. A
+`goal_verdict`, three closed values and a list of at most three fact ids, and a stored value outside them,
+or a pair the test never gives (a pass with no fact behind it), is dropped on read and the reading renders
+without it. The verdict never lowers a drift level and never counts as a passing check. A
 reason that names nothing the record can show is "unconfirmed", never "disputed", because a capped listing
 cannot prove absence.
 

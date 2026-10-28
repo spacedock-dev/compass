@@ -265,6 +265,52 @@ class AQuoteInARecordedChecksOutputIsSaidToBeThere(base.AClaudeCodeReadingProduc
         )
         self.assertEqual(reading.GOAL_VERDICT_QUOTED, printed["why"])
 
+    def test_a_pytest_failing_source_line_is_found_and_a_recipe_echo_above_it_is_not(self) -> None:
+        fact = base.check_fact(result="failed", at=130.0, summary="pnpm test")
+        key = ("call-1", "pnpm test")
+        failing = ">       assert total == 1"
+        for output in (
+            f"> app@1.0.0 test /work/app\n> pytest -q\n\n{failing}\nE  assert 2 == 1\n",
+            f"{failing}\nE  assert 2 == 1\n",
+        ):
+            with self.subTest(output=output):
+                _read, verdict = self._verdict([fact], quoting("assert total == 1"), {key: output})
+                self.assertEqual(reading.GOAL_VERDICT_QUOTED, verdict["why"])
+        _read, echoed = self._verdict(
+            [fact],
+            quoting("assert total == 1"),
+            {key: "> app@1.0.0 test /work/app\n> assert total == 1\n\nran\n"},
+        )
+        self.assertNoQuote(echoed)
+
+    def test_every_runner_echo_line_is_dropped_wherever_it_sits(self) -> None:
+        fact = base.check_fact(result="passed", at=130.0, summary="npm run all")
+        key = ("call-1", "npm run all")
+        recipe = "echo all green"
+        for output in (
+            f"\n> app@1.0.0 build /w\n> tsc\n\nok\n\n> app@1.0.0 test /w\n> {recipe}\n\nran\n",
+            f"\n> ab\n> {recipe}\n\n\n> a\n> {recipe}\n\nA\n",
+            f"> pkg test\n> {recipe}\n",
+            f"> pytest -q\n> {recipe}\n\nran\n",
+        ):
+            with self.subTest(output=output):
+                _read, verdict = self._verdict([fact], quoting(recipe), {key: output})
+                self.assertNoQuote(verdict)
+
+    def test_a_pytest_source_line_and_a_script_line_stay_found_beside_an_echo(self) -> None:
+        fact = base.check_fact(result="failed", at=130.0, summary="pnpm -r test")
+        key = ("call-1", "pnpm -r test")
+        for span, output in (
+            ("assert x == 1", "> a@1 test\n> pytest\n\n>       assert x == 1\nE  fail\n"),
+            (
+                "coverage held at 91 percent",
+                "> a@1 test\n> echo hi\n\ncoverage held at 91 percent\n\n> b@1 test\n> vitest\n",
+            ),
+        ):
+            with self.subTest(span=span):
+                _read, verdict = self._verdict([fact], quoting(span), {key: output})
+                self.assertEqual(reading.GOAL_VERDICT_QUOTED, verdict["why"])
+
     def test_a_span_past_the_searched_tail_is_not_looked_for(self) -> None:
         longer = "x" * (reading.MAX_QUOTED_SPAN_CHARS + 1)
         self.assertEqual((), reading._quoted_spans(f'"{longer}"'))
