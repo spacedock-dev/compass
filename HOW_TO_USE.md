@@ -394,7 +394,7 @@ The file is read up to 64 KiB, 64 projects, 32 commands for each project and 512
 and a file over the size cap is not read at all. An entry past the other limits is ignored, and `--diagnose`
 names it, or counts the projects it did not read.
 A `.compass` folder inside a repository is never read. A session that writes this file, with a write tool or by
-a shell command that names it, has the listing withdrawn for that session, and the page says so. Check it with:
+a shell command that names it and does more than read it (`cat` and `grep` only read), has the listing withdrawn for that session, and the page says so. Check it with:
 
 ```bash
 python3 "$SKILL/server.py" --diagnose

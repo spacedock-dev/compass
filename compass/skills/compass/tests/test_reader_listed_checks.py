@@ -7,15 +7,18 @@ Every project, command and path here is synthetic.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from compass_runtime import (
     diagnostics,
     project_context,
+    project_scripts,
     reader_checks,
     reading,
     session_source,
@@ -271,6 +274,49 @@ class ASessionThatWroteTheFileIsFlaggedAndNothingCounts(ReaderChecksTestCase):
                 self.assertEqual([], [e for e in events if e["subject"] == "check"])
                 self.assertIs(True, scan["reader_checks_written"])
 
+    def test_a_read_only_command_naming_the_file_does_not_withdraw_the_listing(self) -> None:
+        for command in (
+            f"cat {self.store}",
+            f"grep bazel {self.store}",
+            f"rg bazel {self.store}",
+            f"head -5 {self.store}",
+            f"less {self.store}",
+            f"wc -l {self.store}",
+            f"ls -l {self.store} && cat {self.store} | wc -l",
+        ):
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks()
+                self.session.bash(command)
+                self.session.bash(BAZEL, "ok")
+                events, scan = self.read()
+                self.assertEqual([BAZEL], [e["title"] for e in events if e["subject"] == "check"])
+                self.assertNotIn("reader_checks_written", scan)
+
+    def test_a_read_that_redirects_into_the_file_is_still_a_write(self) -> None:
+        self.list_checks()
+        self.session.bash(f"cat other.json > {self.store}")
+        self.session.bash(BAZEL, "ok")
+        events, scan = self.read()
+        self.assertEqual([], [e for e in events if e["subject"] == "check"])
+        self.assertIs(True, scan["reader_checks_written"])
+
+    def test_an_interpreter_or_editor_naming_the_file_withdraws_the_listing(self) -> None:
+        for command in (
+            f"python3 -c \"open('{self.store}', 'w').write('{{}}')\"",
+            f"node -e \"require('fs').writeFileSync('{self.store}', '{{}}')\"",
+            f"perl -pi -e 's/bazel/true/' {self.store}",
+            f"ruby -i -pe '$_.upcase!' {self.store}",
+        ):
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks()
+                self.session.bash(command)
+                self.session.bash(BAZEL, "ok")
+                events, scan = self.read()
+                self.assertEqual([], [e for e in events if e["subject"] == "check"])
+                self.assertIs(True, scan["reader_checks_written"])
+
     def test_a_write_with_nothing_listed_is_not_flagged(self) -> None:
         self.session.write(str(self.cwd / reader_checks.FILENAME), "{}")
         self.session.bash("pytest -q", "1 passed in 0.1s")
@@ -344,6 +390,30 @@ class AListedScriptThePathNamesNeedsTheProjectRootAndAnUntouchedFile(ReaderCheck
                 self.session.bash(self.SCRIPT, "ok")
                 self.assertEqual([], self.titles())
 
+    def test_an_interpreter_that_names_the_script_in_its_code_withdraws_it(self) -> None:
+        for command in (
+            "python3 -c \"open('check.sh', 'w').write('exit 0')\"",
+            "node -e \"require('fs').writeFileSync('check.sh', 'exit 0')\"",
+            "perl -pi -e 's/a/b/' check.sh",
+            "ruby -i -pe '$_.upcase!' ./check.sh",
+        ):
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks({str(self.cwd): [self.SCRIPT]})
+                self.session.bash(command)
+                self.session.bash(self.SCRIPT, "ok")
+                self.assertEqual([], self.titles())
+
+    def test_reading_or_running_the_script_leaves_it_listed(self) -> None:
+        for command in ("cat check.sh", "grep exit check.sh", "head -3 ./check.sh", "wc -l check.sh",
+                        "./check.sh --fast", "bash check.sh", "ls -l check.sh"):  # fmt: skip
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks({str(self.cwd): [self.SCRIPT]})
+                self.session.bash(command, "ok")
+                self.session.bash(self.SCRIPT, "ok")
+                self.assertEqual([self.SCRIPT], self.titles())
+
     def test_a_script_run_in_another_folder_does_not_count(self) -> None:
         self.list_checks({str(self.cwd): [self.SCRIPT]})
         self.session.bash(f"cd {self.root / 'elsewhere'} && {self.SCRIPT}", "ok")
@@ -410,3 +480,44 @@ class EveryReaderOfTheListingAgrees(ReaderChecksTestCase):
                 break
         self.assertGreater(pages, 2)
         self.assertEqual([], found)
+
+
+class ACallIsParsedOnceWhenAScriptIsListed(ReaderChecksTestCase):
+    def test_every_bash_call_is_parsed_once_not_twice(self) -> None:
+        self.list_checks({str(self.cwd): ["./check.sh"]})
+        commands = [f"echo {i} && ls" for i in range(6)] + ["cat check.sh", "cd . && ./check.sh"]
+        for command in commands:
+            self.session.bash(command, "ok")
+        project_context._call_parts_once.cache_clear()
+        real = project_context._call_parts
+        seen: list[str] = []
+
+        def counting(text: str, depth: int = 0) -> Any:
+            seen.append(text)
+            return real(text, depth)
+
+        with mock.patch.object(project_context, "_call_parts", side_effect=counting):
+            self.read()
+        # The call parts of one call are the same text, so they are parsed once for every
+        # reader of it; before, the script-name scan parsed each call a second time.
+        self.assertEqual(sorted(commands), sorted(c for c in seen if c in commands))
+
+
+class APagedReadKeepsAnEarlierPagesListingWrite(ReaderChecksTestCase):
+    def test_a_page_with_nothing_listed_carries_the_earlier_write_forward(self) -> None:
+        self.session.bash("ls", "a")
+        self.session.save(self.path)
+        first = session_source.read(self.config, str(self.path), "claude", "root")
+        assert first.snapshot is not None
+        cursor = dataclasses.replace(
+            first.snapshot.cursor, listing_writes=frozenset({reader_checks.FILENAME})
+        )
+        self.session.bash("ls", "b")
+        self.session.save(self.path)
+        empty = project_scripts.Declarations("", "", {}, {}, {})
+        with mock.patch.object(project_context, "_declared_scripts", return_value=empty):
+            second = session_source.read(
+                self.config, str(self.path), "claude", "root", after=cursor
+            )
+        assert second.snapshot is not None
+        self.assertEqual(frozenset({reader_checks.FILENAME}), second.snapshot.cursor.listing_writes)

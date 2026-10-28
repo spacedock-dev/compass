@@ -18,6 +18,7 @@ import subprocess
 import time
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from . import (
@@ -3093,6 +3094,17 @@ def _body_facts(body: str) -> tuple[bool, tuple[str, ...]]:
     return reads, masked
 
 
+@lru_cache(maxsize=512)
+def _call_parts_once(text: str) -> tuple[_Part, ...]:
+    """`_call_parts` for a whole Bash call, remembered by its text.
+
+    The call is parsed for its facts and again for the names it writes, and the second parse
+    doubled the cost of every call once a reader listed a path script. A failed parse raises
+    and is not remembered. Callers read the segments and never change them.
+    """
+    return tuple(_call_parts(text))
+
+
 def _call_parts(text: str, depth: int = 0) -> list[_Part]:
     """The call's segments, each shell `-c` wrapper replaced by its inner
     segments (owner, 2026-09-25).
@@ -4484,7 +4496,7 @@ class _ShellCall:
         # bash runs the complete lines before it (owner, 2026-09-25).
         self.unbalanced = False
         try:
-            self.parts = _call_parts(command if isinstance(command, str) else "")
+            self.parts = list(_call_parts_once(command if isinstance(command, str) else ""))
         except Exception:  # noqa: BLE001 - any parser fault fails closed, as unbalanced does
             self.unbalanced, self.parts = True, []
         self.words: list[tuple[list[str], bool]] = [(p.words, p.rtk) for p in self.parts]
@@ -6048,20 +6060,71 @@ _NAMING_WRITERS = frozenset(
 )
 
 
-def _shell_names(command: str, names: frozenset[str]) -> set[str]:
-    """Which of `names` a shell command writes by name: a redirect target, or an argument of a
-    program that changes the files it is given. The file is matched by its name alone, so a copy
-    in another folder withdraws it too."""
-    try:
-        parts = _call_parts(command)
-    except Exception:  # noqa: BLE001 - a command that will not parse names nothing
+# Interpreters that run a script given as their first argument; any option before it (`-c`, `-e`,
+# `-i`, `-pi`) makes the script text theirs to run or rewrite, so it is not a plain run.
+_SCRIPT_RUNNERS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "python", "python3", "node",
+                             "perl", "ruby"})  # fmt: skip
+
+
+def _names_word(word: str, name: str) -> bool:
+    """Whether a word is the file `name`, in any folder, or a string that mentions it as a path:
+    `open('check.sh', 'w')` in an interpreter's code names it, and `mycheck.sh` does not."""
+    if os.path.basename(word) == name:
+        return True
+    return re.search(rf"(?<![\w.\-]){re.escape(name)}(?![\w\-])", word) is not None
+
+
+def _part_names_a_write(part: _Part, name: str, listed: frozenset[tuple[str, ...]]) -> bool:
+    """Whether one segment that mentions `name` could change it.
+
+    A segment on the closed read-only list only reads it (`cat`, `grep`, `head`, `wc`), and
+    running the script is not writing it: the script alone, a listed command, or an interpreter
+    given it as its first argument. Anything else that mentions the name withdraws it, an
+    interpreter's own code included, since the shell cannot say what that code does.
+    """
+    words = part.words
+    if not words or tuple(words) in listed:
+        return False
+    runs_it = os.path.basename(words[0]) == name or (
+        os.path.basename(words[0]) in _SCRIPT_RUNNERS
+        and len(words) > 1
+        and os.path.basename(words[1]) == name
+    )
+    if runs_it or not any(_names_word(w, name) for w in (*words[1:], *part.raw)):
+        return False
+    reads = words[0] in {"cd", "pushd"} or (
+        not part.hides_change and _reads_only(part.redirects, words) and not _is_check(words)
+    )
+    return not reads
+
+
+def _shell_names(
+    command: str, names: frozenset[str], listed: frozenset[tuple[str, ...]] = frozenset()
+) -> set[str]:
+    """Which of `names` a shell command could change: a redirect target, or any segment that
+    mentions the file and is not a read of it.
+
+    Matched by the file's name, so a copy in another folder withdraws it too. A command that will
+    not parse, or whose substitution changes something, withdraws every name its text mentions.
+    A read-only command (`cat`, `grep`, `head`, `wc`) naming the file does not. What this does not
+    see is a script or a variable that builds the path.
+    """
+    mentioned = {n for n in names if n in command}
+    if not mentioned:
         return set()
+    try:
+        parts = _call_parts_once(command)
+    except Exception:  # noqa: BLE001 - a command that will not parse is failed closed
+        return mentioned
     found: set[str] = set()
     for part in parts:
+        if part.hides_change:
+            found |= mentioned
         named = {os.path.basename(t) for t in _file_targets(part.redirects)}
         if part.words and os.path.basename(part.words[0]) in _NAMING_WRITERS:
             named |= {os.path.basename(w) for w in part.words[1:]}
         found |= names & named
+        found |= {n for n in mentioned if _part_names_a_write(part, n, listed)}
     return found
 
 
@@ -6070,18 +6133,18 @@ def _written_declaring_files(
     children: Sequence[list[dict[str, Any]]],
     *,
     also: frozenset[str] = frozenset(),
+    listed: frozenset[tuple[str, ...]] = frozenset(),
 ) -> frozenset[str]:
     """The declaring-file names, the reader's listing and each name in `also` that the session
     wrote, in any folder.
 
     By file name alone, so a write anywhere withdraws that kind: a session that wrote a
     `package.json` is not trusted to have left another one alone. A write tool names its file. A
-    shell command that names the listing anywhere in its text counts as writing it: a redirect, a
-    `cp`, a `tee`, a `sed -i` or an interpreter's argument all do, and a read of it withdraws the
-    listing too, which fails closed. What it does not see is a script or a variable that builds the
-    path. A shell write of a declaring file is decided by the work tree's contents, compared with
-    the base commit's (`project_scripts`); a shell write of a name in `also` is read from the
-    call's redirects and its `cp`, `mv`, `tee` and `chmod` arguments. Read through
+    shell command that mentions the listing or a listed script counts as writing it unless it only
+    reads it (`cat`, `grep`, `head`, `wc`) or runs the script (`_shell_names`): a redirect, a `cp`,
+    a `tee`, a `sed -i` or an interpreter's own code all do. What it does not see is a script or a
+    variable that builds the path. A shell write of a declaring file is decided by the work
+    tree's contents, compared with the base commit's (`project_scripts`). Read through
     `_claude_tool_uses`, the one place a tool call's input is read.
     """
     watched = frozenset(
@@ -6103,13 +6166,10 @@ def _written_declaring_files(
                 continue
             command = tool_input.get("command")
             if name == "Bash" and isinstance(command, str):
-                if reader_checks.FILENAME in command:
-                    found.add(reader_checks.FILENAME)
                 # Fails closed like the listing: a command that names a package-manager config
                 # file may have written it, and which script a runner starts follows from it.
                 found.update(n for n in project_scripts.STEERING_FILES if n in command)
-                if also:
-                    found |= _shell_names(command, also)
+                found |= _shell_names(command, also | {reader_checks.FILENAME}, listed)
     return frozenset(found)
 
 
@@ -6149,7 +6209,7 @@ def _declared_scripts(
         if (words := _listed_words(entry))
     )
     scripts = frozenset(os.path.basename(w[0]) for w in listed if "/" in w[0])
-    written = _written_declaring_files(parent, children, also=scripts) | prior_writes
+    written = _written_declaring_files(parent, children, also=scripts, listed=listed) | prior_writes
     # A listing the reader never made is not withdrawn, and the page does not say it was.
     wrote_listing = reader_checks.FILENAME in written and bool(listed)
     if loaded is None and not listed:

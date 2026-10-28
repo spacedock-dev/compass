@@ -7742,8 +7742,8 @@ A project's check is sometimes something no rule finds: a custom script, `bazel 
 - **Ageing is unchanged.** A listed command is still a command that is not read-only, so it ages the passes
   before it, and its own pass stands until a later change (item 4).
 - **A session that writes the file.** A recorded write by a write tool to a file of that name, in any folder,
-  or a shell command whose text names that file at all (a redirect, `cp`, `tee`, an interpreter's argument, or
-  a read, which fails closed), withdraws every listed command for that session, and the page says the session
+  or a shell command that names that file and is not a read of it (a redirect, `cp`, `tee`, an interpreter's
+  argument; see the 2026-10-28 amendment below), withdraws every listed command for that session, and the page says the session
   wrote the file where the reader lists checks, but only when the reader had listed something. The paged
   reader carries that fact across pages, so it agrees with a whole read. The residual is an indirect write: a
   script or a variable that builds the path.
@@ -7826,6 +7826,27 @@ This amendment replaces that comparison and hardens the read around it. Where th
 - **What `--diagnose` shows.** A file that is later repaired, or removed from the commit, stops being listed.
   Paths under the home folder are shown from it (`~/...`), and a Makefile or justfile over the line cap says it
   has too many lines instead of reading "over the byte cap".
+
+### Amended 2026-10-28 (owner): a read of a listed file is not a write
+
+The 2026-10-27 bullet above had any shell command that names the listing withdraw it, a read included, and
+named only a fixed list of writers for a listed script. A reader who looked at their own listing with `cat` was
+told the session had written it, and an interpreter that rewrote a listed script (`python3 -c`, `node -e`,
+`perl -pi -e`, `ruby -i`) was not seen. Where the two differ, this one wins.
+
+- **A read does not withdraw.** A command on DEC-23's closed read-only list that names the listing or a
+  listed script (`cat`, `grep`, `rg`, `head`, `less`, `wc`, `ls`) is a read, and the page does not say the
+  session wrote the file. A redirect into the file still makes it a write.
+- **Any other command that names the file does.** Whatever is not on that list and mentions the file or the
+  script by name, as a word or inside a quoted string (an interpreter's own code), counts as writing it,
+  since the shell cannot say what that code does. Running a listed script is not writing it: the script
+  alone, a listed command, or an interpreter given the script as its first argument. A command that will not
+  parse, or whose substitution changes something, withdraws every listed file its text mentions.
+- **The residual is unchanged.** A write that builds the path indirectly, through a script or a variable, is
+  not seen.
+- **Pages accumulate.** A page of the paged reader keeps every listed-file write an earlier page saw, also
+  where the page itself lists nothing, so the cursor never forgets one.
+- **One parse per call.** A Bash call is parsed once and the segments reused by the scan for these names.
 
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
