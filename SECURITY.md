@@ -771,14 +771,17 @@ A reader can list commands that are checks for a project, in one file in the Com
 nothing is run to read it. The agent can write files in a repository, and a listing makes a command count as
 evidence, so a `.compass` folder inside a repository is never read. A recorded write by the session to a file of
 that name withdraws the listing for that session, and the page says so. So does a shell command that names the
-file and is not only a read of it: a redirect, a `cp`, a `tee` or an interpreter's code. A `cat`, `grep`, `head`
-or `wc` of it does not, and neither does running a listed script. The same holds for a listed script. What this does not see is a write that builds the path indirectly, through a script or a
-variable. A listed script named by a relative path counts only from the project's root and only when the
-session did not write it. An entry that is a shell builtin, cannot fail, only reads, writes files or is not one
-plain command never counts, so a listing cannot turn `echo ok` into a pass. Nothing read from the file leaves
-the machine; the session's own command line is published as any check's is.
-[The ruling](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-reader-may-list-a-projects-checks)
-holds the rest.
+file and is not only a read of it: a redirect, a `cp`, a `tee`, or an interpreter's code, including code sent
+to it through a heredoc, a here-string or a pipe. A `cat`, `grep`, `head` or `wc` of it does not, nor does a
+pure viewer such as `jq`, and neither does running a listed script. A listed script follows the same rule.
+What this does not see is a write that builds the path indirectly, through a script or a variable. A listed
+script named by a relative path counts only from the project's root and only when the session did not write
+it. An entry that is a shell builtin, cannot fail, only reads, writes files or is not one plain command never
+counts, so a listing cannot turn `echo ok` into a pass. Nothing read from the file leaves the machine; the
+session's own command line is published as any check's is.
+The rulings, [the listing](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-reader-may-list-a-projects-checks)
+and [what counts as a write](docs/design-reading-a-session.md#amended-2026-10-28-owner-a-read-of-a-listed-file-is-not-a-write),
+hold the rest.
 
 ## Reaching a session's terminal (the focus command)
 

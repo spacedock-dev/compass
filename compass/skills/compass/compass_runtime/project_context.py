@@ -6056,7 +6056,7 @@ class _CheckScan(NamedTuple):
 
 # Programs whose arguments name the files they change, for a listed script's own name.
 _NAMING_WRITERS = frozenset(
-    {"cp", "mv", "tee", "chmod", "install", "ln", "sed", "dd", "rsync", "touch", "truncate"}
+    {"cp", "mv", "tee", "chmod", "install", "ln", "dd", "rsync", "touch", "truncate"}
 )
 
 
@@ -6085,17 +6085,97 @@ def _part_names_a_write(part: _Part, name: str, listed: frozenset[tuple[str, ...
     words = part.words
     if not words or tuple(words) in listed:
         return False
-    runs_it = os.path.basename(words[0]) == name or (
-        os.path.basename(words[0]) in _SCRIPT_RUNNERS
-        and len(words) > 1
-        and os.path.basename(words[1]) == name
-    )
-    if runs_it or not any(_names_word(w, name) for w in (*words[1:], *part.raw)):
+    if _runs_script(words, name) or not any(_names_word(w, name) for w in (*words[1:], *part.raw)):
         return False
     reads = words[0] in {"cd", "pushd"} or (
-        not part.hides_change and _reads_only(part.redirects, words) and not _is_check(words)
+        not part.hides_change
+        and (
+            (_reads_only(part.redirects, words) and not _is_check(words))
+            or _views_only(part.redirects, words)
+        )
     )
     return not reads
+
+
+_SHELL_RUNNERS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
+# Viewers outside the closed read-only list that only print or check a file. Kept here, not in
+# that list, because the list also decides which commands are timed as checks.
+_VIEWERS = frozenset({"jq", "bat", "diff", "nl", "shellcheck"})
+
+
+def _runs_script(words: list[str], name: str) -> bool:
+    """Whether the segment runs the file `name` rather than editing it: the script itself, or an
+    interpreter given it as its first operand. A shell may carry options that cannot take code
+    (`bash -x check.sh`); any other interpreter's option may (`python3 -c`). `source` and `.`
+    run it too."""
+    program = os.path.basename(words[0])
+    if program == name:
+        return True
+    rest = words[1:]
+    if program in _SHELL_RUNNERS:
+        while rest and rest[0].startswith("-") and rest[0] != "--" and "c" not in rest[0]:
+            rest = rest[1:]
+    elif program not in _SCRIPT_RUNNERS and words[0] not in {"source", "."}:
+        return False
+    return bool(rest) and os.path.basename(rest[0]) == name
+
+
+def _views_only(redirects: list[_Redirect], words: list[str]) -> bool:
+    """A pure viewer, or an editor-shaped one that was not asked to edit in place."""
+    if _writes_a_file(redirects):
+        return False
+    program = words[0]
+    if program in _VIEWERS or words[:2] == ["git", "blame"]:
+        return True
+    if program == "sed":
+        # `-i` edits in place and a `w FILE` command writes one; neither is a view.
+        return not any(
+            w.startswith("--in-place")
+            or (w.startswith("-") and not w.startswith("--") and "i" in w)
+            or re.search(r"(?:^|[\s;{}/])w\s*\S", w) is not None
+            for w in words[1:]
+        )
+    if program == "awk":
+        return "inplace" not in words and not any(w.startswith("inplace") for w in words)
+    return False
+
+
+_STDIN_OPERATORS = ("<<", "<<-", "<<<")
+
+
+def _stdin_text_withdraws(
+    parts: Sequence[_Part], name: str, listed: frozenset[tuple[str, ...]]
+) -> bool:
+    """Whether text that mentions `name` could reach a program that executes it, through stdin.
+
+    The body of a heredoc and a here-string are not words of any segment, and a pipe carries
+    an earlier segment's words into the next one, so the per-segment pass cannot see
+    `python3 <<'EOF'` with `open('check.sh', 'w')` in the body. A reader on the closed list
+    (`cat <<EOF`, `wc -l`) takes the text as data and does not withdraw it.
+    """
+    for i, part in enumerate(parts):
+        words = part.words
+        if not words or tuple(words) in listed or words[0] in {"cd", "pushd"}:
+            continue
+        if _runs_script(words, name):
+            continue
+        if not part.hides_change and (
+            _reads_only(part.redirects, words) or _views_only(part.redirects, words)
+        ):
+            continue
+        if any(r.operator.endswith(_STDIN_OPERATORS) for r in part.redirects):
+            return True
+        j = i - 1
+        while j >= 0 and parts[j].joiner.startswith("|"):
+            feeder = parts[j]
+            if (
+                feeder.words
+                and not _runs_script(feeder.words, name)
+                and any(_names_word(w, name) for w in (*feeder.words, *feeder.raw))
+            ):
+                return True
+            j -= 1
+    return False
 
 
 def _shell_names(
@@ -6125,6 +6205,7 @@ def _shell_names(
             named |= {os.path.basename(w) for w in part.words[1:]}
         found |= names & named
         found |= {n for n in mentioned if _part_names_a_write(part, n, listed)}
+    found |= {n for n in mentioned - found if _stdin_text_withdraws(parts, n, listed)}
     return found
 
 

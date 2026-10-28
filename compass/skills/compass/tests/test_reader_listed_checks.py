@@ -521,3 +521,64 @@ class APagedReadKeepsAnEarlierPagesListingWrite(ReaderChecksTestCase):
             )
         assert second.snapshot is not None
         self.assertEqual(frozenset({reader_checks.FILENAME}), second.snapshot.cursor.listing_writes)
+
+
+class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTestCase):
+    NAMES = frozenset({"check.sh", "compass-project-checks.json"})
+    LISTED = frozenset({("./check.sh",)})
+
+    def names(self, command: str) -> set[str]:
+        return project_context._shell_names(command, self.NAMES, self.LISTED)
+
+    def test_an_interpreter_reading_the_name_from_stdin_withdraws_it(self) -> None:
+        for name in ("check.sh", "compass-project-checks.json"):
+            for command in (
+                f"python3 <<'EOF'\nopen('{name}', 'w').write('x')\nEOF",
+                f"python3 - <<'PY'\nopen('{name}', 'w')\nPY",
+                f"node <<'EOF'\nrequire('fs').writeFileSync('{name}', 'x')\nEOF",
+                f"bash <<'EOF'\necho x > {name}\nEOF",
+                f"python3 <<< \"open('{name}', 'w')\"",
+                f"echo \"open('{name}', 'w')\" | python3",
+            ):
+                with self.subTest(command=command):
+                    self.assertEqual(self.names(command), {name})
+
+    def test_a_reader_given_the_text_does_not_withdraw_it(self) -> None:
+        for command in (
+            "cat <<EOF\nsee check.sh\nEOF",
+            "grep x <<< 'check.sh'",
+            "cat check.sh | wc -l",
+            "./check.sh | tee out.log",
+            "python3 ./check.sh <<< 'input'",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_a_viewer_or_a_run_with_an_option_is_not_a_write(self) -> None:
+        for command in (
+            "jq . compass-project-checks.json",
+            "sed -n 1p check.sh",
+            "awk '1' check.sh",
+            "bat check.sh",
+            "diff check.sh other.sh",
+            "shellcheck check.sh",
+            "git blame check.sh",
+            "bash -n check.sh",
+            "bash -x check.sh",
+            "bash -e ./check.sh",
+            "source check.sh",
+            ". ./check.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_an_editing_form_of_the_same_programs_still_withdraws_it(self) -> None:
+        for command in (
+            "sed -i 's/a/b/' check.sh",
+            "sed --in-place s/a/b/ check.sh",
+            "bash -c 'echo x > check.sh'",
+            "bash -xc 'echo x > check.sh'",
+            "awk -i inplace '1' check.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), {"check.sh"})
