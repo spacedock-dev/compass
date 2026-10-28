@@ -21,6 +21,7 @@
 @source '../intent/PromptSelect.tsx';
 @source '../sample/**/*.{ts,tsx}';
 @source '../shell/Header.tsx';
+@source '../settings/**/*.{ts,tsx}';
 @source '../controls/Disclosure.tsx';
 @source '../drift/{CitationLink,CitedText,DriftStamp,ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore,SteerBack,DriftBody}.tsx';
 @source not '../**/*.test.*';

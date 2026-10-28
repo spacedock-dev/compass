@@ -113,6 +113,42 @@ describe('only GET /api/data reads the revision header', () => {
   });
 });
 
+describe('/api/settings', () => {
+  const body = {
+    values: { analyze_listed_checks: 200 },
+    limits: [{ key: 'analyze_listed_checks', default: 200, minimum: 12, maximum: 2000 }],
+  };
+
+  it('reads the settings in force with no query and no revision', async () => {
+    const { fetch, calls } = recorder(() => json(body));
+    const result = await createApiClient({ fetch }).getSettings();
+    expect(calls.map((call) => [call.url, call.init?.method])).toEqual([
+      ['/api/settings', undefined],
+    ]);
+    expect(result).toEqual({ kind: 'ok', status: 200, body, revision: '' });
+  });
+
+  it('posts the changed keys as JSON once, nulls included, and keeps a refusal as a refusal', async () => {
+    const { fetch, calls } = recorder(
+      () => new Response('<html>outside its bounds</html>', { status: 400 }),
+    );
+    const result = await createApiClient({ fetch }).postSettings({
+      values: { analyze_listed_checks: 300, analyze_record_events: null },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('/api/settings');
+    expect(calls[0]?.init?.method).toBe('POST');
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      values: { analyze_listed_checks: 300, analyze_record_events: null },
+    });
+    expect(result).toEqual({
+      kind: 'http-error',
+      status: 400,
+      body: '<html>outside its bounds</html>',
+    });
+  });
+});
+
 describe('GET /api/project-context', () => {
   it('encodes the stable project key and the exact session key', async () => {
     const { fetch, calls } = recorder(() => json({}));
@@ -323,6 +359,7 @@ describe('no adapter ever retries an action', () => {
       postSummaryDelete: (c) => c.postSummaryDelete(identity),
       postLiveMonitor: (c) =>
         c.postLiveMonitor({ ...identity, action: 'beat', tab_id: 't', visible: true }),
+      postSettings: (c) => c.postSettings({ values: { analyze_listed_checks: null } }),
       focus: (c) => c.focus({ identity, capability: 'cap' }),
     };
 

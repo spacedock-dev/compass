@@ -25,6 +25,8 @@ import type {
   UnaskedGrantRequest,
   SessionIdentity,
   SessionRecord,
+  SettingsBody,
+  SettingsRequest,
   SummaryReceipt,
   SummaryRequest,
   TripwireReceipt,
@@ -189,6 +191,13 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
 
     getAnnotations: (options: { readonly signal?: AbortSignal }) =>
       get<AnnotationsBody>('/api/annotations', options.signal),
+
+    /* The Settings screen's reading limits. A write is all or nothing and answers with what is now in force,
+       so the screen redraws from that, not from what it sent. */
+    getSettings: (options: { readonly signal?: AbortSignal } = {}) =>
+      get<SettingsBody>('/api/settings', options.signal),
+    postSettings: (body: SettingsRequest, signal?: AbortSignal) =>
+      post<SettingsBody>('/api/settings', body, signal),
 
     getInteractionOrigin: (identity: SessionIdentity, signal?: AbortSignal) =>
       get<InteractionOrigin>(

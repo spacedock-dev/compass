@@ -20,6 +20,7 @@ import { useLiveMonitorLease } from '../intent/liveMonitor';
 import { SampleSession } from '../sample/SampleSession';
 import { isSampleRoute } from '../sample/ids';
 import { SessionDetail, SessionsView } from '../sessions';
+import { SettingsView } from '../settings';
 import { PROJECT_SLOTS, ProjectDetail, ProjectsView } from '../project';
 import type { Row } from '../observed';
 
@@ -105,6 +106,8 @@ function TopLevelView({ route }: { readonly route: TopLevelRoute }) {
   /* The Intent log states its own absences (annotations off, store unreadable, still reading), so it
      draws before the first payload as well: it names what it is waiting for rather than a blank. */
   if (route.view === 'intent') return <IntentLog />;
+  /* Settings reads its own route, not the board, so it draws whether or not a payload has arrived. */
+  if (route.view === 'settings') return <SettingsView />;
   /* Attention states its own absences as well: before the first board it names what it waits for, and a
      board that published no session collection says that rather than drawing a queue of zeros. */
   return <AttentionView />;

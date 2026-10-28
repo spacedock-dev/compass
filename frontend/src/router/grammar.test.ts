@@ -53,6 +53,7 @@ describe('every released fragment parses to its route and prints back canonicall
     },
     { name: 'projects', fragment: '#n=projects', route: top('projects'), canonical: '#n=projects' },
     { name: 'intent', fragment: '#n=intent', route: top('intent'), canonical: '#n=intent' },
+    { name: 'settings', fragment: '#n=settings', route: top('settings'), canonical: '#n=settings' },
     {
       name: 'a top-level view carries no suffix',
       fragment: '#n=attention&from=sessions',
