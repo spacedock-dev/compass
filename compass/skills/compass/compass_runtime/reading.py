@@ -4363,9 +4363,12 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
         raw_detail, records.explanation_values(masked_values), prose=True
     )
     # A press that dropped masked values past its bound cannot say the explanation is clear of
-    # them, so the prose is not stored: a missing sentence is cheaper than a leaked value.
-    detail = "" if scrub_partial else records.safe_text(scrubbed, detail_cap_chars)
-    if detail and len(scrubbed) > len(detail):
+    # them, so the prose is not stored: a fixed sentence saying so stands in, so the page shows
+    # why there is no reason rather than an empty one, and a leaked value is never the cost.
+    detail = (
+        SCRUB_WITHHELD_DETAIL if scrub_partial else records.safe_text(scrubbed, detail_cap_chars)
+    )
+    if not scrub_partial and detail and len(scrubbed) > len(detail):
         # A cut sentence loses its qualifier, and the qualifier is always last.
         # Say so rather than publishing half a claim as a whole one.
         detail = f"{detail}…"
@@ -5354,6 +5357,12 @@ def _numbered(selection: object) -> dict[int, LedgerEntry]:
         msg = "resolve needs the Selection build_prompt returned, not a bare sequence"
         raise TypeError(msg)
     return selection.by_index()
+
+
+# What stands in for an explanation withheld because the press masked more values than it keeps.
+SCRUB_WITHHELD_DETAIL = (
+    "The explanation is withheld because too many values were masked to scrub it."
+)
 
 
 def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolve_one`

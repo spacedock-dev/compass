@@ -794,20 +794,24 @@ _MASK_LDAP_PROGRAMS: Final = (
 )  # fmt: skip
 _MASK_COMMAND_FLAGS: Final = {
     "redis-cli": frozenset({"-a", "--pass"}),
-    "aws": frozenset({"--value"}),
     "ssh-keygen": frozenset({"-N"}),
     **{name: frozenset({"-w"}) for name in _MASK_LDAP_PROGRAMS},
 }
 _MASK_COMMAND_WORD_FORMS: Final = {
     "redis-cli": (re.compile(r"^(-a).+$", re.DOTALL), re.compile(r"^(--pass=).+$", re.DOTALL)),
-    "aws": (re.compile(r"^(--value=).+$", re.DOTALL),),
     "ssh-keygen": (re.compile(r"^(-N).+$", re.DOTALL),),
     **{name: (re.compile(r"^(-w).+$", re.DOTALL),) for name in _MASK_LDAP_PROGRAMS},
 }
 # `gh secret set NAME --body VALUE`: the body is a secret only under `gh secret`, since
 # `gh pr create --body` is a sentence a reader wants to see.
 _MASK_GH_SECRET_FLAGS: Final = frozenset({"--body", "-b"})
-_MASK_GH_SECRET_FORM: Final = re.compile(r"^(--body=).+$", re.DOTALL)
+_MASK_GH_SECRET_FORM: Final = re.compile(r"^(--body=|-b=?).+$", re.DOTALL)
+# `aws ssm put-parameter --value V`: `--value` is a secret only under that subcommand, since
+# `aws cloudwatch put-metric-data --value 1` is a number a reader wants to see.
+_MASK_AWS_VALUE_FLAGS: Final = frozenset({"--value"})
+_MASK_AWS_VALUE_FORM: Final = re.compile(r"^(--value=).+$", re.DOTALL)
+# The openssl flags that take a `pass:value` source.
+_MASK_PASS_FLAGS: Final = frozenset({"-pass", "-passin", "-passout"})
 # The flags that take a pair, `--from-literal key=value`: the key stays and the value goes.
 _MASK_PAIR_FLAGS: Final = frozenset({"--from-literal"})
 _MASK_AUTH_WORDS: Final = frozenset({"bearer", "basic", "token", "digest", "negotiate"})
@@ -940,7 +944,6 @@ def _program(words: list[str]) -> int:
 # Programs that run a script handed to them on the command line, with the flag that carries it.
 # The script is code the reader wrote or the model did, and a literal credential inside it has no
 # shape a mask could find, so a line that lists the command shows it as one opaque word.
-_INLINE_PYTHON: Final = re.compile(r"^python(?:\d+(?:\.\d+)?)?$")
 _INLINE_SCRIPT_FLAG: Final = {
     "python": re.compile(r"^-[A-Za-z]*c$"),
     "node": re.compile(r"^(?:-[ep]|--eval|--print|-pe)$"),
@@ -954,10 +957,38 @@ _INLINE_SCRIPT_JOINED: Final = {
     "ruby": re.compile(r"^(-e).+$", re.DOTALL),
     "perl": re.compile(r"^(-[eE]).+$", re.DOTALL),
 }
-# Interpreter flags that take a word of their own, so it is not read as the script file.
-_INLINE_VALUE_FLAGS: Final = frozenset(
-    {"-W", "-X", "-r", "-I", "-C", "-F", "-i", "--require", "--import", "--loader", "-M"}
+# Flags that take a word of their own, so it is not read as the script file. One table per
+# interpreter, because `-I` and `-i` take no value in python, node or perl and one shared set let
+# them swallow the `-c` after them and print the script whole. An unknown flag takes no value: at
+# worst it exposes a following flag, never the script.
+_INLINE_VALUE_FLAGS: Final = {
+    "python": frozenset({"-W", "-X"}),
+    "node": frozenset(
+        {"-r", "--require", "--import", "--loader", "--experimental-loader", "--env-file",
+         "--max-old-space-size", "--conditions", "-C", "--stack-size"}
+    ),
+    "ruby": frozenset({"-r", "-I", "-C"}),
+    "perl": frozenset({"-I", "-M", "-m"}),
+}  # fmt: skip
+_INLINE_PROGRAMS: Final = re.compile(
+    r"^(?:(?P<python>(?:python|pypy)(?:\d+(?:\.\d+)?)?)|(?P<node>node|nodejs)|(?P<ruby>ruby)"
+    r"|(?P<perl>perl))$"
 )
+
+
+def _inline_start(words: list[str]) -> tuple[int, str]:
+    """The first word that names a script interpreter, with its kind, or (-1, "").
+
+    Scanned rather than read from `_program`, so `docker exec c python3 -c ...`, `timeout 10
+    python3 ...` and `uv run --python 3.12 python -c ...` are found behind their wrappers. A
+    word that only looks like one (`echo python`) hides a following flag's value on a tier 3
+    line, which is the safe side to err on.
+    """
+    for at, word in enumerate(words):
+        match = _INLINE_PROGRAMS.match(os.path.basename(word))
+        if match is not None:
+            return at, match.lastgroup or ""
+    return -1, ""
 
 
 def inline_script_words(words: list[str]) -> dict[int, str]:
@@ -967,13 +998,10 @@ def inline_script_words(words: list[str]) -> dict[int, str]:
     Read only before the script file or `-m` module, so `python -m pytest -c conf.ini` and
     `node deploy.js -e prod` name a script's own flags and are left alone.
     """
-    start = _program(words)
-    if start >= len(words):
-        return {}
-    base = os.path.basename(words[start])
-    kind = "python" if _INLINE_PYTHON.match(base) else base if base in _INLINE_SCRIPT_FLAG else ""
+    start, kind = _inline_start(words)
     if not kind:
         return {}
+    value_flags = _INLINE_VALUE_FLAGS[kind]
     found: dict[int, str] = {}
     index = start + 1
     while index < len(words):
@@ -988,7 +1016,7 @@ def inline_script_words(words: list[str]) -> dict[int, str]:
         joined = _INLINE_SCRIPT_JOINED[kind].match(word)
         if joined is not None:
             found[index] = joined.group(1)
-        index += 2 if word in _INLINE_VALUE_FLAGS else 1
+        index += 2 if word in value_flags else 1
     return found
 
 
@@ -1052,11 +1080,16 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
     user_flags = _MASK_USER_FLAGS | {"-a"} if program in _MASK_HTTPIE_PROGRAMS else _MASK_USER_FLAGS
     word_forms = _MASK_WORD_FORMS + (_MASK_HTTP_WORD_FORMS if http else ())
     word_forms += _MASK_COMMAND_WORD_FORMS.get(program, ())
-    if not prose:
+    if not prose and (program == "openssl" or _MASK_PASS_FLAGS.intersection(words)):
         word_forms += _MASK_PASS_PREFIX
     if program == "gh" and "secret" in words[start + 1 :]:
         flags |= _MASK_GH_SECRET_FLAGS
         word_forms += (_MASK_GH_SECRET_FORM,)
+    if program == "aws":
+        subcommand = [words[i] for i in _plain_words(words, start, program, skip_assignments=False)]
+        if subcommand[:2] == ["ssm", "put-parameter"]:
+            flags |= _MASK_AWS_VALUE_FLAGS
+            word_forms += (_MASK_AWS_VALUE_FORM,)
     positional = _positional_credential(words, start, program)
     masked: list[str] = []
     mask_next = user_next = header_owed = scheme_next = plugin_flag = pair_next = False
@@ -2254,12 +2287,14 @@ def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> st
     if not spellings:
         return text
     plain, joined_flag, userinfo = _scrub_patterns(tuple(sorted(spellings)), prose)
-    text = plain.sub(_SECRET_MARKER, text)
+    # Userinfo first: a plain pass would let a short spelling match inside `user:Fake99!@` in
+    # prose and leave the `!` of the longer one, where the one-at-a-time loop took the longest.
+    text = userinfo.sub(lambda match: match[1] + _SECRET_MARKER + match[2], text)
     text = joined_flag.sub(lambda match: match[1] + _SECRET_MARKER, text)
-    return userinfo.sub(lambda match: match[1] + _SECRET_MARKER + match[2], text)
+    return plain.sub(_SECRET_MARKER, text)
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=2)
 def _scrub_patterns(
     spellings: tuple[str, ...], prose: bool
 ) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str]]:
@@ -2269,7 +2304,9 @@ def _scrub_patterns(
     in a press. Longest first, so a value that is a prefix of another leaves no tail: the
     alternation takes the first branch that fits and the trailing boundary rejects a short
     branch that stops inside a longer word. The cache is keyed by the spellings, since a press
-    scrubs several explanations and tails against the same set.
+    scrubs several explanations and tails against the same set; two entries, because it holds
+    real masked values. The userinfo pattern starts only at the head of a run, as
+    `_MASK_USERINFO` does, or a long word rescans its rest at every offset.
     """
     boundary = r"[\w./:@+\-]"
     after = r"(?![\w@+\-]|[./:][\w/])" if prose else rf"(?!{boundary})"
@@ -2280,5 +2317,7 @@ def _scrub_patterns(
     return (
         re.compile(rf"{before}(?:{alternation}){after}"),
         re.compile(rf"(?<!{boundary})(-[pP])(?:{alternation}){after}"),
-        re.compile(rf"((?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"),
+        re.compile(
+            rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
+        ),
     )

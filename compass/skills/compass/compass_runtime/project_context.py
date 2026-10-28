@@ -2068,7 +2068,8 @@ TOOL_REPORT_PATH_CHARS = 240
 # Bounds the set of masked values a press carries. Past it the oldest values go and the newest stay,
 # since a value the agent quoted lately is the likelier one in an explanation, and the press says
 # the scrub is partial (`PressChecks.masked_values_partial`). The scrub is one compiled alternation,
-# so 4,096 values cost tens of milliseconds where 512 once cost 0.18 s.
+# so the first scrub of a press compiles it (about 0.04 s at 512 values, about 0.3 s at 4,096) and
+# later scrubs of the same set reuse it (a few milliseconds); 512 values once cost 0.45 s each time.
 MASKED_VALUES_MAX = 4096
 _SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})

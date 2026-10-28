@@ -3464,22 +3464,29 @@ Three changes, none changing what a check records.
 
 - **More forms.** `records.mask_words` also masks the value after `--secret-string`, `--passphrase`,
   `--pass`, `--pwd` and `--credentials` (joined by `=` or in the next word), kubectl's `--from-literal`
-  value (the key stays), `--value` for `aws`, npm's `_authToken` line, `--body` and `-b` under `gh secret`
-  only, `-w` for the `ldap*` tools, `-N` for `ssh-keygen`, an openssl `pass:` prefix, and the token of
+  value (the key stays), `--value` for `aws ssm put-parameter`, npm's `_authToken` line, `--body` and `-b` under `gh secret`
+  only, `-w` for the `ldap*` tools, `-N` for `ssh-keygen`, an openssl `pass:` prefix (on an openssl line or after `-pass`, `-passin` or `-passout`), and the token of
   `cargo login`. Words that only look like these stay readable: `--max-tokens=4096`, `docker run -u
   1000:1000`, `--pass-with-no-tests`, `--password-store=basic`, `pytest -p no:cacheprovider`, `gh pr create
   --body`. The `user:password@` pattern was quadratic in the length of a word and is now linear: it starts
   a try only at the head of a run of user characters, and reads only the text up to the last `@`.
 - **Inline scripts.** On a line that lists a command that is not a check, the script argument of
-  `python -c`, `node -e`, `node --eval`, `ruby -e` and `perl -e` is one ellipsis. Code carries a literal
-  credential in no shape a mask can find. A script file or a `-m` module is not an inline script, so
-  `python -m pytest -c conf.ini` keeps its words. A check line keeps the rule it had.
+  `python -c`, `node -e`, `node --eval`, `ruby -e` and `perl -e` is one ellipsis, also behind a wrapper
+  (`docker exec`, `kubectl exec --`, `timeout`, `uv run`), because the interpreter is found by scanning
+  the words rather than by the wrapper's own grammar. Each interpreter has its own list of flags that
+  take a value, so `-I` and `-i`, which take none, never swallow the `-c` after them. Code carries a
+  literal credential in no shape a mask can find. A script file or a `-m` module is not an inline script,
+  so `python -m pytest -c conf.ini` keeps its words. A check line keeps the rule it had.
 - **One scrub pass.** `records.scrub_values` compiles one alternation per pattern over every spelling of
-  every value, longest first, and caches it by the set of spellings. It cost 0.18 s per call at 512
-  values and now costs a few milliseconds. The press's bound on masked values rose from 512 to 4,096 and
-  keeps the newest values; dropping any marks the press partial, and a partial press stores no
-  explanation (`PressChecks.masked_values_partial`, `ToolOutput.masked_values_partial`) rather than
-  publish one it cannot say is scrubbed. What was rejected: keeping the first 512 and dropping later
+  every value, longest first, applies the userinfo pattern before the plain one so the longest spelling
+  wins inside `user:password@`, and caches the result by the set of spellings (two entries, held in
+  memory for the process). Compiling cost 0.45 s per call at 512 values and now costs about 0.04 s for
+  the first scrub of a press and a few milliseconds for the later ones; 4,096 values take about 0.3 s
+  the first time. The press's bound on masked values rose from 512 to 4,096 and keeps the newest values;
+  dropping any marks the press partial, and a partial press stores a fixed sentence in place of the
+  explanation (`reading.SCRUB_WITHHELD_DETAIL`; `PressChecks.masked_values_partial`,
+  `ToolOutput.masked_values_partial`) rather than publish one it cannot say is scrubbed.
+  What was rejected: keeping the first 512 and dropping later
   ones without a word, which is what the old bound did.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy

@@ -9,6 +9,7 @@ the vendor rule. Every command and path below is synthetic.
 from __future__ import annotations
 
 import json
+import shlex
 import time
 import unittest
 from types import SimpleNamespace
@@ -22,6 +23,7 @@ from compass_runtime import (
     project_context,
     reading,
     reading_route,
+    records,
 )
 
 from . import test_levels as lv
@@ -98,6 +100,38 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
         )
         self.assertNotIn("FakePass99", " ".join(titles))
 
+    def test_an_interpreter_flag_that_takes_no_value_does_not_expose_the_script(self) -> None:
+        for command in (
+            "python3 -I -c 'login(\"FakePassNine99xyz\")'",
+            "python -i -c 'login(\"FakePassNine99xyz\")'",
+            "perl -i -pe 's/a/FakePassNine99xyz/' f",
+            "node -i -e 'login(\"FakePassNine99xyz\")'",
+            "node --env-file cfg.txt -e 'login(\"FakePassNine99xyz\")'",
+        ):
+            with self.subTest(command=command):
+                line = project_context._command_line(shlex.split(command))
+                self.assertNotIn("FakePassNine99xyz", line)
+                self.assertIn("…", line)
+
+    def test_a_module_run_keeps_its_own_c_flag_readable(self) -> None:
+        self.assertEqual(
+            {}, records.inline_script_words(shlex.split("python -m pytest -c conf.ini"))
+        )
+
+    def test_an_inline_script_is_hidden_behind_a_wrapper_program(self) -> None:
+        for command in (
+            "docker exec c python3 -c 'x=\"FakePassNine99xyz\"'",
+            "kubectl exec p -- python3 -c 'x=\"FakePassNine99xyz\"'",
+            "timeout 10 python3 -c 'x=\"FakePassNine99xyz\"'",
+            "uv run --with requests python -c 'x=\"FakePassNine99xyz\"'",
+            "uv run --python 3.12 python -c 'x=\"FakePassNine99xyz\"'",
+            "nodejs -e 'x=\"FakePassNine99xyz\"'",
+        ):
+            with self.subTest(command=command):
+                line = project_context._command_line(shlex.split(command))
+                self.assertNotIn("FakePassNine99xyz", line)
+                self.assertIn("…", line)
+
     def test_a_script_file_or_module_argument_is_not_an_inline_script(self) -> None:
         for command in (
             "python deploy.py -c prod",
@@ -107,7 +141,11 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
             self.session.bash(command, "done", is_error=False)
         self.assertEqual(
             sorted(
-                ["python deploy.py -c prod", "python -m deploy -c prod", "node deploy.js -e prod"]
+                [
+                    "python deploy.py -c prod",
+                    "python -m deploy -c prod",
+                    "node deploy.js -e prod",
+                ]
             ),
             sorted(event["title"] for event in self.commands()),
         )

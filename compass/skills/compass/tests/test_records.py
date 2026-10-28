@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import random
 import re
 import shlex
 import time
@@ -1077,6 +1078,58 @@ class ScrubManyValuesTest(unittest.TestCase):
                         records.scrub_values(text, self.VALUES, prose=prose),
                     )
 
+    def test_prefix_related_values_in_userinfo_position_match_the_one_at_a_time_scrub(self) -> None:
+        for values, text in (
+            (["Fake99", "Fake99!"], "connect with deploy:Fake99!@db.example.com now"),
+            (["d7EA3", "d7EA3."], "u:d7EA3.@h"),
+            (["-BB2/", "-BB2/:-1"], "user:-BB2/:-1@host"),
+            (["FakeAA11", "FakeAA11-x"], "postgres://u:FakeAA11-x@h/db and u:FakeAA11@h"),
+        ):
+            for prose in (False, True):
+                with self.subTest(text=text, prose=prose):
+                    self.assertEqual(
+                        _one_at_a_time_scrub(text, values, prose=prose),
+                        records.scrub_values(text, values, prose=prose),
+                    )
+
+    def test_a_seeded_random_corpus_agrees_with_the_one_at_a_time_scrub(self) -> None:
+        rng = random.Random(5001)
+        for _ in range(300):
+            values = ["".join(rng.choices("ab1!.-/", k=rng.randint(4, 6))) for _ in range(3)]
+            values.append(values[0] + rng.choice("!.-/:1"))
+            # Whole tokens set apart by spaces: two values touching each other is a different
+            # question, since the one-at-a-time loop re-reads its own marker.
+            text = " ".join(
+                rng.choice(
+                    (
+                        *values,
+                        "user:" + rng.choice(values) + "@h",
+                        "http://u:" + rng.choice(values) + "@h/x",
+                        "-p" + rng.choice(values),
+                        rng.choice(values) + ".",
+                        "(" + rng.choice(values) + ")",
+                        "x" + rng.choice(values),
+                        "word",
+                    )
+                )
+                for _ in range(rng.randint(2, 6))
+            )
+            for prose in (False, True):
+                with self.subTest(values=values, text=text, prose=prose):
+                    self.assertEqual(
+                        _one_at_a_time_scrub(text, values, prose=prose),
+                        records.scrub_values(text, values, prose=prose),
+                    )
+
+    def test_a_scrub_stays_linear_on_a_hundred_thousand_characters(self) -> None:
+        for text in ("a" * 100_000, "a:" * 50_000, "http://" + "a" * 100_000):
+            for values in (["FakePass99xyz"], [f"FakePass{i:03d}xyz" for i in range(200)]):
+                for prose in (False, True):
+                    with self.subTest(text=text[:8], count=len(values), prose=prose):
+                        start = time.monotonic()
+                        records.scrub_values(text, values, prose=prose)
+                        self.assertLess(time.monotonic() - start, 1.0)
+
     def test_a_value_that_prefixes_another_leaves_no_tail(self) -> None:
         out = records.scrub_values("a abcdef b", ["abcd", "abcdef"])
         self.assertEqual(f"a {records.SECRET_MARKER} b", out)
@@ -1092,11 +1145,13 @@ class ScrubManyValuesTest(unittest.TestCase):
         self.assertNotIn("FakeSecret", out)
         self.assertLess(elapsed, 0.25)
 
-    def test_the_first_scrub_of_512_values_is_not_a_second_long(self) -> None:
-        values = [f"FakeFirst{i:04d}Zq" for i in range(512)]
+    def test_a_cold_scrub_over_4096_values_compiles_in_under_a_second_and_a_half(self) -> None:
+        # Base took about 4 s on this input and the combined scrub about 0.35 s. Fresh values,
+        # so the pattern cache cannot answer for it.
+        values = [f"FakeCold{i:05d}Zqx" for i in range(4096)]
         start = time.monotonic()
-        records.scrub_values("ran with FakeFirst0003Zq", values)
-        self.assertLess(time.monotonic() - start, 0.25)
+        records.scrub_values("ran with FakeCold00003Zqx", values, prose=True)
+        self.assertLess(time.monotonic() - start, 1.5)
 
     def test_a_value_of_regex_syntax_is_matched_literally(self) -> None:
         out = records.scrub_values("x a.b*c+d(e z", ["a.b*c+d(e", "(((("])
@@ -1467,6 +1522,25 @@ class MoreSecretFormsTest(unittest.TestCase):
                 if "/app/db" in line:
                     self.assertIn("/app/db", masked)
         self.assertEqual("grep --value shown file", mask("grep --value shown file"))
+        for line in (
+            "aws cloudwatch put-metric-data --metric-name m --value 1",
+            "aws cloudwatch put-metric-data --metric-name m --value=1",
+        ):
+            self.assertEqual(line, mask(line))
+
+    def test_a_pass_prefix_is_a_value_only_where_openssl_takes_one(self) -> None:
+        words = ["git", "commit", "-m", "pass: ok"]
+        self.assertEqual(words, records.mask_words(words))
+        self.assertNotIn(self.VALUE, mask(f"openssl enc -pass pass:{self.VALUE}"))
+
+    def test_a_gh_secret_body_is_masked_in_its_joined_short_forms(self) -> None:
+        for line in (
+            f"gh secret set NAME -b{self.VALUE}",
+            f"gh secret set NAME -b={self.VALUE}",
+            f"gh secret set NAME --body={self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn(self.VALUE, mask(line))
 
     def test_an_npm_auth_token_line_is_masked_in_every_spelling(self) -> None:
         for line in (
@@ -1550,7 +1624,9 @@ class MoreSecretFormsTest(unittest.TestCase):
             ["openssl", "-passin", "pass:" + run],
             ["x", "--" + "a-" * 50_000 + "pass"],
             ["x", "//" + "_auth" * 20_000],
-            ["x", "pass:" * 20_000],
+            ["x", "-pass", "pass:" * 20_000],
+            ["x", "a" * 100_000 + "@"],
+            ["x", "a:" * 50_000 + "b@"],
         ):
             with self.subTest(word=words[-1][:12]):
                 start = time.monotonic()

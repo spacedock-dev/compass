@@ -4131,11 +4131,11 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
 
     def test_an_explanation_is_not_stored_when_the_press_dropped_masked_values(self) -> None:
         # The press kept the newest values and dropped older ones past its bound, so it cannot
-        # say the prose is clear of every value: the sentence is withheld rather than stored.
-        def resolve(partial: bool) -> str:
+        # say the prose is clear of every value: a fixed sentence says so in its place.
+        def resolve(partial: bool, result: str = reading.RESULT_DEPARTURE) -> str:
             criterion = reading.resolve(
                 reply(
-                    reading.RESULT_DEPARTURE,
+                    result,
                     goal_cites=(1,),
                     goal_detail="it typed FakeOldPass77 and renamed the wrong flag",
                 ),
@@ -4148,7 +4148,8 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
             )[reading.CONSTRAINT_GOAL]
             return str(criterion["detail"])
 
-        self.assertEqual("", resolve(True))
+        self.assertEqual(reading.SCRUB_WITHHELD_DETAIL, resolve(True))
+        self.assertEqual("", resolve(True, reading.RESULT_CONSISTENT))
         self.assertIn("renamed the wrong flag", resolve(False))
 
     def test_a_scrubbed_explanation_that_was_not_cut_has_no_ellipsis(self) -> None:
