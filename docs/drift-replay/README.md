@@ -733,3 +733,12 @@ attempts held. Thirty fresh readings and one availability retry fit the new 31-a
 allowance. The new cumulative ceilings are 247 shared and 67 native charges; older keys retain
 their ceilings. Fresh scope adjudication and checked transfer bind expectations before output.
 This preparation does not qualify the producer or resume the stopped seventh run.
+
+## Masked values, 2026-10-28
+
+The runtime hands each reading the values a shell call masked on its command line, and the reading
+scrubs a stored explanation with them. `drift_replay.py` now passes `press.masked_values` the same
+way, so an explanation a replay stores is scrubbed as a reader's would be. The values reach only
+that scrub: they are not in the prompt, so no frozen prompt byte, prompt digest, marks digest or
+stored result moves. The model's raw reply (`raw_verdict` in the local results) is kept as the model
+wrote it and is not scrubbed, as before; those results stay under `~/.compass`.
