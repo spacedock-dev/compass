@@ -2337,11 +2337,16 @@ def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> st
     }
     if not spellings:
         return text
-    patterns = _scrub_patterns(tuple(sorted(spellings)), prose)
-    # A marker never matches a value, so a second pass reads what the first left behind a
-    # marker: `V1:V2` in prose rejects V1 at the `:` until V2 is a marker, so each pass can free
-    # one more value of a chain. It stops when nothing changes; the cap bounds a long chain.
-    for _ in range(_SCRUB_PASSES):
+    text = _scrub_pass(text, _scrub_patterns(tuple(sorted(spellings)), prose))
+    # A later pass reads what the first left behind a marker: `V1:V2` in prose rejects V1 at
+    # the `:` until V2 is a marker, so each pass can free one more value of a chain. It stops
+    # when nothing changes; the cap bounds a long chain. A spelling the marker itself contains
+    # (a value `REDACTED`) is done after the first pass, or it would match inside every marker.
+    later = tuple(sorted(spelling for spelling in spellings if spelling not in _SECRET_MARKER))
+    if not later:
+        return text
+    patterns = _scrub_patterns(later, prose)
+    for _ in range(_SCRUB_PASSES - 1):
         scrubbed = _scrub_pass(text, patterns)
         if scrubbed == text:
             break

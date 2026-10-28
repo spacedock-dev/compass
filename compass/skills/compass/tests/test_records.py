@@ -1155,6 +1155,15 @@ class ScrubManyValuesTest(unittest.TestCase):
                         records.scrub_values(text, values, prose=prose),
                     )
 
+    def test_a_value_inside_the_marker_is_replaced_once(self) -> None:
+        # A later pass reads what an earlier one wrote, so a value the marker itself contains
+        # would match inside every marker and grow it until the pass cap.
+        for value in ("REDACTED", "EDACTED", "…REDACTED"):
+            for prose in (False, True):
+                with self.subTest(value=value, prose=prose):
+                    out = records.scrub_values(f"the token is {value} ok", [value], prose=prose)
+                    self.assertEqual(f"the token is {records.SECRET_MARKER} ok", out)
+
     def test_two_distinct_masked_values_touching_are_both_masked(self) -> None:
         for values, text in (
             (["FakeAAAA11", "FakeBBBB22"], "x FakeAAAA11FakeBBBB22 y"),
