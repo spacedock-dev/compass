@@ -436,6 +436,7 @@ class Lane:
             read_incomplete=press.read_incomplete,
             removals=press.removals,
             masked_values=press.masked_values,
+            masked_values_partial=press.masked_values_partial,
         )
 
     def _announce(

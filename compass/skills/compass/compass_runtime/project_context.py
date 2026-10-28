@@ -2065,8 +2065,11 @@ TOOL_REPORT_LINE_CHARS = 120
 # The existing ledger cap (`reading.LEDGER_SUMMARY_CAP_CHARS`), which item 5 names.
 TOOL_REPORT_TAIL_CHARS = 180
 TOOL_REPORT_PATH_CHARS = 240
-# Bounds the set of masked values a press carries; a session past it stops adding.
-MASKED_VALUES_MAX = 512
+# Bounds the set of masked values a press carries. Past it the oldest values go and the newest stay,
+# since a value the agent quoted lately is the likelier one in an explanation, and the press says
+# the scrub is partial (`PressChecks.masked_values_partial`). The scrub is one compiled alternation,
+# so 4,096 values cost tens of milliseconds where 512 once cost 0.18 s.
+MASKED_VALUES_MAX = 4096
 _SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
@@ -4308,9 +4311,14 @@ def _readable_word(word: str) -> bool:
 def _command_line(words: list[str]) -> str:
     """A tier 3 command's line: masked as a check's is, an unreadable quoted word hidden whole."""
     masked = records.mask_words(words, pytest=_is_pytest(words))
+    scripts = records.inline_script_words(words)
     shown = [
-        _OPAQUE_WORD if re.search(r"\s", word) and not _readable_word(word) else word
-        for word in masked
+        scripts[at] + _OPAQUE_WORD
+        if at in scripts
+        else _OPAQUE_WORD
+        if re.search(r"\s", word) and not _readable_word(word)
+        else word
+        for at, word in enumerate(masked)
     ]
     line = " ".join(shlex.quote(word) if re.search(r"\s", word) else word for word in shown)
     bounded = records.redact_clip(line, TOOL_REPORT_LINE_CHARS)
@@ -4792,8 +4800,10 @@ class _ToolReportTally:
         self.skills: dict[str, dict[str, Any]] = {}
         # The latest delete or move away of each path, for the press alone (`removals`).
         self.removed: dict[str, dict[str, Any]] = {}
-        # Every value any shell call masked, for the press's explanation scrub.
-        self.masked_values: set[str] = set()
+        # Every value any shell call masked, oldest first, for the press's explanation scrub.
+        # A dict keeps the order a set loses, so the cap can drop the oldest.
+        self.masked_values: dict[str, None] = {}
+        self.masked_values_partial = False
         # (time, call id) of every recorded write and fixer run. A pass is aged
         # by one from another call at or after its own time, since recorded
         # time cannot order two calls that share it (DRC-4709); its own call is
@@ -5021,8 +5031,7 @@ class _ToolReportTally:
             )
         )
         self.shell_seq += 1
-        if len(self.masked_values) < MASKED_VALUES_MAX:
-            self.masked_values |= call.masked_values
+        self._keep_masked_values(call.masked_values)
         if call.changes():
             self.changing_seqs.append(self.shell_seq)
             self.scan["last_changing_command_at"] = at
@@ -5696,6 +5705,19 @@ class _ToolReportTally:
                 found[(run["record_id"], run["title"])] = run["tail"]
         return found
 
+    def _keep_masked_values(self, values: Iterable[str]) -> None:
+        """Add a call's masked values as the newest, and drop the oldest past the bound.
+
+        A value met again moves to the newest end, so one the agent keeps typing is not the
+        first to go. Dropping anything marks the scrub partial: it is said, never silent.
+        """
+        for value in sorted(values):
+            self.masked_values.pop(value, None)
+            self.masked_values[value] = None
+        while len(self.masked_values) > MASKED_VALUES_MAX:
+            del self.masked_values[next(iter(self.masked_values))]
+            self.masked_values_partial = True
+
     def tier3_calls(self) -> frozenset[str]:
         """The call ids that ever held a listed foreground run of a tier 3 command, not only the
         latest: a command that re-ran in a later call leaves the earlier call's output tail behind,
@@ -5761,6 +5783,9 @@ class PressChecks(NamedTuple):
     # Every value a shell call's command line masked, so a stored explanation
     # that quotes one is scrubbed the way the output tail is.
     masked_values: frozenset[str] = frozenset()
+    # True when the session masked more values than the press carries and the oldest were
+    # dropped, so a stored explanation is not known to be scrubbed of all of them.
+    masked_values_partial: bool = False
     # The calls whose tail belongs to a tier 3 command, which only the session's own vendor may
     # be sent: a tail of another call is a tier 1 or 2 tail.
     tier3_calls: frozenset[str] = frozenset()
@@ -5794,6 +5819,7 @@ def _press(tally: _ToolReportTally) -> PressChecks:
         tally.passes_and_writes(),
         tally.removals(),
         frozenset(tally.masked_values),
+        tally.masked_values_partial,
         tally.tier3_calls(),
         tally.quotable(),
     )

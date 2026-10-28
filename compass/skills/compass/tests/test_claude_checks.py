@@ -1745,6 +1745,24 @@ class ThePressCarriesTheValuesACallMasked(ClaudeChecksTestCase):
         self.session.bash("git push origin -u HEAD:main", "ok")
         self.assertEqual(frozenset(), self.press().masked_values)
 
+    def test_past_the_bound_the_newest_values_stay_and_the_press_says_the_scrub_is_partial(
+        self,
+    ) -> None:
+        with mock.patch.object(project_context, "MASKED_VALUES_MAX", 3):
+            for index in range(5):
+                self.session.bash(f"curl -u alice:FakePass{index}9 https://x.example", "ok")
+            press = self.press()
+        self.assertEqual(frozenset({"FakePass29", "FakePass39", "FakePass49"}), press.masked_values)
+        self.assertTrue(press.masked_values_partial)
+
+    def test_a_session_within_the_bound_is_not_partial(self) -> None:
+        with mock.patch.object(project_context, "MASKED_VALUES_MAX", 3):
+            for index in range(3):
+                self.session.bash(f"curl -u alice:FakePass{index}9 https://x.example", "ok")
+            press = self.press()
+        self.assertEqual(3, len(press.masked_values))
+        self.assertFalse(press.masked_values_partial)
+
     def test_a_session_that_masked_nothing_carries_nothing(self) -> None:
         self.session.bash("pytest -q", "3 passed in 0.1s")
         self.assertEqual(frozenset(), self.press().masked_values)

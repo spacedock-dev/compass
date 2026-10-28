@@ -1952,7 +1952,11 @@ environment literal (`true`, `false`, `production`, `main`, `test`), an auth sch
 `Basic`), a bare number and a lowercase-letters-only word stay, because `CI=true` and `-u 1000`
 would otherwise erase ordinary words from a sentence the reader reads. The accepted loss is a
 lowercase-letters-only password quoted in an explanation; the check line and the output tail still
-mask it. A value at the end of a sentence or inside brackets or quotes is removed, while one inside a
+mask it. A press carries up to 4,096 masked values and, past that, keeps the newest; when it has
+dropped any, the stored explanation is left empty rather than published unscrubbed. A line that
+lists a command of the shell (not a check) shows the script given to `python -c`, `node -e`
+or `--eval`, `ruby -e` and `perl -e` as one ellipsis, since a literal credential inside code has no
+form a mask can find; a check line keeps its own rule. A value at the end of a sentence or inside brackets or quotes is removed, while one inside a
 longer word, path or domain is not. The class lives in the observed record only, as
 its own fact type, kept out of the semantic history store and out of every session row field, and
 it is named in `history.PROMPT_DERIVED_CARRIERS`.
@@ -1978,7 +1982,14 @@ writes, `http.https://github.com/.extraheader=`), while a flag such as `--max-to
 `--password-file=/x` is not a key; the word after `-a`, `-a<value>`, `--pass` or `--pass=` for
 `redis-cli` only; the token word of `vault login`; the value of `aws configure set` for a name
 holding `secret`, `token`, `password`, `passwd` or `key`, read past `--profile` and the other flags
-that take a value; and the password in `user:password@`, up to the last `@` in the word, so one
+that take a value; the value after `--secret-string`, `--passphrase`, `--pass`, `--pwd` or
+`--credentials`, joined by `=` or in the next word; the value of `--from-literal` in kubectl's
+`key=value` pair (the key stays); the value after `--value` for `aws` only (`aws ssm put-parameter`);
+npm's `_authToken` line, as `//registry/:_authToken=value` or after `npm config set`; the value after
+`--body` or `-b` for `gh secret` only, so a pull request body stays readable; the value after `-w`
+for the `ldap*` tools and after `-N` for `ssh-keygen`; an openssl `pass:` prefix (`-passin pass:value`,
+`-passout`, `-pass`), while `env:` and `file:` sources name no value; the token word of `cargo login`;
+and the password in `user:password@`, up to the last `@` in the word, so one
 holding `/`, `@` or whitespace is masked whole. A program is found behind `rtk`, `sudo`, `env`, `uv
 run`, `pnpm exec` and the like, and behind `docker`, `podman` or `kubectl exec`. The words are the
 ones the program receives: quotes removed, `$'…'` escapes decoded and backslash-newline

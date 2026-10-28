@@ -4129,6 +4129,28 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
             self.assertIn(kept, detail)
         self.assertNotIn("FakeTok99xx", detail)
 
+    def test_an_explanation_is_not_stored_when_the_press_dropped_masked_values(self) -> None:
+        # The press kept the newest values and dropped older ones past its bound, so it cannot
+        # say the prose is clear of every value: the sentence is withheld rather than stored.
+        def resolve(partial: bool) -> str:
+            criterion = reading.resolve(
+                reply(
+                    reading.RESULT_DEPARTURE,
+                    goal_cites=(1,),
+                    goal_detail="it typed FakeOldPass77 and renamed the wrong flag",
+                ),
+                reading.Selection((entry(),)),
+                goal="rename the flag",
+                lines=(),
+                detail_cap_chars=300,
+                masked_values=frozenset({"FakeNewPass88"}),
+                scrub_partial=partial,
+            )[reading.CONSTRAINT_GOAL]
+            return str(criterion["detail"])
+
+        self.assertEqual("", resolve(True))
+        self.assertIn("renamed the wrong flag", resolve(False))
+
     def test_a_scrubbed_explanation_that_was_not_cut_has_no_ellipsis(self) -> None:
         detail = self.resolve_detail(
             "it logged in with " + "P9" * 30 + " and renamed the wrong flag",
