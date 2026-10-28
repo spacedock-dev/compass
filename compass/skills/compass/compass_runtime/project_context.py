@@ -2291,7 +2291,8 @@ _WRITING_OPTIONS = {
     "git log": frozenset({"--output"}),
     "git show": frozenset({"--output"}),
 }
-_LESS_LOG_RE = re.compile(r"-[oO]|--log-file", re.IGNORECASE)
+# `-o FILE` may sit at the end of a flag cluster (`-So FILE`).
+_LESS_LOG_RE = re.compile(r"-[A-Za-z]*[oO]|--log-file", re.IGNORECASE)
 # A device that stores nothing, whichever operator writes to it (review W5).
 _HARMLESS_DEVICE_RE = re.compile(r"^/dev/(?:null|stdout|stderr|tty|fd/\d+)$")
 _CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
@@ -6146,33 +6147,102 @@ def _views_only(redirects: list[_Redirect], words: list[str]) -> bool:
     if program in _VIEWERS or " ".join(words[:2]) == "git blame":
         return True
     if program == "sed":
-        # `-i` edits in place, a `w FILE` command writes one, and GNU `e` (a command, or the `e`
-        # flag of `s`) runs what it holds; none of these is a view.
-        return not any(
-            w.startswith("--in-place")
-            or (w.startswith("-") and not w.startswith("--") and "i" in w)
-            or re.search(r"(?:^|[\s;{}/])w\s*\S", w) is not None
-            or _SED_EXECUTES_RE.search(w) is not None
-            for w in words[1:]
-        )
+        return _sed_is_view(words[1:])
     if program == "awk":
         # A program's own `print > "f"`, `print | "cmd"` and `system(...)` write; a comparison
         # that merely contains `>` also withdraws, the safe side of a name-only match. gawk's
-        # `-i` and `--include` (and `@include`) load a library such as `inplace`, and `-f` reads
-        # a program from a file this call does not show, so none of those is a view.
+        # `-i`, `--include`, `-l` and `--load` (and `@include`, `@load`) load a library such as
+        # `inplace`, and `-f` and `-E` read a program from a file this call does not show, so
+        # none of those is a view.
         return not any(
-            re.match(r"-i|--include|-f|--file", w) is not None
+            re.match(r"-[ifEl]|--include|--file|--exec|--load", w) is not None
             or "@include" in w
+            or "@load" in w
             or re.search(r"[>|]|system\s*\(", w) is not None
             for w in words[1:]
         )
     return False
 
 
-# GNU sed `e`: the command (`e`, `1e CMD`, `/x/e`) or the flag after an `s` command's replacement.
-_SED_EXECUTES_RE = re.compile(
-    r"(?:^|[\s;{}!\d$,/])e(?:\s|$)|\bs(.)(?:(?!\1).)*\1(?:(?!\1).)*\1[a-zA-Z0-9]*e"
-)
+def _sed_is_view(args: list[str]) -> bool:  # noqa: C901 - one branch per sed option form
+    """Whether a sed call only prints: no `-i`, no program read from a file, and no program
+    that writes (`w`, `W`, the `w` flag of `s`) or runs a command (GNU `e`, the `e` flag)."""
+    programs: list[str] = []
+    expect_program = False
+    for arg in args:
+        if expect_program:
+            programs.append(arg)
+            expect_program = False
+        elif arg.startswith("--"):
+            if arg.startswith(("--in-place", "--file")):
+                return False
+            if arg == "--expression":
+                expect_program = True
+            elif arg.startswith("--expression="):
+                programs.append(arg.partition("=")[2])
+        elif arg.startswith("-") and len(arg) > 1:
+            flags = arg[1:]
+            if "i" in flags or "f" in flags:
+                return False
+            if "e" in flags:
+                # `-e SCRIPT`, or `-eSCRIPT` with the script joined to the flag.
+                tail = flags.partition("e")[2]
+                if tail:
+                    programs.append(tail)
+                else:
+                    expect_program = True
+        elif not programs:
+            programs.append(arg)
+    return not any(_sed_program_acts(program) for program in programs)
+
+
+# Commands that take the rest of their line as text, a label or a file to read, so a letter in it
+# is no command.
+_SED_TEXT_COMMANDS = frozenset("aicbtT:rR")
+
+
+def _sed_program_acts(program: str) -> bool:  # noqa: C901 - one branch per kind of sed token
+    """Whether a sed program writes a file or runs a command, read in one pass.
+
+    A regex scan for `e` and `w` was quadratic on a long program with delimiters that never recur,
+    and missed an escaped delimiter and a numbered address (`1w FILE`). This walks the program
+    once: addresses and regexes are skipped (honouring backslash escapes), `s` and `y` consume
+    their delimited parts, and only a letter in command position counts.
+    """
+    i, n = 0, len(program)
+
+    def skip_delimited(start: int, delimiter: str) -> int:
+        j = start
+        while j < n and program[j] != delimiter:
+            j += 2 if program[j] == "\\" else 1
+        return j + 1
+
+    while i < n:
+        c = program[i]
+        if c in " \t\n;{}!,~+$" or c.isdigit():
+            i += 1
+        elif c == "/":
+            i = skip_delimited(i + 1, "/")
+        elif c == "\\" and i + 1 < n:
+            i = skip_delimited(i + 2, program[i + 1])
+        elif c in "ewW":
+            return True
+        elif c in "sy" and i + 1 < n:
+            delimiter = program[i + 1]
+            i = skip_delimited(skip_delimited(i + 2, delimiter), delimiter)
+            flags_start = i
+            while i < n and (program[i].isalnum()):
+                i += 1
+            if c == "s" and any(flag in "ewW" for flag in program[flags_start:i]):
+                return True
+        elif c in _SED_TEXT_COMMANDS:
+            while i < n and program[i] not in ";\n":
+                i += 1
+        else:
+            i += 1
+    return False
+
+
 _STDIN_OPERATORS = ("<<", "<<-", "<<<")
 # Programs that take stdin as data and cannot run or save it as a file the call named, so text a
 # pipe carries into one is not carried to a segment that can write. Their own redirect targets are

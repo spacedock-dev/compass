@@ -660,9 +660,43 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
             "less -o out.log check.sh",
             "less -O out.log check.sh",
             "less -oout.log check.sh",
+            "sed 's#a\\#b#rm check.sh#e' x",
+            "sed 's|a\\|b|rm check.sh|e' x",
+            "sed -n '1w check.sh' x",
+            "sed '$w check.sh' x",
+            "sed '1,3w check.sh' x",
+            "sed -e '/x/W check.sh' y",
+            "sed -f p.sed check.sh",
+            "sed --file=p.sed check.sh",
+            "sed -nf p.sed check.sh",
+            "awk -E p.awk check.sh",
+            "awk --exec p.awk check.sh",
+            "awk -l inplace '1' check.sh",
+            "awk --load=inplace '1' check.sh",
+            "awk '@load \"inplace\"\n1' check.sh",
+            "less -eo out check.sh",
+            "less -So out.log check.sh",
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.names(command), {"check.sh"})
+
+    def test_a_sed_that_only_prints_or_substitutes_is_a_view(self) -> None:
+        for command in (
+            "sed -n '1,20p' check.sh",
+            "sed 's/foo/bar/' check.sh",
+            "sed -n '/test/p' check.sh",
+            "sed -e 's/when/then/g' check.sh",
+            "sed -E 's#web/#www/#' check.sh",
+            "sed -n '$p' check.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_a_hostile_sed_program_is_read_in_linear_time(self) -> None:
+        program = "".join(" s" + chr(0x4E00 + i) + "y" for i in range(25000))
+        started = time.monotonic()
+        self.names(f"sed -n '{program}' check.sh")
+        self.assertLess(time.monotonic() - started, 10.0)
 
     def test_a_long_pipeline_is_judged_in_linear_time(self) -> None:
         started = time.monotonic()
