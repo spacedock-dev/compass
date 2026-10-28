@@ -3404,8 +3404,9 @@ that behaves identically, and [the capture](captures/rtk/proxy-passthrough-1.1.0
 same three arms for both spellings with identical output and status. `rtk bypass <runner>` is stripped to
 `<runner>` and read from its output as if `rtk` were absent, whether the agent typed it or a hook rewrote the
 command to it. Bare `rtk <runner>` keeps the flag-only rule. The check reader, the masking pass and the tool
-family reader each take `bypass` wherever they took `proxy`; the unasked-report matcher's `rtk proxy` prefix is
-a separate closed list and is unchanged.
+family reader each take `bypass` wherever they took `proxy`. So does the hook-side irreversible-shape matcher, a
+separate closed list: `command_shape` in `event_hook.py`, and its copies in the Gemini and Droid roots, strips an
+`rtk bypass` prefix as well as `rtk proxy`.
 
 ### Amended 2026-10-28 (owner): C-style and bare `for` headers are read-only
 
