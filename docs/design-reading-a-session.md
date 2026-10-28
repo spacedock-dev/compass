@@ -1318,7 +1318,7 @@ and the amendment that a word list is a judgement, still hold for verdicts.
 
 The correction Steer back offers asks about the same sentence. It quoted the first cited message, so
 "Can you show evidence for ..." could name the neutral statement while the claims row quoted the claiming one.
-`correction.py` now picks the cited agent message by the same rule, with its own copy of the word list
+`correction.py` now picks the cited agent message by the same rule, in the row's stored cite order, with its own copy of the word list
 (`correction.CLAIM_WORDS`), and a test reads both claims rules from `reading.py` and fails when that list and
 they drift, as the page's test does for its own.
 
@@ -3365,10 +3365,10 @@ are not checks, among them the CI polls that proved the goal. Compass reads only
 that can change files, to age an earlier pass (item 3), and nothing about the read-only ones. The cutoff now adds
 one sentence when any ran: "The session ran 7 other commands, 4 of them read-only; Compass did not read what they
 did." The sentence names the session and not the window, so a long session can read "412 other commands" beside
-three listed entries. The two counts come from the session scan, are stored only when that scan read the whole
-transcript. A scan that began after the start of the session, whether cut from the tail or pushed to a later
-horizon by an unread subagent transcript, counted only the commands after that point, so those counts are left
-out of the whole-session sentence (the 2026-10-28 amendment at the end of this ruling stores them as a floor). They sit beside the
+three listed entries. The two counts come from the session scan: exact for the whole session when that scan read the whole
+transcript, and a lower bound when it began late, cut from the tail or pushed to a later horizon by an unread
+subagent transcript, because it counted only the commands after that point (the 2026-10-28 amendment at the end
+of this ruling stores the floor). The counts sit beside the
 [measured coverage](#amended-2026-10-04-owner-disclose-measured-reading-coverage) the reading already stores.
 Read-only is the scan's own test of whether the command could change a file. A session that ran none says
 nothing.
@@ -3585,7 +3585,8 @@ or an unread subagent transcript pushed its horizon forward. The 2026-10-27 amen
 those scans, so the sessions that ran the most commands said "not recorded". The counts the scan did measure are
 true of what it read, so they are a lower bound on the session, and a lower bound is worth saying. The cutoff
 now reads "The session ran at least 412 other commands, at least 300 of them read-only; Compass did not read
-what they did", and "none known to be read-only" where the floor of read-only calls is zero. A scan that read
+what they did", and "none known to be read-only" where the floor of read-only calls is zero. A floor of zero is not stored, since a late scan that saw no commands says nothing about the
+session, so it stays "not recorded". A scan that read
 the whole transcript still says the plain counts, and a reading stored earlier still says the count was not
 recorded.
 

@@ -2650,6 +2650,8 @@ def _counted(lookup: Callable[[], Mapping[str, Any]] | None) -> dict[str, int]:
         return {}
     kept: dict[str, Any] = dict(zip(COVERAGE_COMMAND_KEYS, counts, strict=True))
     if measured.get(COMMANDS_FLOOR_KEY) is True:
+        if not counts[0]:
+            return {}
         kept[COMMANDS_FLOOR_KEY] = True
     return kept
 

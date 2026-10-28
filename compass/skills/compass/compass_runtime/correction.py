@@ -587,18 +587,26 @@ class _Rows:
             return None
         kept = {str(c) for c in resolved["cites"]}
         standing = [
-            fact
+            (entry, fact)
             for entry, fact in pairs
             if entry["id"] in kept and reading.valid_prompt_time(fact.get("at")) is not None
         ]
+        # The page quotes the first message in the row's stored cite order, not in time order,
+        # so the claiming message is chosen from that order too.
+        position: dict[str, int] = {}
+        for k, cite in enumerate(raw if isinstance(raw, list) else []):
+            if isinstance(cite, str):
+                position.setdefault(cite, k)
         said = [
-            f
-            for f in standing
-            if f.get("type") == reading.AGENT_MESSAGE_TYPE and reading.claim_title(f)
+            fact
+            for entry, fact in sorted(
+                standing, key=lambda pair: position.get(pair[0]["id"], len(position))
+            )
+            if fact.get("type") == reading.AGENT_MESSAGE_TYPE and reading.claim_title(fact)
         ]
         if not said:
             return None
-        record = [f for f in standing if f.get("type") != reading.AGENT_MESSAGE_TYPE]
+        record = [f for _entry, f in standing if f.get("type") != reading.AGENT_MESSAGE_TYPE]
         checks = [f for f in record if f.get("subject") == reading.CHECK_SUBJECT]
         found = checks or record
         # The claiming message, as the page's claims row quotes it: the first cited that holds a

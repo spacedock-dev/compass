@@ -579,6 +579,24 @@ class TheCutoffCountsTheCommandsItNeverSaw(producer.AClaudeCodeReadingProducer):
             http_api._command_counts_of(cut, "claude", "s1"),
         )
 
+    def test_a_floor_of_zero_is_not_recorded(self) -> None:
+        zero = {"other_commands": 0, "read_only_commands": 0}
+        cut = {
+            "sources": {
+                "work": {
+                    "tool_reports": [{"harness": "claude", "sid": "s1", "reads_from": 1.0, **zero}]
+                }
+            }
+        }
+        whole = {
+            "sources": {"work": {"tool_reports": [{"harness": "claude", "sid": "s1", **zero}]}}
+        }
+        self.assertEqual({}, http_api._command_counts_of(cut, "claude", "s1"))
+        self.assertEqual(zero, http_api._command_counts_of(whole, "claude", "s1"))
+        got = self._read(lambda: {**zero, "commands_floor": True})
+        self.assertNotIn("other_commands", got["coverage"])
+        self.assertNotIn("commands_floor", got["coverage"])
+
     def test_a_floor_is_stored_and_worded_as_at_least(self) -> None:
         got = self._read(
             lambda: {"other_commands": 7, "read_only_commands": 4, "commands_floor": True}

@@ -1089,6 +1089,16 @@ class SteerBackSaysWhatTheRecordDoesNotShowTest(unittest.TestCase):
             for part in answer.get("parts", [])
         )
 
+    def test_the_quoted_message_is_the_first_cited_not_the_first_in_time(self) -> None:
+        early = _agent("a1", 90.0, "All the retry tests passed.")
+        late = _agent("a2", 92.0, "Merged it into the release branch now.")
+        text = self.compose(reading.RESULT_UNSUPPORTED, ["a2", "a1"], [early, late])
+        self.assertIn("at T92{a2}?", text)
+        neutral_early = _agent("b0", 80.0, "Looking at the queue.")
+        neutral_late = _agent("b1", 90.0, "Reading the logs.")
+        text = self.compose(reading.RESULT_UNSUPPORTED, ["b1", "b0"], [neutral_early, neutral_late])
+        self.assertIn("at T90{b1}?", text)
+
     def test_an_unshown_claim_is_said_in_one_line(self) -> None:
         text = self.compose(reading.RESULT_UNSUPPORTED, ["a1"], [SAID])
         self.assertIn('Can you show evidence for "All tests pass" at T90{a1}?', text)
@@ -1201,10 +1211,6 @@ class TheScorerKnowsTheQuestionTest(unittest.TestCase):
         self.assertEqual(reading.RESULT_BY_TOKEN, score_abstention.RESULT_BY_TOKEN)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TheClaimWordsAreTheProducerRulesWordsTest(unittest.TestCase):
     """The page holds the same list (`claimWords.test.ts`); this binds the server's."""
 
@@ -1231,3 +1237,7 @@ class TheClaimWordsAreTheProducerRulesWordsTest(unittest.TestCase):
     def test_the_server_list_holds_nothing_beyond_the_rules(self) -> None:
         # "passing" is read as its three forms, as the page reads it.
         self.assertEqual(self._named() | {"passes", "passed"}, set(correction.CLAIM_WORDS))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -6263,6 +6263,10 @@ def command_counts_of(context: dict[str, Any], harness: str, sid: str) -> dict[s
         k: scan[k] for k in ("other_commands", "read_only_commands") if k in scan
     }
     if counts and scan.get("reads_from") is not None:
+        # A floor of zero says nothing: the late scan saw no commands, which is not the same
+        # as none having run, so it stays "not recorded".
+        if counts.get("other_commands") == 0:
+            return {}
         counts[records.COMMANDS_FLOOR_KEY] = True
     return counts
 
