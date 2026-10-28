@@ -7,15 +7,20 @@ Every project, command and path here is synthetic.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from compass_runtime import (
     diagnostics,
     project_context,
+    project_scripts,
     reader_checks,
     reading,
     session_source,
@@ -271,6 +276,49 @@ class ASessionThatWroteTheFileIsFlaggedAndNothingCounts(ReaderChecksTestCase):
                 self.assertEqual([], [e for e in events if e["subject"] == "check"])
                 self.assertIs(True, scan["reader_checks_written"])
 
+    def test_a_read_only_command_naming_the_file_does_not_withdraw_the_listing(self) -> None:
+        for command in (
+            f"cat {self.store}",
+            f"grep bazel {self.store}",
+            f"rg bazel {self.store}",
+            f"head -5 {self.store}",
+            f"less {self.store}",
+            f"wc -l {self.store}",
+            f"ls -l {self.store} && cat {self.store} | wc -l",
+        ):
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks()
+                self.session.bash(command)
+                self.session.bash(BAZEL, "ok")
+                events, scan = self.read()
+                self.assertEqual([BAZEL], [e["title"] for e in events if e["subject"] == "check"])
+                self.assertNotIn("reader_checks_written", scan)
+
+    def test_a_read_that_redirects_into_the_file_is_still_a_write(self) -> None:
+        self.list_checks()
+        self.session.bash(f"cat other.json > {self.store}")
+        self.session.bash(BAZEL, "ok")
+        events, scan = self.read()
+        self.assertEqual([], [e for e in events if e["subject"] == "check"])
+        self.assertIs(True, scan["reader_checks_written"])
+
+    def test_an_interpreter_or_editor_naming_the_file_withdraws_the_listing(self) -> None:
+        for command in (
+            f"python3 -c \"open('{self.store}', 'w').write('{{}}')\"",
+            f"node -e \"require('fs').writeFileSync('{self.store}', '{{}}')\"",
+            f"perl -pi -e 's/bazel/true/' {self.store}",
+            f"ruby -i -pe '$_.upcase!' {self.store}",
+        ):
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks()
+                self.session.bash(command)
+                self.session.bash(BAZEL, "ok")
+                events, scan = self.read()
+                self.assertEqual([], [e for e in events if e["subject"] == "check"])
+                self.assertIs(True, scan["reader_checks_written"])
+
     def test_a_write_with_nothing_listed_is_not_flagged(self) -> None:
         self.session.write(str(self.cwd / reader_checks.FILENAME), "{}")
         self.session.bash("pytest -q", "1 passed in 0.1s")
@@ -344,6 +392,30 @@ class AListedScriptThePathNamesNeedsTheProjectRootAndAnUntouchedFile(ReaderCheck
                 self.session.bash(self.SCRIPT, "ok")
                 self.assertEqual([], self.titles())
 
+    def test_an_interpreter_that_names_the_script_in_its_code_withdraws_it(self) -> None:
+        for command in (
+            "python3 -c \"open('check.sh', 'w').write('exit 0')\"",
+            "node -e \"require('fs').writeFileSync('check.sh', 'exit 0')\"",
+            "perl -pi -e 's/a/b/' check.sh",
+            "ruby -i -pe '$_.upcase!' ./check.sh",
+        ):
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks({str(self.cwd): [self.SCRIPT]})
+                self.session.bash(command)
+                self.session.bash(self.SCRIPT, "ok")
+                self.assertEqual([], self.titles())
+
+    def test_reading_or_running_the_script_leaves_it_listed(self) -> None:
+        for command in ("cat check.sh", "grep exit check.sh", "head -3 ./check.sh", "wc -l check.sh",
+                        "./check.sh --fast", "bash check.sh", "ls -l check.sh"):  # fmt: skip
+            with self.subTest(command=command):
+                self.session.rows.clear()
+                self.list_checks({str(self.cwd): [self.SCRIPT]})
+                self.session.bash(command, "ok")
+                self.session.bash(self.SCRIPT, "ok")
+                self.assertEqual([self.SCRIPT], self.titles())
+
     def test_a_script_run_in_another_folder_does_not_count(self) -> None:
         self.list_checks({str(self.cwd): [self.SCRIPT]})
         self.session.bash(f"cd {self.root / 'elsewhere'} && {self.SCRIPT}", "ok")
@@ -410,3 +482,234 @@ class EveryReaderOfTheListingAgrees(ReaderChecksTestCase):
                 break
         self.assertGreater(pages, 2)
         self.assertEqual([], found)
+
+
+class ACallIsParsedOnceWhenAScriptIsListed(ReaderChecksTestCase):
+    def test_every_bash_call_is_parsed_once_not_twice(self) -> None:
+        self.list_checks({str(self.cwd): ["./check.sh"]})
+        commands = [f"echo {i} && ls" for i in range(6)] + ["cat check.sh", "cd . && ./check.sh"]
+        for command in commands:
+            self.session.bash(command, "ok")
+        project_context._call_parts_memo.cache_clear()
+        real = project_context._call_parts
+        seen: list[str] = []
+
+        def counting(text: str, depth: int = 0) -> Any:
+            seen.append(text)
+            return real(text, depth)
+
+        with mock.patch.object(project_context, "_call_parts", side_effect=counting):
+            self.read()
+        # The call parts of one call are the same text, so they are parsed once for every
+        # reader of it; before, the script-name scan parsed each call a second time.
+        self.assertEqual(sorted(commands), sorted(c for c in seen if c in commands))
+
+    def test_a_long_call_is_not_held_in_the_process_wide_memo(self) -> None:
+        long_command = "echo " + "x" * (project_context._MEMO_MAX_CHARS + 1)
+        short_command = "echo short"
+        project_context._call_parts_memo.cache_clear()
+        real = project_context._call_parts
+        seen: list[str] = []
+
+        def counting(text: str, depth: int = 0) -> Any:
+            seen.append(text)
+            return real(text, depth)
+
+        with mock.patch.object(project_context, "_call_parts", side_effect=counting):
+            for command in (long_command, long_command, short_command, short_command):
+                project_context._call_parts_once(command)
+        self.assertEqual([long_command, long_command, short_command], seen)
+        self.assertEqual(1, project_context._call_parts_memo.cache_info().currsize)
+
+
+class APagedReadKeepsAnEarlierPagesListingWrite(ReaderChecksTestCase):
+    def test_a_page_with_nothing_listed_carries_the_earlier_write_forward(self) -> None:
+        self.session.bash("ls", "a")
+        self.session.save(self.path)
+        first = session_source.read(self.config, str(self.path), "claude", "root")
+        assert first.snapshot is not None
+        cursor = dataclasses.replace(
+            first.snapshot.cursor, listing_writes=frozenset({reader_checks.FILENAME})
+        )
+        self.session.bash("ls", "b")
+        self.session.save(self.path)
+        empty = project_scripts.Declarations("", "", {}, {}, {})
+        with mock.patch.object(project_context, "_declared_scripts", return_value=empty):
+            second = session_source.read(
+                self.config, str(self.path), "claude", "root", after=cursor
+            )
+        assert second.snapshot is not None
+        self.assertEqual(frozenset({reader_checks.FILENAME}), second.snapshot.cursor.listing_writes)
+
+
+class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTestCase):
+    NAMES = frozenset({"check.sh", "compass-project-checks.json"})
+    LISTED = frozenset({("./check.sh",)})
+
+    def names(self, command: str) -> set[str]:
+        return project_context._shell_names(command, self.NAMES, self.LISTED)
+
+    def test_an_interpreter_reading_the_name_from_stdin_withdraws_it(self) -> None:
+        for name in ("check.sh", "compass-project-checks.json"):
+            for command in (
+                f"python3 <<'EOF'\nopen('{name}', 'w').write('x')\nEOF",
+                f"python3 - <<'PY'\nopen('{name}', 'w')\nPY",
+                f"node <<'EOF'\nrequire('fs').writeFileSync('{name}', 'x')\nEOF",
+                f"bash <<'EOF'\necho x > {name}\nEOF",
+                f"python3 <<< \"open('{name}', 'w')\"",
+                f"echo \"open('{name}', 'w')\" | python3",
+            ):
+                with self.subTest(command=command):
+                    self.assertEqual(self.names(command), {name})
+
+    def test_a_heredoc_feeding_an_earlier_segment_or_a_substitution_withdraws_it(self) -> None:
+        for name in ("check.sh", "compass-project-checks.json"):
+            for command in (
+                f"cat <<'EOF' | python3\nopen('{name}', 'w')\nEOF",
+                f"cat << 'EOF' | bash\necho x > {name}\nEOF",
+                f"python3 -c \"$(cat <<'EOF'\nopen('{name}', 'w')\nEOF\n)\"",
+            ):
+                with self.subTest(command=command):
+                    self.assertEqual(self.names(command), {name})
+
+    def test_an_awk_program_that_writes_withdraws_it(self) -> None:
+        for command in (
+            "awk 'BEGIN{print 1 > \"compass-project-checks.json\"}'",
+            "awk '{print > \"check.sh\"}' x",
+            "awk '{print | \"tee check.sh\"}' x",
+            "awk 'BEGIN{system(\"rm check.sh\")}'",
+        ):
+            with self.subTest(command=command):
+                self.assertNotEqual(self.names(command), set())
+
+    def test_a_reader_given_the_text_does_not_withdraw_it(self) -> None:
+        for command in (
+            "cat <<EOF\nsee check.sh\nEOF",
+            "grep x <<< 'check.sh'",
+            "cat check.sh | wc -l",
+            "./check.sh | tee out.log",
+            "python3 ./check.sh <<< 'input'",
+            "cat <<EOF | grep x\ncheck.sh\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_a_file_only_viewed_through_a_pipe_is_not_withdrawn_by_a_filter_that_follows(
+        self,
+    ) -> None:
+        for command in (
+            "cat check.sh | wc -l > count.txt",
+            "cat check.sh | sort > sorted.txt",
+            "cat check.sh | grep -n x | head -5 > top.txt",
+            "cat compass-project-checks.json | jq . > pretty.json",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_a_file_viewed_beside_a_heredoc_that_never_mentions_it_is_not_withdrawn(self) -> None:
+        for command in (
+            "cat check.sh; python3 <<'EOF'\nprint(1)\nEOF",
+            "ls check.sh && bash <<< 'echo hi'",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_a_pipe_into_a_program_that_can_write_still_withdraws_what_it_carries(self) -> None:
+        for command in (
+            "cat check.sh | python3 -c 'import sys'",
+            "cat check.sh | xargs rm",
+            "cat <<'EOF' | sh\nrm check.sh\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), {"check.sh"})
+
+    def test_a_viewer_or_a_run_with_an_option_is_not_a_write(self) -> None:
+        for command in (
+            "jq . compass-project-checks.json",
+            "sed -n 1p check.sh",
+            "sed -n 's/a/b/p' check.sh",
+            "sed 's/a/the end/' check.sh",
+            "awk '1' check.sh",
+            "less check.sh",
+            "bat check.sh",
+            "diff check.sh other.sh",
+            "shellcheck check.sh",
+            "git blame check.sh",
+            "bash -n check.sh",
+            "bash -x check.sh",
+            "bash -e ./check.sh",
+            "source check.sh",
+            ". ./check.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_an_editing_form_of_the_same_programs_still_withdraws_it(self) -> None:
+        for command in (
+            "sed -i 's/a/b/' check.sh",
+            "sed --in-place s/a/b/ check.sh",
+            "bash -c 'echo x > check.sh'",
+            "bash -xc 'echo x > check.sh'",
+            "awk -i inplace '1' check.sh",
+            "awk -iinplace '1' check.sh",
+            "awk --include=inplace '1' check.sh",
+            "awk '@include \"inplace\"\n1' check.sh",
+            "awk -f p.awk check.sh",
+            "sed '1e rm check.sh' x",
+            "sed 's/a/rm check.sh/e' x",
+            "cat check.sh | sed e",
+            "less -o out.log check.sh",
+            "less -O out.log check.sh",
+            "less -oout.log check.sh",
+            "sed 's#a\\#b#rm check.sh#e' x",
+            "sed 's|a\\|b|rm check.sh|e' x",
+            "sed -n '1w check.sh' x",
+            "sed '$w check.sh' x",
+            "sed '1,3w check.sh' x",
+            "sed -e '/x/W check.sh' y",
+            "sed -f p.sed check.sh",
+            "sed --file=p.sed check.sh",
+            "sed -nf p.sed check.sh",
+            "awk -E p.awk check.sh",
+            "awk --exec p.awk check.sh",
+            "awk -l inplace '1' check.sh",
+            "awk --load=inplace '1' check.sh",
+            "awk '@load \"inplace\"\n1' check.sh",
+            "less -eo out check.sh",
+            "less -So out.log check.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), {"check.sh"})
+
+    def test_a_sed_that_only_prints_or_substitutes_is_a_view(self) -> None:
+        for command in (
+            "sed -n '1,20p' check.sh",
+            "sed 's/foo/bar/' check.sh",
+            "sed -n '/test/p' check.sh",
+            "sed -e 's/when/then/g' check.sh",
+            "sed -E 's#web/#www/#' check.sh",
+            "sed -n '$p' check.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_a_hostile_sed_program_is_read_in_linear_time(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        program = "".join(" s" + chr(0x4E00 + i) + "y" for i in range(25000))
+        started = time.process_time()
+        self.names(f"sed -n '{program}' check.sh")
+        self.assertLess(time.process_time() - started, 10.0)
+
+    def test_a_long_pipeline_is_judged_in_linear_time(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        started = time.process_time()
+        for command, expected in (
+            ("x|" * 5000 + "check.sh", set()),
+            ("check.sh|" + "x|" * 5000 + "y", set()),
+            ("echo 'open(\"check.sh\")' | " + "x | " * 5000 + "python3", {"check.sh"}),
+        ):
+            with self.subTest(command=command[:30]):
+                self.assertEqual(self.names(command), expected)
+        self.assertLess(time.process_time() - started, 5.0)

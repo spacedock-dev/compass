@@ -243,11 +243,17 @@ Three objects, with deliberately different lifetimes:
 One exception is allowed, and it is a pure memo: a function-level `functools.lru_cache` on a module, kept
 only where the result depends on nothing but its arguments and recomputing it per call was measured to cost
 too much. `sessions._walk_encoded` is one, keyed on a transcript directory name. `records._scrub_patterns` is
-the other. It holds the compiled patterns a scrub applies, keyed on the masked values, so a press that scrubs
+the second. It holds the compiled patterns a scrub applies, keyed on the masked values, so a press that scrubs
 ten explanations against one set compiles once (0.18 s at 512 values, 1.8 s for ten scrubs without it). Its key
 is the masked values themselves, so it holds them in memory across every server in one interpreter, for the
 last two sets only and never on disk; SECURITY.md discloses this where it describes the scrub. A memo that
 needed a server's state, a clock or a file would belong in `RuntimeState` instead.
+
+`project_context._call_parts_memo` is the third: an `lru_cache` of 512 entries keyed on the text of a Bash call,
+so the parse that reads a call's facts and the parse that reads the names it writes cost one parse between
+them. It is a pure memo with no server state. Only a call of up to 2,048 characters is remembered, because the
+key is the call text itself and a long pasted script or heredoc costs memory and rarely repeats; a longer call
+is parsed each time. A call that fails to parse raises and is not remembered.
 
 `CompassHTTPServer` stores exactly one `Application` and one mandatory page. Its handler reads
 both off the server instance. `cli.main` loads the renderer selected by frozen configuration and

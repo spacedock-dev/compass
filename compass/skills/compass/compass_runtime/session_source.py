@@ -919,7 +919,8 @@ def _finish(
         after.seen if after else (),
         after.subjects if after else (),
         after.message_ids if after else (),
-        declared.listing_writes if declared else (after.listing_writes if after else frozenset()),
+        (declared.listing_writes if declared else frozenset())
+        | (after.listing_writes if after else frozenset()),
     )
     notes = (
         ("codex_agent_words_not_admitted", "codex_checks_and_files_not_admitted")

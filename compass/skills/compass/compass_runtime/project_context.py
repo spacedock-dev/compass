@@ -18,7 +18,8 @@ import subprocess
 import time
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
-from typing import TYPE_CHECKING, Any, NamedTuple
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 from . import (
     claude_data,
@@ -2283,10 +2284,15 @@ _WRITING_OPTIONS = {
         {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
     ),
     "tree": frozenset({"-o"}),
+    # `less -o FILE` and `-O FILE` write a log of what it reads; the attached `-oFILE` form is
+    # caught by `_reads_only`, which sees no `=` to split on.
+    "less": frozenset({"-o", "-O", "--log-file", "--LOG-FILE"}),
     "git diff": frozenset({"--output"}),
     "git log": frozenset({"--output"}),
     "git show": frozenset({"--output"}),
 }
+# `-o FILE` may sit at the end of a flag cluster (`-So FILE`).
+_LESS_LOG_RE = re.compile(r"-[A-Za-z]*[oO]|--log-file", re.IGNORECASE)
 # A device that stores nothing, whichever operator writes to it (review W5).
 _HARMLESS_DEVICE_RE = re.compile(r"^/dev/(?:null|stdout|stderr|tty|fd/\d+)$")
 _CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
@@ -3093,6 +3099,29 @@ def _body_facts(body: str) -> tuple[bool, tuple[str, ...]]:
     return reads, masked
 
 
+# A memo keyed by the command text is process-wide, so it holds whatever text a session ran. A
+# long call (a pasted script, a generated heredoc) is the one that costs memory and rarely repeats,
+# so only a call this short is remembered and a longer one is parsed each time it is asked for.
+_MEMO_MAX_CHARS: Final = 2048
+
+
+def _call_parts_once(text: str) -> tuple[_Part, ...]:
+    """`_call_parts` for a whole Bash call, remembered by its text when the text is short.
+
+    The call is parsed for its facts and again for the names it writes, and the second parse
+    doubled the cost of every call once a reader listed a path script. A failed parse raises
+    and is not remembered. Callers read the segments and never change them.
+    """
+    if len(text) > _MEMO_MAX_CHARS:
+        return tuple(_call_parts(text))
+    return _call_parts_memo(text)
+
+
+@lru_cache(maxsize=512)
+def _call_parts_memo(text: str) -> tuple[_Part, ...]:
+    return tuple(_call_parts(text))
+
+
 def _call_parts(text: str, depth: int = 0) -> list[_Part]:
     """The call's segments, each shell `-c` wrapper replaced by its inner
     segments (owner, 2026-09-25).
@@ -3695,7 +3724,9 @@ def _reads_only(redirects: list[_Redirect], words: list[str]) -> bool:
     if words[:2] == ["gh", "api"]:
         return _gh_api_reads_only(words[2:])
     writing = _WRITING_OPTIONS.get(words[0]) or _WRITING_OPTIONS.get(" ".join(words[:2]))
-    if writing and writing & {w.split("=", 1)[0] for w in words[1:]}:
+    if (writing and writing & {w.split("=", 1)[0] for w in words[1:]}) or (
+        words[0] == "less" and any(_LESS_LOG_RE.match(w) for w in words[1:])
+    ):
         return False
     if _for_header(words):
         return True
@@ -4484,7 +4515,7 @@ class _ShellCall:
         # bash runs the complete lines before it (owner, 2026-09-25).
         self.unbalanced = False
         try:
-            self.parts = _call_parts(command if isinstance(command, str) else "")
+            self.parts = list(_call_parts_once(command if isinstance(command, str) else ""))
         except Exception:  # noqa: BLE001 - any parser fault fails closed, as unbalanced does
             self.unbalanced, self.parts = True, []
         self.words: list[tuple[list[str], bool]] = [(p.words, p.rtk) for p in self.parts]
@@ -6044,24 +6075,274 @@ class _CheckScan(NamedTuple):
 
 # Programs whose arguments name the files they change, for a listed script's own name.
 _NAMING_WRITERS = frozenset(
-    {"cp", "mv", "tee", "chmod", "install", "ln", "sed", "dd", "rsync", "touch", "truncate"}
+    {"cp", "mv", "tee", "chmod", "install", "ln", "dd", "rsync", "touch", "truncate"}
 )
 
 
-def _shell_names(command: str, names: frozenset[str]) -> set[str]:
-    """Which of `names` a shell command writes by name: a redirect target, or an argument of a
-    program that changes the files it is given. The file is matched by its name alone, so a copy
-    in another folder withdraws it too."""
-    try:
-        parts = _call_parts(command)
-    except Exception:  # noqa: BLE001 - a command that will not parse names nothing
+# Interpreters that run a script given as their first argument; any option before it (`-c`, `-e`,
+# `-i`, `-pi`) makes the script text theirs to run or rewrite, so it is not a plain run.
+_SCRIPT_RUNNERS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "python", "python3", "node",
+                             "perl", "ruby"})  # fmt: skip
+
+
+def _names_word(word: str, name: str) -> bool:
+    """Whether a word is the file `name`, in any folder, or a string that mentions it as a path:
+    `open('check.sh', 'w')` in an interpreter's code names it, and `mycheck.sh` does not."""
+    if os.path.basename(word) == name:
+        return True
+    return re.search(rf"(?<![\w.\-]){re.escape(name)}(?![\w\-])", word) is not None
+
+
+def _part_names_a_write(part: _Part, name: str, listed: frozenset[tuple[str, ...]]) -> bool:
+    """Whether one segment that mentions `name` could change it.
+
+    A segment on the closed read-only list only reads it (`cat`, `grep`, `head`, `wc`), and
+    running the script is not writing it: the script alone, a listed command, or an interpreter
+    given it as its first argument. Anything else that mentions the name withdraws it, an
+    interpreter's own code included, since the shell cannot say what that code does.
+    """
+    words = part.words
+    if not words or tuple(words) in listed:
+        return False
+    if _runs_script(words, name) or not any(_names_word(w, name) for w in (*words[1:], *part.raw)):
+        return False
+    reads = words[0] in {"cd", "pushd"} or (
+        not part.hides_change
+        and (
+            (_reads_only(part.redirects, words) and not _is_check(words))
+            or _views_only(part.redirects, words)
+        )
+    )
+    return not reads
+
+
+_SHELL_RUNNERS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
+# Viewers outside the closed read-only list that only print or check a file. Kept here, not in
+# that list, because the list also decides which commands are timed as checks.
+_VIEWERS = frozenset({"jq", "bat", "diff", "nl", "shellcheck"})
+
+
+def _runs_script(words: list[str], name: str) -> bool:
+    """Whether the segment runs the file `name` rather than editing it: the script itself, or an
+    interpreter given it as its first operand. A shell may carry options that cannot take code
+    (`bash -x check.sh`); any other interpreter's option may (`python3 -c`). `source` and `.`
+    run it too."""
+    program = os.path.basename(words[0])
+    if program == name:
+        return True
+    rest = words[1:]
+    if program in _SHELL_RUNNERS:
+        while rest and rest[0].startswith("-") and rest[0] != "--" and "c" not in rest[0]:
+            rest = rest[1:]
+    elif program not in _SCRIPT_RUNNERS and words[0] not in {"source", "."}:
+        return False
+    return bool(rest) and os.path.basename(rest[0]) == name
+
+
+def _views_only(redirects: list[_Redirect], words: list[str]) -> bool:
+    """A pure viewer, or an editor-shaped one that was not asked to edit in place."""
+    if _writes_a_file(redirects):
+        return False
+    program = words[0]
+    if program in _VIEWERS or " ".join(words[:2]) == "git blame":
+        return True
+    if program == "sed":
+        return _sed_is_view(words[1:])
+    if program == "awk":
+        # A program's own `print > "f"`, `print | "cmd"` and `system(...)` write; a comparison
+        # that merely contains `>` also withdraws, the safe side of a name-only match. gawk's
+        # `-i`, `--include`, `-l` and `--load` (and `@include`, `@load`) load a library such as
+        # `inplace`, and `-f` and `-E` read a program from a file this call does not show, so
+        # none of those is a view.
+        return not any(
+            re.match(r"-[ifEl]|--include|--file|--exec|--load", w) is not None
+            or "@include" in w
+            or "@load" in w
+            or re.search(r"[>|]|system\s*\(", w) is not None
+            for w in words[1:]
+        )
+    return False
+
+
+def _sed_is_view(args: list[str]) -> bool:  # noqa: C901 - one branch per sed option form
+    """Whether a sed call only prints: no `-i`, no program read from a file, and no program
+    that writes (`w`, `W`, the `w` flag of `s`) or runs a command (GNU `e`, the `e` flag)."""
+    programs: list[str] = []
+    expect_program = False
+    for arg in args:
+        if expect_program:
+            programs.append(arg)
+            expect_program = False
+        elif arg.startswith("--"):
+            if arg.startswith(("--in-place", "--file")):
+                return False
+            if arg == "--expression":
+                expect_program = True
+            elif arg.startswith("--expression="):
+                programs.append(arg.partition("=")[2])
+        elif arg.startswith("-") and len(arg) > 1:
+            flags = arg[1:]
+            if "i" in flags or "f" in flags:
+                return False
+            if "e" in flags:
+                # `-e SCRIPT`, or `-eSCRIPT` with the script joined to the flag.
+                tail = flags.partition("e")[2]
+                if tail:
+                    programs.append(tail)
+                else:
+                    expect_program = True
+        elif not programs:
+            programs.append(arg)
+    return not any(_sed_program_acts(program) for program in programs)
+
+
+# Commands that take the rest of their line as text, a label or a file to read, so a letter in it
+# is no command.
+_SED_TEXT_COMMANDS = frozenset("aicbtT:rR")
+
+
+def _sed_program_acts(program: str) -> bool:  # noqa: C901 - one branch per kind of sed token
+    """Whether a sed program writes a file or runs a command, read in one pass.
+
+    A regex scan for `e` and `w` was quadratic on a long program with delimiters that never recur,
+    and missed an escaped delimiter and a numbered address (`1w FILE`). This walks the program
+    once: addresses and regexes are skipped (honouring backslash escapes), `s` and `y` consume
+    their delimited parts, and only a letter in command position counts.
+    """
+    i, n = 0, len(program)
+
+    def skip_delimited(start: int, delimiter: str) -> int:
+        j = start
+        while j < n and program[j] != delimiter:
+            j += 2 if program[j] == "\\" else 1
+        return j + 1
+
+    while i < n:
+        c = program[i]
+        if c in " \t\n;{}!,~+$" or c.isdigit():
+            i += 1
+        elif c == "/":
+            i = skip_delimited(i + 1, "/")
+        elif c == "\\" and i + 1 < n:
+            i = skip_delimited(i + 2, program[i + 1])
+        elif c in "ewW":
+            return True
+        elif c in "sy" and i + 1 < n:
+            delimiter = program[i + 1]
+            i = skip_delimited(skip_delimited(i + 2, delimiter), delimiter)
+            flags_start = i
+            while i < n and (program[i].isalnum()):
+                i += 1
+            if c == "s" and any(flag in "ewW" for flag in program[flags_start:i]):
+                return True
+        elif c in _SED_TEXT_COMMANDS:
+            while i < n and program[i] not in ";\n":
+                i += 1
+        else:
+            i += 1
+    return False
+
+
+_STDIN_OPERATORS = ("<<", "<<-", "<<<")
+# Programs that take stdin as data and cannot run or save it as a file the call named, so text a
+# pipe carries into one is not carried to a segment that can write. Their own redirect targets are
+# judged by name elsewhere.
+_DATA_FILTERS = frozenset(
+    {"cat", "head", "tail", "sort", "uniq", "cut", "tr", "wc", "grep", "egrep", "fgrep", "rg",
+     "less", "more", "column", "fold", "nl", "rev", "tac", "jq", "base64", "xxd", "od", "hexdump",
+     "md5sum", "sha1sum", "sha256sum", "shasum", "cksum", "paste", "expand", "unexpand",
+     "strings", "fmt"}
+)  # fmt: skip
+
+
+def _stdin_text_withdraws(
+    parts: Sequence[_Part], name: str, listed: frozenset[tuple[str, ...]], command: str
+) -> bool:
+    """Whether text that mentions `name` could reach a program that executes it, through stdin.
+
+    The body of a heredoc and a here-string are not words of any segment, and a pipe carries
+    an earlier segment's words into the next one, so the per-segment pass cannot see
+    `python3 <<'EOF'` with `open('check.sh', 'w')` in the body. A reader on the closed list
+    (`cat <<EOF`, `wc -l`) takes the text as data and does not withdraw it.
+    """
+    # A heredoc body is in no segment, so its text is read from the command: everything after the
+    # first line. A name that appears only in another segment of the call is not in it.
+    body = command.partition("\n")[2]
+    # A here-string's word is blanked in its segment, so its text is the rest of that line.
+    in_body = _names_word_in_text(body, name) or any(
+        _names_word_in_text(rest.partition("\n")[0], name) for rest in command.split("<<<")[1:]
+    )
+    # A heredoc inside a substitution is in no segment, only its `$(...)` placeholder is, so a
+    # command with a heredoc that hands a placeholder to a program is judged by the program.
+    has_heredoc = "<<" in command
+    # `fed[i]` is whether a run of pipe-joined segments ending just before `i` carries the text.
+    # Built once left to right: walking back from each segment is quadratic in a long pipeline.
+    fed = [False] * len(parts)
+    carries = False
+    for i, part in enumerate(parts):
+        fed[i] = carries
+        carries = part.joiner.startswith("|") and (
+            carries
+            or (in_body and any(r.operator.endswith(_STDIN_OPERATORS) for r in part.redirects))
+            or bool(
+                part.words
+                and not _runs_script(part.words, name)
+                and any(_names_word(w, name) for w in (*part.words, *part.raw))
+            )
+        )
+    for i, part in enumerate(parts):
+        words = part.words
+        if not words or tuple(words) in listed or words[0] in {"cd", "pushd"}:
+            continue
+        if _runs_script(words, name) or words[0] in _DATA_FILTERS:
+            continue
+        if not part.hides_change and (
+            _reads_only(part.redirects, words) or _views_only(part.redirects, words)
+        ):
+            continue
+        if any(r.operator.endswith(_STDIN_OPERATORS) for r in part.redirects) and (
+            in_body or any(_names_word(w, name) for w in (*words, *part.raw))
+        ):
+            return True
+        if has_heredoc and in_body and any("(…)" in w or "`" in w for w in words[1:]):
+            return True
+        if fed[i]:
+            return True
+    return False
+
+
+def _names_word_in_text(text: str, name: str) -> bool:
+    return re.search(rf"(?<![\w.\-]){re.escape(name)}(?![\w\-])", text) is not None
+
+
+def _shell_names(
+    command: str, names: frozenset[str], listed: frozenset[tuple[str, ...]] = frozenset()
+) -> set[str]:
+    """Which of `names` a shell command could change: a redirect target, or any segment that
+    mentions the file and is not a read of it.
+
+    Matched by the file's name, so a copy in another folder withdraws it too. A command that will
+    not parse, or whose substitution changes something, withdraws every name its text mentions.
+    A read-only command (`cat`, `grep`, `head`, `wc`) naming the file does not. What this does not
+    see is a script or a variable that builds the path.
+    """
+    mentioned = {n for n in names if n in command}
+    if not mentioned:
         return set()
+    try:
+        parts = _call_parts_once(command)
+    except Exception:  # noqa: BLE001 - a command that will not parse is failed closed
+        return mentioned
     found: set[str] = set()
     for part in parts:
+        if part.hides_change:
+            found |= mentioned
         named = {os.path.basename(t) for t in _file_targets(part.redirects)}
         if part.words and os.path.basename(part.words[0]) in _NAMING_WRITERS:
             named |= {os.path.basename(w) for w in part.words[1:]}
         found |= names & named
+        found |= {n for n in mentioned if _part_names_a_write(part, n, listed)}
+    found |= {n for n in mentioned - found if _stdin_text_withdraws(parts, n, listed, command)}
     return found
 
 
@@ -6070,18 +6351,18 @@ def _written_declaring_files(
     children: Sequence[list[dict[str, Any]]],
     *,
     also: frozenset[str] = frozenset(),
+    listed: frozenset[tuple[str, ...]] = frozenset(),
 ) -> frozenset[str]:
     """The declaring-file names, the reader's listing and each name in `also` that the session
     wrote, in any folder.
 
     By file name alone, so a write anywhere withdraws that kind: a session that wrote a
     `package.json` is not trusted to have left another one alone. A write tool names its file. A
-    shell command that names the listing anywhere in its text counts as writing it: a redirect, a
-    `cp`, a `tee`, a `sed -i` or an interpreter's argument all do, and a read of it withdraws the
-    listing too, which fails closed. What it does not see is a script or a variable that builds the
-    path. A shell write of a declaring file is decided by the work tree's contents, compared with
-    the base commit's (`project_scripts`); a shell write of a name in `also` is read from the
-    call's redirects and its `cp`, `mv`, `tee` and `chmod` arguments. Read through
+    shell command that mentions the listing or a listed script counts as writing it unless it only
+    reads it (`cat`, `grep`, `head`, `wc`) or runs the script (`_shell_names`): a redirect, a `cp`,
+    a `tee`, a `sed -i` or an interpreter's own code all do. What it does not see is a script or a
+    variable that builds the path. A shell write of a declaring file is decided by the work
+    tree's contents, compared with the base commit's (`project_scripts`). Read through
     `_claude_tool_uses`, the one place a tool call's input is read.
     """
     watched = frozenset(
@@ -6103,13 +6384,10 @@ def _written_declaring_files(
                 continue
             command = tool_input.get("command")
             if name == "Bash" and isinstance(command, str):
-                if reader_checks.FILENAME in command:
-                    found.add(reader_checks.FILENAME)
                 # Fails closed like the listing: a command that names a package-manager config
                 # file may have written it, and which script a runner starts follows from it.
                 found.update(n for n in project_scripts.STEERING_FILES if n in command)
-                if also:
-                    found |= _shell_names(command, also)
+                found |= _shell_names(command, also | {reader_checks.FILENAME}, listed)
     return frozenset(found)
 
 
@@ -6149,7 +6427,7 @@ def _declared_scripts(
         if (words := _listed_words(entry))
     )
     scripts = frozenset(os.path.basename(w[0]) for w in listed if "/" in w[0])
-    written = _written_declaring_files(parent, children, also=scripts) | prior_writes
+    written = _written_declaring_files(parent, children, also=scripts, listed=listed) | prior_writes
     # A listing the reader never made is not withdrawn, and the page does not say it was.
     wrote_listing = reader_checks.FILENAME in written and bool(listed)
     if loaded is None and not listed:
