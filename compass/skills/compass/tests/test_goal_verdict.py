@@ -485,9 +485,11 @@ class TheStoredCheckIsValidatedOnTheWayBackIn(base.AClaudeCodeReadingProducer):
             with self.subTest(patch=patch):
                 stored = self._stored()
                 stored["goal_verdict"] = {**stored["goal_verdict"], **patch}
-                self.assertIsNone(annotation_store._assessment(stored, 240))
+                back = annotation_store._assessment(stored, 240)
+                assert back is not None
+                self.assertNotIn("goal_verdict", back)
 
-    def test_a_token_the_producer_never_writes_refuses_the_reading_whole(self) -> None:
+    def test_a_token_the_producer_never_writes_drops_the_check_and_keeps_the_reading(self) -> None:
         for patch in (
             {"check": "confirmed"},
             {"why": "trust-me"},
@@ -498,7 +500,63 @@ class TheStoredCheckIsValidatedOnTheWayBackIn(base.AClaudeCodeReadingProducer):
             with self.subTest(patch=patch):
                 stored = self._stored()
                 stored["goal_verdict"] = {**stored["goal_verdict"], **patch}
-                self.assertIsNone(annotation_store._assessment(stored, 240))
+                back = annotation_store._assessment(stored, 240)
+                assert back is not None
+                self.assertNotIn("goal_verdict", back)
+
+    def _pair(self, check: str, why: str, cites: list[str]) -> dict[str, Any]:
+        stored = self._stored()
+        stored["goal_verdict"] = {"at": VERDICT_AT, "check": check, "why": why, "cites": cites}
+        if why in reading.GOAL_VERDICT_REMOVAL_WHYS:
+            stored["goal_verdict"].update({"path": "a.md", "changed_at": 170.0})
+        if why == reading.GOAL_VERDICT_QUOTED:
+            stored["goal_verdict"]["quoted"] = 1
+        return stored
+
+    def test_every_pair_the_producer_gives_is_accepted(self) -> None:
+        for why, (check, cited) in reading.GOAL_VERDICT_PAIRS.items():
+            with self.subTest(why=why):
+                back = annotation_store._assessment(
+                    self._pair(check, why, ["write-1"] if cited else []), 240
+                )
+                assert back is not None
+                self.assertEqual(check, back["goal_verdict"]["check"])
+
+    def test_the_producer_and_the_validator_read_one_table(self) -> None:
+        self.assertEqual(set(reading.GOAL_VERDICT_WHYS), set(reading.GOAL_VERDICT_PAIRS))
+        self.assertEqual(
+            set(reading.GOAL_VERDICT_CHECKS),
+            {check for check, _ in reading.GOAL_VERDICT_PAIRS.values()},
+        )
+
+    def test_a_pair_the_producer_cannot_emit_drops_the_check_and_keeps_the_reading(self) -> None:
+        for check, why, cites in (
+            ("agrees", "not-found", []),
+            ("agrees", "nothing-checkable", []),
+            ("disputed", "written-before", ["write-1"]),
+            ("unconfirmed", "ci-passed", ["ci-1"]),
+            ("agrees", "check-failed", ["check-1"]),
+        ):
+            with self.subTest(check=check, why=why):
+                back = annotation_store._assessment(self._pair(check, why, cites), 240)
+                assert back is not None
+                self.assertNotIn("goal_verdict", back)
+
+    def test_a_pair_the_producer_always_cites_is_refused_without_cites(self) -> None:
+        for why in ("ci-passed", "passed-before", "written-before", "written-after"):
+            with self.subTest(why=why):
+                check, _ = reading.GOAL_VERDICT_PAIRS[why]
+                back = annotation_store._assessment(self._pair(check, why, []), 240)
+                assert back is not None
+                self.assertNotIn("goal_verdict", back)
+
+    def test_a_pair_the_producer_never_cites_is_refused_with_cites(self) -> None:
+        for why in ("not-found", "nothing-checkable", "deleted-after"):
+            with self.subTest(why=why):
+                check, _ = reading.GOAL_VERDICT_PAIRS[why]
+                back = annotation_store._assessment(self._pair(check, why, ["write-1"]), 240)
+                assert back is not None
+                self.assertNotIn("goal_verdict", back)
 
     def test_the_key_is_one_the_assessment_declares(self) -> None:
         self.assertIn("goal_verdict", reading.ASSESSMENT_KEYS)

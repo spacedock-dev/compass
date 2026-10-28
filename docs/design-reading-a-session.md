@@ -6024,7 +6024,7 @@ DRC-4948, owner ruling of the same date. When a Claude Code session ran with `/g
 - The result is stored beside the criteria as `goal_verdict` (`{at, check, why, cites}`), not among them. `at`
   is the verdict's own time, so a reading that predates a verdict, or carries no test, leaves it unchecked and
   the card says to analyze again. `check` and `why` are closed tokens; the page owns the sentences, as it does
-  for a criterion's `why`, and a stored value outside the tokens refuses the reading whole.
+  for a criterion's `why`, and a stored value outside the tokens is dropped on read (see the 2026-10-28 amendment below).
 - The verdict never lowers a level and never counts as a passing check. The producer builds the criteria
   without reading it, and the check is not in `Recorded`, so nothing that cites a check can cite it. Where
   Compass disagrees the card says "Compass disputes it", and "Compass's own reading stands": the level shown is
@@ -6650,7 +6650,8 @@ check Compass recorded, and says where it is.
   characters (the output searched is only the last 180) once whitespace is folded and case is ignored, and at most
   eight are looked for. A span made only of result words ("pass", "ok", "all checks passed", "no issues found") is
   ignored. A span the check's own command line holds is not found there, and neither are the `> ` lines a package
-  runner echoes for its recipe; a line the script itself prints is still the check's output and is searched. A span that
+  runner echoes for its recipe (see [the 2026-10-28 amendment](#amended-2026-10-28-owner-a-stored-verdict-is-one-pair-the-producer-emits-and-pytest-lines-stay-searchable));
+  a line the script itself prints is still the check's output and is searched. A span that
   names a remote job (the shapes
   [the 2026-10-27 CI job amendment](#amended-2026-10-27-a-ci-job-named-in-the-reason-is-not-a-local-check) lists) is
   left to the pull request's CI facts. A span that holds a credential shape or a redaction marker is never searched.
@@ -6663,6 +6664,29 @@ check Compass recorded, and says where it is.
 - **Rejected:** searching every tool output (an `echo` satisfies it); searching a check's output for the quote and
   calling it agreement (a phrase in output is not a result); matching a quoted job name to a CI fact by its name,
   which stays with the pull request's CI facts and the number the reason names.
+
+### Amended 2026-10-28 (owner): a stored verdict is one pair the producer emits, and pytest lines stay searchable
+
+Two gaps in the verdict test, both measured against the producer rather than assumed.
+
+- **Check, why and cites are one fact.** The stored-check validator accepted any listed `check` beside any listed
+  `why`, so a record holding `agrees` with `not-found`, or `agrees` with `ci-passed` and no cites, read back and drew
+  a pass nothing backed. The producer cannot emit those. It now builds its answer from one table
+  (`reading.GOAL_VERDICT_PAIRS`: each `why`, the `check` it always comes with, and whether it always carries cites),
+  and the validator reads the same table, so there is no second list to drift. A pass or a dispute that cites a fact
+  needs at least one cite; `not-found`, `nothing-checkable` and the two removal tokens carry none.
+- **A bad verdict is dropped, not the reading.** A stored verdict that fails any of this is left off and the reading
+  renders without it, as one with no test does: the card says the claim is unchecked. Refusing the whole reading for
+  a field that only adds a sentence lost the criteria beside it, and a dropped verdict never speaks for Compass.
+  The stored pull request CI facts keep their own whole refusal.
+- **Only the runner's own echo is stripped from a check's output.** The quote search removed every line starting
+  with `> `, which also removed pytest's failing-source lines (`>       assert x == 1`) and made a quote of one
+  unfindable. It now removes only the block npm, pnpm and yarn print before a script runs: the first non-blank line
+  of the output has the shape `> <package>@<version> <script>`, and the contiguous `> ` lines after it are the
+  echoed command. Output that does not open that way keeps every line, and a `>` line after the echo's blank line
+  is the check's own.
+- **Rejected:** stripping nothing (the recipe echo would make a command's own text count as printed output);
+  stripping by line count (a runner may print one or two lines).
 
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 

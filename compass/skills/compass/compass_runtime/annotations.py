@@ -911,9 +911,10 @@ def _verdict_extras_whole(value: dict[str, Any]) -> bool:
 def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     """One stored test of the harness's goal verdict, or nothing.
 
-    Closed tokens only, as a criterion's `why` is: the page maps a token to its own sentence, so a
-    sidecar rewritten to say something else refuses the reading whole rather than speaking for
-    Compass.
+    Closed tokens only, as a criterion's `why` is: the page maps a token to its own sentence. The
+    pair has to be one the producer emits (`reading.GOAL_VERDICT_PAIRS`) with the cites it always
+    gives, so a sidecar rewritten to say something else is dropped and the reading renders without
+    a verdict, which the card already says is unchecked, rather than speaking for Compass.
     """
     if not isinstance(value, dict):
         return None
@@ -926,12 +927,14 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
         isinstance(at, bool)
         or not isinstance(at, (int, float))
         or at <= 0
-        or value["check"] not in reading.GOAL_VERDICT_CHECKS
-        or value["why"] not in reading.GOAL_VERDICT_WHYS
+        or value["why"] not in reading.GOAL_VERDICT_PAIRS
         or not isinstance(cites, (list, tuple))
         or len(cites) > reading.MAX_RECORDED_CITES
         or not all(isinstance(cite, str) for cite in cites)
     ):
+        return None
+    check, cited = reading.GOAL_VERDICT_PAIRS[value["why"]]
+    if value["check"] != check or cited != bool(cites):
         return None
     checked: reading.GoalVerdictCheck = {
         "at": float(at),
@@ -976,7 +979,6 @@ def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.As
     ci = ci_read.validate(value["ci"]) if "ci" in value else None
     if (
         criteria is None
-        or ("goal_verdict" in value and verdict is None)
         or ("ci" in value and ci is None)
         or (value.get("coverage") is not None and coverage is None)
         or any(not reading.result_in_scope(row.get("result"), scope) for row in criteria.values())

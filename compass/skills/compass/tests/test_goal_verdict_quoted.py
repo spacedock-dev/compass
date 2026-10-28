@@ -265,6 +265,24 @@ class AQuoteInARecordedChecksOutputIsSaidToBeThere(base.AClaudeCodeReadingProduc
         )
         self.assertEqual(reading.GOAL_VERDICT_QUOTED, printed["why"])
 
+    def test_a_pytest_failing_source_line_is_found_and_a_recipe_echo_above_it_is_not(self) -> None:
+        fact = base.check_fact(result="failed", at=130.0, summary="pnpm test")
+        key = ("call-1", "pnpm test")
+        failing = ">       assert total == 1"
+        for output in (
+            f"> app@1.0.0 test /work/app\n> pytest -q\n\n{failing}\nE  assert 2 == 1\n",
+            f"{failing}\nE  assert 2 == 1\n",
+        ):
+            with self.subTest(output=output):
+                _read, verdict = self._verdict([fact], quoting("assert total == 1"), {key: output})
+                self.assertEqual(reading.GOAL_VERDICT_QUOTED, verdict["why"])
+        _read, echoed = self._verdict(
+            [fact],
+            quoting("assert total == 1"),
+            {key: f"> app@1.0.0 test /work/app\n> {failing[2:]}\n\nran\n"},
+        )
+        self.assertNoQuote(echoed)
+
     def test_a_span_past_the_searched_tail_is_not_looked_for(self) -> None:
         longer = "x" * (reading.MAX_QUOTED_SPAN_CHARS + 1)
         self.assertEqual((), reading._quoted_spans(f'"{longer}"'))
