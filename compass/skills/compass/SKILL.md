@@ -546,7 +546,11 @@ many checks and written files it lists (1,000), and how much of the session's an
 transcripts it scans for them (512 MB), which is where delegated work runs its tests. The project
 page keeps its own 100 events and 12 checks and scans 8 MB. A check that `&&` joins ahead of a later
 check whose own summary ends the output counts as passed, since the later one only ran because the
-earlier one exited 0. An idle Claude Code session whose last turn has no recorded finish is read up to
+earlier one exited 0. Checks separated by `;`, each cut by `tail`, each take their own summary line
+in order, but only when there is exactly one such line per check and the last ends the output; a
+bare unittest `OK` counts when the command names the tests it runs. When nothing departs and the
+goal line rests on what the agent said, green pull request checks that count (on the session's
+commit, or merged into its branch) are enough for a level of None or low. An idle Claude Code session whose last turn has no recorded finish is read up to
 its last recorded entry, and the result says so with that entry's time, never as a final verdict. General scope and the
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state

@@ -878,3 +878,51 @@ class ResultTimeTest(unittest.TestCase):
             [check("c1", SAVE - 10, "failed") | {"result_at": SAVE - 5}], scan(failed=1)
         )
         self.assertEqual(levels.NOT_ENOUGH, analyze(SUPPORTED, facts).level)
+
+
+class CountedCiBacksTheFloorTest(unittest.TestCase):
+    """A consistent goal resting on the agent's account reaches the floor on green CI checks that
+    count, a pull request merged into the session's branch among them (owner, 2026-10-28)."""
+
+    @staticmethod
+    def ci(**over: Any) -> list[dict[str, Any]]:
+        from compass_runtime import ci_read  # noqa: PLC0415
+
+        record = {
+            **ci_read.blank(
+                ci_read.Binding("acme/widgets", 12, ci_read.SOURCE_GOAL),
+                "a" * 40,
+                False,
+                SAVE + 500,
+            ),
+            "head": "b" * 40,
+            "merged_in": True,
+            "counts": {"pass": 1, "fail": 0, "pending": 0, "skipping": 0, "cancel": 0},
+            "checks": [{"name": "quality-gate", "bucket": "pass", "completed_at": SAVE + 400}],
+            **over,
+        }
+        return ci_read.facts(record, "claude", "s")
+
+    def level(self, ci_facts: list[dict[str, Any]]) -> levels.Level:
+        facts = evidence([*PASSING.facts, *ci_facts], PASSING.scan)
+        return analyze(a_reading(goal=criterion(reading.RESULT_CONSISTENT, "m1")), facts, lines=0)
+
+    def test_green_counted_checks_back_a_goal_the_model_rested_on_the_agents_account(self) -> None:
+        got = self.level(self.ci())
+        self.assertEqual(levels.NONE_OR_LOW, got.level)
+
+    def test_checks_that_do_not_count_back_nothing(self) -> None:
+        got = self.level(self.ci(merged_in=False))
+        self.assertNotEqual(levels.NONE_OR_LOW, got.level)
+
+    def test_a_counted_failure_backs_nothing(self) -> None:
+        got = self.level(
+            self.ci(
+                counts={"pass": 1, "fail": 1, "pending": 0, "skipping": 0, "cancel": 0},
+                checks=[
+                    {"name": "quality-gate", "bucket": "pass", "completed_at": SAVE + 400},
+                    {"name": "unit", "bucket": "fail", "completed_at": SAVE + 400},
+                ],
+            )
+        )
+        self.assertNotEqual(levels.NONE_OR_LOW, got.level)

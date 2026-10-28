@@ -4221,6 +4221,12 @@ def _summary_runner(words: list[str]) -> str:
     words = _runner_words(words)
     if _PYTHON_RE.match(words[0]) and words[1:3] == ["-m", "unittest"]:
         return "unittest"
+    if _PYTHON_RE.match(words[0]) and _RUN_TESTS_SCRIPT.fullmatch(
+        os.path.basename(words[1:2][0] if words[1:2] else "")
+    ):
+        # A project's own unittest wrapper (`scripts/run_tests.py` here, Django's `runtests.py`):
+        # its summary is unittest's, and it is read under unittest's rules, `Ran N tests` and all.
+        return "unittest"
     if os.path.basename(words[0]) in ("pytest", "py.test") or (
         _PYTHON_RE.match(words[0]) and words[1:3] == ["-m", "pytest"]
     ):
@@ -4289,15 +4295,37 @@ def _last_line_summary(words: list[str], text: str) -> str:
         return "failed"
     if not passed.fullmatch(last) or cancelled:
         return ""
-    return "" if _pass_is_refused(runner, lines) else "passed"
+    return "" if _pass_is_refused(runner, lines, words) else "passed"
 
 
-def _pass_is_refused(runner: str, lines: list[str]) -> bool:
+def _pass_is_refused(runner: str, lines: list[str], words: list[str] | None = None) -> bool:
     anywhere = _FAILS_ANYWHERE.get(runner)
     if anywhere is not None and any(anywhere.search(line) for line in lines[:-1]):
         return True
-    # unittest prints `OK` after an empty discovery too, so a pass needs a real count before it.
-    return runner == "unittest" and not (len(lines) > 1 and _UNITTEST_RAN.match(lines[-2]))
+    # unittest prints `OK` after an empty discovery too, so a pass needs a real count before it,
+    # unless the command names the tests it runs: a named module, class or method is never an
+    # empty discovery (owner, 2026-10-28), and `| tail -1` keeps only the `OK`.
+    return (
+        runner == "unittest"
+        and not (len(lines) > 1 and _UNITTEST_RAN.match(lines[-2]))
+        and not _explicit_unittest(words or [])
+    )
+
+
+_UNITTEST_SELECTOR = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+_UNITTEST_QUIET_FLAGS = frozenset({"-v", "-q", "--verbose", "--quiet", "-b", "--buffer"})
+_RUN_TESTS_SCRIPT = re.compile(r"run_?tests?\.py")
+
+
+def _explicit_unittest(words: list[str]) -> bool:
+    """`python -m unittest` naming at least one dotted test name and no discovery or pattern."""
+    words = _runner_words(words) if words else []
+    if len(words) < 4 or not _PYTHON_RE.match(words[0]) or words[1:3] != ["-m", "unittest"]:
+        return False
+    named = [word for word in words[3:] if word not in _UNITTEST_QUIET_FLAGS]
+    return bool(named) and all(
+        word != "discover" and _UNITTEST_SELECTOR.fullmatch(word) for word in named
+    )
 
 
 def _ran_nothing(tail: str) -> bool:
@@ -4492,6 +4520,114 @@ def _chain_passes(call: _ShellCall, text: str, added: Mapping[int, dict[str, Any
         ):
             continue
         run.update(result="passed", result_source="chain", result_reason="")
+
+
+def _check_groups(call: _ShellCall) -> list[list[int]] | None:
+    """The call's checks as `&&` groups, or None where its shape lets something else print.
+
+    A group is checks joined by `&&` with nothing piped between them; after its last check only
+    pipe filters may follow, then `;`, `&&` or the end. Before the first check any setup may run,
+    as `last_line_may_speak` allows: agents edit a file and test it in one call. A summary-shaped
+    line it printed would be one line too many, and `_ordered_summaries` would read nothing. After
+    the first check a `cd` that prints nothing and an assignment may stand anywhere; any other
+    command could print a line that reads as the next group's summary, so the call is not read.
+    """
+    if len(call.checks) < 2 or call.substituted:
+        return None
+    checks = set(call.checks)
+    groups: list[list[int]] = []
+    previous_joiner = ""
+    previous_check = False
+    first = min(checks)
+    for index, part in enumerate(call.parts):
+        if index < first:
+            previous_joiner = part.joiner
+            continue
+        words = call.words[index][0]
+        if index in checks:
+            if (
+                call.words[index][1]
+                or call.background(index)
+                or call.negated(index)
+                or call.unestablished(index)
+            ):
+                return None
+            if previous_check and previous_joiner == "&&" and groups:
+                groups[-1].append(index)
+            else:
+                groups.append([index])
+            previous_check = True
+        elif (
+            (previous_joiner == "|" and _pipe_filter(part))
+            or not words
+            or (words[0] == "cd" and index not in call.printing_directories)
+        ):
+            previous_check = False
+        else:
+            return None
+        previous_joiner = part.joiner
+        if previous_joiner not in ("", ";", "&&", "|"):
+            return None
+    return groups if len(groups) > 1 else None
+
+
+def _ordered_summaries(  # noqa: C901 - each early return is one way the lines can be ambiguous
+    call: _ShellCall, text: str, added: Mapping[int, dict[str, Any]]
+) -> None:
+    """Results for `;`-separated checks, each from its own summary line, in order (owner,
+    2026-10-28).
+
+    Agents run `a | tail -2; b | tail -1; c && d | tail -1`, whose status is the last filter's and
+    whose output is every block's tail in a row. Each group's last check takes the one summary line
+    its own runner prints, and the checks `&&` joins ahead of it passed, as `_chain_passes` reads
+    them. Read only when the lines are unambiguous: every group's last check has a runner, the lines
+    any of the call's runners would print number exactly one per group, the k-th is group k's own,
+    and the last ends the output. Anything else leaves every check as it was.
+    """
+    groups = _check_groups(call)
+    if groups is None:
+        return
+    runners = [_summary_runner(call.words[group[-1]][0]) for group in groups]
+    if not all(runners):
+        return
+    involved = {_summary_runner(call.words[index][0]) for index in call.checks} - {""}
+    lines = [
+        _ANSI_RE.sub("", line).rstrip()
+        for line in _without_trailer(_redacted(text)).split("\n")
+        if line.strip()
+    ]
+    trailing = _TRAILING_LINES.get(runners[-1])
+    while trailing is not None and lines and trailing.match(lines[-1]):
+        lines.pop()
+
+    def summary_of(line: str, runner: str) -> str:
+        passed, failed = _LAST_LINE_SUMMARIES[runner]
+        if len(line) > _LAST_LINE_MAX:
+            return ""
+        return "failed" if failed.fullmatch(line) else "passed" if passed.fullmatch(line) else ""
+
+    found = [
+        at for at, line in enumerate(lines) if any(summary_of(line, runner) for runner in involved)
+    ]
+    if len(found) != len(groups) or not found or found[-1] != len(lines) - 1:
+        return
+    start = 0
+    for group, runner, at in zip(groups, runners, found, strict=True):
+        last = group[-1]
+        verdict = summary_of(lines[at], runner)
+        block = lines[start : at + 1]
+        start = at + 1
+        if not verdict:
+            return
+        if verdict == "passed" and _pass_is_refused(runner, block, call.words[last][0]):
+            verdict = ""
+        for index in group[:-1]:
+            run = added.get(index)
+            if run is not None and run["result"] == "not-recorded":
+                run.update(result="passed", result_source="chain", result_reason="")
+        run = added.get(last)
+        if verdict and run is not None and run["result"] == "not-recorded":
+            run.update(result=verdict, result_source="summary", result_reason="")
 
 
 def _check_line(words: list[str]) -> str:
@@ -5560,6 +5696,7 @@ class _ToolReportTally:
             added[index] = self.runs[identity][-1]
         if result is not None:
             _chain_passes(call, text, added)
+            _ordered_summaries(call, text, added)
 
     @staticmethod
     def _outcome(
