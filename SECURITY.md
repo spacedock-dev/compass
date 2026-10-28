@@ -2656,6 +2656,10 @@ project, no title, no prompt text and no model prose reach the repository from e
 a test asserts that none of the local half's fields (the session id, the project, the title, the
 opening ask, the cutoff sentence, the model's detail) appears anywhere in the summary.
 
+The one exception is a set of synthetic cases written for this repository and run against a fake
+model, in `scripts/premarked_cases.py` and its test. They hold invented repositories, commands and
+commits and no session text, so they are committed; recorded cases stay local as above.
+
 A scoring run names its producer with a required `--producer`, and only `claude` may score:
 no Codex spend is authorized for this qualification, so `--producer codex` reports and refuses to
 score. A Claude Code run spends the operator's Anthropic capacity through `reading.ClaudeReadingModel`, the

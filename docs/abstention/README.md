@@ -118,6 +118,28 @@ local results (`~/.compass/abstention-results.json`) carry the producer's withhe
 cutoff sentence. The rubric expectation file (`~/.compass/abstention-rubric.json`) may carry
 synthesised case bodies. All three stay on the machine that made them.
 
+## Premarked false-consistent cases
+
+`scripts/premarked_cases.py` holds nine synthetic cases in five classes: a command that cannot
+fail (`echo`, `true`, `exit 0`), a command forced to exit zero (`make deploy || true`), CI for a
+commit that is not the session's, CI after the session edited a workflow file, and a CI poll of
+another pull request or repository. Each is one goal or first line whose words the cited evidence
+would falsely support. The table carries no expected outcome. A different agent wrote
+`premarked-false-consistent-marks.json` from the case descriptions and the written rulings alone,
+before any run, using one of two tokens: `withdrawn` (the line ends not verifiable) or
+`caution-kept` (it stays consistent and the prompt carries the caution, as the ruling for an
+edited workflow requires). `premarked-false-consistent-marks-digest.json` binds the marks file and
+the case table by sha256, and it was committed before the run test existed.
+
+The cases are synthetic (`acme/widgets`, `fix/widget-guard`, repeated-digit commits), so they and
+their fixtures are committed, unlike the recorded cases above. Nothing here calls a model.
+`compass/skills/compass/tests/test_premarked_false_consistent.py` runs each case through the real
+reader with a fake model that answers consistent and cites every ledger row, and checks the
+outcome against the committed mark, the digest file against both inputs, and that the marks were
+committed before the test. `python3 scripts/premarked_cases.py` prints the table, and `--run`
+refuses unless the committed digest equals the working copy. The same cases against the real
+producer are owner-gated spend and are not part of this check.
+
 ## Masked values, 2026-10-28
 
 The drift replay passes the values a shell call masked to the producer, as the runtime does (see
