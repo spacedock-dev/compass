@@ -7929,8 +7929,8 @@ tiers exist to refuse.
 
 - **The rule.** A poll counts only when its repository is the `origin` of the folder the session began in and,
   where it names a pull request number or a branch, the session is bound to that one. The repository is the
-  poll's `--repo` or `-R`, a `GH_REPO=` prefix on the poll or an earlier `export` in the same call (which `gh`
-  reads the same way), or a pull request or run URL; a URL that disagrees with `--repo` binds nothing. A
+  poll's `--repo` or `-R`, a `GH_REPO=` prefix on the poll itself (which `gh` reads the same way), or a pull request or run URL; a URL that disagrees with `--repo` binds nothing. An earlier
+  `export GH_REPO=` in the same call, like `GH_HOST` or `GH_ENTERPRISE_TOKEN`, binds nothing. A
   poll that names a repository is compared with the session folder's remote wherever the call ran, so
   `cd <other clone> && gh pr checks 3 -R <the session's repository>` counts. A poll that names none reads the
   call's own directory, which must be the session folder or a checkout whose remote equals the session folder's
