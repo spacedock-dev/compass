@@ -34,6 +34,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
@@ -99,6 +100,11 @@ ERRORS: Final = (
 )
 
 TIMEOUT_SEC: Final = 20.0
+# A GitLab read makes up to twelve sequential calls (the request, up to ten pages of jobs, the
+# request again), each allowed `TIMEOUT_SEC`, so without one deadline over the whole read a slow
+# server could hold a press for four minutes. It is checked before each call, and a call is given
+# only the time that is left.
+GITLAB_DEADLINE_SEC: Final = 60.0
 # `gh pr checks --json` prints about 250 bytes a check; a pull request with a thousand of them
 # is far past anything a reading can use, and the cap is what stops a hostile endpoint filling a
 # disk.
@@ -192,11 +198,17 @@ def valid_host(host: str) -> bool:
     return host == host.lower() and _HOST_RE.fullmatch(host) is not None
 
 
+def _github_host(host: str) -> bool:
+    """github.com and every name under it, which is never a GitLab host."""
+    return host == HOST or host.endswith(f".{HOST}")
+
+
 def _gitlab_repository(repository: str) -> bool:
     host, _, path = repository.partition("/")
     segments = path.split("/")
     return (
         valid_host(host)
+        and not _github_host(host)
         and 2 <= len(segments) <= 21
         and all(
             _GROUP_SEGMENT_RE.fullmatch(segment)
@@ -226,11 +238,7 @@ def pull_request_urls(text: str) -> tuple[tuple[str, int], ...]:
             found[(repository, int(matched["number"]))] = None
     for matched in _MR_URL_RE.finditer(text):
         repository = f"{matched['host'].lower()}/{matched['path']}"
-        if (
-            matched["host"].lower() != HOST
-            and _gitlab_repository(repository)
-            and int(matched["number"]) <= _NUMBER_MAX
-        ):
+        if _gitlab_repository(repository) and int(matched["number"]) <= _NUMBER_MAX:
             found[(repository, int(matched["number"]))] = None
     return tuple(found)
 
@@ -622,6 +630,67 @@ def glab_environment(environ: Mapping[str, str]) -> dict[str, str]:
 _HOSTS_FILE_BYTES: Final = 65_536
 
 
+def _unplaceable(line: str, stripped: str) -> bool:
+    """Whether a line inside `hosts:` may hold a key this reader would not parse.
+
+    YAML indents with spaces only, so a tab is a file no key can be placed in, and a line that
+    opens a flow mapping or sequence, a complex key, a tag or a block scalar may spell one of the
+    three keys below in a way this reader does not read. The host it sits in is not read.
+    """
+    return "\t" in line[: len(line) - len(line.lstrip(" \t"))] or stripped[0] in "{[?!|>"
+
+
+def _spreads(stripped: str) -> bool:
+    """Whether a line defines or uses an anchor, alias or merge key anywhere on it.
+
+    An anchor under one host can be merged into another, so one seen anywhere under `hosts:` leaves
+    no host this reader can vouch for.
+    """
+    return "&" in stripped or "*" in stripped or "<<" in stripped
+
+
+_PLAIN_KEY: Final = re.compile(r"[A-Za-z0-9_.-]+")
+_TLS_OFF: Final = frozenset({"false", "no", "off", "n", "0"})
+
+
+def _redirects(key: str, value: str, host: str) -> bool:
+    """Whether one `key: value` of a host's block sends glab's call elsewhere.
+
+    glab resolves `--hostname` through these three keys, so a host that sends the call over http, to
+    another address or without certificate checks is not one this read may name. A key may be
+    quoted, as YAML allows, and the quotes are not part of it; a key that is not a plain name (an
+    escape, a space) may decode to one of the three, so it refuses the host. Certificate checks are
+    an allow-list: only a bare `false` style value keeps the host, because a comment, a tag or a
+    value on the next line is YAML this reader does not parse.
+    """
+    name, setting = key.strip().strip("'\""), value.strip().strip("'\"").lower()
+    if not _PLAIN_KEY.fullmatch(name):
+        return True
+    return (
+        (name == "api_protocol" and setting != "https")
+        or (name == "api_host" and setting != host)
+        or (name == "skip_tls_verify" and setting not in _TLS_OFF)
+    )
+
+
+def _glab_config_text(environ: Mapping[str, str]) -> str:
+    """glab's configuration file, or empty when its folder is relative or it cannot be read."""
+    base = environ.get("XDG_CONFIG_HOME", "") or (
+        environ.get("APPDATA", "")
+        if os.name == "nt"
+        else os.path.join(environ.get("HOME", ""), ".config")
+    )
+    if not base or not os.path.isabs(base):
+        return ""
+    try:
+        raw = runtime_io.read_prefix_bytes(
+            os.path.join(base, "glab-cli", "config.yml"), max_bytes=_HOSTS_FILE_BYTES
+        )
+    except OSError:
+        return ""
+    return raw.decode("utf-8", "replace")
+
+
 def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
     """The hosts glab's own configuration names, read from its file and never by launching glab.
 
@@ -631,27 +700,20 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
     one with a port) is dropped, so the set can only hold hosts a launch may name. Unreadable or
     absent is empty.
     """
-    base = environ.get("XDG_CONFIG_HOME", "") or (
-        environ.get("APPDATA", "")
-        if os.name == "nt"
-        else os.path.join(environ.get("HOME", ""), ".config")
-    )
-    if not base or not os.path.isabs(base):
-        return frozenset()
-    try:
-        raw = runtime_io.read_prefix_bytes(
-            os.path.join(base, "glab-cli", "config.yml"), max_bytes=_HOSTS_FILE_BYTES
-        )
-    except OSError:
-        return frozenset()
+    text = _glab_config_text(environ)
     hosts: set[str] = set()
     redirected: set[str] = set()
     inside, depth, current = False, 0, ""
-    for line in raw.decode("utf-8", "replace").splitlines():
+    for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         indent = len(line) - len(line.lstrip(" "))
+        if inside and indent and _spreads(stripped):
+            return frozenset()
+        if inside and _unplaceable(line, stripped):
+            redirected.add(current)
+            continue
         if indent == 0:
             inside = stripped.rstrip() == "hosts:"
             depth = 0
@@ -665,14 +727,7 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
                 hosts.add(current)
             continue
         key, _, value = stripped.partition(":")
-        key, value = key.strip(), value.strip().strip("'\"").lower()
-        # glab resolves `--hostname` through these three keys, so a host that sends the call over
-        # http, to another address or without certificate checks is not one this read may name.
-        if (
-            (key == "api_protocol" and value != "https")
-            or (key == "api_host" and value != current)
-            or (key == "skip_tls_verify" and value in {"true", "yes", "on", "1"})
-        ):
+        if _redirects(key, value, current):
             redirected.add(current)
     return frozenset(hosts - redirected)
 
@@ -722,6 +777,7 @@ def _run(
     *,
     glab: bool = False,
     on_spawn: Callable[[Any], None] | None = None,
+    timeout: float | None = None,
 ) -> Any:
     """One `gh` call: its JSON whatever the exit code, or a `_FailureError` with a closed token.
 
@@ -752,7 +808,7 @@ def _run(
                     stdout=out,
                     stderr=err,
                     env=environ,
-                    timeout=TIMEOUT_SEC,
+                    timeout=TIMEOUT_SEC if timeout is None else timeout,
                     check=False,
                     **options,
                 )
@@ -886,7 +942,7 @@ class Floor:
 FLOOR: Final = Floor()
 
 
-def read(
+def read(  # noqa: PLR0913 - every one is a seam a test or a caller binds
     binding: Binding,
     *,
     session_head: str,
@@ -896,6 +952,7 @@ def read(
     runner: Callable[..., Any] = supervise.run,
     floor: Floor | None = None,
     on_spawn: Callable[[Any], None] | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> dict[str, Any]:
     """One press's read of one pull request: the stored record, with `error` set when it failed.
 
@@ -907,7 +964,7 @@ def read(
     key = (binding.repository, binding.number, binding.branch, session_head, caution)
     if floor is not None and (kept := floor.get(key, now)) is not None:
         return kept
-    record = _read_once(binding, session_head, caution, now, environ, runner, on_spawn)
+    record = _read_once(binding, session_head, caution, now, environ, runner, on_spawn, clock)
     if floor is not None and not record["error"]:
         floor.put(key, now, record)
     return record
@@ -921,6 +978,7 @@ def _read_once(
     environ: Mapping[str, str] | None,
     runner: Callable[..., Any],
     on_spawn: Callable[[Any], None] | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> dict[str, Any]:
     """One uncached read: `read` without the floor."""
     record = blank(binding, session_head, caution, now)
@@ -930,7 +988,7 @@ def _read_once(
     ):
         return {**record, "error": ERROR_FAILED}
     if host_of(binding.repository) != HOST:
-        return _read_gitlab(binding, record, environ, runner, on_spawn)
+        return _read_gitlab(binding, record, environ, runner, on_spawn, clock)
     env = environment(os.environ if environ is None else environ)
     binary = git_status.executable("gh", env)
     if binary is None:
@@ -1097,12 +1155,16 @@ def _read_gitlab(
     environ: Mapping[str, str] | None,
     runner: Callable[..., Any],
     on_spawn: Callable[[Any], None] | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> dict[str, Any]:
     """One merge request's pipeline, through `glab api` on a host glab's own configuration names.
 
     The hosts file is read before anything is launched, so a goal that names another host starts
-    no process at all. Every call is a fixed GET of the merge request or of its pipeline's jobs;
-    the project path is percent-encoded from a validated name and the numbers are integers.
+    no `glab` at all (the git probe that places the session has already run). Every call is a
+    fixed GET of the merge request or of its pipeline's jobs;
+    the project path is percent-encoded from a validated name and the numbers are integers. One
+    deadline (`GITLAB_DEADLINE_SEC`) covers the whole read: no call starts once it has passed, and
+    a call is given no more than the time left.
     """
     source = os.environ if environ is None else environ
     host, _, path = binding.repository.partition("/")
@@ -1114,9 +1176,22 @@ def _read_gitlab(
         return {**record, "error": ERROR_GLAB_MISSING}
     project = f"projects/{quote(path, safe='')}"
 
+    started = clock()
+
     def call(endpoint: str) -> Any:
+        left = GITLAB_DEADLINE_SEC - (clock() - started)
+        if left <= 0:
+            raise _FailureError(ERROR_TIMEOUT)
         argv = ["api", endpoint, "--hostname", host, "--method", "GET"]
-        return _run(runner, binary, argv, env, glab=True, on_spawn=on_spawn)
+        return _run(
+            runner,
+            binary,
+            argv,
+            env,
+            glab=True,
+            on_spawn=on_spawn,
+            timeout=min(TIMEOUT_SEC, left),
+        )
 
     merge_request = f"{project}/merge_requests/{binding.number}"
     try:
@@ -1261,6 +1336,10 @@ _WORDS = {
     BUCKET_SKIPPING: "skipped on the pull request",
     BUCKET_CANCEL: "cancelled on the pull request",
 }
+# GitLab calls it a merge request, and a reader on GitLab is shown their own word.
+_WORDS_GITLAB = {
+    bucket: words.replace("pull request", "merge request") for bucket, words in _WORDS.items()
+}
 _RESULT = {
     BUCKET_PASS: "passed",
     BUCKET_FAIL: "failed",
@@ -1271,6 +1350,7 @@ _RESULT = {
 SOURCE_TEXT: Final = "GitHub pull request check, read by Compass"
 SOURCE_TEXT_GITLAB: Final = "GitLab merge request pipeline job, read by Compass"
 HEAD_MOVED_TEXT: Final = "the pull request head is not this session's commit"
+HEAD_MOVED_TEXT_GITLAB: Final = HEAD_MOVED_TEXT.replace("pull request", "merge request")
 CAUTION_TEXT: Final = "this session changed the CI configuration"
 
 
@@ -1303,6 +1383,8 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
     at = float(record["read_at"])
     gitlab = host_of(record["repository"]) != HOST
     whole = green(record)
+    words = _WORDS_GITLAB if gitlab else _WORDS
+    moved_text = HEAD_MOVED_TEXT_GITLAB if gitlab else HEAD_MOVED_TEXT
     out: list[dict[str, Any]] = []
     for index, row in enumerate(record["checks"]):
         bucket = row["bucket"]
@@ -1312,12 +1394,12 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
         notes = [
             note
             for note, holds in (
-                (HEAD_MOVED_TEXT, not record["head_matches"]),
+                (moved_text, not record["head_matches"]),
                 (CAUTION_TEXT, record["caution"]),
             )
             if holds
         ]
-        summary = f"{json.dumps(row['name'])} {_WORDS[bucket]}" + (
+        summary = f"{json.dumps(row['name'])} {words[bucket]}" + (
             f"; {'; '.join(notes)}" if notes else ""
         )
         out.append(

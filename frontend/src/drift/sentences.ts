@@ -250,6 +250,14 @@ export type CiProvider = 'GitHub' | 'GitLab';
    owner holds a dot (`ci_read.host_of`). */
 export const ciProvider = (repository: string): CiProvider =>
   repository.split('/')[0]?.includes('.') ? 'GitLab' : 'GitHub';
+/* The provider the verdict's own words name when no CI read is stored: a GitLab merge request URL, or an
+   `MR`/merge request wording with no `PR`/pull request beside it. Anything else says GitHub's word. */
+export const requestProviderOf = (text: string): CiProvider => {
+  if (/\/-\/merge_requests\/\d/.test(text)) return 'GitLab';
+  const merge = /\b(?:MRs?|merge\s+requests?)\b/i.test(text);
+  const pull = /\b(?:PRs?|pull\s+requests?)\b|\/pull\/\d/i.test(text);
+  return merge && !pull ? 'GitLab' : 'GitHub';
+};
 export const ciReadReason = (token: string, provider: CiProvider): string =>
   (provider === 'GitLab' ? CI_READ_ERRORS_GITLAB[token] : undefined) ??
   CI_READ_ERRORS[token] ??
@@ -257,7 +265,8 @@ export const ciReadReason = (token: string, provider: CiProvider): string =>
 /* The merge request GitLab numbers with a bang, and a pull request GitHub numbers with a hash. */
 export const ciRequestName = (repository: string, number: number): string =>
   `${repository}${ciProvider(repository) === 'GitLab' ? '!' : '#'}${String(number)}`;
-export const CI_READ_LABEL = 'Pull request checks';
+export const ciReadLabel = (provider: CiProvider): string =>
+  provider === 'GitLab' ? 'Merge request checks' : 'Pull request checks';
 /* The entry a stored CI check is, as the producer's fact words it (`ci_read.facts`), so a citation of one
    resolves on this page as it did when the reading was made. */
 export const CI_ENTRY_SOURCE = 'GitHub pull request check, read by Compass · recorded';
@@ -269,6 +278,13 @@ export const CI_ENTRY_WORDS: Readonly<Record<string, string>> = {
   pending: 'still running on the pull request',
   skipping: 'skipped on the pull request',
   cancel: 'cancelled on the pull request',
+};
+export const CI_ENTRY_WORDS_GITLAB: Readonly<Record<string, string>> = {
+  pass: 'passed on the merge request',
+  fail: 'failed on the merge request',
+  pending: 'still running on the merge request',
+  skipping: 'skipped on the merge request',
+  cancel: 'cancelled on the merge request',
 };
 export const CI_ENTRY_RESULT: Readonly<Record<string, string>> = {
   pass: 'passed',
@@ -302,6 +318,8 @@ export const CI_NONE_DONE = 'No check has completed, so they settle nothing.';
 export const CI_CANCELLED = 'A cancelled check keeps them from settling anything.';
 export const CI_HEAD_MOVED =
   'The pull request head is not this session’s commit, so they settle nothing.';
+export const CI_HEAD_MOVED_GITLAB =
+  'The merge request head is not this session’s commit, so they settle nothing.';
 export const CI_HEAD_UNKNOWN =
   'Compass could not read this session’s commit, so they settle nothing.';
 export const CI_CAUTION = 'This session changed the CI configuration.';
@@ -319,8 +337,12 @@ export const CI_SWITCH_FAILED = 'Could not save that. Try again.';
 
 /* "the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict":
    the pull request fact the test confirmed, named from the entry it cites. */
-export const goalVerdictPullRequest = (name: string, byGoal = false): string =>
-  `the pull request ${byGoal ? 'the goal' : 'its reason'} names, ${name}, is recorded as created before the verdict`;
+export const goalVerdictPullRequest = (
+  name: string,
+  byGoal = false,
+  provider: CiProvider = 'GitHub',
+): string =>
+  `the ${provider === 'GitLab' ? 'merge' : 'pull'} request ${byGoal ? 'the goal' : 'its reason'} names, ${name}, is recorded as created before the verdict`;
 /* "the quoted text is in the output of check #12": where the text its reason quotes was found, named by the
    numbers the card gives the checks. It says where the text is and nothing about whether the check passed. */
 export const goalVerdictQuoted = (numbers: readonly string[]): string =>
@@ -330,6 +352,25 @@ export const goalVerdictQuoted = (numbers: readonly string[]): string =>
 /* "docs/e2e/notes.md was deleted at 22:59, after the verdict": the file and the moment the record shows. */
 export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
   `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;
+/* The two verdict reasons that name the request, worded for a reader on GitLab, where it is a merge request.
+   Read where the stored CI read is from GitLab (`ciProvider`); a reading with no CI read takes it from the verdict's own URL or wording (`requestProviderOf`). */
+const GOAL_VERDICT_WHY_GITLAB: Readonly<Record<string, string>> = {
+  'pr-created-before':
+    'the merge request its reason names is recorded as created before the verdict',
+  'ci-passed':
+    'the merge request its reason names had every check that counts pass on this session’s commit',
+};
+const GOAL_VERDICT_WHY_GOAL_GITLAB: Readonly<Record<string, string>> = {
+  'pr-created-before': 'the merge request the goal names is recorded as created before the verdict',
+  'ci-passed':
+    'the merge request the goal names had every check that counts pass on this session’s commit',
+};
+export const goalVerdictWhy = (why: string, byGoal: boolean, provider: CiProvider): string =>
+  (provider === 'GitLab'
+    ? (byGoal ? GOAL_VERDICT_WHY_GOAL_GITLAB : GOAL_VERDICT_WHY_GITLAB)[why]
+    : undefined) ??
+  (byGoal ? GOAL_VERDICT_WHY_GOAL : GOAL_VERDICT_WHY)[why] ??
+  '';
 export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
 /* Both claims name the product, not the payload's harness label ("Claude"). Claude Code and Codex report a
    goal met; only Claude Code gives one up this way, and the Intent card's note says "Claude Code" too. */

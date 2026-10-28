@@ -518,7 +518,18 @@ _NEVER_FAILS_WORDS = frozenset(
 _NEVER_FAILS_PAIRS = frozenset(
     {"git status", "git log", "git diff", "git show", "git rev-parse", "git merge-base"}
 )
-_NEVER_FAILS_TRIPLES = frozenset({"gh pr view", "gh run list", "gh run watch", "glab ci status"})
+_NEVER_FAILS_TRIPLES = frozenset(
+    {
+        "gh pr view",
+        "gh run list",
+        "gh run watch",
+        "glab ci status",
+        "glab mr view",
+        "glab ci list",
+        "glab ci get",
+        "glab ci trace",
+    }
+)
 _STATUS_FORCED = re.compile(r"(?:\|\||;)\s*(?:true|:|exit\s+0)\s*$")
 
 
@@ -4826,8 +4837,9 @@ GOAL_VERDICT_FAILED = "check-failed"
 GOAL_VERDICT_DELETED_AFTER = "deleted-after"
 GOAL_VERDICT_MOVED_AFTER = "moved-after"
 GOAL_VERDICT_PR = "pr-created-before"
-# The pull request the verdict names had every check that counts pass on the session's commit,
-# as the press read them from GitHub. Its dispute is `GOAL_VERDICT_FAILED`.
+# The pull request or merge request the verdict names had every check that counts pass on the
+# session's commit, as the press read them from GitHub or GitLab. Its dispute is
+# `GOAL_VERDICT_FAILED`; the page words the request per provider.
 GOAL_VERDICT_CI = "ci-passed"
 # The same pass, on a session that changed its own CI configuration. A caution and not a block, so
 # the pass still agrees and the card says the checks may not be the ones the repository had:
@@ -4891,11 +4903,12 @@ def _verdict_files(reason: str) -> tuple[str, ...]:
 # "MR !7", a list of them ("PRs #6 and #7", "PRs #7, #8"), or a `pull/7` path, which may carry
 # the repository before it (owner, 2026-10-23). A bare "#7" is not read: it is as often an issue.
 _VERDICT_PR_URL = re.compile(
-    r"(?:github\.com/(?P<repo>[\w.-]+/[\w.-]+)/pull/|\bpull/)(?P<number>\d+)\b", re.IGNORECASE
+    r"(?:github\.com/(?P<repo>[\w.-]+/[\w.-]+)/pull/|\bpull/)(?P<number>\d{1,10})\b",
+    re.IGNORECASE,
 )
 _VERDICT_PR_LIST = re.compile(
     r"\b(?:PRs?|MRs?|pull\s+requests?|merge\s+requests?)\s*\(?\s*"
-    r"(?P<list>[#!]?\d+\b(?:\s*(?:,|and|&)\s*[#!]?\d+\b)*)",
+    r"(?P<list>[#!]?\d{1,10}\b(?:\s*(?:,|and|&)\s*[#!]?\d{1,10}\b)*)",
     re.IGNORECASE,
 )
 # A GitLab merge request by its URL, which names the host and the project the way `ci_read` stores
@@ -4903,7 +4916,7 @@ _VERDICT_PR_LIST = re.compile(
 _VERDICT_MR_URL = re.compile(
     r"(?<![\w.-])(?:https://)?"
     r"(?P<repo>(?:[A-Za-z0-9-]{1,63}\.){1,10}[A-Za-z0-9-]{1,63}(?:/[\w.-]{1,100}){2,20})"
-    r"/-/merge_requests/(?P<number>\d+)\b",
+    r"/-/merge_requests/(?P<number>\d{1,10})\b",
     re.IGNORECASE,
 )
 
@@ -4919,7 +4932,7 @@ def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
     named.extend(
         ("", int(number))
         for found in _VERDICT_PR_LIST.finditer(reason)
-        for number in re.findall(r"\d+", found["list"])
+        for number in re.findall(r"\d{1,10}", found["list"])
     )
     return tuple(dict.fromkeys(named))
 
@@ -5329,8 +5342,9 @@ _CLAUSE_BREAK = re.compile(r"[.;,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
 
 # A phrase that names a remote job is no claim about a local run. A CI job's name is a hyphen- or
 # slash-joined token ("server-unittest pass") that often holds a kind word, so it is dropped whole
-# rather than split to find one. A clause that speaks of CI, a workflow, GitHub Actions or "check
-# on" a pull request, or holds a run URL, is a remote claim too. Matching a job name to a CI fact is
+# rather than split to find one. A clause that speaks of CI, a workflow, GitHub Actions, a GitLab
+# pipeline, merge request or MR, or "check on" a pull request, or holds a run URL, is a remote claim
+# too. Matching a job name to a CI fact is
 # a separate rule; here such a phrase contributes no local kind. The rule and what it leaves alone:
 # [DEC-26](docs/design-reading-a-session.md#amended-2026-10-27-a-ci-job-named-in-the-reason-is-not-a-local-check)  # noqa: E501
 _CI_RUN_URL = re.compile(
@@ -5350,8 +5364,9 @@ _PATH_AFTER = re.compile(r"\b(?:in|under|of)\s+[`'\"]?$", re.IGNORECASE)
 # Case matters for the two short words: "ci" and "actions" are ordinary words in a reason, and a
 # hyphen or colon after one ("CI-related", "Actions: all tests pass") is not the remote service.
 _REMOTE_CLAUSE = re.compile(
-    r"(?<![\w-])(?:CI|Actions)(?![\w-]|:)"
-    rf"|(?i:\bworkflows?\b|\bchecks?\s+on\b|{_REMOTE_MARK}|github\s+actions|\b(?:in|on|via|per)\s+ci\b)"
+    r"(?<![\w-])(?:CI|Actions|MRs?)(?![\w-]|:)"
+    rf"|(?i:\bworkflows?\b|\bchecks?\s+on\b|{_REMOTE_MARK}|github\s+actions|\b(?:in|on|via|per)\s+ci\b"
+    r"|\bpipelines?\b|\bmerge\s+requests?\b|\bgitlab\s+ci\b)"
 )
 
 

@@ -270,10 +270,30 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
             "nothing red; build-and-test pass",
             "tests passed in github actions",
             "tests passed on ci",
+            "unit tests passed in the pipeline",
+            "the tests passed on the merge request",
+            "the tests pass on MR !12",
+            "tests passed in GitLab CI",
+            "tests passed in gitlab ci",
+            "the pipelines show the tests passed",
         ):
             with self.subTest(reason=reason):
                 checked = self._checked(passing, reason)
                 self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, checked["check"])
+
+    def test_a_digit_run_longer_than_the_interpreters_limit_names_no_request(self) -> None:
+        digits = "9" * 10_000
+        for reason in (
+            f"PR #{digits} passed",
+            f"PRs #{digits}, #{digits}",
+            f"pull/{digits}",
+            f"github.com/acme/widgets/pull/{digits}",
+            f"MR !{digits} is green",
+            f"https://gitlab.example.com/acme/widgets/-/merge_requests/{digits}",
+        ):
+            with self.subTest(reason=reason[:30]):
+                self.assertEqual((), reading._verdict_prs(reason))
+        self.assertEqual((("", 7),), reading._verdict_prs("PR #7 and later " + digits))
 
     def test_a_ci_job_in_the_reason_claims_no_kind(self) -> None:
         self.assertEqual(
@@ -308,6 +328,7 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
             "CI-related tests pass",
             "Actions: all tests pass",
             "the ciremoterun tests pass",
+            "the gitlab-client tests pass",
         ):
             with self.subTest(reason=reason):
                 self.assertEqual(frozenset({"test"}), reading._verdict_check_kinds(reason))

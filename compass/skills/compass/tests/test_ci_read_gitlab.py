@@ -224,6 +224,8 @@ class TheBindingNamesOneMergeRequest(unittest.TestCase):
             f"https://{HOST}/widgets/-/merge_requests/1",
             f"https://{HOST}/ac me/widgets/-/merge_requests/1",
             f"https://github.com/{PROJECT}/-/merge_requests/1",
+            f"https://ssh.github.com/{PROJECT}/-/merge_requests/1",
+            f"https://api.github.com/{PROJECT}/-/merge_requests/1",
         ):
             with self.subTest(url=url):
                 self.assertEqual((), ci_read.pull_request_urls(url))
@@ -233,7 +235,16 @@ class TheBindingNamesOneMergeRequest(unittest.TestCase):
         self.assertTrue(ci_read.valid_repository(REPOSITORY))
         self.assertEqual("github.com", ci_read.host_of("acme/widgets"))
         self.assertEqual(HOST, ci_read.host_of(REPOSITORY))
-        for bad in ("", HOST, f"{HOST}/widgets", f"10.0.0.5/{PROJECT}", f"{HOST}/a/../b"):
+        for bad in (
+            "",
+            HOST,
+            f"{HOST}/widgets",
+            f"10.0.0.5/{PROJECT}",
+            f"{HOST}/a/../b",
+            f"github.com/{PROJECT}",
+            f"ssh.github.com/{PROJECT}",
+            f"GitHub.com/{PROJECT}",
+        ):
             with self.subTest(bad=bad):
                 self.assertFalse(ci_read.valid_repository(bad))
 
@@ -288,6 +299,67 @@ class AHostWhoseConfigurationRedirectsTheCallIsNotRead(unittest.TestCase):
     def test_skipped_tls_verification_is_refused(self) -> None:
         self.host_block("skip_tls_verify: true")
         self.refused()
+
+    def test_a_quoted_key_is_read_as_the_key_it_spells(self) -> None:
+        for line in (
+            '"api_protocol": http',
+            "'api_protocol': http",
+            '"api_host": 10.0.0.9',
+            '"skip_tls_verify": true',
+        ):
+            with self.subTest(line=line):
+                self.host_block(line)
+                self.refused()
+
+    def test_a_line_that_may_hide_a_key_refuses_the_host(self) -> None:
+        for line in (
+            "{api_protocol: http}",
+            "? api_protocol",
+            "&anchor",
+            "*anchor",
+            "[x]",
+            '"api_\\x70rotocol": http',
+            "<<: *h",
+            "api_protocol: &h http",
+            "!!str api_protocol: http",
+        ):
+            with self.subTest(line=line):
+                self.host_block(line)
+                self.refused()
+
+    def test_skipped_tls_verification_is_read_only_when_plainly_off(self) -> None:
+        for line in (
+            "skip_tls_verify: true # note",
+            "skip_tls_verify: !!bool true",
+            "skip_tls_verify: y",
+            "skip_tls_verify: 'true' # x",
+            "skip_tls_verify:",
+            "skip_tls_verify: false # note",
+        ):
+            with self.subTest(line=line):
+                self.host_block(line)
+                self.refused()
+        self.host_block("skip_tls_verify:", "true")
+        self.refused()
+        for line in ("skip_tls_verify: false", "skip_tls_verify: 'No'", "skip_tls_verify: 0"):
+            with self.subTest(line=line):
+                self.host_block(line)
+                self.assertIn(HOST, ci_read.glab_hosts(self.stub.environ))
+
+    def test_an_anchor_under_one_host_cannot_reach_another_by_merge_key(self) -> None:
+        self.stub.configure(
+            "hosts:\n"
+            "    other.example.com: &h\n"
+            "        api_protocol: http\n"
+            f"    {HOST}:\n"
+            "        <<: *h\n"
+            "        token: FakePass99\n"
+        )
+        self.assertEqual(frozenset(), ci_read.glab_hosts(self.stub.environ))
+
+    def test_an_inline_mapping_for_the_host_names_no_host(self) -> None:
+        self.stub.configure(f"hosts:\n    {HOST}: {{api_protocol: http, token: FakePass99}}\n")
+        self.assertNotIn(HOST, ci_read.glab_hosts(self.stub.environ))
 
     def test_an_https_protocol_and_the_same_api_host_still_read(self) -> None:
         self.host_block("api_protocol: 'HTTPS'", f"api_host: {HOST}", "skip_tls_verify: false")
@@ -623,6 +695,23 @@ class AStoredGitlabReadIsValidatedAndBecomesFacts(unittest.TestCase):
             self.assertEqual(ci_read.SOURCE_TEXT_GITLAB, fact["evidence"]["source"])
             self.assertEqual(REPOSITORY, fact["ci_repository"])
 
+    def test_a_gitlab_row_says_merge_request_and_a_github_row_says_pull_request(self) -> None:
+        facts = ci_read.facts(read(self.stub), "claude", "s1")
+        self.assertIn(
+            f'"unit-tests" {ci_read._WORDS_GITLAB[ci_read.BUCKET_PASS]}', facts[1]["summary"]
+        )
+        self.assertTrue(all("pull request" not in f["summary"] for f in facts))
+        self.assertEqual("passed on the merge request", ci_read._WORDS_GITLAB["pass"])
+        self.assertEqual("passed on the pull request", ci_read._WORDS["pass"])
+        self.stub.set(mr=merge_request(OTHER_HEAD))
+        moved = ci_read.facts(read(self.stub, now=5_000.0), "claude", "s1")
+        for fact in moved:
+            self.assertIn(ci_read.HEAD_MOVED_TEXT_GITLAB, fact["summary"])
+            self.assertNotIn("pull request", fact["summary"])
+        self.assertEqual(
+            "the merge request head is not this session's commit", ci_read.HEAD_MOVED_TEXT_GITLAB
+        )
+
     def test_a_pass_counts_only_on_the_sessions_commit(self) -> None:
         facts = ci_read.facts(read(self.stub), "claude", "s1")
         # The skipped job settles nothing; both passes do.
@@ -675,7 +764,7 @@ class ADoneMergeRequestSettlesTheGoal(base.AClaudeCodeReadingProducer):
         self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
         self.assertTrue(row["cites"])
         self.assertTrue(all(c.startswith("ci:12:") for c in row["cites"]))
-        self.assertIn('"unit-tests" passed on the pull request', self.prompts[0])
+        self.assertIn('"unit-tests" passed on the merge request', self.prompts[0])
         self.assertNotIn("FakePass99", self.prompts[0])
 
     def test_a_pipeline_still_running_cannot_carry_a_consistent(self) -> None:
@@ -779,6 +868,46 @@ class APressOnAnUnconfiguredHostStartsNothing(unittest.TestCase):
         self.assertEqual("", record["error"])
         self.assertEqual(3, len(self.stub.calls))
         self.assertEqual(REPOSITORY, record["repository"])
+
+
+class TheWholeGitlabReadHasOneDeadline(unittest.TestCase):
+    """Up to twelve sequential calls at 20 s each would hold a press for four minutes."""
+
+    def setUp(self) -> None:
+        self.stub = StubGlab(self)
+        self.now = 0.0
+        self.timeouts: list[float] = []
+
+    def runner(self, step: float) -> Any:
+        def run(argv: Sequence[str], **options: Any) -> Any:
+            self.timeouts.append(options["timeout"])
+            self.now += step
+            answer = merge_request() if "merge_requests" in argv[2] else GREEN
+            options["stdout"].write(json.dumps(answer).encode())
+            return types.SimpleNamespace(returncode=0)
+
+        return run
+
+    def press(self, step: float) -> dict[str, Any]:
+        return read(self.stub, runner=self.runner(step), clock=lambda: self.now)
+
+    def test_the_deadline_is_a_minute(self) -> None:
+        self.assertEqual(60.0, ci_read.GITLAB_DEADLINE_SEC)
+
+    def test_a_read_inside_the_deadline_is_unchanged(self) -> None:
+        record = self.press(1.0)
+        self.assertEqual("", record["error"])
+        self.assertEqual([20.0, 20.0, 20.0], self.timeouts)
+
+    def test_no_call_starts_past_the_deadline(self) -> None:
+        record = self.press(30.0)
+        self.assertEqual(ci_read.ERROR_TIMEOUT, record["error"])
+        self.assertEqual(2, len(self.timeouts))
+
+    def test_a_call_is_given_only_the_time_that_is_left(self) -> None:
+        record = self.press(45.0)
+        self.assertEqual(ci_read.ERROR_TIMEOUT, record["error"])
+        self.assertEqual([20.0, 15.0], self.timeouts)
 
 
 if __name__ == "__main__":

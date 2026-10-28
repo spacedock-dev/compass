@@ -286,8 +286,10 @@ def _quote(fact: Mapping[str, Any]) -> list[Part]:
     if fact.get("type") == reading.CI_CHECK_TYPE:
         name = neutralised(ci_read.check_name(fact), ci_read.NAME_CAP_CHARS)
         result = str(fact.get("result") or "")
+        # The provider's own word for the request, as the fact's own summary says it.
+        request = "merge request" if fact.get("by") == "gitlab" else "pull request"
         return (
-            [{"quote": f', where CI check "{name}" {result} on the pull request'}]
+            [{"quote": f', where CI check "{name}" {result} on the {request}'}]
             if name and result in {"failed", "passed"}
             else []
         )

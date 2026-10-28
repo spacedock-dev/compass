@@ -1144,6 +1144,16 @@ class CiCheckCitedTest(unittest.TestCase):
         self.assertIn(name, found[0])
         self.assertLessEqual(len(found[0]), correction.QUOTE_MAX_CHARS)
 
+    def test_a_gitlab_check_is_a_check_on_the_merge_request(self) -> None:
+        record = {
+            **self.ci_record(("unit-tests", "fail")),
+            "repository": "gitlab.example.com/acme/widgets",
+        }
+        row = self.row(record, line_1=row_of(DEPARTED, ("ci:12:0",), clause=L1))
+        text = words(compose(row, (FACTS[2],))["parts"])
+        self.assertIn(', where CI check "unit-tests" failed on the merge request', text)
+        self.assertNotIn("pull request", text)
+
     def test_the_name_is_carried_in_its_closed_character_set_and_nothing_more(self) -> None:
         record = self.ci_record(("@everyone `x` <b>", "fail"))
         row = self.row(record, line_1=row_of(DEPARTED, ("ci:12:0",), clause=L1))
