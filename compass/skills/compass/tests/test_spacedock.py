@@ -449,7 +449,7 @@ class SpacedockParserTest(unittest.TestCase):
         """On POSIX the guard has to refuse the path outright.
 
         The filesystem handler is ``surrogateescape``, which cannot encode
-        ``\ud800``, so ``os.fsencode`` raises ``UnicodeEncodeError``. That is a
+        ``\\ud800``, so ``os.fsencode`` raises ``UnicodeEncodeError``. That is a
         ``ValueError``, not an ``OSError``, so it would sail through every
         handler below. Windows uses ``surrogatepass`` and encodes it, where the
         path merely fails to exist and the ordinary ``OSError`` path covers it.

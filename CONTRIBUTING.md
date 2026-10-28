@@ -13,7 +13,7 @@ If you are looking for what to work on rather than how, [docs/visibility-2x2](do
 ## Development setup
 
 Prerequisites: Python 3.11+ (`runtime-floor` runs the shipped entry point and the suite on 3.11,
-while lint, types and the coverage threshold run on 3.12), `git`, the Node 26 version in
+while lint and types run on 3.12 and the coverage threshold on 3.14), `git`, the Node 26 version in
 `.node-version`, the pnpm version in `package.json`, and optionally the Claude Code / AGY CLIs for native
 validation. See [COMPATIBILITY.md](COMPATIBILITY.md) for why 3.11 is the floor.
 
