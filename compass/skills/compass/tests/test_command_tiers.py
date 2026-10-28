@@ -14,6 +14,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import time
 import unittest
 from types import SimpleNamespace
@@ -688,6 +689,8 @@ class ACiPollReadsTheSessionFoldersRepository(ClaudeChecksTestCase):
     def test_a_call_of_thousands_of_polls_costs_a_pass_and_keeps_the_environment_order(
         self,
     ) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         count = 12000
         polls = [f"gh pr checks {number}" for number in range(1, count + 1)]
         polls.insert(count // 2, "export GH_REPO=other/old")
