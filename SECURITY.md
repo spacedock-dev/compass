@@ -1920,8 +1920,9 @@ nothing, and its output goes only to the session's own vendor. A command that ca
 `printf`, `true`, `:`, `export`, `unset`, `set`, `eval`, `tee`,
 `exit 0`, `return 0`, by any spelling such as a path or `command true`) is never published, and one whose
 status a later `|| true` or `; exit 0` forces is published with no result and withdrawn from every verdict
-and level. A stage after a `|` that follows other work, such as `tee` or `sed`, records no result, since the
-call's status speaks for the filter and not for the program before it. A tier 3 failure blocks the live
+and level. The last stage of a `|` speaks for itself, as a check does: a pass is that stage's own pass, and a
+failure counts only for a call of one segment. The stages before it record no result, and `tee` is never
+published because it cannot fail. A tier 3 failure blocks the live
 estimate's floor only until a later check or command passes. A call whose result carries Claude Code's structured git record publishes that record only, never
 its command line. A quoted word the masking cannot read word by word, such as the script of a `bash -c`
 call that did not parse, is published as `…`, so half of a value is never shown. The same rules decide the

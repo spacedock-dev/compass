@@ -223,7 +223,7 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
         for number in (14, 15, 16):
             self.assertEqual("not-recorded", by_title[f"gh pr checks {number}"])
 
-    def test_a_filter_at_the_end_of_a_pipe_speaks_for_nothing_upstream(self) -> None:
+    def test_the_stages_before_the_last_of_a_pipe_record_no_result(self) -> None:
         for command in (
             "pytest -q | tee out.log",
             "make test | sed 's/a/b/'",
@@ -237,6 +237,7 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
             "passed", [c["result"] for c in self.commands() if c["title"] == "make test"]
         )
         self.assertEqual([], self.passed_checks())
+        self.assertEqual("passed", {c["title"]: c["result"] for c in self.commands()}["sed s/a/b/"])
 
     def test_a_lone_command_and_one_before_a_read_only_filter_read_as_they_did(self) -> None:
         self.session.bash("sed -n 1p notes.txt", "x", is_error=False)
@@ -1222,7 +1223,6 @@ class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
         self.assertGreater(len(ledger), len(small.entries))
         titles = [e["summary"] for e in small.entries]
         self.assertTrue(any("make broken" in t for t in titles), titles)
-        self.assertFalse(any(t.startswith("make step") for t in titles[:0]))
         # With room for the failures alone behind a flood of failed checks, it is carried unread.
         flood = [
             base.check_fact(
@@ -1252,6 +1252,9 @@ class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
         self.session.bash("make deploy; make deploy", "done", is_error=False)
         (event,) = [e for e in self.read()[0] if e["subject"] == "command"]
         self.assertNotIn("id_title", event)
+        self.session.bash("cd a && pytest -q & cd b && pytest -q", "3 passed", is_error=False)
+        (check,) = [e for e in self.read()[0] if e["subject"] == "check"]
+        self.assertNotIn("id_title", check)
 
     def test_gh_error_lines_only_withdraw_a_failure_when_gh_wrote_them(self) -> None:
         rows = {
@@ -1261,13 +1264,17 @@ class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
             "gh pr checks 15": "Exit code 1\nTo get started, please run:  gh auth login",
             "gh pr checks 16": "Exit code 1\nno checks reported on the 'fix/widget-guard' branch",
             "gh pr checks 20": "Exit code 1\nCould not resolve to a PullRequest",
+            "gh pr checks 21": "Exit code 1\nGraphQL: Could not resolve to a PullRequest with the"
+            " number of 12. (repository.pullRequest)",
+            "gh pr checks 22": "Exit code 1\ngh: Not Found (HTTP 404)",
+            "gh pr checks 23": "Exit code 1\ngh: GraphQL: Could not resolve to a Repository",
         }
         for command, text in rows.items():
             self.session.bash(command, text, is_error=True)
         got = {e["title"]: e["result"] for e in self.read()[0] if e["subject"] == "ci_command"}
         self.assertEqual("failed", got["gh pr checks 12"])
         self.assertEqual("failed", got["gh pr checks 13"])
-        for number in (14, 15, 16, 20):
+        for number in (14, 15, 16, 20, 21, 22, 23):
             self.assertEqual("not-recorded", got[f"gh pr checks {number}"])
 
     def test_the_last_stage_of_a_pipe_after_work_speaks_for_itself(self) -> None:

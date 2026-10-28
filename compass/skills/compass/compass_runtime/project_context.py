@@ -4355,8 +4355,8 @@ def _ci_run_kind(words: list[str]) -> str:
 # (name, state, time, link), so a check named `authentication` or a link holding `HTTP 500` text
 # is never read as the command failing to reach GitHub, and a failing run keeps its failure.
 _NOT_A_CI_FAILURE = re.compile(
-    r"^(?:gh: |error: )?(?:no checks reported|HTTP \d{3}\b|could not resolve|authentication\b"
-    r"|.*\bgh auth login\b)",
+    r"^(?:\w+: )*(?:no checks reported|HTTP \d{3}\b|could not resolve|authentication\b"
+    r"|.*\bgh auth login\b|.*\(HTTP \d{3}\)$)",
     re.IGNORECASE,
 )
 _EXIT_CODE_RE = re.compile(r"\AExit code (\d+)\b")
@@ -5424,7 +5424,11 @@ class _ToolReportTally:
                     "at": call.at,
                     "record_id": call_id,
                     "title": _check_line(words),
-                    "title_n": call.title_ordinal(_check_line(words), identity),
+                    "title_n": (
+                        0
+                        if call.background(index)
+                        else call.title_ordinal(_check_line(words), identity)
+                    ),
                     "segment": index,
                     "result": outcome,
                     "result_source": source,

@@ -8011,8 +8011,10 @@ had set aside. None produced a false pass. Each is closed below.
    `session_source` follows: it only needs a segment id for a repeat in one place now.
 4. **gh's own error lines.** The test that withdraws a failed `gh pr checks` ran over the whole output, so a
    failing run with a check named `authentication`, or a link with `HTTP 500` in it, recorded no failure. It now
-   reads a line only when it carries no tab, which a check row always does, and starts with gh's error shapes:
-   `no checks reported`, `HTTP <status>`, `could not resolve`, `authentication`, or a hint naming `gh auth login`.
+   reads a line only when it carries no tab, which a check row always does, and starts with gh's error shapes,
+   after any number of `word: ` prefixes such as `gh: `, `error: ` or `GraphQL: `: `no checks reported`,
+   `HTTP <status>`, `could not resolve`, `authentication`, a hint naming `gh auth login`, or a line ending in
+   `(HTTP <status>)` such as `gh: Not Found (HTTP 404)`.
 5. **The last stage of a pipe speaks for itself.** A command after a pipe was blanked whenever a working stage
    came before it, although the call's status is the last stage's own. It now follows the rule a check follows:
    a pass speaks for the last stage and a failure only for a call of one segment. The stages before it still
