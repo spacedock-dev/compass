@@ -273,6 +273,9 @@ coverage report   # enforces the fail_under threshold from pyproject.toml
 # verdict as `python3 -m unittest discover`, spread over every core, with per-worker
 # coverage files that `combine` merges. `-j N` caps the workers. Plain
 # `unittest discover` still works and reaches the same verdict, serially.
+# It holds what a passing test prints, as `unittest -b` does; `--no-buffer` shows it.
+# On Python 3.14, `COVERAGE_CORE=sysmon` cuts the coverage run several-fold, as CI does;
+# older Pythons refuse it with branch coverage and fall back to the slow tracer.
 # `test_capture_terminal_identity` and `test_capture_focus_raise` exercise AppleScript
 # against Terminal.app, and this suite now sends nothing. It used to: measured on a macOS desk with Terminal
 # open, `test_capture_terminal_identity` sent 91 `tell application "Terminal"`
@@ -449,7 +452,7 @@ is Sonnet 5.5. Reviewer acceptance and scored producer results retain their sepa
 
 ## Quality Gate
 
-Every PR must pass the `quality-gate` required check (`.github/workflows/quality-gate.yml`): ruff with `select = ALL` (curated ignores documented in `pyproject.toml`), `ruff format --check`, `mypy --strict`, a direct-launch smoke test on the Python 3.11 runtime floor followed by the whole suite there, the same suite under `coverage` on 3.12 with the `fail_under` threshold from `pyproject.toml` enforced once, and `platform-tests`, the same unit suite re-run natively on macOS with one dashboard leg and three script shards (Ubuntu is already covered by the two jobs before it). Python suite jobs use `scripts/run_tests.py`, one worker per core. The frontend suite has its own coverage threshold, 80% of statements, branches, functions and lines, set in `vitest.config.mts` and enforced by `Frontend tests + coverage threshold`. Each threshold only ratchets up; never lower one in a PR. A PR that must merge below either needs the `coverage-exception` label, which is visible in the PR timeline.
+Every PR must pass the `quality-gate` required check (`.github/workflows/quality-gate.yml`): ruff with `select = ALL` (curated ignores documented in `pyproject.toml`), `ruff format --check`, `mypy --strict`, a direct-launch smoke test on the Python 3.11 runtime floor followed by the whole suite there, the same suite under `coverage` on 3.14 (for its `sysmon` tracer) with the `fail_under` threshold from `pyproject.toml` enforced once, and `platform-tests`, the same unit suite re-run natively on macOS with one dashboard leg and three script shards (Ubuntu is already covered by the two jobs before it). Python suite jobs use `scripts/run_tests.py`, one worker per core. The frontend suite has its own coverage threshold, 80% of statements, branches, functions and lines, set in `vitest.config.mts` and enforced by `Frontend tests + coverage threshold`. Each threshold only ratchets up; never lower one in a PR. A PR that must merge below either needs the `coverage-exception` label, which is visible in the PR timeline.
 
 **The required context always reports; its constituent jobs may not run.** A `changes` job decides
 whether the diff contains anything the gate can measure, and the measurable jobs are gated on

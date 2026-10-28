@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -206,6 +207,52 @@ class RunnerVerdictTest(unittest.TestCase):
 
         self.assertEqual(1, code, out)
         self.assertIn("Ran 0 tests", out)
+
+
+PRINTING = """
+import sys
+import unittest
+
+
+class Printing(unittest.TestCase):
+    def test_passes_noisily(self):
+        print("PASSING-STDOUT")
+        sys.stderr.write("PASSING-STDERR\\n")
+
+    def test_fails_noisily(self):
+        print("FAILING-STDOUT")
+        self.fail("boom")
+"""
+
+
+class OutputBufferTest(unittest.TestCase):
+    """A worker writes to the real descriptors, so only a child process sees what it printed."""
+
+    def output(self, *extra: str) -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            write_suite(Path(tmp), {"test_printing.py": PRINTING})
+            done = subprocess.run(
+                [sys.executable, run_tests.__file__, "-s", tmp, "-t", tmp, "-j", "1", *extra],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        self.assertEqual(1, done.returncode, done.stderr)
+        return done.stdout + done.stderr
+
+    def test_a_passing_test_prints_nothing_and_a_failing_one_shows_what_it_printed(self) -> None:
+        out = self.output()
+
+        self.assertNotIn("PASSING-STDOUT", out)
+        self.assertNotIn("PASSING-STDERR", out)
+        self.assertIn("FAILING-STDOUT", out)
+
+    def test_no_buffer_prints_what_a_passing_test_wrote(self) -> None:
+        out = self.output("--no-buffer")
+
+        self.assertIn("PASSING-STDOUT", out)
+        self.assertIn("PASSING-STDERR", out)
 
 
 def mock_env(values: dict[str, str]) -> contextlib.AbstractContextManager[object]:

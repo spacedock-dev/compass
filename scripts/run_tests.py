@@ -22,6 +22,12 @@ fixtures and verdict, and spreads the work:
 - ``--coverage`` starts coverage inside each worker with a data suffix; run
   ``coverage combine`` afterwards. Coverage is imported only when asked for,
   because the runtime floor installs no coverage.
+- Output a test writes to ``sys.stdout`` or ``sys.stderr`` is held, as
+  ``unittest -b`` does, and shown only with that test's failure or error. A
+  passing run printed 650 lines of argparse refusals and phase timings that
+  tests provoke on purpose (2026-10-28), which buried the one line that mattered.
+  ``--no-buffer`` prints it as it happens. A subprocess writes to the real
+  descriptors and is never held.
 
 Every class is its own top-level run, so ``setUpModule`` runs once per class
 rather than once per module. One module defines it, to start and stop a log
@@ -199,6 +205,7 @@ def worker(
         results.put(("inventory", index, {unit: len(tests) for unit, tests in units.items()}))
         while (unit := tasks.get()) is not None:
             result = unittest.TestResult()
+            result.buffer = config["buffer"]
             problems: list[tuple[str, str]] = []
             started = time.perf_counter()
             if unit not in units:
@@ -324,6 +331,7 @@ def run(
     coverage: bool,
     slowest: int = 0,
     shard: tuple[int, int] | None = None,
+    buffer: bool = True,
 ) -> bool:
     """Discover, fan out across ``jobs`` workers, merge, report, return the verdict."""
     started = time.perf_counter()
@@ -343,6 +351,7 @@ def run(
         "pattern": pattern,
         "coverage": coverage,
         "shard": shard,
+        "buffer": buffer,
     }
     procs = [
         context.Process(target=worker, args=(index, config, tasks, results))
@@ -388,6 +397,12 @@ def main(argv: list[str] | None = None) -> int:
         "--slowest", type=int, default=0, metavar="N", help="list the N slowest classes"
     )
     parser.add_argument(
+        "--no-buffer",
+        dest="buffer",
+        action="store_false",
+        help="print what tests write as they run, instead of only with a failure",
+    )
+    parser.add_argument(
         "--shard",
         type=parse_shard,
         default=None,
@@ -415,6 +430,7 @@ def main(argv: list[str] | None = None) -> int:
         coverage=args.coverage,
         slowest=args.slowest,
         shard=args.shard,
+        buffer=args.buffer,
     )
     state_home.cleanup()
     return 0 if ok else 1

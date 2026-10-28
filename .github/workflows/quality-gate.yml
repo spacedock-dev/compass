@@ -253,7 +253,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.12"
+          # 3.14 for `sysmon` below, which coverage refuses with `branch = true`
+          # on any earlier Python. The suites still run on 3.11 in runtime-floor.
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - name: Install toolchain
@@ -261,9 +263,12 @@ jobs:
 
       # Each worker records its own data file and `combine` merges them, which
       # measured the same 86.8% as the serial `coverage run` (2026-09-23).
-      # `COVERAGE_CORE=sysmon` would cut the tracing cost, but coverage refuses
-      # it with `branch = true` below Python 3.14 and falls back to ctrace.
+      # The default tracer cost 30 to 50 times the plain run on loop-heavy tests:
+      # one scrub test took 106s under it and 2s under sysmon, and the two suites
+      # took 246s and 410s here (2026-10-28).
       - name: Run full unittest suite under coverage
+        env:
+          COVERAGE_CORE: sysmon
         run: |
           coverage erase
           python3 scripts/run_tests.py --coverage --slowest 10 -s compass/skills/compass/tests -t .
