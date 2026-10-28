@@ -4351,10 +4351,34 @@ def _ci_run_kind(words: list[str]) -> str:
     return ""
 
 
+# gh's own error shapes. gh prints an error and no check rows, and a check row is tab-separated
+# (name, state, time, link), so output holding a tab is a run that reported checks, whatever a
+# check name or a line among the rows looks like, and a failing run keeps its failure.
 _NOT_A_CI_FAILURE = re.compile(
-    r"no checks reported|gh auth login|authentication|HTTP \d{3}|could not resolve", re.IGNORECASE
+    r"^(?:\w+: )*(?:no checks reported|HTTP \d{3}\b|could not resolve|authentication\b"
+    r"|.*\bgh auth login\b|.*\(HTTP \d{3}\)$)",
+    re.IGNORECASE,
 )
+# gh's longest error is the login prompt, three lines; more than this is not one message.
+_GH_ERROR_MAX_LINES = 4
+# The shapes above backtrack on a long first line (a hundred thousand `a: ` took 23 s), and a gh
+# error line is a sentence, so a longer first line is not read as one.
+_GH_ERROR_LINE_MAX = 300
 _EXIT_CODE_RE = re.compile(r"\AExit code (\d+)\b")
+
+
+def _gh_error_line(text: str) -> bool:
+    """Whether the whole output is one gh error message: short, tab-free, opening on an error."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines and _EXIT_CODE_RE.match(lines[0]):
+        lines = lines[1:]
+    return (
+        bool(lines)
+        and len(lines) <= _GH_ERROR_MAX_LINES
+        and "\t" not in text
+        and len(lines[0]) <= _GH_ERROR_LINE_MAX
+        and _NOT_A_CI_FAILURE.match(lines[0]) is not None
+    )
 
 
 def _ci_outcome(ci: str, outcome: str, source: str, text: str) -> tuple[str, str]:
@@ -4363,7 +4387,7 @@ def _ci_outcome(ci: str, outcome: str, source: str, text: str) -> tuple[str, str
         # Only exit 1 is a failing check. 8 is pending, 2 a cancelled run and 4 a missing login,
         # and exit 1 also reports a pull request with no CI or a request that failed.
         exited = _EXIT_CODE_RE.match(text)
-        if not exited or exited[1].lstrip("0") != "1" or _NOT_A_CI_FAILURE.search(text):
+        if not exited or exited[1].lstrip("0") != "1" or _gh_error_line(text):
             return "not-recorded", ""
     elif ci == "run_view" and outcome == "passed":
         # Exit 0 also means a run still in progress, so only its failure counts.
@@ -4573,6 +4597,7 @@ class _ShellCall:
             self.unbalanced, self.parts = True, []
         self.words: list[tuple[list[str], bool]] = [(p.words, p.rtk) for p in self.parts]
         self.printing_directories: set[int] = set()
+        self._titles: dict[str, list[str]] = {}
         self.directories, self.placed = self._directories(cwd)
         self.meaningful = [
             i for i, (words, _rtk) in enumerate(self.words) if words and words[0] != "cd"
@@ -4910,18 +4935,18 @@ class _ShellCall:
             )
         return first < index
 
-    def piped_after_work(self, index: int) -> bool:
-        """Whether a pipe feeds this segment from a stage that did work. The call's status then
-        speaks for the last stage, a filter such as `tee` or `sed`, and says nothing about the
-        program upstream of it."""
-        joiners = self.joiners()
-        at = index
-        while at > 0 and joiners[at - 1] == "|":
-            at -= 1
-            words = self.words[at][0]
-            if words and not (self._reads_only(at) or _always_zero(words)):
-                return True
-        return False
+    def title_ordinal(self, title: str, identity: str) -> int:
+        """Which of this call's segments of the same line, in different places, this one is.
+
+        Two directories running one line (`cd a && pytest -q; cd b && pytest -q`) are two
+        facts with one title, record and time, and so one fact id. The first of a title is 0 and
+        a segment that merges with an earlier one by identity shares its number, so a call with
+        no repeated line keeps the id it had.
+        """
+        seen = self._titles.setdefault(title, [])
+        if identity not in seen:
+            seen.append(identity)
+        return seen.index(identity)
 
     def status_masked(self, index: int) -> bool:
         """Whether a later segment forces the call's exit status to 0 (`|| true`, `; true`,
@@ -5412,6 +5437,11 @@ class _ToolReportTally:
                     "at": call.at,
                     "record_id": call_id,
                     "title": _check_line(words),
+                    "title_n": (
+                        0
+                        if call.background(index)
+                        else call.title_ordinal(_check_line(words), identity)
+                    ),
                     "segment": index,
                     "result": outcome,
                     "result_source": source,
@@ -5534,10 +5564,7 @@ class _ToolReportTally:
             outcome, source = "not-recorded", ""
             masked = call.status_masked(index)
             if result is not None and not (
-                call.unestablished(index)
-                or call.negated(index)
-                or masked
-                or call.piped_after_work(index)
+                call.unestablished(index) or call.negated(index) or masked
             ):
                 flag_result = _flag_result(
                     flag,
@@ -5561,6 +5588,7 @@ class _ToolReportTally:
                 "at": call.at,
                 "record_id": call_id,
                 "title": _command_line(words),
+                "title_n": call.title_ordinal(_command_line(words), identity),
                 "segment": index,
                 "result": outcome,
                 "result_source": source,
@@ -5632,6 +5660,8 @@ class _ToolReportTally:
         # Always published, so a reader can tell a command that can fail from an older fact that
         # never said: only the latter is read by its text.
         entry["cannot_fail"] = bool(latest["cannot_fail"])
+        if latest.get("title_n"):
+            entry[ID_TITLE_FIELD] = f"{latest['title']}\x1e{latest['title_n']}"
         if latest["result_source"]:
             entry["result_source"] = latest["result_source"]
         if latest["result_at"] is not None:
@@ -5691,6 +5721,8 @@ class _ToolReportTally:
             # Its only recorded result is a failure: ranked with the failures,
             # or twelve writes would push the failure out of the listing.
             entry["rank"] = _RESULT_ORDER["failed"]
+        if latest.get("title_n"):
+            entry[ID_TITLE_FIELD] = f"{latest['title']}\x1e{latest['title_n']}"
         if latest["result_source"]:
             entry["result_source"] = latest["result_source"]
         if latest["result_reason"]:

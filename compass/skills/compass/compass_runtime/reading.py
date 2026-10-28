@@ -455,7 +455,11 @@ _WRITE_PRIORITY = 3
 _CHECK_PRIORITY = {RESULT_FAILED: 1, RESULT_PASSED: 2, "not-recorded": 4}
 # Tier 3 reserves room after everything else a record holds but the agent's messages: it never
 # displaces the reader's words, a check, a write, a pull request, a skill or a tier 2 CI read.
-_COMMAND_PRIORITY = 5
+# A command that failed and could fail ranks ahead of the commands that passed, so a bound full of
+# commands keeps the failures a departure rests on.
+_COMMAND_FAILED_PRIORITY = 5
+_COMMAND_PRIORITY = 6
+_AGENT_MESSAGE_PRIORITY = 7
 # Two more subjects, apart from `check` (never reusing it): a CI read that carries an exit status
 # (tier 2) and any other command (tier 3):
 # [DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)  # noqa: E501
@@ -2823,12 +2827,17 @@ NONFINAL_CLAIMS_RULE = (
 )
 
 
+def _command_priority(entry: LedgerEntry) -> int:
+    failed = entry.get("result") == RESULT_FAILED and not cannot_fail(entry)
+    return _COMMAND_FAILED_PRIORITY if failed else _COMMAND_PRIORITY
+
+
 def _priority(entry: LedgerEntry) -> int:  # noqa: PLR0911 - one return per kind of entry
     """Which entries the byte bound reserves first (lower is earlier)."""
     if entry["author"] == AUTHOR_PERSON:
         return 0
     if entry.get("subject") == COMMAND_SUBJECT:
-        return _COMMAND_PRIORITY
+        return _command_priority(entry)
     if entry.get("subject") in (CHECK_SUBJECT, CI_SUBJECT):
         # A run with no result whose earlier run failed is ranked with the
         # failures, as the collector lists it (item 4, amended 2026-10-04).
@@ -2851,7 +2860,7 @@ def _priority(entry: LedgerEntry) -> int:  # noqa: PLR0911 - one return per kind
     # than it does, and a hundred newer messages dropped the older write that
     # showed what it did (review, 2026-10-03).
     if entry["type"] == AGENT_MESSAGE_TYPE:
-        return 6
+        return _AGENT_MESSAGE_PRIORITY
     return 5
 
 
@@ -3278,7 +3287,13 @@ def build_prompt(  # noqa: PLR0913 (each is one keyword its caller names)
     head_size = len(header.encode("utf-8", "replace"))
     citable = [entry for entry in ledger if _citable(entry)]
     checks = [entry for entry in citable if entry.get("subject") == CHECK_SUBJECT]
-    failures = [entry for entry in checks if entry.get("result") == RESULT_FAILED]
+    # A failed command a bound left out is as unread as a failed check: a `consistent` may not
+    # stand on the prompt's silence about it. `check_supports` withdraws one that cannot fail.
+    failures = [
+        entry
+        for entry in citable
+        if entry.get("subject") in RESULT_SUBJECTS and entry.get("result") == RESULT_FAILED
+    ]
     if head_size > budget:
         # Cutting the header would remove instructions or typed intent. An
         # empty selection already withholds the call, so no oversized prompt

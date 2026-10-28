@@ -303,11 +303,12 @@ def _commands(evidence: Evidence) -> list[Mapping[str, Any]]:
 _NOT_RECORDED = "not-recorded"
 
 
-def _uncovered_command_failure(evidence: Evidence) -> bool:
-    """Whether a listed tier 3 failure has no later passing check or command after it.
+def _uncovered_command_failures(evidence: Evidence) -> list[Mapping[str, Any]]:
+    """The listed tier 3 failures with no later passing check or command after them.
 
     Commands supersede one another by identical text only, so a failure a later, different
-    command or check recovered from would otherwise block the floor for the whole session.
+    command or check recovered from would otherwise block the floor for the whole session. The
+    scan counter drops the same failures, so the floor's blockers and its citations read one set.
     """
     passes = [
         t
@@ -315,11 +316,16 @@ def _uncovered_command_failure(evidence: Evidence) -> bool:
         if f.get("result") == reading.RESULT_PASSED and (t := _at(f)) is not None
     ]
     last = max(passes, default=None)
-    return any(
-        f.get("result") == reading.RESULT_FAILED
-        and (last is None or (_at(f) is None) or last <= (_at(f) or 0.0))
+    return [
+        f
         for f in _commands(evidence)
-    )
+        if f.get("result") == reading.RESULT_FAILED
+        and (last is None or (_at(f) is None) or last <= (_at(f) or 0.0))
+    ]
+
+
+def _uncovered_command_failure(evidence: Evidence) -> bool:
+    return bool(_uncovered_command_failures(evidence))
 
 
 def _writes(evidence: Evidence) -> list[Mapping[str, Any]]:
@@ -423,11 +429,8 @@ def live_level(evidence: Evidence, intent: Intent) -> Level:
             _ids(
                 [
                     *passes,
-                    *(
-                        f
-                        for f in (*checks, *_commands(evidence))
-                        if f.get("result") == reading.RESULT_FAILED
-                    ),
+                    *(f for f in checks if f.get("result") == reading.RESULT_FAILED),
+                    *_uncovered_command_failures(evidence),
                 ]
             )
         )

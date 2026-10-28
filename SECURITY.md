@@ -1903,7 +1903,9 @@ A foreground shell command that is neither a closed-list check nor on the read-o
 a command: its line, masked and clipped as a check line is, and its exit status where the call's status
 speaks for it. `gh pr checks` and `gh run view --exit-status` are published as CI reads. `gh pr checks`
 records a failure only on exit 1 with checks reported, and no result on exit 8 (pending), 2, 4 or a pull
-request with no checks. `gh run view --exit-status` exits 0 for a run still in progress, so only its failure
+request with no checks. Output that is one `gh` error message (a request that failed, a login prompt, no
+checks reported) records none, but a failing run keeps its failure whatever a line among its tab-separated
+check rows says. `gh run view --exit-status` exits 0 for a run still in progress, so only its failure
 counts. A CI read counts only when it reads the session's own repository, which is the `origin` of the
 folder the session began in, and, where it names a pull request or a branch, one the session is bound to by
 your goal's URL, a recorded pull request link or created pull request, or a pushed branch of that repository.
@@ -1920,8 +1922,9 @@ nothing, and its output goes only to the session's own vendor. A command that ca
 `printf`, `true`, `:`, `export`, `unset`, `set`, `eval`, `tee`,
 `exit 0`, `return 0`, by any spelling such as a path or `command true`) is never published, and one whose
 status a later `|| true` or `; exit 0` forces is published with no result and withdrawn from every verdict
-and level. A stage after a `|` that follows other work, such as `tee` or `sed`, records no result, since the
-call's status speaks for the filter and not for the program before it. A tier 3 failure blocks the live
+and level. The last stage of a `|` speaks for itself, as a check does: a pass is that stage's own pass, and a
+failure counts only for a call of one segment. The stages before it record no result, and `tee` is never
+published because it cannot fail. A tier 3 failure blocks the live
 estimate's floor only until a later check or command passes. A call whose result carries Claude Code's structured git record publishes that record only, never
 its command line. A quoted word the masking cannot read word by word, such as the script of a `bash -c`
 call that did not parse, is published as `…`, so half of a value is never shown. The same rules decide the

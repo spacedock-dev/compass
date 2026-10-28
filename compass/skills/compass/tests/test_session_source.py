@@ -115,9 +115,8 @@ class SessionSourceTest(unittest.TestCase):
         ids = [entry.fact_id for entry in first.entries]
         self.assertEqual(2, len(ids))
         self.assertEqual(2, len(set(ids)))
-        # The published report keeps both checks under the call id, so both derive one fact id;
-        # the newest run carries it here and the earlier one is no published entry.
-        self.assertEqual({ids[-1]}, set(self.published_ids("check_run")))
+        # Each directory's run is its own published entry, with an id apart from the other's.
+        self.assertEqual(set(ids), set(self.published_ids("check_run")))
         self.assertEqual("unchanged", self.source.compare(first.snapshot, self.read()).kind)
 
     def test_foreground_check_followed_by_its_background_run_keeps_the_published_id(
