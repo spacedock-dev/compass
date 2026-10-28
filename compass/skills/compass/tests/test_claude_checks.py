@@ -2616,6 +2616,13 @@ class TheBiomeStorybookAndGradleRunnersAreChecks(ClaudeChecksTestCase):
             "storybook test --updateSnapshot",
             "test-storybook -u",
             "test-storybook --updateSnapshot",
+            "storybook test --update",
+            "storybook test --update-snapshots",
+            "pnpm test:stories -u",
+            "pnpm test:stories --updateSnapshot",
+            "npm run test:stories -- -u",
+            "yarn test:stories -u",
+            "pnpm run test:stories --update",
         ):
             with self.subTest(command=command):
                 self.assertTrue(project_context._is_fixer(command.split()))
@@ -2625,6 +2632,8 @@ class TheBiomeStorybookAndGradleRunnersAreChecks(ClaudeChecksTestCase):
             "biome check .",
             "biome ci --error-on-warnings .",
             "storybook test --ci",
+            "pnpm test:stories",
+            "npm run test:stories",
             "storybook dev -u",
             "curl -u me host",
         ):

@@ -2150,7 +2150,9 @@ _FIX_FLAGS = frozenset({"--fix", "--write", "--fix-only", "--unsafe-fixes"})
 # [DEC-23](docs/design-reading-a-session.md#amended-2026-10-28-owner-biome-storybook-and-gradle-check-runners-join-the-closed-list)  # noqa: E501
 _RUNNER_FIX_FLAGS = {
     "biome": frozenset({"--write", "--fix", "--apply", "--apply-unsafe", "--unsafe"}),
-    "storybook": frozenset({"-u", "--updateSnapshot", "--update-snapshot"}),
+    "storybook": frozenset(
+        {"-u", "--update", "--update-snapshots", "--updateSnapshot", "--update-snapshot"}
+    ),
     "test-storybook": frozenset({"-u", "--updateSnapshot", "--update-snapshot"}),
 }
 _INTERPRETERS = frozenset({"node", "bash", "sh", "zsh"})
@@ -4012,7 +4014,7 @@ def _pytest_line(verdict: str) -> re.Pattern[str]:
 
 
 # Each runner's own last-line summaries, whole line and keyed by runner: (pass, fail). A runner
-# that prints nothing (`tsc`, `eslint`, `biome`) has no row, so it never takes another command's
+# that prints nothing (`tsc`, `eslint`) has no row, so it never takes another command's
 # line. The rule:
 # [DEC-29](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-checks-own-summary-on-the-last-line-records-its-result)  # noqa: E501
 _LAST_LINE_SUMMARIES: dict[str, tuple[re.Pattern[str], re.Pattern[str]]] = {
@@ -4033,8 +4035,9 @@ _LAST_LINE_SUMMARIES: dict[str, tuple[re.Pattern[str], re.Pattern[str]]] = {
     "node": (re.compile(rf"{_INFO} fail 0"), re.compile(rf"{_INFO} fail [1-9]\d*")),
     # Biome's last line, measured on 2.5 with and without colour: `Checked N files in Xms. No
     # fixes applied.` for a run that found nothing to report, and either `Found N errors.` or the
-    # closing `Some errors were emitted while running checks.` (glyph `x` or a cross) for one that
-    # did. Which of the two ends a failing run depends on how the streams interleave.
+    # closing `Some errors were emitted while running checks.` (led by U+00D7 or U+2716, never an
+    # ASCII `x`) for one that did. Which of the two ends a failing run depends on how the streams
+    # interleave.
     "biome": (
         re.compile(r"Checked [1-9]\d* files? in \S+\. No fixes (?:applied|needed)\."),
         re.compile(
@@ -4382,6 +4385,16 @@ def _is_fixer(words: list[str]) -> bool:
     if flags & _RUNNER_FIX_FLAGS.get(words[0], frozenset()) and (
         words[0] != "storybook" or words[1:2] == ["test"]
     ):
+        return True
+    if (
+        words[:2] in (["pnpm", "test:stories"], ["yarn", "test:stories"])
+        or words[:3]
+        in (
+            ["npm", "run", "test:stories"],
+            ["pnpm", "run", "test:stories"],
+            ["yarn", "run", "test:stories"],
+        )
+    ) and flags & _RUNNER_FIX_FLAGS["storybook"]:
         return True
     if words[0] == "black" or words[:2] == ["ruff", "format"]:
         return "--check" not in flags

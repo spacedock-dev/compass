@@ -242,15 +242,16 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
             {
                 "package.json": package(
                     **{
-                        "lint:a": "biome check --write",
-                        "lint:b": "biome check --apply --unsafe",
-                        "test:a": "storybook test -u",
-                        "test:b": "test-storybook --updateSnapshot",
+                        "lint:a": "biome check --apply",
+                        "lint:b": "biome check --apply-unsafe",
+                        "lint:c": "biome check --unsafe",
+                        "test:a": "storybook test --update-snapshot",
+                        "test:b": "storybook test --update",
                     }
                 )
             }
         )
-        for name in ("lint:a", "lint:b", "test:a", "test:b"):
+        for name in ("lint:a", "lint:b", "lint:c", "test:a", "test:b"):
             self.ran(f"pnpm run {name}")
         self.assertEqual([], self.titles())
 
