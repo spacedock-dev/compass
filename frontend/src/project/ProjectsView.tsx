@@ -108,9 +108,11 @@ function ProjectRow({
             ) : null}
           </div>
           <div className="next-project-sessions" aria-label="Observed sessions">
-            {members.shown.map((session) => (
+            {/* The index is part of the key because a board can publish one harness and sid twice; the
+                generated boards do, and React warned on the duplicate. */}
+            {members.shown.map((session, index) => (
               <MemberLine
-                key={`${session.harness}\u0000${session.sid}`}
+                key={`${session.harness}\u0000${session.sid}\u0000${String(index)}`}
                 session={session}
                 project={project.key}
               />
