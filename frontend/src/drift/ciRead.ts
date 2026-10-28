@@ -7,8 +7,10 @@ import {
   CI_ENTRY_SOURCE,
   CI_ENTRY_SOURCE_GITLAB,
   CI_ENTRY_WORDS,
+  CI_ENTRY_WORDS_GITLAB,
   CI_FAILING,
   CI_HEAD_MOVED,
+  CI_HEAD_MOVED_GITLAB,
   CI_HEAD_UNKNOWN,
   CI_NONE_DONE,
   CI_NO_CHECKS,
@@ -58,8 +60,10 @@ export function ciReadNote(ci: CiRead, clockText: string): { state: CiState; lin
     !(ci.counts['pending'] ?? 0) &&
     !(ci.counts['cancel'] ?? 0);
   let state: CiState = 'unsettled';
-  if (!ci.head_matches) lines.push(ci.session_head ? CI_HEAD_MOVED : CI_HEAD_UNKNOWN);
-  else if (ci.counts['fail']) {
+  if (!ci.head_matches) {
+    const moved = ciProvider(ci.repository) === 'GitLab' ? CI_HEAD_MOVED_GITLAB : CI_HEAD_MOVED;
+    lines.push(ci.session_head ? moved : CI_HEAD_UNKNOWN);
+  } else if (ci.counts['fail']) {
     lines.push(CI_FAILING);
     state = 'settles';
   } else if (ci.counts['pending']) lines.push(CI_RUNNING);
@@ -93,15 +97,18 @@ export function ciEntries(ci: CiRead | null, harness: string, sid: string): Work
   if (!ci || ci.error || !ci.checks.length) return [];
   const whole = green(ci);
   const gitlab = ciProvider(ci.repository) === 'GitLab';
+  const words = gitlab ? CI_ENTRY_WORDS_GITLAB : CI_ENTRY_WORDS;
   const notes = [
-    ...(ci.head_matches ? [] : ["the pull request head is not this session's commit"]),
+    ...(ci.head_matches
+      ? []
+      : [`the ${gitlab ? 'merge' : 'pull'} request head is not this session's commit`]),
     ...(ci.caution ? ['this session changed the CI configuration'] : []),
   ];
   return ci.checks.map((check, index) => ({
     id: `ci:${String(ci.number)}:${String(index)}`,
     type: 'ci_check',
     by: gitlab ? 'gitlab' : 'github',
-    summary: `${JSON.stringify(check.name)} ${CI_ENTRY_WORDS[check.bucket] ?? ''}${
+    summary: `${JSON.stringify(check.name)} ${words[check.bucket] ?? ''}${
       notes.length ? `; ${notes.join('; ')}` : ''
     }`,
     at: ci.read_at,

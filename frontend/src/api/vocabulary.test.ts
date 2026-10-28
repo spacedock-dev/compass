@@ -19,7 +19,9 @@ import {
   CI_ENTRY_SOURCE,
   CI_ENTRY_SOURCE_GITLAB,
   CI_ENTRY_WORDS,
+  CI_ENTRY_WORDS_GITLAB,
   CI_HEAD_MOVED,
+  CI_HEAD_MOVED_GITLAB,
   CI_READ_ERRORS,
   CI_SOURCES,
   GOAL_VERDICT_CHECKS,
@@ -81,9 +83,11 @@ interface Vocabulary {
   readonly ciReadErrors: string[];
   readonly ciEntryResults: Record<string, string>;
   readonly ciEntryWords: Record<string, string>;
+  readonly ciEntryWordsGitlab: Record<string, string>;
   readonly ciEntrySource: string;
   readonly ciEntrySourceGitlab: string;
   readonly ciHeadMoved: string;
+  readonly ciHeadMovedGitlab: string;
   readonly ciCaution: string;
   readonly workEvidenceByHarness: Record<string, string[]>;
   readonly checkResultWords: Record<string, string>;
@@ -162,11 +166,13 @@ describe('the reading vocabulary', () => {
   it('words a stored check entry as the producer does, up to the page capitals and suffixes', () => {
     expect(CI_ENTRY_RESULT).toEqual(vocabulary.ciEntryResults);
     expect(CI_ENTRY_WORDS).toEqual(vocabulary.ciEntryWords);
+    expect(CI_ENTRY_WORDS_GITLAB).toEqual(vocabulary.ciEntryWordsGitlab);
     const opens = (page: string, producer: string): boolean =>
       page.replaceAll('\u2019', "'").toLowerCase().startsWith(producer.toLowerCase());
     expect(opens(CI_ENTRY_SOURCE, vocabulary.ciEntrySource)).toBe(true);
     expect(opens(CI_ENTRY_SOURCE_GITLAB, vocabulary.ciEntrySourceGitlab)).toBe(true);
     expect(opens(CI_HEAD_MOVED, vocabulary.ciHeadMoved)).toBe(true);
+    expect(opens(CI_HEAD_MOVED_GITLAB, vocabulary.ciHeadMovedGitlab)).toBe(true);
     expect(opens(CI_CAUTION, vocabulary.ciCaution)).toBe(true);
   });
 

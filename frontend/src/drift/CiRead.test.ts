@@ -241,5 +241,14 @@ describe('the pull request check read, as the card says it', () => {
       expect(moved[0]?.summary).toContain("the pull request head is not this session's commit");
       expect(ciEntries(accepted({ error: 'gh-failed' }), 'claude', 's1')).toEqual([]);
     });
+
+    it('words a GitLab row as a merge request, in the entry and in the page sentence', () => {
+      const repository = 'gitlab.example.com/acme/widgets';
+      const [first] = ciEntries(accepted({ repository }), 'claude', 's1');
+      expect(first?.summary).toBe('"lint" passed on the merge request');
+      const moved = ciEntries(accepted({ repository, head_matches: false }), 'claude', 's1');
+      expect(moved[0]?.summary).toContain("the merge request head is not this session's commit");
+      expect(moved[0]?.summary).not.toContain('pull request');
+    });
   });
 });

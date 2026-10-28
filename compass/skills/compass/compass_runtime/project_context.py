@@ -2264,6 +2264,10 @@ _READ_ONLY_TRIPLES = frozenset(
         "gh run list",
         "gh run watch",
         "glab ci status",
+        "glab mr view",
+        "glab ci list",
+        "glab ci get",
+        "glab ci trace",
     }
 )
 # Words that write nothing: the loop and test keywords, and the commands a loop condition or a

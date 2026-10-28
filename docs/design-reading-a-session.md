@@ -3560,6 +3560,15 @@ Five edges of the lane above, each a place its words or its payload said more or
   command was recorded". The lane counts the failed rows the cut dropped and the cutoff says "A failed
   check was recorded outside the window this check read" (or the count).
 
+### Amended 2026-10-28 (owner): the GitLab polling reads are read-only too
+
+`glab mr view`, `glab ci list`, `glab ci get` and `glab ci trace` join the polling commands of the
+2026-10-27 amendment above. Each reads a merge request, a pipeline list, one pipeline or a job's log and
+takes no option that writes a file, so a session that watches a pipeline no longer ages every earlier pass,
+as `glab ci status` already did not. They are the same kind of command as `gh pr view` and `gh run list`: read-only, record no result and never pass, because a command that
+reports no failure by its exit status says nothing a reading may rest on. `glab ci run`, `glab mr merge` and
+a `glab ci trace` sent to a file are not on the list, the last because the redirect is a write.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
@@ -6691,6 +6700,19 @@ Two gaps in the verdict test, both measured against the producer rather than ass
 - **Rejected:** stripping nothing (the recipe echo would make a command's own text count as printed output);
   stripping by line count (a runner may print one or two lines).
 
+### Amended 2026-10-28 (owner): a GitLab word is a remote word too
+
+The remote-clause rule of the 2026-10-27 amendment "a CI job named in the reason is not a local check" read
+GitHub's words only, so "the unit tests passed in the pipeline" was matched to a local test run. A clause
+that says `pipeline` or `pipelines`, `merge request`, `GitLab` or `GitLab CI` (any case), or `MR` or `MRs`
+in capitals, now claims nothing about a local run, as `CI`, `Actions` and `workflow` already did. `MR` is
+read in capitals only, for the reason `CI` is: a lowercase `mr` is an ordinary token. The cost is that
+"the data pipeline tests pass" reads as nothing checkable, the same accepted loss the rule already
+carries for hyphen-joined local names.
+
+The harness verdict's number match is bounded too: a pull or merge request number is one to ten digits, so a
+reason with a digit run past the interpreter's limit names no request instead of raising.
+
 ## DEC-27: the first view of a session is the goal, Analyze drift and the result
 
 Decided 2026-10-11 (DRC-4855), on the Actions Front and Center project, in the milestone "Intent
@@ -8103,9 +8125,10 @@ fact and its store, the page setting and `--no-ci-read`, and the notice line.
 
 ### Amended 2026-10-27 (owner): the `gh` read is built, for `github.com`
 
-This layer builds the ruling for GitHub only. `glab` and a host from the tool's own hosts file are not
-built, so the known hosts are `github.com` and nothing else, and a goal that names another host
-contributes no pull request, and the session's own records may still bind one. The ruling's other items stand as written, and these are the choices it left open.
+This layer built the ruling for GitHub first. The `glab` read and a host from that tool's own hosts file
+followed, in the next amendment, so for GitHub the known host is `github.com` and nothing else, and a goal
+that names a host neither read knows contributes no pull request, and the session's own records may still
+bind one. The ruling's other items stand as written, and these are the choices it left open.
 
 - **One fact per check, built from the stored record.** A `ci_check` entry carries the check's name,
   bucket and completion time, and Compass's own word for whether it may settle (`ci_counts`). The record
@@ -8158,7 +8181,7 @@ as written, and these are the choices it left open.
   request and a GitLab merge request binds none.
 - **Hosts come from glab's own file, before anything starts.** The host names under `hosts:` in
   `glab-cli/config.yml` are the only hosts read; no value in that file is kept. A goal URL on any other
-  host binds, because the reader's words name it, and then launches nothing and is said beside the
+  host binds, because the reader's words name it, and then starts no `glab` and is said beside the
   reading as `host-not-configured`. A host is read only when it is a dotted name, exactly equal to one
   in the file, over https, and never an IP literal or one carrying a port. This is the ruling's item
   10, "known hosts only", as it applies to a tool whose hosts the reader configured.
@@ -8251,6 +8274,32 @@ Three loose ends in the `gh` and `glab` read and in how a reason is checked agai
   ("cannot pass", "needs to pass", "should pass", "I doubt it passes", "whether it passes") counts as no claim.
   A pass the clause scopes to the reader's own machine ("passes locally", "on my machine") counts as no claim
   either, so a CI pass does not agree with "the `lint` job passes locally but CI fails".
+
+### Amended 2026-10-28 (owner): the GitLab read's follow-ups
+
+These are the follow-ups the review of the `glab` read found. The ruling's items stand as written.
+
+- **The words name the provider.** A GitLab check says `passed on the merge request` and a GitLab head that
+  moved says `the merge request head is not this session's commit`; a GitHub row keeps `pull request`. The
+  producer, the page's stored-entry words and the shared vocabulary fixture carry both sets, so a citation
+  resolves on the page as it did in the prompt, and a correction quotes the provider's own word.
+- **A GitLab repository is never `github.com`.** `github.com` and every name under it is refused as a GitLab
+  host, so a URL such as `https://ssh.github.com/.../-/merge_requests/1` binds nothing and launches nothing.
+- **One deadline covers the GitLab read.** The read makes up to twelve sequential calls, each allowed 20
+  seconds, so a slow server could hold a press for four minutes. A deadline of 60 seconds over the whole
+  read is checked before each call, and a call is given no more than the time that is left. Past it the read
+  ends with the `timeout` token and settles nothing.
+- **A quoted key in glab's file is the key.** `"api_protocol": http` redirects a host exactly as the unquoted
+  spelling does. A host block that holds a line Compass cannot place a key in (a tab, a flow mapping or
+  sequence, a complex key, an anchor, an alias or a block scalar) is not read, because the key it hides may
+  be one of the three Compass refuses on. A host written inline, `HOST: {...}`, names no host.
+- **`GLAB_CONFIG_DIR` is not followed.** Compass reads `glab-cli/config.yml` from `XDG_CONFIG_HOME`, else
+  `~/.config`, else `%APPDATA%`, and never from a folder `GLAB_CONFIG_DIR` names, because that variable is
+  stripped from the child and honouring it for the file would let the environment pick which file decides the
+  host. A reader whose configuration lives there reads as `host-not-configured`, and the way out is in
+  `HOW_TO_USE.md`.
+- **What was rejected.** A single deadline applied by shortening only the last call, which lets eleven slow
+  calls through. Following `GLAB_CONFIG_DIR`: the host list would then depend on a variable the child cannot see.
 
 ## DEC-31: the text of a command that is not a check may leave the machine, by vendor
 

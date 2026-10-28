@@ -56,7 +56,7 @@ The posture rests on two invariants:
    Four kinds of outbound request are implemented, and they are named apart rather than counted
    together because they are not the same
    exposure. The quota poll carries a vendor token out and quota numbers back, and no session
-   content whatever. The pull request CI read, described in Pull request CI reads below, starts
+   content whatever. The pull request and merge request CI read, described in Pull request CI reads below, starts
    your own `gh` when you press Analyze and sends GitHub a repository and a pull request number (or a pushed branch's name, where that bound
    it), or your own `glab` and sends a GitLab host you have signed in to a project and a merge request number; it carries no session text. A harness invocation, described in Light harness usage below, can carry
    session-derived text: it is the one pathway by which the operator's own words may leave this
@@ -2404,10 +2404,12 @@ the time is where the record is whole from. The keys, types and exposure are unc
 ### Pull request CI reads
 
 [The ruling](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)
-is the contract. When you press Analyze on a session whose goal names a pull request by its
+is the contract. When you press Analyze on a session whose goal names a GitHub pull request by its
 `https://github.com/OWNER/REPO/pull/N` URL, or whose Claude Code transcript records a `pr-link` or a
 pushed branch for the repository the session folder's own `origin` names, Compass starts your `gh`
-to read that pull request's checks. The records are read from the transcript's tail, bounded in
+to read that pull request's checks. A goal that names a GitLab merge request by its
+`https://HOST/GROUP/.../PROJECT/-/merge_requests/N` URL starts your `glab` instead, under the bounds
+listed below; no transcript record binds a merge request. The records are read from the transcript's tail, bounded in
 bytes and rows: a `pr-link` row's `prRepository` and `prNumber`, and a result's
 `toolUseResult.gitOperation.push` (`branch`); never the command or its output. It sends GitHub the repository and the number, or, where a pushed branch is what bound it, the
 repository and that branch's name, and nothing else of the session's text. The repository, the number and the branch are identifiers taken from the session's records, not session text, and they leave the machine with your own login. A
@@ -2429,7 +2431,10 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   The login it uses is the one stored for your account. A `GITHUB_TOKEN` in the environment is kept.
 - The owner, repository and number are checked against a closed pattern before anything starts, and
   a pushed branch against another, so nothing in a transcript can become an option.
-- A hard timeout of 20 seconds kills the process group, and output is capped at 256 KiB.
+- A hard timeout of 20 seconds kills the process group, and output is capped at 256 KiB. The GitLab
+  read also has one deadline of 60 seconds over all of its calls (up to twelve), checked before each
+  call, and a call is given no more than the time left, so a slow server cannot hold a press for the
+  sum of twelve timeouts. Past it the read ends as `timeout` and settles nothing.
 - Its output is read as JSON whatever the exit code, since `gh` exits 8 while a check is pending and
   1 while one has failed, then checked against a closed schema. Anything else is one closed error
   token. Its stderr is read only to choose that token and is then dropped.
@@ -2444,10 +2449,14 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   `%APPDATA%` on Windows), keeps no value from it, and reads only a host that matches one exactly, over
   https, as a dotted name that is never an IP literal and carries no port. A host whose block sets
   `api_protocol` to anything but https, `api_host` to another address, or `skip_tls_verify` on is
-  not read either (those three values are read from the block, and no token). A pipeline counts only when
+  not read either (those three values are read from the block, and no token), and neither is one whose
+  block holds a quoted key spelling one of them as well as a line this reader cannot place a key in (a
+  tab, a flow mapping, an anchor). `GLAB_CONFIG_DIR` is not followed: the file is read from
+  `XDG_CONFIG_HOME`, else `~/.config`, else `%APPDATA%`, so a configuration that lives only under a
+  folder that variable names reads as `host-not-configured` ([HOW_TO_USE.md](HOW_TO_USE.md#read-a-gitlab-merge-requests-pipeline) gives the way out). A pipeline counts only when
   it ran the merge request's head, which is the session's commit; a merged-results pipeline settles
   nothing. A goal URL that names any
-  other host starts no process and says so beside the reading. Only a goal URL binds a merge request:
+  other host starts no `glab` and says so beside the reading. Only a goal URL binds a merge request:
   what Claude Code writes for one is not measured
   ([the capture note](docs/captures/claude/gitlab-merge-request-read-unmeasured.md)).
   GitLab has no required-checks list, so a job allowed to fail counts as neither a pass nor a

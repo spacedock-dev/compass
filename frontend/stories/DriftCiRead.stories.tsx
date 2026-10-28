@@ -141,6 +141,18 @@ export const GreenOnAGitlabMergeRequest: Story = {
   },
 };
 
+export const ChecksOnAMovedGitlabHeadNameTheMergeRequest: Story = {
+  ...citing(record({ repository: GITLAB, head: OTHER, head_matches: false })),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-ci-read-state', 'unsettled');
+    await expect(node).toHaveTextContent(
+      'The merge request head is not this session’s commit, so they settle nothing.',
+    );
+    await expect(node).not.toHaveTextContent('pull request');
+  },
+};
+
 export const AGitlabHostGlabDoesNotNameSaysSo: Story = {
   ...read(
     record({

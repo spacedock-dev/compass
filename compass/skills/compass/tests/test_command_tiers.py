@@ -386,6 +386,13 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
         self.assertEqual([], self.commands("ci_command"))
         self.assertEqual([], self.commands())
 
+    def test_the_other_glab_reads_record_no_result_either(self) -> None:
+        for command in ("glab mr view 7", "glab ci list", "glab ci get", "glab ci trace build"):
+            with self.subTest(command=command):
+                self.session.bash(command, "output", is_error=False)
+        self.assertEqual([], self.commands("ci_command"))
+        self.assertEqual([], self.commands())
+
     def test_a_ci_read_never_ages_an_earlier_pass_but_a_command_does(self) -> None:
         self.session.bash("pytest -q", "3 passed", is_error=False)
         self.session.bash("gh pr checks 12", "all pass", is_error=False)

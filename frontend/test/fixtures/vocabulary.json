@@ -113,7 +113,15 @@
     "pending": "still running on the pull request",
     "skipping": "skipped on the pull request"
   },
+  "ciEntryWordsGitlab": {
+    "cancel": "cancelled on the merge request",
+    "fail": "failed on the merge request",
+    "pass": "passed on the merge request",
+    "pending": "still running on the merge request",
+    "skipping": "skipped on the merge request"
+  },
   "ciHeadMoved": "the pull request head is not this session's commit",
+  "ciHeadMovedGitlab": "the merge request head is not this session's commit",
   "ciReadErrors": [
     "gh-missing",
     "gh-signed-out",

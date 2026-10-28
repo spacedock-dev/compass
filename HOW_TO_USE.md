@@ -550,6 +550,36 @@ starts a fresh baseline. Projects keeps saved conditions visible and removable a
 session disappears. The card distinguishes a suspended source, a failed save and the notification
 service's response. A service accepting an attempt does not prove a banner appeared.
 
+## Read a GitLab merge request's pipeline
+
+Pressing Analyze drift reads one merge request's pipeline through your own `glab`, when your goal names the
+merge request by its `https://HOST/GROUP/.../PROJECT/-/merge_requests/N` URL. No session record binds a
+merge request, so a goal without the URL reads nothing from GitLab. Three things about your `glab`
+setup decide whether the read happens. This procedure was not run against a live GitLab server: the read is
+built from GitLab's documented answers, and the first press on your own host is the first real test.
+
+1. **Sign in with `glab auth login`.** Compass strips `GITLAB_TOKEN`, `GITLAB_HOST` and `GL_HOST` (and every
+   other `GLAB_*` variable) from the `glab` it starts, because `GITLAB_TOKEN` applies to whatever host a command
+   names and a goal can name any host. A reader who signs in by `GITLAB_TOKEN` alone is read as signed out.
+   Store a login instead, which `glab` keys by host:
+
+   ```bash
+   glab auth login --hostname gitlab.example.com
+   ```
+
+2. **Keep `glab`'s configuration in its usual place.** Compass reads the host names under `hosts:` in
+   `glab-cli/config.yml` under `XDG_CONFIG_HOME`, else `~/.config`, else `%APPDATA%` on Windows, and reads only a
+   host that file names. A configuration that lives only under a folder `GLAB_CONFIG_DIR` names is not
+   followed, and the card says the host is not configured. Copy or link that file to the usual path, or sign
+   in again with `GLAB_CONFIG_DIR` unset.
+3. **Leave the host block on https.** A host whose block sets `api_protocol` to anything but `https`,
+   `api_host` to another name, or `skip_tls_verify` on is not read, and neither is one whose block holds a
+   line Compass cannot place a key in (a tab, a flow mapping, an anchor). The card says the host is not
+   configured.
+
+`--no-ci-read` and the page's switch turn the read off. [SECURITY.md](SECURITY.md#pull-request-ci-reads) lists
+every bound the read keeps, the 60 second deadline over the whole GitLab read among them.
+
 ## Turn a feature off
 
 Each flag belongs to the dashboard process, so changing one means restarting.

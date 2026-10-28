@@ -270,6 +270,13 @@ export const CI_ENTRY_WORDS: Readonly<Record<string, string>> = {
   skipping: 'skipped on the pull request',
   cancel: 'cancelled on the pull request',
 };
+export const CI_ENTRY_WORDS_GITLAB: Readonly<Record<string, string>> = {
+  pass: 'passed on the merge request',
+  fail: 'failed on the merge request',
+  pending: 'still running on the merge request',
+  skipping: 'skipped on the merge request',
+  cancel: 'cancelled on the merge request',
+};
 export const CI_ENTRY_RESULT: Readonly<Record<string, string>> = {
   pass: 'passed',
   fail: 'failed',
@@ -302,6 +309,8 @@ export const CI_NONE_DONE = 'No check has completed, so they settle nothing.';
 export const CI_CANCELLED = 'A cancelled check keeps them from settling anything.';
 export const CI_HEAD_MOVED =
   'The pull request head is not this session’s commit, so they settle nothing.';
+export const CI_HEAD_MOVED_GITLAB =
+  'The merge request head is not this session’s commit, so they settle nothing.';
 export const CI_HEAD_UNKNOWN =
   'Compass could not read this session’s commit, so they settle nothing.';
 export const CI_CAUTION = 'This session changed the CI configuration.';
