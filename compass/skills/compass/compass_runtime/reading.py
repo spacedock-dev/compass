@@ -1118,10 +1118,10 @@ AGENT_MESSAGE_TYPE = "agent_message"
 # cap, 240, and the counted sentence alone runs to about 180, so the clauses
 # saying the checks were not sent, or had no room, were cut off in the store
 # (review, 2026-09-24). Composed by the code from counts, never model prose.
-# The newest-final fallback clause and the largest accepted command counts raise
-# the measured worst case to 825 characters. Keep all loss clauses rather than
-# clipping their tail.
-CUTOFF_CAP_CHARS = 832
+# The newest-final fallback clause and the largest accepted command counts, said as
+# floors ("at least" twice), raise the measured worst case to 843 characters. Keep all
+# loss clauses rather than clipping their tail.
+CUTOFF_CAP_CHARS = 850
 
 
 class LedgerEntry(TypedDict):
@@ -2627,15 +2627,31 @@ def _commands_note(measured: Mapping[str, Any]) -> str:
     if counts is None or not counts[0]:
         return ""
     other, read_only = counts
-    ran = f"The session ran {other} other command{'s' if other != 1 else ''}"
-    apart = f"{read_only} of them read-only" if read_only else "none of them read-only"
+    # A scan that read only the later part of the session counted the commands it saw, so each
+    # count is a lower bound and is said as one.
+    floor = measured.get("commands_floor") is True
+    least = "at least " if floor else ""
+    ran = f"The session ran {least}{other} other command{'s' if other != 1 else ''}"
+    apart = (
+        f"{least}{read_only} of them read-only"
+        if read_only
+        else "none known to be read-only"
+        if floor
+        else "none of them read-only"
+    )
     return f" {ran}, {apart}; Compass did not read what they did."
 
 
 def _counted(lookup: Callable[[], Mapping[str, Any]] | None) -> dict[str, int]:
     """Both counts or neither, so a scan that did not measure them is "not recorded", not zero."""
-    counts = _command_counts(lookup() if lookup else {})
-    return {} if counts is None else dict(zip(COVERAGE_COMMAND_KEYS, counts, strict=True))
+    measured = lookup() if lookup else {}
+    counts = _command_counts(measured)
+    if counts is None:
+        return {}
+    kept: dict[str, Any] = dict(zip(COVERAGE_COMMAND_KEYS, counts, strict=True))
+    if measured.get(COMMANDS_FLOOR_KEY) is True:
+        kept[COMMANDS_FLOOR_KEY] = True
+    return kept
 
 
 def _command_counts(measured: Mapping[str, Any]) -> tuple[int, int] | None:
@@ -2743,6 +2759,11 @@ COVERAGE_GOAL_SOURCES = ("typed", "whole", "excerpt", "unroomed", "unknown")
 
 
 COVERAGE_COMMAND_KEYS = ("other_commands", "read_only_commands")
+# Present, and True, when the scan that counted the commands began after the start of the session,
+# so both counts are lower bounds. Optional beside the counts: a reading stored before it carries
+# whole counts or none, and an absent key means the counts are the session's.
+# Spelt once in `records`, which `project_context` imports and `reading` may not be imported by.
+COMMANDS_FLOOR_KEY = records.COMMANDS_FLOOR_KEY
 
 
 def validate_coverage(value: Any) -> dict[str, Any] | None:
@@ -2750,13 +2771,19 @@ def validate_coverage(value: Any) -> dict[str, Any] | None:
 
     A reading stored before the command counts carries the first five keys alone and
     stays valid, saying the count was not recorded. A newer one carries both counts or
-    neither: one alone, or a count that cannot be true, refuses the reading.
+    neither: one alone, or a count that cannot be true, refuses the reading. `commands_floor`
+    may follow the counts, only as True, and never without them.
     """
     if not isinstance(value, dict):
         return None
     keys = set(value)
     older = set(COVERAGE_KEYS)
-    counted = keys == older | set(COVERAGE_COMMAND_KEYS) and _command_counts(value) is not None
+    counts = older | set(COVERAGE_COMMAND_KEYS)
+    counted = (
+        keys in (counts, counts | {COMMANDS_FLOOR_KEY})
+        and _command_counts(value) is not None
+        and (COMMANDS_FLOOR_KEY not in keys or value[COMMANDS_FLOOR_KEY] is True)
+    )
     if keys != older and not counted:
         return None
     return dict(value) if _coverage_fields_valid(value) else None

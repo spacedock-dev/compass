@@ -272,6 +272,30 @@ def request_clock(payload: Mapping[str, Any]) -> Callable[[float], str] | None:
     return clock_text if zone is None else zone_clock(zone)
 
 
+# The words of `reading.CLAIMS_RULE` and `reading.NONFINAL_CLAIMS_RULE`, "passing" read as its three
+# forms. The resolver cannot tell a claim's kind, so the correction quotes the cited message that
+# holds one of them, as the page's claims row does (`frontend/src/drift/claimWords.ts`). A test
+# reads both rules and fails when this list and they drift.
+CLAIM_WORDS = (
+    "running",
+    "done",
+    "merged",
+    "pushed",
+    "deployed",
+    "passing",
+    "passes",
+    "passed",
+    "fixed",
+    "sent",
+    "filed",
+)
+_CLAIM_WORD = re.compile(r"\b(?:" + "|".join(CLAIM_WORDS) + r")\b", re.IGNORECASE)
+
+
+def holds_claim_word(text: object) -> bool:
+    return _CLAIM_WORD.search(text if isinstance(text, str) else "") is not None
+
+
 def _placeholder(fact: Mapping[str, Any]) -> dict[str, str]:
     return {"entry": str(fact.get("fact_id") or "")}
 
@@ -577,7 +601,10 @@ class _Rows:
         record = [f for f in standing if f.get("type") != reading.AGENT_MESSAGE_TYPE]
         checks = [f for f in record if f.get("subject") == reading.CHECK_SUBJECT]
         found = checks or record
-        return str(result), said[0], found[0] if found else None
+        # The claiming message, as the page's claims row quotes it: the first cited that holds a
+        # claim word, else the first cited, so the offered question names the sentence shown.
+        claiming = next((f for f in said if holds_claim_word(f.get("summary"))), said[0])
+        return str(result), claiming, found[0] if found else None
 
 
 def _saved_lines(row: Mapping[str, Any]) -> list[tuple[int, str]]:

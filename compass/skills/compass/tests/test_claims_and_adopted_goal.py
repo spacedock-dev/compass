@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -1138,6 +1139,25 @@ class SteerBackSaysWhatTheRecordDoesNotShowTest(unittest.TestCase):
             ),
         )
 
+    def test_the_claiming_message_is_quoted_not_the_first_cited(self) -> None:
+        neutral = _agent("a0", 80.0, "The worker stopped before the queue registered the job.")
+        claiming = _agent("a1", 90.0, "All the retry tests passed.")
+        text = self.compose(reading.RESULT_UNSUPPORTED, ["a0", "a1"], [neutral, claiming])
+        self.assertIn('Can you show evidence for "All the retry tests passed" at T90{a1}?', text)
+        self.assertNotIn("worker stopped", text)
+
+    def test_with_no_claim_word_the_first_cited_is_quoted(self) -> None:
+        first = _agent("a0", 80.0, "Looking at the queue now.")
+        second = _agent("a2", 85.0, "The worker stopped early.")
+        text = self.compose(reading.RESULT_UNSUPPORTED, ["a0", "a2"], [first, second])
+        self.assertIn('Can you show evidence for "Looking at the queue now" at T80{a0}?', text)
+
+    def test_the_first_of_several_claiming_messages_is_quoted(self) -> None:
+        first = _agent("a1", 90.0, "All the retry tests passed.")
+        later = _agent("a2", 92.0, "Merged it.")
+        text = self.compose(reading.RESULT_UNSUPPORTED, ["a1", "a2"], [first, later])
+        self.assertIn("at T90{a1}?", text)
+
     def test_a_cited_id_cleaned_by_the_ledger_still_finds_its_fact(self) -> None:
         padded = {**SID_AGENT_PADDED}
         text = self.compose(reading.RESULT_UNSUPPORTED, ["a1"], [padded])
@@ -1183,3 +1203,31 @@ class TheScorerKnowsTheQuestionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheClaimWordsAreTheProducerRulesWordsTest(unittest.TestCase):
+    """The page holds the same list (`claimWords.test.ts`); this binds the server's."""
+
+    @staticmethod
+    def _named() -> set[str]:
+        full = re.search(r"compare agent states \(([^)]*)\)", reading.CLAIMS_RULE)
+        short = re.search(r"only assertions of ([a-z/]+),", reading.NONFINAL_CLAIMS_RULE)
+        assert full is not None
+        assert short is not None
+        return {w.strip() for part in (full[1], short[1]) for w in re.split(r"[,/]", part)} - {""}
+
+    def test_every_word_either_rule_names_is_a_claim_word(self) -> None:
+        named = self._named()
+        self.assertGreaterEqual(len(named), 9)
+        for word in named:
+            self.assertTrue(correction.holds_claim_word(f"it is {word} now"), word)
+        for form in ("passing", "passes", "passed"):
+            self.assertTrue(correction.holds_claim_word(form))
+
+    def test_a_word_the_rules_do_not_name_is_not_one(self) -> None:
+        for text in ("the sender fixedpoint undone", "looking at the queue", ""):
+            self.assertFalse(correction.holds_claim_word(text), text)
+
+    def test_the_server_list_holds_nothing_beyond_the_rules(self) -> None:
+        # "passing" is read as its three forms, as the page reads it.
+        self.assertEqual(self._named() | {"passes", "passed"}, set(correction.CLAIM_WORDS))

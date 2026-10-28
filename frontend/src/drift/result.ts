@@ -593,8 +593,9 @@ export function coverageLimits(shape: Shape): string {
   return clauses.join(' ');
 }
 
-/* A reading's cutoff already says how many other commands ran beside the entries it read, so this speaks only
-   where the count was never recorded: a reading stored before it was measured, or one whose session had no scan.
+/* A reading's cutoff already says how many other commands ran beside the entries it read, or at least how many
+   when the scan began late, so this speaks only where no count was stored: a reading stored before it was
+   measured, or one whose session had no scan.
    Said apart from `coverageLimits`, which the retired page's own sentence is held to. */
 export function commandCountNote(shape: Shape): string {
   return shape.coverage && Object.hasOwn(shape.coverage, 'other_commands')

@@ -1314,6 +1314,14 @@ The word rule only picks which already cited agent message the page quotes. It i
 never changes a result, a citation or a verdict, so the ruling that no English keyword classifier is added,
 and the amendment that a word list is a judgement, still hold for verdicts.
 
+### Amended 2026-10-28 (owner): the correction quotes the claiming message too
+
+The correction Steer back offers asks about the same sentence. It quoted the first cited message, so
+"Can you show evidence for ..." could name the neutral statement while the claims row quoted the claiming one.
+`correction.py` now picks the cited agent message by the same rule, with its own copy of the word list
+(`correction.CLAIM_WORDS`), and a test reads both claims rules from `reading.py` and fails when that list and
+they drift, as the page's test does for its own.
+
 ### Repeated calls
 
 A reading is produced only in response to a discrete reader action, asserted rather than assumed,
@@ -3358,8 +3366,9 @@ that can change files, to age an earlier pass (item 3), and nothing about the re
 one sentence when any ran: "The session ran 7 other commands, 4 of them read-only; Compass did not read what they
 did." The sentence names the session and not the window, so a long session can read "412 other commands" beside
 three listed entries. The two counts come from the session scan, are stored only when that scan read the whole
-transcript, and are left unrecorded when the scan was cut from the tail, because a cut scan counted only the
-commands after the cut. They sit beside the
+transcript. A scan that began after the start of the session, whether cut from the tail or pushed to a later
+horizon by an unread subagent transcript, counted only the commands after that point, so those counts are left
+out of the whole-session sentence (the 2026-10-28 amendment at the end of this ruling stores them as a floor). They sit beside the
 [measured coverage](#amended-2026-10-04-owner-disclose-measured-reading-coverage) the reading already stores.
 Read-only is the scan's own test of whether the command could change a file. A session that ran none says
 nothing.
@@ -3568,6 +3577,22 @@ takes no option that writes a file, so a session that watches a pipeline no long
 as `glab ci status` already did not. They are the same kind of command as `gh pr view` and `gh run list`: read-only, record no result and never pass, because a command that
 reports no failure by its exit status says nothing a reading may rest on. `glab ci run`, `glab mr merge` and
 a `glab ci trace` sent to a file are not on the list, the last because the redirect is a write.
+
+### Amended 2026-10-28 (owner): a scan that began late stores its command counts as a floor
+
+A long session often has a scan that began after the start of the transcript: the read was cut from the tail,
+or an unread subagent transcript pushed its horizon forward. The 2026-10-27 amendment dropped both counts for
+those scans, so the sessions that ran the most commands said "not recorded". The counts the scan did measure are
+true of what it read, so they are a lower bound on the session, and a lower bound is worth saying. The cutoff
+now reads "The session ran at least 412 other commands, at least 300 of them read-only; Compass did not read
+what they did", and "none known to be read-only" where the floor of read-only calls is zero. A scan that read
+the whole transcript still says the plain counts, and a reading stored earlier still says the count was not
+recorded.
+
+The stored `coverage` mapping may carry one more optional key, `commands_floor`, only as `true` and only beside
+both counts. A `false`, a non-boolean or a floor with no counts refuses the reading. The cutoff's bound rose
+from 832 to 850 characters, because the two "at least" phrases lengthen the measured worst case from 825 to
+843. The page draws the stored sentence, so it needs no new wording of its own.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
@@ -5133,8 +5158,8 @@ come from an older scan, so the tail start does not describe the check listing. 
 passed, failed and unrecorded runs, files written, launches, person messages, agent messages and
 derived entries. Omitted pass and write counts cover only the reading's window through its stop,
 not the session-wide count; checks the prompt could not fit have their own count. Loss and source
-clauses fit the stored cutoff's 832-character bound without truncation. The newest-final
-fallback and the largest accepted command counts raise the measured large-count case to 825 characters; this keeps every loss clause.
+clauses fit the stored cutoff's 850-character bound without truncation. The newest-final
+fallback and the largest accepted command counts, each said as an "at least" floor, raise the measured large-count case to 843 characters; this keeps every loss clause.
 
 Coverage stores only an optional closed mapping of counts, a time, a boolean and the source state.
 It changes no model prompt. A found adopted source already equal to the saved goal was read whole,
