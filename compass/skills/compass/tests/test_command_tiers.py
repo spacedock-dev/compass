@@ -1316,9 +1316,9 @@ class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
 
     def test_a_hostile_first_line_is_not_matched_against_the_error_shapes(self) -> None:
         for line in ("a: " * 40_000, "a" * 100_000 + " gh auth login"):
-            started = time.monotonic()
+            started = time.process_time()
             self.assertFalse(project_context._gh_error_line(f"Exit code 1\n{line}"))
-            self.assertLess(time.monotonic() - started, 1.0)
+            self.assertLess(time.process_time() - started, 1.0)
         self.assertTrue(project_context._gh_error_line("Exit code 1\ngh: Not Found (HTTP 404)"))
 
     def test_the_last_stage_of_a_pipe_after_work_speaks_for_itself(self) -> None:
