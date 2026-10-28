@@ -178,6 +178,7 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
         answer: dict[str, Any],
         *,
         tails: dict[str, str] | None = None,
+        partial: bool = False,
     ) -> unasked.Lane:
         def model(prompt: str, **_kw: Any) -> tuple[str, str]:
             self.prompts.append(prompt)
@@ -194,6 +195,7 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
                 tails or {"call-bad": TAIL, "call-ok": PASS_TAIL},
                 frozenset(),
                 masked_values=frozenset(),
+                masked_values_partial=partial,
             )
 
         return unasked.Lane(
@@ -236,6 +238,17 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
         self.assertEqual("bad", raised[0]["evidence"])
         self.assertEqual(1, len(self.popups))
         self.assertTrue(self.kwargs[0]["failures_only"])
+
+    def _tool_output_for(self, *, partial: bool) -> Any:
+        facts = [WORDS, _report("bad", "failed", 4_200.0)]
+        self._consider(self._lane(facts, {}, partial=partial))
+        return self.kwargs[0]["tool_output"]
+
+    def test_a_press_that_dropped_masked_values_says_so_to_the_reading(self) -> None:
+        self.assertTrue(self._tool_output_for(partial=True).masked_values_partial)
+
+    def test_a_press_that_kept_every_masked_value_says_nothing_was_dropped(self) -> None:
+        self.assertFalse(self._tool_output_for(partial=False).masked_values_partial)
 
     def test_a_session_with_only_passes_sends_no_check_and_no_tail(self) -> None:
         facts = [WORDS, _report("ok", "passed", 4_100.0)]

@@ -3960,6 +3960,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 label=route["label"],
                 removals=press.removals,
                 masked_values=press.masked_values,
+                masked_values_partial=press.masked_values_partial,
                 quotable=press.quotable,
             )
         elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
@@ -3978,6 +3979,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 passes_and_writes=press.passes_and_writes,
                 removals=press.removals,
                 masked_values=press.masked_values,
+                masked_values_partial=press.masked_values_partial,
                 quotable=press.quotable,
             )
         return {

@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import random
+import re
 import shlex
+import sys
 import time
 import unittest
 from contextlib import contextmanager
@@ -1018,6 +1021,285 @@ class ScrubValuesTest(unittest.TestCase):
         self.assertEqual({"FakeTok99xx", "FakePass99"}, values)
 
 
+class InlineScriptAndQuoteCostTest(unittest.TestCase):
+    def test_an_unlisted_value_flag_does_not_expose_the_script(self) -> None:
+        for line in (
+            "node --inspect-port 9229 -e 'x(\"FakePass99\")'",
+            "node --title foo -e 'x'",
+            "ruby -E utf-8 -e 'x'",
+            "perl -F , -ane 'x'",
+        ):
+            with self.subTest(line=line):
+                words = shlex.split(line)
+                (at,) = records.inline_script_words(words)
+                self.assertEqual(words.index("-e") + 1 if "-e" in words else at, at)
+
+    def test_an_unlisted_flag_with_a_path_value_does_not_expose_the_script(self) -> None:
+        for line in (
+            "node --diagnostic-dir /tmp/x -e 'x(\"FakePass99\")'",
+            "node --title ./foo -e 'x(\"FakePass99\")'",
+            "node --openssl-config /etc/ssl/o.cnf -e 'x(\"FakePass99\")'",
+            "python3 --some-flag lib/mod.py -c 'x(\"FakePass99\")'",
+        ):
+            with self.subTest(line=line):
+                words = shlex.split(line)
+                self.assertIn(len(words) - 1, records.inline_script_words(words))
+
+    def test_a_deno_eval_hides_the_script_after_an_unlisted_flag_value(self) -> None:
+        words = shlex.split("deno eval --unstable-x foo 'x(\"FakePass99\")'")
+        self.assertIn(len(words) - 1, records.inline_script_words(words))
+
+    def test_bun_deno_and_php_inline_scripts_are_opaque_and_shell_wrappers_are_not(self) -> None:
+        for line, script in (
+            ("bun -e 'x(\"FakePass99\")'", 2),
+            ("bun --eval 'x(\"FakePass99\")'", 2),
+            ("bun -p 'x(\"FakePass99\")'", 2),
+            ("bun --eval='x(\"FakePass99\")'", 1),
+            ("deno eval 'x(\"FakePass99\")'", 2),
+            ("deno eval --ext ts 'x(\"FakePass99\")'", 4),
+            ("php -r 'x(\"FakePass99\");'", 2),
+            ("php -r'x(\"FakePass99\");'", 1),
+            ("timeout 5 php -r 'x();'", 4),
+        ):
+            with self.subTest(line=line):
+                self.assertEqual({script}, set(records.inline_script_words(shlex.split(line))))
+        for line in ("bash -c 'echo hi'", "sh -c 'echo hi'", "deno test -e x", "bun test"):
+            with self.subTest(line=line):
+                self.assertEqual({}, records.inline_script_words(shlex.split(line)))
+
+    def test_a_script_file_still_ends_the_scan(self) -> None:
+        for line in ("node deploy.js -e prod", "python manage.py -c x", "perl ./run -e x"):
+            with self.subTest(line=line):
+                self.assertEqual({}, records.inline_script_words(shlex.split(line)))
+
+    def test_a_quote_heavy_result_scrubs_quickly_at_the_value_cap(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        values = [f"Val{n}secret" for n in range(4096)]
+        started = time.process_time()
+        for text in ("'" * 100_000, "a'" * 50_000):
+            records.scrub_values(text, values, prose=True)
+        self.assertLess(time.process_time() - started, 5.0)
+        self.assertEqual(
+            "x …REDACTED and Val5secretX …REDACTED",
+            records.scrub_values("x Val5secret and Val5secretX 'Val5secret'", values, prose=True),
+        )
+
+
+def _one_at_a_time_scrub(text: str, values: list[str], *, prose: bool = False) -> str:
+    """The scrub as it was before the spellings were combined: three patterns per spelling.
+
+    Kept as the reference the combined alternation must agree with.
+    """
+    boundary = r"[\w./:@+\-]"
+    after = r"(?![\w@+\-]|[./:][\w/])" if prose else rf"(?!{boundary})"
+    spellings = {
+        spelling
+        for value in values
+        for piece in (value, *value.split())
+        if len(piece) >= records.SCRUB_MIN_CHARS
+        for spelling in (
+            piece,
+            shlex.quote(piece),
+            "'" + piece.replace("'", "'\\''") + "'",
+            piece.replace("'", "'\\''"),
+            piece.replace("'", "'\"'\"'"),
+        )
+    }
+    before = r"(?<![\w./@+\-])" if prose else rf"(?<!{boundary})"
+    for spelling in sorted(spellings, key=len, reverse=True):
+        text = re.sub(rf"{before}{re.escape(spelling)}{after}", records.SECRET_MARKER, text)
+        text = re.sub(
+            rf"(?<!{boundary})(-[pP]){re.escape(spelling)}{after}",
+            lambda match: match[1] + records.SECRET_MARKER,
+            text,
+        )
+        text = re.sub(
+            rf"((?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:){re.escape(spelling)}(@)",
+            lambda match: match[1] + records.SECRET_MARKER + match[2],
+            text,
+        )
+    return text
+
+
+class ScrubManyValuesTest(unittest.TestCase):
+    """One compiled alternation per scrub, and a cap that keeps the newest values."""
+
+    VALUES = ("FakePass99", "Fake Pass 77", "it's-Fake88", "FakePass99Longer", "abcd", "abcdef")
+    CORPUS = (
+        "ran mysql -pFakePass99 then FakePass99. and 'FakePass99' with FakePass99Longer tail",
+        "curl -u alice:FakePass99 https://x and alice:FakePass99@host and postgres://u:abcdef@h",
+        "echo 'it'\\''s-Fake88' and it's-Fake88 ; abcdefgh abcd abcdef abcdefg abcd_x src/abcd",
+        "see test_a.py, FakePass99/x, x/FakePass99, (Fake) 'Fake Pass 77' Pass 77 Fake",
+        "nothing to hide in this line at all",
+        "",
+    )
+
+    def test_the_combined_scrub_agrees_with_the_one_at_a_time_scrub_on_a_mixed_corpus(self) -> None:
+        for prose in (False, True):
+            for text in self.CORPUS:
+                with self.subTest(prose=prose, text=text[:30]):
+                    self.assertEqual(
+                        _one_at_a_time_scrub(text, list(self.VALUES), prose=prose),
+                        records.scrub_values(text, self.VALUES, prose=prose),
+                    )
+
+    def test_prefix_related_values_in_userinfo_position_match_the_one_at_a_time_scrub(self) -> None:
+        for values, text in (
+            (["Fake99", "Fake99!"], "connect with deploy:Fake99!@db.example.com now"),
+            (["d7EA3", "d7EA3."], "u:d7EA3.@h"),
+            (["-BB2/", "-BB2/:-1"], "user:-BB2/:-1@host"),
+            (["FakeAA11", "FakeAA11-x"], "postgres://u:FakeAA11-x@h/db and u:FakeAA11@h"),
+        ):
+            for prose in (False, True):
+                with self.subTest(text=text, prose=prose):
+                    self.assertEqual(
+                        _one_at_a_time_scrub(text, values, prose=prose),
+                        records.scrub_values(text, values, prose=prose),
+                    )
+
+    def test_a_value_inside_the_marker_is_replaced_once(self) -> None:
+        # A later pass reads what an earlier one wrote, so a value the marker itself contains
+        # would match inside every marker and grow it until the pass cap.
+        for value in ("REDACTED", "EDACTED", "…REDACTED"):
+            for prose in (False, True):
+                with self.subTest(value=value, prose=prose):
+                    out = records.scrub_values(f"the token is {value} ok", [value], prose=prose)
+                    self.assertEqual(f"the token is {records.SECRET_MARKER} ok", out)
+
+    def test_two_distinct_masked_values_touching_are_both_masked(self) -> None:
+        for values, text in (
+            (["FakeAAAA11", "FakeBBBB22"], "x FakeAAAA11FakeBBBB22 y"),
+            (["FakeAAAA11", "FakeBBBB22"], "x FakeBBBB22FakeAAAA11 y"),
+            (["FakeAAAA11", "FakeBBBB22", "FakeCCCC33"], "FakeAAAA11FakeBBBB22FakeCCCC33"),
+            (["FakeAAAA11", "FakeBBBB22"], "x 'FakeAAAA11FakeBBBB22' y"),
+        ):
+            for prose in (False, True):
+                with self.subTest(text=text, prose=prose):
+                    out = records.scrub_values(text, values, prose=prose)
+                    for value in values:
+                        self.assertNotIn(value, out)
+                    self.assertIn(records.SECRET_MARKER, out)
+
+    def test_two_masked_values_joined_by_a_colon_or_after_a_password_flag_are_all_masked(
+        self,
+    ) -> None:
+        values = ["FakeUser11", "FakePass22", "FakeThird33"]
+        for prose, text in (
+            (True, "tried FakeUser11:FakePass22 on it"),
+            (True, "tried FakeUser11:FakePass22:FakeThird33 on it"),
+            (False, "ran mysql -pFakeUser11FakePass22 now"),
+            (True, "ran mysql -pFakeUser11FakePass22FakeThird33 now"),
+            (False, "ran mysql -pFakeUser11FakePass22FakeThird33 now"),
+        ):
+            with self.subTest(text=text, prose=prose):
+                out = records.scrub_values(text, values, prose=prose)
+                for value in values:
+                    self.assertNotIn(value, out)
+
+    def test_values_that_only_share_a_boundary_are_not_joined_into_a_longer_word(self) -> None:
+        # One masked value inside a longer word stays: only a run of values is read as masked.
+        text = "see FakeAAAA11x and xFakeAAAA11"
+        self.assertEqual(text, records.scrub_values(text, ["FakeAAAA11", "FakeBBBB22"]))
+
+    def test_a_long_run_of_overlapping_values_scrubs_quickly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        values = ["a" * 4, "a" * 5, "a" * 6]
+        started = time.process_time()
+        records.scrub_values("a" * 400 + "-", values)
+        self.assertLess(time.process_time() - started, 2.0)
+
+    def test_a_seeded_random_corpus_agrees_with_the_one_at_a_time_scrub(self) -> None:
+        rng = random.Random(5001)
+        for _ in range(300):
+            values = ["".join(rng.choices("ab1!.-/", k=rng.randint(4, 6))) for _ in range(3)]
+            values.append(values[0] + rng.choice("!.-/:1"))
+            # Whole tokens set apart by spaces: two values touching each other is a different
+            # question, since the one-at-a-time loop re-reads its own marker.
+            text = " ".join(
+                rng.choice(
+                    (
+                        *values,
+                        "user:" + rng.choice(values) + "@h",
+                        "http://u:" + rng.choice(values) + "@h/x",
+                        "-p" + rng.choice(values),
+                        rng.choice(values) + ".",
+                        "(" + rng.choice(values) + ")",
+                        "x" + rng.choice(values),
+                        "word",
+                    )
+                )
+                for _ in range(rng.randint(2, 6))
+            )
+            for prose in (False, True):
+                with self.subTest(values=values, text=text, prose=prose):
+                    self.assertEqual(
+                        _one_at_a_time_scrub(text, values, prose=prose),
+                        records.scrub_values(text, values, prose=prose),
+                    )
+
+    def test_a_scrub_stays_linear_on_a_hundred_thousand_characters(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        for text in ("a" * 100_000, "a:" * 50_000, "http://" + "a" * 100_000):
+            for values in (["FakePass99xyz"], [f"FakePass{i:03d}xyz" for i in range(200)]):
+                for prose in (False, True):
+                    with self.subTest(text=text[:8], count=len(values), prose=prose):
+                        start = time.process_time()
+                        records.scrub_values(text, values, prose=prose)
+                        self.assertLess(time.process_time() - start, 2.0)
+
+    def test_a_value_that_prefixes_another_leaves_no_tail(self) -> None:
+        out = records.scrub_values("a abcdef b", ["abcd", "abcdef"])
+        self.assertEqual(f"a {records.SECRET_MARKER} b", out)
+
+    def test_a_scrub_over_512_values_is_fast(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        values = [f"FakeSecret{i:04d}Zq" for i in range(512)]
+        text = "ran deploy with FakeSecret0511Zq and FakeSecret0000Zq ok. " * 20
+        records.scrub_values("warm", values)
+        start = time.process_time()
+        out = records.scrub_values(text, values)
+        elapsed = time.process_time() - start
+        print(f"scrub of 512 values: {elapsed * 1000:.1f} ms")
+        self.assertNotIn("FakeSecret", out)
+        self.assertLess(elapsed, 1.0)
+
+    def test_values_that_each_extend_the_last_scrub_without_a_recursion_error(self) -> None:
+        for values in (
+            ["!" * count + "x" for count in range(3, 520)],
+            ["Tok" + "a" * count for count in range(1, 450)],
+        ):
+            with self.subTest(count=len(values)):
+                longest = max(values, key=len)
+                out = records.scrub_values(f"saw {longest} and {values[3]} ok", values)
+                self.assertEqual(f"saw {records.SECRET_MARKER} and {records.SECRET_MARKER} ok", out)
+
+    def test_a_deep_prefix_chain_still_leaves_no_tail_behind_the_shorter_value(self) -> None:
+        values = ["Tok" + "a" * count for count in range(1, 200)]
+        out = records.scrub_values("x " + values[-1] + "b", values)
+        self.assertEqual("x " + values[-1] + "b", out)
+        out = records.scrub_values("x " + values[-1] + " y", values)
+        self.assertEqual(f"x {records.SECRET_MARKER} y", out)
+
+    def test_a_cold_scrub_over_4096_values_compiles_in_seconds(self) -> None:
+        # Base took about 4 s on this input and the combined scrub about 0.26 s here. Fresh values,
+        # so the pattern cache cannot answer for it. The bound is ten times the measured time, wide
+        # enough for a loaded runner.
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        values = [f"FakeCold{i:05d}Zqx" for i in range(4096)]
+        start = time.process_time()
+        records.scrub_values("ran with FakeCold00003Zqx", values, prose=True)
+        self.assertLess(time.process_time() - start, 5.0)
+
+    def test_a_value_of_regex_syntax_is_matched_literally(self) -> None:
+        out = records.scrub_values("x a.b*c+d(e z", ["a.b*c+d(e", "(((("])
+        self.assertEqual(f"x {records.SECRET_MARKER} z", out)
+
+
 class MaskCommandTest(unittest.TestCase):
     def test_the_string_masker_that_split_on_whitespace_is_gone(self) -> None:  # V9
         # It leaked a quoted value's tail; the check line masks shell words.
@@ -1337,6 +1619,179 @@ class MaskCommandTest(unittest.TestCase):
     def test_a_command_with_nothing_to_mask_reads_as_it_was_typed(self) -> None:
         line = "python3 -m pytest tests/test_retry.py -q 2>&1 | tail -20"
         self.assertEqual(line, mask(line))
+
+
+class MoreSecretFormsTest(unittest.TestCase):
+    """Value flags, prefixes and inline scripts a command line can carry a credential in.
+
+    Every value is synthetic. Each form masks its value in the equals and the space spelling
+    and leaves the ordinary words beside it readable.
+    """
+
+    VALUE = "FakePass99"
+
+    def test_each_value_flag_masks_its_value_in_both_spellings(self) -> None:
+        for flag in ("--secret-string", "--passphrase", "--pass", "--pwd", "--credentials"):
+            for line in (f"tool {flag} {self.VALUE} run", f"tool {flag}={self.VALUE} run"):
+                with self.subTest(line=line):
+                    masked = mask(line)
+                    self.assertNotIn(self.VALUE, masked)
+                    self.assertTrue(masked.startswith(f"tool {flag}"))
+                    self.assertTrue(masked.endswith("run"))
+
+    def test_a_kubectl_literal_keeps_its_key_and_loses_its_value(self) -> None:
+        for line in (
+            f"kubectl create secret generic db --from-literal db-pass={self.VALUE}",
+            f"kubectl create secret generic db --from-literal=db-pass={self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn(self.VALUE, masked)
+                self.assertIn("db-pass=", masked)
+        self.assertNotIn(
+            self.VALUE, mask(f"kubectl create secret generic db --from-literal {self.VALUE}")
+        )
+
+    def test_an_aws_value_flag_is_masked_only_for_aws(self) -> None:
+        for line in (
+            f"aws ssm put-parameter --name /app/db --value {self.VALUE} --type SecureString",
+            f"aws ssm put-parameter --name /app/db --value={self.VALUE} --type SecureString",
+            f"aws secretsmanager put-secret-value --secret-id s --secret-string {self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn(self.VALUE, masked)
+                if "/app/db" in line:
+                    self.assertIn("/app/db", masked)
+        self.assertEqual("grep --value shown file", mask("grep --value shown file"))
+        for line in (
+            "aws cloudwatch put-metric-data --metric-name m --value 1",
+            "aws cloudwatch put-metric-data --metric-name m --value=1",
+        ):
+            self.assertEqual(line, mask(line))
+
+    def test_a_pass_prefix_is_a_value_only_where_openssl_takes_one(self) -> None:
+        words = ["git", "commit", "-m", "pass: ok"]
+        self.assertEqual(words, records.mask_words(words))
+        self.assertNotIn(self.VALUE, mask(f"openssl enc -pass pass:{self.VALUE}"))
+
+    def test_a_gh_secret_body_is_masked_in_its_joined_short_forms(self) -> None:
+        for line in (
+            f"gh secret set NAME -b{self.VALUE}",
+            f"gh secret set NAME -b={self.VALUE}",
+            f"gh secret set NAME --body={self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn(self.VALUE, mask(line))
+
+    def test_an_npm_auth_token_line_is_masked_in_every_spelling(self) -> None:
+        for line in (
+            f"npm config set //registry.example.com/:_authToken {self.VALUE}",
+            f"npm config set //registry.example.com/:_authToken={self.VALUE}",
+            f"echo //registry.example.com/:_authToken={self.VALUE}",
+            f"echo _authToken={self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn(self.VALUE, mask(line))
+
+    def test_an_npm_auth_or_password_key_is_masked_like_the_auth_token(self) -> None:
+        for line in (
+            f"npm config set _auth {self.VALUE}",
+            f"npm config set _auth={self.VALUE}",
+            f"npm config set //registry.example.com/:_auth {self.VALUE}",
+            f"npm config set //registry.example.com/:_password {self.VALUE}",
+            f"npm config set //registry.example.com/:_password={self.VALUE}",
+            f"npm publish --_auth={self.VALUE}",
+            f"npm publish --_auth {self.VALUE}",
+            f"echo _auth={self.VALUE}",
+            f"echo //registry.example.com/:_auth={self.VALUE}",
+            f"echo //registry.example.com/:_password={self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn(self.VALUE, mask(line))
+
+    def test_gh_secret_set_masks_its_body_and_a_pr_body_stays_readable(self) -> None:
+        for line in (
+            f"gh secret set API_KEY --body {self.VALUE}",
+            f"gh secret set API_KEY --body={self.VALUE}",
+            f"gh secret set API_KEY -b {self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn(self.VALUE, masked)
+                self.assertIn("API_KEY", masked)
+        self.assertEqual("gh pr create --body notes", mask("gh pr create --body notes"))
+
+    def test_ldap_and_ssh_keygen_flags_mask_their_value(self) -> None:
+        for line in (
+            f"ldapsearch -x -D admin -w {self.VALUE} -b base",
+            f"ldapsearch -x -D admin -w{self.VALUE} -b base",
+            f"ssh-keygen -t ed25519 -N {self.VALUE} -f key",
+            f"ssh-keygen -t ed25519 -N{self.VALUE} -f key",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn(self.VALUE, masked)
+                self.assertTrue(masked.endswith(("base", "key")))
+        self.assertEqual("ls -w 80", mask("ls -w 80"))
+
+    def test_an_openssl_pass_prefix_is_masked_and_a_file_or_env_source_is_not(self) -> None:
+        for line in (
+            f"openssl enc -aes256 -passin pass:{self.VALUE} -in a",
+            f"openssl enc -aes256 -passout pass:{self.VALUE} -in a",
+            f"openssl enc -aes256 -pass pass:{self.VALUE} -in a",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn(self.VALUE, masked)
+                self.assertIn("pass:", masked)
+        self.assertIn("env:PW", mask("openssl enc -passin env:PW -in a"))
+
+    def test_cargo_login_masks_its_token_past_its_own_flags(self) -> None:
+        for line in (
+            f"cargo login {self.VALUE}",
+            f"cargo login --registry mine {self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                masked = mask(line)
+                self.assertNotIn(self.VALUE, masked)
+                self.assertTrue(masked.startswith("cargo login"))
+        self.assertEqual("cargo build --release", mask("cargo build --release"))
+
+    def test_ordinary_words_that_resemble_the_forms_stay_readable(self) -> None:
+        for line in (
+            "pytest --max-tokens=4096",
+            "docker run -u 1000:1000 img",
+            "jest --pass-with-no-tests",
+            "pytest -p no:cacheprovider",
+            "tool --password-store=basic run",
+            "tool --passphrase-file /x run",
+            "cargo login",
+        ):
+            with self.subTest(line=line):
+                words = shlex.split(line)
+                masked = records.mask_words(words, pytest=line.startswith("pytest"))
+                self.assertEqual(words, masked)
+
+    def test_every_new_form_stays_linear_on_a_hundred_thousand_characters(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        run = "a" * 100_000
+        for words in (
+            ["tool", "--passphrase=" + run],
+            ["npm", "config", "set", "//r/:_authToken=" + run],
+            ["kubectl", "--from-literal=" + "k" * 50_000 + "=" + run],
+            ["openssl", "-passin", "pass:" + run],
+            ["x", "--" + "a-" * 50_000 + "pass"],
+            ["x", "//" + "_auth" * 20_000],
+            ["x", "-pass", "pass:" * 20_000],
+            ["x", "a" * 100_000 + "@"],
+            ["x", "a:" * 50_000 + "b@"],
+        ):
+            with self.subTest(word=words[-1][:12]):
+                start = time.process_time()
+                records.mask_words(words)
+                self.assertLess(time.process_time() - start, 1.0)
 
 
 class OutputSecretShapesTest(unittest.TestCase):

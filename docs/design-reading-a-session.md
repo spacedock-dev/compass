@@ -3455,6 +3455,73 @@ commands with no result. The closed list in item 3 grows by these runners, match
 - **What was rejected.** Reading `Tests` lines for `storybook test` because it runs vitest: the line that ends
   the output belongs to whatever the project wraps around it, which a closed table cannot know.
 
+### Amended 2026-10-28 (owner): more command-line forms are masked, inline scripts are opaque, and the scrub is one pass
+
+Now that every command's line can be listed, a credential in a form masking did not know was shown whole
+(the upkeep item 4 of
+[DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor) names).
+Three changes, none changing what a check records.
+
+- **More forms.** `records.mask_words` also masks the value after `--secret-string`, `--passphrase`,
+  `--pass`, `--pwd` and `--credentials` (joined by `=` or in the next word), kubectl's `--from-literal`
+  value (the key stays), `--value` for `aws ssm put-parameter`, npm's `_authToken` line, `--body` and `-b` under `gh secret`
+  only, `-w` for the `ldap*` tools, `-N` for `ssh-keygen`, an openssl `pass:` prefix (on an openssl line or after `-pass`, `-passin` or `-passout`), and the token of
+  `cargo login`. Words that only look like these stay readable: `--max-tokens=4096`, `docker run -u
+  1000:1000`, `--pass-with-no-tests`, `--password-store=basic`, `pytest -p no:cacheprovider`, `gh pr create
+  --body`. The `user:password@` pattern was quadratic in the length of a word and is now linear: it starts
+  a try only at the head of a run of user characters, and reads only the text up to the last `@`.
+- **Inline scripts.** On a line that lists a command that is not a check, the script argument of
+  `python -c`, `node -e`, `node --eval`, `ruby -e` and `perl -e` is one ellipsis, also behind a wrapper
+  (`docker exec`, `kubectl exec --`, `timeout`, `uv run`), because the interpreter is found by scanning
+  the words rather than by the wrapper's own grammar. Each interpreter has its own list of flags that
+  take a value, so `-I` and `-i`, which take none, never swallow the `-c` after them. Code carries a
+  literal credential in no shape a mask can find. A script file or a `-m` module is not an inline script,
+  so `python -m pytest -c conf.ini` keeps its words. A check line keeps the rule it had.
+- **One scrub pass.** `records.scrub_values` compiles one alternation per pattern over every spelling of
+  every value, longest first, applies the userinfo pattern before the plain one so the longest spelling
+  wins inside `user:password@`, and caches the result by the set of spellings (two entries, held in
+  memory for the process). Compiling cost 0.45 s per call at 512 values and now costs about 0.04 s for
+  the first scrub of a press and a few milliseconds for the later ones; 4,096 values take about 0.3 s
+  the first time. The press's bound on masked values rose from 512 to 4,096 and keeps the newest values;
+  dropping any marks the press partial, and a partial press stores a fixed sentence in place of the
+  explanation (`reading.SCRUB_WITHHELD_DETAIL`; `PressChecks.masked_values_partial`,
+  `ToolOutput.masked_values_partial`) rather than publish one it cannot say is scrubbed.
+  What was rejected: keeping the first 512 and dropping later
+  ones without a word, which is what the old bound did.
+
+### Amended 2026-10-28 (owner): npm auth keys, more inline interpreters, the withheld sentence and touching values
+
+Four small changes to the masking and scrub, each closing a way a value or a false sentence could reach a page.
+
+- **npm keys.** `_auth` and `_password` are masked like `_authToken`: after `npm config set`, in a
+  `//registry/:_auth` or `:_password` key, as `--_auth=value` or `--_auth value`, and in `.npmrc`-style lines.
+- **Inline scripts.** A tier 3 line shows `bun -e`, `bun --eval` and `bun -p`, `deno eval` and `php -r`
+  as one opaque word, as it does `python -c` and `node -e`. `sh -c` and `bash -c` stay readable, because
+  their string is parsed again as commands and masked word by word.
+- **The withheld sentence.** The fixed sentence that says an explanation was withheld is stored only when
+  a reply carried an explanation. A departure or an unfinished result with no explanation stores none.
+- **Touching values.** Two masked values with nothing between them reject each other at the word
+  boundary, so neither was masked. A run of two or more touching values is now read whole and each value
+  in it is masked.
+
+### Amended 2026-10-28 (owner): an unlisted flag's path value, a deno script and chained values
+
+- **Inline scripts.** A path-like word right after an unlisted interpreter flag is that flag's value, not the
+  script file, so `node --diagnostic-dir /tmp/x -e ...` still shows the script as one opaque word. A script
+  file ends the scan only when no flag stands before it. The cost is a script's own flag value hidden on a
+  tier 3 line (`node --strict deploy.js -e prod`), which is the safe side. `deno eval` hides every plain word
+  after its flags, because an unlisted flag's value is indistinguishable from the script.
+- **Chained values.** The scrub repeats its pass until nothing changes, so a value that was rejected at the
+  boundary of another value is read once that one is a marker: prose `V1:V2` masks both. The flag pass takes a
+  whole run after `-p`, so `-pV1V2` masks both values. Strict (output tail) mode still keeps a `:`, `.` or `/`
+  between two values as part of one word, as before.
+- **Deep and heavy sets.** The prefix tree is built without recursion past forty nested values, and a
+  set that deep is read as a flat alternation, longest first: about 400 values that each extend the last
+  once raised a `RecursionError` out of the scrub, and a press would have failed. The press also keeps
+  masked values only up to 131,072 characters in total, newest first, and marks itself partial past it
+  as the count bound does: compile time follows total length, and 4,096 values of 1,000 characters took
+  32 s and 2.4 GB to compile cold.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
@@ -7933,4 +8000,6 @@ output." The Live monitor sends no output tail at all, so it needed no second ru
 
 A line is masked as a check's is, with one addition: a quoted word that the masking cannot read word by word
 is shown as `…`. A `bash -c` script that did not parse is the case that showed it, and masking one word at a
-time left half of a value behind.
+time left half of a value behind. The script given to `python -c`, `node -e`, `ruby -e` or
+`perl -e` is shown as `…` the same way, under the rule in the
+[DEC-23 amendment of 2026-10-28](#amended-2026-10-28-owner-more-command-line-forms-are-masked-inline-scripts-are-opaque-and-the-scrub-is-one-pass).

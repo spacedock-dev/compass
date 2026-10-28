@@ -5062,7 +5062,16 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(202, status)
         self.assertEqual(changed, seen[0].changed_after)
 
-    def _masked_values_seen_by_produce(self, config: Any, state: Any) -> frozenset[str]:
+    def _masked_values_seen_by_produce(
+        self, config: Any, state: Any, *, partial: bool = False
+    ) -> frozenset[str]:
+        return frozenset(
+            self._tool_output_seen_by_produce(config, state, partial=partial).masked_values
+        )
+
+    def _tool_output_seen_by_produce(
+        self, config: Any, state: Any, *, partial: bool = False
+    ) -> Any:
         seen: list[Any] = []
         real = runtime_reading.produce
 
@@ -5078,13 +5087,16 @@ class ReadingRouteTest(unittest.TestCase):
                 runtime_project_context,
                 "press_checks",
                 lambda *_a, **_k: runtime_project_context.PressChecks(
-                    {}, frozenset(), masked_values=frozenset({"FakePass99"})
+                    {},
+                    frozenset(),
+                    masked_values=frozenset({"FakePass99"}),
+                    masked_values_partial=partial,
                 ),
             ),
         ):
             status, _body = self._post(port, self._claude_press())
         self.assertEqual(202, status)
-        return frozenset(seen[0].masked_values)
+        return seen[0]
 
     def test_the_press_hands_the_reading_the_values_a_command_masked(self) -> None:
         config, state = self._runtime()
@@ -5103,6 +5115,24 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(
             frozenset({"FakePass99"}), self._masked_values_seen_by_produce(config, state)
         )
+
+    def test_the_press_hands_the_reading_that_it_dropped_masked_values(self) -> None:
+        config, state = self._runtime()
+        # The grantless branch and the granted one each build their own ToolOutput.
+        for granted in (False, True):
+            if granted:
+                reading_policy.set_consent(
+                    config,
+                    True,
+                    now=1_700_000_100.0,
+                    provider="codex",
+                    tool_output="OpenAI",
+                    destination="OpenAI",
+                )
+            for partial in (False, True):
+                with self.subTest(granted=granted, partial=partial):
+                    seen = self._tool_output_seen_by_produce(config, state, partial=partial)
+                    self.assertIs(partial, seen.masked_values_partial)
 
     def test_on_the_claude_code_route_the_checks_go_only_after_the_same_allow(self) -> None:
         config, state = self._runtime()

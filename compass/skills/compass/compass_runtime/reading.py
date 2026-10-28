@@ -579,6 +579,9 @@ class ToolOutput:
     # Every value a shell call's command line masked, read at the press. It
     # scrubs the explanation a reading stores and goes no further.
     masked_values: frozenset[str] = frozenset()
+    # True when the press dropped the oldest masked values past its bound: the scrub of a stored
+    # explanation is then partial, and the explanation is not stored (fail closed).
+    masked_values_partial: bool = False
     # (record id, check line) to the output tail the one check that call ran owns, read at the
     # press to find the text a harness verdict quotes. Searched and dropped: it is never sent to a
     # model, stored or published, so a missing grant does not blind that test either.
@@ -4253,6 +4256,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     uncitable: frozenset[str] = frozenset(),
     recorded_write: bool = False,
     masked_values: Collection[str] = (),
+    scrub_partial: bool = False,
 ) -> Criterion:
     """One constraint's criterion, with every server-side rule applied.
 
@@ -4358,8 +4362,15 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     scrubbed = records.scrub_values(
         raw_detail, records.explanation_values(masked_values), prose=True
     )
-    detail = records.safe_text(scrubbed, detail_cap_chars)
-    if detail and len(scrubbed) > len(detail):
+    # A press that dropped masked values past its bound cannot say the explanation is clear of
+    # them, so the prose is not stored: a fixed sentence saying so stands in, so the page shows
+    # why there is no reason rather than an empty one, and a leaked value is never the cost.
+    detail = (
+        (SCRUB_WITHHELD_DETAIL if raw_detail else "")
+        if scrub_partial
+        else records.safe_text(scrubbed, detail_cap_chars)
+    )
+    if not scrub_partial and detail and len(scrubbed) > len(detail):
         # A cut sentence loses its qualifier, and the qualifier is always last.
         # Say so rather than publishing half a claim as a whole one.
         detail = f"{detail}…"
@@ -5350,6 +5361,12 @@ def _numbered(selection: object) -> dict[int, LedgerEntry]:
     return selection.by_index()
 
 
+# What stands in for an explanation withheld because the press masked more values than it keeps.
+SCRUB_WITHHELD_DETAIL = (
+    "The explanation is withheld because too many values were masked to scrub it."
+)
+
+
 def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolve_one`
     parsed: Mapping[str, Mapping[str, Any]],
     selection: Selection,
@@ -5365,6 +5382,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
     recorded: Recorded | None = None,
     open_call_at: float | None = None,
     masked_values: Collection[str] = (),
+    scrub_partial: bool = False,
 ) -> dict[str, Criterion]:
     """The model's tokens and indices, turned into what the page may render.
 
@@ -5506,6 +5524,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
                     requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
                     uncitable=uncitable,
                     masked_values=masked_values,
+                    scrub_partial=scrub_partial,
                 ),
                 name,
                 by_id,
@@ -5785,6 +5804,7 @@ def produce(  # noqa: PLR0913
         line_requests=line_request_floors(latest, request_sources, harness, sid),
         recorded=recorded_from(facts, harness, sid, tool_output=tool_output),
         masked_values=tool_output.masked_values if tool_output is not None else (),
+        scrub_partial=tool_output.masked_values_partial if tool_output is not None else False,
         open_call_at=(
             open_call_lookup()
             if open_call_lookup is not None

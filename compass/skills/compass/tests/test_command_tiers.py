@@ -9,6 +9,7 @@ the vendor rule. Every command and path below is synthetic.
 from __future__ import annotations
 
 import json
+import shlex
 import time
 import unittest
 from types import SimpleNamespace
@@ -22,6 +23,7 @@ from compass_runtime import (
     project_context,
     reading,
     reading_route,
+    records,
 )
 
 from . import test_levels as lv
@@ -64,6 +66,89 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
         self.assertEqual("make deploy", command["title"])
         self.assertEqual("command_run", command["kind"])
         self.assertEqual([], self.checks())
+
+    def test_an_inline_script_is_shown_as_an_opaque_word_on_a_tier_3_line(self) -> None:
+        for command, _title in (
+            ("python -c 'token=\"FakePass99\"; deploy()'", "python -c …"),
+            ("python3 -c 'print(1)'", "python3 -c …"),
+            ("python3.12 -Wignore -c 'x=FakePass99'", "python3.12 -Wignore -c …"),
+            ("node -e 'send(\"FakePass99\")'", "node -e …"),
+            ("node --eval 'send(1)'", "node --eval …"),
+            ("ruby -e 'puts \"FakePass99\"'", "ruby -e …"),
+            ("perl -e 'print \"FakePass99\"'", "perl -e …"),
+            ("perl -pi -e 's/a/FakePass99/' notes.txt", "perl -p…REDACTED -e … notes.txt"),
+            ('python -c"print(FakePass99)"', "python -c…"),
+        ):
+            with self.subTest(command=command):
+                self.session.bash(command, "done", is_error=False)
+        titles = [event["title"] for event in self.commands()]
+        self.assertEqual(
+            sorted(
+                [
+                    "python -c …",
+                    "python3 -c …",
+                    "python3.12 -Wignore -c …",
+                    "node -e …",
+                    "node --eval …",
+                    "ruby -e …",
+                    "perl -e …",
+                    "perl -p…REDACTED -e … notes.txt",
+                    "python -c…",
+                ]
+            ),
+            sorted(titles),
+        )
+        self.assertNotIn("FakePass99", " ".join(titles))
+
+    def test_an_interpreter_flag_that_takes_no_value_does_not_expose_the_script(self) -> None:
+        for command in (
+            "python3 -I -c 'login(\"FakePassNine99xyz\")'",
+            "python -i -c 'login(\"FakePassNine99xyz\")'",
+            "perl -i -pe 's/a/FakePassNine99xyz/' f",
+            "node -i -e 'login(\"FakePassNine99xyz\")'",
+            "node --env-file cfg.txt -e 'login(\"FakePassNine99xyz\")'",
+        ):
+            with self.subTest(command=command):
+                line = project_context._command_line(shlex.split(command))
+                self.assertNotIn("FakePassNine99xyz", line)
+                self.assertIn("…", line)
+
+    def test_a_module_run_keeps_its_own_c_flag_readable(self) -> None:
+        self.assertEqual(
+            {}, records.inline_script_words(shlex.split("python -m pytest -c conf.ini"))
+        )
+
+    def test_an_inline_script_is_hidden_behind_a_wrapper_program(self) -> None:
+        for command in (
+            "docker exec c python3 -c 'x=\"FakePassNine99xyz\"'",
+            "kubectl exec p -- python3 -c 'x=\"FakePassNine99xyz\"'",
+            "timeout 10 python3 -c 'x=\"FakePassNine99xyz\"'",
+            "uv run --with requests python -c 'x=\"FakePassNine99xyz\"'",
+            "uv run --python 3.12 python -c 'x=\"FakePassNine99xyz\"'",
+            "nodejs -e 'x=\"FakePassNine99xyz\"'",
+        ):
+            with self.subTest(command=command):
+                line = project_context._command_line(shlex.split(command))
+                self.assertNotIn("FakePassNine99xyz", line)
+                self.assertIn("…", line)
+
+    def test_a_script_file_or_module_argument_is_not_an_inline_script(self) -> None:
+        for command in (
+            "python deploy.py -c prod",
+            "python -m deploy -c prod",
+            "node deploy.js -e prod",
+        ):
+            self.session.bash(command, "done", is_error=False)
+        self.assertEqual(
+            sorted(
+                [
+                    "python deploy.py -c prod",
+                    "python -m deploy -c prod",
+                    "node deploy.js -e prod",
+                ]
+            ),
+            sorted(event["title"] for event in self.commands()),
+        )
 
     def test_a_failed_command_is_a_failure_when_it_ran_alone(self) -> None:
         self.session.bash("make deploy", "boom", is_error=True)
