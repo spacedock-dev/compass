@@ -1093,6 +1093,35 @@ class ARecordedCiPollIsReadForWhatItNames(unittest.TestCase):
             "other/old", self.poll("gh pr checks 4", raw=("GH_REPO=other/old", "gh")).repository
         )
 
+    def test_a_run_view_names_a_run_id_or_a_run_url_and_nothing_else(self) -> None:
+        url = f"https://github.com/{REPO}/actions/runs/5"
+        self.assertEqual(REPO, self.poll(f"gh run view {url} --exit-status").repository)
+        self.assertEqual(REPO, self.poll(f"gh run view {url}/job/9").repository)
+        self.assertEqual(
+            "other/old",
+            self.poll("gh run view https://github.com/other/old/actions/runs/5").repository,
+        )
+        self.assertEqual("other/old", self.poll("gh run view 5 -R other/old").repository)
+        for line in (
+            "gh run view other-url --exit-status",
+            "gh run view https://example.com/acme/widgets/actions/runs/5",
+            f"gh run view {url} --repo other/old",
+            "gh run view 5 6",
+            "gh run view 0",
+        ):
+            self.assertFalse(self.poll(line).valid, line)
+
+    def test_an_environment_pointing_gh_at_another_host_or_repository_binds_nothing(self) -> None:
+        for name in ("GH_HOST=ghe.example.com", "GH_ENTERPRISE_TOKEN=FakePass99"):
+            self.assertFalse(self.poll("gh pr checks 4", raw=(name, "gh")).valid, name)
+        for word in ("GH_REPO=other/old", "GH_HOST=ghe.example.com", "GH_ENTERPRISE_TOKEN=x"):
+            poll = ci_read.parse_poll(
+                "pr_checks", ["gh", "pr", "checks", "4"], (), ("export", word)
+            )
+            self.assertFalse(poll.valid, word)
+        clean = ci_read.parse_poll("pr_checks", ["gh", "pr", "checks", "4"], (), ("export", "A=1"))
+        self.assertTrue(clean.valid)
+
     def test_a_poll_binds_only_inside_the_folders_own_repository(self) -> None:
         goal = [f"https://github.com/{REPO}/pull/3"]
         bound = ci_read.poll_bound

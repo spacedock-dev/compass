@@ -36,7 +36,7 @@ from . import correction, levels
 from . import project_context as pc
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, Sequence
 
     from .config import RuntimeConfig
 
@@ -172,12 +172,29 @@ def for_session(
         level = levels.live_level(levels.Evidence((), {}, 0), intent)
         return {**answer, "level": level.level, "reasons": list(level.reasons)}
     unsettled = correction.unsettled_directions(row, facts, floor=floor)
-    key = (transcript_path, harness, sid, answer["revision"], intent.goal, intent.lines, unsettled)
+    goal_texts = pc.goal_texts_of(row)
+    key = (
+        transcript_path,
+        harness,
+        sid,
+        answer["revision"],
+        intent.goal,
+        intent.lines,
+        unsettled,
+        goal_texts,
+    )
     while True:
         signature = _live_signature(config, transcript_path)
         if signature is None:
             uncertain = _replay(
-                config, transcript_path, sid, intent, unsettled, None, force_incomplete=True
+                config,
+                transcript_path,
+                sid,
+                intent,
+                unsettled,
+                None,
+                force_incomplete=True,
+                goal_texts=goal_texts,
             )
             return {**answer, **uncertain.found}
         with _cache_lock:
@@ -194,12 +211,21 @@ def for_session(
             flight.wait()
             continue
         try:
-            replayed = _replay(config, transcript_path, sid, intent, unsettled, previous)
+            replayed = _replay(
+                config, transcript_path, sid, intent, unsettled, previous, goal_texts=goal_texts
+            )
             after = _live_signature(config, transcript_path)
             if after != signature:
                 # A moving file cannot support a complete cached assurance.
                 uncertain = _replay(
-                    config, transcript_path, sid, intent, unsettled, None, force_incomplete=True
+                    config,
+                    transcript_path,
+                    sid,
+                    intent,
+                    unsettled,
+                    None,
+                    force_incomplete=True,
+                    goal_texts=goal_texts,
                 )
                 return {**answer, **uncertain.found}
             replayed.published = {**answer, **replayed.found}
@@ -514,9 +540,10 @@ def _replay(
     previous: _Replayed | None,
     *,
     force_incomplete: bool = False,
+    goal_texts: Sequence[str] = (),
 ) -> _Replayed:
     """The level now and where it rose, over the last `LIVE_REPLAY_STEPS` moving calls."""
-    scan = pc._live_check_scan(config, transcript_path, goal_texts=(intent.goal,))  # noqa: SLF001
+    scan = pc._live_check_scan(config, transcript_path, goal_texts=goal_texts)  # noqa: SLF001
     cwd = scan.session_dir
     results = pc._merged_check_results(scan.parent, scan.children)  # noqa: SLF001
     context = (

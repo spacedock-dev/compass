@@ -116,6 +116,11 @@ _PR_URL_RE = re.compile(
 )
 # A GitLab host: dotted labels ending in a name, so a bare IPv4 address, `localhost` and a port all
 # fail it. An IPv6 literal carries brackets and colons, which no label holds.
+_RUN_URL_RE = re.compile(
+    r"https://github\.com/(?P<owner>[A-Za-z0-9-]{1,39})/(?P<repo>[A-Za-z0-9._-]{1,100})"
+    r"/actions/runs/[1-9][0-9]{0,19}(?:/job/[1-9][0-9]{0,19})?",
+    re.IGNORECASE,
+)
 _HOST_RE = re.compile(
     r"(?=.{4,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?"
 )
@@ -323,22 +328,30 @@ def _poll_operands(kind: str, rest: Sequence[str]) -> tuple[list[str], list[str]
     return repos, positional
 
 
-def parse_poll(kind: str, words: Sequence[str], raw: Sequence[str] = ()) -> Poll:
-    """The repository and target a `gh pr checks` or `gh run view` command names.
+# Environment names that point `gh` at another repository or host. Any word of the call that
+# sets one, in the poll's own segment or an earlier one, leaves the poll bound to nothing.
+_POLL_ENVIRONMENT: Final = ("GH_REPO=", "GH_HOST=", "GH_ENTERPRISE_TOKEN=")
 
-    `kind` is `pr_checks` or `run_view`; `words` are the program's words after any wrapper, and
-    `raw` the segment's words before wrappers and assignments were stripped, so a `GH_REPO=...`
-    prefix, which points `gh` at another repository, is read like `--repo`.
-    """
-    repos, positional = _poll_operands(kind, words[3:])
-    repos.extend(word.partition("=")[2] for word in raw if word.startswith("GH_REPO="))
-    named = {_poll_repository(value) for value in repos}
-    if len(named) > 1 or None in named or len(positional) > 1:
-        return Poll(valid=False)
-    repository = next(iter(named), "") or ""
-    if kind == "run_view" or not positional:
+
+def _run_view_target(positional: str, repository: str) -> Poll:
+    """What a `gh run view` operand names: a run id, or a run URL carrying its own repository."""
+    if not positional or (positional.isdigit() and 0 < int(positional) <= _NUMBER_MAX):
         return Poll(repository=repository)
-    target = positional[0]
+    matched = _RUN_URL_RE.fullmatch(positional)
+    if matched is None:
+        return Poll(valid=False)
+    url_repository = f"{matched['owner']}/{matched['repo']}"
+    if not _github_repository(url_repository):
+        return Poll(valid=False)
+    if repository and repository.lower() != url_repository.lower():
+        return Poll(valid=False)
+    return Poll(url_repository)
+
+
+def _pull_request_target(target: str, repository: str) -> Poll:
+    """What a `gh pr checks` operand names: a number, a pull request URL, a branch, or nothing."""
+    if not target:
+        return Poll(repository=repository)
     if target.isdigit():
         number = int(target)
         return Poll(repository, number) if 0 < number <= _NUMBER_MAX else Poll(valid=False)
@@ -349,6 +362,34 @@ def parse_poll(kind: str, words: Sequence[str], raw: Sequence[str] = ()) -> Poll
             return Poll(valid=False)
         return Poll(url_repository, number)
     return Poll(repository, branch=target) if _usable_branch(target) else Poll(valid=False)
+
+
+def parse_poll(
+    kind: str, words: Sequence[str], raw: Sequence[str] = (), earlier: Sequence[str] = ()
+) -> Poll:
+    """The repository and target a `gh pr checks` or `gh run view` command names.
+
+    `kind` is `pr_checks` or `run_view`; `words` are the program's words after any wrapper, and
+    `raw` the segment's words before wrappers and assignments were stripped, so a `GH_REPO=...`
+    prefix, which points `gh` at another repository, is read like `--repo`. `earlier` is every raw
+    word of the call's earlier segments: one that sets `GH_REPO`, `GH_HOST` or
+    `GH_ENTERPRISE_TOKEN` (an `export`, a plain assignment) leaves the poll bound to nothing, as
+    does `GH_HOST` or the token on the poll itself. A variable exported in an earlier call is not
+    seen.
+    """
+    if any(word.startswith(_POLL_ENVIRONMENT[1:]) for word in raw) or any(
+        word.startswith(_POLL_ENVIRONMENT) for word in earlier
+    ):
+        return Poll(valid=False)
+    repos, positional = _poll_operands(kind, words[3:])
+    repos.extend(word.partition("=")[2] for word in raw if word.startswith("GH_REPO="))
+    named = {_poll_repository(value) for value in repos}
+    if len(named) > 1 or None in named or len(positional) > 1:
+        return Poll(valid=False)
+    repository = next(iter(named), "") or ""
+    if kind == "run_view":
+        return _run_view_target(positional[0] if positional else "", repository)
+    return _pull_request_target(positional[0] if positional else "", repository)
 
 
 def poll_bound(

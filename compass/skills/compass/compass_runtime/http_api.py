@@ -3931,7 +3931,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # The shell's removals are read here too: they test the harness's own verdict against
             # the record and go to no model, so a missing grant does not blind that test.
             press = runtime_project_context.press_checks(
-                application.config, application.state, harness, sid
+                application.config,
+                application.state,
+                harness,
+                sid,
+                runtime_project_context.goal_texts_of(row),
             )
             tool_output = runtime_reading.ToolOutput(
                 destination="",
@@ -3943,7 +3947,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             )
         elif harness in runtime_reading_route.TOOL_OUTPUT_HARNESSES:
             press = runtime_project_context.press_checks(
-                application.config, application.state, harness, sid
+                application.config,
+                application.state,
+                harness,
+                sid,
+                runtime_project_context.goal_texts_of(row),
             )
             tails = runtime_reading_route.tails_for(
                 route["provider"], harness, press.tails, press.tier3_calls

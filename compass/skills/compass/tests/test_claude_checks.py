@@ -14,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import json
+import os
 import re
 import shlex
 import tempfile
@@ -186,12 +187,17 @@ class ClaudeChecksTestCase(unittest.TestCase):
         # No git here: the folder's remote is stubbed, and None stands for a folder with none.
         self.remote: tuple[str, str] | None = REMOTE
         self.goal_texts: tuple[str, ...] = (BOUND_GOAL,)
-        probe = mock.patch.object(ci_read, "probe_session", side_effect=self._identity)
-        probe.start()
-        self.addCleanup(probe.stop)
+        # A folder other than the session's that has its own remote, by normalized path.
+        self.folder_remotes: dict[str, tuple[str, str] | None] = {}
+        self.probe_patch = mock.patch.object(ci_read, "probe_session", side_effect=self._identity)
+        self.probe_patch.start()
+        self.addCleanup(self.probe_patch.stop)
 
-    def _identity(self, *_args: Any, **_kwargs: Any) -> git_status.GitIdentity | None:
-        return git_status.GitIdentity("a" * 40, *self.remote) if self.remote else None
+    def _identity(
+        self, _config: Any, folder: str = "", *_args: Any, **_kwargs: Any
+    ) -> git_status.GitIdentity | None:
+        remote = self.folder_remotes.get(os.path.normpath(folder), self.remote)
+        return git_status.GitIdentity("a" * 40, *remote) if remote else None
 
     def file(self, name: str) -> str:
         return str(self.cwd / name)

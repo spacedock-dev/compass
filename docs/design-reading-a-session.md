@@ -7927,11 +7927,19 @@ so `gh pr checks 99 --repo other/old` exiting 0 counted as a CI pass toward the 
 request has nothing to do with the session. A pass the reader's session did not earn is the false pass the
 tiers exist to refuse.
 
-- **The rule.** A poll counts only when its repository is the folder's own `origin` and, where it names a pull
-  request number or a branch, the session is bound to that one. The repository is the poll's `--repo` or `-R`
-  (or a `GH_REPO=` assignment, which `gh` reads the same way), or the folder's own remote where it names none;
-  a URL target carries its own, and a URL that disagrees with `--repo` binds nothing. The folder is the call's
-  own directory after any `cd`, and the session's where the call's cannot be placed.
+- **The rule.** A poll counts only when its repository is the `origin` of the folder the session began in and,
+  where it names a pull request number or a branch, the session is bound to that one. The repository is the
+  poll's `--repo` or `-R`, a `GH_REPO=` prefix on the poll or an earlier `export` in the same call (which `gh`
+  reads the same way), or a pull request or run URL; a URL that disagrees with `--repo` binds nothing. A
+  poll that names a repository is compared with the session folder's remote wherever the call ran, so
+  `cd <other clone> && gh pr checks 3 -R <the session's repository>` counts. A poll that names none reads the
+  call's own directory, which must be the session folder or a checkout whose remote equals the session folder's
+  (a worktree or subdirectory), so `cd <other clone> && gh pr checks` does not count. A directory the shell
+  decides (a variable, a command substitution, a conditional `cd`) is not placed, and an unplaced directory
+  binds nothing: the session's folder is never substituted for it. `GH_HOST` and `GH_ENTERPRISE_TOKEN`, on the
+  poll or exported earlier in the call, point `gh` at another host and bind nothing. A variable exported in an
+  earlier call is not seen, which is accepted: the poll then reads as the session's own when it was not.
+  Git runs only in the session folder and in a directory a poll ran in.
 - **What binds a number or a branch.** The sources
   [DEC-30](#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze) uses for the press:
   the reader's goal naming the pull request by its URL, a `pr-link` record or a pull request the session
@@ -7940,8 +7948,9 @@ tiers exist to refuse.
   A press binds one pull request, the newest. A poll may be any the session is bound to, so a session that opened
   two pull requests keeps both polls. A poll that names neither a number nor a branch reads the current
   branch's, and binds with the repository.
-- **A run names no pull request.** `gh run view <id> --exit-status` counts when `--repo` is absent or equals the
-  folder's remote. Nothing further can bind a run id without a network call, so a run of another workflow in the
+- **A run names no pull request.** `gh run view <id> --exit-status` counts when its repository (`--repo`, or the
+  one a `https://github.com/<owner>/<repo>/actions/runs/<id>` URL carries) is absent or equals the folder's
+  remote; any other operand binds nothing. Nothing further can bind a run id without a network call, so a run of another workflow in the
   same repository counts. That residual is accepted: the failure it permits is a run of the session's own
   repository.
 - **No network, and fail safe.** Collection never calls the network, so a binding that needs one is not
@@ -7954,6 +7963,11 @@ tiers exist to refuse.
   counts a poll only by the session's own records.
 - **A goal URL in another repository.** It binds the press (`bind`), where the reader's words name what to read,
   and does not bind a poll, which must also be in the folder's own repository.
+- **What leaves the machine.** An output tail of a poll that falls to a plain command is a tier 3 tail, sent
+  only to the session's own vendor
+  ([DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)). The press
+  decides it with the same binding as the published entry, from the session row's goal texts, and with none an
+  unverifiable poll is withheld and never bound.
 - **Ordering.** The binding is decided when the entries are chosen and not when the run is read, because a
   `pr-link` or a created pull request is often recorded after the first poll and the entry cache never sees one
   arrive. The live estimate replays each call position, so a poll made before the record shows unbound there

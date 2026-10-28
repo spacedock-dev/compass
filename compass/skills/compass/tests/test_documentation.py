@@ -1025,7 +1025,8 @@ class GitProbeContractDocumentationTest(unittest.TestCase):
         # writes and non-loopback traffic — none of which is subprocess execution.
         self.assertIn(
             "running any program inside a user's repository other than the probe described in "
-            "Repository git reads (the end-of-session probe) and the two press-time identity commands described in Pull request CI reads,",
+            "Repository git reads (the end-of-session probe) and the two identity commands described in Pull request CI reads "
+            "(at an Analyze press, and where a recorded CI poll needs binding),",
             self.FLAT,
         )
         # Amended 2026-09-07 (DEC-11). The old wording said the probe "neither

@@ -4866,15 +4866,46 @@ class _CiBinding:
             self._remotes[cwd] = (found.host, found.repository) if found else ("", "")
         return self._remotes[cwd]
 
-    def bound(self, poll: ci_read.Poll, cwd: str, created: Iterable[tuple[str, int]]) -> bool:
-        if not self._config.git_probe_enabled or not cwd:
+    def _same_checkout(self, cwd: str, session_dir: str, remote: tuple[str, str]) -> bool:
+        """Whether a poll run in `cwd` reads the session's repository where it names none.
+
+        The call's own directory is the session folder, or a checkout of the same remote (a
+        worktree or subdirectory). Another clone, or a directory that cannot be placed (empty),
+        reads some other repository.
+        """
+        if not cwd:
+            return False
+        if os.path.normpath(cwd) == os.path.normpath(session_dir):
+            return True
+        there = self._remote(cwd)
+        return there[1] != "" and (there[0].lower(), there[1].lower()) == (
+            remote[0].lower(),
+            remote[1].lower(),
+        )
+
+    def bound(
+        self,
+        poll: ci_read.Poll,
+        cwd: str,
+        session_dir: str,
+        created: Iterable[tuple[str, int]],
+    ) -> bool:
+        """Whether the poll reads the session folder's own repository and pull request.
+
+        The repository is always the session folder's `origin`. A poll that names one is decided
+        by it alone, wherever the call ran; one that names none reads the call's directory, which
+        must be the session folder or a checkout of the same remote. Git runs only in the session
+        folder and in a directory a poll was placed in.
+        """
+        if not self._config.git_probe_enabled or not session_dir:
+            return False
+        remote = self._remote(session_dir)
+        if not poll.repository and not self._same_checkout(cwd, session_dir, remote):
             return False
         if self._records is None:
             self._records = ci_read.scan_records(self._config, self._transcript_path)
         links, pushes = self._records
-        return ci_read.poll_bound(
-            poll, self._remote(cwd), self.goal_texts, (*links, *created), pushes
-        )
+        return ci_read.poll_bound(poll, remote, self.goal_texts, (*links, *created), pushes)
 
 
 class _ToolReportTally:
@@ -5384,7 +5415,16 @@ class _ToolReportTally:
             ci = _ci_run_kind(words) if reads_only else ""
             if (reads_only and not ci) or _always_zero(words):
                 continue
-            poll = ci_read.parse_poll(ci, words, call.parts[index].raw) if ci else None
+            poll = (
+                ci_read.parse_poll(
+                    ci,
+                    words,
+                    call.parts[index].raw,
+                    [word for part in call.parts[:index] for word in part.raw],
+                )
+                if ci
+                else None
+            )
             outcome, source = "not-recorded", ""
             masked = call.status_masked(index)
             if result is not None and not (
@@ -5426,7 +5466,8 @@ class _ToolReportTally:
                 "worker": worker,
                 "subject": CI_SUBJECT if ci else COMMAND_SUBJECT,
                 "ci_poll": poll,
-                "cwd": call.directories[index] if call.placed[index] else self.session_dir,
+                # An unplaced directory binds nothing: a `cd` the shell decides could be anywhere.
+                "cwd": call.directories[index] if call.placed[index] else "",
                 "cannot_fail": masked,
                 "changes_later_in_call": any(
                     i > index
@@ -5777,12 +5818,7 @@ class _ToolReportTally:
         Decided here and not when the run is read, because a pull request the session created
         or pushed may be recorded after the poll, and the entry cache never sees that arrive.
         """
-        poll = latest.get("ci_poll")
-        if poll is None or entry["subject"] != CI_SUBJECT:
-            return entry
-        binding = self.ci_binding
-        created = [(pr["repository"], pr["number"]) for pr in self.prs.values()]
-        if binding is not None and binding.bound(poll, latest["cwd"], created):
+        if entry["subject"] != CI_SUBJECT or not self._poll_unbound(latest):
             return entry
         return {
             **entry,
@@ -5792,6 +5828,19 @@ class _ToolReportTally:
             "result_reason": CI_POLL_UNBOUND,
             "rank": _COMMAND_FAILED_RANK if entry["result"] == "failed" else _COMMAND_RANK,
         }
+
+    def _poll_unbound(self, run: dict[str, Any]) -> bool:
+        """Whether a recorded run is a CI poll this session is not bound to.
+
+        The one decision behind the published entry and behind which output tails are tier 3, so
+        the press withholds what the fact declares a plain command.
+        """
+        poll = run.get("ci_poll")
+        if poll is None or run["subject"] != CI_SUBJECT:
+            return False
+        binding = self.ci_binding
+        created = [(pr["repository"], pr["number"]) for pr in self.prs.values()]
+        return binding is None or not binding.bound(poll, run["cwd"], self.session_dir, created)
 
     def passes_and_writes(self) -> tuple[tuple[str, str, float], ...]:
         """(record id, title, time) of every latest passing check and written path.
@@ -5886,7 +5935,7 @@ class _ToolReportTally:
             run["record_id"]
             for history in self.commands.values()
             for run in history
-            if run["subject"] == COMMAND_SUBJECT
+            if run["subject"] == COMMAND_SUBJECT or self._poll_unbound(run)
         )
 
     def passing_calls(self) -> frozenset[str]:
@@ -5997,7 +6046,11 @@ class PressChecks(NamedTuple):
 
 
 def claude_check_press(
-    config: RuntimeConfig, transcript_path: str, *, max_bytes: int | None = None
+    config: RuntimeConfig,
+    transcript_path: str,
+    *,
+    max_bytes: int | None = None,
+    goal_texts: Iterable[str] = (),
 ) -> PressChecks:
     """The output tails, later-command flags and incomplete-read flags a press
     may carry, keyed by the call's record id and check line, and the record
@@ -6009,7 +6062,7 @@ def claude_check_press(
     output for ever holds it. The same scan and bounds as
     `claude_tool_reports`, so both belong to the run that fact lists.
     """
-    tally = _claude_tally(config, transcript_path, max_bytes=max_bytes)
+    tally = _claude_tally(config, transcript_path, max_bytes=max_bytes, goal_texts=goal_texts)
     return _press(tally)
 
 
@@ -6081,14 +6134,25 @@ def session_tail_coverage(
     return transcript_tail_coverage(config, transcript, expected_stamp=stamp) if stamp else {}
 
 
-def press_checks(config: RuntimeConfig, state: RuntimeState, harness: str, sid: str) -> PressChecks:
-    """`claude_check_press` for one session, found as `collect` finds it; empty elsewhere."""
+def press_checks(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    harness: str,
+    sid: str,
+    goal_texts: Iterable[str] = (),
+) -> PressChecks:
+    """`claude_check_press` for one session, found as `collect` finds it; empty elsewhere.
+
+    `goal_texts` are the session's own, as `goal_texts_of` reads them from its row, so a CI poll
+    is bound here exactly as the published fact bound it. With none, a poll naming a pull request
+    is unbound and its output is withheld.
+    """
     transcript_path = (
         observer.resolve_transcript(config, state, harness, sid) if harness == "claude" else None
     )
     if not transcript_path:
         return PressChecks({}, frozenset())
-    return claude_check_press(config, transcript_path)
+    return claude_check_press(config, transcript_path, goal_texts=goal_texts)
 
 
 # A subagent's own transcript sits under its parent's session directory, flat
@@ -8066,7 +8130,7 @@ def _index_provider(
     return provide
 
 
-def _goal_texts(session: Mapping[str, Any]) -> tuple[str, ...]:
+def goal_texts_of(session: Mapping[str, Any]) -> tuple[str, ...]:
     """The reader's own words for the goal, as the press binds a pull request from them."""
     goal = session.get("session_goal")
     return (
@@ -8099,7 +8163,7 @@ def _session_work_evidence(
             sid,
             window_start=_assessment_window_start(session),
             index_provider=index_provider,
-            goal_texts=_goal_texts(session),
+            goal_texts=goal_texts_of(session),
         )
         events.extend(report_rows)
         tool_report_scans.append({**identity, **scan})

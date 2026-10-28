@@ -464,7 +464,9 @@ class Lane:
         if not reading_route.unasked_sends_failures(route):
             return None
         harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
-        press = self.press_for(self.config, state, harness, sid)
+        press = self.press_for(
+            self.config, state, harness, sid, runtime_project_context.goal_texts_of(row)
+        )
         return runtime_reading.ToolOutput(
             destination=route["destination"],
             label=route["label"],
