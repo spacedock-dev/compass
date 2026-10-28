@@ -862,6 +862,16 @@ class AFileThatIsLaterRepairedIsNoLongerReported(ProjectScriptTestCase):
             ["package.json"], [Path(p["file"]).name for p in project_scripts.problems()]
         )
 
+    def test_clean_reads_of_other_projects_never_push_a_problem_out(self) -> None:
+        # The store is bounded, and clean verdicts share it; were they evicted alongside
+        # problems, enough healthy projects would hide a broken file from --diagnose.
+        project_scripts._record("/repo/broken", "package.json", "c0", 1.0, "unparseable")
+        for n in range(2 * project_scripts._PROBLEMS_MAX):
+            project_scripts._record(f"/repo/ok{n}", "package.json", "c1", 2.0 + n, None)
+        self.assertEqual(
+            ["/repo/broken/package.json"], [p["file"] for p in project_scripts.problems()]
+        )
+
     def test_a_path_under_home_is_shown_from_home(self) -> None:
         self.commit({"package.json": "{"})
         project_scripts.load(str(self.cwd), 1_790_000_000.0)

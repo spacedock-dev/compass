@@ -222,8 +222,11 @@ def _record(toplevel: str, name: str, commit: str, at: float, reason: str | None
     with _lock:
         _problems[key] = (at, reason)
         _problems.move_to_end(key)
+        # Over the bound, a clean verdict goes first: evicting by age alone let enough healthy
+        # projects push a broken file out of `--diagnose`.
         while len(_problems) > _PROBLEMS_MAX:
-            _problems.popitem(last=False)
+            clean = next((k for k, (_at, why) in _problems.items() if why is None), None)
+            del _problems[clean if clean is not None else next(iter(_problems))]
 
 
 def load(
