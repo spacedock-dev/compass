@@ -2284,10 +2284,14 @@ _WRITING_OPTIONS = {
         {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
     ),
     "tree": frozenset({"-o"}),
+    # `less -o FILE` and `-O FILE` write a log of what it reads; the attached `-oFILE` form is
+    # caught by `_reads_only`, which sees no `=` to split on.
+    "less": frozenset({"-o", "-O", "--log-file", "--LOG-FILE"}),
     "git diff": frozenset({"--output"}),
     "git log": frozenset({"--output"}),
     "git show": frozenset({"--output"}),
 }
+_LESS_LOG_RE = re.compile(r"-[oO]|--log-file", re.IGNORECASE)
 # A device that stores nothing, whichever operator writes to it (review W5).
 _HARMLESS_DEVICE_RE = re.compile(r"^/dev/(?:null|stdout|stderr|tty|fd/\d+)$")
 _CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
@@ -3719,7 +3723,9 @@ def _reads_only(redirects: list[_Redirect], words: list[str]) -> bool:
     if words[:2] == ["gh", "api"]:
         return _gh_api_reads_only(words[2:])
     writing = _WRITING_OPTIONS.get(words[0]) or _WRITING_OPTIONS.get(" ".join(words[:2]))
-    if writing and writing & {w.split("=", 1)[0] for w in words[1:]}:
+    if (writing and writing & {w.split("=", 1)[0] for w in words[1:]}) or (
+        words[0] == "less" and any(_LESS_LOG_RE.match(w) for w in words[1:])
+    ):
         return False
     if _for_header(words):
         return True
@@ -6140,23 +6146,33 @@ def _views_only(redirects: list[_Redirect], words: list[str]) -> bool:
     if program in _VIEWERS or words[:2] == ["git", "blame"]:
         return True
     if program == "sed":
-        # `-i` edits in place and a `w FILE` command writes one; neither is a view.
+        # `-i` edits in place, a `w FILE` command writes one, and GNU `e` (a command, or the `e`
+        # flag of `s`) runs what it holds; none of these is a view.
         return not any(
             w.startswith("--in-place")
             or (w.startswith("-") and not w.startswith("--") and "i" in w)
             or re.search(r"(?:^|[\s;{}/])w\s*\S", w) is not None
+            or _SED_EXECUTES_RE.search(w) is not None
             for w in words[1:]
         )
     if program == "awk":
         # A program's own `print > "f"`, `print | "cmd"` and `system(...)` write; a comparison
-        # that merely contains `>` also withdraws, the safe side of a name-only match.
+        # that merely contains `>` also withdraws, the safe side of a name-only match. gawk's
+        # `-i` and `--include` (and `@include`) load a library such as `inplace`, and `-f` reads
+        # a program from a file this call does not show, so none of those is a view.
         return not any(
-            w.startswith("inplace") or re.search(r"[>|]|system\s*\(", w) is not None
+            re.match(r"-i|--include|-f|--file", w) is not None
+            or "@include" in w
+            or re.search(r"[>|]|system\s*\(", w) is not None
             for w in words[1:]
         )
     return False
 
 
+# GNU sed `e`: the command (`e`, `1e CMD`, `/x/e`) or the flag after an `s` command's replacement.
+_SED_EXECUTES_RE = re.compile(
+    r"(?:^|[\s;{}!\d$,/])e(?:\s|$)|\bs(.)(?:(?!\1).)*\1(?:(?!\1).)*\1[a-zA-Z0-9]*e"
+)
 _STDIN_OPERATORS = ("<<", "<<-", "<<<")
 # Programs that take stdin as data and cannot run or save it as a file the call named, so text a
 # pipe carries into one is not carried to a segment that can write. Their own redirect targets are

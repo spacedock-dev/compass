@@ -7725,11 +7725,10 @@ A project's check is sometimes something no rule finds: a custom script, `bazel 
 - **What counts.** A command typed in a session of that project whose words equal a listed entry's is a
   tier 2 check. A program on the PATH or by an absolute path counts from any folder; a script named by a
   relative path (`./check.sh`) is a file of the project, so it counts only where it ran from the project's
-  root, and not when the session wrote that file by a write tool or by a shell command that names it and
-  is not a read of it (see the 2026-10-28 amendment below). A
-  listing keyed by a path the session's folder no longer has (a deleted worktree) matches nothing. Such a check
-  is a tier 2 check, with the result of its exit status read as any check's is. `bazel test //...`
-  listed does not make `bazel test //other/...` one. Such a check is published with `listed_by_reader`, and the
+  root, and not when the session wrote that file by a write tool or by a shell command that names it and is
+  not a read of it (see the 2026-10-28 amendment below). A listing keyed by a path the session's folder no
+  longer has (a deleted worktree) matches nothing. Such a check is a tier 2 check, with the result of its
+  exit status read as any check's is. `bazel test //...` listed does not make `bazel test //other/...` one. Such a check is published with `listed_by_reader`, and the
   page and the row the model reads both say "counted because you listed it", so a pass is never read as a runner
   Compass knows.
 - **What never counts, however it is listed.** A shell builtin (the whole bash and zsh set), `echo`, `printf`,
@@ -7843,8 +7842,11 @@ told the session had written it, and an interpreter that rewrote a listed script
   since the shell cannot say what that code does. Running a listed script is not writing it: the script
   alone, a listed command, or an interpreter given the script as its first argument, after any option that
   cannot carry code (`bash -x check.sh`); `source` and `.` run it too. A pure viewer (`jq`, `bat`, `diff`,
-  `nl`, `shellcheck`, `git blame`, and `sed` or `awk` not editing in place) only reads it. A command that
-  will not parse, or whose substitution changes something, withdraws every listed file its text mentions.
+  `nl`, `shellcheck`, `git blame`, and `sed` or `awk` not editing in place) only reads it. A `sed` that
+  runs a command (GNU `e`, or the `e` flag of `s`), an `awk` that loads a library (`-i`, `--include`,
+  `@include`) or reads its program from a file (`-f`), and `less` given a log file (`-o`, `-O`) are not
+  views. A command that will not parse, or whose substitution changes something, withdraws every listed
+  file its text mentions.
 - **Text sent to a program through stdin is seen, where it can reach a program that writes.** The body of
   a heredoc and a here-string are not words of any segment, so a command that sends a program text
   mentioning the file, as a heredoc or here-string (`python3 <<'EOF'`) or through a pipe from an earlier

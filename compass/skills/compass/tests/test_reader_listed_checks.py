@@ -626,7 +626,10 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
         for command in (
             "jq . compass-project-checks.json",
             "sed -n 1p check.sh",
+            "sed -n 's/a/b/p' check.sh",
+            "sed 's/a/the end/' check.sh",
             "awk '1' check.sh",
+            "less check.sh",
             "bat check.sh",
             "diff check.sh other.sh",
             "shellcheck check.sh",
@@ -647,6 +650,16 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
             "bash -c 'echo x > check.sh'",
             "bash -xc 'echo x > check.sh'",
             "awk -i inplace '1' check.sh",
+            "awk -iinplace '1' check.sh",
+            "awk --include=inplace '1' check.sh",
+            "awk '@include \"inplace\"\n1' check.sh",
+            "awk -f p.awk check.sh",
+            "sed '1e rm check.sh' x",
+            "sed 's/a/rm check.sh/e' x",
+            "cat check.sh | sed e",
+            "less -o out.log check.sh",
+            "less -O out.log check.sh",
+            "less -oout.log check.sh",
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.names(command), {"check.sh"})
