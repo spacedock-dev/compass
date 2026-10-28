@@ -5824,6 +5824,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
     open_call_lookup: Callable[[], float | None] | None = None,
     failures_only: bool = False,
     ci: Mapping[str, Any] | Callable[[], Mapping[str, Any] | None] | None = None,
+    max_prompt_bytes: int | None = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -5930,7 +5931,9 @@ def produce(  # noqa: C901, PLR0911, PLR0913
         ledger,
         goal=goal,
         lines=lines,
-        max_bytes=observer.OBSERVER_MODEL_MAX_PROMPT_BYTES,
+        # The press passes the reader's `settings.analyze_prompt_bytes`; the unasked lane keeps
+        # the original bound.
+        max_bytes=max_prompt_bytes or observer.OBSERVER_MODEL_MAX_PROMPT_BYTES,
         goal_words=source[1] if source else "",
         goal_fact=source[0] if source else "",
         scope=scope,

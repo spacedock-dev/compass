@@ -780,10 +780,18 @@ class PressMessages(NamedTuple):
 
 
 class PressWindow(NamedTuple):
-    """A press's request to read messages back: the window's start and the file it stamped."""
+    """A press's request to read messages back: the window's start and the file it stamped.
+
+    `cap` is how many of the session's messages and checks the press keeps: the reader's
+    `settings.analyze_record_events`. The project page keeps `MAX_PROJECT_EVENTS`.
+    """
 
     start: float
     stamp: tuple[int, int, int, int] | None
+    cap: int = MAX_PROJECT_EVENTS
+    # How many of the focused session's checks and writes the press lists: the reader's
+    # `settings.analyze_listed_checks`. None keeps the page's `TOOL_REPORT_MAX_ENTRIES`.
+    listed: int | None = None
 
 
 def _message_text_chars(record: Mapping[str, Any]) -> int:
@@ -814,9 +822,17 @@ class _MessageRead:
     replayed record cannot make a partial read look complete, and an unread region freezes it.
     """
 
-    def __init__(self, config: RuntimeConfig, harness: str, sid: str, window_start: float) -> None:
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        harness: str,
+        sid: str,
+        window_start: float,
+        cap: int = MAX_PROJECT_EVENTS,
+    ) -> None:
         self.config, self.harness, self.sid = config, harness, sid
         self.window_start = window_start
+        self.cap = cap
         self.found: list[dict[str, Any]] = []
         # Turn-closing agent messages found after `found` was full, each with the reader's message
         # that followed it, newest first and bounded: the oldest `PRESS_ANCHORS` stay, which are
@@ -848,7 +864,7 @@ class _MessageRead:
     @property
     def full(self) -> bool:
         # One past the cap, as before: a window of exactly the cap's size is whole.
-        return len(self.found) > MAX_PROJECT_EVENTS
+        return len(self.found) > self.cap
 
     def stop(self, skipped: bool = False) -> bool:
         if skipped:
@@ -970,12 +986,12 @@ def press_message_events(
     outgrows before its first turn: measured on a 1.82 MB transcript the tail began four minutes
     after the Goal, so what the agent said it had done was outside it. This reads backward under
     the press bounds (`direction_scan_max_*`) and stops at `PRESS_OLDER_RUN` records older than the
-    window. It keeps the newest `MAX_PROJECT_EVENTS` messages, which is all the project cap can
-    keep, and goes on reading for the closing agent message of each earlier turn, the oldest
-    `PRESS_ANCHORS` of them: stopping at the cap read only the newest messages and never reached the
-    first turns an early Goal rests on. What it saw and did not keep is `MessageReach.lost`.
-    Enlarging `tail_bytes` instead is a recorded rejection: docs/design-session-record-pages.md,
-    "Rejected alternatives".
+    window. It keeps the newest `window.cap` messages (the reader's `analyze_record_events`, which
+    the press's timeline keeps too), and goes on reading for the closing agent message of each
+    earlier turn, the oldest `PRESS_ANCHORS` of them: stopping at the cap read only the newest
+    messages and never reached the first turns an early Goal rests on. What it saw and did not
+    keep is `MessageReach.lost`. Enlarging `tail_bytes` instead is a recorded rejection:
+    docs/design-session-record-pages.md, "Rejected alternatives".
 
     Both kinds are emitted although the history store also supplies person messages: coverage
     claims the whole message record was read, and that claim cannot rest on a backfill this read
@@ -986,7 +1002,7 @@ def press_message_events(
         return None
     from . import record_pages  # noqa: PLC0415 - shared reader imports the fact builders
 
-    read = _MessageRead(config, harness, sid, window.start)
+    read = _MessageRead(config, harness, sid, window.start, window.cap)
     scan = record_pages.scan_source(
         config,
         transcript_path,
@@ -5771,7 +5787,9 @@ class _ToolReportTally:
         ]
         return max(times) if times else None
 
-    def entries(self, sid: str, index: Any = None) -> list[dict[str, Any]]:
+    def entries(
+        self, sid: str, index: Any = None, cap: int = TOOL_REPORT_MAX_ENTRIES
+    ) -> list[dict[str, Any]]:
         histories = self._histories()
         candidates = self._ranked(histories)
         last_pass_at = self._last_pass_at()
@@ -5798,12 +5816,12 @@ class _ToolReportTally:
                     # The fact stays listed and can still support a departure.
                     continue
                 self.scan[f"{prefix}_{str(entry['result']).replace('-', '_')}"] += 1
-        listed = candidates[:TOOL_REPORT_MAX_ENTRIES]
+        listed = candidates[:cap]
         # A created pull request is what a goal such as "create a PR" rests on, and the verdict
         # check reads the listing, so newer checks may not evict it: the newest of those the cap
         # dropped are listed beside it, up to the cap again (owner review, 2026-10-23).
-        kept = [row for row in candidates[TOOL_REPORT_MAX_ENTRIES:] if row["subject"] == "pr"]
-        listed += kept[:TOOL_REPORT_MAX_ENTRIES]
+        kept = [row for row in candidates[cap:] if row["subject"] == "pr"]
+        listed += kept[:cap]
         self.scan.update(
             distinct_checks=len(histories),
             commands=len(self.commands),
@@ -5811,16 +5829,11 @@ class _ToolReportTally:
             pull_requests=len(self.prs),
             skills_used=len(self.skills),
             listed=len(listed),
-            more=sum(
-                row["subject"] != "launch" and row not in listed
-                for row in candidates[TOOL_REPORT_MAX_ENTRIES:]
-            ),
+            more=sum(row["subject"] != "launch" and row not in listed for row in candidates[cap:]),
             background_unpaired=sum(
                 row["count"] for row in self.launches.values() if row["completed_at"] is None
             ),
-            background_more=sum(
-                row["subject"] == "launch" for row in candidates[TOOL_REPORT_MAX_ENTRIES:]
-            ),
+            background_more=sum(row["subject"] == "launch" for row in candidates[cap:]),
         )
         # A fixed position for every check, file and launch the transcript holds, counted whether
         # or not the listing keeps it: evicting one leaves a gap and moves no number after it. A
@@ -7294,7 +7307,7 @@ def delegated_work_published(
     }
 
 
-def claude_tool_reports(
+def claude_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names
     config: RuntimeConfig,
     transcript_path: str,
     sid: str,
@@ -7304,6 +7317,7 @@ def claude_tool_reports(
     index_provider: Callable[[], Any] | None = None,
     goal_texts: Iterable[str] = (),
     remotes: git_status.StampCache | None = None,
+    listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """The listed checks and written paths, and the full-scan counts behind them,
     a subagent's included and labelled.
@@ -7316,7 +7330,9 @@ def claude_tool_reports(
     )
     # Asked for after the tally has read. A message written meanwhile is later than every entry the
     # tally read, so it cannot belong to the position of one of them.
-    entries = tally.entries(sid, index_provider() if index_provider is not None else None)
+    entries = tally.entries(
+        sid, index_provider() if index_provider is not None else None, cap=listed_cap
+    )
     if not isinstance(window_start, _WindowNotRequested):
         tally.scan["window_start"] = window_start
         tally.scan["window_written_paths"] = sum(
@@ -8313,6 +8329,7 @@ def _session_work_evidence(
     tool_report_scans: list[dict[str, Any]],
     index_provider: Callable[[], Any] | None = None,
     remotes: git_status.StampCache | None = None,
+    listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
 ) -> dict[str, int]:
     """Pi's demonstrated results and Claude Code's checks, appended for `collect`.
 
@@ -8332,6 +8349,7 @@ def _session_work_evidence(
             index_provider=index_provider,
             goal_texts=goal_texts_of(session),
             remotes=remotes,
+            listed_cap=listed_cap,
         )
         events.extend(report_rows)
         tool_report_scans.append({**identity, **scan})
@@ -8801,6 +8819,7 @@ def _project_timeline(
     events: list[dict[str, Any]],
     focus: tuple[str, str] | None,
     anchored: frozenset[tuple[object, ...]] = frozenset(),
+    cap: int = MAX_PROJECT_EVENTS,
 ) -> list[dict[str, Any]]:
     # The agent's messages are reserved last in each scope. A long session says far more than
     # its reader types or its checks record, and a cap filled newest first would let that
@@ -8836,11 +8855,11 @@ def _project_timeline(
         groups = (own_checks, own_other, own_anchor, own_said, surrounding, their_said)
     selected: list[dict[str, Any]] = []
     for group in groups:
-        room = MAX_PROJECT_EVENTS - len(selected)
+        room = cap - len(selected)
         if group is own_anchor:
             group = group[:room]  # noqa: PLW2901 - the earliest turns are the ones short of evidence
         selected.extend(_dedupe_project_events(group, limit=room))
-        if len(selected) == MAX_PROJECT_EVENTS:
+        if len(selected) == cap:
             break
     return sorted(selected, key=lambda event: float(event["at"]), reverse=True)
 
@@ -11016,6 +11035,11 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
             tool_report_scans,
             _index_provider(config, state, transcript_path, harness, sid) if is_focused else None,
             state.ci_remotes,
+            listed_cap=(
+                message_reach.listed
+                if is_focused and message_reach is not None and message_reach.listed
+                else TOOL_REPORT_MAX_ENTRIES
+            ),
         )
         backfill_rows, signature = _incremental_history_events(
             config, state, history_project, transcript_path, harness, sid, now=now
@@ -11041,7 +11065,12 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         semantic_history.read(config, state, history_project),
     )
 
-    timeline = _project_timeline(events, focus, reached.anchors if reached else frozenset())
+    timeline = _project_timeline(
+        events,
+        focus,
+        reached.anchors if reached else frozenset(),
+        cap=message_reach.cap if message_reach is not None else MAX_PROJECT_EVENTS,
+    )
     history_timeline = _dedupe_project_events(history_events)
     gate_count, steer_count, work_count = _timeline_counts(timeline)
     semantic = _semantic_model(timeline, observers, now=now)

@@ -40,6 +40,7 @@ from compass_runtime import (
     records,
     session_outline,
     session_source,
+    settings,
     summary_jobs,
     summary_store,
     tripwires,
@@ -374,6 +375,8 @@ def _session_context(
 # one reply that page shows verbatim is a route with no provider, whose `note`
 # it draws in the button's place and keeps until its next poll, so the refusal
 # is a 400 carrying such a route, and its note says to reload.
+# A settings body is a few keys and integers; anything near this is not one.
+SETTINGS_BODY_CAP_BYTES = 1024
 PAGE_OUTDATED_REASON = "page-outdated"
 PAGE_OUTDATED = (
     "This page is from an older version of Compass, so nothing was sent. Reload the page "
@@ -1382,6 +1385,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/overlays": self._overlays,
             "/api/cleared": self._cleared,
             "/api/annotations": self._annotations,
+            "/api/settings": self._settings_get,
             "/api/stream": self._stream,
             "/api/health": self._health,
         }.get(url.path)
@@ -1849,6 +1853,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "application/json",
         )
 
+    def _settings_get(self) -> None:
+        """The reader's settings, with each one's default and bounds (`settings.published`)."""
+        if not self._local_ok():
+            self.send_error(403)
+            return
+        published = settings.published(settings.load(self.server.application.config))
+        self._send(json.dumps(published, separators=(",", ":")).encode(), "application/json")
+
     def _annotations(self) -> None:
         """Every session the reader has typed words against, including departed ones.
 
@@ -2085,6 +2097,46 @@ class _RequestHandler(BaseHTTPRequestHandler):
     SESSION_IDENTITY_KEYS: ClassVar[frozenset[str]] = frozenset(
         {"harness", "sid", "session", "session_id", "resume_id"}
     )
+
+    def _settings_post(self) -> None:
+        """Change some of the reader's settings: `{"values": {key: int or null}}`.
+
+        A same-origin page only, as `/api/summary` is: a setting decides how much of a session the
+        next press sends to a model, so a cross-site form must not move it. Every value is checked
+        before any is written (`settings.save`), and the answer is the whole published state, so
+        the screen redraws from what the store now holds rather than from what it sent.
+        """
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= SETTINGS_BODY_CAP_BYTES:
+            self._reject(413)
+            return
+        try:
+            payload = json.loads(self._read_body(length) or b"null")
+        except (ValueError, json.JSONDecodeError, RecursionError):
+            payload = None
+        values = payload.get("values") if isinstance(payload, dict) else None
+        if not isinstance(values, dict):
+            self._reject(400, "the body names no values")
+            return
+        config = self.server.application.config
+        try:
+            saved = settings.save(config, values)
+        except settings.InvalidSettingError as error:
+            self._reject(400, f"{error.key} is not a setting, or is outside its bounds")
+            return
+        except OSError:
+            self._reject(503, "the settings store could not be written")
+            return
+        self._send(
+            json.dumps(settings.published(saved), separators=(",", ":")).encode(),
+            "application/json",
+        )
 
     def _lane(self) -> None:
         """Record that a dashboard tab has a working notification lane in it.
@@ -3826,6 +3878,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         launch or fails. A fresh press is the only retry.
         """
         application = self.server.application
+        # Read at each press, so a change on the Settings screen applies to the next one.
+        limits = settings.load(application.config)
         transcript = (
             runtime_observer.resolve_transcript(
                 application.config, application.state, str(row.get("harness")), str(row.get("sid"))
@@ -3838,7 +3892,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         revisions = entry["revisions"]
         reach = (
             runtime_project_context.PressWindow(
-                runtime_reading.window_start(revisions[-1]), press_stamp
+                runtime_reading.window_start(revisions[-1]),
+                press_stamp,
+                limits.analyze_record_events,
+                limits.analyze_listed_checks,
             )
             if revisions and press_stamp is not None
             else None
@@ -3942,6 +3999,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             admit_turn_stop=str(row.get("harness")) in runtime_reading.TURN_STOP_HARNESSES,
             # The job's phases, each told where it really begins (DRC-4686).
             on_phase=hooks.phase,
+            max_prompt_bytes=limits.analyze_prompt_bytes,
             **self._reading_arguments(row, entry, route, hooks),
         )
 
@@ -4359,6 +4417,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/answer": self._answer,
             "/api/notify": self._notify,
             "/api/lane": self._lane,
+            "/api/settings": self._settings_post,
         }.get(path)
         if route is None:
             self._reject(404)

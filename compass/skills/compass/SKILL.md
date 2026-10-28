@@ -278,7 +278,7 @@ python3 "<skill-dir>/server.py" --port 4553 --status
 running, or that the port belongs to some other process — in which case it changes nothing. A start
 on a port that already runs a dashboard is refused and points at it.
 
-The server writes eleven files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
+The server writes twelve files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
 `compass-<port>.json`, which records the running instance; `compass-<port>.log`, where a
 detached server's output goes; `compass-dismissals.json`, the sessions marked handled;
 `compass-annotations.json`, the goal and expected outcome lines you typed against a session, plus a
@@ -288,6 +288,7 @@ text-free record of any session you discarded everything for;
 `compass-ends.json`, the session ends the board observed, so a session that finished still reads as
 ended after a restart;
 `ci-read-off`, a one-line marker left while the page's switch for the pull request CI read is off;
+`compass-settings.json`, the reading limits set on the Settings screen, only once one is changed;
 `semantic-work-history.json`, the project cockpit's own record of what a project's sessions were
 observed doing, bounded to a 24-hour window across at most 20 projects;
 `observer/<harness>_<sid>.json`, the sidecar an observer panel records when a reader opens one; and
@@ -539,7 +540,10 @@ how many were read-only, and says Compass did not read what they did; an older r
 An older reading says coverage was not recorded. A tail starting inside the intent window tags
 every intent row "may be in the part not read"; claims stay independent. On Claude Code an Analyze
 press reads the session's messages back to the window start where it can, and says where it stopped
-when it cannot. An idle Claude Code session whose last turn has no recorded finish is read up to
+when it cannot. How much a press keeps and sends is set on the page's Settings screen: the largest
+prompt (256 KB by default), how many of the session's messages and checks it keeps (2,000), and how
+many checks and written files it lists (200). The project page keeps its own 100 events and 12
+checks. An idle Claude Code session whose last turn has no recorded finish is read up to
 its last recorded entry, and the result says so with that entry's time, never as a final verdict. General scope and the
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state

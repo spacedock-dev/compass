@@ -1551,6 +1551,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.summary_jobs",
             # The summary start route reads the source page the job summarizes.
             "compass_runtime.session_source",
+            "compass_runtime.settings",
             # Each message's fixed number on the record pages and the focused context (DRC-4897).
             "compass_runtime.entry_numbers",
             "compass_runtime.record_pages",
@@ -1715,6 +1716,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # Cuts a bounded prompt title back to a whole word for the outline (`transcripts.clip`).
             "compass_runtime.transcripts",
         },
+        "compass_runtime.settings": {"compass_runtime.config", "compass_runtime.io"},
         # The summary store persists the producer's frozen result and compares it with a fresh
         # source read; it resolves the focused transcript itself and holds no model seam.
         "compass_runtime.summary_store": {
