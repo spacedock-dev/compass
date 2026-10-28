@@ -543,6 +543,26 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
                 with self.subTest(command=command):
                     self.assertEqual(self.names(command), {name})
 
+    def test_a_heredoc_feeding_an_earlier_segment_or_a_substitution_withdraws_it(self) -> None:
+        for name in ("check.sh", "compass-project-checks.json"):
+            for command in (
+                f"cat <<'EOF' | python3\nopen('{name}', 'w')\nEOF",
+                f"cat << 'EOF' | bash\necho x > {name}\nEOF",
+                f"python3 -c \"$(cat <<'EOF'\nopen('{name}', 'w')\nEOF\n)\"",
+            ):
+                with self.subTest(command=command):
+                    self.assertEqual(self.names(command), {name})
+
+    def test_an_awk_program_that_writes_withdraws_it(self) -> None:
+        for command in (
+            "awk 'BEGIN{print 1 > \"compass-project-checks.json\"}'",
+            "awk '{print > \"check.sh\"}' x",
+            "awk '{print | \"tee check.sh\"}' x",
+            "awk 'BEGIN{system(\"rm check.sh\")}'",
+        ):
+            with self.subTest(command=command):
+                self.assertNotEqual(self.names(command), set())
+
     def test_a_reader_given_the_text_does_not_withdraw_it(self) -> None:
         for command in (
             "cat <<EOF\nsee check.sh\nEOF",
@@ -550,6 +570,7 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
             "cat check.sh | wc -l",
             "./check.sh | tee out.log",
             "python3 ./check.sh <<< 'input'",
+            "cat <<EOF | grep x\ncheck.sh\nEOF",
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.names(command), set())

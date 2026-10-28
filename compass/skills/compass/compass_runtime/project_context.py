@@ -6136,7 +6136,12 @@ def _views_only(redirects: list[_Redirect], words: list[str]) -> bool:
             for w in words[1:]
         )
     if program == "awk":
-        return "inplace" not in words and not any(w.startswith("inplace") for w in words)
+        # A program's own `print > "f"`, `print | "cmd"` and `system(...)` write; a comparison
+        # that merely contains `>` also withdraws, the safe side of a name-only match.
+        return not any(
+            w.startswith("inplace") or re.search(r"[>|]|system\s*\(", w) is not None
+            for w in words[1:]
+        )
     return False
 
 
@@ -6144,7 +6149,7 @@ _STDIN_OPERATORS = ("<<", "<<-", "<<<")
 
 
 def _stdin_text_withdraws(
-    parts: Sequence[_Part], name: str, listed: frozenset[tuple[str, ...]]
+    parts: Sequence[_Part], name: str, listed: frozenset[tuple[str, ...]], command: str
 ) -> bool:
     """Whether text that mentions `name` could reach a program that executes it, through stdin.
 
@@ -6153,6 +6158,9 @@ def _stdin_text_withdraws(
     `python3 <<'EOF'` with `open('check.sh', 'w')` in the body. A reader on the closed list
     (`cat <<EOF`, `wc -l`) takes the text as data and does not withdraw it.
     """
+    # A heredoc inside a substitution is in no segment, only its `$(...)` placeholder is, so a
+    # command with a heredoc that hands a placeholder to a program is judged by the program.
+    has_heredoc = "<<" in command
     for i, part in enumerate(parts):
         words = part.words
         if not words or tuple(words) in listed or words[0] in {"cd", "pushd"}:
@@ -6165,9 +6173,13 @@ def _stdin_text_withdraws(
             continue
         if any(r.operator.endswith(_STDIN_OPERATORS) for r in part.redirects):
             return True
+        if has_heredoc and any("(…)" in w or "`" in w for w in words[1:]):
+            return True
         j = i - 1
         while j >= 0 and parts[j].joiner.startswith("|"):
             feeder = parts[j]
+            if any(r.operator.endswith(_STDIN_OPERATORS) for r in feeder.redirects):
+                return True
             if (
                 feeder.words
                 and not _runs_script(feeder.words, name)
@@ -6205,7 +6217,7 @@ def _shell_names(
             named |= {os.path.basename(w) for w in part.words[1:]}
         found |= names & named
         found |= {n for n in mentioned if _part_names_a_write(part, n, listed)}
-    found |= {n for n in mentioned - found if _stdin_text_withdraws(parts, n, listed)}
+    found |= {n for n in mentioned - found if _stdin_text_withdraws(parts, n, listed, command)}
     return found
 
 
