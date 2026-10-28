@@ -313,6 +313,13 @@ export const ciReadFrom = (
 export const CI_NO_CHECKS = 'no checks reported';
 export const CI_SETTLES = 'Every check that counts passed on this session’s commit.';
 export const CI_FAILING = 'A failing check on this session’s commit counts against the work.';
+/* A pull request merged by a commit the session folder's history holds (`ci_read`'s `merged_in`): its head is
+   not the folder's commit, but what it ran is in the session's branch. */
+export const CI_MERGED_IN =
+  'The pull request was merged into this session’s branch, so its checks count.';
+export const CI_SETTLES_MERGED = 'Every check that counts passed on the merged pull request.';
+export const CI_FAILING_MERGED =
+  'A failing check on the merged pull request counts against the work.';
 export const CI_RUNNING = 'Checks are still running, so they settle nothing.';
 export const CI_NONE_DONE = 'No check has completed, so they settle nothing.';
 export const CI_CANCELLED = 'A cancelled check keeps them from settling anything.';

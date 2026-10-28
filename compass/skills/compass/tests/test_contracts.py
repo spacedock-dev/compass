@@ -1556,6 +1556,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.entry_numbers",
             "compass_runtime.record_pages",
             # `POST /api/goal/find`: the reader's prompts read for a goal on a press.
+            "compass_runtime.git_status",
             "compass_runtime.goal_find",
             # Pause model calls and an Analyze press cancel a Live monitor check in flight.
             "compass_runtime.live_monitor",

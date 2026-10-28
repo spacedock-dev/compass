@@ -28,6 +28,7 @@ from compass_runtime import (
     departures,
     dismissals,
     entry_numbers,
+    git_status,
     goal_find,
     levels,
     live_estimate,
@@ -745,6 +746,11 @@ def _bind_and_read_ci(
         now=application.clock(),
         floor=ci_read.FLOOR,
         on_spawn=hooks.ci_spawned,
+        # A merged pull request counts when its merge commit is in the folder's own history: a
+        # stack merged into the session's branch has a head no folder will ever be on again.
+        contains=lambda commit: git_status.is_ancestor(
+            folder, commit, identity.head, timeout_sec=config.git_probe_timeout_sec
+        ),
     )
 
 

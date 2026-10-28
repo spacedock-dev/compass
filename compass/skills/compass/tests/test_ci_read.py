@@ -238,7 +238,7 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
         view, checks, required, after = (call["args"] for call in self.stub.calls)
         self.assertEqual(["pr", "view", "12", "--repo", f"github.com/{REPO}"], after[:5])
         self.assertEqual(["pr", "view", "12", "--repo", f"github.com/{REPO}"], view[:5])
-        self.assertEqual("headRefOid,number", view[-1])
+        self.assertEqual("headRefOid,number,state,mergeCommit", view[-1])
         self.assertEqual(["pr", "checks", "12", "--repo", f"github.com/{REPO}"], checks[:5])
         self.assertEqual("name,state,bucket,completedAt", checks[-1])
         self.assertIn("--required", required)
