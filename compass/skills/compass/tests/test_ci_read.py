@@ -1088,6 +1088,12 @@ class ARecordedCiPollIsReadForWhatItNames(unittest.TestCase):
         ):
             self.assertFalse(self.poll(line).valid, line)
 
+    def test_an_operand_int_cannot_parse_binds_to_nothing_without_raising(self) -> None:
+        for operand in ("\u00b2", "\u0663", "9" * 5000):
+            self.assertFalse(self.poll(f"gh pr checks {operand}").valid, operand)
+            run = ci_read.parse_poll("run_view", ["gh", "run", "view", operand, "--exit-status"])
+            self.assertFalse(run.valid, operand)
+
     def test_a_gh_repo_assignment_is_a_repository_the_poll_names(self) -> None:
         self.assertEqual(
             "other/old", self.poll("gh pr checks 4", raw=("GH_REPO=other/old", "gh")).repository

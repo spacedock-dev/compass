@@ -333,9 +333,14 @@ def _poll_operands(kind: str, rest: Sequence[str]) -> tuple[list[str], list[str]
 _POLL_ENVIRONMENT: Final = ("GH_REPO=", "GH_HOST=", "GH_ENTERPRISE_TOKEN=")
 
 
+def _ascii_number(text: str) -> bool:
+    """Whether `int(text)` is safe: ASCII digits only, short of the interpreter's digit limit."""
+    return text.isascii() and text.isdigit() and len(text) <= 19
+
+
 def _run_view_target(positional: str, repository: str) -> Poll:
     """What a `gh run view` operand names: a run id, or a run URL carrying its own repository."""
-    if not positional or (positional.isdigit() and 0 < int(positional) <= _NUMBER_MAX):
+    if not positional or (_ascii_number(positional) and 0 < int(positional) <= _NUMBER_MAX):
         return Poll(repository=repository)
     matched = _RUN_URL_RE.fullmatch(positional)
     if matched is None:
@@ -352,7 +357,7 @@ def _pull_request_target(target: str, repository: str) -> Poll:
     """What a `gh pr checks` operand names: a number, a pull request URL, a branch, or nothing."""
     if not target:
         return Poll(repository=repository)
-    if target.isdigit():
+    if _ascii_number(target):
         number = int(target)
         return Poll(repository, number) if 0 < number <= _NUMBER_MAX else Poll(valid=False)
     urls = pull_request_urls(target) if target.startswith("https://") else ()
@@ -433,7 +438,7 @@ def _usable_branch(branch: str) -> bool:
     return bool(
         _BRANCH_RE.fullmatch(branch)
         # A bare number is how `gh pr view` names a pull request; a branch never is one.
-        and not branch.isdigit()
+        and not _ascii_number(branch)
         and ".." not in branch
         and not branch.endswith((".lock", "/", "."))
     )
