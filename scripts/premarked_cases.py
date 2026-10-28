@@ -162,7 +162,7 @@ FIXTURES: dict[str, dict[str, Any]] = {
     case_id("script-then-exit-zero"): {"commands": ["./migrate.sh; exit 0"]},
     case_id("ci-other-head"): {"ci": {"head": OTHER_HEAD, "head_matches": False}},
     case_id("ci-after-workflow-edit"): {
-        "ci": {"head": SESSION_HEAD, "head_matches": True, "caution": True},
+        "ci": {"head": SESSION_HEAD, "head_matches": True},
         "edited": [".github/workflows/ci.yml"],
     },
     case_id("ci-poll-other-pr"): {"commands": ["gh pr checks 99 --repo other/old"]},

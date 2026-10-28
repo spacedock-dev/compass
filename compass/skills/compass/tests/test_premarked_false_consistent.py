@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -75,26 +76,30 @@ class TheCommittedMarksAreTheOnesRun(unittest.TestCase):
         if shutil.which("git") is None:
             self.skipTest("git is not available")
 
-        def last_commit(path: Path) -> str:
+        def git(*args: str) -> list[str]:
             found = subprocess.run(
-                ["git", "-C", str(ROOT), "log", "-1", "--format=%H", "--", str(path)],  # noqa: S607
+                ["git", "-C", str(ROOT), *args],  # noqa: S607
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            return found.stdout.strip() if found.returncode == 0 else ""
+            return found.stdout.split() if found.returncode == 0 else []
 
-        marks, digest = last_commit(MARKS_FILE), last_commit(DIGEST_FILE)
-        if not marks or not digest:
+        def first_commit(path: Path) -> str:
+            added = git("log", "--diff-filter=A", "--format=%H", "--", str(path))
+            return added[-1] if added else ""
+
+        marks, digest, head = (first_commit(p) for p in (MARKS_FILE, DIGEST_FILE, TEST_FILE))
+        if not (marks and digest and head):
             self.skipTest("the marks are not in a git history here")
-        head = last_commit(TEST_FILE) or "HEAD"
+        # The reference is the commit that first added this test, so a later edit to the marks
+        # cannot move it. A squash merge puts all three in one commit, which is its own ancestor.
         for first in (marks, digest):
             ordered = subprocess.run(
                 ["git", "-C", str(ROOT), "merge-base", "--is-ancestor", first, head],  # noqa: S607
                 capture_output=True,
                 check=False,
             )
-            # A squash merge puts marks and test in one commit, which is its own ancestor.
             self.assertEqual(0, ordered.returncode, "the marks must precede the test")
 
 
@@ -104,6 +109,7 @@ class AnAlwaysConsistentModelFindsNoFalseSupport(ClaudeChecksTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.prompts: list[str] = []
+        self.cited: list[list[int]] = []
         state = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, state, True)
         self.reader_config = base.WhatOnePressActuallyCostsAndProduces._Config()
@@ -128,15 +134,7 @@ class AnAlwaysConsistentModelFindsNoFalseSupport(ClaudeChecksTestCase):
         every_fact = [words, *facts]
         if ci is not None:
             every_fact += ci_read.facts(ci, "claude", SHORT)
-        ledger = reading.build_ledger(
-            every_fact,
-            "claude",
-            SHORT,
-            tool_output={},
-        )
-        cites = list(range(1, len(ledger) + 1))
         constraint = case["constraint"]
-        answer = {constraint: {"result": "consistent", "cites": cites, "detail": ""}}
         revision: dict[str, Any] = {"n": 1, "at": window_at}
         if constraint == "goal":
             revision.update(goal=case["words"], lines=[])
@@ -145,6 +143,10 @@ class AnAlwaysConsistentModelFindsNoFalseSupport(ClaudeChecksTestCase):
 
         def model(prompt: str, **_kw: Any) -> tuple[str, str]:
             self.prompts.append(prompt)
+            cites = [int(n) for n in re.findall(r"^\[(\d+)\]", prompt, re.MULTILINE)]
+            self.assertTrue(cites, case["name"])
+            self.cited.append(cites)
+            answer = {constraint: {"result": "consistent", "cites": cites, "detail": ""}}
             return json.dumps(answer), "ok"
 
         assessment, why, _spent = reading.produce(
@@ -166,12 +168,13 @@ class AnAlwaysConsistentModelFindsNoFalseSupport(ClaudeChecksTestCase):
 
     def _commands(self, case: dict[str, str], fixture: dict[str, Any]) -> dict[str, Any]:
         self.session.prompt(premarked_cases.BRANCH)
+        # A command that records no fact would leave nothing in the window, and the press is then
+        # withheld before any model runs. A written file keeps it open. It must come first: a write
+        # after the command ages every command check, and each case would then be withdrawn
+        # whatever rule is under test.
+        self.session.write(self.file("src/guard.py"))
         for command in fixture["commands"]:
             self.session.bash(command, "all checks passed", is_error=False)
-        # A command that records no fact would leave nothing in the window, and the press is then
-        # withheld before any model runs. A written file is the row that keeps it open: it shows
-        # a write and no result, so no rule lets it carry a `consistent`.
-        self.session.write(self.file("src/guard.py"))
         if fixture.get("pr"):
             pull = f"https://github.com/{premarked_cases.REPO}/pull/{fixture['pr']}"
             self.goal_texts = (f"Land {pull}",)
@@ -196,7 +199,9 @@ class AnAlwaysConsistentModelFindsNoFalseSupport(ClaudeChecksTestCase):
     def _ci(self, case: dict[str, str], fixture: dict[str, Any]) -> dict[str, Any]:
         spec = fixture["ci"]
         record = record_with(
-            *GREEN, head_matches=bool(spec["head_matches"]), caution=bool(spec.get("caution"))
+            *GREEN,
+            head_matches=bool(spec["head_matches"]),
+            caution=ci_read.changed_ci_configuration(fixture.get("edited", [])),
         )
         return self._read_with(case, [], words_at=90.0, window_at=50.0, now=200.0, ci=record)
 
@@ -225,3 +230,46 @@ class AnAlwaysConsistentModelFindsNoFalseSupport(ClaudeChecksTestCase):
         (case,) = (c for c in premarked_cases.CASES if c["name"] == "ci-other-head")
         self._ci(case, premarked_cases.FIXTURES[case["id"]])
         self.assertNotIn(ci_read.CAUTION_TEXT, self.prompts[0])
+
+    def test_the_workflow_edit_case_edits_ci_configuration_and_the_others_do_not(self) -> None:
+        for case in premarked_cases.CASES:
+            fixture = premarked_cases.FIXTURES[case["id"]]
+            self.assertEqual(
+                case["name"] == "ci-after-workflow-edit",
+                ci_read.changed_ci_configuration(fixture.get("edited", [])),
+                case["name"],
+            )
+
+    def test_controls_that_can_pass_are_left_standing(self) -> None:
+        """Without the aging write in the way, a real passing command is kept: the withdrawal in
+        the cases is the rule under test, not a side effect of the setup."""
+        case = {
+            "name": "control",
+            "constraint": "line_1",
+            "words": "The tests pass.",
+            "class": premarked_cases.COMMAND_CANNOT_FAIL,
+        }
+        pull = f"https://github.com/{premarked_cases.REPO}/pull/7"
+        for command, pr in (("pytest tests", None), ("gh pr checks 7", 7), ("gh pr checks 99", 7)):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.prompt(premarked_cases.BRANCH)
+                self.session.write(self.file("src/guard.py"))
+                self.session.bash(command, "all checks passed", is_error=False)
+                if pr:
+                    self.goal_texts = (f"Land {pull}",)
+                entries, _scan = self.read()
+                row = self._read_with(
+                    case,
+                    facts_of(entries),
+                    words_at=EPOCH + 1,
+                    window_at=EPOCH + 2,
+                    now=EPOCH + 3600,
+                    ci=None,
+                )
+                expected = (
+                    reading.RESULT_UNVERIFIABLE
+                    if command.endswith("99")
+                    else reading.RESULT_CONSISTENT
+                )
+                self.assertEqual(expected, row["result"])
