@@ -141,7 +141,7 @@ def diagnose(application: Application) -> dict[str, Any]:
         "store_errors": store_errors,
         # Declaring files (package.json, a Makefile, a justfile) the collection above found and
         # did not trust, with why. Names and a closed reason only, never a file's content.
-        "project_scripts": project_scripts.problems(),
+        "project_scripts": project_scripts.problems(config.home),
         # The reader's own list of check commands: where it is, whether it could be read, and each
         # entry that was ignored with its program and why. Never an argument or a path.
         "reader_checks": reader_checks.report(config, project_context.listed_entry_refusal),

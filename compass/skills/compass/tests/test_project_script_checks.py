@@ -17,6 +17,7 @@ import time
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from compass_runtime import (
     diagnostics,
@@ -27,6 +28,7 @@ from compass_runtime import (
     session_source,
 )
 
+from . import support
 from .test_claude_checks import ClaudeChecksTestCase
 
 GIT = shutil.which("git")
@@ -70,6 +72,12 @@ class ProjectScriptTestCase(ClaudeChecksTestCase):
         super().setUp()
         project_scripts.reset()
         self.addCleanup(project_scripts.reset)
+        git(self.cwd, "init", "-q")
+
+    def fresh_repo(self) -> None:
+        """A new repository in the same folder, for a subtest that commits again."""
+        project_scripts.reset()
+        shutil.rmtree(self.cwd / ".git")
         git(self.cwd, "init", "-q")
 
     def commit(self, files: dict[str, str], *, when: str = BEFORE_THE_SESSION) -> None:
@@ -333,6 +341,77 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
             self.ran(command)
         self.assertEqual([], self.titles())
 
+    def test_a_steering_variable_set_earlier_in_the_same_call_leaves_the_script_a_command(
+        self,
+    ) -> None:
+        self.commit(
+            {
+                "package.json": package(typecheck="tsc --noEmit"),
+                "Makefile": ".PHONY: lint\nlint:\n\truff check .\n",
+            }
+        )
+        refused = (
+            "env MAKEFLAGS=-n make lint",
+            "export MAKEFLAGS=-n; make lint",
+            "export MAKEFLAGS=-n && make lint",
+            "MAKEFLAGS=-n; make lint",
+            "declare -x MAKEFLAGS=-n && make lint",
+            "MAKEFLAGS=n make lint",
+            "GNUMAKEFLAGS=-n make lint",
+            "MFLAGS=-n make lint",
+            "MAKEFILES=other.mk make lint",
+            "export npm_config_script_shell=/usr/bin/true; npm run typecheck",
+            "export NPM_CONFIG_PREFIX=sub && pnpm typecheck",
+            "make MAKEFLAGS=-n lint",
+        )
+        for command in refused:
+            self.ran(command)
+        self.assertEqual([], self.titles())
+
+    def test_a_make_option_that_stops_the_recipe_running_leaves_the_target_a_command(self) -> None:
+        self.commit({"Makefile": ".PHONY: lint\nlint:\n\truff check .\n"})
+        for command in (
+            "make -n lint",
+            "make --dry-run lint",
+            "make --just-print lint",
+            "make --recon lint",
+            "make -q lint",
+            "make --question lint",
+            "make -t lint",
+            "make --touch lint",
+            "make -sn lint",
+            "make lint -n",
+        ):
+            self.ran(command)
+        self.assertEqual([], self.titles())
+
+    def test_a_linter_told_to_exit_zero_is_not_a_check_in_a_declared_body(self) -> None:
+        for body in (
+            "ruff check . --exit-zero",
+            "pylint src --exit-zero",
+            "flake8 . --exit-zero",
+            "bandit -r src --exit-zero",
+            "golangci-lint run --issues-exit-code=0",
+            "golangci-lint run --issues-exit-code 0",
+            "eslint . || true",
+            "mypy . || true",
+            "uv run ruff check --exit-zero .",
+        ):
+            with self.subTest(body=body):
+                project_scripts.reset()
+                self.commit({"package.json": package(lint=body)})
+                self.ran("pnpm lint")
+                self.assertEqual([], self.titles())
+
+    def test_a_linter_that_exits_nonzero_on_findings_still_counts(self) -> None:
+        self.commit({"package.json": package(lint="golangci-lint run --issues-exit-code=2")})
+        self.ran("pnpm lint")
+        self.assertEqual(["pnpm lint"], self.titles())
+
+    def test_an_exit_zero_flag_in_a_reader_listed_command_never_counts(self) -> None:
+        reason, _program = project_context.listed_entry_refusal("ruff check . --exit-zero")
+        self.assertTrue(reason)
+
     def test_an_argument_forwarded_after_a_double_dash_still_counts(self) -> None:
         self.commit({"package.json": package(typecheck="tsc")})
         self.ran("npm run typecheck -- --noEmit")
@@ -432,6 +511,23 @@ class ASessionThatChangedADeclaringFileDeclaresNothing(ProjectScriptTestCase):
         self.ran("just check")
         self.assertEqual(["just check"], self.titles())
 
+    def test_a_package_manager_config_the_session_wrote_withdraws_the_package_scripts(self) -> None:
+        for name in (".npmrc", ".yarnrc.yml"):
+            with self.subTest(name=name, tool="write"):
+                self.fresh_repo()
+                self.commit(
+                    {"package.json": package(lint="eslint ."), "justfile": "check:\n    mypy .\n"}
+                )
+                self.session.write(self.file(f"sub/{name}"), "script-shell=/bin/true\n")
+                self.ran("pnpm lint")
+                self.ran("just check")
+                self.assertEqual(["just check"], self.titles())
+        self.fresh_repo()
+        self.commit({"package.json": package(lint="eslint .")})
+        self.ran("echo 'script-shell=/bin/true' > .npmrc")
+        self.ran("pnpm lint")
+        self.assertNotIn("pnpm lint", self.titles())
+
     def test_a_file_changed_by_a_shell_command_differs_from_the_commit_and_declares_nothing(
         self,
     ) -> None:
@@ -458,6 +554,354 @@ class ASessionThatChangedADeclaringFileDeclaresNothing(ProjectScriptTestCase):
         self.commit({"package.json": package(typecheck="tsc --noEmit")}, when=AFTER_THE_SESSION)
         self.ran("pnpm typecheck")
         self.assertEqual([], self.titles())
+
+
+class MakeReadsOnlyTheFirstMakefileItFinds(ProjectScriptTestCase):
+    def test_a_target_only_the_shadowed_makefile_declares_does_not_count(self) -> None:
+        self.commit(
+            {
+                "GNUmakefile": ".PHONY: lint\nlint:\n\truff check .\n",
+                "Makefile": ".PHONY: lint test-all\nlint:\n\techo no\ntest-all:\n\tpytest -q\n",
+            }
+        )
+        self.ran("make lint")
+        self.ran("make test-all")
+        self.assertEqual(["make lint"], self.titles())
+
+    def test_the_first_file_wins_even_where_the_later_one_declares_the_target_as_a_check(
+        self,
+    ) -> None:
+        self.commit(
+            {
+                "GNUmakefile": ".PHONY: lint\nlint:\n\techo done\n",
+                "Makefile": ".PHONY: lint\nlint:\n\truff check .\n",
+            }
+        )
+        self.ran("make lint")
+        self.assertEqual([], self.titles())
+
+    def test_a_makefile_make_would_now_read_first_withdraws_every_target(self) -> None:
+        self.commit({"Makefile": ".PHONY: lint\nlint:\n\truff check .\n"})
+        (self.cwd / "GNUmakefile").write_text(".PHONY: lint\nlint:\n\ttrue\n", encoding="utf-8")
+        self.ran("make lint")
+        self.assertEqual([], self.titles())
+
+
+class ALaterEditToTheFileDoesNotWithdrawADeclarationItDidNotChange(ProjectScriptTestCase):
+    def package_with(self, dependency: str, **scripts: str) -> str:
+        return json.dumps(
+            {"name": "widgets", "dependencies": {"left-pad": dependency}, "scripts": scripts}
+        )
+
+    def test_a_dependency_bump_keeps_the_declared_checks(self) -> None:
+        self.commit({"package.json": self.package_with("1.0.0", typecheck="tsc --noEmit")})
+        (self.cwd / "package.json").write_text(
+            self.package_with("2.0.0", typecheck="tsc --noEmit"), encoding="utf-8"
+        )
+        self.ran("pnpm typecheck")
+        self.assertEqual(["pnpm typecheck"], self.titles())
+
+    def test_a_changed_script_body_drops_that_script_and_keeps_the_others(self) -> None:
+        self.commit(
+            {"package.json": self.package_with("1.0.0", typecheck="tsc --noEmit", lint="eslint .")}
+        )
+        (self.cwd / "package.json").write_text(
+            self.package_with("1.0.0", typecheck="tsc --noEmit && true", lint="eslint ."),
+            encoding="utf-8",
+        )
+        self.ran("pnpm typecheck")
+        self.ran("pnpm lint")
+        self.assertEqual(["pnpm lint"], self.titles())
+
+    def test_a_hook_added_after_the_base_withdraws_the_script_it_wraps(self) -> None:
+        self.commit({"package.json": self.package_with("1.0.0", lint="eslint .")})
+        (self.cwd / "package.json").write_text(
+            self.package_with("1.0.0", lint="eslint .", prelint="node scripts/seed.js"),
+            encoding="utf-8",
+        )
+        self.ran("pnpm lint")
+        self.assertEqual([], self.titles())
+
+    def test_a_script_that_names_a_changed_script_is_withdrawn_with_it(self) -> None:
+        self.commit(
+            {
+                "package.json": self.package_with(
+                    "1.0.0", lint="eslint .", check="pnpm lint && tsc --noEmit"
+                )
+            }
+        )
+        (self.cwd / "package.json").write_text(
+            self.package_with("1.0.0", lint="eslint . --fix", check="pnpm lint && tsc --noEmit"),
+            encoding="utf-8",
+        )
+        self.ran("pnpm check")
+        self.assertEqual([], self.titles())
+
+    def test_a_makefile_comment_edit_keeps_its_targets_and_a_changed_recipe_drops_one(self) -> None:
+        self.commit(
+            {
+                "Makefile": ".PHONY: lint test-all\nlint:\n\truff check .\ntest-all:\n\tpytest -q\n",
+            }
+        )
+        (self.cwd / "Makefile").write_text(
+            "# a note\n.PHONY: lint test-all\nlint:\n\truff check .\ntest-all:\n\tpytest -q || true\n",
+            encoding="utf-8",
+        )
+        self.ran("make lint")
+        self.ran("make test-all")
+        self.assertEqual(["make lint"], self.titles())
+
+    def test_a_session_write_to_the_file_still_drops_every_script_in_it(self) -> None:
+        self.commit({"package.json": self.package_with("1.0.0", typecheck="tsc --noEmit")})
+        self.session.write(
+            self.file("package.json"), self.package_with("2.0.0", typecheck="tsc --noEmit")
+        )
+        (self.cwd / "package.json").write_text(
+            self.package_with("2.0.0", typecheck="tsc --noEmit"), encoding="utf-8"
+        )
+        self.ran("pnpm typecheck")
+        self.assertEqual([], self.titles())
+
+    def test_a_working_file_that_will_not_parse_declares_nothing(self) -> None:
+        self.commit({"package.json": self.package_with("1.0.0", typecheck="tsc --noEmit")})
+        (self.cwd / "package.json").write_text("{", encoding="utf-8")
+        self.ran("pnpm typecheck")
+        self.assertEqual([], self.titles())
+
+
+class ALaterEditOutsideTheRecipesWithdrawsAMakefileOrJustfile(ProjectScriptTestCase):
+    MAKEFILE = ".PHONY: lint\nlint:\n\truff check .\n"
+    JUSTFILE = "typecheck:\n    mypy .\n"
+
+    def rewritten(self, name: str, committed: str, working: str, command: str) -> list[str]:
+        self.commit({name: committed})
+        (self.cwd / name).write_text(working, encoding="utf-8")
+        self.ran(command)
+        return self.titles()
+
+    def test_a_directive_added_to_a_makefile_withdraws_its_targets(self) -> None:
+        for working in (
+            ".IGNORE:\n" + self.MAKEFILE,
+            self.MAKEFILE + ".IGNORE:\n",
+            "MAKEFLAGS += -n\n" + self.MAKEFILE,
+            "export PATH := /tmp/fake:$(PATH)\n" + self.MAKEFILE,
+            "SHELL_X = y\n" + self.MAKEFILE,
+            "  .IGNORE:\n" + self.MAKEFILE,
+            self.MAKEFILE + " .IGNORE:\n",
+            self.MAKEFILE + "  MAKEFLAGS += -n\n",
+            self.MAKEFILE + "%: .SHELLFLAGS = -c 'exit 0;'\n",
+            "T = lint\n" + self.MAKEFILE + "$(T):\n\ttrue\n",
+            "T = lint\n" + self.MAKEFILE + "$(T): ; true\n",
+            self.MAKEFILE + "%.o: %.c\n\ttrue\n",
+        ):
+            with self.subTest(working=working):
+                self.fresh_repo()
+                self.assertEqual(
+                    [], self.rewritten("Makefile", self.MAKEFILE, working, "make lint")
+                )
+
+    def test_a_directive_added_to_a_justfile_withdraws_its_recipes(self) -> None:
+        for working in (
+            "export PATH := '/tmp/fake'\n" + self.JUSTFILE,
+            "set allow-duplicate-recipes\n" + self.JUSTFILE + "typecheck:\n    true\n",
+            "alias tc := typecheck\n" + self.JUSTFILE,
+        ):
+            with self.subTest(working=working):
+                self.fresh_repo()
+                self.assertEqual(
+                    [], self.rewritten("justfile", self.JUSTFILE, working, "just typecheck")
+                )
+
+    def test_a_new_target_a_comment_or_a_phony_name_keeps_the_others(self) -> None:
+        working = "# a note\n.PHONY: lint docs\nlint:\n\truff check .\ndocs:\n\tmkdocs build\n"
+        self.assertEqual(
+            ["make lint"], self.rewritten("Makefile", self.MAKEFILE, working, "make lint")
+        )
+
+    def test_a_new_recipe_keeps_a_justfile_check(self) -> None:
+        working = "# note\n" + self.JUSTFILE + "docs:\n    mkdocs build\n"
+        self.assertEqual(
+            ["just typecheck"], self.rewritten("justfile", self.JUSTFILE, working, "just typecheck")
+        )
+
+    def test_a_crlf_checkout_keeps_the_check(self) -> None:
+        working = self.MAKEFILE.replace("\n", "\r\n")
+        self.commit({"Makefile": self.MAKEFILE})
+        (self.cwd / "Makefile").write_bytes(working.encode())
+        self.ran("make lint")
+        self.assertEqual(["make lint"], self.titles())
+
+
+class ATopLevelKeyOtherThanDependenciesWithdrawsAPackageFile(ProjectScriptTestCase):
+    def package_with(self, **top: Any) -> str:
+        return json.dumps({"name": "widgets", "scripts": {"typecheck": "tsc --noEmit"}, **top})
+
+    def test_a_dependency_or_version_bump_keeps_the_check(self) -> None:
+        self.commit({"package.json": self.package_with(version="1.0.0", dependencies={"a": "1"})})
+        (self.cwd / "package.json").write_text(
+            self.package_with(version="1.1.0", dependencies={"a": "2"}, devDependencies={"b": "1"}),
+            encoding="utf-8",
+        )
+        self.ran("pnpm typecheck")
+        self.assertEqual(["pnpm typecheck"], self.titles())
+
+    def test_tool_configuration_added_after_the_base_withdraws_every_script(self) -> None:
+        for extra in (
+            {"jest": {"passWithNoTests": True}},
+            {"eslintConfig": {"ignorePatterns": ["*"]}},
+        ):
+            with self.subTest(extra=extra):
+                self.fresh_repo()
+                self.commit({"package.json": self.package_with()})
+                (self.cwd / "package.json").write_text(self.package_with(**extra), encoding="utf-8")
+                self.ran("pnpm typecheck")
+                self.assertEqual([], self.titles())
+
+
+class AnExitZeroFlagIsRefusedWhereverItIsWritten(ProjectScriptTestCase):
+    def test_ruff_short_flag_in_a_declared_body_is_refused(self) -> None:
+        for body in ("ruff check -e .", "ruff check . -e", "uv run ruff check -e ."):
+            with self.subTest(body=body):
+                project_scripts.reset()
+                self.commit({"package.json": package(lint=body)})
+                self.ran("pnpm lint")
+                self.assertEqual([], self.titles())
+
+    def test_the_short_flag_on_another_tool_is_not_an_exit_zero(self) -> None:
+        self.commit({"package.json": package(lint="eslint -e .")})
+        self.ran("pnpm lint")
+        self.assertEqual(["pnpm lint"], self.titles())
+
+    def test_a_forwarded_exit_zero_argument_is_refused(self) -> None:
+        self.commit({"package.json": package(lint="ruff check .")})
+        for command in (
+            "pnpm lint -- --exit-zero",
+            "npm run lint -- --exit-zero",
+            "pnpm lint -- --issues-exit-code=0",
+            "pnpm lint -- --issues-exit-code 0",
+            "pnpm lint -- -e",
+        ):
+            self.ran(command)
+        self.assertEqual([], self.titles())
+
+    def test_a_forwarded_path_argument_still_counts(self) -> None:
+        self.commit({"package.json": package(lint="ruff check")})
+        self.ran("pnpm lint -- src")
+        self.assertEqual(["pnpm lint -- src"], self.titles())
+
+    def test_a_listed_ruff_short_flag_is_refused(self) -> None:
+        reason, _program = project_context.listed_entry_refusal("ruff check -e .")
+        self.assertTrue(reason)
+
+
+class AFileMakeWouldReadFirstAppearingInsideTheCacheWindow(ProjectScriptTestCase):
+    def test_a_gnumakefile_added_after_a_load_withdraws_the_targets(self) -> None:
+        self.commit({"Makefile": ".PHONY: lint\nlint:\n\truff check .\n"})
+        at = 1_790_000_000.0
+        first = project_scripts.load(str(self.cwd), at)
+        assert first is not None
+        self.assertIn("lint", first.make)
+        (self.cwd / "GNUmakefile").write_text("lint:\n\ttrue\n", encoding="utf-8")
+        again = project_scripts.load(str(self.cwd), at)
+        assert again is not None
+        self.assertEqual({}, dict(again.make))
+        self.assertIn(("Makefile", project_scripts.SHADOWED_REASON), again.skipped)
+
+
+class AFileThatIsLaterRepairedIsNoLongerReported(ProjectScriptTestCase):
+    def test_a_file_repaired_in_the_work_tree_clears_its_entry(self) -> None:
+        self.commit({"package.json": package(typecheck="tsc --noEmit")})
+        at = 1_790_000_000.0
+        (self.cwd / "package.json").write_text(package(typecheck="true"), encoding="utf-8")
+        project_scripts.load(str(self.cwd), at)
+        self.assertEqual(
+            [project_scripts.EDITED_REASON], [p["reason"] for p in project_scripts.problems()]
+        )
+        (self.cwd / "package.json").write_text(package(typecheck="tsc --noEmit"), encoding="utf-8")
+        project_scripts.load(str(self.cwd), at + 1)
+        self.assertEqual([], project_scripts.problems())
+
+    def test_a_newer_commit_that_repaired_the_file_stops_the_older_commits_report(self) -> None:
+        first = dt.datetime(2026, 9, 1, 12, tzinfo=dt.UTC).timestamp()
+        later = dt.datetime(2026, 9, 3, tzinfo=dt.UTC).timestamp()
+        self.commit({"package.json": "{"})
+        project_scripts.load(str(self.cwd), first)
+        self.commit(
+            {"package.json": package(typecheck="tsc --noEmit")}, when="2026-09-02T00:00:00Z"
+        )
+        project_scripts.load(str(self.cwd), later)
+        self.assertEqual([], project_scripts.problems())
+        project_scripts.load(str(self.cwd), first + 1)
+        self.assertEqual([], project_scripts.problems())
+
+    def test_two_commits_with_different_problems_report_the_file_once(self) -> None:
+        first = dt.datetime(2026, 9, 1, 12, tzinfo=dt.UTC).timestamp()
+        later = dt.datetime(2026, 9, 3, tzinfo=dt.UTC).timestamp()
+        self.commit({"package.json": "{"})
+        project_scripts.load(str(self.cwd), first)
+        self.commit({"package.json": "["}, when="2026-09-02T00:00:00Z")
+        project_scripts.load(str(self.cwd), later)
+        self.assertEqual(
+            ["package.json"], [Path(p["file"]).name for p in project_scripts.problems()]
+        )
+
+    def test_a_load_that_notes_a_file_keeps_another_files_entry_on_the_same_commit(self) -> None:
+        self.commit({"package.json": "{", "justfile": "test:\n    pytest\n"})
+        at = 1_790_000_000.0
+        (self.cwd / "justfile").write_text(
+            'set shell := ["true"]\ntest:\n    pytest\n', encoding="utf-8"
+        )
+        project_scripts.load(str(self.cwd), at)
+        self.assertEqual(
+            {"package.json", "justfile"},
+            {Path(p["file"]).name for p in project_scripts.problems()},
+        )
+        (self.cwd / "justfile").write_text("test:\n    pytest\n", encoding="utf-8")
+        project_scripts.load(str(self.cwd), at + 1)
+        self.assertEqual(
+            ["package.json"], [Path(p["file"]).name for p in project_scripts.problems()]
+        )
+
+    def test_clean_reads_of_other_projects_never_push_a_problem_out(self) -> None:
+        # The store is bounded, and clean verdicts share it; were they evicted alongside
+        # problems, enough healthy projects would hide a broken file from --diagnose.
+        project_scripts._record("/repo/broken", "package.json", "c0", 1.0, "unparseable")
+        for n in range(2 * project_scripts._PROBLEMS_MAX):
+            project_scripts._record(f"/repo/ok{n}", "package.json", "c1", 2.0 + n, None)
+        self.assertEqual(
+            ["/repo/broken/package.json"], [p["file"] for p in project_scripts.problems()]
+        )
+
+    def test_a_path_under_home_is_shown_from_home(self) -> None:
+        self.commit({"package.json": "{"})
+        project_scripts.load(str(self.cwd), 1_790_000_000.0)
+        home = os.path.dirname(os.path.realpath(self.cwd))
+        (problem,) = project_scripts.problems(home)
+        self.assertEqual(f"~/{self.cwd.name}/package.json", problem["file"])
+        (elsewhere,) = project_scripts.problems("/nowhere/else")
+        self.assertEqual(
+            os.path.join(os.path.realpath(self.cwd), "package.json"), elsewhere["file"]
+        )
+
+    def test_diagnose_asks_for_the_paths_from_the_configured_home(self) -> None:
+        with mock.patch.object(project_scripts, "problems", return_value=[]) as problems:
+            support.diagnose()
+        problems.assert_called_once()
+        (home,) = problems.call_args.args
+        self.assertTrue(home)
+
+
+class AFileOverTheLineCapSaysSo(unittest.TestCase):
+    def test_a_justfile_and_a_makefile_over_the_line_count_have_their_own_reason(self) -> None:
+        lines = "\n" * (project_scripts.MAX_LINES + 1)
+        for name in ("justfile", "Makefile"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    (None, project_scripts.LINES_REASON),
+                    project_scripts._parse(name, lines.encode()),
+                )
+        self.assertNotEqual(project_scripts.LINES_REASON, project_scripts.SIZE_REASON)
+        self.assertIn("lines", project_scripts.LINES_REASON)
 
 
 class AnUnreadableDeclaringFileAddsNothingAndIsReported(ProjectScriptTestCase):
@@ -596,7 +1040,7 @@ class TheParsersAreBoundedInTime(unittest.TestCase):
         )
         lines = "\n" * (project_scripts.MAX_LINES + 1)
         self.assertEqual(
-            (None, project_scripts.SIZE_REASON), project_scripts._parse("justfile", lines.encode())
+            (None, project_scripts.LINES_REASON), project_scripts._parse("justfile", lines.encode())
         )
 
 

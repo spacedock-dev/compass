@@ -737,9 +737,13 @@ never a guess.
 What bounds the content: only the toplevel of the work tree the session began in; a link or special
 file in the commit's tree is refused by its mode, and one in the work tree by `lstat` before any open,
 which is non-blocking and refuses a link, so a FIFO cannot block the read; the work-tree file must
-equal the commit's blob byte for byte, so a file the session edited declares nothing, and a cached
-read is checked against the work tree again before it is used; a recorded
-write by a write tool withdraws that kind of file even if the session restored it. A file over the
+equal the commit's blob for the declaration in question, one script, target or recipe at a time, so
+a session that rewrote a script's body leaves that script a command while an unrelated later edit, a
+dependency bump, leaves the others alone (a package.json keeps its scripts through a change to its dependencies, version or other
+publishing fields, and loses them all through a change to tool configuration such as `jest` or `eslintConfig`; a Makefile or justfile loses
+every declaration through any change outside its recipes, such as an assignment, `export` or `.IGNORE`), and a cached read is checked against the work tree again before it is used; a recorded
+write by a write tool withdraws that kind of file even if the session restored it. `make` reads the first of
+`GNUmakefile`, `makefile` and `Makefile`, and so does this read. A file over the
 cap, with more than 5,000 lines, with a line over 4,096 characters, with more than 500 scripts, that does not parse, or that is a Makefile using `include`,
 conditionals, `define`, `.ONESHELL` or a custom `SHELL` adds nothing, and `--diagnose` lists it by
 path and a closed reason. The commit is the newest first-parent commit of HEAD no newer than the
@@ -751,9 +755,14 @@ sent; what is published is the session's own command line, masked and clipped as
 the vendor rule of [the command ruling](docs/design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)
 already covers. `--no-git` stops the read, and the scripts read as commands again. The residuals are
 the probe's: a repository can carry configuration of its own, and an edit made by a shell command and
-put back before the session ended is the one change neither the recorded write nor the byte
-comparison sees. [The ruling](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-projects-own-scripts-are-tier-2-checks)
-holds the rest.
+put back before the session ended is the one change neither the recorded write nor the comparison sees.
+One more is accepted. The base commit is the newest one whose commit date is no later than the
+session's first record, so a backdated `GIT_COMMITTER_DATE` can make a script the session wrote look
+committed. That needs a deliberate act on the reader's machine, and a session that wants a false pass
+can already type a runner from the closed list, so no skew check between author and committer dates is
+made: a rebase makes the same skew honestly. [The ruling](docs/design-reading-a-session.md#amended-2026-10-28-owner-a-declaration-is-compared-one-script-at-a-time)
+and [the one before it](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-projects-own-scripts-are-tier-2-checks)
+hold the rest.
 
 ### The reader's list of check commands
 

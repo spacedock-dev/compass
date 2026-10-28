@@ -8,10 +8,17 @@ this module reads it only where it cannot have been changed by the session:
   first recorded time, never from the working tree alone. Compass does not record the commit a
   session began on, so this is the stand-in; a commit the session made later is never the base;
 - only at the toplevel of the work tree the session began in;
-- and only while the working-tree file is a regular file whose bytes equal that commit's. A
-  session that edited the file, by any tool or by a shell command, leaves it different, so it
-  declares nothing. A file the session wrote and then restored is caught by the recorded write
-  (`project_context`), which the byte comparison cannot see.
+- and only for a declaration whose body in the work tree equals its body at that commit, in a
+  file that is a regular file. A later change to something else in the file (a dependency bump in
+  `package.json`) leaves a script's declaration alone; a changed body withdraws that script, and
+  so does a changed or added `pre` or `post` hook around it. A change to a `package.json` key
+  that is not a dependency or publishing field, or to anything outside the recipes of a Makefile
+  or justfile (an assignment, `export`, `.IGNORE`, `set`), withdraws the whole file. A file the
+  session wrote and then restored is caught by the recorded write (`project_context`), which a
+  comparison cannot see.
+  `make` reads the first of `GNUmakefile`, `makefile` and `Makefile`, and so does this module.
+  The rule is in
+  [DEC-29](docs/design-reading-a-session.md#amended-2026-10-28-owner-a-declaration-is-compared-one-script-at-a-time).
 
 Every bound is a constant here and not a setting: one file at most `MAX_FILE_BYTES`, at most
 `MAX_SCRIPTS` declarations, at most `len(DECLARING_FILES)` files, one `GIT_TIMEOUT_SEC` deadline for
@@ -44,15 +51,19 @@ from compass_runtime import git_status
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+# The files `make` looks for, in the order it looks, and it reads the first it finds only.
+MAKE_FILES: Final = ("GNUmakefile", "makefile", "Makefile")
 DECLARING_FILES: Final = (
     "package.json",
-    "GNUmakefile",
-    "makefile",
-    "Makefile",
+    *MAKE_FILES,
     "justfile",
     "Justfile",
     ".justfile",
 )
+# Package-manager config a session can write to change what `pnpm lint` runs (`script-shell` in an
+# `.npmrc`, `yarnPath` in a `.yarnrc.yml`) without touching the `package.json` it reads. A write of
+# one, in any folder, withdraws the package declarations like a write of `package.json` does.
+STEERING_FILES: Final = (".npmrc", ".yarnrc", ".yarnrc.yml")
 MAX_FILE_BYTES: Final = 256 * 1024
 MAX_SCRIPTS: Final = 500
 MAX_LINES: Final = 5000
@@ -68,10 +79,12 @@ _CACHE_ENTRIES: Final = 32
 _PROBLEMS_MAX: Final = 64
 
 SIZE_REASON: Final = "over the byte cap"
+LINES_REASON: Final = "has too many lines"
 LINK_REASON: Final = "a symlink, not a regular file"
 SPECIAL_REASON: Final = "not a regular file"
 MISSING_REASON: Final = "missing from the work tree"
 EDITED_REASON: Final = "differs from the commit the session began on"
+SHADOWED_REASON: Final = "a Makefile make reads first has been added or removed"
 PARSE_REASON: Final = "could not be parsed"
 FEATURE_REASON: Final = "uses syntax this reader does not follow"
 COUNT_REASON: Final = "declares too many scripts"
@@ -84,6 +97,9 @@ class Script:
 
     lines: tuple[str, ...]
     needs: tuple[str, ...] = ()
+    # The work tree's body for this declaration differs from the base commit's, so it counts as
+    # nothing, and a script that needs it or runs it as a hook counts as nothing either.
+    withdrawn: bool = False
 
 
 @dataclass
@@ -112,6 +128,8 @@ class Declarations:
     # session wrote that a listing depends on: the listing file and each listed script's name.
     listed_root: str = ""
     listing_writes: frozenset[str] = frozenset()
+    # The Makefile the load trusted, so a cached load notices a file make would now read first.
+    make_file: str | None = None
 
     def at_listed_root(self, directory: str) -> bool:
         if not directory or not self.listed_root:
@@ -134,6 +152,8 @@ class Declarations:
         """These declarations less every kind whose declaring file the session wrote, and the
         listing when `withdraw_listing` says the session wrote it."""
         gone = {_kind(name) for name in written if name in DECLARING_FILES}
+        if written & set(STEERING_FILES):
+            gone.add("package")
         if not gone & {"package", "make", "just"} and not withdraw_listing:
             return self
         empty: dict[str, Script] = {}
@@ -154,16 +174,33 @@ class Declarations:
 
 _lock = threading.Lock()
 _cache: OrderedDict[tuple[str, int], tuple[float, Declarations | None]] = OrderedDict()
-_problems: OrderedDict[tuple[str, str], str] = OrderedDict()
+_problems: OrderedDict[tuple[str, str, str], tuple[float, str | None]] = OrderedDict()
 
 
-def problems() -> list[dict[str, str]]:
-    """Each declaring file this process skipped, with why, for `--diagnose`. No file content."""
+def problems(home: str = "") -> list[dict[str, str]]:
+    """Each declaring file this process skipped, with why, for `--diagnose`. No file content.
+
+    A path under `home` is shown from it (`~/repo/package.json`), so a report pasted into an issue
+    does not carry the reader's account name.
+    """
     with _lock:
+        newest: dict[tuple[str, str], tuple[float, str | None]] = {}
+        for (top, name, _commit), (at, reason) in _problems.items():
+            if (top, name) not in newest or at >= newest[top, name][0]:
+                newest[top, name] = (at, reason)
         return [
-            {"file": os.path.join(top, name), "reason": reason}
-            for (top, name), reason in _problems.items()
+            {"file": _from_home(os.path.join(top, name), home), "reason": reason}
+            for (top, name), (_at, reason) in newest.items()
+            if reason is not None
         ]
+
+
+def _from_home(path: str, home: str) -> str:
+    for base in {home, os.path.realpath(home)} if home else ():
+        root = base.rstrip(os.sep)
+        if root and path.startswith(root + os.sep):
+            return "~" + path[len(root) :]
+    return path
 
 
 def reset() -> None:
@@ -173,12 +210,23 @@ def reset() -> None:
         _problems.clear()
 
 
-def _note(toplevel: str, name: str, reason: str) -> None:
+def _record(toplevel: str, name: str, commit: str, at: float, reason: str | None) -> None:
+    """Note this load's verdict on one file: a reason, or None for a clean read.
+
+    The entry is kept per base commit because two sessions of one project can start from different
+    commits, and `problems` shows only the newest session's verdict per file, so a file repaired in
+    a newer commit stops being reported and one file never appears twice. A clean read is kept, not
+    dropped, so a later load of an older session cannot bring the older commit's problem back.
+    """
+    key = (toplevel, name, commit)
     with _lock:
-        _problems[(toplevel, name)] = reason
-        _problems.move_to_end((toplevel, name))
+        _problems[key] = (at, reason)
+        _problems.move_to_end(key)
+        # Over the bound, a clean verdict goes first: evicting by age alone let enough healthy
+        # projects push a broken file out of `--diagnose`.
         while len(_problems) > _PROBLEMS_MAX:
-            _problems.popitem(last=False)
+            clean = next((k for k, (_at, why) in _problems.items() if why is None), None)
+            del _problems[clean if clean is not None else next(iter(_problems))]
 
 
 def load(
@@ -209,11 +257,14 @@ def load(
 
 
 def _still_committed(held: Declarations) -> bool:
-    """Whether every trusted file in the work tree still holds the bytes it was trusted with.
+    """Whether every trusted file in the work tree still holds the bytes it was read with.
 
     The cache outlives a shell edit by up to `CACHE_SECONDS` otherwise, and a declaration read in
-    that window would be one the session wrote. No git run is needed: the digests are held.
+    that window would be one the session wrote. No git run is needed: the digests are held, and are
+    of the work tree's bytes at load, so a later edit of any kind runs the load again.
     """
+    if held.make_file is not None and _first_make(held.toplevel) != held.make_file:
+        return False
     for name, digest in held.digests.items():
         working, reason = _working_bytes(os.path.join(held.toplevel, name))
         if reason is not None or working is None or hashlib.sha256(working).digest() != digest:
@@ -237,20 +288,22 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
     skipped: list[tuple[str, str]] = []
     trusted: set[str] = set()
     digests: dict[str, bytes] = {}
+    committed_make = next(
+        (name for name in MAKE_FILES if any(e.name == name for e in committed.entries)), None
+    )
     for entry in committed.entries:
-        reason = _unusable(entry, top)
-        parsed: dict[str, Script] | None = None
-        if reason is None:
-            assert entry.content is not None  # noqa: S101 - `_unusable` returned None only then
-            parsed, reason = _parse(entry.name, entry.content)
-        if reason is not None or parsed is None:
-            skipped.append((entry.name, reason or PARSE_REASON))
-            _note(top, entry.name, reason or PARSE_REASON)
+        if _kind(entry.name) == "make" and entry.name != committed_make:
             continue
+        parsed, working, reason = _declarations(entry, top, committed_make)
+        if reason is not None or parsed is None or working is None:
+            skipped.append((entry.name, reason or PARSE_REASON))
+            _record(top, entry.name, committed.commit, at, reason or PARSE_REASON)
+            continue
+        _record(top, entry.name, committed.commit, at, None)
         trusted.add(entry.name)
-        assert entry.content is not None  # noqa: S101 - a trusted entry was read
-        digests[entry.name] = hashlib.sha256(entry.content).digest()
-        # A name two files of a kind both declare is read from the first, as `make` and `just` do.
+        digests[entry.name] = hashlib.sha256(working).digest()
+        # A name two files of a kind both declare is read from the first, as `just` does; `make`
+        # reads one file, so only one is here.
         for name, script in parsed.items():
             by_kind[_kind(entry.name)].setdefault(name, script)
     try:
@@ -267,6 +320,7 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
         frozenset(trusted),
         real,
         digests,
+        make_file=committed_make,
     )
 
 
@@ -276,18 +330,165 @@ def _kind(name: str) -> str:
     return "make" if name.lower() in ("gnumakefile", "makefile") else "just"
 
 
-def _unusable(entry: git_status.CommittedEntry, toplevel: str) -> str | None:
-    """Why a committed file may not declare anything, or None when its bytes are trusted."""
+def _declarations(
+    entry: git_status.CommittedEntry, toplevel: str, committed_make: str | None
+) -> tuple[dict[str, Script] | None, bytes | None, str | None]:
+    """A committed file's declarations as the work tree still holds them, its work-tree bytes,
+    and why it declares nothing, if it does not.
+
+    Each declaration is compared with its own body in the work tree: one whose body is unchanged
+    stands, whatever else the file now says, and one that differs is kept as `withdrawn`, so a
+    script that names it, or a hook around it, is refused too and does not read as absent.
+    """
+    content = entry.content
+    reason = _committed_refusal(entry)
+    working, refusal = (
+        (None, reason) if reason else _working_bytes(os.path.join(toplevel, entry.name))
+    )
+    if refusal is None and _kind(entry.name) == "make" and _first_make(toplevel) != committed_make:
+        refusal = SHADOWED_REASON
+    if refusal is not None or working is None or content is None:
+        return None, None, refusal or SPECIAL_REASON
+    return _compare(entry.name, content, working)
+
+
+def _compare(
+    name: str, content: bytes, working: bytes
+) -> tuple[dict[str, Script] | None, bytes | None, str | None]:
+    parsed, reason = _parse(name, content)
+    if reason is not None or parsed is None:
+        return None, None, reason or PARSE_REASON
+    if working == content:
+        return parsed, working, None
+    now, _why = _parse(name, working)
+    if now is None:
+        return None, None, EDITED_REASON
+    kind = _kind(name)
+    if _outside_declarations(kind, content) != _outside_declarations(kind, working):
+        return None, None, EDITED_REASON
+    carried = _carry(kind, parsed, now)
+    if parsed and all(script.withdrawn for script in carried.values()):
+        return None, None, EDITED_REASON
+    return carried, working, None
+
+
+# Top-level `package.json` keys a later edit may change without withdrawing the file. Anything
+# else (`jest`, `eslintConfig`, `mocha`) configures the tool a script runs and can turn a failing
+# check into a passing one, so a change there withdraws every script in the file.
+_PACKAGE_FREE_KEYS: Final = frozenset(
+    {"dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "version",
+     "name", "description", "keywords", "license", "author", "homepage", "repository", "bugs",
+     "packageManager", "engines", "files", "main", "module", "types", "exports", "bin",
+     "private", "scripts"}
+)  # fmt: skip
+
+
+def _outside_declarations(kind: str, data: bytes) -> object:
+    """What a file says beyond its declarations, which a later edit may not change."""
+    return _package_outside_scripts(data) if kind == "package" else _directives(kind, data)
+
+
+def _package_outside_scripts(data: bytes) -> object:
+    try:
+        parsed = json.loads(data.decode("utf-8"))
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return {key: value for key, value in parsed.items() if key not in _PACKAGE_FREE_KEYS}
+
+
+def _directives(kind: str, data: bytes) -> tuple[str, ...]:
+    """The lines of a Makefile or justfile that are not blank, a comment, a recipe line or an
+    ordinary recipe header: assignments, `export`, `.IGNORE` and the like, `set`, `alias`. Each
+    changes what a recipe means without touching the recipe, so a work tree whose set differs from
+    the commit's withdraws the whole file. `.PHONY` is left out: naming one more is harmless."""
+    try:
+        text = data.decode("utf-8")
+        lines = _logical_lines(text) if kind == "make" else text.splitlines()
+    except (UnicodeDecodeError, _LineTooLong):
+        return ("\0",)
+    found: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # make reads a line that does not start with a tab as a directive even when a space
+        # indents it, so only a justfile's indented line is a recipe line here.
+        recipe_lead = ("\t",) if kind == "make" else ("\t", " ")
+        if not stripped or stripped.startswith("#") or line[:1] in recipe_lead:
+            continue
+        ordinary = _make_ordinary(stripped) if kind == "make" else _just_ordinary(stripped)
+        if not ordinary:
+            found.append(stripped)
+    return tuple(found)
+
+
+def _make_ordinary(line: str) -> bool:
+    if _MAKE_ASSIGNMENT.match(line):
+        return False
+    rule = _make_rule(line)
+    if rule is None:
+        return False
+    names, colons, rest = rule
+    # `%: .SHELLFLAGS = ...` is a target-specific variable, so an `=` before any `;` recipe makes
+    # the line a directive however plain its target looks.
+    if "=" in rest.partition(";")[0]:
+        return False
+    # A target built from a variable or a pattern (`$(T):`, `%.o:`) can be an existing target's
+    # name with a later recipe, which make runs in place of the committed one, and the working
+    # parse cannot name it, so it counts as a directive.
+    return names == [".PHONY"] or (
+        len(names) == 1
+        and colons == ":"
+        and not names[0].startswith(".")
+        and not any(ch in names[0] for ch in "$%*")
+    )
+
+
+def _just_ordinary(line: str) -> bool:
+    if line.startswith(("alias ", "set ", "export ", "unexport ")) or _JUST_ATTRIBUTE.match(line):
+        return bool(_JUST_ATTRIBUTE.match(line))
+    return _just_header(line) is not None
+
+
+def _committed_refusal(entry: git_status.CommittedEntry) -> str | None:
     if entry.mode == "120000":
         return LINK_REASON
     if entry.mode not in ("100644", "100755"):
         return SPECIAL_REASON
-    if entry.content is None or entry.size > MAX_FILE_BYTES:
-        return SIZE_REASON
-    working, reason = _working_bytes(os.path.join(toplevel, entry.name))
-    if reason is not None:
-        return reason
-    return None if working == entry.content else EDITED_REASON
+    return SIZE_REASON if entry.content is None or entry.size > MAX_FILE_BYTES else None
+
+
+def _first_make(toplevel: str) -> str | None:
+    """The file `make` would read in this work tree, by exact name: on a case-insensitive disk
+    `lstat("makefile")` finds `Makefile`, which would read as a file that was added."""
+    try:
+        present = {entry.name for entry in os.scandir(toplevel)}
+    except OSError:
+        return None
+    return next((name for name in MAKE_FILES if name in present), None)
+
+
+def _carry(
+    kind: str, committed: dict[str, Script], working: dict[str, Script]
+) -> dict[str, Script]:
+    """The committed declarations, each marked withdrawn where the work tree's body differs.
+
+    A script is changed when its body, or what it needs, is not what the work tree holds, and a
+    declaration the work tree no longer parses counts as changed. For a package, a `pre` or `post`
+    hook that was added or changed withdraws the script it wraps, since the package manager runs
+    it around that script.
+    """
+    changed = {name for name, script in committed.items() if working.get(name) != script}
+    if kind == "package":
+        for name in committed.keys() | working.keys():
+            if committed.get(name) != working.get(name):
+                changed.update(
+                    name[len(prefix) :] for prefix in ("pre", "post") if name.startswith(prefix)
+                )
+    return {
+        name: replace(script, withdrawn=True) if name in changed else script
+        for name, script in committed.items()
+    }
 
 
 class _Refused(Exception):  # noqa: N818 - a refusal with its reason, not an error the caller reports
@@ -359,7 +560,7 @@ def _parse(name: str, content: bytes) -> tuple[dict[str, Script] | None, str | N
 
 def _parse_line_file(kind: str, text: str) -> tuple[dict[str, Script] | None, str | None]:
     if text.count("\n") > MAX_LINES:
-        return None, SIZE_REASON
+        return None, LINES_REASON
     if any(len(line) > MAX_LINE_CHARS for line in text.splitlines()):
         return None, LINE_REASON
     try:

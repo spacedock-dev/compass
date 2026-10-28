@@ -3312,6 +3312,10 @@ def _package_invocation(
         or _SCRIPT_NAME_RE.fullmatch(name) is None
         or any(arg.startswith("-") for arg in own)
         or any(arg.split("=", 1)[0] in _SCRIPT_WRITING_ARGS for arg in (*own, *forwarded))
+        or _exits_zero_by_flag(forwarded)
+        # The script's body is not read here, and `-e` is ruff's exit-zero switch, so a forwarded
+        # bare `-e` is refused rather than guessed at.
+        or "-e" in forwarded
     ):
         return None
     return "package", [name]
@@ -3326,7 +3330,30 @@ def _partition_double_dash(args: list[str]) -> tuple[list[str], list[str], list[
 
 # Variables that change which script or recipe a package manager, `make` or `just` runs, or
 # whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`).
-_STEERING_VARIABLE_RE = re.compile(r"^(?:npm_config_|JUST_)|^(?:MAKEFLAGS|MAKE)$", re.IGNORECASE)
+_STEERING_VARIABLE_RE = re.compile(
+    r"^(?:npm_config_|JUST_|YARN_)|^(?:MAKEFLAGS|GNUMAKEFLAGS|MFLAGS|MAKEFILES|MAKEOVERRIDES|MAKE)$",
+    re.IGNORECASE,
+)
+# A linter's own switch that makes it exit zero whatever it finds, so the body cannot fail.
+_EXIT_ZERO_FLAG = "--exit-zero"
+_EXIT_CODE_FLAG = "--issues-exit-code"
+
+
+def _exits_zero_by_flag(words: list[str]) -> bool:
+    """Whether a command's own arguments make it exit zero (`ruff check --exit-zero`,
+    `golangci-lint run --issues-exit-code=0`), which `|| true` and `exit 0` do from outside."""
+    # `-e` is ruff's short spelling, and means something else to other tools, so it counts only
+    # in a command that names ruff (`uv run ruff check -e .`).
+    names_ruff = any(os.path.basename(word) == "ruff" for word in words)
+    for index, word in enumerate(words):
+        flag, _, value = word.partition("=")
+        if flag == _EXIT_ZERO_FLAG or (names_ruff and word == "-e"):
+            return True
+        if flag == _EXIT_CODE_FLAG:
+            given = value if "=" in word else (words[index + 1] if index + 1 < len(words) else "")
+            if given == "0":
+                return True
+    return False
 
 
 def _steers_a_script(raw: tuple[str, ...]) -> bool:
@@ -3380,6 +3407,7 @@ def _script_line_is_check(
             or (index < len(parts) - 1 and part.joiner != "&&")
             or _is_fixer(words)
             or _always_zero(words)
+            or _exits_zero_by_flag(words)
             or _steers_a_script(part.raw)
             or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
         ):
@@ -3413,6 +3441,7 @@ def _script_is_check(
     result = False
     if (
         script is not None
+        and not script.withdrawn
         and identity not in trail
         and (not named or _script_name_ok(name, script.lines))
     ):
@@ -3542,7 +3571,7 @@ def listed_entry_refusal(entry: str) -> tuple[str, str]:
     program = reader_checks.program_of(words)
     listed = _listed_inner(list(words))
     reason = ""
-    if _always_zero(listed):
+    if _always_zero(listed) or _exits_zero_by_flag(listed):
         reason = reader_checks.CANNOT_FAIL_REASON
     elif os.path.basename(listed[0]) in _LISTED_BUILTINS:
         reason = reader_checks.BUILTIN_REASON
@@ -4476,10 +4505,16 @@ class _ShellCall:
         # reader, so it ages earlier passes as any command whose effects are not known does
         # (`changes`, `changes_later_in_call`). It is not in `changing_others`, which would stop
         # its own output from being read as the call's one check's.
+        # A variable a segment sets for the rest of the call (`export MAKEFLAGS=-n; make lint`)
+        # steers every later segment, which its own words do not show.
+        steered_from = next(
+            (i for i, part in enumerate(self.parts) if _steers_a_script(part.raw)), len(self.parts)
+        )
         self.declared_checks = [
             i
             for i in self.meaningful
             if i not in self.checks
+            and i <= steered_from
             and self.placed[i]
             and _declared_check(declared, self.directories[i], self.words[i][0], self.parts[i].raw)
         ]
@@ -4489,6 +4524,7 @@ class _ShellCall:
             for i in self.meaningful
             if i not in self.checks
             and i not in self.declared_checks
+            and i <= steered_from
             and _listed_check(
                 declared,
                 self.words[i][0],
@@ -6043,12 +6079,19 @@ def _written_declaring_files(
     shell command that names the listing anywhere in its text counts as writing it: a redirect, a
     `cp`, a `tee`, a `sed -i` or an interpreter's argument all do, and a read of it withdraws the
     listing too, which fails closed. What it does not see is a script or a variable that builds the
-    path. A shell write of a declaring file is decided by the work tree's bytes
-    (`project_scripts`); a shell write of a name in `also` is read from the call's redirects and
-    its `cp`, `mv`, `tee` and `chmod` arguments. Read through `_claude_tool_uses`, the one place a
-    tool call's input is read.
+    path. A shell write of a declaring file is decided by the work tree's contents, compared with
+    the base commit's (`project_scripts`); a shell write of a name in `also` is read from the
+    call's redirects and its `cp`, `mv`, `tee` and `chmod` arguments. Read through
+    `_claude_tool_uses`, the one place a tool call's input is read.
     """
-    watched = frozenset((*project_scripts.DECLARING_FILES, reader_checks.FILENAME, *also))
+    watched = frozenset(
+        (
+            *project_scripts.DECLARING_FILES,
+            *project_scripts.STEERING_FILES,
+            reader_checks.FILENAME,
+            *also,
+        )
+    )
     found: set[str] = set()
     streams = [_claude_tool_uses(parent), *(_claude_tool_uses(c, sidechain=True) for c in children)]
     for stream in streams:
@@ -6062,6 +6105,9 @@ def _written_declaring_files(
             if name == "Bash" and isinstance(command, str):
                 if reader_checks.FILENAME in command:
                     found.add(reader_checks.FILENAME)
+                # Fails closed like the listing: a command that names a package-manager config
+                # file may have written it, and which script a runner starts follows from it.
+                found.update(n for n in project_scripts.STEERING_FILES if n in command)
                 if also:
                     found |= _shell_names(command, also)
     return frozenset(found)
@@ -6080,15 +6126,18 @@ def _declared_scripts(
 
     The project's own scripts: the base commit is the one HEAD was on at the transcript's first
     stamped record, since Compass does not record the commit a session began on; a clipped read
-    falls back to its oldest record, which is later, and the work tree's byte comparison still
-    refuses a file the session changed. And the commands the reader listed for the project, which
-    no git read is needed for. A page of the paged reader holds only its own rows, so the names an
-    earlier page saw written ride in as `prior_writes`, since no byte comparison covers them.
+    falls back to its oldest record, which is later, and the work tree comparison still refuses
+    a changed declaration (one script at a time for a `package.json`; for a Makefile or justfile,
+    any change outside the recipes withdraws the file). And the commands the reader listed for the
+    project, which no git read is needed for. A page of the paged reader holds only its own rows,
+    so the names an earlier page saw written ride in as `prior_writes`, since no work tree
+    comparison covers them.
     """
     if not began_in:
         return None
     loaded: project_scripts.Declarations | None = None
-    # `--no-git` means no git command runs in any repository, and this reader runs three.
+    # `--no-git` means no git command runs in any repository, and this reader runs git reads of
+    # its own (`git_status.read_committed`).
     if config.git_probe_enabled:
         start = claude_data.head_start(config, transcript_path) or _oldest_at(parent)
         loaded = project_scripts.load(began_in, start) if start is not None else None

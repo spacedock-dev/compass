@@ -7778,6 +7778,55 @@ another package's script, another directory's or none (`--filter`, `-r`, `-w`, `
 `--prefix`, `--workspace`, `--script-shell`, `--ignore-scripts`), because the declaration Compass read is
 not necessarily the one that ran.
 
+### Amended 2026-10-28 (owner): a declaration is compared one script at a time
+
+The 2026-10-27 amendment above compared the whole declaring file with its commit, so one unrelated later edit
+(a dependency bump in `package.json`) turned every earlier session's declared checks back into commands.
+This amendment replaces that comparison and hardens the read around it. Where the two differ, this one wins.
+
+- **A declaration counts when its own body is unchanged.** The body of that script, target or recipe in the
+  work tree must equal its body at the session's base commit, and the session must have made no recorded
+  write to the declaring file. A changed `dependencies` block no longer disqualifies `scripts.test`. For a
+  `package.json`, the keys that may change without withdrawing the file are `dependencies`,
+  `devDependencies`, `peerDependencies`, `optionalDependencies`, `version`, `name`, `description`,
+  `keywords`, `license`, `author`, `homepage`, `repository`, `bugs`, `packageManager`, `engines`, `files`,
+  `main`, `module`, `types`, `exports`, `bin` and `private`; a change to any other top-level key (`jest`,
+  `eslintConfig`, `mocha`) configures the tool a script runs and withdraws every script in the file. For a
+  Makefile or a justfile, anything outside the recipes is compared as a whole: an assignment, `export`,
+  `include`, a special target such as `.IGNORE`, and in a justfile `set` and `alias`. Any change there
+  withdraws every declaration in the file, while a new ordinary target or recipe, a comment, a `.PHONY`
+  line or a line-ending change does not. The Windows line-ending skip in the 2026-10-27 bullets above
+  (a CRLF checkout differing byte for byte) no longer applies, and the whole-file byte wording there is
+  replaced by this rule. A
+  changed body withdraws that one declaration, and a script that names a withdrawn one, or that a `pre` or
+  `post` hook wraps where the hook was added or changed, is withdrawn with it. A work-tree file that will not
+  parse, or that has no declaration left standing, declares nothing and `--diagnose` says it differs from the
+  commit. The cache keeps a digest of the work-tree bytes it read, so a later edit of any kind runs the
+  comparison again.
+- **The residual is the same.** An edit by a shell command that changes a body and then puts it back is
+  invisible to the comparison, as it was to the byte check. A recorded write by a write tool still withdraws
+  every declaration in that kind of file.
+- **`make` reads one file.** It takes the first of `GNUmakefile`, `makefile` and `Makefile`, so only that file
+  is read at the base commit, and a different first file in the work tree withdraws the Makefile
+  declarations. The two are no longer merged.
+- **The base commit is chosen by commit date, and that is accepted.** A backdated `GIT_COMMITTER_DATE` can
+  make a declaration the session wrote look committed. It takes a deliberate act on the machine, and an agent
+  that wants a false pass can already type a closed-list runner. An author-against-committer skew check was
+  weighed and left out: a rebase or a cherry-pick makes the skew honestly, and an attacker who backdates one
+  date backdates both. [SECURITY.md](../SECURITY.md#the-committed-file-read-project-check-scripts) lists it.
+- **More spellings refuse.** A steering variable (`MAKEFLAGS`, `GNUMAKEFLAGS`, `MFLAGS`, `MAKEFILES`,
+  `MAKEOVERRIDES`, `MAKE`, `npm_config_*`, `JUST_*`, `YARN_*`) set by an earlier segment of the same call
+  (`export MAKEFLAGS=-n; make lint`) leaves every later script a command, as one set on the segment itself
+  already did. A body that tells its linter to exit zero (`--exit-zero`, `--issues-exit-code=0`, ruff's `-e`)
+  never counts, and neither does a reader-listed command that does or a call that forwards one after `--`.
+- **Package-manager config counts as the file.** A recorded write to an `.npmrc`, `.yarnrc` or `.yarnrc.yml`
+  in any folder withdraws the package declarations, because `script-shell` or `yarnPath` there changes what
+  `pnpm lint` runs without touching `package.json`. A shell call that names one counts as a write.
+  A Makefile rule whose target holds `$`, `%` or `*` is a directive, since it can restate an existing target.
+- **What `--diagnose` shows.** A file that is later repaired, or removed from the commit, stops being listed.
+  Paths under the home folder are shown from it (`~/...`), and a Makefile or justfile over the line cap says it
+  has too many lines instead of reading "over the byte cap".
+
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
 Decided by the owner on 2026-10-27 (DRC-4973). This layer writes the ruling down; the layers that follow build
