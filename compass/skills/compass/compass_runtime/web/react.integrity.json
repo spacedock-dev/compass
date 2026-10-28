@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2159515,
+    "bytes": 2159663,
     "file": "react.html",
-    "sha256": "b507cee9cb7786803327753d540d1c3cfbe90dc6f1cd2e73820936c7a40bba58"
+    "sha256": "272894342325d9800634e29d597ecd7ae8fc814c73817f850391f09c46fb1e9e"
   },
   "format": 1,
   "frontend": "react",
@@ -995,7 +995,7 @@
       },
       {
         "file": "frontend/src/project/ProjectsView.tsx",
-        "sha256": "a4265c05b79b812e5cd2a6cc53801c6377e71344e1bf82f6ac3ef5e2057818f4"
+        "sha256": "348b9963193c0c8237827a79c5a3e24132711a48c624fed9493c3aa380ecbd20"
       },
       {
         "file": "frontend/src/project/RecoveryStrip.tsx",
