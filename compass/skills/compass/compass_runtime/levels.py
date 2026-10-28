@@ -624,8 +624,35 @@ class _LineTally:
         ]
         if resolved.get("result") == reading.RESULT_CONSISTENT and not why and (passes or done):
             self.shown.extend(resolved["cites"])
+        elif resolved.get("result") == reading.RESULT_CONSISTENT and not why and self._ci_green():
+            # The pull request's own checks back a consistent line the model did not cite them for,
+            # when every check that counts passed on the session's commit or on a pull request
+            # merged into its branch (owner, 2026-10-28): a burndown's goal is shown done by its
+            # merged pull requests, and the model cites what the agent said about them instead.
+            self.shown.extend(self._ci_passes())
         else:
             self.not_shown += 1
+
+    def _ci_passes(self) -> list[str]:
+        return [
+            entry_id
+            for entry_id, entry in self.by_id.items()
+            if entry.get("subject") == reading.CI_CHECK_SUBJECT
+            and entry.get("result") == reading.CI_RESULT_PASSED
+            and entry.get("ci_counts") is True
+            and entry.get("work") is True
+        ]
+
+    def _ci_green(self) -> bool:
+        """Counted CI checks the press read, at least one passing and none failing."""
+        counted = [
+            entry
+            for entry in self.by_id.values()
+            if entry.get("subject") == reading.CI_CHECK_SUBJECT and entry.get("ci_counts") is True
+        ]
+        return bool(self._ci_passes()) and all(
+            entry.get("result") == reading.CI_RESULT_PASSED for entry in counted
+        )
 
 
 def _analysis_entries(facts: Sequence[Mapping[str, Any]]) -> dict[str, reading.LedgerEntry]:

@@ -252,3 +252,41 @@ describe('the pull request check read, as the card says it', () => {
     });
   });
 });
+
+describe('a pull request merged into the session’s branch', () => {
+  const merged = { head: 'b'.repeat(40), head_matches: false, merged_in: true };
+
+  it('counts its checks and says why its head is not the session’s commit', () => {
+    const note = ciReadNote(accepted(merged), '10:00');
+    expect(note.state).toBe('settles');
+    expect(note.lines).toContain(
+      'The pull request was merged into this session’s branch, so its checks count.',
+    );
+    expect(note.lines).toContain('Every check that counts passed on the merged pull request.');
+    expect(note.lines.join(' ')).not.toContain('settle nothing');
+    const [entry] = ciEntries(accepted(merged), 'claude', 's1');
+    expect(entry?.ciCounts).toBe(true);
+    expect(entry?.summary).toContain('merged into this session');
+  });
+
+  it('counts a failure on it against the work', () => {
+    const note = ciReadNote(accepted({ ...merged, counts: counts({ pass: 1, fail: 1 }) }), '10:00');
+    expect(note.state).toBe('settles');
+    expect(note.lines).toContain(
+      'A failing check on the merged pull request counts against the work.',
+    );
+  });
+
+  it('reads a record stored before the field as not merged in', () => {
+    // `record` never writes `merged_in`, as a record stored before the field was kept.
+    const ci = readingCi(record({ head: 'b'.repeat(40), head_matches: false }));
+    expect(ci).not.toBeNull();
+    expect(ciReadNote(ci as CiRead, 'x').state).toBe('unsettled');
+  });
+
+  it('refuses a record that claims both, or merged in with no session commit', () => {
+    expect(readingCi(record({ merged_in: true }))).toBeNull();
+    expect(readingCi(record({ ...merged, session_head: '' }))).toBeNull();
+    expect(readingCi(record({ ...merged, merged_in: 'yes' }))).toBeNull();
+  });
+});

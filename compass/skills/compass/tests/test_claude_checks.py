@@ -2361,6 +2361,8 @@ class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase)
         )
 
     def test_an_earlier_failure_in_the_window_does_not_fail_the_last_check(self) -> None:
+        # `echo go` may print, so the ordered reading of `test_ordered_summaries` reads nothing
+        # here either, and mypy stays unrecorded.
         self.assertEqual(
             {"mypy .": "not-recorded", "ruff check .": "passed"},
             self.results_of(

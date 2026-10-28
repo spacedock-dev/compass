@@ -17,6 +17,8 @@ export function documentTitle(route: Route, data: PayloadData | null): string {
       return 'Compass — Sessions';
     case 'intent':
       return 'Compass — Intent log';
+    case 'settings':
+      return 'Compass — Settings';
     case 'project':
       return `${route.project} — Compass`;
     case 'session': {

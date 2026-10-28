@@ -526,8 +526,8 @@ def _base_parts(
     # The newest final reply goes whole (owner amendment, 2026-10-05), and it is the only
     # message that does: every other keeps the cap above, and no shell or tool output joins it.
     final = (
-        "The agent's newest final reply, as its transcript records one, goes whole instead "
-        f"where it fits {_FINAL_REPLY_BYTES:,} bytes."
+        "The agent's newest final reply, as its transcript records one, goes whole, up to "
+        f"{_FINAL_REPLY_CHARS:,} characters."
         if harness in AGENT_MESSAGE_HARNESSES
         else ""
     )
@@ -567,10 +567,12 @@ _CLI_ADDS = {
 # which the `Sent:` item states. Copied rather than imported, because this module
 # sits below `reading` in the import graph; a test holds the two equal.
 _WORDS_CAP = 1_000
-# The bytes the newest final reply may take whole: the agent's share of the prompt
-# (`observer.OBSERVER_MODEL_MAX_PROMPT_BYTES` over `reading.AGENT_WORDS_SHARE_DIVISOR`). Copied
-# for the same reason, and held equal by a test.
-_FINAL_REPLY_BYTES = 4_096
+# The most the newest final reply may hold and still go whole
+# (`project_context.FINAL_WORDS_MAX_CHARS`). It also needs the agent's share of the prompt, a
+# quarter of the reader's prompt size, which at the 512 KiB default is far more; the old 16 KiB
+# bound gave it 4,096 bytes, which the notice used to name. Copied for the same reason, and held
+# equal by a test.
+_FINAL_REPLY_CHARS = 16_384
 
 
 # The one line a press's notice carries for the GitHub and GitLab read, as the ruling asks:

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import copy
 import dataclasses
+import functools
 import hashlib
 import heapq
 import json
@@ -780,10 +782,21 @@ class PressMessages(NamedTuple):
 
 
 class PressWindow(NamedTuple):
-    """A press's request to read messages back: the window's start and the file it stamped."""
+    """A press's request to read messages back: the window's start and the file it stamped.
+
+    `cap` is how many of the session's messages and checks the press keeps: the reader's
+    `settings.analyze_record_events`. The project page keeps `MAX_PROJECT_EVENTS`.
+    """
 
     start: float
     stamp: tuple[int, int, int, int] | None
+    cap: int = MAX_PROJECT_EVENTS
+    # How many of the focused session's checks and writes the press lists: the reader's
+    # `settings.analyze_listed_checks`. None keeps the page's `TOOL_REPORT_MAX_ENTRIES`.
+    listed: int | None = None
+    # How many bytes of the session and its subagents' transcripts the press scans for checks: the
+    # reader's `settings.analyze_scan_megabytes`. None keeps `turn_scan_max_bytes`.
+    scan_bytes: int | None = None
 
 
 def _message_text_chars(record: Mapping[str, Any]) -> int:
@@ -814,9 +827,17 @@ class _MessageRead:
     replayed record cannot make a partial read look complete, and an unread region freezes it.
     """
 
-    def __init__(self, config: RuntimeConfig, harness: str, sid: str, window_start: float) -> None:
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        harness: str,
+        sid: str,
+        window_start: float,
+        cap: int = MAX_PROJECT_EVENTS,
+    ) -> None:
         self.config, self.harness, self.sid = config, harness, sid
         self.window_start = window_start
+        self.cap = cap
         self.found: list[dict[str, Any]] = []
         # Turn-closing agent messages found after `found` was full, each with the reader's message
         # that followed it, newest first and bounded: the oldest `PRESS_ANCHORS` stay, which are
@@ -848,7 +869,7 @@ class _MessageRead:
     @property
     def full(self) -> bool:
         # One past the cap, as before: a window of exactly the cap's size is whole.
-        return len(self.found) > MAX_PROJECT_EVENTS
+        return len(self.found) > self.cap
 
     def stop(self, skipped: bool = False) -> bool:
         if skipped:
@@ -970,12 +991,12 @@ def press_message_events(
     outgrows before its first turn: measured on a 1.82 MB transcript the tail began four minutes
     after the Goal, so what the agent said it had done was outside it. This reads backward under
     the press bounds (`direction_scan_max_*`) and stops at `PRESS_OLDER_RUN` records older than the
-    window. It keeps the newest `MAX_PROJECT_EVENTS` messages, which is all the project cap can
-    keep, and goes on reading for the closing agent message of each earlier turn, the oldest
-    `PRESS_ANCHORS` of them: stopping at the cap read only the newest messages and never reached the
-    first turns an early Goal rests on. What it saw and did not keep is `MessageReach.lost`.
-    Enlarging `tail_bytes` instead is a recorded rejection: docs/design-session-record-pages.md,
-    "Rejected alternatives".
+    window. It keeps the newest `window.cap` messages (the reader's `analyze_record_events`, which
+    the press's timeline keeps too), and goes on reading for the closing agent message of each
+    earlier turn, the oldest `PRESS_ANCHORS` of them: stopping at the cap read only the newest
+    messages and never reached the first turns an early Goal rests on. What it saw and did not
+    keep is `MessageReach.lost`. Enlarging `tail_bytes` instead is a recorded rejection:
+    docs/design-session-record-pages.md, "Rejected alternatives".
 
     Both kinds are emitted although the history store also supplies person messages: coverage
     claims the whole message record was read, and that claim cannot rest on a backfill this read
@@ -986,7 +1007,7 @@ def press_message_events(
         return None
     from . import record_pages  # noqa: PLC0415 - shared reader imports the fact builders
 
-    read = _MessageRead(config, harness, sid, window.start)
+    read = _MessageRead(config, harness, sid, window.start, window.cap)
     scan = record_pages.scan_source(
         config,
         transcript_path,
@@ -4200,6 +4221,12 @@ def _summary_runner(words: list[str]) -> str:
     words = _runner_words(words)
     if _PYTHON_RE.match(words[0]) and words[1:3] == ["-m", "unittest"]:
         return "unittest"
+    if _PYTHON_RE.match(words[0]) and _RUN_TESTS_SCRIPT.fullmatch(
+        os.path.basename(words[1:2][0] if words[1:2] else "")
+    ):
+        # A project's own unittest wrapper (`scripts/run_tests.py` here, Django's `runtests.py`):
+        # its summary is unittest's, and it is read under unittest's rules, `Ran N tests` and all.
+        return "unittest"
     if os.path.basename(words[0]) in ("pytest", "py.test") or (
         _PYTHON_RE.match(words[0]) and words[1:3] == ["-m", "pytest"]
     ):
@@ -4222,6 +4249,14 @@ def _node_or_gradle_runner(words: list[str]) -> str:
     return "node" if words[0] == "node" and "--test" in words else ""
 
 
+@functools.lru_cache(maxsize=8)
+def _redacted(text: str) -> str:
+    """`records.redact_secrets`, which reads nothing but its argument, remembered for the call at
+    hand: each check in a shell call redacted the call's whole output again, and on an 18-hour
+    session with its subagents that was 22 of 34 seconds (measured 2026-10-28)."""
+    return records.redact_secrets(text)
+
+
 def _summary_for(
     call: _ShellCall, index: int, words: list[str], attributable: bool, *, tail: str
 ) -> str:
@@ -4233,7 +4268,7 @@ def _summary_for(
     runner = _summary_runner(words)
     if any(_summary_runner(call.words[c][0]) == runner for c in call.checks if c < index):
         return ""
-    return _last_line_summary(words, records.redact_secrets(tail))
+    return _last_line_summary(words, _redacted(tail))
 
 
 def _last_line_summary(words: list[str], text: str) -> str:
@@ -4260,15 +4295,42 @@ def _last_line_summary(words: list[str], text: str) -> str:
         return "failed"
     if not passed.fullmatch(last) or cancelled:
         return ""
-    return "" if _pass_is_refused(runner, lines) else "passed"
+    return "" if _pass_is_refused(runner, lines, words) else "passed"
 
 
-def _pass_is_refused(runner: str, lines: list[str]) -> bool:
+def _pass_is_refused(runner: str, lines: list[str], words: list[str] | None = None) -> bool:
     anywhere = _FAILS_ANYWHERE.get(runner)
     if anywhere is not None and any(anywhere.search(line) for line in lines[:-1]):
         return True
-    # unittest prints `OK` after an empty discovery too, so a pass needs a real count before it.
-    return runner == "unittest" and not (len(lines) > 1 and _UNITTEST_RAN.match(lines[-2]))
+    # unittest prints `OK` after an empty discovery too, so a pass needs a real count before it,
+    # unless the command names the tests it runs: a named module, class or method is never an
+    # empty discovery (owner, 2026-10-28), and `| tail -1` keeps only the `OK`.
+    return (
+        runner == "unittest"
+        and not (len(lines) > 1 and _UNITTEST_RAN.match(lines[-2]))
+        and not _explicit_unittest(words or [])
+    )
+
+
+_UNITTEST_SELECTOR = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+_UNITTEST_QUIET_FLAGS = frozenset({"-v", "-q", "--verbose", "--quiet", "-b", "--buffer"})
+_RUN_TESTS_SCRIPT = re.compile(r"run_?tests?\.py")
+# The last part of a name must read as a test module, class or method. A package (`tests`) names
+# no test: on Python 3.11 `python -m unittest tests` printed `Ran 0 tests` and `OK` (review,
+# 2026-10-28), the empty discovery the rule refuses.
+_UNITTEST_NAMED = re.compile(r"(?!tests?$)(?:test\w*|\w*Tests?\w*|\w*_test)")
+
+
+def _explicit_unittest(words: list[str]) -> bool:
+    """`python -m unittest` naming at least one dotted test name and no discovery or pattern."""
+    words = _runner_words(words) if words else []
+    if len(words) < 4 or not _PYTHON_RE.match(words[0]) or words[1:3] != ["-m", "unittest"]:
+        return False
+    named = [word for word in words[3:] if word not in _UNITTEST_QUIET_FLAGS]
+    return bool(named) and all(
+        _UNITTEST_SELECTOR.fullmatch(word) and _UNITTEST_NAMED.fullmatch(word.rsplit(".", 1)[-1])
+        for word in named
+    )
 
 
 def _ran_nothing(tail: str) -> bool:
@@ -4421,6 +4483,208 @@ def _is_pytest(words: list[str]) -> bool:
     if os.path.basename(words[0]) in ("pytest", "py.test"):
         return True
     return bool(_PYTHON_RE.match(os.path.basename(words[0]))) and words[1:3] == ["-m", "pytest"]
+
+
+def _chain_passes(call: _ShellCall, text: str, added: Mapping[int, dict[str, Any]]) -> None:
+    """Pass the checks `&&` joins ahead of a later check that is shown to have run.
+
+    `&&` runs what follows only once what precedes it exits 0, so a check whose output's last line
+    is its own runner's summary, passing or failing, proves every check chained ahead of it passed.
+    That is the measured shape `ruff check . && ruff format --check . && mypy | tail -3` takes: the
+    call's status is `tail`'s, so the earlier checks read "ran, result not recorded" although mypy's
+    summary shows each of them exited 0 (2,848 runs on one session, 2026-10-28). The last line is
+    the later check's only where `last_line_may_speak` allows it and no earlier check shares its
+    runner, `_summary_for`'s two conditions, and never through `rtk`, whose output may be rewritten.
+    """
+    last = call.checks[-1] if call.checks else None
+    if last is None or last not in added:
+        return
+    words, rtk = call.words[last]
+    runner = _summary_runner(words)
+    if (
+        not runner
+        or rtk
+        or call.background(last)
+        or call.negated(last)
+        or call.unestablished(last)
+        or not call.last_line_may_speak(last)
+        or any(_summary_runner(call.words[index][0]) == runner for index in call.checks[:-1])
+        or not _last_line_summary(words, _redacted(text))
+    ):
+        return
+    joiners = call.joiners()
+    for index in call.checks[:-1]:
+        run = added.get(index)
+        if (
+            run is None
+            or run["result"] != "not-recorded"
+            or run["background"]
+            or call.negated(index)
+            or call.unestablished(index)
+            or _cannot_fail(call.words[index][0])
+            or not all(joiner == "&&" for joiner in joiners[index:last])
+        ):
+            continue
+        run.update(result="passed", result_source="chain", result_reason="")
+
+
+def _cannot_fail(words: list[str]) -> bool:
+    """A check whose own arguments make it exit 0 (`ruff check --exit-zero`): `&&` proves nothing
+    of it, since it lets what follows run whatever it found."""
+    return _exits_zero_by_flag(words) or _always_zero(words)
+
+
+# Setup that cannot print, ahead of the first check (`_check_groups`). A summary-shaped line it
+# printed would take the slot of a check that printed none (review, 2026-10-28: `echo OK;` and a
+# health-check `curl` did), so only commands that print nothing by construction are admitted.
+_QUIET_SETUP = frozenset({"mkdir", "touch", "cp", "mv", "rm", "rmdir", "chmod", "ln"})
+_STDOUT_AWAY = frozenset({">", "1>", ">>", "1>>", "&>", "&>>"})
+
+
+def _quiet_setup(call: _ShellCall, index: int) -> bool:
+    part = call.parts[index]
+    words = part.words
+    if not words or (words[0] == "cd" and index not in call.printing_directories):
+        return True
+    if any(redirect.operator in _STDOUT_AWAY for redirect in part.redirects):
+        return True
+    if any(word in ("-v", "--verbose") for word in words[1:]):
+        return False
+    if words[0] in _QUIET_SETUP or (words[0] == "sed" and "-i" in words[1:]):
+        return True
+    # An agent's file edit: `python3 - <<'EOF' ... EOF`. Its script is not kept by the parser, so
+    # the call's whole text must hold no print at all.
+    return (
+        bool(_PYTHON_RE.match(words[0]))
+        and words[1:] == ["-"]
+        and any(redirect.operator.startswith("<<") for redirect in part.redirects)
+        and "print(" not in call.text
+        and "stdout" not in call.text
+    )
+
+
+def _check_groups(call: _ShellCall) -> list[list[int]] | None:
+    """The call's checks as `&&` groups, or None where its shape lets something else print.
+
+    A group is checks joined by `&&` with nothing piped between them; after its last check only
+    pipe filters may follow, then `;` (or a newline), `&&` or the end. Before the first check only
+    setup that prints nothing may run (`_quiet_setup`): agents edit a file and test it in one call.
+    After the first check a `cd` that prints nothing and an assignment may stand anywhere; any other
+    command could print a line that reads as the next group's summary, so the call is not read.
+    """
+    if len(call.checks) < 2 or call.substituted:
+        return None
+    checks = set(call.checks)
+    groups: list[list[int]] = []
+    previous_joiner = ""
+    previous_check = False
+    first = min(checks)
+    for index, part in enumerate(call.parts):
+        if index < first:
+            if not _quiet_setup(call, index):
+                return None
+            previous_joiner = part.joiner
+            continue
+        words = call.words[index][0]
+        if index in checks:
+            if (
+                call.words[index][1]
+                or call.background(index)
+                or call.negated(index)
+                or call.unestablished(index)
+            ):
+                return None
+            if previous_check and previous_joiner == "&&" and groups:
+                groups[-1].append(index)
+            else:
+                groups.append([index])
+            previous_check = True
+        elif (
+            (previous_joiner == "|" and _pipe_filter(part))
+            or not words
+            or (words[0] == "cd" and index not in call.printing_directories)
+        ):
+            previous_check = False
+        else:
+            return None
+        previous_joiner = ";" if part.joiner == "\n" else part.joiner
+        if previous_joiner not in ("", ";", "&&", "|"):
+            return None
+    return groups if len(groups) > 1 else None
+
+
+def _ordered_summaries(  # noqa: C901 - each early return is one way the lines can be ambiguous
+    call: _ShellCall, text: str, added: Mapping[int, dict[str, Any]]
+) -> None:
+    """Results for `;`-separated checks, each from its own summary line, in order (owner,
+    2026-10-28).
+
+    Agents run `a | tail -2; b | tail -1; c && d | tail -1`, whose status is the last filter's and
+    whose output is every block's tail in a row. Each group's last check takes the one summary line
+    its own runner prints, and the checks `&&` joins ahead of it passed, as `_chain_passes` reads
+    them. Read only when the lines are unambiguous: every group's last check has a runner, the lines
+    any of the call's runners would print number exactly one per group, the k-th is group k's own,
+    and the last ends the output. Anything else leaves every check as it was.
+    """
+    groups = _check_groups(call)
+    if groups is None:
+        return
+    runners = [_summary_runner(call.words[group[-1]][0]) for group in groups]
+    if not all(runners):
+        return
+    # A runner repeated inside a group makes its last line ambiguous, as `_chain_passes` refuses:
+    # `pytest a && pytest b | tail -1` prints a's failure when a fails and b never runs.
+    if any(
+        _summary_runner(call.words[index][0]) == runner
+        for group, runner in zip(groups, runners, strict=True)
+        for index in group[:-1]
+    ):
+        return
+    involved = {_summary_runner(call.words[index][0]) for index in call.checks} - {""}
+    lines = [
+        _ANSI_RE.sub("", line).rstrip()
+        for line in _without_trailer(_redacted(text)).split("\n")
+        if line.strip()
+    ]
+    trailing = _TRAILING_LINES.get(runners[-1])
+    while trailing is not None and lines and trailing.match(lines[-1]):
+        lines.pop()
+
+    def summary_of(line: str, runner: str) -> str:
+        passed, failed = _LAST_LINE_SUMMARIES[runner]
+        if len(line) > _LAST_LINE_MAX:
+            return ""
+        return "failed" if failed.fullmatch(line) else "passed" if passed.fullmatch(line) else ""
+
+    found = [
+        at for at, line in enumerate(lines) if any(summary_of(line, runner) for runner in involved)
+    ]
+    if len(found) != len(groups) or not found or found[-1] != len(lines) - 1:
+        return
+    # Every group is read before any result is written, so a later group that does not match
+    # leaves the earlier ones as they were too.
+    updates: list[tuple[int, str, str]] = []
+    start = 0
+    for group, runner, at in zip(groups, runners, found, strict=True):
+        last = group[-1]
+        verdict = summary_of(lines[at], runner)
+        block = lines[start : at + 1]
+        start = at + 1
+        if not verdict:
+            return
+        if verdict == "passed" and _pass_is_refused(runner, block, call.words[last][0]):
+            verdict = ""
+        updates.extend(
+            (index, "passed", "chain")
+            for index in group[:-1]
+            if not _cannot_fail(call.words[index][0])
+        )
+        if verdict:
+            updates.append((last, verdict, "summary"))
+    for index, result, source in updates:
+        run = added.get(index)
+        if run is not None and run["result"] == "not-recorded":
+            run.update(result=result, result_source=source, result_reason="")
 
 
 def _check_line(words: list[str]) -> str:
@@ -4590,6 +4854,9 @@ class _ShellCall:
     ) -> None:
         command = tool_input.get("command")
         self.at = at
+        # The command as written, which `_quiet_setup` reads for a heredoc script's prints: the
+        # parser keeps no heredoc body.
+        self.text = command if isinstance(command, str) else ""
         self.all_background = tool_input.get("run_in_background") is True or moved
         # Unbalanced quoting is a syntax error, so the call is not run: nothing
         # of it is listed or published, and it still counts as a change, since
@@ -5386,11 +5653,12 @@ class _ToolReportTally:
         flag = result.get("is_error") if result is not None else None
         # Redaction runs over the whole read window before the tail is cut (item 5).
         text = _without_trailer(text) if result is not None else text
-        tail = records.redact_secrets(text)[-TOOL_REPORT_TAIL_CHARS:]
+        tail = _redacted(text)[-TOOL_REPORT_TAIL_CHARS:]
         all_and = all(joiner == "&&" for joiner in call.joiners()[:-1])
         # V8: output speaks for a check only when it is the call's one check,
         # background ones counted, and nothing else in the call may print.
         attributable = call.output_attributable()
+        added: dict[int, dict[str, Any]] = {}
         for index in call.checks:
             words, rtk = call.words[index]
             background = call.background(index)
@@ -5485,6 +5753,10 @@ class _ToolReportTally:
                 }
             )
             self._last_added_runs.append((identity, self.runs[identity][-1]))
+            added[index] = self.runs[identity][-1]
+        if result is not None:
+            _chain_passes(call, text, added)
+            _ordered_summaries(call, text, added)
 
     @staticmethod
     def _outcome(
@@ -5771,7 +6043,9 @@ class _ToolReportTally:
         ]
         return max(times) if times else None
 
-    def entries(self, sid: str, index: Any = None) -> list[dict[str, Any]]:
+    def entries(
+        self, sid: str, index: Any = None, cap: int = TOOL_REPORT_MAX_ENTRIES
+    ) -> list[dict[str, Any]]:
         histories = self._histories()
         candidates = self._ranked(histories)
         last_pass_at = self._last_pass_at()
@@ -5798,12 +6072,12 @@ class _ToolReportTally:
                     # The fact stays listed and can still support a departure.
                     continue
                 self.scan[f"{prefix}_{str(entry['result']).replace('-', '_')}"] += 1
-        listed = candidates[:TOOL_REPORT_MAX_ENTRIES]
+        listed = candidates[:cap]
         # A created pull request is what a goal such as "create a PR" rests on, and the verdict
         # check reads the listing, so newer checks may not evict it: the newest of those the cap
         # dropped are listed beside it, up to the cap again (owner review, 2026-10-23).
-        kept = [row for row in candidates[TOOL_REPORT_MAX_ENTRIES:] if row["subject"] == "pr"]
-        listed += kept[:TOOL_REPORT_MAX_ENTRIES]
+        kept = [row for row in candidates[cap:] if row["subject"] == "pr"]
+        listed += kept[:cap]
         self.scan.update(
             distinct_checks=len(histories),
             commands=len(self.commands),
@@ -5811,16 +6085,11 @@ class _ToolReportTally:
             pull_requests=len(self.prs),
             skills_used=len(self.skills),
             listed=len(listed),
-            more=sum(
-                row["subject"] != "launch" and row not in listed
-                for row in candidates[TOOL_REPORT_MAX_ENTRIES:]
-            ),
+            more=sum(row["subject"] != "launch" and row not in listed for row in candidates[cap:]),
             background_unpaired=sum(
                 row["count"] for row in self.launches.values() if row["completed_at"] is None
             ),
-            background_more=sum(
-                row["subject"] == "launch" for row in candidates[TOOL_REPORT_MAX_ENTRIES:]
-            ),
+            background_more=sum(row["subject"] == "launch" for row in candidates[cap:]),
         )
         # A fixed position for every check, file and launch the transcript holds, counted whether
         # or not the listing keeps it: evicting one leaves a gap and moves no number after it. A
@@ -6298,6 +6567,7 @@ def press_checks(
     harness: str,
     sid: str,
     goal_texts: Iterable[str] = (),
+    scan_bytes: int | None = None,
 ) -> PressChecks:
     """`claude_check_press` for one session, found as `collect` finds it; empty elsewhere.
 
@@ -6310,6 +6580,9 @@ def press_checks(
     )
     if not transcript_path:
         return PressChecks({}, frozenset())
+    if scan_bytes:
+        # The bound the press's own listing read under, so the tails belong to the checks it lists.
+        config = dataclasses.replace(config, turn_scan_max_bytes=scan_bytes)
     return claude_check_press(
         config, transcript_path, goal_texts=goal_texts, remotes=state.ci_remotes
     )
@@ -6994,7 +7267,59 @@ def _merged_check_calls(
     return heapq.merge(*streams, key=lambda row: row[0])
 
 
+# The tallies one press has built, keyed by what built them. A press lists its checks through
+# `collect` and reads their output tails through `press_checks`, and each built the whole tally: on
+# an 18-hour session whose 282 subagents a press reads, that was 34 seconds each (2026-10-28).
+_PRESS_TALLIES: contextvars.ContextVar[dict[tuple[object, ...], _ToolReportTally] | None] = (
+    contextvars.ContextVar("press_tallies", default=None)
+)
+
+
+@contextlib.contextmanager
+def shared_tallies() -> Iterator[None]:
+    """Within the block, one tally per session and bounds, built once and read by every caller."""
+    token = _PRESS_TALLIES.set({})
+    try:
+        yield
+    finally:
+        _PRESS_TALLIES.reset(token)
+
+
 def _claude_tally(
+    config: RuntimeConfig,
+    transcript_path: str,
+    *,
+    max_bytes: int | None = None,
+    child_paths: Sequence[str] | None = None,
+    goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
+) -> _ToolReportTally:
+    shared = _PRESS_TALLIES.get()
+    goal_texts = tuple(goal_texts)
+    key = (
+        transcript_path,
+        config.turn_scan_max_bytes,
+        max_bytes,
+        None if child_paths is None else tuple(child_paths),
+        goal_texts,
+        id(remotes),
+    )
+    if shared is not None and key in shared:
+        return shared[key]
+    tally = _built_tally(
+        config,
+        transcript_path,
+        max_bytes=max_bytes,
+        child_paths=child_paths,
+        goal_texts=goal_texts,
+        remotes=remotes,
+    )
+    if shared is not None:
+        shared[key] = tally
+    return tally
+
+
+def _built_tally(
     config: RuntimeConfig,
     transcript_path: str,
     *,
@@ -7294,7 +7619,7 @@ def delegated_work_published(
     }
 
 
-def claude_tool_reports(
+def claude_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names
     config: RuntimeConfig,
     transcript_path: str,
     sid: str,
@@ -7304,6 +7629,7 @@ def claude_tool_reports(
     index_provider: Callable[[], Any] | None = None,
     goal_texts: Iterable[str] = (),
     remotes: git_status.StampCache | None = None,
+    listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """The listed checks and written paths, and the full-scan counts behind them,
     a subagent's included and labelled.
@@ -7316,7 +7642,9 @@ def claude_tool_reports(
     )
     # Asked for after the tally has read. A message written meanwhile is later than every entry the
     # tally read, so it cannot belong to the position of one of them.
-    entries = tally.entries(sid, index_provider() if index_provider is not None else None)
+    entries = tally.entries(
+        sid, index_provider() if index_provider is not None else None, cap=listed_cap
+    )
     if not isinstance(window_start, _WindowNotRequested):
         tally.scan["window_start"] = window_start
         tally.scan["window_written_paths"] = sum(
@@ -8313,6 +8641,7 @@ def _session_work_evidence(
     tool_report_scans: list[dict[str, Any]],
     index_provider: Callable[[], Any] | None = None,
     remotes: git_status.StampCache | None = None,
+    listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
 ) -> dict[str, int]:
     """Pi's demonstrated results and Claude Code's checks, appended for `collect`.
 
@@ -8332,6 +8661,7 @@ def _session_work_evidence(
             index_provider=index_provider,
             goal_texts=goal_texts_of(session),
             remotes=remotes,
+            listed_cap=listed_cap,
         )
         events.extend(report_rows)
         tool_report_scans.append({**identity, **scan})
@@ -8801,6 +9131,7 @@ def _project_timeline(
     events: list[dict[str, Any]],
     focus: tuple[str, str] | None,
     anchored: frozenset[tuple[object, ...]] = frozenset(),
+    cap: int = MAX_PROJECT_EVENTS,
 ) -> list[dict[str, Any]]:
     # The agent's messages are reserved last in each scope. A long session says far more than
     # its reader types or its checks record, and a cap filled newest first would let that
@@ -8836,11 +9167,11 @@ def _project_timeline(
         groups = (own_checks, own_other, own_anchor, own_said, surrounding, their_said)
     selected: list[dict[str, Any]] = []
     for group in groups:
-        room = MAX_PROJECT_EVENTS - len(selected)
+        room = cap - len(selected)
         if group is own_anchor:
             group = group[:room]  # noqa: PLW2901 - the earliest turns are the ones short of evidence
         selected.extend(_dedupe_project_events(group, limit=room))
-        if len(selected) == MAX_PROJECT_EVENTS:
+        if len(selected) == cap:
             break
     return sorted(selected, key=lambda event: float(event["at"]), reverse=True)
 
@@ -11009,13 +11340,22 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         # Fixed positions are published for the focused session only: its message index is one pass
         # over its whole transcript, and no other session's page asks for it.
         work_support = _session_work_evidence(
-            config,
+            (
+                dataclasses.replace(config, turn_scan_max_bytes=message_reach.scan_bytes)
+                if is_focused and message_reach is not None and message_reach.scan_bytes
+                else config
+            ),
             transcript_path,
             session,
             events,
             tool_report_scans,
             _index_provider(config, state, transcript_path, harness, sid) if is_focused else None,
             state.ci_remotes,
+            listed_cap=(
+                message_reach.listed
+                if is_focused and message_reach is not None and message_reach.listed
+                else TOOL_REPORT_MAX_ENTRIES
+            ),
         )
         backfill_rows, signature = _incremental_history_events(
             config, state, history_project, transcript_path, harness, sid, now=now
@@ -11041,7 +11381,12 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         semantic_history.read(config, state, history_project),
     )
 
-    timeline = _project_timeline(events, focus, reached.anchors if reached else frozenset())
+    timeline = _project_timeline(
+        events,
+        focus,
+        reached.anchors if reached else frozenset(),
+        cap=message_reach.cap if message_reach is not None else MAX_PROJECT_EVENTS,
+    )
     history_timeline = _dedupe_project_events(history_events)
     gate_count, steer_count, work_count = _timeline_counts(timeline)
     semantic = _semantic_model(timeline, observers, now=now)

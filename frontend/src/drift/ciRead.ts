@@ -9,6 +9,8 @@ import {
   CI_ENTRY_WORDS,
   CI_ENTRY_WORDS_GITLAB,
   CI_FAILING,
+  CI_FAILING_MERGED,
+  CI_MERGED_IN,
   CI_HEAD_MOVED,
   CI_HEAD_MOVED_GITLAB,
   CI_HEAD_UNKNOWN,
@@ -17,6 +19,7 @@ import {
   CI_REQUIRED_ONLY,
   CI_RUNNING,
   CI_SETTLES,
+  CI_SETTLES_MERGED,
   ciNotCounted,
   ciProvider,
   ciReadFailed,
@@ -60,18 +63,22 @@ export function ciReadNote(ci: CiRead, clockText: string): { state: CiState; lin
     !(ci.counts['pending'] ?? 0) &&
     !(ci.counts['cancel'] ?? 0);
   let state: CiState = 'unsettled';
-  if (!ci.head_matches) {
+  const merged = !ci.head_matches && ci.merged_in === true;
+  if (!ci.head_matches && !merged) {
     const moved = ciProvider(ci.repository) === 'GitLab' ? CI_HEAD_MOVED_GITLAB : CI_HEAD_MOVED;
     lines.push(ci.session_head ? moved : CI_HEAD_UNKNOWN);
-  } else if (ci.counts['fail']) {
-    lines.push(CI_FAILING);
-    state = 'settles';
-  } else if (ci.counts['pending']) lines.push(CI_RUNNING);
-  else if (ci.counts['cancel']) lines.push(CI_CANCELLED);
-  else if (!pass) lines.push(CI_NONE_DONE);
-  else if (green) {
-    lines.push(CI_SETTLES);
-    state = 'settles';
+  } else {
+    if (merged) lines.push(CI_MERGED_IN);
+    if (ci.counts['fail']) {
+      lines.push(merged ? CI_FAILING_MERGED : CI_FAILING);
+      state = 'settles';
+    } else if (ci.counts['pending']) lines.push(CI_RUNNING);
+    else if (ci.counts['cancel']) lines.push(CI_CANCELLED);
+    else if (!pass) lines.push(CI_NONE_DONE);
+    else if (green) {
+      lines.push(merged ? CI_SETTLES_MERGED : CI_SETTLES);
+      state = 'settles';
+    }
   }
   if (ci.required_only) {
     lines.push(CI_REQUIRED_ONLY);
@@ -98,10 +105,14 @@ export function ciEntries(ci: CiRead | null, harness: string, sid: string): Work
   const whole = green(ci);
   const gitlab = ciProvider(ci.repository) === 'GitLab';
   const words = gitlab ? CI_ENTRY_WORDS_GITLAB : CI_ENTRY_WORDS;
+  const settles = ci.head_matches || ci.merged_in === true;
   const notes = [
-    ...(ci.head_matches
+    ...(settles
       ? []
       : [`the ${gitlab ? 'merge' : 'pull'} request head is not this session's commit`]),
+    ...(!ci.head_matches && ci.merged_in === true
+      ? ["the pull request was merged into this session's branch"]
+      : []),
     ...(ci.caution ? ['this session changed the CI configuration'] : []),
   ];
   return ci.checks.map((check, index) => ({
@@ -131,6 +142,6 @@ export function ciEntries(ci: CiRead | null, harness: string, sid: string): Work
     ordinal: null,
     ordinalSub: null,
     source: gitlab ? CI_ENTRY_SOURCE_GITLAB : CI_ENTRY_SOURCE,
-    ciCounts: ci.head_matches && ((check.bucket === 'pass' && whole) || check.bucket === 'fail'),
+    ciCounts: settles && ((check.bucket === 'pass' && whole) || check.bucket === 'fail'),
   }));
 }

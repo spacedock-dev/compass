@@ -963,6 +963,7 @@ class ForgetIsACommandAndNotARouteTest(HistoryStoreTestCase):
         # session summary added `/api/summary` and `/api/summary/cancel`; neither
         # reads or writes session history. `/api/goal/find` reads the reader's prompts and
         # stores no history. `/api/live-monitor` holds an in-memory lease and writes nothing.
+        # `/api/settings` writes the reader's reading limits and nothing of history.
         import ast  # noqa: PLC0415
         from pathlib import Path  # noqa: PLC0415
 
@@ -982,7 +983,7 @@ class ForgetIsACommandAndNotARouteTest(HistoryStoreTestCase):
             for key in tables[0].keys
             if isinstance(key, ast.Constant) and isinstance(key.value, str)
         ]
-        self.assertEqual(21, len(routes))
+        self.assertEqual(22, len(routes))
         prefixes = [
             node
             for node in ast.walk(post)

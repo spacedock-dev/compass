@@ -932,7 +932,7 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
                 self.assertLessEqual(len(reply.split()), 19)
                 self.assertIn("as its transcript records one", reply)
                 self.assertIn("whole", reply)
-                self.assertIn("4,096 bytes", reply)
+                self.assertIn("16,384 characters", reply)
                 destination = next(part for part in parts if part.startswith("To:"))
                 self.assertLess(parts.index(reply), parts.index(destination))
                 self.assertNotIn("newest final", parts[1])

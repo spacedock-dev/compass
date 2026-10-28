@@ -11,6 +11,7 @@ const HOME_LABEL: Readonly<Record<Exclude<TopLevelView, 'projects'>, string>> = 
   sessions: 'Sessions',
   attention: 'Attention',
   intent: 'Intent log',
+  settings: 'Settings',
 };
 
 /* The crumb a reader sees for the location they are in. Top-level views carry none. A session's crumb

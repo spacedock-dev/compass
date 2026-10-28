@@ -20,7 +20,7 @@ const current = () =>
     .find((link) => link.getAttribute('aria-current') === 'page')?.textContent ?? null;
 
 describe('the primary navigation', () => {
-  it('lists the four views in the released order with the released labels, each a real link', async () => {
+  it('lists the five views in the released order with the released labels, each a real link', async () => {
     const page = mountShell({ data: BOARD });
     await page.settle();
     const links = primary().getAllByRole('link');
@@ -29,12 +29,14 @@ describe('the primary navigation', () => {
       'Projects',
       'Attention',
       'Intent log',
+      'Settings',
     ]);
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
       '#n=sessions',
       '#n=projects',
       '#n=attention',
       '#n=intent',
+      '#n=settings',
     ]);
     for (const link of links) expect(link.getAttribute('tabindex')).not.toBe('-1');
   });
@@ -44,6 +46,7 @@ describe('the primary navigation', () => {
     ['#n=attention', 'Attention'],
     ['#n=projects', 'Projects'],
     ['#n=intent', 'Intent log'],
+    ['#n=settings', 'Settings'],
     ['#n=project:alpha%2Fapp', 'Projects'],
     ['#n=project:alpha%2Fapp:course', 'Projects'],
     ['#n=session:alpha%2Fapp:claude:shared-sid', 'Sessions'],
@@ -178,6 +181,7 @@ describe('the document title is one per view and does not move while the board r
     ['#n=attention', 'Compass — Attention'],
     ['#n=projects', 'Compass — Projects'],
     ['#n=intent', 'Compass — Intent log'],
+    ['#n=settings', 'Compass — Settings'],
     ['#n=project:alpha%2Fapp', 'alpha/app — Compass'],
     ['#n=session:alpha%2Fapp:claude:shared-sid', 'Alpha shared claude — alpha/app — Compass'],
     ['#n=session:beta%2Fapi:claude:colon%3Asid', 'Title not published — beta/api — Compass'],

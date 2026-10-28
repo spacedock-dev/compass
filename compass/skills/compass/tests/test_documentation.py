@@ -2282,18 +2282,18 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
             'path.startswith("/api/events/")' in do_post
         )
         gated = len(re.findall(r"\bcoordinator\.(?:focus_)?authorized\(", source))
-        self.assertEqual(22, routes)
+        self.assertEqual(23, routes)
         self.assertEqual(2, gated)
-        self.assertIn("Writing is the twenty-two POST routes", self.FLAT)
-        self.assertIn("There is nothing to authenticate with on twenty of them", self.FLAT)
+        self.assertIn("Writing is the twenty-three POST routes", self.FLAT)
+        self.assertIn("There is nothing to authenticate with on twenty-one of them", self.FLAT)
         self.assertIn("Two carry a capability and they are not worth the same.", self.FLAT)
 
     def test_the_copied_correction_route_is_named_counted_and_its_residual_stated(self) -> None:
         # DRC-4678: the thirteenth mutating endpoint and the sixth disk writer, the
         # local-process residual, where the digests live and what clears them, and the
         # exemption of a reader's edits inside a copied correction from the floor.
-        self.assertIn("Sixteen endpoints mutate", self.FLAT)
-        self.assertIn("Nine write to disk.", self.FLAT)
+        self.assertIn("Seventeen endpoints mutate", self.FLAT)
+        self.assertIn("Ten write to disk.", self.FLAT)
         self.assertIn("`POST /api/correction/copied`", self.FLAT)
         self.assertIn("`compass-copied-corrections.json`", self.FLAT)
         self.assertIn(

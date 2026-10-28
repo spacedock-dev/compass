@@ -72,7 +72,7 @@ The posture rests on two invariants:
    no network on Compass's own account: the hand-off request in Hand-off requests below writes one
    line to a socket on this machine, and what travels afterwards travels on the receiving session's
    own connection, which is why it is named here rather than counted above.
-2. Read-only against harness stores. They are opened read-only and never written. Sixteen endpoints
+2. Read-only against harness stores. They are opened read-only and never written. Seventeen endpoints
    mutate, and seven of them only in memory: `POST /api/notify` updates needs-input state, and
    `POST /api/usage` stores a quota figure a harness published to its own status-line command.
    `POST /api/events/<harness>` also mutates in memory only, behind the capability described under
@@ -83,7 +83,7 @@ The posture rests on two invariants:
    timestamp for the whole board, never written to disk, and a body that names a session is refused
    rather than stripped. Delivery records below is where that refusal is stated. The long
    poll that delivers an answer, `GET /api/ask/<id>`, drops that question from memory once it has,
-   which is the delivery completing rather than a change a caller asked for. Nine write to disk.
+   which is the delivery completing rather than a change a caller asked for. Ten write to disk.
    `POST /api/dismiss` writes the sessions you marked handled,
    `POST /api/annotate` writes the goal you typed or explicitly adopted and the expected outcome lines you typed against a session, including a line you added from a later direction you gave and the settlement of those directions, and
    `POST /api/reading` writes a model's reading of that session back into the same annotation
@@ -175,7 +175,15 @@ The posture rests on two invariants:
    writes nothing to disk but the rolling-cap ledger row and, the first time, the goal notice in
    the permission file. It is guarded as `POST /api/reading` is: loopback-only, Host/Origin and
    fetch-site checks, a document navigation refused before the body is read, and a body that must
-   assert `press` and `observer_model`. [Find goal](#find-goal) owns what it sends and what it keeps. The separate
+   assert `press` and `observer_model`. [Find goal](#find-goal) owns what it sends and what it keeps.
+   The eleventh, `POST /api/settings`, saves the reading limits set on the Settings screen (how
+   large an Analyze drift prompt may be, how many of a session's messages and checks a press keeps
+   and lists, and how much of its transcripts the press scans for checks) in
+   `compass-settings.json`, owner-only, holding integers and nothing a session
+   or a reader wrote. It is loopback-only, enforces Host/Origin and fetch-site checks, refuses a
+   document navigation, and checks every value against its bounds before it writes any. A larger
+   limit changes how much of a session the next press sends, never where it goes or who it goes to,
+   which the press's own disclosure still names. The separate
    **summary store**, `compass-summaries.json` under the same home, holds model-written
    summaries keyed by harness and session, without a saved intent. Discard everything removes the
    discarded session's entry and no other (owner's ruling, 2026-10-21; it reversed the earlier rule
@@ -355,7 +363,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | The hook forwarders and the MCP server | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`. None for the two JavaScript adapters. |
 | A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, the page's switch beside the notice, and the refusals every press meets first (`--no-observer-model`, Pause model calls, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
-| The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`), inside an admitted Analyze press that reads a pull request's checks and, at collection and in the Live monitor's estimate, only when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding, in the session folder and in a directory such a poll ran in. Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` |
+| The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`), plus `merge-base --is-ancestor` for a merged pull request, inside an admitted Analyze press that reads a pull request's checks and, at collection and in the Live monitor's estimate, only when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding, in the session folder and in a directory such a poll ran in. Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
 | A native notification | On macOS, `/usr/bin/osascript` with text Compass composes. Other platforms have no native notifier. Nothing leaves the machine. | `--quiet-hours` holds it back inside a window you name. No switch turns it off outright. | None: the program is meant to launch. `test_notifications.NoNativeNotificationTest` only keeps this repository's own test run from launching one. |
@@ -1437,7 +1445,7 @@ The evidence includes the reader's own messages in the session's record, and sin
 is sent whole rather than as its first sentence where the prompt has room (the newest first,
 within half the prompt; the rest go by their first sentence): collapsed to one line, redacted by
 `records.safe_text`, and cut at 1,000 characters (`project_context.READER_WORDS_CAP_CHARS`, held
-again by the ledger's `reading.LEDGER_WORDS_CAP_CHARS`), inside the same 16 KiB prompt bound. That
+again by the ledger's `reading.LEDGER_WORDS_CAP_CHARS`), inside the press's prompt bound (below). That
 sends more of what the reader typed than the first sentence did, including any private prose in a
 later sentence that redaction does not recognize. The owner accepted that, because a first sentence
 dropped the point of a measured correction
@@ -1465,7 +1473,7 @@ Since 2026-10-21 the reader's own messages include two Claude Code records that 
 message the reader sent while the agent worked, and the reader's answer to the agent's multiple-choice
 question ([the amendment](docs/design-reading-a-session.md#amended-2026-10-21-a-message-sent-mid-turn-and-an-answer-to-the-agents-question-are-the-readers-words)).
 Both are sent as any other reader message is: whole, redacted by `records.safe_text`, at most 1,000
-characters, inside the same 16 KiB prompt bound, and never stored or published. An answer is its
+characters, inside the press's prompt bound, and never stored or published. An answer is its
 question's one-word `header` (the agent's label), the answer and any note the reader attached. The
 question's text and every option's preview, which are the agent's words, are not read as the
 reader's. This sends more of what the reader typed than before, and sends the answer a reader
@@ -1478,11 +1486,11 @@ window start instead of from the 400,000-byte tail (2026-10-13, `project_context
 [the amendment](docs/design-reading-a-session.md#amended-2026-10-13-a-press-reads-the-message-record-back-to-the-window-start)).
 The read is backward and memory-only, under the same allowance as the adopted-source lookup: the newest
 64 MiB under one two-second clock, a stamp check that refuses a file changed since the press began, and
-a stop after sixteen timestamped records in a row older than the window. It keeps the newest 100
-messages, the project event cap, and the closing agent message of up to twelve earlier turns with the
+a stop after sixteen timestamped records in a row older than the window. It keeps the newest
+`settings.analyze_record_events` messages and checks (the project page keeps 100), and the closing agent message of up to twelve earlier turns with the
 reader's message after each, a bounded handful held in memory (2026-10-13, [the amendment](docs/design-reading-a-session.md#amended-2026-10-13-a-press-keeps-the-closing-agent-message-of-each-earlier-turn)).
 A message whose text is over 256 Ki characters is not read and counts as an unread region. The prompt
-reserves an eighth of its 16 KiB (`reading.ANCHOR_SHARE_DIVISOR`) for those closings ahead of the newest
+reserves an eighth of its bound (`reading.ANCHOR_SHARE_DIVISOR`) for those closings ahead of the newest
 agent messages, and no entry of another kind is displaced. It adds no content class. The messages it finds are the person and agent messages
 a reading already sends, redacted and capped the same way, `for_page` still strips both words fields,
 and nothing is stored or retained after the press. Ordinary collection and every other harness keep the
@@ -1521,7 +1529,7 @@ it reached the provider. Amended 2026-10-04 by the owner: the reader-requested w
 masks raw prose before folding whitespace, including before rendering command arguments. Default
 callers retain the original path. A message's words are also shared out of the prompt budget
 rather than taking it: every entry is chosen by its first sentence exactly as before, and the
-newest messages replace their first sentence with their words only inside half the 16 KiB
+newest messages replace their first sentence with their words only inside half the prompt bound
 (`reading.WORDS_SHARE_DIVISOR`), counted in UTF-8 bytes. A message whose words do not fit is sent
 as its first sentence.
 
@@ -1532,13 +1540,31 @@ On a Claude Code session each top-level assistant text message in the bounded tr
 an entry of its own; sidechain and meta records, thinking and tool call blocks, and the CLI's own
 `<synthetic>` records are not. Its first sentence is the entry's title, and the whole message,
 masked as raw prose before it is collapsed to one line, then redacted by `records.safe_text` and
-cut at 1,000 characters (`project_context.AGENT_WORDS_CAP_CHARS`), replaces the title inside a quarter of the 16 KiB
-prompt (`reading.AGENT_WORDS_SHARE_DIVISOR`), newest first, after the reader's own messages have had
+cut at 1,000 characters (`project_context.AGENT_WORDS_CAP_CHARS`), replaces the title inside a quarter of the
+prompt bound (`reading.AGENT_WORDS_SHARE_DIVISOR`), newest first, after the reader's own messages have had
 their half. Amended 2026-10-04 by the owner: additional selected agent excerpts may use room left
-after those passes, without dropping an entry or exceeding the 16 KiB cap. Complete bounded
+after those passes, without dropping an entry or exceeding the prompt bound. Complete bounded
 records measure the full masked, folded length; a cropped prompt row labels its actual excerpt
 length and that total. Neither count is inferred for a legacy record. These counts stay in memory
-and are stripped from page responses with the words. That change stayed within the existing
+and are stripped from page responses with the words. Amended 2026-10-28 by the owner: a press's bounds are the reader's, set on the Settings screen
+and stored in `compass-settings.json` (`settings`). The prompt bound is
+`settings.analyze_prompt_bytes`, 512 KiB by default and at most, never under the 16 KiB it was; the messages and checks a press keeps are `settings.analyze_record_events`, 2,000 by default
+and never under the project page's 100; the checks and written files it lists are
+`settings.analyze_listed_checks`, 1,000 by default and never under the page's 12; and the
+transcript bytes it scans for them, the session's and its subagents', are
+`settings.analyze_scan_megabytes`, 512 MiB by default, never under the board's 8 MiB and never over
+1 GiB, because the scan holds what it read in memory until the press ends, about five times the
+bytes it scanned. The scan
+reads the same files the board's does (the subagent rule of
+[DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)), only further back; on the 18-hour
+session it read 282 subagent transcripts the board's bound left unread, which is where every
+builder ran its tests. Measured on an
+18-hour session, the old bounds kept 103 of 187 messages and sent each of the agent's messages as
+one line, and the reading could not tell; the defaults kept all of them. Larger bounds send more of
+the same content classes to the same destination, so `CONTENT_VERSION` is unchanged, and every
+other caller (the unasked lane, goal and session summaries, the project page) keeps its own bound.
+
+That change stayed within the existing
 content classes, so it left `reading_policy.CONTENT_VERSION` at 2.
 
 Amended 2026-10-05 by the owner through delegated adversarial acceptance
@@ -1546,7 +1572,8 @@ Amended 2026-10-05 by the owner through delegated adversarial acceptance
 the agent's newest message that its own transcript record marks as ending its turn
 (`message.stop_reason` equal to `end_turn`; text alone, a quiet session or a later timestamp does
 not establish it) goes whole in place of its 1,000-character excerpt, but only when its complete
-quoted row fits the 4,096 bytes of the agent's quarter and the room the reader's words left. It is
+quoted row fits the agent's quarter of the prompt (4,096 bytes under the old 16 KiB bound, far more
+under the reader's prompt size), at most 16,384 characters, and the room the reader's words left. It is
 chosen among the rows the prompt already selected, so no entry, citation number or older or later
 record is added, and it is read from the same file version the press read its facts from, by a
 memory-only scan of the complete file, only when it is at most 32 MiB. A larger file cannot
@@ -1821,7 +1848,7 @@ The prompt itself can still name paths. Under the tool-output ruling a check's c
 redacted output tail are sent as the session recorded them, and a reader's own messages and, since
 2026-10-03, the agent's own messages are sent whole up to 1,000 characters each where the prompt
 has room (Observer model calls), except its newest recorded final reply, which since 2026-10-05
-goes in full where it fits 4,096 bytes, redacted, so a home path or user name the session typed or
+goes in full up to 16,384 characters, redacted, so a home path or user name the session typed or
 printed reaches Anthropic that way.
 
 Because the working directory is sent, the process runs in a fresh owner-only (0700) empty
@@ -1860,7 +1887,7 @@ A hard kill of Compass (SIGKILL, a power loss) runs no cleanup and can leave bot
 owner-only; the next start removes any such file in `state_dir` older than a day, which no live
 call reaches, so a second instance's call in flight keeps its own. An absent or relative
 `shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
-receives: redacted, then clipped to 16 KiB. The same remembered answer, now per provider, and the
+receives: redacted, then bounded by the reader's prompt size (512 KiB by default). The same remembered answer, now per provider, and the
 same rolling cap apply.
 
 These flags are CLI restrictions, not an OS sandbox. There is no Claude Code equivalent of Codex
@@ -2464,7 +2491,12 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   failure, a manual job counts as pending unless it may be skipped, and a pipeline whose own
   status disagrees with its jobs (a trigger job's child failed) is listed as a check named `pipeline`.
 - To place the session, Compass runs `git rev-parse HEAD` and `git config --get remote.origin.url`
-  in the session folder, with the status probe's flags and the same scrubbed `PATH`. It keeps the
+  in the session folder, with the status probe's flags and the same scrubbed `PATH`. When the pull
+  request GitHub names is merged and its head is not that commit, an Analyze press runs one more,
+  `git merge-base --is-ancestor <merge commit> <HEAD>` with the same flags, to ask whether the
+  folder's history already holds the merge; both arguments are 40-hex ids checked before it starts,
+  and only exit 0 counts the checks. GitHub is asked for the pull request's state and merge commit
+  beside its head, in the same `gh pr view`, and is sent nothing more. It keeps the
   commit and the host and repository the remote names. Any user or token in the URL, and the URL
   itself, are dropped by the parse and never returned. `--no-git` stops both commands, pinned by
   `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and, for a session
@@ -4363,15 +4395,15 @@ that was.
 saying the machine's network may read the board, and there is no second gate behind it: everything
 the paragraph below grants another account on the machine, a non-default bind grants anything that
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
-project paths. Writing is the twenty-two POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
+project paths. Writing is the twenty-three POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Three of the twenty-two store nothing durable of their own: `POST /api/direction` returns the whole text
+somebody other than you. Three of the twenty-three store nothing durable of their own: `POST /api/direction` returns the whole text
 of a direction a session's user gave, which `/api/project-context` names by its first sentence,
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
 message's published title of at most 112 characters, and `POST /api/live-monitor` holds the Live
 monitor's lease in memory only. All three answer only a loopback peer, so a non-default bind does not widen them;
-the first two have their bounds in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty of them, for the reason the
+the first two have their bounds in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty-one of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client

@@ -238,7 +238,7 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
         view, checks, required, after = (call["args"] for call in self.stub.calls)
         self.assertEqual(["pr", "view", "12", "--repo", f"github.com/{REPO}"], after[:5])
         self.assertEqual(["pr", "view", "12", "--repo", f"github.com/{REPO}"], view[:5])
-        self.assertEqual("headRefOid,number", view[-1])
+        self.assertEqual("headRefOid,number,state,mergeCommit", view[-1])
         self.assertEqual(["pr", "checks", "12", "--repo", f"github.com/{REPO}"], checks[:5])
         self.assertEqual("name,state,bucket,completedAt", checks[-1])
         self.assertIn("--required", required)
@@ -840,6 +840,8 @@ class _PressCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.state, True)
         self.config = types.SimpleNamespace(
             state_dir=self.state,
+            # A press reads the reader's reading limits from here; none are stored.
+            state_home=str(self.state),
             ci_read_enabled=True,
             model_calls_disabled=False,
             git_probe_enabled=True,
@@ -949,7 +951,7 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(_PressCase):
             self.boom(),
         ):
             self.hooks.phase = lambda *_a: None
-            self.handler._reading_arguments = lambda *_a: {}
+            self.handler._reading_arguments = lambda *_a, **_kw: {}
             result = http_api._RequestHandler._compose_reading(
                 cast("Any", self.handler),
                 row,

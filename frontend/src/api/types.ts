@@ -318,3 +318,23 @@ export interface LiveMonitorReceipt {
   /** The lease as the server holds it, the same shape the focused context publishes. */
   readonly state: Readonly<Record<string, unknown>>;
 }
+
+/** One of the reader's settings as the server bounds it: the value a missing setting reads as, and the
+    inclusive range a write must fall in. */
+export interface SettingLimit {
+  readonly key: string;
+  readonly default: number;
+  readonly minimum: number;
+  readonly maximum: number;
+}
+
+/** `GET /api/settings`, and the answer to every accepted `POST`: the values in force and their limits. */
+export interface SettingsBody {
+  readonly values: Readonly<Record<string, number>>;
+  readonly limits: readonly SettingLimit[];
+}
+
+/** A subset of the keys; `null` restores that key's default. */
+export interface SettingsRequest {
+  readonly values: Readonly<Record<string, number | null>>;
+}

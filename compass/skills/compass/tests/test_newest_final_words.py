@@ -1134,11 +1134,11 @@ class TheHttpPressStampsBeforeItReadsTheContext(unittest.TestCase):
 
 
 class TheDisclosureNamesTheWholeFinalReply(unittest.TestCase):
-    def test_the_route_copies_the_prompts_agent_share(self) -> None:
-        share = observer.OBSERVER_MODEL_MAX_PROMPT_BYTES // reading.AGENT_WORDS_SHARE_DIVISOR
-        self.assertEqual(share, reading_route._FINAL_REPLY_BYTES)
+    def test_the_route_names_the_whole_replys_own_cap(self) -> None:
+        cap = project_context.FINAL_WORDS_MAX_CHARS
+        self.assertEqual(cap, reading_route._FINAL_REPLY_CHARS)
         text = " ".join(reading_route._base_parts("claude", harness="claude"))
-        self.assertIn(f"{share:,} bytes", text)
+        self.assertIn(f"up to {cap:,} characters", text)
 
     def test_the_consent_repair_epoch_is_four_and_unasked_reads_stay_at_one(self) -> None:
         self.assertEqual(4, reading_policy.CONTENT_VERSION)

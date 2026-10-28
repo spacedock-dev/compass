@@ -86,6 +86,7 @@
     "failed flag": "failed, as the tool reported",
     "failed marker": "failed, per a failure line in its output",
     "failed summary": "failed, per its summary line",
+    "passed chain": "passed, since a later check in its && chain ran",
     "passed flag": "passed, as the tool reported",
     "passed summary": "passed, per its summary line"
   },

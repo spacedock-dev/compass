@@ -54,6 +54,7 @@ const CHECK_RESULTS: Readonly<Record<string, string>> = {
   'failed summary': 'failed, per its summary line',
   'passed summary': 'passed, per its summary line',
   'failed marker': 'failed, per a failure line in its output',
+  'passed chain': 'passed, since a later check in its && chain ran',
 };
 
 /* A tier 3 command's result words: the exit status, and what Compass does not know. A command is any shell

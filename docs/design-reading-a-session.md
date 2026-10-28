@@ -8403,3 +8403,33 @@ is shown as `…`. A `bash -c` script that did not parse is the case that showed
 time left half of a value behind. The script given to `python -c`, `node -e`, `ruby -e` or
 `perl -e` is shown as `…` the same way, under the rule in the
 [DEC-23 amendment of 2026-10-28](#amended-2026-10-28-owner-more-command-line-forms-are-masked-inline-scripts-are-opaque-and-the-scrub-is-one-pass).
+
+### Amended 2026-10-28 (owner): a press reads a long session whole
+
+Measured on an 18-hour Claude Code burndown: the press read back to the window's start in a quarter
+of a second, then kept 103 of 187 messages under the project's 100-event cap, listed 12 of its
+checks, scanned 8 MiB of a 17 MB parent and none of its 282 subagent transcripts, and sent a
+16 KiB prompt with each of the agent's messages cut to one line. The reading said it could not
+tell. The owner ruled that a press reads the session whole, within bounds the reader sets.
+
+- The bounds are the reader's, on the Settings screen (`settings`): the prompt (512 KiB by
+  default), the messages and checks kept (2,000), the checks and files listed (1,000) and the
+  transcript bytes scanned for checks, the subagents' included (512 MiB). The old constants are
+  the floors, and the project page, the unasked lane and the summaries keep their own.
+- A check `&&` joins ahead of a later check whose own summary ends the output passed, because the
+  later one ran only after the earlier exited 0.
+- Checks separated by `;`, each cut by `tail`, each take their own summary line in order, read only
+  when there is exactly one such line per group of `&&`-joined checks and the last ends the
+  output. Setup may run before the first check; any other printing command between checks reads
+  nothing. A bare unittest `OK` counts when the command names the tests it runs, since a named
+  module, class or method is never an empty discovery, and a project's own `run_tests.py`-style
+  wrapper reads as unittest under unittest's rules.
+- A pull request merged by a commit the session folder's history holds counts as its head would
+  (`merged_in`), checked with `git merge-base --is-ancestor`.
+- A consistent line resting on the agent's account reaches the evidence floor on green pull
+  request checks that count, with none failing. Known limit, left for a later ruling: these checks
+  are not aged by work done after them, so a merged pull request's checks can back a line about
+  later commits on the same branch.
+
+The same session then read all 1,148 entries after its intent in a 431 KB prompt, its passed runs
+rose from 3 to 451, and the reading drew None or low.

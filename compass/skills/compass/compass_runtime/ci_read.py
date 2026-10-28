@@ -876,6 +876,19 @@ def _parse_checks(value: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _merged(value: Any) -> str:
+    """The merge commit of a merged pull request, from `state` and `mergeCommit`, or "".
+
+    A squash or rebase merge writes a commit the pull request's head is not an ancestor of, so it
+    is the merge commit, never the head, that a session's history can be shown to contain.
+    """
+    if not isinstance(value, dict) or value.get("state") != "MERGED":
+        return ""
+    merge = value.get("mergeCommit")
+    oid = merge.get("oid") if isinstance(merge, dict) else None
+    return oid if isinstance(oid, str) and _HEAD_RE.fullmatch(oid) else ""
+
+
 def _head(value: Any) -> tuple[str, int]:
     """The head commit and number a `gh pr view --json headRefOid,number` answer holds."""
     head = value.get("headRefOid") if isinstance(value, dict) else None
@@ -953,8 +966,13 @@ def read(  # noqa: PLR0913 - every one is a seam a test or a caller binds
     floor: Floor | None = None,
     on_spawn: Callable[[Any], None] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    contains: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """One press's read of one pull request: the stored record, with `error` set when it failed.
+
+    `contains` answers whether a commit is in the session folder's own history
+    (`git_status.is_ancestor`). A pull request merged by a commit it contains is `merged_in`, and
+    its checks count although its head is not the folder's commit.
 
     Validated before any subprocess: a repository, number or branch that is not a plain name
     launches nothing. The head commit is read before the checks and again after them, and a
@@ -964,13 +982,15 @@ def read(  # noqa: PLR0913 - every one is a seam a test or a caller binds
     key = (binding.repository, binding.number, binding.branch, session_head, caution)
     if floor is not None and (kept := floor.get(key, now)) is not None:
         return kept
-    record = _read_once(binding, session_head, caution, now, environ, runner, on_spawn, clock)
+    record = _read_once(
+        binding, session_head, caution, now, environ, runner, on_spawn, clock, contains
+    )
     if floor is not None and not record["error"]:
         floor.put(key, now, record)
     return record
 
 
-def _read_once(
+def _read_once(  # noqa: PLR0913, PLR0917 - `read`'s own arguments, passed through
     binding: Binding,
     session_head: str,
     caution: bool,
@@ -979,6 +999,7 @@ def _read_once(
     runner: Callable[..., Any],
     on_spawn: Callable[[Any], None] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    contains: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """One uncached read: `read` without the floor."""
     record = blank(binding, session_head, caution, now)
@@ -1000,7 +1021,7 @@ def _read_once(
         binding.branch or str(binding.number),
         *where,
         "--json",
-        "headRefOid,number",
+        "headRefOid,number,state,mergeCommit",
     ]
 
     def call(argv: Sequence[str]) -> Any:
@@ -1021,11 +1042,14 @@ def _read_once(
         # The head again, by the number now: `gh pr checks` names no commit, so a push between the
         # first look and the listing would put the new commit's checks under the old head. A head
         # that moved is the one reported, and it matches nothing.
-        later, _ = _head(call([*viewing[:2], str(number), *viewing[3:]]))
+        again = call([*viewing[:2], str(number), *viewing[3:]])
+        later, _ = _head(again)
     except _FailureError as failure:
         return {**record, "error": failure.token}
     moved = later != head
     head = later
+    matches = not moved and bool(record["session_head"]) and head == record["session_head"]
+    merge = _merged(again)
     # Where GitHub names required checks they are the ones that count and the ones listed, and
     # the counts are over that same set, so the page's sentence and the verdict read one thing. The
     # checks left out are counted, so the page can say how many it did not weigh.
@@ -1038,9 +1062,13 @@ def _read_once(
         **record,
         "number": number,
         "head": head,
-        "head_matches": not moved
+        "head_matches": matches,
+        "merged_in": not matches
+        and not moved
+        and bool(merge)
         and bool(record["session_head"])
-        and head == record["session_head"],
+        and contains is not None
+        and contains(merge),
         "required_only": bool(required),
         "not_counted": left_out,
         "counts": _counts(rows),
@@ -1059,6 +1087,7 @@ def blank(binding: Binding, session_head: str, caution: bool, now: float) -> dic
         "head": "",
         "session_head": session_head if _HEAD_RE.fullmatch(session_head) else "",
         "head_matches": False,
+        "merged_in": False,
         "required_only": False,
         "not_counted": 0,
         "counts": dict.fromkeys(BUCKETS, 0),
@@ -1244,6 +1273,7 @@ RECORD_KEYS: Final = (
     "head",
     "session_head",
     "head_matches",
+    "merged_in",
     "required_only",
     "not_counted",
     "counts",
@@ -1251,7 +1281,8 @@ RECORD_KEYS: Final = (
     "checks",
 )
 # A record stored before the count of checks left out was kept has no such key, and reads as none.
-_OPTIONAL_KEYS: Final = frozenset({"not_counted"})
+# Nor a record stored before a merged pull request could count, and it reads as not merged in.
+_OPTIONAL_KEYS: Final = frozenset({"not_counted", "merged_in"})
 _CHECK_KEYS = ("name", "bucket", "completed_at")
 
 
@@ -1277,7 +1308,7 @@ def validate(value: Any) -> dict[str, Any] | None:
         return None
     if set(value) - set(RECORD_KEYS):
         return None
-    value = {"not_counted": 0, **value}
+    value = {"not_counted": 0, "merged_in": False, **value}
     counts, checks = value["counts"], value["checks"]
     if (
         not _stamp(value["read_at"])
@@ -1292,7 +1323,11 @@ def validate(value: Any) -> dict[str, Any] | None:
             or (value[key] != "" and not _HEAD_RE.fullmatch(value[key]))
             for key in ("head", "session_head")
         )
-        or any(type(value[key]) is not bool for key in ("head_matches", "required_only", "caution"))
+        or any(
+            type(value[key]) is not bool
+            for key in ("head_matches", "merged_in", "required_only", "caution")
+        )
+        or (value["merged_in"] and (value["head_matches"] or not value["session_head"]))
         or not _count(value["not_counted"])
         or (value["not_counted"] and not value["required_only"])
         or not isinstance(counts, dict)
@@ -1352,6 +1387,7 @@ SOURCE_TEXT_GITLAB: Final = "GitLab merge request pipeline job, read by Compass"
 HEAD_MOVED_TEXT: Final = "the pull request head is not this session's commit"
 HEAD_MOVED_TEXT_GITLAB: Final = HEAD_MOVED_TEXT.replace("pull request", "merge request")
 CAUTION_TEXT: Final = "this session changed the CI configuration"
+MERGED_IN_TEXT: Final = "the pull request was merged into this session's branch"
 
 
 def green(record: Mapping[str, Any]) -> bool:
@@ -1374,7 +1410,8 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
     """One `ci_check` fact per listed check, built from a stored record, or none.
 
     A pass counts (`ci_counts`) only when the whole considered set is green and the pull request's
-    head is the session folder's HEAD; a failure counts when that head is. Anything else is listed
+    head is the session folder's HEAD, or the pull request was merged by a commit the folder's
+    history holds (`merged_in`); a failure counts on the same terms. Anything else is listed
     so the reading can say it, and settles nothing. The fact's time is the read's, because what
     the pull request showed is a state at the press and not an event in the session.
     """
@@ -1385,16 +1422,17 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
     whole = green(record)
     words = _WORDS_GITLAB if gitlab else _WORDS
     moved_text = HEAD_MOVED_TEXT_GITLAB if gitlab else HEAD_MOVED_TEXT
+    merged_in = bool(record.get("merged_in"))
+    settles = record["head_matches"] or merged_in
     out: list[dict[str, Any]] = []
     for index, row in enumerate(record["checks"]):
         bucket = row["bucket"]
-        counted = record["head_matches"] and (
-            (bucket == BUCKET_PASS and whole) or bucket == BUCKET_FAIL
-        )
+        counted = settles and ((bucket == BUCKET_PASS and whole) or bucket == BUCKET_FAIL)
         notes = [
             note
             for note, holds in (
-                (moved_text, not record["head_matches"]),
+                (moved_text, not settles),
+                (MERGED_IN_TEXT, merged_in),
                 (CAUTION_TEXT, record["caution"]),
             )
             if holds

@@ -695,6 +695,9 @@ export interface CiRead {
   readonly head: string;
   readonly session_head: string;
   readonly head_matches: boolean;
+  /* The pull request was merged by a commit the session folder's history holds, so its checks count
+     although its head is not the folder's commit. Absent on a record stored before it was kept. */
+  readonly merged_in?: boolean;
   readonly required_only: boolean;
   /* How many checks the required-only rule left out. Absent on a record stored before it was kept. */
   readonly not_counted?: number;
@@ -707,8 +710,9 @@ export interface CiRead {
   }[];
 }
 
-/* Keys a stored record may lack: `not_counted` arrived after the first records were stored. */
-const CI_OPTIONAL_KEYS = ['not_counted'];
+/* Keys a stored record may lack: `not_counted` and `merged_in` arrived after the first records were
+   stored. */
+const CI_OPTIONAL_KEYS = ['not_counted', 'merged_in'];
 const CI_KEYS = [
   'read_at',
   'error',
@@ -718,6 +722,7 @@ const CI_KEYS = [
   'head',
   'session_head',
   'head_matches',
+  'merged_in',
   'required_only',
   'not_counted',
   'counts',
@@ -749,6 +754,9 @@ export function readingCi(raw: unknown): CiRead | null {
     typeof raw['session_head'] !== 'string' ||
     !CI_HEAD.test(raw['session_head']) ||
     typeof raw['head_matches'] !== 'boolean' ||
+    (Object.hasOwn(raw, 'merged_in') &&
+      (typeof raw['merged_in'] !== 'boolean' ||
+        (raw['merged_in'] === true && (raw['head_matches'] === true || !raw['session_head'])))) ||
     typeof raw['required_only'] !== 'boolean' ||
     (Object.hasOwn(raw, 'not_counted') &&
       (!Number.isInteger(raw['not_counted']) ||

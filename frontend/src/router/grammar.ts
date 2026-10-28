@@ -7,7 +7,9 @@
    `encodeURIComponent`-escaped, which is what lets a project, harness or sid contain a colon
    and keeps `&` out of every part. */
 
-export const TOP_LEVEL_VIEWS = ['attention', 'projects', 'sessions', 'intent'] as const;
+/* `settings` arrived after the legacy page was retired, so the grammar's oracle has no answer for it. The
+   legacy page read it as an unknown view and landed on Sessions, which is still what an old build does. */
+export const TOP_LEVEL_VIEWS = ['attention', 'projects', 'sessions', 'intent', 'settings'] as const;
 export type TopLevelView = (typeof TOP_LEVEL_VIEWS)[number];
 
 /* Where a reader opened a session from, carried as a trailing `&from=` so the tab, the crumb and

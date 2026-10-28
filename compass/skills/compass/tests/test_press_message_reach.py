@@ -339,7 +339,7 @@ class TheHttpPressAsksForItsOwnWindow(PressReachTestCase):
                     config=self.config, state=SimpleNamespace(), clock=lambda: NOW
                 )
             ),
-            _reading_arguments=lambda *_args: {
+            _reading_arguments=lambda *_args, **_kw: {
                 "model": lambda *_a, **_kw: ("{}", "ok"),
                 "stamp_text": "read",
                 "now": NOW,

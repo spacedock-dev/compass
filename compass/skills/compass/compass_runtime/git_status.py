@@ -441,6 +441,58 @@ def identity(
     return GitIdentity(head, host, repository)
 
 
+# Whether a commit is in the history of the folder's own commit: how a merged pull request's checks
+# reach a session whose folder has moved on past the pull request's head. Plumbing with the same
+# flags as the two reads above; both commits are 40-hex ids checked before any process starts, so
+# no option or revision expression can be smuggled in.
+_ANCESTOR_ARGV: Final[tuple[str, ...]] = (
+    "git",
+    "-c",
+    "core.fsmonitor=",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "--no-optional-locks",
+    "merge-base",
+    "--is-ancestor",
+)
+
+
+def is_ancestor(
+    cwd: str,
+    commit: str,
+    head: str,
+    *,
+    timeout_sec: float,
+    runner: Callable[..., Any] = subprocess.run,
+) -> bool:
+    """Whether `commit` is `head` or an ancestor of it in the repository at `cwd`.
+
+    False for anything else, including a commit the folder does not have and every failure:
+    `merge-base --is-ancestor` exits 0 for yes and 1 for no, and only a 0 is an answer.
+    """
+    if not (_HEAD_RE.fullmatch(commit) and _HEAD_RE.fullmatch(head)) or not os.path.isdir(cwd):
+        return False
+    if commit == head:
+        return True
+    environ = probe_environment(os.environ)
+    resolved = _executable(environ)
+    if resolved is None:
+        return False
+    try:
+        result = runner(
+            (resolved, *_ANCESTOR_ARGV[1:], commit, head),
+            cwd=cwd,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout_sec,
+            check=False,
+            env=environ,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return getattr(result, "returncode", 1) == 0
+
+
 def _reading(stdout: object) -> GitStatus:
     """Count porcelain entries. The only thing that ever looks at the output."""
     if isinstance(stdout, str):

@@ -20,6 +20,7 @@ const PRIMARY = [
   ['projects', 'Projects'],
   ['attention', 'Attention'],
   ['intent', 'Intent log'],
+  ['settings', 'Settings'],
 ] as const;
 
 /* The view a route sits under: a session sits under the view it was opened from, a project under Projects. */
