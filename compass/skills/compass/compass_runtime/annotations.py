@@ -954,10 +954,12 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
 def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.Assessment | None:
     """One untrusted reading, or nothing at all.
 
-    Dropped WHOLE on any failure. A half-parsed reading is the worst of the
+    Dropped WHOLE on any failure, except that a malformed `goal_verdict` is
+    not a failure of the reading: `_goal_verdict` drops that one block and the
+    rest of the reading stands. A half-parsed reading is the worst of the
     three outcomes: the page renders whatever survived, and what survives is
     whichever half happened to be well-formed rather than whichever half is
-    true. Nothing here repairs a field.
+    true. Nothing else here repairs a field.
 
     Type-checked on the way out as well as on the way in, for `_revision`'s
     reason: any local process can rewrite this file, and a dict arriving here
