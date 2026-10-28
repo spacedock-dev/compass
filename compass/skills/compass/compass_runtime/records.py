@@ -2385,7 +2385,33 @@ def _trie_alternation(spellings: tuple[str, ...]) -> str:
         for char in spelling:
             node = node.setdefault(char, {})
         node[""] = {}
+    if _trie_depth(root) > _TRIE_DEPTH_MAX:
+        # Values that each extend the last nest one group per value, and about 400 of them
+        # overflow the recursion limit here and the regex parser's own. A flat alternation,
+        # longest first, reads the same set without nesting.
+        return "|".join(re.escape(s) for s in sorted(spellings, key=lambda s: (-len(s), s)))
     return _trie_regex(root)
+
+
+# Deeper than any real set of masked values: each level is a value that prefixes another.
+_TRIE_DEPTH_MAX: Final = 40
+
+
+def _trie_depth(root: dict[str, Any]) -> int:
+    """How many groups `_trie_regex` would nest, counted without recursing."""
+    deepest = 0
+    pending = [(root, 0)]
+    while pending:
+        node, depth = pending.pop()
+        deepest = max(deepest, depth)
+        for char, child in node.items():
+            if not char:
+                continue
+            below = child
+            while len(below) == 1 and "" not in below:
+                ((_, below),) = below.items()
+            pending.append((below, depth + 1))
+    return deepest
 
 
 def _trie_regex(node: dict[str, Any]) -> str:

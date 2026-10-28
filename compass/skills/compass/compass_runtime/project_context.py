@@ -2071,6 +2071,10 @@ TOOL_REPORT_PATH_CHARS = 240
 # so the first scrub of a press compiles it (about 0.04 s at 512 values, about 0.3 s at 4,096) and
 # later scrubs of the same set reuse it (a few milliseconds); 512 values once cost 0.45 s each time.
 MASKED_VALUES_MAX = 4096
+# The count alone left the size open: 4,096 values of 1,000 characters took 32 s and 2.4 GB to
+# compile cold. Compile time follows total length, about a second per 130,000 characters, so the
+# newest values are kept up to this many characters and the press is partial past it.
+MASKED_VALUES_MAX_CHARS = 131_072
 _SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
@@ -4805,6 +4809,7 @@ class _ToolReportTally:
         # A dict keeps the order a set loses, so the cap can drop the oldest.
         self.masked_values: dict[str, None] = {}
         self.masked_values_partial = False
+        self.masked_chars = 0
         # (time, call id) of every recorded write and fixer run. A pass is aged
         # by one from another call at or after its own time, since recorded
         # time cannot order two calls that share it (DRC-4709); its own call is
@@ -5713,10 +5718,17 @@ class _ToolReportTally:
         first to go. Dropping anything marks the scrub partial: it is said, never silent.
         """
         for value in sorted(values):
-            self.masked_values.pop(value, None)
+            if value in self.masked_values:
+                del self.masked_values[value]
+                self.masked_chars -= len(value)
             self.masked_values[value] = None
-        while len(self.masked_values) > MASKED_VALUES_MAX:
-            del self.masked_values[next(iter(self.masked_values))]
+            self.masked_chars += len(value)
+        while len(self.masked_values) > MASKED_VALUES_MAX or (
+            self.masked_chars > MASKED_VALUES_MAX_CHARS
+        ):
+            oldest = next(iter(self.masked_values))
+            del self.masked_values[oldest]
+            self.masked_chars -= len(oldest)
             self.masked_values_partial = True
 
     def tier3_calls(self) -> frozenset[str]:

@@ -1952,12 +1952,12 @@ environment literal (`true`, `false`, `production`, `main`, `test`), an auth sch
 `Basic`), a bare number and a lowercase-letters-only word stay, because `CI=true` and `-u 1000`
 would otherwise erase ordinary words from a sentence the reader reads. The accepted loss is a
 lowercase-letters-only password quoted in an explanation; the check line and the output tail still
-mask it. A press carries up to 4,096 masked values and, past that, keeps the newest; when it has
-dropped any, the stored explanation is replaced by a fixed sentence saying it was withheld, rather than
+mask it. A press carries up to 4,096 masked values and 131,072 characters of them and, past either,
+keeps the newest; when it has dropped any, the stored explanation is replaced by a fixed sentence saying it was withheld, rather than
 published unscrubbed. The server holds the masked values of the last two scrubs in a small in-memory
 cache for the life of the process, and writes them nowhere. A line that lists a command of the shell
-(not a check) shows the script given to `python -c`, `node -e` or `--eval`, `ruby -e` and `perl -e`
-as one ellipsis, also behind a wrapper such as `docker exec`, `timeout` or `uv run`, since a literal
+(not a check) shows the script given to `python -c`, `node -e` or `--eval`, `bun -e` or `--eval`,
+`deno eval`, `ruby -e`, `perl -e` and `php -r` as one ellipsis, also behind a wrapper such as `docker exec`, `timeout` or `uv run`, since a literal
 credential inside code has no form a mask can find; a check line keeps its own rule. A value at the
 end of a sentence or inside brackets or quotes is removed, while one inside a
 longer word, path or domain is not. The class lives in the observed record only, as
@@ -1988,7 +1988,8 @@ holding `secret`, `token`, `password`, `passwd` or `key`, read past `--profile` 
 that take a value; the value after `--secret-string`, `--passphrase`, `--pass`, `--pwd` or
 `--credentials`, joined by `=` or in the next word; the value of `--from-literal` in kubectl's
 `key=value` pair (the key stays); the value after `--value` for `aws ssm put-parameter` only;
-npm's `_authToken` line, as `//registry/:_authToken=value` or after `npm config set`; the value after
+npm's `_authToken`, `_auth` and `_password` lines, as `//registry/:_authToken=value` or after
+`npm config set`; the value after
 `--body` or `-b` for `gh secret` only, so a pull request body stays readable; the value after `-w`
 for the `ldap*` tools and after `-N` for `ssh-keygen`; an openssl `pass:` prefix, on an openssl
 line or after `-pass`, `-passin` or `-passout` (`-passin pass:value`), while `env:` and `file:`

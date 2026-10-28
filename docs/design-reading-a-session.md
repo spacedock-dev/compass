@@ -3515,6 +3515,12 @@ Four small changes to the masking and scrub, each closing a way a value or a fal
   boundary of another value is read once that one is a marker: prose `V1:V2` masks both. The flag pass takes a
   whole run after `-p`, so `-pV1V2` masks both values. Strict (output tail) mode still keeps a `:`, `.` or `/`
   between two values as part of one word, as before.
+- **Deep and heavy sets.** The prefix tree is built without recursion past forty nested values, and a
+  set that deep is read as a flat alternation, longest first: about 400 values that each extend the last
+  once raised a `RecursionError` out of the scrub, and a press would have failed. The press also keeps
+  masked values only up to 131,072 characters in total, newest first, and marks itself partial past it
+  as the count bound does: compile time follows total length, and 4,096 values of 1,000 characters took
+  32 s and 2.4 GB to compile cold.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
