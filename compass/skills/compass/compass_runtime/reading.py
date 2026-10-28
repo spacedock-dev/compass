@@ -4944,26 +4944,34 @@ _JOB_MARK = "\ue001"
 # ("will fail until", "is not passing yet", "never ran green") is no claim of a result, and a CI
 # pass must not agree with it.
 _JOB_RESULT = re.compile(
-    r"\b(?:pass(?:es|ed|ing)?|green|clean|ok|okay|succe(?:ed|eds|eded|ss|ssful|ssfully)"
-    r"|fail(?:s|ed|ing)?)\b",
+    r"\b(?:pass(?:es|ed|ing)?|green|clean|ok|okay|succe(?:ed|eds|eded|ss|ssful|ssfully))\b",
     re.IGNORECASE,
 )
+# A failure word names a job only against a job the record shows failed. Against a green job an
+# affirmed failure ("the unit-tests job failed") is no claim that agrees with it, and counting it
+# as one let a passing record confirm a reason that said the opposite.
+_JOB_FAILURE = re.compile(r"\bfail(?:s|ed|ing|ure)?\b", re.IGNORECASE)
 _JOB_HEDGE = re.compile(
     r"\b(?:will|would|might|may|could|going\s+to|until|once|yet|if|when)\b"
     r"|\b(?:not|never|no\s+longer)\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
-    r"|\wn['\u2019]t\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)",
+    r"|\wn['\u2019]t\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
+    r"|\bfail\w*\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)",
     re.IGNORECASE,
 )
 
 
-def _job_claimed(text: str, name: str) -> bool:
-    """Whether a clause that names this CI job also claims how it came out."""
+def _job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
+    """Whether a clause that names this CI job also claims how it came out.
+
+    `failed` is the record's own result for the job: only then does a failure word count as a claim.
+    """
     if not _names_job(text, name):
         return False
+    result_words = (_JOB_RESULT, _JOB_FAILURE) if failed else (_JOB_RESULT,)
     marked = re.sub(rf"(?<![\w-]){re.escape(name)}(?![\w-])", _JOB_MARK, text, flags=re.IGNORECASE)
     return any(
         _JOB_MARK in clause
-        and _JOB_RESULT.search(clause)
+        and any(words.search(clause) for words in result_words)
         and not _JOB_HEDGE.search(clause)
         and not _NOT_A_RESULT.search(clause)
         for clause in _CLAUSE_BREAK.split(marked)
@@ -5163,7 +5171,11 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
     # A reason that names no pull request but names jobs of the one the press read for this session
     # (the facts hold CI only where that read bound one): the jobs it names stand for themselves.
     named_jobs = (
-        frozenset(ci.id for ci in recorded.ci if _job_claimed(basis, ci.name))
+        frozenset(
+            ci.id
+            for ci in recorded.ci
+            if _job_claimed(basis, ci.name, failed=ci.result == CI_RESULT_FAILED)
+        )
         if not named_prs
         else frozenset()
     )

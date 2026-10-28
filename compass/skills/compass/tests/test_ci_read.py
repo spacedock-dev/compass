@@ -1563,6 +1563,24 @@ class AReasonThatNamesOnlyCiJobsReachesTheCiFacts(base.AClaudeCodeReadingProduce
                 self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
                 self.assertNotEqual(reading.GOAL_VERDICT_CI, verdict["why"])
 
+    def test_an_affirmed_failure_agrees_with_no_passing_job(self) -> None:
+        for reason in (
+            "The unit-tests job failed.",
+            "The unit-tests job still fails.",
+            "The unit-tests job fails on main.",
+            "The unit-tests job is failing.",
+            "The unit-tests job failed to pass.",
+        ):
+            with self.subTest(reason=reason):
+                verdict = self.checked(reason, record_with(*GREEN))
+                self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
+                self.assertNotEqual(reading.GOAL_VERDICT_CI, verdict["why"])
+
+    def test_a_failure_word_still_names_a_job_the_record_shows_failed(self) -> None:
+        record = record_with(check("lint", "pass"), check("unit-tests", "fail"))
+        verdict = self.checked("The unit-tests job failed.", record)
+        self.assertEqual(reading.GOAL_VERDICT_DISPUTED, verdict["check"])
+
     def test_a_job_that_passes_in_its_own_clause_still_agrees(self) -> None:
         verdict = self.checked(
             "The server-unittest job passes.", record_with(check("server-unittest", "pass"))
