@@ -679,6 +679,24 @@ class ACiPollReadsTheSessionFoldersRepository(ClaudeChecksTestCase):
         for poll in found.values():
             self.assert_unbound(poll)
 
+    def test_a_call_of_thousands_of_polls_costs_a_pass_and_keeps_the_environment_order(
+        self,
+    ) -> None:
+        count = 12000
+        polls = [f"gh pr checks {number}" for number in range(1, count + 1)]
+        polls.insert(count // 2, "export GH_REPO=other/old")
+        command = " && ".join(polls)
+        started = time.monotonic()
+        self.session.bash(command, "all pass", is_error=False)
+        found = {t: p for t, p in self.polls().items() if t.startswith("gh pr checks")}
+        # Linear in the polls: about 1.5 s here. The earlier per-poll scans took half a minute.
+        self.assertLess(time.monotonic() - started, 8.0)
+        self.assertGreater(len(found), 0)
+        for text, poll in found.items():
+            number = int(text.rsplit(" ", 1)[1])
+            if number > count // 2:
+                self.assert_unbound(poll)
+
     def test_a_run_view_url_binds_by_the_repository_it_names(self) -> None:
         self.goal_texts = ()
         other = "gh run view https://github.com/other/old/actions/runs/5 --exit-status"

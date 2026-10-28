@@ -4733,31 +4733,45 @@ class _ShellCall:
             return None
         return _written_path(os.path.join(self.directories[at] or "/", target), cwd, session_dir)
 
-    def _raw_prefixes(self) -> tuple[list[str], list[int], int]:
-        """Every segment's raw words in order, where each segment's start falls in them, and the
-        first segment whose command is `eval` or a variable. Built once per call."""
+    def _raw_prefixes(self) -> tuple[list[int], int, int]:
+        """Where each segment's raw words start in the call's raw words in order, the first
+        segment whose command is `eval` or a variable, and the count of raw words before the first
+        that sets a variable pointing `gh` elsewhere (-1 when none). Built once per call, and
+        holding positions instead of the words, so a call of thousands of polls costs a pass."""
         cached = self.__dict__.get("_raw_prefix")
         if cached is None:
-            raw: list[str] = []
             starts: list[int] = []
             first_decided = len(self.parts)
+            first_environment = -1
+            total = 0
             for at, part in enumerate(self.parts):
-                starts.append(len(raw))
+                starts.append(total)
                 if first_decided == len(self.parts) and _decides_the_command(list(part.raw)):
                     first_decided = at
-                raw.extend(part.raw)
-            cached = self.__dict__["_raw_prefix"] = (raw, starts, first_decided)
+                if first_environment < 0:
+                    found = next(
+                        (
+                            i
+                            for i, word in enumerate(part.raw)
+                            if ci_read.sets_poll_environment(word)
+                        ),
+                        None,
+                    )
+                    if found is not None:
+                        first_environment = total + found
+                total += len(part.raw)
+            cached = self.__dict__["_raw_prefix"] = (starts, first_decided, first_environment)
         return cached
 
-    def earlier_raw(self, index: int) -> list[str]:
-        """The raw words of the segments before this one."""
-        raw, starts, _first = self._raw_prefixes()
-        return raw[: starts[index]]
+    def environment_set_before(self, index: int) -> bool:
+        """Whether an earlier segment sets `GH_REPO`, `GH_HOST` or the enterprise token."""
+        starts, _decided, first = self._raw_prefixes()
+        return 0 <= first < starts[index]
 
     def directory_decided_before(self, index: int) -> bool:
         """Whether an earlier segment runs `eval` or a variable's value, so no directory the call
         names for this one can be relied on."""
-        return self._raw_prefixes()[2] < index
+        return self._raw_prefixes()[1] < index
 
     def joiners(self) -> list[str]:
         cached = self.__dict__.get("_joiners")
@@ -4841,7 +4855,13 @@ class _ShellCall:
         result: the flag and the summary no longer say whether the code is sound."""
         if "!" in self.parts[index].syntax:
             return True
-        return any(self._negates_group(part) for part in self.parts[:index])
+        first = self.__dict__.get("_first_negating")
+        if first is None:
+            first = self.__dict__["_first_negating"] = next(
+                (at for at, part in enumerate(self.parts) if self._negates_group(part)),
+                len(self.parts),
+            )
+        return first < index
 
     @staticmethod
     def _negates_group(part: _Part) -> bool:
@@ -4860,7 +4880,13 @@ class _ShellCall:
 
     def unestablished(self, index: int) -> bool:
         """Whether a `||` before the segment leaves its execution unknown."""
-        return "||" in self.joiners()[:index]
+        first = self.__dict__.get("_first_or")
+        if first is None:
+            joiners = self.joiners()
+            first = self.__dict__["_first_or"] = (
+                joiners.index("||") if "||" in joiners else len(joiners)
+            )
+        return first < index
 
     def piped_after_work(self, index: int) -> bool:
         """Whether a pipe feeds this segment from a stage that did work. The call's status then
@@ -5478,7 +5504,7 @@ class _ToolReportTally:
                     ci,
                     words,
                     call.parts[index].raw,
-                    call.earlier_raw(index),
+                    earlier_sets_environment=call.environment_set_before(index),
                 )
                 if ci
                 else None

@@ -369,8 +369,18 @@ def _pull_request_target(target: str, repository: str) -> Poll:
     return Poll(repository, branch=target) if _usable_branch(target) else Poll(valid=False)
 
 
+def sets_poll_environment(word: str) -> bool:
+    """Whether a raw word assigns an environment name that points `gh` elsewhere."""
+    return word.startswith(_POLL_ENVIRONMENT)
+
+
 def parse_poll(
-    kind: str, words: Sequence[str], raw: Sequence[str] = (), earlier: Sequence[str] = ()
+    kind: str,
+    words: Sequence[str],
+    raw: Sequence[str] = (),
+    earlier: Sequence[str] = (),
+    *,
+    earlier_sets_environment: bool = False,
 ) -> Poll:
     """The repository and target a `gh pr checks` or `gh run view` command names.
 
@@ -380,10 +390,13 @@ def parse_poll(
     word of the call's earlier segments: one that sets `GH_REPO`, `GH_HOST` or
     `GH_ENTERPRISE_TOKEN` (an `export`, a plain assignment) leaves the poll bound to nothing, as
     does `GH_HOST` or the token on the poll itself. A variable exported in an earlier call is not
-    seen.
+    seen. A caller with many polls in one call passes `earlier_sets_environment`, decided once for
+    the call, instead of `earlier`: scanning every earlier word for every poll is quadratic.
     """
-    if any(word.startswith(_POLL_ENVIRONMENT[1:]) for word in raw) or any(
-        word.startswith(_POLL_ENVIRONMENT) for word in earlier
+    if (
+        earlier_sets_environment
+        or any(word.startswith(_POLL_ENVIRONMENT[1:]) for word in raw)
+        or any(sets_poll_environment(word) for word in earlier)
     ):
         return Poll(valid=False)
     repos, positional = _poll_operands(kind, words[3:])
