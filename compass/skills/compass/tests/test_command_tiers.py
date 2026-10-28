@@ -1315,6 +1315,8 @@ class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
             self.assertEqual("not-recorded", got[f"gh pr checks {number}"])
 
     def test_a_hostile_first_line_is_not_matched_against_the_error_shapes(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         for line in ("a: " * 40_000, "a" * 100_000 + " gh auth login"):
             started = time.process_time()
             self.assertFalse(project_context._gh_error_line(f"Exit code 1\n{line}"))
