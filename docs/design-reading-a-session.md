@@ -3551,6 +3551,10 @@ Five edges of the lane above, each a place its words or its payload said more or
   press's own attribution of one check's tail to one call. The press already read it for the tails, so the lane
   reads nothing more of the transcript, and it is searched and dropped like a pressed reading's. A goal
   reason that quotes a recorded failure's output is `quoted-in-check` instead of `not-found`.
+- **A failure outside the window is said so.** The window and the last-turn stop cut the ledger before
+  the cutoff asked whether a failure was sent, so a failure after the stop read as "No failed check or
+  command was recorded". The lane counts the failed rows the cut dropped and the cutoff says "A failed
+  check was recorded outside the window this check read" (or the count).
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

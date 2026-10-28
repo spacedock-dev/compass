@@ -5718,6 +5718,7 @@ def produce(  # noqa: PLR0913
     ledger, superseded = _ledger_and_superseded(
         facts, harness, sid, tails, tool_output, read_agent_words, failures_only
     )
+    uncut = ledger
     ledger, stopped, left_out, withheld = _ledger_to_read(ledger, row, scope, window_start(latest))
     if withheld:
         return None, withheld, False
@@ -5851,6 +5852,7 @@ def produce(  # noqa: PLR0913
         failures_only,
         sent_failure=any(row["type"] == TOOL_REPORT_TYPE for row in ledger),
         superseded=superseded,
+        outside_window=_failures_left_out(uncut, ledger),
     )
     revision = latest.get("n")
     assessment: Assessment = {
@@ -6062,7 +6064,18 @@ def _ledger_and_superseded(
     return build_ledger(facts, harness, sid, **args), 0
 
 
-def _unsent_checks_note(
+def _failures_left_out(uncut: Sequence[LedgerEntry], kept: Sequence[LedgerEntry]) -> int:
+    """How many failed checks the window or the stop cut from what the press read.
+
+    Counted over the ledger as `_ledger_and_superseded` made it, before `_ledger_to_read` cut it,
+    so a cutoff never says no failure was recorded about a failure the window merely did not
+    reach.
+    """
+    sent = {row["id"] for row in kept}
+    return sum(1 for row in uncut if row["type"] == TOOL_REPORT_TYPE and row["id"] not in sent)
+
+
+def _unsent_checks_note(  # noqa: PLR0913, PLR0917 - each argument is one fact of the sentence
     tool_output: ToolOutput | None,
     facts: Sequence[Any],
     harness: str,
@@ -6071,6 +6084,7 @@ def _unsent_checks_note(
     failures_only: bool,
     sent_failure: bool = True,
     superseded: int = 0,
+    outside_window: int = 0,
 ) -> str:
     """The cutoff's sentence about the checks a reading was not shown, or none."""
     if admitted and failures_only:
@@ -6084,8 +6098,15 @@ def _unsent_checks_note(
                 " superseded them."
             )
         )
+        if outside_window:
+            left_out += (
+                " A failed check was recorded outside the window this check read."
+                if outside_window == 1
+                else f" {outside_window} failed checks were recorded outside the window this"
+                " check read."
+            )
         if not sent_failure:
-            if superseded:
+            if superseded or outside_window:
                 return left_out + " A check that passed is never sent."
             return (
                 " No failed check or command was recorded, and a check that passed is never sent."

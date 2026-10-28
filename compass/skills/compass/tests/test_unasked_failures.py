@@ -693,6 +693,50 @@ class TheCutoffAndTheUnreadFlagSayWhatWasWithheld(unittest.TestCase):
         _, unsent = self._cutoff_and_unsent([WORDS])
         self.assertFalse(unsent)
 
+    def _window_note(self, facts: list[dict[str, Any]], stopped_at: float) -> str:
+        ledger, superseded = reading.failure_ledger(
+            facts,
+            "claude",
+            "s-1",
+            cap_chars=reading.LEDGER_SUMMARY_CAP_CHARS,
+            tool_output={},
+            changed_after=frozenset(),
+            read_incomplete=frozenset(),
+            read_agent_words=False,
+        )
+        row = {"harness": "claude", "finished_at": stopped_at}
+        kept, _stop, _left, withheld = reading._ledger_to_read(
+            ledger, row, reading.SCOPE_LAST_TURN, 4_000.0
+        )
+        self.assertEqual("", withheld)
+        return reading._unsent_checks_note(
+            cast("Any", object()),
+            facts,
+            "claude",
+            "s-1",
+            True,
+            True,
+            sent_failure=any(entry["type"] == "tool_report" for entry in kept),
+            superseded=superseded,
+            outside_window=reading._failures_left_out(ledger, kept),
+        )
+
+    def test_a_failure_after_the_stop_is_not_called_unrecorded(self) -> None:
+        note = self._window_note([WORDS, _report("bad", "failed", 4_200.0)], stopped_at=4_100.0)
+        self.assertIn("A failed check was recorded outside the window this check read", note)
+        self.assertNotIn("No failed check or command was recorded", note)
+
+    def test_two_failures_outside_the_window_are_counted(self) -> None:
+        note = self._window_note(
+            [
+                WORDS,
+                _report("a", "failed", 4_200.0),
+                _report("b", "failed", 4_300.0, summary="python3 -m pytest tests/b.py"),
+            ],
+            stopped_at=4_100.0,
+        )
+        self.assertIn("2 failed checks were recorded outside the window this check read", note)
+
     def test_passes_only_says_no_failure_was_recorded(self) -> None:
         note, unsent = self._cutoff_and_unsent([WORDS, _report("ok", "passed", 4_100.0)])
         self.assertTrue(unsent)
