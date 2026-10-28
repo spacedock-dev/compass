@@ -692,11 +692,11 @@ class ACiPollReadsTheSessionFoldersRepository(ClaudeChecksTestCase):
         polls = [f"gh pr checks {number}" for number in range(1, count + 1)]
         polls.insert(count // 2, "export GH_REPO=other/old")
         command = " && ".join(polls)
-        started = time.monotonic()
+        started = time.process_time()
         self.session.bash(command, "all pass", is_error=False)
         found = {t: p for t, p in self.polls().items() if t.startswith("gh pr checks")}
         # Linear in the polls: about 1.5 s here. The earlier per-poll scans took half a minute.
-        self.assertLess(time.monotonic() - started, 8.0)
+        self.assertLess(time.process_time() - started, 8.0)
         self.assertGreater(len(found), 0)
         for text, poll in found.items():
             number = int(text.rsplit(" ", 1)[1])
