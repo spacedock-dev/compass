@@ -168,7 +168,7 @@ class Declarations:
 
 _lock = threading.Lock()
 _cache: OrderedDict[tuple[str, int], tuple[float, Declarations | None]] = OrderedDict()
-_problems: OrderedDict[tuple[str, str], str] = OrderedDict()
+_problems: OrderedDict[tuple[str, str, str], str] = OrderedDict()
 
 
 def problems(home: str = "") -> list[dict[str, str]]:
@@ -180,7 +180,7 @@ def problems(home: str = "") -> list[dict[str, str]]:
     with _lock:
         return [
             {"file": _from_home(os.path.join(top, name), home), "reason": reason}
-            for (top, name), reason in _problems.items()
+            for (top, name, _commit), reason in _problems.items()
         ]
 
 
@@ -199,18 +199,20 @@ def reset() -> None:
         _problems.clear()
 
 
-def _forget(toplevel: str) -> None:
-    """Drop what an earlier load noted about this work tree, so a file that has since been
-    repaired, or removed from the commit, stops being reported."""
+def _repaired(toplevel: str, name: str, commit: str) -> None:
+    """Drop what an earlier load of this file at this base commit noted, so a file that has since
+    been repaired stops being reported. Keyed by commit as well as work tree because two sessions
+    of one project can start from different commits, and one session's clean load must not erase
+    the entry the other's still-broken file earned."""
     with _lock:
-        for key in [key for key in _problems if key[0] == toplevel]:
-            del _problems[key]
+        _problems.pop((toplevel, name, commit), None)
 
 
-def _note(toplevel: str, name: str, reason: str) -> None:
+def _note(toplevel: str, name: str, commit: str, reason: str) -> None:
+    key = (toplevel, name, commit)
     with _lock:
-        _problems[(toplevel, name)] = reason
-        _problems.move_to_end((toplevel, name))
+        _problems[key] = reason
+        _problems.move_to_end(key)
         while len(_problems) > _PROBLEMS_MAX:
             _problems.popitem(last=False)
 
@@ -270,7 +272,6 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
     if committed is None:
         return None
     top = committed.toplevel
-    _forget(top)
     by_kind: dict[str, dict[str, Script]] = {"package": {}, "make": {}, "just": {}}
     skipped: list[tuple[str, str]] = []
     trusted: set[str] = set()
@@ -284,8 +285,9 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
         parsed, working, reason = _declarations(entry, top, committed_make)
         if reason is not None or parsed is None or working is None:
             skipped.append((entry.name, reason or PARSE_REASON))
-            _note(top, entry.name, reason or PARSE_REASON)
+            _note(top, entry.name, committed.commit, reason or PARSE_REASON)
             continue
+        _repaired(top, entry.name, committed.commit)
         trusted.add(entry.name)
         digests[entry.name] = hashlib.sha256(working).digest()
         # A name two files of a kind both declare is read from the first, as `just` does; `make`

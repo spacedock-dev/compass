@@ -789,30 +789,49 @@ class AFileMakeWouldReadFirstAppearingInsideTheCacheWindow(ProjectScriptTestCase
 
 
 class AFileThatIsLaterRepairedIsNoLongerReported(ProjectScriptTestCase):
-    def test_a_repaired_file_clears_its_entry_and_the_path_is_shown_from_home(self) -> None:
+    def test_a_file_repaired_in_the_work_tree_clears_its_entry(self) -> None:
+        self.commit({"package.json": package(typecheck="tsc --noEmit")})
+        at = 1_790_000_000.0
+        (self.cwd / "package.json").write_text(package(typecheck="true"), encoding="utf-8")
+        project_scripts.load(str(self.cwd), at)
+        self.assertEqual(
+            [project_scripts.EDITED_REASON], [p["reason"] for p in project_scripts.problems()]
+        )
+        (self.cwd / "package.json").write_text(package(typecheck="tsc --noEmit"), encoding="utf-8")
+        project_scripts.load(str(self.cwd), at + 1)
+        self.assertEqual([], project_scripts.problems())
+
+    def test_a_sessions_clean_load_keeps_the_entry_a_session_on_another_commit_earned(
+        self,
+    ) -> None:
         first = dt.datetime(2026, 9, 1, 12, tzinfo=dt.UTC).timestamp()
         later = dt.datetime(2026, 9, 3, tzinfo=dt.UTC).timestamp()
         self.commit({"package.json": "{"})
         project_scripts.load(str(self.cwd), first)
-        self.assertEqual(
-            [project_scripts.PARSE_REASON], [p["reason"] for p in project_scripts.problems()]
-        )
         self.commit(
             {"package.json": package(typecheck="tsc --noEmit")}, when="2026-09-02T00:00:00Z"
         )
         project_scripts.load(str(self.cwd), later)
-        self.assertEqual([], project_scripts.problems())
+        self.assertEqual(
+            ["package.json"], [Path(p["file"]).name for p in project_scripts.problems()]
+        )
 
-    def test_a_file_removed_from_the_commit_clears_its_entry(self) -> None:
-        first = dt.datetime(2026, 9, 1, 12, tzinfo=dt.UTC).timestamp()
-        later = dt.datetime(2026, 9, 3, tzinfo=dt.UTC).timestamp()
+    def test_a_load_that_notes_a_file_keeps_another_files_entry_on_the_same_commit(self) -> None:
         self.commit({"package.json": "{", "justfile": "test:\n    pytest\n"})
-        project_scripts.load(str(self.cwd), first)
-        self.assertEqual(1, len(project_scripts.problems()))
-        git(self.cwd, "rm", "-q", "package.json")
-        git(self.cwd, "commit", "-q", "-m", "drop", when="2026-09-02T00:00:00Z")
-        project_scripts.load(str(self.cwd), later)
-        self.assertEqual([], project_scripts.problems())
+        at = 1_790_000_000.0
+        (self.cwd / "justfile").write_text(
+            'set shell := ["true"]\ntest:\n    pytest\n', encoding="utf-8"
+        )
+        project_scripts.load(str(self.cwd), at)
+        self.assertEqual(
+            {"package.json", "justfile"},
+            {Path(p["file"]).name for p in project_scripts.problems()},
+        )
+        (self.cwd / "justfile").write_text("test:\n    pytest\n", encoding="utf-8")
+        project_scripts.load(str(self.cwd), at + 1)
+        self.assertEqual(
+            ["package.json"], [Path(p["file"]).name for p in project_scripts.problems()]
+        )
 
     def test_a_path_under_home_is_shown_from_home(self) -> None:
         self.commit({"package.json": "{"})
