@@ -955,6 +955,9 @@ _INLINE_SCRIPT_FLAG: Final = {
     "node": re.compile(r"^(?:-[ep]|--eval|--print|-pe)$"),
     "ruby": re.compile(r"^-[A-Za-z0-9]*e$"),
     "perl": re.compile(r"^-[A-Za-z0-9]*[eE]$"),
+    "bun": re.compile(r"^(?:-[ep]|--eval|--print)$"),
+    "php": re.compile(r"^-r$"),
+    "deno": re.compile(r"^$"),
 }
 # `python -c"..."`, `node --eval=...`: the script joined to its flag.
 _INLINE_SCRIPT_JOINED: Final = {
@@ -962,6 +965,9 @@ _INLINE_SCRIPT_JOINED: Final = {
     "node": re.compile(r"^(--eval=|--print=).+$", re.DOTALL),
     "ruby": re.compile(r"^(-e).+$", re.DOTALL),
     "perl": re.compile(r"^(-[eE]).+$", re.DOTALL),
+    "bun": re.compile(r"^(--eval=|--print=).+$", re.DOTALL),
+    "php": re.compile(r"^(-r).+$", re.DOTALL),
+    "deno": re.compile(r"^$"),
 }
 # Flags that take a word of their own, so it is not read as the script file. One table per
 # interpreter, because `-I` and `-i` take no value in python, node or perl and one shared set let
@@ -976,10 +982,13 @@ _INLINE_VALUE_FLAGS: Final = {
     ),
     "ruby": frozenset({"-r", "-I", "-C"}),
     "perl": frozenset({"-I", "-M", "-m"}),
+    "bun": frozenset({"-r", "--preload", "--import", "--env-file", "--cwd", "-c", "--config"}),
+    "php": frozenset({"-c", "-d", "-z"}),
+    "deno": frozenset({"--ext", "--env", "--env-file", "--import-map", "--config", "-c"}),
 }  # fmt: skip
 _INLINE_PROGRAMS: Final = re.compile(
     r"^(?:(?P<python>(?:python|pypy)(?:\d+(?:\.\d+)?)?)|(?P<node>node|nodejs)|(?P<ruby>ruby)"
-    r"|(?P<perl>perl))$"
+    r"|(?P<perl>perl)|(?P<bun>bun)|(?P<php>php\d*(?:\.\d+)?)|(?P<deno>deno))$"
 )
 
 
@@ -1016,6 +1025,8 @@ def inline_script_words(words: list[str]) -> dict[int, str]:
     if not kind:
         return {}
     value_flags = _INLINE_VALUE_FLAGS[kind]
+    if kind == "deno":
+        return _deno_eval_script(words, start, value_flags)
     found: dict[int, str] = {}
     index = start + 1
     while index < len(words):
@@ -1037,6 +1048,19 @@ def inline_script_words(words: list[str]) -> dict[int, str]:
             found[index] = joined.group(1)
         index += 2 if word in value_flags else 1
     return found
+
+
+def _deno_eval_script(words: list[str], start: int, value_flags: frozenset[str]) -> dict[int, str]:
+    """`deno eval [flags] SCRIPT`: the script is the first plain word after the subcommand."""
+    if words[start + 1 : start + 2] != ["eval"]:
+        return {}
+    index = start + 2
+    while index < len(words):
+        word = words[index]
+        if not word.startswith("-"):
+            return {index: ""}
+        index += 2 if word in value_flags else 1
+    return {}
 
 
 def _plain_words(words: list[str], at: int, program: str, *, skip_assignments: bool) -> list[int]:

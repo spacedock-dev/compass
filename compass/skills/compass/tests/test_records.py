@@ -1033,6 +1033,24 @@ class InlineScriptAndQuoteCostTest(unittest.TestCase):
                 (at,) = records.inline_script_words(words)
                 self.assertEqual(words.index("-e") + 1 if "-e" in words else at, at)
 
+    def test_bun_deno_and_php_inline_scripts_are_opaque_and_shell_wrappers_are_not(self) -> None:
+        for line, script in (
+            ("bun -e 'x(\"FakePass99\")'", 2),
+            ("bun --eval 'x(\"FakePass99\")'", 2),
+            ("bun -p 'x(\"FakePass99\")'", 2),
+            ("bun --eval='x(\"FakePass99\")'", 1),
+            ("deno eval 'x(\"FakePass99\")'", 2),
+            ("deno eval --ext ts 'x(\"FakePass99\")'", 4),
+            ("php -r 'x(\"FakePass99\");'", 2),
+            ("php -r'x(\"FakePass99\");'", 1),
+            ("timeout 5 php -r 'x();'", 4),
+        ):
+            with self.subTest(line=line):
+                self.assertEqual({script}, set(records.inline_script_words(shlex.split(line))))
+        for line in ("bash -c 'echo hi'", "sh -c 'echo hi'", "deno test -e x", "bun test"):
+            with self.subTest(line=line):
+                self.assertEqual({}, records.inline_script_words(shlex.split(line)))
+
     def test_a_script_file_still_ends_the_scan(self) -> None:
         for line in ("node deploy.js -e prod", "python manage.py -c x", "perl ./run -e x"):
             with self.subTest(line=line):
