@@ -1990,8 +1990,9 @@ that take a value; the value after `--secret-string`, `--passphrase`, `--pass`, 
 `key=value` pair (the key stays); the value after `--value` for `aws ssm put-parameter` only;
 npm's `_authToken` line, as `//registry/:_authToken=value` or after `npm config set`; the value after
 `--body` or `-b` for `gh secret` only, so a pull request body stays readable; the value after `-w`
-for the `ldap*` tools and after `-N` for `ssh-keygen`; an openssl `pass:` prefix, on an openssl line or after `-pass`, `-passin` or `-passout` (`-passin pass:value`,
-`-passout`, `-pass`), while `env:` and `file:` sources name no value; the token word of `cargo login`;
+for the `ldap*` tools and after `-N` for `ssh-keygen`; an openssl `pass:` prefix, on an openssl
+line or after `-pass`, `-passin` or `-passout` (`-passin pass:value`), while `env:` and `file:`
+sources name no value; the token word of `cargo login`;
 and the password in `user:password@`, up to the last `@` in the word, so one
 holding `/`, `@` or whitespace is masked whole. A program is found behind `rtk`, `sudo`, `env`, `uv
 run`, `pnpm exec` and the like, and behind `docker`, `podman` or `kubectl exec`. The words are the

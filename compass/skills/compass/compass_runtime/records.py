@@ -959,8 +959,9 @@ _INLINE_SCRIPT_JOINED: Final = {
 }
 # Flags that take a word of their own, so it is not read as the script file. One table per
 # interpreter, because `-I` and `-i` take no value in python, node or perl and one shared set let
-# them swallow the `-c` after them and print the script whole. An unknown flag takes no value: at
-# worst it exposes a following flag, never the script.
+# them swallow the `-c` after them and print the script whole. An unknown flag takes no value, so
+# the word after it is met next; a word counts as the script file only when it looks like one
+# (`_looks_like_script_file`), and anything else keeps the scan going toward the script flag.
 _INLINE_VALUE_FLAGS: Final = {
     "python": frozenset({"-W", "-X"}),
     "node": frozenset(
@@ -974,6 +975,13 @@ _INLINE_PROGRAMS: Final = re.compile(
     r"^(?:(?P<python>(?:python|pypy)(?:\d+(?:\.\d+)?)?)|(?P<node>node|nodejs)|(?P<ruby>ruby)"
     r"|(?P<perl>perl))$"
 )
+
+
+_SCRIPT_FILE: Final = re.compile(r"[/\\]|\.(?:py|pyw|js|mjs|cjs|rb|pl|pm|ts)$")
+
+
+def _looks_like_script_file(word: str) -> bool:
+    return _SCRIPT_FILE.search(word) is not None
 
 
 def _inline_start(words: list[str]) -> tuple[int, str]:
@@ -1006,8 +1014,13 @@ def inline_script_words(words: list[str]) -> dict[int, str]:
     index = start + 1
     while index < len(words):
         word = words[index]
-        if word == "--" or not word.startswith("-") or (kind == "python" and word == "-m"):
+        if word == "--" or (kind == "python" and word == "-m"):
             break
+        if not word.startswith("-"):
+            if _looks_like_script_file(word):
+                break
+            index += 1
+            continue
         if _INLINE_SCRIPT_FLAG[kind].match(word):
             if index + 1 < len(words):
                 found[index + 1] = ""
@@ -2294,6 +2307,41 @@ def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> st
     return plain.sub(_SECRET_MARKER, text)
 
 
+def _trie_alternation(spellings: tuple[str, ...]) -> str:
+    """One regex alternation over `spellings`, shared prefixes factored out.
+
+    A flat alternation tries every branch at every offset, and each value has a quote-wrapped
+    spelling, so a quote-heavy result cost O(quotes x values): 3.5 s for 100,000 quotes at 4,096
+    values. A prefix tree tries only the branches that start with the character in hand. Longer
+    branches are tried before the end of a shorter one, so the longest value still wins.
+    """
+    root: dict[str, Any] = {}
+    for spelling in spellings:
+        node = root
+        for char in spelling:
+            node = node.setdefault(char, {})
+        node[""] = {}
+    return _trie_regex(root)
+
+
+def _trie_regex(node: dict[str, Any]) -> str:
+    ends = "" in node
+    branches = []
+    for char in sorted(node):
+        if not char:
+            continue
+        label, child = char, node[char]
+        while len(child) == 1 and "" not in child:
+            ((next_char, grand),) = child.items()
+            label += next_char
+            child = grand
+        branches.append(re.escape(label) + _trie_regex(child))
+    if not branches:
+        return ""
+    body = branches[0] if len(branches) == 1 else "(?:" + "|".join(branches) + ")"
+    return f"(?:{body})?" if ends else body
+
+
 @lru_cache(maxsize=2)
 def _scrub_patterns(
     spellings: tuple[str, ...], prose: bool
@@ -2313,7 +2361,7 @@ def _scrub_patterns(
     # In prose a `:` after a word is how `user:password` is quoted, so it does not
     # make the value part of a longer word; a `/`, `.` or `@` still does.
     before = r"(?<![\w./@+\-])" if prose else rf"(?<!{boundary})"
-    alternation = "|".join(re.escape(each) for each in sorted(spellings, key=len, reverse=True))
+    alternation = _trie_alternation(spellings)
     return (
         re.compile(rf"{before}(?:{alternation}){after}"),
         re.compile(rf"(?<!{boundary})(-[pP])(?:{alternation}){after}"),

@@ -7967,4 +7967,6 @@ output." The Live monitor sends no output tail at all, so it needed no second ru
 
 A line is masked as a check's is, with one addition: a quoted word that the masking cannot read word by word
 is shown as `…`. A `bash -c` script that did not parse is the case that showed it, and masking one word at a
-time left half of a value behind.
+time left half of a value behind. The script given to `python -c`, `node -e`, `ruby -e` or
+`perl -e` is shown as `…` the same way, under the rule in the
+[DEC-23 amendment of 2026-10-28](#amended-2026-10-28-owner-more-command-line-forms-are-masked-inline-scripts-are-opaque-and-the-scrub-is-one-pass).

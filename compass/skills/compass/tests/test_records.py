@@ -1020,6 +1020,36 @@ class ScrubValuesTest(unittest.TestCase):
         self.assertEqual({"FakeTok99xx", "FakePass99"}, values)
 
 
+class InlineScriptAndQuoteCostTest(unittest.TestCase):
+    def test_an_unlisted_value_flag_does_not_expose_the_script(self) -> None:
+        for line in (
+            "node --inspect-port 9229 -e 'x(\"FakePass99\")'",
+            "node --title foo -e 'x'",
+            "ruby -E utf-8 -e 'x'",
+            "perl -F , -ane 'x'",
+        ):
+            with self.subTest(line=line):
+                words = shlex.split(line)
+                (at,) = records.inline_script_words(words)
+                self.assertEqual(words.index("-e") + 1 if "-e" in words else at, at)
+
+    def test_a_script_file_still_ends_the_scan(self) -> None:
+        for line in ("node deploy.js -e prod", "python manage.py -c x", "perl ./run -e x"):
+            with self.subTest(line=line):
+                self.assertEqual({}, records.inline_script_words(shlex.split(line)))
+
+    def test_a_quote_heavy_result_scrubs_quickly_at_the_value_cap(self) -> None:
+        values = [f"Val{n}secret" for n in range(4096)]
+        started = time.monotonic()
+        for text in ("'" * 100_000, "a'" * 50_000):
+            records.scrub_values(text, values, prose=True)
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertEqual(
+            "x …REDACTED and Val5secretX …REDACTED",
+            records.scrub_values("x Val5secret and Val5secretX 'Val5secret'", values, prose=True),
+        )
+
+
 def _one_at_a_time_scrub(text: str, values: list[str], *, prose: bool = False) -> str:
     """The scrub as it was before the spellings were combined: three patterns per spelling.
 
