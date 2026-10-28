@@ -71,3 +71,53 @@ class EachGroupTakesItsOwnSummary(ClaudeChecksTestCase):
         # The `-p` value is masked in the title, so the run is found by how the line starts.
         run_tests = [result for title, result in found.items() if "run_tests.py" in title]
         self.assertEqual(["passed"], run_tests)
+
+
+PYTEST_FAILED = "=== 1 failed, 3 passed in 0.50s ==="
+RUFF_OK = "All checks passed!"
+
+
+class NothingIsPassedThatDidNotPass(ClaudeChecksTestCase):
+    """The review's false passes of 2026-10-28, each read as passed before the fix."""
+
+    def results(self, command: str, output: str) -> dict[str, str]:
+        self.session.bash(command, output, is_error=False)
+        return results_by_title(self.read()[0])
+
+    def test_a_runner_repeated_inside_a_group_reads_nothing(self) -> None:
+        found = self.results(
+            "pytest tests/a && pytest tests/b | tail -1; ruff check . | tail -1",
+            f"FAILED tests/a.py::t\n{PYTEST_FAILED}\n{RUFF_OK}",
+        )
+        self.assertNotEqual("passed", found["pytest tests/a"])
+        self.assertNotEqual("failed", found["pytest tests/b"])
+
+    def test_a_later_group_that_does_not_match_leaves_the_earlier_ones(self) -> None:
+        found = self.results(
+            "python3 -m unittest tests.test_a; mypy srcx | tail -1; ruff check .",
+            f"OK\nFAIL: test_x\nFAILED (failures=1)\nmypy: can't read file 'srcx'\n{RUFF_OK}",
+        )
+        self.assertNotEqual("passed", found["python3 -m unittest tests.test_a"])
+
+    def test_setup_that_may_print_reads_nothing(self) -> None:
+        for setup in ("echo OK", "curl -sf http://127.0.0.1:8000/healthz"):
+            with self.subTest(setup=setup):
+                self.setUp()
+                found = self.results(
+                    f"{setup}; python3 -m unittest tests.test_a 2>&1 | tail -1; mypy src",
+                    f"OK\nTraceback\nSyntaxError: invalid syntax\n{MYPY_OK}",
+                )
+                self.assertNotEqual("passed", found["python3 -m unittest tests.test_a"])
+
+    def test_a_package_name_is_not_a_named_test(self) -> None:
+        found = self.results("python3 -m unittest tests 2>&1 | tail -1; mypy src", f"OK\n{MYPY_OK}")
+        self.assertNotEqual("passed", found["python3 -m unittest tests"])
+
+    def test_a_check_that_cannot_fail_is_not_passed_by_its_chain(self) -> None:
+        self.session.bash(
+            "ruff check --exit-zero . && mypy src | tail -1",
+            f"x.py:1:1: F401 unused\nFound 1 error.\n{MYPY_OK}",
+            is_error=False,
+        )
+        found = results_by_title(self.read()[0])
+        self.assertNotEqual("passed", found["ruff check --exit-zero ."])

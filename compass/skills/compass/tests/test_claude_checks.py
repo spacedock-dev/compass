@@ -2361,10 +2361,10 @@ class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase)
         )
 
     def test_an_earlier_failure_in_the_window_does_not_fail_the_last_check(self) -> None:
-        # Since 2026-10-28 each `;`-separated check takes its own summary line in order
-        # (`test_ordered_summaries`), so mypy's own failure line now fails mypy, and still not ruff.
+        # `echo go` may print, so the ordered reading of `test_ordered_summaries` reads nothing
+        # here either, and mypy stays unrecorded.
         self.assertEqual(
-            {"mypy .": "failed", "ruff check .": "passed"},
+            {"mypy .": "not-recorded", "ruff check .": "passed"},
             self.results_of(
                 "echo go; mypy . 2>&1 | tail -5; ruff check . | tail -5",
                 "src/a.py:1: error: Missing return\nFound 1 error in 1 file\nAll checks passed!",

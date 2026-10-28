@@ -19,7 +19,8 @@ loss. Raised, the same press kept all 187 messages.
 - `analyze_scan_megabytes` is how much of the session's transcript and its subagents' a press scans
   for checks. The board scans 8 MiB, which on the same session read half the parent and none of
   its 282 subagents, where every builder and reviewer ran its tests; 512 MiB read all of them, in
-  about half a minute.
+  about half a minute. The scan holds what it read until the press ends, about five times the
+  bytes it scanned (review, 2026-10-28), so the ceiling is 1 GiB rather than more.
 
 A value missing, unreadable or out of range reads as its default, so a damaged file costs the
 reader their settings and never their reading. Writes are refused, not clamped, when out of range:
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 from . import io as runtime_io
@@ -40,7 +42,7 @@ if TYPE_CHECKING:
     from .config import RuntimeConfig
 
 STORE_FILENAME: Final = "compass-settings.json"
-# A store of two integers. Anything larger is not this file, and is not parsed.
+# A store of a few integers. Anything larger is not this file, and is not parsed.
 _MAX_STORE_BYTES: Final = 4096
 _LOCK_WAIT_SEC: Final = 2.0
 
@@ -61,7 +63,7 @@ LIMITS: Final = (
     Limit("analyze_prompt_bytes", default=524_288, minimum=16_384, maximum=524_288),
     Limit("analyze_record_events", default=2_000, minimum=100, maximum=20_000),
     Limit("analyze_listed_checks", default=1_000, minimum=12, maximum=5_000),
-    Limit("analyze_scan_megabytes", default=512, minimum=8, maximum=4_096),
+    Limit("analyze_scan_megabytes", default=512, minimum=8, maximum=1_024),
 )
 
 
@@ -96,9 +98,20 @@ def _valid(limit: Limit, value: Any) -> bool:
     )
 
 
+def _read_store(path: str) -> bytes:
+    """The store's first bytes, from a regular file only: a link or a FIFO left at the path would
+    otherwise be followed, or block every press that reads the settings."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise OSError(path)
+        return handle.read(_MAX_STORE_BYTES + 1)
+
+
 def _stored(config: RuntimeConfig) -> dict[str, Any]:
     try:
-        raw = runtime_io.read_prefix_bytes(store_path(config), max_bytes=_MAX_STORE_BYTES + 1)
+        raw = _read_store(store_path(config))
     except OSError:
         return {}
     if len(raw) > _MAX_STORE_BYTES:

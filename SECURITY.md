@@ -177,8 +177,9 @@ The posture rests on two invariants:
    fetch-site checks, a document navigation refused before the body is read, and a body that must
    assert `press` and `observer_model`. [Find goal](#find-goal) owns what it sends and what it keeps.
    The eleventh, `POST /api/settings`, saves the reading limits set on the Settings screen (how
-   large an Analyze drift prompt may be, and how many of a session's messages and checks a press
-   keeps and lists) in `compass-settings.json`, owner-only, holding integers and nothing a session
+   large an Analyze drift prompt may be, how many of a session's messages and checks a press keeps
+   and lists, and how much of its transcripts the press scans for checks) in
+   `compass-settings.json`, owner-only, holding integers and nothing a session
    or a reader wrote. It is loopback-only, enforces Host/Origin and fetch-site checks, refuses a
    document navigation, and checks every value against its bounds before it writes any. A larger
    limit changes how much of a session the next press sends, never where it goes or who it goes to,
@@ -1551,7 +1552,9 @@ and stored in `compass-settings.json` (`settings`). The prompt bound is
 and never under the project page's 100; the checks and written files it lists are
 `settings.analyze_listed_checks`, 1,000 by default and never under the page's 12; and the
 transcript bytes it scans for them, the session's and its subagents', are
-`settings.analyze_scan_megabytes`, 512 MiB by default and never under the board's 8 MiB. The scan
+`settings.analyze_scan_megabytes`, 512 MiB by default, never under the board's 8 MiB and never over
+1 GiB, because the scan holds what it read in memory until the press ends, about five times the
+bytes it scanned. The scan
 reads the same files the board's does (the subagent rule of
 [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)), only further back; on the 18-hour
 session it read 282 subagent transcripts the board's bound left unread, which is where every
@@ -1569,7 +1572,8 @@ Amended 2026-10-05 by the owner through delegated adversarial acceptance
 the agent's newest message that its own transcript record marks as ending its turn
 (`message.stop_reason` equal to `end_turn`; text alone, a quiet session or a later timestamp does
 not establish it) goes whole in place of its 1,000-character excerpt, but only when its complete
-quoted row fits the 4,096 bytes of the agent's quarter and the room the reader's words left. It is
+quoted row fits the agent's quarter of the prompt (4,096 bytes under the old 16 KiB bound, far more
+under the reader's prompt size), at most 16,384 characters, and the room the reader's words left. It is
 chosen among the rows the prompt already selected, so no entry, citation number or older or later
 record is added, and it is read from the same file version the press read its facts from, by a
 memory-only scan of the complete file, only when it is at most 32 MiB. A larger file cannot
@@ -1844,7 +1848,7 @@ The prompt itself can still name paths. Under the tool-output ruling a check's c
 redacted output tail are sent as the session recorded them, and a reader's own messages and, since
 2026-10-03, the agent's own messages are sent whole up to 1,000 characters each where the prompt
 has room (Observer model calls), except its newest recorded final reply, which since 2026-10-05
-goes in full where it fits 4,096 bytes, redacted, so a home path or user name the session typed or
+goes in full up to 16,384 characters, redacted, so a home path or user name the session typed or
 printed reaches Anthropic that way.
 
 Because the working directory is sent, the process runs in a fresh owner-only (0700) empty
@@ -1883,7 +1887,7 @@ A hard kill of Compass (SIGKILL, a power loss) runs no cleanup and can leave bot
 owner-only; the next start removes any such file in `state_dir` older than a day, which no live
 call reaches, so a second instance's call in flight keeps its own. An absent or relative
 `shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
-receives: redacted, then clipped to 16 KiB. The same remembered answer, now per provider, and the
+receives: redacted, then bounded by the reader's prompt size (512 KiB by default). The same remembered answer, now per provider, and the
 same rolling cap apply.
 
 These flags are CLI restrictions, not an OS sandbox. There is no Claude Code equivalent of Codex

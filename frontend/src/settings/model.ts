@@ -32,7 +32,7 @@ const COPY: Readonly<Record<string, Copy>> = {
   },
   analyze_scan_megabytes: {
     label: 'Transcript scanned for checks',
-    help: "How much of the session's transcript, and its subagents' transcripts, a press scans for the checks and files it lists. Subagents are where delegated work runs its tests. More reads more of that work, and takes longer.",
+    help: "How much of the session's transcript, and its subagents' transcripts, a press scans for the checks and files it lists. Subagents are where delegated work runs its tests. More reads more of that work, but takes longer and holds about five times as much in memory while the press runs.",
     scale: 1,
     unit: 'MB',
   },

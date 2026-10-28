@@ -168,7 +168,8 @@ class RoutesTest(unittest.TestCase):
         with self.serving() as port:
             status, body = self.request(port, "POST", {"values": {"analyze_prompt_bytes": 10}})
         self.assertEqual(400, status)
-        self.assertIn(b"analyze_prompt_bytes", body)
+        # The caller's key never reaches the reply: the reason is written into the status line.
+        self.assertNotIn(b"analyze_prompt_bytes", body)
         self.assertFalse(os.path.exists(settings.store_path(self.config)))
 
     def test_a_body_without_values_is_refused(self) -> None:
@@ -272,3 +273,14 @@ class OnePressBuildsOneTally(reach_tests.PressReachTestCase):
                 self.config, cast("Any", state), "claude", "s", scan_bytes=64 * 1024 * 1024
             )
         self.assertEqual(64 * 1024 * 1024, press.call_args.args[0].turn_scan_max_bytes)
+
+
+class TheStoreIsReadAsARegularFileOnly(StoreTest):
+    def test_a_link_or_a_fifo_at_the_path_reads_as_the_defaults(self) -> None:
+        target = Path(self.path).with_name("elsewhere.json")
+        target.write_text(json.dumps({"analyze_listed_checks": 40}))
+        os.symlink(target, self.path)
+        self.assertEqual(settings.DEFAULTS, self.load())
+        os.unlink(self.path)
+        os.mkfifo(self.path)
+        self.assertEqual(settings.DEFAULTS, self.load())

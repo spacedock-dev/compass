@@ -8427,7 +8427,9 @@ tell. The owner ruled that a press reads the session whole, within bounds the re
 - A pull request merged by a commit the session folder's history holds counts as its head would
   (`merged_in`), checked with `git merge-base --is-ancestor`.
 - A consistent line resting on the agent's account reaches the evidence floor on green pull
-  request checks that count, with none failing.
+  request checks that count, with none failing. Known limit, left for a later ruling: these checks
+  are not aged by work done after them, so a merged pull request's checks can back a line about
+  later commits on the same branch.
 
 The same session then read all 1,148 entries after its intent in a 431 KB prompt, its passed runs
 rose from 3 to 451, and the reading drew None or low.

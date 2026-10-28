@@ -2133,8 +2133,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         config = self.server.application.config
         try:
             saved = settings.save(config, values)
-        except settings.InvalidSettingError as error:
-            self._reject(400, f"{error.key} is not a setting, or is outside its bounds")
+        except settings.InvalidSettingError:
+            # The key is not echoed: it is the caller's text, and the reason reaches the status
+            # line.
+            self._reject(400, "a value names no setting, or is outside its bounds")
             return
         except OSError:
             self._reject(503, "the settings store could not be written")

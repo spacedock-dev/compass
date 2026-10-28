@@ -4315,6 +4315,10 @@ def _pass_is_refused(runner: str, lines: list[str], words: list[str] | None = No
 _UNITTEST_SELECTOR = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
 _UNITTEST_QUIET_FLAGS = frozenset({"-v", "-q", "--verbose", "--quiet", "-b", "--buffer"})
 _RUN_TESTS_SCRIPT = re.compile(r"run_?tests?\.py")
+# The last part of a name must read as a test module, class or method. A package (`tests`) names
+# no test: on Python 3.11 `python -m unittest tests` printed `Ran 0 tests` and `OK` (review,
+# 2026-10-28), the empty discovery the rule refuses.
+_UNITTEST_NAMED = re.compile(r"(?!tests?$)(?:test\w*|\w*Tests?\w*|\w*_test)")
 
 
 def _explicit_unittest(words: list[str]) -> bool:
@@ -4324,7 +4328,8 @@ def _explicit_unittest(words: list[str]) -> bool:
         return False
     named = [word for word in words[3:] if word not in _UNITTEST_QUIET_FLAGS]
     return bool(named) and all(
-        word != "discover" and _UNITTEST_SELECTOR.fullmatch(word) for word in named
+        _UNITTEST_SELECTOR.fullmatch(word) and _UNITTEST_NAMED.fullmatch(word.rsplit(".", 1)[-1])
+        for word in named
     )
 
 
@@ -4516,20 +4521,55 @@ def _chain_passes(call: _ShellCall, text: str, added: Mapping[int, dict[str, Any
             or run["background"]
             or call.negated(index)
             or call.unestablished(index)
+            or _cannot_fail(call.words[index][0])
             or not all(joiner == "&&" for joiner in joiners[index:last])
         ):
             continue
         run.update(result="passed", result_source="chain", result_reason="")
 
 
+def _cannot_fail(words: list[str]) -> bool:
+    """A check whose own arguments make it exit 0 (`ruff check --exit-zero`): `&&` proves nothing
+    of it, since it lets what follows run whatever it found."""
+    return _exits_zero_by_flag(words) or _always_zero(words)
+
+
+# Setup that cannot print, ahead of the first check (`_check_groups`). A summary-shaped line it
+# printed would take the slot of a check that printed none (review, 2026-10-28: `echo OK;` and a
+# health-check `curl` did), so only commands that print nothing by construction are admitted.
+_QUIET_SETUP = frozenset({"mkdir", "touch", "cp", "mv", "rm", "rmdir", "chmod", "ln"})
+_STDOUT_AWAY = frozenset({">", "1>", ">>", "1>>", "&>", "&>>"})
+
+
+def _quiet_setup(call: _ShellCall, index: int) -> bool:
+    part = call.parts[index]
+    words = part.words
+    if not words or (words[0] == "cd" and index not in call.printing_directories):
+        return True
+    if any(redirect.operator in _STDOUT_AWAY for redirect in part.redirects):
+        return True
+    if any(word in ("-v", "--verbose") for word in words[1:]):
+        return False
+    if words[0] in _QUIET_SETUP or (words[0] == "sed" and "-i" in words[1:]):
+        return True
+    # An agent's file edit: `python3 - <<'EOF' ... EOF`. Its script is not kept by the parser, so
+    # the call's whole text must hold no print at all.
+    return (
+        bool(_PYTHON_RE.match(words[0]))
+        and words[1:] == ["-"]
+        and any(redirect.operator.startswith("<<") for redirect in part.redirects)
+        and "print(" not in call.text
+        and "stdout" not in call.text
+    )
+
+
 def _check_groups(call: _ShellCall) -> list[list[int]] | None:
     """The call's checks as `&&` groups, or None where its shape lets something else print.
 
     A group is checks joined by `&&` with nothing piped between them; after its last check only
-    pipe filters may follow, then `;`, `&&` or the end. Before the first check any setup may run,
-    as `last_line_may_speak` allows: agents edit a file and test it in one call. A summary-shaped
-    line it printed would be one line too many, and `_ordered_summaries` would read nothing. After
-    the first check a `cd` that prints nothing and an assignment may stand anywhere; any other
+    pipe filters may follow, then `;` (or a newline), `&&` or the end. Before the first check only
+    setup that prints nothing may run (`_quiet_setup`): agents edit a file and test it in one call.
+    After the first check a `cd` that prints nothing and an assignment may stand anywhere; any other
     command could print a line that reads as the next group's summary, so the call is not read.
     """
     if len(call.checks) < 2 or call.substituted:
@@ -4541,6 +4581,8 @@ def _check_groups(call: _ShellCall) -> list[list[int]] | None:
     first = min(checks)
     for index, part in enumerate(call.parts):
         if index < first:
+            if not _quiet_setup(call, index):
+                return None
             previous_joiner = part.joiner
             continue
         words = call.words[index][0]
@@ -4565,7 +4607,7 @@ def _check_groups(call: _ShellCall) -> list[list[int]] | None:
             previous_check = False
         else:
             return None
-        previous_joiner = part.joiner
+        previous_joiner = ";" if part.joiner == "\n" else part.joiner
         if previous_joiner not in ("", ";", "&&", "|"):
             return None
     return groups if len(groups) > 1 else None
@@ -4590,6 +4632,14 @@ def _ordered_summaries(  # noqa: C901 - each early return is one way the lines c
     runners = [_summary_runner(call.words[group[-1]][0]) for group in groups]
     if not all(runners):
         return
+    # A runner repeated inside a group makes its last line ambiguous, as `_chain_passes` refuses:
+    # `pytest a && pytest b | tail -1` prints a's failure when a fails and b never runs.
+    if any(
+        _summary_runner(call.words[index][0]) == runner
+        for group, runner in zip(groups, runners, strict=True)
+        for index in group[:-1]
+    ):
+        return
     involved = {_summary_runner(call.words[index][0]) for index in call.checks} - {""}
     lines = [
         _ANSI_RE.sub("", line).rstrip()
@@ -4611,6 +4661,9 @@ def _ordered_summaries(  # noqa: C901 - each early return is one way the lines c
     ]
     if len(found) != len(groups) or not found or found[-1] != len(lines) - 1:
         return
+    # Every group is read before any result is written, so a later group that does not match
+    # leaves the earlier ones as they were too.
+    updates: list[tuple[int, str, str]] = []
     start = 0
     for group, runner, at in zip(groups, runners, found, strict=True):
         last = group[-1]
@@ -4621,13 +4674,17 @@ def _ordered_summaries(  # noqa: C901 - each early return is one way the lines c
             return
         if verdict == "passed" and _pass_is_refused(runner, block, call.words[last][0]):
             verdict = ""
-        for index in group[:-1]:
-            run = added.get(index)
-            if run is not None and run["result"] == "not-recorded":
-                run.update(result="passed", result_source="chain", result_reason="")
-        run = added.get(last)
-        if verdict and run is not None and run["result"] == "not-recorded":
-            run.update(result=verdict, result_source="summary", result_reason="")
+        updates.extend(
+            (index, "passed", "chain")
+            for index in group[:-1]
+            if not _cannot_fail(call.words[index][0])
+        )
+        if verdict:
+            updates.append((last, verdict, "summary"))
+    for index, result, source in updates:
+        run = added.get(index)
+        if run is not None and run["result"] == "not-recorded":
+            run.update(result=result, result_source=source, result_reason="")
 
 
 def _check_line(words: list[str]) -> str:
@@ -4797,6 +4854,9 @@ class _ShellCall:
     ) -> None:
         command = tool_input.get("command")
         self.at = at
+        # The command as written, which `_quiet_setup` reads for a heredoc script's prints: the
+        # parser keeps no heredoc body.
+        self.text = command if isinstance(command, str) else ""
         self.all_background = tool_input.get("run_in_background") is True or moved
         # Unbalanced quoting is a syntax error, so the call is not run: nothing
         # of it is listed or published, and it still counts as a change, since
