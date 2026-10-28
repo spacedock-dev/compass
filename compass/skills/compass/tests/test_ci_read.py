@@ -840,6 +840,8 @@ class _PressCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.state, True)
         self.config = types.SimpleNamespace(
             state_dir=self.state,
+            # A press reads the reader's reading limits from here; none are stored.
+            state_home=str(self.state),
             ci_read_enabled=True,
             model_calls_disabled=False,
             git_probe_enabled=True,
