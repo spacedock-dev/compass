@@ -4,7 +4,7 @@
 
 ## Test plan
 
-- [ ] Ran the canonical pre-PR suite in `AGENTS.md` § Pre-PR Checks, including frontend lint, strict types, unit and build checks, and the Storybook stories for any UI change, and it is clean. A prose-only diff is not exempt: the `validate` check is unfiltered and runs the same tests
+- [ ] Ran the canonical pre-PR suite in `AGENTS.md` § Pre-PR Checks, including frontend lint, strict types, unit, coverage and build checks, and the Storybook stories for any UI change, and it is clean. A prose-only diff is not exempt: the `validate` check is unfiltered and runs the same tests
 - [ ] Preserved Python 3.11 compatibility; CI's `runtime-floor` job launches the shipped entry point on that floor
 - [ ] Invoked the `sync-docs` skill — the doc updates for this change ride in this PR, or there was nothing to reconcile
 - [ ] Behavior changes to `server.py` or `compass_runtime/` include a regression test
