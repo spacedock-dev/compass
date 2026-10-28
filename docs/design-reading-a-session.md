@@ -8249,6 +8249,8 @@ Three loose ends in the `gh` and `glab` read and in how a reason is checked agai
   occurrence names the job, and a claim word counts only in a clause holding such an occurrence: "The `lint` job
   exists. The lint is clean." no longer agrees. A claim hedged by a requirement, a doubt or a question
   ("cannot pass", "needs to pass", "should pass", "I doubt it passes", "whether it passes") counts as no claim.
+  A pass the clause scopes to the reader's own machine ("passes locally", "on my machine") counts as no claim
+  either, so a CI pass does not agree with "the `lint` job passes locally but CI fails".
 
 ## DEC-31: the text of a command that is not a check may leave the machine, by vendor
 

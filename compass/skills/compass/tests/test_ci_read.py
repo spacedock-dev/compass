@@ -1626,6 +1626,18 @@ class AReasonThatNamesOnlyCiJobsReachesTheCiFacts(base.AClaudeCodeReadingProduce
                 self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
                 self.assertNotEqual(reading.GOAL_VERDICT_CI, verdict["why"])
 
+    def test_a_pass_stated_as_local_is_no_claim_about_the_ci_job(self) -> None:
+        for reason in (
+            "The unit-tests job passes locally but CI fails.",
+            "The unit-tests job passes on my machine.",
+            "Ran the unit-tests job locally and it passed.",
+        ):
+            with self.subTest(reason=reason):
+                verdict = self.checked(reason, record_with(*GREEN))
+                self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
+                self.assertNotEqual(reading.GOAL_VERDICT_CI, verdict["why"])
+        self.assertFalse(reading._job_claimed("the `lint` job passes locally but CI fails", "lint"))
+
     def test_an_affirmed_failure_agrees_with_no_passing_job(self) -> None:
         for reason in (
             "The unit-tests job failed.",

@@ -4976,6 +4976,13 @@ _JOB_HEDGE = re.compile(
 )
 
 
+# A pass the reason scopes to the reader's own machine says nothing about the CI job of that name.
+_JOB_LOCAL = re.compile(
+    r"\blocal(?:ly)?\b|\bon\s+(?:my|this|our)\s+(?:machine|laptop|computer|box|end)\b",
+    re.IGNORECASE,
+)
+
+
 def _job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
     """Whether a clause that names this CI job also claims how it came out.
 
@@ -4994,6 +5001,7 @@ def _job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
         _JOB_MARK in clause
         and any(words.search(clause) for words in result_words)
         and not _JOB_HEDGE.search(clause)
+        and not _JOB_LOCAL.search(clause)
         and not _NOT_A_RESULT.search(clause)
         for clause in _CLAUSE_BREAK.split(marked)
     )
