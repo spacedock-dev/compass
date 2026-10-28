@@ -120,6 +120,36 @@ export const ClaimConfirmedByTheCreatedPullRequest: Story = {
   },
 };
 
+/* A pass on a session that changed its own CI configuration still agrees, because a changed CI configuration is a caution and not a block.
+   The card says both halves in one sentence. */
+export const ClaimConfirmedByCiOnASessionThatChangedItsConfiguration: Story = {
+  ...scenario({
+    session: {
+      session_goal: {
+        ...GOAL,
+        verdict: {
+          met: true,
+          at: VERDICT_AT,
+          reason: 'the unit-tests job passed on the pull request',
+        },
+      },
+      ...checked('agrees', 'ci-passed-config-changed', VERDICT_AT, { cites: ['ci1'] }),
+    },
+    facts: [...FACTS],
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'agrees');
+    await waitFor(() =>
+      expect(node).toHaveTextContent(
+        'Compass agrees: CI passed, and the session changed its CI configuration.',
+      ),
+    );
+    await expect(node).toHaveTextContent('does not change the level and is not a passing check');
+  },
+};
+
 /* The reason quotes text, and a check Compass recorded printed it. The card says where the text is, by the check's
    number, and stays unconfirmed: output that holds a phrase is not a passing check, and the level is untouched. */
 export const ClaimQuotedTextFoundInACheckOutput: Story = {

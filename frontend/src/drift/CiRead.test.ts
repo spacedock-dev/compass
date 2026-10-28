@@ -14,6 +14,7 @@ const record = (over: Record<string, unknown> = {}) => ({
   session_head: HEAD,
   head_matches: true,
   required_only: false,
+  not_counted: 0,
   counts: { pass: 2, fail: 0, pending: 0, skipping: 1, cancel: 0 },
   caution: false,
   checks: [{ name: 'lint', bucket: 'pass', completed_at: 900 }],
@@ -109,6 +110,49 @@ describe('the pull request check read, as the card says it', () => {
     expect(note.lines.join(' ')).toContain('A failing check on this session’s commit counts');
     expect(note.lines).toContain('This session changed the CI configuration.');
     expect(note.lines).toContain('Only the checks GitHub requires are counted.');
+  });
+
+  it('says how many non-required checks the required-only rule left out', () => {
+    const left = ciReadNote(accepted({ required_only: true, not_counted: 3 }), 'x');
+    expect(left.lines).toContain('3 non-required checks not counted.');
+    const one = ciReadNote(accepted({ required_only: true, not_counted: 1 }), 'x');
+    expect(one.lines).toContain('1 non-required check not counted.');
+    const none = ciReadNote(accepted({ required_only: true, not_counted: 0 }), 'x');
+    expect(none.lines.join(' ')).not.toContain('not counted');
+  });
+
+  it('reads a record stored before the count was kept, and refuses a count with no rule behind it', () => {
+    const older: Record<string, unknown> = record({ required_only: true });
+    delete older['not_counted'];
+    const ci = readingCi(older);
+    expect(ci).not.toBeNull();
+    expect(ciReadNote(ci as CiRead, 'x').lines.join(' ')).not.toContain('not counted');
+    expect(readingCi(record({ not_counted: 2 }))).toBeNull();
+    expect(readingCi(record({ required_only: true, not_counted: -1 }))).toBeNull();
+    expect(readingCi(record({ required_only: true, not_counted: 1.5 }))).toBeNull();
+  });
+
+  it('says why a read never started for a harness with no recorded folder', () => {
+    const note = ciReadNote(accepted({ error: 'no-session-folder', head_matches: false }), 'x');
+    expect(note.state).toBe('failed');
+    expect(note.lines[0]).toContain('no folder is known for this session');
+  });
+
+  it('words a read that never started for no folder, or no readable commit, by provider', () => {
+    const gitlab = 'gitlab.example.com/acme/widgets';
+    for (const token of ['no-session-folder', 'no-session-commit']) {
+      expect(ciReadReason(token, 'GitLab')).toContain('merge request’s pipeline commit');
+      expect(ciReadReason(token, 'GitLab')).not.toMatch(/\bpull request/);
+      expect(ciReadReason(token, 'GitHub')).toContain('pull request’s commit');
+      const note = ciReadNote(accepted({ repository: gitlab, error: token }), 'x');
+      expect(note.state).toBe('failed');
+      expect(note.lines[0]).toMatch(/^Merge request checks were not read from GitLab: /);
+    }
+    const noCommit = ciReadNote(
+      accepted({ error: 'no-session-commit', head_matches: false, session_head: '' }),
+      'x',
+    );
+    expect(noCommit.lines[0]).toContain('the commit this session is on could not be read');
   });
 
   it('says a failed read in a sentence of its own, from a closed token', () => {

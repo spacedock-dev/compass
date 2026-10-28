@@ -707,6 +707,27 @@ def _bind_and_read_ci(
     # Last, so a Cancel that landed while the folder and the records were read launches nothing.
     if binding is None or hooks.cancelled():
         return None
+    if not folder:
+        # No recorded folder means no commit to match the pull request's head to, so nothing a
+        # launch could read would settle anything. Said, rather than left to look like no read.
+        return ci_read.refused(
+            binding,
+            ci_read.ERROR_NO_FOLDER,
+            session_head="",
+            caution=False,
+            now=application.clock(),
+        )
+    if identity is None:
+        # A folder whose commit cannot be read never matches the pull request's head, so a launch
+        # could settle nothing either. Said, rather than left to look like a read that found no
+        # pass.
+        return ci_read.refused(
+            binding,
+            ci_read.ERROR_NO_COMMIT,
+            session_head="",
+            caution=False,
+            now=application.clock(),
+        )
     written = (
         str(fact.get("summary") or "")
         for fact in facts
@@ -716,10 +737,11 @@ def _bind_and_read_ci(
     )
     return ci_read.read(
         binding,
-        session_head=identity.head if identity else "",
+        session_head=identity.head,
         caution=ci_read.changed_ci_configuration(written),
         now=application.clock(),
         floor=ci_read.FLOOR,
+        on_spawn=hooks.ci_spawned,
     )
 
 
@@ -3830,7 +3852,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             row,
             entry["revisions"],
             facts,
-            ci=_read_ci(application, row, entry, transcript, facts, hooks),
+            # Handed over unread: `produce` runs it only once it has decided to read, so a press it
+            # withholds launches no `gh` or `glab`.
+            ci=lambda: _read_ci(application, row, entry, transcript, facts, hooks),
             settled_through=settled["through"] if (settled := entry.get("settled")) else None,
             open_call_lookup=(
                 (

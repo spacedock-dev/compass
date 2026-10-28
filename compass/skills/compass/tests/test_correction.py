@@ -1067,5 +1067,91 @@ class SameEntryTest(unittest.TestCase):
         self.assertNotIn("departed at T105", text)
 
 
+class CiCheckCitedTest(unittest.TestCase):
+    """A departure that cites a failing CI check the press read names it in the text.
+
+    The check is no entry of the session's record and has no number on the page, so the text says
+    its name and result where a message's words or a number would otherwise stand.
+    """
+
+    SHA = "a" * 40
+
+    @staticmethod
+    def ci_record(*checks: tuple[str, str], head_matches: bool = True) -> dict[str, Any]:
+        counts = dict.fromkeys(("pass", "fail", "pending", "skipping", "cancel"), 0)
+        for _name, bucket in checks:
+            counts[bucket] += 1
+        return {
+            "read_at": 120.0,
+            "error": "",
+            "source": "goal",
+            "repository": "acme/widgets",
+            "number": 12,
+            "head": CiCheckCitedTest.SHA if head_matches else "b" * 40,
+            "session_head": CiCheckCitedTest.SHA,
+            "head_matches": head_matches,
+            "required_only": False,
+            "not_counted": 0,
+            "counts": counts,
+            "caution": False,
+            "checks": [
+                {"name": name, "bucket": bucket, "completed_at": 118.0} for name, bucket in checks
+            ],
+        }
+
+    def row(self, record: dict[str, Any] | None, **criteria: Any) -> dict[str, Any]:
+        stored = reading(**criteria)
+        if record is not None:
+            stored["ci"] = record
+        return session_row(annotation_assessment=stored, annotation_line_2="", annotation_line_3="")
+
+    def test_a_departure_citing_a_failing_ci_check_is_steered_from_and_names_it(self) -> None:
+        record = self.ci_record(("server-unittest", "fail"), ("lint", "pass"))
+        row = self.row(
+            record,
+            goal=row_of(CONSISTENT, ("a1",), clause=GOAL),
+            line_1=row_of(DEPARTED, ("ci:12:0",), clause=L1),
+        )
+        answer = compose(row, (FACTS[2], FACTS[3]))
+        self.assertIs(True, answer["ok"])
+        self.assertIn(
+            f'- {L1}: departed at T120{{ci:12:0}}, where CI check "server-unittest" failed on '
+            f"the pull request{WHY}{DETAIL}",
+            rendered(answer["parts"]),
+        )
+
+    def test_a_failure_on_a_head_that_moved_is_not_carried(self) -> None:
+        record = self.ci_record(("server-unittest", "fail"), head_matches=False)
+        row = self.row(record, line_1=row_of(DEPARTED, ("ci:12:0",), clause=L1))
+        self.assertEqual({"ok": False, "reason": "nothing"}, compose(row, (FACTS[2],)))
+
+    def test_a_citation_with_no_stored_read_is_not_carried(self) -> None:
+        row = self.row(None, line_1=row_of(DEPARTED, ("ci:12:0",), clause=L1))
+        self.assertEqual({"ok": False, "reason": "nothing"}, compose(row, (FACTS[2],)))
+
+    def test_a_ci_failure_is_no_check_that_failed_after_the_words(self) -> None:
+        record = self.ci_record(("server-unittest", "fail"))
+        row = self.row(record, line_1=row_of(UNVERIFIABLE, (), clause=L1, why="uncited"))
+        self.assertEqual({"ok": False, "reason": "nothing"}, compose(row, (FACTS[2],)))
+
+    def test_the_widest_name_stays_inside_the_budget_a_quoted_message_has(self) -> None:
+        name = "n" * 80
+        record = self.ci_record((name, "fail"))
+        row = self.row(record, line_1=row_of(DEPARTED, ("ci:12:0",), clause=L1))
+        parts = compose(row, (FACTS[2],))["parts"]
+        found = re.search(r", where CI check \"n+\" failed on the pull request", words(parts))
+        assert found is not None
+        self.assertIn(name, found[0])
+        self.assertLessEqual(len(found[0]), correction.QUOTE_MAX_CHARS)
+
+    def test_the_name_is_carried_in_its_closed_character_set_and_nothing_more(self) -> None:
+        record = self.ci_record(("@everyone `x` <b>", "fail"))
+        row = self.row(record, line_1=row_of(DEPARTED, ("ci:12:0",), clause=L1))
+        text = words(compose(row, (FACTS[2],))["parts"])
+        self.assertNotIn("`", text)
+        self.assertNotIn("<", text)
+        self.assertNotIn("@everyone", text)
+
+
 if __name__ == "__main__":
     unittest.main()

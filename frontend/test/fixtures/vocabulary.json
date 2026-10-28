@@ -125,7 +125,9 @@
     "glab-missing",
     "glab-signed-out",
     "glab-failed",
-    "host-not-configured"
+    "host-not-configured",
+    "no-session-folder",
+    "no-session-commit"
   ],
   "ciSources": [
     "goal",
@@ -175,6 +177,7 @@
     "passed-before",
     "pr-created-before",
     "ci-passed",
+    "ci-passed-config-changed",
     "written-after",
     "deleted-after",
     "moved-after",

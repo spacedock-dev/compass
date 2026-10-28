@@ -15,6 +15,7 @@ import {
   CI_REQUIRED_ONLY,
   CI_RUNNING,
   CI_SETTLES,
+  ciNotCounted,
   ciProvider,
   ciReadFailed,
   ciReadFrom,
@@ -68,7 +69,10 @@ export function ciReadNote(ci: CiRead, clockText: string): { state: CiState; lin
     lines.push(CI_SETTLES);
     state = 'settles';
   }
-  if (ci.required_only) lines.push(CI_REQUIRED_ONLY);
+  if (ci.required_only) {
+    lines.push(CI_REQUIRED_ONLY);
+    if ((ci.not_counted ?? 0) > 0) lines.push(ciNotCounted(ci.not_counted ?? 0));
+  }
   if (ci.caution) lines.push(CI_CAUTION);
   return { state, lines };
 }

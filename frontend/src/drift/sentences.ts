@@ -184,6 +184,7 @@ export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
     'the pull request its reason names is recorded as created before the verdict',
   'ci-passed':
     'the pull request its reason names had every check that counts pass on this session’s commit',
+  'ci-passed-config-changed': 'CI passed, and the session changed its CI configuration',
   'written-after': 'the file its reason names was written again after the verdict',
   'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
   'moved-after': 'a file its reason or the goal names was moved away after the verdict',
@@ -200,6 +201,7 @@ export const GOAL_VERDICT_WHY_GOAL: Readonly<Record<string, string>> = {
   'pr-created-before': 'the pull request the goal names is recorded as created before the verdict',
   'ci-passed':
     'the pull request the goal names had every check that counts pass on this session’s commit',
+  'ci-passed-config-changed': 'CI passed, and the session changed its CI configuration',
   'written-after': 'the file the goal names was written again after the verdict',
   'deleted-after': 'a file the goal names was deleted after the verdict',
   'moved-after': 'a file the goal names was moved away after the verdict',
@@ -227,6 +229,10 @@ export const CI_READ_ERRORS: Readonly<Record<string, string>> = {
   'glab-signed-out': 'glab is not signed in, so run glab auth login to let Compass read them',
   'glab-failed': 'glab failed',
   'host-not-configured': 'glab’s own configuration does not name that GitLab host',
+  'no-session-folder':
+    'no folder is known for this session, so the pull request’s commit could not be matched to it',
+  'no-session-commit':
+    'the commit this session is on could not be read (git is off or the folder is not a repository), so the pull request’s commit could not be matched to it',
 };
 /* The three tokens both providers share, worded for GitLab. */
 const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
@@ -234,6 +240,10 @@ const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
   'rate-limited': 'GitLab is rate limiting your glab login',
   timeout: 'GitLab did not answer in time',
   'unreadable-output': 'glab answered in a shape Compass does not read',
+  'no-session-folder':
+    'no folder is known for this session, so the merge request’s pipeline commit could not be matched to it',
+  'no-session-commit':
+    'the commit this session is on could not be read (git is off or the folder is not a repository), so the merge request’s pipeline commit could not be matched to it',
 };
 export type CiProvider = 'GitHub' | 'GitLab';
 /* Which provider a stored repository names. A GitLab one is stored as `host/group/project`, and no GitHub
@@ -296,6 +306,9 @@ export const CI_HEAD_UNKNOWN =
   'Compass could not read this session’s commit, so they settle nothing.';
 export const CI_CAUTION = 'This session changed the CI configuration.';
 export const CI_REQUIRED_ONLY = 'Only the checks GitHub requires are counted.';
+/* How many checks that rule left out, so a failing one that is not required is not silently hidden. */
+export const ciNotCounted = (count: number): string =>
+  `${String(count)} non-required ${count === 1 ? 'check' : 'checks'} not counted.`;
 /* The switch beside the notice. `flag-off` is the run's own `--no-ci-read`, which the page cannot lift. */
 export const CI_SWITCH_ON =
   'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Analyze.';

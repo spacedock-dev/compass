@@ -1106,6 +1106,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # `aggregate`, `http_api` and `cli` reach it.
         # Pure composition: the copy route's cap and harnesses, and the reading's rules.
         "compass_runtime.correction": {
+            # The CI caution a steer back carries is worded where the CI read owns it.
+            "compass_runtime.ci_read",
             "compass_runtime.copied_corrections",
             "compass_runtime.reading",
             "compass_runtime.records",

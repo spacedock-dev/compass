@@ -184,6 +184,17 @@ class Hooks:
             group.cancel()
         self.phase(reading.PHASE_WAITING)
 
+    def ci_spawned(self, group: Any) -> None:
+        """A `gh` or `glab` call exists, so a Cancel must be able to kill it.
+
+        Handed over as the model's CLI is, and the model's CLI takes the handle after it. Until it
+        does, a Cancel may be given a finished call's group, and cancelling a reaped group is a
+        no-op, so the CLI's own hand-over is what ends the job. The phase is untouched: a
+        read of the pull request's checks is no wait on the provider.
+        """
+        if reading.hand_over(self._job, group):
+            group.cancel()
+
     def cancelled(self) -> bool:
         """Whether a reader's Cancel was accepted for this job."""
         return reading.job_cancelled(self._job)

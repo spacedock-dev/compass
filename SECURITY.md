@@ -2324,7 +2324,7 @@ Steer back's correction. `POST /api/correction` names a session and nothing
 else, and answers a correction the server composes without a model from that session's published
 row and observed record: the goal and outcome lines the reader saved, each line's state re-derived
 from a stored reading of those exact words, and the time of each entry a line or sentence rests on.
-It never reads a fact's summary, a command, a check name, tool output or a message's text, so
+It never reads a fact's summary, a command, tool output or a message's text, so
 none of them can reach the correction, with one exception since 2026-10-04: for
 a claim of the agent's that a stored reading found the record contradicts or does not show, it
 quotes that one agent message's published title, its first sentence of at most 112 characters,
@@ -2355,7 +2355,12 @@ ruling of 2026-10-20: a departed goal or outcome line cited at one of the agent'
 that message's published title, the same first sentence of at most 112 characters, passed through
 exactly the redaction and neutralising the explanation takes, so the agent can find the moment
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-20-owner-local-time-and-quoted-words)).
-A command, a check name, a path and tool output are still never quoted. Each entry travels as its
+A fourth exception since 2026-10-28: a departure that cites a CI check the press read names it, as
+`, where CI check "<name>" failed on the pull request` (or `passed`), after the line's time. The name
+comes from the stored reading's `ci` record, not from the session, and is the closed-character-set name
+that record keeps (`ci_read.check_name`), at most 80 characters, passed through the same neutralising as
+a quoted title, and set inside the room a quote already has, so the 5,900-character cap does not move. It
+is repository-controlled text, so read the correction before pasting it, as "Pull request CI reads" says. A command, a path and tool output are still never quoted. Each entry travels as its
 time, drawn in the zone the page sends (`utc_offset_minutes`, refused unless a whole offset within
 16 hours of UTC, and the server's own clock when absent), and a placeholder holding its fact id,
 which the page draws as nothing. A reply's lines are at most 2,760 characters, each of at most
@@ -2471,10 +2476,23 @@ GitHub's required checks are preferred where it names any. CI counts only when t
 head is the commit the session folder is on, and a session that edited a workflow file or
 `.gitlab-ci.yml` carries a caution the model reads while it still settles.
 
+The read starts only once the press has decided to read, after every refusal that precedes the model
+call, so a press that is withheld launches nothing, and a Cancel ends a `gh` or `glab` call that is
+already running. A session with no recorded folder (a harness that records none, or a transcript that cannot
+be found) has no commit the pull request's head could equal, so nothing is launched and the card says so.
+Where GitHub names required checks and the card counts only those, it also says how many other checks
+it left out. A `github.com` remote spelled as `ssh.github.com` is `github.com`. One spelled as an ssh
+alias, `github.com-<suffix>`, binds a pull request only when a `pr-link` record or the goal's URL names
+the same repository on `github.com`, because resolving the alias would start another process. A check's
+name is repository-controlled text, so a contributor to the pull request chooses it. It is shown in the
+correction you review and copy, so read it before pasting it into an agent.
+
 The off switches are `--no-ci-read` and a switch on the page, stored as one marker file in
 Compass's state directory. The flag wins over the page. `--no-observer-model`, Pause model calls and
 the rolling cap refuse the press before anything starts, because the read runs inside the admitted
-job. `--no-git` also leaves the read without a session commit, so it settles nothing. The one line
+job. `--no-git`, a session folder that is not a repository and a missing `git` leave the read without a
+session commit, which could never match the pull request's head, so nothing is launched and the card says
+the commit could not be read. The one line
 naming the read is part of the notice a press shows, and a reader who turns the read off sees no such line.
 
 ### Session summary calls

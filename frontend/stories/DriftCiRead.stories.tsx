@@ -40,6 +40,7 @@ const record = (over: Record<string, unknown> = {}) => ({
   session_head: HEAD,
   head_matches: true,
   required_only: false,
+  not_counted: 0,
   counts: { pass: 2, fail: 0, pending: 0, skipping: 1, cancel: 0 },
   caution: false,
   checks: [
@@ -216,6 +217,78 @@ export const GhSignedOutSaysSoBesideTheReading: Story = {
     await expect(node).toHaveTextContent(
       'Pull request checks were not read from GitHub: gh is not signed in, so run gh auth login to let Compass read them.',
     );
+  },
+};
+
+export const NoSessionFolderSaysWhyNothingWasRead: Story = {
+  ...read(
+    record({
+      error: 'no-session-folder',
+      head: '',
+      session_head: '',
+      head_matches: false,
+      counts: { pass: 0, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+      checks: [],
+    }),
+  ),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-ci-read-state', 'failed');
+    await expect(node).toHaveTextContent(
+      'Pull request checks were not read from GitHub: no folder is known for this session, so the pull request’s commit could not be matched to it.',
+    );
+  },
+};
+
+export const NoReadableCommitSaysWhyNothingWasRead: Story = {
+  ...read(
+    record({
+      error: 'no-session-commit',
+      head: '',
+      session_head: '',
+      head_matches: false,
+      counts: { pass: 0, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+      checks: [],
+    }),
+  ),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-ci-read-state', 'failed');
+    await expect(node).toHaveTextContent(
+      'Pull request checks were not read from GitHub: the commit this session is on could not be read (git is off or the folder is not a repository), so the pull request’s commit could not be matched to it.',
+    );
+  },
+};
+
+export const RequiredOnlySaysHowManyChecksItLeftOut: Story = {
+  ...read(
+    record({
+      required_only: true,
+      not_counted: 2,
+      counts: { pass: 1, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+      checks: [{ name: 'lint', bucket: 'pass', completed_at: 900 }],
+    }),
+  ),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveTextContent('Only the checks GitHub requires are counted.');
+    await expect(node).toHaveTextContent('2 non-required checks not counted.');
+  },
+};
+
+export const NoNonRequiredChecksLeftOutSaysNothingOfThem: Story = {
+  ...read(
+    record({
+      required_only: true,
+      not_counted: 0,
+      counts: { pass: 1, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+      checks: [{ name: 'lint', bucket: 'pass', completed_at: 900 }],
+    }),
+  ),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveTextContent('Only the checks GitHub requires are counted.');
+    await expect(node).not.toHaveTextContent('not counted');
   },
 };
 

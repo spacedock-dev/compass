@@ -4603,6 +4603,10 @@ class RecordedCi:
     result: str
     counts: bool
     at: float
+    # The job's name as the press listed it, for a reason that names a job and no pull request.
+    name: str = ""
+    # The session changed the CI configuration, so a pass is a caution and not a plain pass.
+    caution: bool = False
 
 
 class HeldOutput(NamedTuple):
@@ -4734,6 +4738,8 @@ def _recorded_ci(fact: Mapping[str, Any], harness: str, sid: str) -> RecordedCi 
             str(fact.get("result") or ""),
             fact.get("ci_counts") is True,
             stamp,
+            ci_read.check_name(fact),
+            fact.get("ci_caution") is True,
         )
     return None
 
@@ -4823,6 +4829,10 @@ GOAL_VERDICT_PR = "pr-created-before"
 # The pull request the verdict names had every check that counts pass on the session's commit,
 # as the press read them from GitHub. Its dispute is `GOAL_VERDICT_FAILED`.
 GOAL_VERDICT_CI = "ci-passed"
+# The same pass, on a session that changed its own CI configuration. A caution and not a block, so
+# the pass still agrees and the card says the checks may not be the ones the repository had:
+# [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)  # noqa: E501
+GOAL_VERDICT_CI_CAUTION = "ci-passed-config-changed"
 # The text the reason quotes is in the output of a check the record holds. Said as where the text
 # is: the answer stays `unconfirmed`, because output that holds a phrase is no pass.
 GOAL_VERDICT_QUOTED = "quoted-in-check"
@@ -4837,6 +4847,7 @@ GOAL_VERDICT_PAIRS: dict[str, tuple[str, bool]] = {
     GOAL_VERDICT_PASSED: (GOAL_VERDICT_AGREES, True),
     GOAL_VERDICT_PR: (GOAL_VERDICT_AGREES, True),
     GOAL_VERDICT_CI: (GOAL_VERDICT_AGREES, True),
+    GOAL_VERDICT_CI_CAUTION: (GOAL_VERDICT_AGREES, True),
     GOAL_VERDICT_WRITTEN_AFTER: (GOAL_VERDICT_DISPUTED, True),
     GOAL_VERDICT_DELETED_AFTER: (GOAL_VERDICT_DISPUTED, False),
     GOAL_VERDICT_MOVED_AFTER: (GOAL_VERDICT_DISPUTED, False),
@@ -4915,6 +4926,85 @@ def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
 
 def _names_pr(named: Sequence[tuple[str, int]], repository: str, number: int) -> bool:
     return any(n == number and r in ("", repository) for r, n in named)
+
+
+def _job_spans(text: str, name: str) -> list[tuple[int, int]]:
+    """Where a reason names this CI job: each occurrence of its whole name, bounded as a token.
+
+    A name that is one plain word ("build", "lint") is also an ordinary word of a reason, so only a
+    quoted or backticked occurrence names a job. A joined name ("server-unittest", "unit / python
+    3.12") is not an ordinary word, and stands unquoted.
+    """
+    if not name:
+        return []
+    plain = re.fullmatch(r"\w+", name) is not None
+    pattern = rf"(?<![\w-]){re.escape(name)}(?![\w-])"
+    spans: list[tuple[int, int]] = []
+    for found in re.finditer(pattern, text, re.IGNORECASE):
+        before, after = text[: found.start()][-1:], text[found.end() :][:1]
+        if not plain or (before in _JOB_QUOTES and after in _JOB_QUOTES):
+            spans.append(found.span())
+    return spans
+
+
+def _names_job(text: str, name: str) -> bool:
+    return bool(_job_spans(text, name))
+
+
+_JOB_QUOTES = frozenset({"`", "'", '"', "\u2018", "\u2019", "\u201c", "\u201d"})
+_JOB_MARK = "\ue001"
+# A clause that names a job counts only when it says how the job came out. A promise or a doubt
+# ("will fail until", "is not passing yet", "never ran green") is no claim of a result, and a CI
+# pass must not agree with it.
+_JOB_RESULT = re.compile(
+    r"\b(?:pass(?:es|ed|ing)?|green|clean|ok|okay|succe(?:ed|eds|eded|ss|ssful|ssfully))\b",
+    re.IGNORECASE,
+)
+# A failure word names a job only against a job the record shows failed. Against a green job an
+# affirmed failure ("the unit-tests job failed") is no claim that agrees with it, and counting it
+# as one let a passing record confirm a reason that said the opposite.
+_JOB_FAILURE = re.compile(r"\bfail(?:s|ed|ing|ure)?\b", re.IGNORECASE)
+_JOB_HEDGE = re.compile(
+    r"\b(?:will|would|might|may|could|going\s+to|until|once|yet|if|when)\b"
+    r"|\b(?:not|never|no\s+longer)\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
+    r"|\wn['\u2019]t\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
+    r"|\bfail\w*\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
+    # A doubt, a requirement or a question about a result is no report of one.
+    r"|\bcannot\b|\bcan\s+not\b|\b(?:should|must|ought|supposed)\b"
+    r"|\b(?:needs?|has|have)\s+to\b|\bdoubt\w*\b|\bwhether\b|\bunsure\b",
+    re.IGNORECASE,
+)
+
+
+# A pass the reason scopes to the reader's own machine says nothing about the CI job of that name.
+_JOB_LOCAL = re.compile(
+    r"\blocal(?:ly)?\b|\bon\s+(?:my|this|our)\s+(?:machine|laptop|computer|box|end)\b",
+    re.IGNORECASE,
+)
+
+
+def _job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
+    """Whether a clause that names this CI job also claims how it came out.
+
+    `failed` is the record's own result for the job: only then does a failure word count as a claim.
+    """
+    spans = _job_spans(text, name)
+    if not spans:
+        return False
+    result_words = (_JOB_RESULT, _JOB_FAILURE) if failed else (_JOB_RESULT,)
+    # Only an occurrence that names the job is marked: a plain word of the reason that happens to be
+    # the job's name ("the lint is clean") is not a claim about the job, whatever else is quoted.
+    marked = text
+    for start, end in reversed(spans):
+        marked = marked[:start] + _JOB_MARK + marked[end:]
+    return any(
+        _JOB_MARK in clause
+        and any(words.search(clause) for words in result_words)
+        and not _JOB_HEDGE.search(clause)
+        and not _JOB_LOCAL.search(clause)
+        and not _NOT_A_RESULT.search(clause)
+        for clause in _CLAUSE_BREAK.split(marked)
+    )
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:
@@ -5107,6 +5197,17 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
     basis = reason if reason.strip() else str(goal.get("text") or "")
     files, kinds = _verdict_files(basis), _verdict_check_kinds(basis)
     named_prs = _verdict_prs(basis)
+    # A reason that names no pull request but names jobs of the one the press read for this session
+    # (the facts hold CI only where that read bound one): the jobs it names stand for themselves.
+    named_jobs = (
+        frozenset(
+            ci.id
+            for ci in recorded.ci
+            if _job_claimed(basis, ci.name, failed=ci.result == CI_RESULT_FAILED)
+        )
+        if not named_prs
+        else frozenset()
+    )
     # The condition names files too ("the file docs/e2e/notes.md exists"), and a file it names that
     # the record shows taken away after the verdict contradicts the claim whatever the reason said.
     named = tuple(dict.fromkeys((*files, *_verdict_files(str(goal.get("text") or "")))))
@@ -5119,7 +5220,7 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
             "path": records.safe_text(taken.path, VERDICT_PATH_CAP_CHARS),
             "changed_at": taken.at,
         }
-    if not files and not kinds and not named_prs:
+    if not files and not kinds and not named_prs and not named_jobs:
         return unconfirmed(GOAL_VERDICT_NOTHING_CHECKABLE)
     writes = [
         write
@@ -5135,7 +5236,11 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         if (evidence_at(entry) or entry["at"]) >= set_at
         and kinds & _check_kinds(_check_text(entry))
     ]
-    named_ci = [ci for ci in recorded.ci if _names_pr(named_prs, ci.repository, ci.number)]
+    named_ci = [
+        ci
+        for ci in recorded.ci
+        if _names_pr(named_prs, ci.repository, ci.number) or ci.id in named_jobs
+    ]
     failed = [
         entry["id"]
         for entry in checks
@@ -5145,9 +5250,10 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         return result(GOAL_VERDICT_FAILED, failed)
     if writes:
         return result(GOAL_VERDICT_WRITTEN, [write.id for write in writes])
-    green = [ci.id for ci in named_ci if ci.counts and ci.result == CI_RESULT_PASSED]
+    green = [ci for ci in named_ci if ci.counts and ci.result == CI_RESULT_PASSED]
     if green:
-        return result(GOAL_VERDICT_CI, green)
+        why = GOAL_VERDICT_CI_CAUTION if any(ci.caution for ci in green) else GOAL_VERDICT_CI
+        return result(why, [ci.id for ci in green])
     created = [
         pr.id
         for pr in recorded.prs
@@ -5646,7 +5752,7 @@ def record_withheld(context: Mapping[str, Any], harness: str, sid: str) -> str:
     return ""
 
 
-def produce(  # noqa: PLR0913
+def produce(  # noqa: C901, PLR0911, PLR0913
     config: RuntimeConfig,
     row: Mapping[str, Any],
     revisions: Sequence[Mapping[str, Any]],
@@ -5673,7 +5779,7 @@ def produce(  # noqa: PLR0913
     settled_through: Any = None,
     open_call_lookup: Callable[[], float | None] | None = None,
     failures_only: bool = False,
-    ci: Mapping[str, Any] | None = None,
+    ci: Mapping[str, Any] | Callable[[], Mapping[str, Any] | None] | None = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -5718,9 +5824,11 @@ def produce(  # noqa: PLR0913
     also reads mid-flight, but nothing is running there, so an unanswered call is an
     interruption and no call in flight excuses a departure; only work recorded after the words can.
 
-    `ci` is the reading route's: the press's read of the bound pull request (`ci_read.read`).
-    Its checks join the facts as `ci_check` entries, listed whatever the tool-output grant says
-    because GitHub said them and no session did, and the record is stored on the assessment.
+    `ci` is the reading route's: the press's read of the bound pull request (`ci_read.read`), or a
+    callable that makes it, which runs only here, after every refusal above it, so a press that is
+    withheld launches nothing. Its checks join the facts as `ci_check` entries, listed whatever the
+    tool-output grant says because GitHub said them and no session did, and the record is stored on
+    the assessment.
 
     `on_phase` is a reading job's, told `PHASE_CHECKING` once a reply arrived
     and never otherwise, so a published phase is one that really happened.
@@ -5745,12 +5853,20 @@ def produce(  # noqa: PLR0913
         return None, record_withheld, False
     latest = revisions[-1]
     harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
-    facts = [*facts, *ci_read.facts(ci, harness, sid)]
     tails = tool_output.tails if tool_output is not None and tool_output.destination else None
     admitted = tails is not None
-    ledger, superseded = _ledger_and_superseded(
-        facts, harness, sid, tails, tool_output, read_agent_words, failures_only
+
+    def ledger_of(found: list[Any]) -> tuple[tuple[LedgerEntry, ...], int]:
+        return _ledger_and_superseded(
+            found, harness, sid, tails, tool_output, read_agent_words, failures_only
+        )
+
+    ci_record, facts, early = _with_ci(
+        ci, facts, harness, sid, ledger_of, (row, scope, window_start(latest))
     )
+    if early:
+        return None, early, False
+    ledger, superseded = ledger_of(facts)
     uncut = ledger
     ledger, stopped, left_out, withheld = _ledger_to_read(ledger, row, scope, window_start(latest))
     if withheld:
@@ -5902,8 +6018,8 @@ def produce(  # noqa: PLR0913
         "criteria": criteria,
         "coverage": coverage,
     }
-    if ci is not None:
-        assessment["ci"] = dict(ci)
+    if ci_record is not None:
+        assessment["ci"] = dict(ci_record)
     if latest.get("goal_source") in PROMPT_SOURCES:
         assessment["goal_source"] = str(latest["goal_source"])
         assessment["goal_source_at"] = baseline_at(latest)
@@ -5976,6 +6092,30 @@ def _scope_text(scope: str, row: Mapping[str, Any]) -> str:
     if scope == SCOPE_MID_FLIGHT and end_kind(row) in IDLE_PRESS_KINDS:
         return SCOPE_TEXT_MID_FLIGHT_IDLE
     return SCOPE_TEXT[scope]
+
+
+def _with_ci(
+    ci: Any,
+    facts: Iterable[Any],
+    harness: str,
+    sid: str,
+    ledger_of: Callable[[list[Any]], tuple[tuple[LedgerEntry, ...], int]],
+    window: tuple[Mapping[str, Any], str, float],
+) -> tuple[Any, list[Any], str]:
+    """The CI record, the facts with its checks added, or why the press is withheld.
+
+    A CI check is exempt from the window and the stop, so it cannot change whether the press is
+    withheld for them; a lazy read is therefore not run until the other facts have passed those
+    tests, and a press that is withheld launches nothing. `ledger_of` builds the ledger as the
+    press does, so that early test reads the same entries the press will.
+    """
+    facts = list(facts)
+    if callable(ci):
+        _, _, _, early = _ledger_to_read(ledger_of(facts)[0], *window)
+        if early:
+            return None, facts, early
+        ci = ci()
+    return ci, [*facts, *ci_read.facts(ci, harness, sid)], ""
 
 
 def _ledger_to_read(

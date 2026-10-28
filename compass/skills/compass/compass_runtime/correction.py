@@ -42,7 +42,7 @@ import unicodedata
 import zoneinfo
 from typing import TYPE_CHECKING, Any
 
-from . import copied_corrections, reading, records
+from . import ci_read, copied_corrections, reading, records
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -277,7 +277,20 @@ def _placeholder(fact: Mapping[str, Any]) -> dict[str, str]:
 
 
 def _quote(fact: Mapping[str, Any]) -> list[Part]:
-    """The agent's own words at a cited message, or nothing for any other entry."""
+    """The agent's own words at a cited message, or a cited CI check's name and result.
+
+    A check the press read from GitHub or GitLab has no number the agent could be pointed at, so
+    the text names it: its name is in the closed character set `ci_read` keeps, and the result is
+    the producer's word for it. Any other entry gives nothing.
+    """
+    if fact.get("type") == reading.CI_CHECK_TYPE:
+        name = neutralised(ci_read.check_name(fact), ci_read.NAME_CAP_CHARS)
+        result = str(fact.get("result") or "")
+        return (
+            [{"quote": f', where CI check "{name}" {result} on the pull request'}]
+            if name and result in {"failed", "passed"}
+            else []
+        )
     if fact.get("type") != reading.AGENT_MESSAGE_TYPE:
         return []
     # Its closing stop dropped, as the claim line drops it: the sentence around it keeps its own.
@@ -306,7 +319,8 @@ def _as_evidence(fact: Mapping[str, Any], harness: str) -> dict[str, Any]:
     return {
         **fact,
         "stale": fact.get("before_last_change") is True,
-        "work": str(fact.get("type") or "") in work,
+        "work": str(fact.get("type") or "") in work
+        or str(fact.get("type") or "") == reading.CI_CHECK_TYPE,
     }
 
 
@@ -780,12 +794,24 @@ def compose(
     `{"ok": False, "reason": "nothing"}` with nothing to steer from; or the
     too-long refusal with its sentence.
     """
-    own = _own(row, facts)
+    assessment = row.get("annotation_assessment")
+    # The CI checks the stored reading holds, as the facts the press numbered them as: they are not
+    # in the session's record, and a departure may cite one.
+    own = _own(
+        row,
+        [
+            *facts,
+            *ci_read.facts(
+                assessment.get("ci") if isinstance(assessment, dict) else None,
+                str(row.get("harness") or ""),
+                str(row.get("sid") or ""),
+            ),
+        ],
+    )
     goal = str(row.get("annotation_goal") or "")
     lines = _saved_lines(row)
     if not goal.strip() and not lines:
         return {"ok": False, "reason": REASON_NOTHING}
-    assessment = row.get("annotation_assessment")
     read_at = assessment.get("read_at") if isinstance(assessment, dict) else None
     unsettled = unsettled_directions(row, own, floor=floor, until=read_at) > 0
     window = reading.valid_prompt_time(row.get("annotation_window_start")) or 0.0

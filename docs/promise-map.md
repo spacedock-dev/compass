@@ -179,11 +179,13 @@ command's line and exit status and no output
 [DEC-31](design-reading-a-session.md#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor)).
 Pressing Analyze drift also reads one pull request's CI checks from GitHub with your own `gh` login
 when your goal names the pull request by its URL, or when a Claude Code session records one for the
-repository its folder points at
+repository its folder points at, and only in a session whose folder is known, since the pull request's head
+has to match its commit
 ([DEC-30](design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)).
 GitHub is sent the repository and the number, or, where a pushed branch is what bound it, the repository and that branch's name, and nothing else of the session. Checks still running,
 no completed check, a pull request head past the session's commit, and a cancelled check each settle
-nothing, and skipped checks count as neither a pass nor a failure. `--no-ci-read` and the switch beside
+nothing, and skipped checks count as neither a pass nor a failure. Where GitHub names required checks, only those
+count, and the card says how many other checks it left out. `--no-ci-read` and the switch beside
 the notice turn the read off, and a missing or signed-out `gh` is said beside the reading. The same
 read works for a GitLab merge request your goal names by its URL, through your own `glab` and only on a
 host `glab`'s own configuration already names; a session record never binds a merge request, because
