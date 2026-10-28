@@ -2473,12 +2473,14 @@ head is the commit the session folder is on, and a session that edited a workflo
 
 The read starts only once the press has decided to read, after every refusal that precedes the model
 call, so a press that is withheld launches nothing, and a Cancel ends a `gh` or `glab` call that is
-already running. A session whose harness records no working folder (only Claude Code, Codex and Pi
-do) has no commit the pull request's head could equal, so nothing is launched and the card says so.
+already running. A session with no recorded folder (a harness that records none, or a transcript that cannot
+be found) has no commit the pull request's head could equal, so nothing is launched and the card says so.
 Where GitHub names required checks and the card counts only those, it also says how many other checks
 it left out. A `github.com` remote spelled as `ssh.github.com` is `github.com`. One spelled as an ssh
 alias, `github.com-<suffix>`, binds a pull request only when a `pr-link` record or the goal's URL names
-the same repository on `github.com`, because resolving the alias would start another process.
+the same repository on `github.com`, because resolving the alias would start another process. A check's
+name is repository-controlled text, so a contributor to the pull request chooses it. It is shown in the
+correction you review and copy, so read it before pasting it into an agent.
 
 The off switches are `--no-ci-read` and a switch on the page, stored as one marker file in
 Compass's state directory. The flag wins over the page. `--no-observer-model`, Pause model calls and

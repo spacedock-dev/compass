@@ -26,6 +26,7 @@ from compass_runtime import (
     git_status,
     http_api,
     levels,
+    observer,
     project_context,
     reading,
     supervise,
@@ -917,6 +918,50 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(_PressCase):
         # No folder was recorded, so no session commit: the read happened and settles nothing.
         self.assertFalse(record["head_matches"])
 
+    def test_every_launch_hands_its_group_to_the_cancel_hook(self) -> None:
+        groups: list[Any] = []
+        self.hooks.ci_spawned = groups.append
+        with mock.patch.dict(os.environ, self.stub.environ, clear=True):
+            self.assertIsNotNone(self.read_ci())
+        self.assertEqual(4, len(self.stub.calls))
+        self.assertEqual(4, len(groups))
+
+    def test_the_route_hands_produce_the_read_unrun(self) -> None:
+        # A route that evaluated the read as an argument would launch gh for a press `produce`
+        # then withholds; this fails on that.
+        launched: list[int] = []
+        seen: dict[str, Any] = {}
+
+        def produce(*_args: Any, **kwargs: Any) -> tuple[None, str, bool]:
+            seen.update(kwargs)
+            return None, reading.WITHHELD_WINDOW_EMPTY, False
+
+        route = types.SimpleNamespace()
+        row = {"harness": "claude", "sid": "s1", "state": "working", "ended_at": None}
+        entry = {"revisions": [{"n": 1, "at": 50.0, "goal": GOAL_TEXT}]}
+        with (
+            mock.patch.object(http_api, "_read_ci", side_effect=lambda *_a: launched.append(1)),
+            mock.patch.object(reading, "produce", side_effect=produce),
+            mock.patch.object(observer, "resolve_transcript", return_value=""),
+            mock.patch.object(http_api, "_session_context", return_value={}),
+            mock.patch.object(http_api, "_facts_of", return_value=[]),
+            self.boom(),
+        ):
+            self.hooks.phase = lambda *_a: None
+            self.handler._reading_arguments = lambda *_a: {}
+            result = http_api._RequestHandler._compose_reading(
+                cast("Any", self.handler),
+                row,
+                cast("Any", entry),
+                cast("Any", route),
+                cast("Any", self.hooks),
+            )
+            self.assertEqual(reading.WITHHELD_WINDOW_EMPTY, result[1])
+            self.assertTrue(callable(seen["ci"]))
+            self.assertEqual([], launched)
+            seen["ci"]()
+            self.assertEqual([1], launched)
+
     def test_turning_it_back_on_removes_the_marker(self) -> None:
         cfg = cast("Any", self.config)
         ci_read.set_setting(cfg, on=False)
@@ -1187,6 +1232,10 @@ class TheLaunchWaitsForTheDecisionToRead(base.AClaudeCodeReadingProducer):
     """Item 2 of the follow-ups: a withheld press launches nothing, and a Cancel kills a call."""
 
     def produce(self, ci: Any, **over: Any) -> tuple[Any, str, bool]:
+        facts = over.pop("facts", [base.WORDS_FACT])
+        row = over.pop(
+            "row", {"harness": "claude", "sid": "s1", "state": "working", "ended_at": None}
+        )
         options: dict[str, Any] = {
             "now": 200.0,
             "stamp_text": "read at 10:00",
@@ -1198,9 +1247,9 @@ class TheLaunchWaitsForTheDecisionToRead(base.AClaudeCodeReadingProducer):
         options.update(over)
         return reading.produce(
             self.config,  # type: ignore[arg-type]
-            {"harness": "claude", "sid": "s1", "state": "working", "ended_at": None},
+            row,
             [{"n": 1, "at": 50.0, "goal": GOAL_TEXT, "lines": ["CI is green"]}],
-            [base.WORDS_FACT],
+            facts,
             **options,
         )
 
@@ -1215,6 +1264,42 @@ class TheLaunchWaitsForTheDecisionToRead(base.AClaudeCodeReadingProducer):
         self.assertIsNone(assessment)
         self.assertEqual(reading.WITHHELD_WINDOW_EMPTY, why)
         self.assertFalse(spent)
+        self.assertEqual([], calls)
+
+    def _counted(self, facts: list[dict[str, Any]], **over: Any) -> tuple[str, list[int]]:
+        calls: list[int] = []
+
+        def lazy() -> dict[str, Any]:
+            calls.append(1)
+            return record_with(*GREEN)
+
+        assessment, why, spent = self.produce(lazy, facts=facts, **over)
+        self.assertIsNone(assessment)
+        self.assertFalse(spent)
+        return why, calls
+
+    def test_a_press_with_nothing_since_the_words_launches_nothing(self) -> None:
+        early = {**base.WORDS_FACT, "at": 10.0}
+        why, calls = self._counted([early])
+        self.assertEqual(reading.WITHHELD_WINDOW_EMPTY, why)
+        self.assertEqual([], calls)
+
+    def test_a_press_with_no_facts_launches_nothing(self) -> None:
+        why, calls = self._counted([])
+        self.assertEqual(reading.WITHHELD_LEDGER_EMPTY, why)
+        self.assertEqual([], calls)
+
+    def test_a_press_with_nothing_inside_the_stop_launches_nothing(self) -> None:
+        row = {
+            "harness": "claude",
+            "sid": "s1",
+            "state": "idle",
+            "acquisition": "event",
+            "finished_at": 60.0,
+            "ended_at": None,
+        }
+        why, calls = self._counted([base.WORDS_FACT], row=row, admit_turn_stop=True)
+        self.assertEqual(reading.WITHHELD_AFTER_STOP, why)
         self.assertEqual([], calls)
 
     def test_a_press_that_reads_calls_it_once_and_stores_what_it_returned(self) -> None:
@@ -1395,7 +1480,13 @@ class AnSshRemoteBindsAsGithub(unittest.TestCase):
         self.assertIsNone(self.bind("github.com-work", links=[], pushes=["fix/widget-guard"]))
 
     def test_a_host_that_only_looks_like_the_alias_binds_nothing(self) -> None:
-        for host in ("github.com.evil.example", "notgithub.com-work", "github.com-", "gitlab.com"):
+        for host in (
+            "github.com.evil.example",
+            "github.com-a.evil.com",
+            "notgithub.com-work",
+            "github.com-",
+            "gitlab.com",
+        ):
             with self.subTest(host=host):
                 self.assertIsNone(self.bind(host))
 
@@ -1459,6 +1550,24 @@ class AReasonThatNamesOnlyCiJobsReachesTheCiFacts(base.AClaudeCodeReadingProduce
         self.assertNotEqual(reading.GOAL_VERDICT_CI, plain["why"])
         quoted = self.checked("The `lint` job passed.", record)
         self.assertEqual(reading.GOAL_VERDICT_CI, quoted["why"])
+
+    def test_a_mention_that_claims_no_result_agrees_with_nothing(self) -> None:
+        for reason in (
+            "Wired the unit-tests job into the release script.",
+            "The unit-tests job is not passing yet, I will fix it later.",
+            "The unit-tests job will fail until the migration lands.",
+            "Skipped the unit-tests job.",
+        ):
+            with self.subTest(reason=reason):
+                verdict = self.checked(reason, record_with(*GREEN))
+                self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
+                self.assertNotEqual(reading.GOAL_VERDICT_CI, verdict["why"])
+
+    def test_a_job_that_passes_in_its_own_clause_still_agrees(self) -> None:
+        verdict = self.checked(
+            "The server-unittest job passes.", record_with(check("server-unittest", "pass"))
+        )
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, verdict["check"])
 
 
 if __name__ == "__main__":

@@ -8195,14 +8195,17 @@ as written, and these are the choices it left open.
 
 ### Amended 2026-10-28 (owner): the CI read follows the press, says what it left out, and reaches a correction
 
-These are the follow-ups the review of the `gh` read found. The ruling's items stand as written.
+These are the follow-ups the review of the `gh` read found. The ruling's items stand as written, except that
+item 8 narrows: a goal URL is read only where a session folder is known, so Gemini, Cursor and every other
+harness that records none read nothing.
 
 - **The read waits for the decision to read.** `produce` is handed the read as a callable and runs it only
-  after every refusal that precedes the ledger, so a press that is withheld launches nothing. A Cancel kills a
+  after every refusal that precedes the model call, the ones that depend on the session's own entries included
+  (nothing since the words, nothing inside the stop, no entries), so a press that is withheld launches nothing. A Cancel kills a
   `gh` or `glab` call already in flight, because each call's process group is handed to the job as the model's
   CLI is, and the CLI takes the handle after it.
 - **A session with no recorded folder reads nothing.** Only Claude Code, Codex and Pi record the folder a
-  session ran in, and without it the pull request's head can never equal the session's commit, so no launch
+  session ran in, and one of them whose transcript cannot be found has none either. Without it the pull request's head can never equal the session's commit, so no launch
   could settle anything. The press stores a record whose error is `no-session-folder`, which the page words,
   and starts no process. A press that binds no pull request still stores nothing.
 - **The checks left out are counted.** Where the provider names required checks, the record carries
@@ -8217,11 +8220,15 @@ These are the follow-ups the review of the `gh` read found. The ruling's items s
   session's record and has no number on the page. The correction adds the stored reading's CI facts to the
   record it reads, treats them as work, and writes `, where CI check "<name>" failed on the pull request` after
   the line's time, in the budget a quoted message already has. The name is the closed-character-set name the
-  record keeps. A check cannot be a check that failed after the words, so a CI failure alone is still nothing
+  record keeps. It is repository-controlled text, shown in a correction the reader reviews and copies, and
+  the reader is told to read it before pasting. The page's `correction.ts` needs no change: the server
+  composes the check's text, and `useFollowCorrection` keeps only the cited ids the page holds, so a `ci:` id
+  never marks a held correction stale. A check cannot be a check that failed after the words, so a CI failure alone is still nothing
   to steer from.
 - **A reason that names only CI jobs reaches the CI facts.** A goal verdict whose reason names no pull request
   but names a job of the one the press read for this session (the whole name, bounded as a token, and quoted
-  when it is one plain word) is agreed or disputed by that job's result, on the same counting rules. Without a
+  when it is one plain word, and in a clause that claims a result, so "wired the job in", "is not passing
+  yet" and "will fail until" count as no claim) is agreed or disputed by that job's result, on the same counting rules. Without a
   read bound to this session there are no CI facts, and the reason stays as unconfirmed as before.
 
 ## DEC-31: the text of a command that is not a check may leave the machine, by vendor

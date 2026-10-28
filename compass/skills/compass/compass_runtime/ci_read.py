@@ -150,7 +150,7 @@ _GITLAB_STATUS_BUCKET: Final = {
 }
 # An ssh alias for github.com (`Host github.com-work` in `~/.ssh/config`), which says nothing about
 # where it points until a pull request link names the same repository on github.com.
-_ALIAS_HOST_RE = re.compile(r"github\.com-[a-z0-9][a-z0-9._-]{0,62}")
+_ALIAS_HOST_RE = re.compile(r"github\.com-[a-z0-9][a-z0-9_-]{0,62}")
 # GitHub's own ssh-over-443 host, which is github.com.
 _SSH_HOST: Final = "ssh.github.com"
 _NAME_CHARS = re.compile(r"[^A-Za-z0-9 ._/:()+#@,\[\]-]")
@@ -260,7 +260,9 @@ def bind(
 
     The goal's own URL binds, because those are the reader's words, and a goal that names two
     different pull requests binds none rather than guessing. Failing that, the newest `pr-link`
-    record whose repository is the session folder's own `origin`, and failing that the newest
+    record whose repository is the session folder's own `origin` (`ssh.github.com` counts as
+    github.com, and a `github.com-<name>` ssh alias does only where a goal URL or a `pr-link`
+    record names the same repository on github.com), and failing that the newest
     pushed branch of that repository. A record naming another repository binds nothing: a
     transcript can say anything, and only the folder's own remote says it is this one. A GitLab
     merge request binds by the goal's URL alone; no record binds one, because what Claude Code

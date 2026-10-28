@@ -135,7 +135,7 @@ describe('the pull request check read, as the card says it', () => {
   it('says why a read never started for a harness with no recorded folder', () => {
     const note = ciReadNote(accepted({ error: 'no-session-folder', head_matches: false }), 'x');
     expect(note.state).toBe('failed');
-    expect(note.lines[0]).toContain('records no folder for the session');
+    expect(note.lines[0]).toContain('no folder is known for this session');
   });
 
   it('says a failed read in a sentence of its own, from a closed token', () => {

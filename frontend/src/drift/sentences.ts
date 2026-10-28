@@ -228,7 +228,7 @@ export const CI_READ_ERRORS: Readonly<Record<string, string>> = {
   'glab-failed': 'glab failed',
   'host-not-configured': 'glab’s own configuration does not name that GitLab host',
   'no-session-folder':
-    'this harness records no folder for the session, so the pull request’s commit could not be matched to it',
+    'no folder is known for this session, so the pull request’s commit could not be matched to it',
 };
 /* The three tokens both providers share, worded for GitLab. */
 const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
@@ -236,6 +236,8 @@ const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
   'rate-limited': 'GitLab is rate limiting your glab login',
   timeout: 'GitLab did not answer in time',
   'unreadable-output': 'glab answered in a shape Compass does not read',
+  'no-session-folder':
+    'no folder is known for this session, so the merge request’s pipeline commit could not be matched to it',
 };
 export type CiProvider = 'GitHub' | 'GitLab';
 /* Which provider a stored repository names. A GitLab one is stored as `host/group/project`, and no GitHub

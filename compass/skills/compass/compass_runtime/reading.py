@@ -4939,6 +4939,35 @@ def _names_job(text: str, name: str) -> bool:
 
 
 _JOB_QUOTES = frozenset({"`", "'", '"', "\u2018", "\u2019", "\u201c", "\u201d"})
+_JOB_MARK = "\ue001"
+# A clause that names a job counts only when it says how the job came out. A promise or a doubt
+# ("will fail until", "is not passing yet", "never ran green") is no claim of a result, and a CI
+# pass must not agree with it.
+_JOB_RESULT = re.compile(
+    r"\b(?:pass(?:es|ed|ing)?|green|clean|ok|okay|succe(?:ed|eds|eded|ss|ssful|ssfully)"
+    r"|fail(?:s|ed|ing)?)\b",
+    re.IGNORECASE,
+)
+_JOB_HEDGE = re.compile(
+    r"\b(?:will|would|might|may|could|going\s+to|until|once|yet|if|when)\b"
+    r"|\b(?:not|never|no\s+longer)\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
+    r"|\wn['\u2019]t\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)",
+    re.IGNORECASE,
+)
+
+
+def _job_claimed(text: str, name: str) -> bool:
+    """Whether a clause that names this CI job also claims how it came out."""
+    if not _names_job(text, name):
+        return False
+    marked = re.sub(rf"(?<![\w-]){re.escape(name)}(?![\w-])", _JOB_MARK, text, flags=re.IGNORECASE)
+    return any(
+        _JOB_MARK in clause
+        and _JOB_RESULT.search(clause)
+        and not _JOB_HEDGE.search(clause)
+        and not _NOT_A_RESULT.search(clause)
+        for clause in _CLAUSE_BREAK.split(marked)
+    )
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:
@@ -5134,7 +5163,7 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
     # A reason that names no pull request but names jobs of the one the press read for this session
     # (the facts hold CI only where that read bound one): the jobs it names stand for themselves.
     named_jobs = (
-        frozenset(ci.id for ci in recorded.ci if _names_job(basis, ci.name))
+        frozenset(ci.id for ci in recorded.ci if _job_claimed(basis, ci.name))
         if not named_prs
         else frozenset()
     )
@@ -5681,7 +5710,7 @@ def record_withheld(context: Mapping[str, Any], harness: str, sid: str) -> str:
     return ""
 
 
-def produce(  # noqa: PLR0913
+def produce(  # noqa: C901, PLR0911, PLR0913
     config: RuntimeConfig,
     row: Mapping[str, Any],
     revisions: Sequence[Mapping[str, Any]],
@@ -5782,13 +5811,20 @@ def produce(  # noqa: PLR0913
         return None, record_withheld, False
     latest = revisions[-1]
     harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
-    ci_record = ci() if callable(ci) else ci
-    facts = [*facts, *ci_read.facts(ci_record, harness, sid)]
     tails = tool_output.tails if tool_output is not None and tool_output.destination else None
     admitted = tails is not None
-    ledger, superseded = _ledger_and_superseded(
-        facts, harness, sid, tails, tool_output, read_agent_words, failures_only
+
+    def ledger_of(found: list[Any]) -> tuple[tuple[LedgerEntry, ...], int]:
+        return _ledger_and_superseded(
+            found, harness, sid, tails, tool_output, read_agent_words, failures_only
+        )
+
+    ci_record, facts, early = _with_ci(
+        ci, facts, harness, sid, ledger_of, (row, scope, window_start(latest))
     )
+    if early:
+        return None, early, False
+    ledger, superseded = ledger_of(facts)
     uncut = ledger
     ledger, stopped, left_out, withheld = _ledger_to_read(ledger, row, scope, window_start(latest))
     if withheld:
@@ -6014,6 +6050,30 @@ def _scope_text(scope: str, row: Mapping[str, Any]) -> str:
     if scope == SCOPE_MID_FLIGHT and end_kind(row) in IDLE_PRESS_KINDS:
         return SCOPE_TEXT_MID_FLIGHT_IDLE
     return SCOPE_TEXT[scope]
+
+
+def _with_ci(
+    ci: Any,
+    facts: Iterable[Any],
+    harness: str,
+    sid: str,
+    ledger_of: Callable[[list[Any]], tuple[tuple[LedgerEntry, ...], int]],
+    window: tuple[Mapping[str, Any], str, float],
+) -> tuple[Any, list[Any], str]:
+    """The CI record, the facts with its checks added, or why the press is withheld.
+
+    A CI check is exempt from the window and the stop, so it cannot change whether the press is
+    withheld for them; a lazy read is therefore not run until the other facts have passed those
+    tests, and a press that is withheld launches nothing. `ledger_of` builds the ledger as the
+    press does, so that early test reads the same entries the press will.
+    """
+    facts = list(facts)
+    if callable(ci):
+        _, _, _, early = _ledger_to_read(ledger_of(facts)[0], *window)
+        if early:
+            return None, facts, early
+        ci = ci()
+    return ci, [*facts, *ci_read.facts(ci, harness, sid)], ""
 
 
 def _ledger_to_read(

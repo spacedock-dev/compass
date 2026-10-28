@@ -235,7 +235,7 @@ export const NoSessionFolderSaysWhyNothingWasRead: Story = {
     const node = await note(canvasElement);
     await expect(node).toHaveAttribute('data-next-ci-read-state', 'failed');
     await expect(node).toHaveTextContent(
-      'Pull request checks were not read from GitHub: this harness records no folder for the session, so the pull request’s commit could not be matched to it.',
+      'Pull request checks were not read from GitHub: no folder is known for this session, so the pull request’s commit could not be matched to it.',
     );
   },
 };
