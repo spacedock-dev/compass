@@ -2764,7 +2764,7 @@ COVERAGE_COMMAND_KEYS = ("other_commands", "read_only_commands")
 # Present, and True, when the scan that counted the commands began after the start of the session,
 # so both counts are lower bounds. Optional beside the counts: a reading stored before it carries
 # whole counts or none, and an absent key means the counts are the session's.
-# Spelt once in `records`, which `project_context` imports and `reading` may not be imported by.
+# Spelt once in `records`, because `project_context` sets it and may not import `reading`.
 COMMANDS_FLOOR_KEY = records.COMMANDS_FLOOR_KEY
 
 

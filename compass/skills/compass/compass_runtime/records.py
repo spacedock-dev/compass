@@ -31,7 +31,7 @@ SESSION_GOAL_HARNESSES: Final = ("claude", "codex", "antigravity")
 PROMPT_SOURCES: Final = ("latest-prompt", "first-prompt", PROMPT_CHOSEN, SESSION_GOAL)
 # Present, and True, beside a stored reading's other-command counts when the scan that counted them
 # began after the start of the session, so both are lower bounds. Spelt here because
-# `project_context` sets it and neither it nor `records` may import `reading`.
+# `project_context` sets it and may not import `reading`.
 COMMANDS_FLOOR_KEY: Final = "commands_floor"
 
 # C0 and DEL, the zero-width space, the two directional marks, and the bidi
