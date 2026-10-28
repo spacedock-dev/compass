@@ -3313,6 +3313,9 @@ def _package_invocation(
         or any(arg.startswith("-") for arg in own)
         or any(arg.split("=", 1)[0] in _SCRIPT_WRITING_ARGS for arg in (*own, *forwarded))
         or _exits_zero_by_flag(forwarded)
+        # The script's body is not read here, and `-e` is ruff's exit-zero switch, so a forwarded
+        # bare `-e` is refused rather than guessed at.
+        or "-e" in forwarded
     ):
         return None
     return "package", [name]

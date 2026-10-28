@@ -669,6 +669,10 @@ class ALaterEditOutsideTheRecipesWithdrawsAMakefileOrJustfile(ProjectScriptTestC
             "MAKEFLAGS += -n\n" + self.MAKEFILE,
             "export PATH := /tmp/fake:$(PATH)\n" + self.MAKEFILE,
             "SHELL_X = y\n" + self.MAKEFILE,
+            "  .IGNORE:\n" + self.MAKEFILE,
+            self.MAKEFILE + " .IGNORE:\n",
+            self.MAKEFILE + "  MAKEFLAGS += -n\n",
+            self.MAKEFILE + "%: .SHELLFLAGS = -c 'exit 0;'\n",
         ):
             with self.subTest(working=working):
                 self.fresh_repo()
@@ -755,6 +759,7 @@ class AnExitZeroFlagIsRefusedWhereverItIsWritten(ProjectScriptTestCase):
             "npm run lint -- --exit-zero",
             "pnpm lint -- --issues-exit-code=0",
             "pnpm lint -- --issues-exit-code 0",
+            "pnpm lint -- -e",
         ):
             self.ran(command)
         self.assertEqual([], self.titles())

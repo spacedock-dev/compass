@@ -397,7 +397,10 @@ def _directives(kind: str, data: bytes) -> tuple[str, ...]:
     found: list[str] = []
     for line in lines:
         stripped = line.strip()
-        if not stripped or stripped.startswith("#") or line[:1] in ("\t", " "):
+        # make reads a line that does not start with a tab as a directive even when a space
+        # indents it, so only a justfile's indented line is a recipe line here.
+        recipe_lead = ("\t",) if kind == "make" else ("\t", " ")
+        if not stripped or stripped.startswith("#") or line[:1] in recipe_lead:
             continue
         ordinary = _make_ordinary(stripped) if kind == "make" else _just_ordinary(stripped)
         if not ordinary:
@@ -411,7 +414,11 @@ def _make_ordinary(line: str) -> bool:
     rule = _make_rule(line)
     if rule is None:
         return False
-    names, colons, _rest = rule
+    names, colons, rest = rule
+    # `%: .SHELLFLAGS = ...` is a target-specific variable, so an `=` before any `;` recipe makes
+    # the line a directive however plain its target looks.
+    if "=" in rest.partition(";")[0]:
+        return False
     return names == [".PHONY"] or (
         len(names) == 1 and colons == ":" and not names[0].startswith(".")
     )
