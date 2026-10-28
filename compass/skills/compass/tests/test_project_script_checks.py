@@ -246,7 +246,7 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
                         "lint:b": "biome check --apply-unsafe",
                         "lint:c": "biome check --unsafe",
                         "test:a": "storybook test --update-snapshot",
-                        "test:b": "storybook test --update",
+                        "test:b": "test-storybook --update-snapshot",
                     }
                 )
             }
@@ -348,6 +348,50 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
         (self.cwd / "packages" / "app").mkdir(parents=True)
         self.ran(f"cd {self.cwd / 'packages' / 'app'} && pnpm typecheck")
         self.assertEqual([], self.titles())
+
+
+class AClosedListNameTheProjectDeclaresIsJudgedByItsBody(ProjectScriptTestCase):
+    """`pnpm test` is the usual runner until the project declares a `test` of its own."""
+
+    NAMES = (
+        ("test", "pnpm test"),
+        ("test", "npm test"),
+        ("test", "npm run test"),
+        ("test", "yarn test"),
+        ("test:stories", "pnpm test:stories"),
+        ("test:stories", "pnpm run test:stories"),
+        ("test:stories", "yarn test:stories"),
+    )
+
+    def declare(self, body: str) -> None:
+        self.commit({"package.json": package(**{"test": body, "test:stories": body})})
+
+    def test_a_body_that_is_not_a_check_makes_the_invocation_an_ordinary_command(self) -> None:
+        for body in ("echo skipped", "true", "storybook test -u", "biome check --apply"):
+            with self.subTest(body=body):
+                project_scripts.reset()
+                self.declare(body)
+                for _script, command in self.NAMES:
+                    self.ran(command)
+                self.assertEqual([], self.titles())
+
+    def test_a_body_that_is_a_runner_still_counts(self) -> None:
+        self.declare("vitest run")
+        for _script, command in self.NAMES:
+            self.ran(command)
+        self.assertEqual(sorted(command for _script, command in self.NAMES), sorted(self.titles()))
+
+    def test_without_a_declared_script_of_that_name_the_closed_list_stands(self) -> None:
+        self.commit({"package.json": package(lint="eslint .")})
+        self.ran("pnpm test")
+        self.ran("pnpm test:stories")
+        self.assertEqual(["pnpm test", "pnpm test:stories"], sorted(self.titles()))
+
+    def test_with_no_declarations_read_the_closed_list_stands(self) -> None:
+        self.config = dataclasses.replace(self.config, git_probe_enabled=False)
+        self.commit({"package.json": package(test="echo skipped")})
+        self.ran("npm test")
+        self.assertEqual(["npm test"], self.titles())
 
 
 class ASessionThatChangedADeclaringFileDeclaresNothing(ProjectScriptTestCase):

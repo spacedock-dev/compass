@@ -4430,7 +4430,14 @@ class _ShellCall:
         self.meaningful = [
             i for i, (words, _rtk) in enumerate(self.words) if words and words[0] != "cd"
         ]
-        self.checks = [i for i in self.meaningful if _is_check(self.words[i][0])]
+        self.checks = [
+            i
+            for i in self.meaningful
+            if _is_check(self.words[i][0])
+            and not self._declared_body_refuses(
+                declared, i, self.directories[i] if self.placed[i] else ""
+            )
+        ]
         # A declared script is a check, and still a change: its body is not run through this
         # reader, so it ages earlier passes as any command whose effects are not known does
         # (`changes`, `changes_later_in_call`). It is not in `changing_others`, which would stop
@@ -4502,6 +4509,28 @@ class _ShellCall:
             for i, part in enumerate(self.parts)
             if not part.words and _writes_a_file(part.redirects)
         ]
+
+    def _declared_body_refuses(
+        self, declared: project_scripts.Declarations | None, index: int, directory: str
+    ) -> bool:
+        """Whether a closed-list name is also a script the project declares, and that body is
+        not a check. The list names the usual runner behind `pnpm test`; a project that declares
+        its own `test` made it something else, so its body decides (`echo skipped`, `true` and a
+        snapshot-updating run are not checks). Where nothing is declared or read, the list
+        stands."""
+        if declared is None or not directory or not declared.at(directory):
+            return False
+        words = self.words[index][0]
+        if words[:1] in (["npm"], ["pnpm"], ["yarn"]) and words[1:2] == ["test"]:
+            words = [words[0], "run", *words[1:]]
+        invoked = _script_invocation(words) if not _steers_a_script(self.parts[index].raw) else None
+        if invoked is None:
+            return False
+        kind, names = invoked
+        script = declared.kind(kind)
+        if not any(name in script for name in names):
+            return False
+        return not all(_script_is_check(declared, kind, name) for name in names)
 
     def _reads_only(self, index: int) -> bool:
         part = self.parts[index]

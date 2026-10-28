@@ -3439,9 +3439,10 @@ commands with no result. The closed list in item 3 grows by these runners, match
 - **Fixer spellings.** `biome check` or `biome ci` with `--write`, `--fix`, `--apply`, `--apply-unsafe` or
   `--unsafe`, `biome format --write`, and a Storybook test run with `-u`, `--update`,
   `--update-snapshots`, `--updateSnapshot` or `--update-snapshot` rewrite files. The `test:stories` script
-  spellings above are fixers with the same flags, whether given directly or after a bare `--`. A run with one is a fixer that ages every earlier pass, as `eslint --fix`
-  is, and a declared script whose body holds one is not a check. `-u` is read as a fixer only for the
-  Storybook runners, because other programs use it for something else.
+  spellings above are fixers with the same flags, whether given directly or after a bare `--`. A run with
+  one is a fixer that ages every earlier pass, as `eslint --fix` is, and a declared script whose body holds
+  one is not a check. `-u` is read as a fixer only for the Storybook runners, because other programs use it
+  for something else.
 - **Last-line summaries.** The table in
   [DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes) gains
   two rows, each from output measured or documented. Biome prints `Checked N files in Xms. No fixes
@@ -7486,8 +7487,8 @@ it but `tail`, `head` or `grep` filters that read stdin, whatever earlier setup 
 only when it is one the check's own runner prints, from a closed table: unittest (`OK`, `OK (skipped=N)`,
 `OK (expected failures=N)`, `FAILED (...)`), pytest (the counted summary with its timing), mypy (`Success` and
 `Found N errors in ...`), ruff check (`All checks passed!`, `Found N errors.` and the fixable-count line under
-it), vitest (its `Tests` line) and `node --test` (its `fail` line), and, from a later amendment, biome and gradle. A runner that prints no summary of its own
-(`tsc`, `eslint`) never takes another command's line. A check wrapped in `rtk` stays flag-only, and a
+it), vitest (its `Tests` line) and `node --test` (its `fail` line), and, from a later amendment, biome
+and gradle. A runner that prints no summary of its own (`tsc`, `eslint`) never takes another command's line. A check wrapped in `rtk` stays flag-only, and a
 check that is not the last of the call is unchanged. Only the last line is read, so a failure printed earlier in
 the window by another command does not fail a later passing check.
 
@@ -7691,6 +7692,17 @@ The closed table of runner summaries gains two rows, biome and gradle, and `biom
 runners that print no summary of their own (`tsc` and `eslint` still are). The shapes each row reads, and why
 Storybook's runners have no row, are in the
 [DEC-23 amendment](#amended-2026-10-28-owner-biome-storybook-and-gradle-check-runners-join-the-closed-list).
+
+### Amended 2026-10-28 (owner): a closed-list name the project declares is judged by its body
+
+`pnpm test`, `npm test`, `npm run test`, `yarn test` and `pnpm test:stories` are on the closed list as
+the usual runner behind each name. A project that declares a script of that name has made it something
+else, and the list used to skip the declared body, so `"test": "echo skipped"`, `"test": "true"` or
+`"test:stories": "storybook test -u"` read as a passed check. Where the declarations were read for the
+folder the call ran in and hold a script of that name, the declared body decides: a body that is a
+runner, or a `&&` chain of them, keeps the invocation a check, and a body that is not a runner, is a
+fixer or cannot fail makes it an ordinary command. Where nothing is declared under that name, or no
+declaration was read (`--no-git`, not a repository), the closed list stands as before.
 
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
