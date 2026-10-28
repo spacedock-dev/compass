@@ -8291,10 +8291,10 @@ These are the follow-ups the review of the `glab` read found. The ruling's items
   ends with the `timeout` token and settles nothing.
 - **A quoted key in glab's file is the key.** `"api_protocol": http` redirects a host exactly as the unquoted
   spelling does. A host block that holds a line Compass cannot place a key in (a tab, a flow mapping or
-  sequence, a complex key, an anchor, an alias or a block scalar) is not read, because the key it hides may
-  be one of the three Compass refuses on. A host written inline, `HOST: {...}`, names no host.
+  sequence, a complex key, a tag or a block scalar) is not read, because the key it hides may
+  be one of the three Compass refuses on. An anchor, alias or merge key anywhere under `hosts:` leaves no host read, because an anchor under one host can be merged into another. `skip_tls_verify` is an allow-list: only a bare false, no, off, n or 0 keeps the host. A host written inline, `HOST: {...}`, names no host.
 - **`GLAB_CONFIG_DIR` is not followed.** Compass reads `glab-cli/config.yml` from `XDG_CONFIG_HOME`, else
-  `~/.config`, else `%APPDATA%`, and never from a folder `GLAB_CONFIG_DIR` names, because that variable is
+  `%APPDATA%` on Windows or `~/.config` elsewhere when it is unset, and never from a folder `GLAB_CONFIG_DIR` names, because that variable is
   stripped from the child and honouring it for the file would let the environment pick which file decides the
   host. A reader whose configuration lives there reads as `host-not-configured`, and the way out is in
   `HOW_TO_USE.md`.

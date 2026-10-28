@@ -257,7 +257,8 @@ export const ciReadReason = (token: string, provider: CiProvider): string =>
 /* The merge request GitLab numbers with a bang, and a pull request GitHub numbers with a hash. */
 export const ciRequestName = (repository: string, number: number): string =>
   `${repository}${ciProvider(repository) === 'GitLab' ? '!' : '#'}${String(number)}`;
-export const CI_READ_LABEL = 'Pull request checks';
+export const ciReadLabel = (provider: CiProvider): string =>
+  provider === 'GitLab' ? 'Merge request checks' : 'Pull request checks';
 /* The entry a stored CI check is, as the producer's fact words it (`ci_read.facts`), so a citation of one
    resolves on this page as it did when the reading was made. */
 export const CI_ENTRY_SOURCE = 'GitHub pull request check, read by Compass · recorded';

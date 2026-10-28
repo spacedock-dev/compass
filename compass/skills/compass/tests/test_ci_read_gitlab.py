@@ -312,10 +312,50 @@ class AHostWhoseConfigurationRedirectsTheCallIsNotRead(unittest.TestCase):
                 self.refused()
 
     def test_a_line_that_may_hide_a_key_refuses_the_host(self) -> None:
-        for line in ("{api_protocol: http}", "? api_protocol", "&anchor", "*anchor", "[x]"):
+        for line in (
+            "{api_protocol: http}",
+            "? api_protocol",
+            "&anchor",
+            "*anchor",
+            "[x]",
+            '"api_\\x70rotocol": http',
+            "<<: *h",
+            "api_protocol: &h http",
+            "!!str api_protocol: http",
+        ):
             with self.subTest(line=line):
                 self.host_block(line)
                 self.refused()
+
+    def test_skipped_tls_verification_is_read_only_when_plainly_off(self) -> None:
+        for line in (
+            "skip_tls_verify: true # note",
+            "skip_tls_verify: !!bool true",
+            "skip_tls_verify: y",
+            "skip_tls_verify: 'true' # x",
+            "skip_tls_verify:",
+            "skip_tls_verify: false # note",
+        ):
+            with self.subTest(line=line):
+                self.host_block(line)
+                self.refused()
+        self.host_block("skip_tls_verify:", "true")
+        self.refused()
+        for line in ("skip_tls_verify: false", "skip_tls_verify: 'No'", "skip_tls_verify: 0"):
+            with self.subTest(line=line):
+                self.host_block(line)
+                self.assertIn(HOST, ci_read.glab_hosts(self.stub.environ))
+
+    def test_an_anchor_under_one_host_cannot_reach_another_by_merge_key(self) -> None:
+        self.stub.configure(
+            "hosts:\n"
+            "    other.example.com: &h\n"
+            "        api_protocol: http\n"
+            f"    {HOST}:\n"
+            "        <<: *h\n"
+            "        token: FakePass99\n"
+        )
+        self.assertEqual(frozenset(), ci_read.glab_hosts(self.stub.environ))
 
     def test_an_inline_mapping_for_the_host_names_no_host(self) -> None:
         self.stub.configure(f"hosts:\n    {HOST}: {{api_protocol: http, token: FakePass99}}\n")
@@ -830,10 +870,6 @@ class APressOnAnUnconfiguredHostStartsNothing(unittest.TestCase):
         self.assertEqual(REPOSITORY, record["repository"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TheWholeGitlabReadHasOneDeadline(unittest.TestCase):
     """Up to twelve sequential calls at 20 s each would hold a press for four minutes."""
 
@@ -872,3 +908,7 @@ class TheWholeGitlabReadHasOneDeadline(unittest.TestCase):
         record = self.press(45.0)
         self.assertEqual(ci_read.ERROR_TIMEOUT, record["error"])
         self.assertEqual([20.0, 15.0], self.timeouts)
+
+
+if __name__ == "__main__":
+    unittest.main()

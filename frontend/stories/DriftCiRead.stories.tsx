@@ -149,7 +149,8 @@ export const ChecksOnAMovedGitlabHeadNameTheMergeRequest: Story = {
     await expect(node).toHaveTextContent(
       'The merge request head is not this session’s commit, so they settle nothing.',
     );
-    await expect(node).not.toHaveTextContent('pull request');
+    await expect(node).not.toHaveTextContent(/pull request/i);
+    await expect(node).toHaveTextContent('Merge request checks:');
   },
 };
 

@@ -3,7 +3,7 @@ import { ActionButton } from '../intent/ActionButton';
 import { ciReadAnswer } from './actions';
 import { ciReadNote } from './ciRead';
 import { useDrift } from './context';
-import { CI_READ_LABEL, CI_SWITCH_FLAG, CI_SWITCH_OFF, CI_SWITCH_ON } from './sentences';
+import { ciProvider, ciReadLabel, CI_SWITCH_FLAG, CI_SWITCH_OFF, CI_SWITCH_ON } from './sentences';
 
 /* Under the goal verdict note, from the reading's own record. Absent where no pull request was bound or the
    reader turned the read off, which is no claim either way. */
@@ -19,7 +19,7 @@ export function CiReadNote() {
       data-next-ci-read-state={note.state}
     >
       <p>
-        <strong>{`${CI_READ_LABEL}:`}</strong> {note.lines.join(' ')}
+        <strong>{`${ciReadLabel(ciProvider(ci.repository))}:`}</strong> {note.lines.join(' ')}
       </p>
     </div>
   );

@@ -328,6 +328,7 @@ class AHarnessVerdictIsAClaimTheRecordTests(base.AClaudeCodeReadingProducer):
             "CI-related tests pass",
             "Actions: all tests pass",
             "the ciremoterun tests pass",
+            "the gitlab-client tests pass",
         ):
             with self.subTest(reason=reason):
                 self.assertEqual(frozenset({"test"}), reading._verdict_check_kinds(reason))

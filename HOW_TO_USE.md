@@ -568,7 +568,7 @@ built from GitLab's documented answers, and the first press on your own host is 
    ```
 
 2. **Keep `glab`'s configuration in its usual place.** Compass reads the host names under `hosts:` in
-   `glab-cli/config.yml` under `XDG_CONFIG_HOME`, else `~/.config`, else `%APPDATA%` on Windows, and reads only a
+   `glab-cli/config.yml` under `XDG_CONFIG_HOME` when set, otherwise `%APPDATA%` on Windows or `~/.config` elsewhere, and reads only a
    host that file names. A configuration that lives only under a folder `GLAB_CONFIG_DIR` names is not
    followed, and the card says the host is not configured. Copy or link that file to the usual path, or sign
    in again with `GLAB_CONFIG_DIR` unset.

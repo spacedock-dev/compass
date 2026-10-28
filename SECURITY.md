@@ -2445,14 +2445,15 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   `GL_*`, so `GITLAB_TOKEN`, which applies to any host a command names, never reaches the child: a reader
   who signs in to `glab` by that variable alone reads nothing, and one signed in with `glab auth login`
   reads normally. Before anything is launched Compass reads the host names under `hosts:` in glab's
-  own configuration file (`glab-cli/config.yml` in `XDG_CONFIG_HOME`, else `~/.config`, else
-  `%APPDATA%` on Windows), keeps no value from it, and reads only a host that matches one exactly, over
+  own configuration file (`glab-cli/config.yml` in `XDG_CONFIG_HOME` when set, otherwise
+  `%APPDATA%` on Windows or `~/.config` elsewhere), keeps no value from it, and reads only a host that matches one exactly, over
   https, as a dotted name that is never an IP literal and carries no port. A host whose block sets
-  `api_protocol` to anything but https, `api_host` to another address, or `skip_tls_verify` on is
+  `api_protocol` to anything but https, `api_host` to another address, or `skip_tls_verify` to anything but a bare false (a comment, a tag or a value on the next line
+  counts as not false) is
   not read either (those three values are read from the block, and no token), and neither is one whose
   block holds a quoted key spelling one of them as well as a line this reader cannot place a key in (a
-  tab, a flow mapping, an anchor). `GLAB_CONFIG_DIR` is not followed: the file is read from
-  `XDG_CONFIG_HOME`, else `~/.config`, else `%APPDATA%`, so a configuration that lives only under a
+  tab, a flow mapping, a tag), and an anchor, alias or merge key anywhere under `hosts:` leaves no host read. `GLAB_CONFIG_DIR` is not followed: the file is read from
+  `XDG_CONFIG_HOME` when set, otherwise `%APPDATA%` on Windows or `~/.config` elsewhere, so a configuration that lives only under a
   folder that variable names reads as `host-not-configured` ([HOW_TO_USE.md](HOW_TO_USE.md#read-a-gitlab-merge-requests-pipeline) gives the way out). A pipeline counts only when
   it ran the merge request's head, which is the session's commit; a merged-results pipeline settles
   nothing. A goal URL that names any

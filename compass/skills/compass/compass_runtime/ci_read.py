@@ -634,10 +634,23 @@ def _unplaceable(line: str, stripped: str) -> bool:
     """Whether a line inside `hosts:` may hold a key this reader would not parse.
 
     YAML indents with spaces only, so a tab is a file no key can be placed in, and a line that
-    opens a flow mapping or sequence, a complex key, an anchor, an alias or a block scalar may spell
-    one of the three keys below in a way this reader does not read. The host it sits in is not read.
+    opens a flow mapping or sequence, a complex key, a tag or a block scalar may spell one of the
+    three keys below in a way this reader does not read. The host it sits in is not read.
     """
-    return "\t" in line[: len(line) - len(line.lstrip(" \t"))] or stripped[0] in "{[?&*|>"
+    return "\t" in line[: len(line) - len(line.lstrip(" \t"))] or stripped[0] in "{[?!|>"
+
+
+def _spreads(stripped: str) -> bool:
+    """Whether a line defines or uses an anchor, alias or merge key anywhere on it.
+
+    An anchor under one host can be merged into another, so one seen anywhere under `hosts:` leaves
+    no host this reader can vouch for.
+    """
+    return "&" in stripped or "*" in stripped or "<<" in stripped
+
+
+_PLAIN_KEY: Final = re.compile(r"[A-Za-z0-9_.-]+")
+_TLS_OFF: Final = frozenset({"false", "no", "off", "n", "0"})
 
 
 def _redirects(key: str, value: str, host: str) -> bool:
@@ -645,13 +658,18 @@ def _redirects(key: str, value: str, host: str) -> bool:
 
     glab resolves `--hostname` through these three keys, so a host that sends the call over http, to
     another address or without certificate checks is not one this read may name. A key may be
-    quoted, as YAML allows, and the quotes are not part of it.
+    quoted, as YAML allows, and the quotes are not part of it; a key that is not a plain name (an
+    escape, a space) may decode to one of the three, so it refuses the host. Certificate checks are
+    an allow-list: only a bare `false` style value keeps the host, because a comment, a tag or a
+    value on the next line is YAML this reader does not parse.
     """
     name, setting = key.strip().strip("'\""), value.strip().strip("'\"").lower()
+    if not _PLAIN_KEY.fullmatch(name):
+        return True
     return (
         (name == "api_protocol" and setting != "https")
         or (name == "api_host" and setting != host)
-        or (name == "skip_tls_verify" and setting in {"true", "yes", "on", "1"})
+        or (name == "skip_tls_verify" and setting not in _TLS_OFF)
     )
 
 
@@ -691,6 +709,8 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
         if not stripped or stripped.startswith("#"):
             continue
         indent = len(line) - len(line.lstrip(" "))
+        if inside and indent and _spreads(stripped):
+            return frozenset()
         if inside and _unplaceable(line, stripped):
             redirected.add(current)
             continue

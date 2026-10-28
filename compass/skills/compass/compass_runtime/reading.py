@@ -5365,7 +5365,7 @@ _PATH_AFTER = re.compile(r"\b(?:in|under|of)\s+[`'\"]?$", re.IGNORECASE)
 _REMOTE_CLAUSE = re.compile(
     r"(?<![\w-])(?:CI|Actions|MRs?)(?![\w-]|:)"
     rf"|(?i:\bworkflows?\b|\bchecks?\s+on\b|{_REMOTE_MARK}|github\s+actions|\b(?:in|on|via|per)\s+ci\b"
-    r"|\bpipelines?\b|\bmerge\s+requests?\b|\bgitlab(?:\s+ci)?\b)"
+    r"|\bpipelines?\b|\bmerge\s+requests?\b|\bgitlab\s+ci\b)"
 )
 
 
