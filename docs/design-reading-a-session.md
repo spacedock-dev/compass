@@ -7746,8 +7746,8 @@ A project's check is sometimes something no rule finds: a custom script, `bazel 
   or a shell command that names that file and is not a read of it (a redirect, `cp`, `tee`, an interpreter's
   argument; see the 2026-10-28 amendment below), withdraws every listed command for that session, and the
   page says the session wrote the file where the reader lists checks, but only when the reader had listed
-  something. The paged reader carries that fact across pages, so it agrees with a whole read. The residual is an indirect write: a
-  script or a variable that builds the path.
+  something. The paged reader carries that fact across pages, so it agrees with a whole read. The residual is
+  an indirect write: a script or a variable that builds the path.
 - **`--no-git` does not stop it.** No git command runs for a listing; it is one file read.
 - **What was rejected.** Reading a `.compass/` folder in the repository, so a team could share a list: the
   file would be one the agent can write. A listing keyed by project name alone, which two repositories share.
