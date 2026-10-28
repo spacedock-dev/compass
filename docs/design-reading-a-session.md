@@ -2527,6 +2527,8 @@ Runners, matched on the first word or words of a stripped segment:
   `python3 -m unittest`, `nose2`, `tox`, `nox`, `node --test`, `npm test`, `npm run test`,
   `pnpm test`, `pnpm run test`, `yarn test`, `bun test`, `deno test`, `jest`, `vitest`, `mocha`,
   `go test`, `cargo test`, `cargo nextest`, `mvn test`, `gradle test`, `./gradlew test`,
+  `gradle check`, `./gradlew check`, `storybook test`, `test-storybook`, `pnpm test:stories`,
+  `yarn test:stories`, `npm run test:stories`, `pnpm run test:stories`, `yarn run test:stories`,
   `dotnet test`, `rspec`, `bundle exec rspec`, `rake test`, `phpunit`, `swift test`, `ctest`,
   `make test`, `make check`, and a program file whose name holds `test` or `tests` as a word of its
   own, with the name split on `_`, `-` and `.`: `run_tests.py`, `./test.sh` and
@@ -2536,7 +2538,8 @@ Runners, matched on the first word or words of a stripped segment:
   `cargo build`, `go build`, `make build`, `mvn package`, `gradle build`, `./gradlew build`,
   `dotnet build`, `swift build`, `vite build`, and `tsc` without `--noEmit`.
 - Lint: `ruff check`, `ruff format --check`, `flake8`, `pylint`, `black --check`, `eslint`,
-  `prettier --check`, `stylelint`, `golangci-lint`, `cargo clippy`, `rubocop`, `shellcheck`.
+  `biome check`, `biome ci`, `prettier --check`, `stylelint`, `golangci-lint`, `cargo clippy`,
+  `rubocop`, `shellcheck`.
 - Type-check: `mypy`, `pyright`, `tsc --noEmit`, `cargo check`, `go vet`.
 
 Read-only commands, matched the same way, for segments that are not checks: `git status`,
@@ -3420,6 +3423,37 @@ file. Under-coverage of this kind keeps a pass aged and never makes a false one.
 - **What still ages a pass.** A redirect on any of them, a substitution inside them that writes, and every
   body command that is not read-only, so `for ((;;)); do rm x; done` and `for ((i=0;i<3;i++)); do echo x > f;
   done` still count as changes. A check inside the loop is still found and listed.
+
+### Amended 2026-10-28 (owner): Biome, Storybook and Gradle check runners join the closed list
+
+A reader on a Java project, or on a monorepo that runs Biome or Storybook tests, saw those runs listed as
+commands with no result. The closed list in item 3 grows by these runners, matched the same way as the rest
+(first words of a stripped segment, with `pnpm exec`, `pnpm` shorthand, `npx` and the other wrappers removed):
+
+- **Lint.** `biome check` and `biome ci`.
+- **Test.** `storybook test`, `test-storybook`, and the `test:stories` script spelled `pnpm test:stories`,
+  `yarn test:stories`, `npm run test:stories`, `pnpm run test:stories` and `yarn run test:stories`;
+  `gradle check` and `./gradlew check`.
+  `gradle test` and `./gradlew test` were already named. `gradle build` is not added for its check form: it
+  was already a build, and it stays one.
+- **Fixer spellings.** `biome check` or `biome ci` with `--write`, `--fix`, `--apply`, `--apply-unsafe` or
+  `--unsafe`, `biome format --write`, and a Storybook test run with `-u`, `--update`,
+  `--update-snapshots`, `--updateSnapshot` or `--update-snapshot` rewrite files. The `test:stories` script
+  spellings above are fixers with the same flags, whether given directly or after a bare `--`. A run with
+  one is a fixer that ages every earlier pass, as `eslint --fix` is, and a declared script whose body holds
+  one is not a check. `-u` is read as a fixer only for the Storybook runners, because other programs use it
+  for something else.
+- **Last-line summaries.** The table in
+  [DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes) gains
+  two rows, each from output measured or documented. Biome prints `Checked N files in Xms. No fixes
+  applied.` for a run with nothing to report, and a failing run ends on `Found N errors.` or on `Some errors
+  were emitted while running checks.`, which one depending on how its streams interleave; a pass line is
+  refused when either failure line sits above it, and a run that checked no files is not a pass. Gradle ends
+  on `BUILD SUCCESSFUL in Ns` or `BUILD FAILED in Ns`, then an `N actionable tasks` line that is skipped from
+  the end. Storybook's runners have no row: `test:stories` is a project script whose wrapper may print after
+  the test runner's own summary, and the exit status alone speaks for them.
+- **What was rejected.** Reading `Tests` lines for `storybook test` because it runs vitest: the line that ends
+  the output belongs to whatever the project wraps around it, which a closed table cannot know.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
@@ -7453,8 +7487,8 @@ it but `tail`, `head` or `grep` filters that read stdin, whatever earlier setup 
 only when it is one the check's own runner prints, from a closed table: unittest (`OK`, `OK (skipped=N)`,
 `OK (expected failures=N)`, `FAILED (...)`), pytest (the counted summary with its timing), mypy (`Success` and
 `Found N errors in ...`), ruff check (`All checks passed!`, `Found N errors.` and the fixable-count line under
-it), vitest (its `Tests` line) and `node --test` (its `fail` line). A runner that prints no summary of its own
-(`tsc`, `eslint`, `biome`) never takes another command's line. A check wrapped in `rtk` stays flag-only, and a
+it), vitest (its `Tests` line) and `node --test` (its `fail` line), and, from a later amendment, biome
+and gradle. A runner that prints no summary of its own (`tsc`, `eslint`) never takes another command's line. A check wrapped in `rtk` stays flag-only, and a
 check that is not the last of the call is unchanged. Only the last line is read, so a failure printed earlier in
 the window by another command does not fail a later passing check.
 
@@ -7585,9 +7619,10 @@ a closed-list runner". This layer builds that, and what the build had to decide 
   file and a closed reason, never its content. A command in a subfolder runs that folder's scripts, which are not
   read. Workflow `run:` steps are out of scope, because no YAML parser ships. On Windows a checkout that converts
   line endings differs from its commit byte for byte, so its declarations are skipped as edited.
-- **What stays a command.** The closed list is the whole vocabulary of a body: `biome check`, `storybook test`,
-  `./gradlew check` and any runner not on it leave their scripts tier 3 until the list grows or a later layer
-  reads them. This layer does not widen the list.
+- **What stays a command.** The closed list is the whole vocabulary of a body: any runner not on it leaves its
+  script tier 3 until the list grows or a later layer reads them. This layer did not widen the list; `biome
+  check`, `biome ci`, `storybook test`, `test-storybook` and `gradle`/`./gradlew check` joined it later, see the
+  [DEC-23 amendment](#amended-2026-10-28-owner-biome-storybook-and-gradle-check-runners-join-the-closed-list).
 - **Ageing and the answer.** A declared script is a check and still a change, as item 4 says of every command
   that is not read-only: it ages the passes before it, its own pass stands, and a later one ages that. Its result is
   read as any check's is, from the call's exit status and the output the producer already reads. The line
@@ -7650,6 +7685,31 @@ A project's check is sometimes something no rule finds: a custom script, `bazel 
   file would be one the agent can write. A listing keyed by project name alone, which two repositories share.
   Matching by prefix, so a listed command covers any arguments: a flag after `--` or an environment variable
   can turn one into a writer, and the reader can list each command they run.
+
+### Amended 2026-10-28 (owner): biome and gradle join the last-line table
+
+The closed table of runner summaries gains two rows, biome and gradle, and `biome` is no longer in the list of
+runners that print no summary of their own (`tsc` and `eslint` still are). The shapes each row reads, and why
+Storybook's runners have no row, are in the
+[DEC-23 amendment](#amended-2026-10-28-owner-biome-storybook-and-gradle-check-runners-join-the-closed-list).
+
+### Amended 2026-10-28 (owner): a closed-list name the project declares is judged by its body
+
+`pnpm test`, `npm test`, `npm run test`, `yarn test` and `pnpm test:stories` are on the closed list as
+the usual runner behind each name. A project that declares a script of that name has made it something
+else, and the list used to skip the declared body, so `"test": "echo skipped"`, `"test": "true"` or
+`"test:stories": "storybook test -u"` read as a passed check. Where the declarations were read for the
+folder the call ran in and hold a script of that name, the declared body decides: a body that is a
+runner, or a `&&` chain of them, keeps the invocation a check, and a body that is not a runner, is a
+fixer or cannot fail makes it an ordinary command. Where nothing is declared under that name, or no
+declaration was read (`--no-git`, not a repository), the closed list stands as before.
+
+A call that carries options is judged by the same body: a reporter, `--run`, `--coverage`, `--foo`, a
+`--` with forwarded arguments or `-u` cannot change which declared script ran, so `pnpm test --run` over
+`"test": "echo skipped"` is an ordinary command. The closed list still stands for the options that run
+another package's script, another directory's or none (`--filter`, `-r`, `-w`, `-C`, `--dir`, `--cwd`,
+`--prefix`, `--workspace`, `--script-shell`, `--ignore-scripts`), because the declaration Compass read is
+not necessarily the one that ran.
 
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 

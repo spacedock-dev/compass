@@ -2371,6 +2371,42 @@ class WhatTheLastLineOfACheckSaysWhenOtherCommandsPrintToo(ClaudeChecksTestCase)
                 self.setUp()
                 self.assertEqual(expected, self.result_of(command, output))
 
+    def test_biome_and_gradle_read_their_own_last_line(self) -> None:
+        biome_ok = "Checked 12 files in 8ms. No fixes applied."
+        biome_fail = "Checked 12 files in 8ms. No fixes applied.\nFound 2 errors."
+        biome_closing = "Found 2 errors.\ncheck \u2501\u2501\u2501\n\n  \u2716 Some errors were emitted while running checks.\n  "
+        gradle_ok = "> Task :test\n\nBUILD SUCCESSFUL in 4s\n3 actionable tasks: 3 executed"
+        gradle_fail = "FAILURE: Build failed with an exception.\n\nBUILD FAILED in 1m 3s\n2 actionable tasks: 2 executed"
+        for command, output, expected in (
+            ("echo a; biome check .", biome_ok, "passed"),
+            ("echo a; biome ci .", biome_ok, "passed"),
+            ("echo a; pnpm exec biome check .", biome_ok, "passed"),
+            ("echo a; biome check .", biome_fail, "failed"),
+            ("echo a; biome check .", biome_closing, "failed"),
+            # A pass line printed last after a failure above it is never a pass.
+            ("echo a; biome check .", "Found 2 errors.\n" + biome_ok, "not-recorded"),
+            ("echo a; biome check .", "Checked 0 files in 1ms. No fixes applied.", "not-recorded"),
+            ("echo a; pytest", biome_ok, "not-recorded"),
+            ("echo a; ./gradlew check", gradle_ok, "passed"),
+            ("echo a; gradle test", gradle_ok, "passed"),
+            ("echo a; ./gradlew check", gradle_fail, "failed"),
+            ("echo a; gradle check", "BUILD FAILED in 2s", "failed"),
+            ("echo a; gradle check", "BUILD SUCCESSFUL", "not-recorded"),
+            ("echo a; ./gradlew check", "> Task :check UP-TO-DATE", "not-recorded"),
+        ):
+            with self.subTest(command=command, output=output):
+                self.setUp()
+                self.assertEqual(expected, self.result_of(command, output))
+
+    def test_a_storybook_runner_has_no_summary_row_and_reads_the_flag_alone(self) -> None:
+        for command in ("storybook test", "test-storybook", "pnpm test:stories"):
+            with self.subTest(command=command):
+                self.assertEqual("", project_context._summary_runner(command.split()))
+                self.setUp()
+                self.assertEqual(
+                    "not-recorded", self.result_of(f"echo a; {command}", "Tests  5 passed (5)")
+                )
+
     def test_an_error_flag_is_not_outvoted_by_a_passing_summary(self) -> None:
         # The failure may be the setup command, so the check is withheld, not passed.
         for command in (
@@ -2515,3 +2551,106 @@ class EveryWithheldResultNamesItsReason(ClaudeChecksTestCase):
                     self.assertIn(
                         check["result_reason"], project_context.CHECK_NOT_RECORDED_REASONS
                     )
+
+
+class TheBiomeStorybookAndGradleRunnersAreChecks(ClaudeChecksTestCase):
+    """DEC-23 item 3's closed list names these, and their fixer spellings are not checks' passes."""
+
+    CHECKS = (
+        "biome check .",
+        "biome ci .",
+        "pnpm exec biome check src",
+        "pnpm biome check src",
+        "storybook test",
+        "pnpm exec storybook test",
+        "test-storybook --ci",
+        "pnpm test:stories",
+        "pnpm run test:stories",
+        "npm run test:stories",
+        "yarn test:stories",
+        "./gradlew check",
+        "gradle check",
+        "gradle test",
+        "./gradlew test",
+    )
+
+    def test_each_is_a_check_with_its_command_as_the_title(self) -> None:
+        for command in self.CHECKS:
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, "", is_error=False)
+                self.assertEqual(1, len(self.checks()))
+                self.assertEqual("passed", self.only_check()["result"])
+
+    def test_a_non_runner_beside_them_is_not_a_check(self) -> None:
+        for command in (
+            "biome format .",
+            "biome lint",
+            "pnpm biome",
+            "storybook dev",
+            "pnpm storybook",
+        ):
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, "", is_error=False)
+                self.assertEqual([], self.checks())
+
+    def test_a_failing_flag_fails_each(self) -> None:
+        for command in self.CHECKS:
+            with self.subTest(command=command):
+                self.setUp()
+                self.session.bash(command, "", is_error=True)
+                self.assertEqual("failed", self.only_check()["result"])
+
+    def test_the_fixer_spellings_are_fixers(self) -> None:
+        for command in (
+            "biome check --write .",
+            "biome check --fix .",
+            "biome check --apply .",
+            "biome check --unsafe .",
+            "biome check --write --unsafe .",
+            "biome ci --apply-unsafe .",
+            "biome format --write .",
+            "pnpm exec biome check --write",
+            "storybook test -u",
+            "storybook test --updateSnapshot",
+            "test-storybook -u",
+            "test-storybook --updateSnapshot",
+            "storybook test --update",
+            "storybook test --update-snapshots",
+            "pnpm test:stories -u",
+            "pnpm test:stories --updateSnapshot",
+            "npm run test:stories -- -u",
+            "yarn test:stories -u",
+            "pnpm run test:stories --update",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(project_context._is_fixer(command.split()))
+
+    def test_the_read_only_spellings_are_not_fixers(self) -> None:
+        for command in (
+            "biome check .",
+            "biome ci --error-on-warnings .",
+            "storybook test --ci",
+            "pnpm test:stories",
+            "npm run test:stories",
+            "storybook dev -u",
+            "curl -u me host",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(project_context._is_fixer(command.split()))
+
+    def test_a_fixer_run_ages_an_earlier_pass(self) -> None:
+        for later in ("biome check --write .", "biome format --write .", "storybook test -u"):
+            with self.subTest(later=later):
+                self.setUp()
+                self.session.bash("pytest", "5 passed", is_error=False)
+                self.session.bash(later, "", is_error=False)
+                check = next(e for e in self.checks() if e["title"] == "pytest")
+                self.assertIs(True, check["before_last_change"])
+
+    def test_a_clean_run_ages_nothing(self) -> None:
+        self.session.bash("pytest", "5 passed", is_error=False)
+        self.session.bash("biome check .", "", is_error=False)
+        found = {e["title"]: e for e in self.checks()}
+        self.assertIs(False, found["pytest"]["before_last_change"])
