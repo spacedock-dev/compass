@@ -7990,6 +7990,40 @@ tiers exist to refuse.
   something sees nothing, and "ran" is the honest word. Asking `gh` which pull request a branch or run belongs
   to: that is a network call at collection time.
 
+### Amended 2026-10-28 (owner): the edges of the command tiers
+
+Seven loose ends in the tier 2 and tier 3 rules, each a way a reading weighed a command wrongly or cited one it
+had set aside. None produced a false pass. Each is closed below.
+
+1. **The unread-pass guard already counts commands.** It was reported as walking check histories only. It walks
+   the ranked candidates, which hold every tier 3 command and tier 2 CI read, so a passed `make deploy` or
+   `gh pr checks` the prompt left out is counted as an unread pass today. Closed with a test and no code change.
+2. **A failed command outranks a passed one.** In the prompt's byte bound a failed command that could fail is
+   ranked behind the reader's words, the checks, the writes, the pull requests and the skills, and ahead of the
+   commands that passed and the agent's messages. A failed command the bound leaves out joins the unread
+   failures, so a `consistent` on an outcome line cannot stand on the prompt's silence about it. A command that
+   cannot fail is never ranked as a failure.
+3. **One call, two places, two fact ids.** `cd a && make deploy; cd b && make deploy` and the same for a check
+   made two facts with one title, record and time, and so one fact id. A segment whose line an earlier segment
+   of the call already ran in a different place now hashes its position among those into the id. The first
+   segment, every single segment and a line run twice in one place keep the id they had, so no stored citation
+   moves. The `id_title` field that carries the hashed text stays server side and never reaches the page.
+   `session_source` follows: it only needs a segment id for a repeat in one place now.
+4. **gh's own error lines.** The test that withdraws a failed `gh pr checks` ran over the whole output, so a
+   failing run with a check named `authentication`, or a link with `HTTP 500` in it, recorded no failure. It now
+   reads a line only when it carries no tab, which a check row always does, and starts with gh's error shapes:
+   `no checks reported`, `HTTP <status>`, `could not resolve`, `authentication`, or a hint naming `gh auth login`.
+5. **The last stage of a pipe speaks for itself.** A command after a pipe was blanked whenever a working stage
+   came before it, although the call's status is the last stage's own. It now follows the rule a check follows:
+   a pass speaks for the last stage and a failure only for a call of one segment. The stages before it still
+   read no result.
+6. **A covered failure is not cited by the live level.** The scan counter already drops a tier 3 failure a later
+   pass covers. The live level cited it anyway beside a floor it did not block. It now cites the failures that
+   block the floor and no others.
+7. **The notice content version does not move.** The command content class widened with this ruling and DEC-31,
+   and the notice's `CONTENT_VERSION` is not bumped for it. DEC-31 item 3 has the first press run with no hold,
+   and a bump would show the legacy "allow it again" change to a reader who has nothing to allow.
+
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
 Decided by the owner on 2026-10-27 (DRC-4973). This layer writes the ruling down; the layers that follow build

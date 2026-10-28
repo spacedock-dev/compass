@@ -569,10 +569,12 @@ def _classify(
     actor = "parent" if stream == "parent" else "subagent"
     entries: list[SourceEntry] = []
     # The published report keeps one entry per check, its newest foreground run, under the call's
-    # own id, and two checks in one call that share a title (`cd a && pytest; cd b && pytest`)
-    # derive the same published fact id. The source keeps one run per title in the call on the
-    # call id, chosen as the published `_latest` chooses, and gives every other run a segment id,
-    # so no two source entries share an id; the run left on a segment id has no published entry.
+    # own id. Two checks in one call that share a title in different places
+    # (`cd a && pytest; cd b && pytest`) are two published entries with ids apart, but one check
+    # run twice in one place (`pytest; pytest`) derives one. The source keeps one run per check
+    # in the call on the call id, chosen as the published `_latest` chooses, and gives every other
+    # run a segment id, so no two source entries share an id; the run left on a segment id has no
+    # published entry.
     foreground = sorted(
         (
             (run["segment"], identity, run)
@@ -582,12 +584,12 @@ def _classify(
         ),
         key=lambda item: item[0],
     )
-    by_title: dict[str, list[tuple[int, dict[str, Any]]]] = {}
-    for segment, _identity, run in foreground:
-        by_title.setdefault(run["title"], []).append((segment, run))
+    by_check: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for segment, identity, run in foreground:
+        by_check.setdefault(identity, []).append((segment, run))
     kept = {
         history[tally._latest([run for _segment, run in history])][0]  # noqa: SLF001
-        for history in by_title.values()
+        for history in by_check.values()
     }
     for segment, identity, run in foreground:
         entry = tally._check_entry([run])  # noqa: SLF001

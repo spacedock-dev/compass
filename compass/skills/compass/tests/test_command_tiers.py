@@ -231,7 +231,11 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
             "pnpm test | tee log",
         ):
             self.session.bash(command, "1 failed, 2 passed", is_error=False)
-        self.assertNotIn("passed", [c["result"] for c in self.commands()])
+        # The upstream program is never read as passing. A listed last stage speaks for itself,
+        # as a check at the end of a pipe does: the call's status is that stage's own.
+        self.assertNotIn(
+            "passed", [c["result"] for c in self.commands() if c["title"] == "make test"]
+        )
         self.assertEqual([], self.passed_checks())
 
     def test_a_lone_command_and_one_before_a_read_only_filter_read_as_they_did(self) -> None:
@@ -1162,6 +1166,147 @@ class TheVendorRuleDecidesWhatOutputLeaves(ClaudeChecksTestCase):
         other = reading_route._tool_output_sentence("codex", "claude", "OpenAI")
         self.assertIn("Other commands go too, with their output.", same)
         self.assertIn("Other commands go with their exit status and no output.", other)
+
+
+class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
+    def test_a_pass_of_a_command_or_a_ci_read_is_counted_by_the_unread_pass_guard(self) -> None:
+        self.session.bash("make deploy", "done", is_error=False)
+        self.session.bash("gh pr checks 12", "all pass", is_error=False)
+        self.session.save(self.path)
+        press = project_context.claude_check_press(self.config, str(self.path))
+        self.assertEqual(
+            ["gh pr checks 12", "make deploy"], sorted(p[1] for p in press.passes_and_writes)
+        )
+
+    def test_a_failed_command_ranks_ahead_of_a_passed_one_and_behind_a_check(self) -> None:
+        failed = reading.build_ledger(
+            [base.check_fact(fact_id="c1", subject="command", tier=3, summary="make a")],
+            "claude",
+            "s1",
+            tool_output={},
+        )[0]
+        passed = cast("reading.LedgerEntry", {**failed, "result": "passed"})
+        check = cast("reading.LedgerEntry", {**failed, "subject": "check"})
+        message = cast("reading.LedgerEntry", {**failed, "type": "agent_message", "subject": "x"})
+        self.assertLess(reading._priority(check), reading._priority(failed))
+        self.assertLess(reading._priority(failed), reading._priority(passed))
+        self.assertLess(reading._priority(passed), reading._priority(message))
+
+    def test_a_failed_command_a_full_bound_left_out_is_an_unread_failure(self) -> None:
+        facts = [base.WORDS_FACT]
+        facts += [
+            base.check_fact(
+                fact_id=f"c{n}",
+                subject="command",
+                tier=3,
+                result="passed",
+                summary=f"make step{n}",
+                at=100.0 + n,
+            )
+            for n in range(40)
+        ]
+        facts.append(
+            base.check_fact(
+                fact_id="bad",
+                subject="command",
+                tier=3,
+                result="failed",
+                summary="make broken",
+                at=50.0,
+            )
+        )
+        ledger = reading.build_ledger(facts, "claude", "s1", tool_output={})
+        _text, small = reading.build_prompt(
+            ledger, goal="deploy", lines=("deployed",), max_bytes=2_600
+        )
+        self.assertGreater(len(ledger), len(small.entries))
+        titles = [e["summary"] for e in small.entries]
+        self.assertTrue(any("make broken" in t for t in titles), titles)
+        self.assertFalse(any(t.startswith("make step") for t in titles[:0]))
+        # With room for the failures alone behind a flood of failed checks, it is carried unread.
+        flood = [
+            base.check_fact(
+                fact_id=f"k{n}", result="failed", summary=f"pytest t{n}.py", at=60.0 + n
+            )
+            for n in range(60)
+        ]
+        ledger = reading.build_ledger(
+            [base.WORDS_FACT, *flood, facts[-1]], "claude", "s1", tool_output={}
+        )
+        _text, tight = reading.build_prompt(
+            ledger, goal="deploy", lines=("deployed",), max_bytes=2_600
+        )
+        self.assertTrue(any("make broken" in e["summary"] for e in tight.unread_failures))
+
+    def test_two_directories_running_one_line_keep_distinct_fact_ids(self) -> None:
+        self.session.bash("cd a && make deploy; cd b && make deploy", "done", is_error=False)
+        self.session.bash("cd a && pytest -q; cd b && pytest -q", "3 passed", is_error=False)
+        self.session.bash("make solo", "done", is_error=False)
+        facts = facts_of(self.read()[0])
+        ids = [f["fact_id"] for f in facts]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(5, len(ids))
+        self.assertNotIn("id_title", json.dumps(facts))
+
+    def test_a_single_segment_and_a_repeat_in_one_place_keep_the_id_they_had(self) -> None:
+        self.session.bash("make deploy; make deploy", "done", is_error=False)
+        (event,) = [e for e in self.read()[0] if e["subject"] == "command"]
+        self.assertNotIn("id_title", event)
+
+    def test_gh_error_lines_only_withdraw_a_failure_when_gh_wrote_them(self) -> None:
+        rows = {
+            "gh pr checks 12": "Exit code 1\nauthentication\tfail\t1m\thttps://ci.example/1",
+            "gh pr checks 13": "Exit code 1\nbuild\tfail\t1m\thttps://ci.example/HTTP 500 retry",
+            "gh pr checks 14": "Exit code 1\nHTTP 404: Not Found (https://api.example/x)",
+            "gh pr checks 15": "Exit code 1\nTo get started, please run:  gh auth login",
+            "gh pr checks 16": "Exit code 1\nno checks reported on the 'fix/widget-guard' branch",
+            "gh pr checks 20": "Exit code 1\nCould not resolve to a PullRequest",
+        }
+        for command, text in rows.items():
+            self.session.bash(command, text, is_error=True)
+        got = {e["title"]: e["result"] for e in self.read()[0] if e["subject"] == "ci_command"}
+        self.assertEqual("failed", got["gh pr checks 12"])
+        self.assertEqual("failed", got["gh pr checks 13"])
+        for number in (14, 15, 16, 20):
+            self.assertEqual("not-recorded", got[f"gh pr checks {number}"])
+
+    def test_the_last_stage_of_a_pipe_after_work_speaks_for_itself(self) -> None:
+        self.session.bash("make stage | ./release.sh", "done", is_error=False)
+        self.session.bash("make stage2 | ./fail.sh", "boom", is_error=True)
+        self.session.bash("pytest -q | ./summarize.sh", "3 passed", is_error=False)
+        got = {e["title"]: e["result"] for e in self.read()[0] if e["subject"] == "command"}
+        self.assertEqual("passed", got["./release.sh"])
+        # A failure speaks only for a call of one segment, the rule a check follows too.
+        self.assertEqual("not-recorded", got["./fail.sh"])
+        self.assertNotEqual("passed", got["make stage"])
+        self.assertNotEqual("failed", got["make stage2"])
+
+    def test_a_tier_3_failure_a_later_pass_covers_is_not_cited_by_the_live_level(self) -> None:
+        self.session.write(self.file("src/new.py"))
+        self.session.bash("git commit -m wip", "hook rejected", is_error=True)
+        self.session.bash("git commit -m fix", "done", is_error=False)
+        self.session.bash("pytest -q", "3 passed", is_error=False)
+        entries, scan = self.read()
+        facts = facts_of(entries)
+        got = levels.live_level(
+            lv.evidence(facts, {**lv.scan(), **scan, "last_user_at": 9e9}), lv.intent("Tests pass")
+        )
+        self.assertEqual(levels.NONE_OR_LOW, got.level)
+        failed = [f["fact_id"] for f in facts if f.get("result") == "failed"]
+        self.assertEqual(1, len(failed))
+        self.assertNotIn(failed[0], got.cites)
+
+    def test_an_uncovered_tier_3_failure_is_still_cited(self) -> None:
+        self.session.write(self.file("src/new.py"))
+        self.session.bash("pytest -q", "3 passed", is_error=False)
+        self.session.bash("git commit -m wip", "hook rejected", is_error=True)
+        entries, scan = self.read()
+        facts = facts_of(entries)
+        got = levels.live_level(
+            lv.evidence(facts, {**lv.scan(), **scan, "last_user_at": 9e9}), lv.intent("Tests pass")
+        )
+        failed = [f["fact_id"] for f in facts if f.get("result") == "failed"]
+        self.assertIn(failed[0], got.cites)
 
 
 if __name__ == "__main__":
