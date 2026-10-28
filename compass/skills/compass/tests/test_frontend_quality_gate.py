@@ -259,11 +259,13 @@ class FrontendWiringControlsTest(unittest.TestCase):
         commands = [step.get("run", "") for step in steps]
         self.assertIn("pnpm install --frozen-lockfile --ignore-scripts", commands)
         self.assertFalse(any("corepack" in command.lower() for command in commands))
-        for step in steps:
+        install = commands.index("pnpm install --frozen-lockfile --ignore-scripts")
+        for index, step in enumerate(steps):
             self.assertNotIn("registry-url", step.get("with", {}))
             # The coverage-exception label check reads the PR with the job's read-only token. It is the
             # one step allowed a token, and it runs before any dependency is installed.
             if self.label_check(step):
+                self.assertLess(index, install, "a token-bearing step runs before the install")
                 continue
             for name in ("NODE_AUTH_TOKEN", "NPM_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
                 self.assertNotIn(name, step.get("env", {}))
