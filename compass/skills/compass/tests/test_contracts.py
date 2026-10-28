@@ -1150,6 +1150,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.departures",
             "compass_runtime.io",
             "compass_runtime.notifications",
+            # Resolves a session's transcript path to find where a failed check's output sits.
+            "compass_runtime.observer",
             "compass_runtime.project_context",
             "compass_runtime.reading",
             # The Allow binding a press reads, asked before each send, so the
