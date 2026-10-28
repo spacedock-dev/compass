@@ -511,6 +511,23 @@ class ASessionThatChangedADeclaringFileDeclaresNothing(ProjectScriptTestCase):
         self.ran("just check")
         self.assertEqual(["just check"], self.titles())
 
+    def test_a_package_manager_config_the_session_wrote_withdraws_the_package_scripts(self) -> None:
+        for name in (".npmrc", ".yarnrc.yml"):
+            with self.subTest(name=name, tool="write"):
+                self.fresh_repo()
+                self.commit(
+                    {"package.json": package(lint="eslint ."), "justfile": "check:\n    mypy .\n"}
+                )
+                self.session.write(self.file(f"sub/{name}"), "script-shell=/bin/true\n")
+                self.ran("pnpm lint")
+                self.ran("just check")
+                self.assertEqual(["just check"], self.titles())
+        self.fresh_repo()
+        self.commit({"package.json": package(lint="eslint .")})
+        self.ran("echo 'script-shell=/bin/true' > .npmrc")
+        self.ran("pnpm lint")
+        self.assertNotIn("pnpm lint", self.titles())
+
     def test_a_file_changed_by_a_shell_command_differs_from_the_commit_and_declares_nothing(
         self,
     ) -> None:
@@ -673,6 +690,9 @@ class ALaterEditOutsideTheRecipesWithdrawsAMakefileOrJustfile(ProjectScriptTestC
             self.MAKEFILE + " .IGNORE:\n",
             self.MAKEFILE + "  MAKEFLAGS += -n\n",
             self.MAKEFILE + "%: .SHELLFLAGS = -c 'exit 0;'\n",
+            "T = lint\n" + self.MAKEFILE + "$(T):\n\ttrue\n",
+            "T = lint\n" + self.MAKEFILE + "$(T): ; true\n",
+            self.MAKEFILE + "%.o: %.c\n\ttrue\n",
         ):
             with self.subTest(working=working):
                 self.fresh_repo()

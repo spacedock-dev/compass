@@ -6084,7 +6084,14 @@ def _written_declaring_files(
     call's redirects and its `cp`, `mv`, `tee` and `chmod` arguments. Read through
     `_claude_tool_uses`, the one place a tool call's input is read.
     """
-    watched = frozenset((*project_scripts.DECLARING_FILES, reader_checks.FILENAME, *also))
+    watched = frozenset(
+        (
+            *project_scripts.DECLARING_FILES,
+            *project_scripts.STEERING_FILES,
+            reader_checks.FILENAME,
+            *also,
+        )
+    )
     found: set[str] = set()
     streams = [_claude_tool_uses(parent), *(_claude_tool_uses(c, sidechain=True) for c in children)]
     for stream in streams:
@@ -6098,6 +6105,9 @@ def _written_declaring_files(
             if name == "Bash" and isinstance(command, str):
                 if reader_checks.FILENAME in command:
                     found.add(reader_checks.FILENAME)
+                # Fails closed like the listing: a command that names a package-manager config
+                # file may have written it, and which script a runner starts follows from it.
+                found.update(n for n in project_scripts.STEERING_FILES if n in command)
                 if also:
                     found |= _shell_names(command, also)
     return frozenset(found)

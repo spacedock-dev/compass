@@ -60,6 +60,10 @@ DECLARING_FILES: Final = (
     "Justfile",
     ".justfile",
 )
+# Package-manager config a session can write to change what `pnpm lint` runs (`script-shell` in an
+# `.npmrc`, `yarnPath` in a `.yarnrc.yml`) without touching the `package.json` it reads. A write of
+# one, in any folder, withdraws the package declarations like a write of `package.json` does.
+STEERING_FILES: Final = (".npmrc", ".yarnrc", ".yarnrc.yml")
 MAX_FILE_BYTES: Final = 256 * 1024
 MAX_SCRIPTS: Final = 500
 MAX_LINES: Final = 5000
@@ -148,6 +152,8 @@ class Declarations:
         """These declarations less every kind whose declaring file the session wrote, and the
         listing when `withdraw_listing` says the session wrote it."""
         gone = {_kind(name) for name in written if name in DECLARING_FILES}
+        if written & set(STEERING_FILES):
+            gone.add("package")
         if not gone & {"package", "make", "just"} and not withdraw_listing:
             return self
         empty: dict[str, Script] = {}
@@ -421,8 +427,14 @@ def _make_ordinary(line: str) -> bool:
     # the line a directive however plain its target looks.
     if "=" in rest.partition(";")[0]:
         return False
+    # A target built from a variable or a pattern (`$(T):`, `%.o:`) can be an existing target's
+    # name with a later recipe, which make runs in place of the committed one, and the working
+    # parse cannot name it, so it counts as a directive.
     return names == [".PHONY"] or (
-        len(names) == 1 and colons == ":" and not names[0].startswith(".")
+        len(names) == 1
+        and colons == ":"
+        and not names[0].startswith(".")
+        and not any(ch in names[0] for ch in "$%*")
     )
 
 

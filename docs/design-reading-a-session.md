@@ -7819,6 +7819,10 @@ This amendment replaces that comparison and hardens the read around it. Where th
   (`export MAKEFLAGS=-n; make lint`) leaves every later script a command, as one set on the segment itself
   already did. A body that tells its linter to exit zero (`--exit-zero`, `--issues-exit-code=0`, ruff's `-e`)
   never counts, and neither does a reader-listed command that does or a call that forwards one after `--`.
+- **Package-manager config counts as the file.** A recorded write to an `.npmrc`, `.yarnrc` or `.yarnrc.yml`
+  in any folder withdraws the package declarations, because `script-shell` or `yarnPath` there changes what
+  `pnpm lint` runs without touching `package.json`. A shell call that names one counts as a write.
+  A Makefile rule whose target holds `$`, `%` or `*` is a directive, since it can restate an existing target.
 - **What `--diagnose` shows.** A file that is later repaired, or removed from the commit, stops being listed.
   Paths under the home folder are shown from it (`~/...`), and a Makefile or justfile over the line cap says it
   has too many lines instead of reading "over the byte cap".
