@@ -30,6 +30,12 @@ const COPY: Readonly<Record<string, Copy>> = {
     scale: 1,
     unit: 'checks and files',
   },
+  analyze_scan_megabytes: {
+    label: 'Transcript scanned for checks',
+    help: "How much of the session's transcript, and its subagents' transcripts, a press scans for the checks and files it lists. Subagents are where delegated work runs its tests. More reads more of that work, and takes longer.",
+    scale: 1,
+    unit: 'MB',
+  },
 };
 
 export interface Field {

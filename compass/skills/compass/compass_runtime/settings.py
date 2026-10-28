@@ -1,6 +1,6 @@
 """What the reader set on the Settings screen, kept beside the other stores.
 
-Three limits on how much of a session an Analyze press reads. All were constants until 2026-10-28,
+Four limits on how much of a session an Analyze press reads. All were constants until 2026-10-28,
 when a measured press on an 18-hour Claude Code session read 103 of its 187 messages, every one
 before the newest six and a half hours dropped by the 100-event project cap, and sent a
 16,384-byte prompt in which each of the agent's messages was cut to one line. The reading came back
@@ -16,6 +16,10 @@ loss. Raised, the same press kept all 187 messages.
 - `analyze_listed_checks` is how many of the session's checks and written files a press lists. The
   scan already reads the whole transcript and counts them all; the page lists the newest 12, which
   left 52 passes on the same session counted and unsent.
+- `analyze_scan_megabytes` is how much of the session's transcript and its subagents' a press scans
+  for checks. The board scans 8 MiB, which on the same session read half the parent and none of
+  its 282 subagents, where every builder and reviewer ran its tests; 512 MiB read all of them, in
+  about half a minute.
 
 A value missing, unreadable or out of range reads as its default, so a damaged file costs the
 reader their settings and never their reading. Writes are refused, not clamped, when out of range:
@@ -56,7 +60,8 @@ class Limit(NamedTuple):
 LIMITS: Final = (
     Limit("analyze_prompt_bytes", default=524_288, minimum=16_384, maximum=524_288),
     Limit("analyze_record_events", default=2_000, minimum=100, maximum=20_000),
-    Limit("analyze_listed_checks", default=200, minimum=12, maximum=2_000),
+    Limit("analyze_listed_checks", default=1_000, minimum=12, maximum=5_000),
+    Limit("analyze_scan_megabytes", default=512, minimum=8, maximum=4_096),
 )
 
 
@@ -64,6 +69,7 @@ class Settings(NamedTuple):
     analyze_prompt_bytes: int
     analyze_record_events: int
     analyze_listed_checks: int
+    analyze_scan_megabytes: int
 
 
 DEFAULTS: Final = Settings(**{limit.key: limit.default for limit in LIMITS})

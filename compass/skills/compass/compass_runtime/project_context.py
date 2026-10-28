@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import copy
 import dataclasses
+import functools
 import hashlib
 import heapq
 import json
@@ -792,6 +794,9 @@ class PressWindow(NamedTuple):
     # How many of the focused session's checks and writes the press lists: the reader's
     # `settings.analyze_listed_checks`. None keeps the page's `TOOL_REPORT_MAX_ENTRIES`.
     listed: int | None = None
+    # How many bytes of the session and its subagents' transcripts the press scans for checks: the
+    # reader's `settings.analyze_scan_megabytes`. None keeps `turn_scan_max_bytes`.
+    scan_bytes: int | None = None
 
 
 def _message_text_chars(record: Mapping[str, Any]) -> int:
@@ -4238,6 +4243,14 @@ def _node_or_gradle_runner(words: list[str]) -> str:
     return "node" if words[0] == "node" and "--test" in words else ""
 
 
+@functools.lru_cache(maxsize=8)
+def _redacted(text: str) -> str:
+    """`records.redact_secrets`, which reads nothing but its argument, remembered for the call at
+    hand: each check in a shell call redacted the call's whole output again, and on an 18-hour
+    session with its subagents that was 22 of 34 seconds (measured 2026-10-28)."""
+    return records.redact_secrets(text)
+
+
 def _summary_for(
     call: _ShellCall, index: int, words: list[str], attributable: bool, *, tail: str
 ) -> str:
@@ -4249,7 +4262,7 @@ def _summary_for(
     runner = _summary_runner(words)
     if any(_summary_runner(call.words[c][0]) == runner for c in call.checks if c < index):
         return ""
-    return _last_line_summary(words, records.redact_secrets(tail))
+    return _last_line_summary(words, _redacted(tail))
 
 
 def _last_line_summary(words: list[str], text: str) -> str:
@@ -4437,6 +4450,48 @@ def _is_pytest(words: list[str]) -> bool:
     if os.path.basename(words[0]) in ("pytest", "py.test"):
         return True
     return bool(_PYTHON_RE.match(os.path.basename(words[0]))) and words[1:3] == ["-m", "pytest"]
+
+
+def _chain_passes(call: _ShellCall, text: str, added: Mapping[int, dict[str, Any]]) -> None:
+    """Pass the checks `&&` joins ahead of a later check that is shown to have run.
+
+    `&&` runs what follows only once what precedes it exits 0, so a check whose output's last line
+    is its own runner's summary, passing or failing, proves every check chained ahead of it passed.
+    That is the measured shape `ruff check . && ruff format --check . && mypy | tail -3` takes: the
+    call's status is `tail`'s, so the earlier checks read "ran, result not recorded" although mypy's
+    summary shows each of them exited 0 (2,848 runs on one session, 2026-10-28). The last line is
+    the later check's only where `last_line_may_speak` allows it and no earlier check shares its
+    runner, `_summary_for`'s two conditions, and never through `rtk`, whose output may be rewritten.
+    """
+    last = call.checks[-1] if call.checks else None
+    if last is None or last not in added:
+        return
+    words, rtk = call.words[last]
+    runner = _summary_runner(words)
+    if (
+        not runner
+        or rtk
+        or call.background(last)
+        or call.negated(last)
+        or call.unestablished(last)
+        or not call.last_line_may_speak(last)
+        or any(_summary_runner(call.words[index][0]) == runner for index in call.checks[:-1])
+        or not _last_line_summary(words, _redacted(text))
+    ):
+        return
+    joiners = call.joiners()
+    for index in call.checks[:-1]:
+        run = added.get(index)
+        if (
+            run is None
+            or run["result"] != "not-recorded"
+            or run["background"]
+            or call.negated(index)
+            or call.unestablished(index)
+            or not all(joiner == "&&" for joiner in joiners[index:last])
+        ):
+            continue
+        run.update(result="passed", result_source="chain", result_reason="")
 
 
 def _check_line(words: list[str]) -> str:
@@ -5402,11 +5457,12 @@ class _ToolReportTally:
         flag = result.get("is_error") if result is not None else None
         # Redaction runs over the whole read window before the tail is cut (item 5).
         text = _without_trailer(text) if result is not None else text
-        tail = records.redact_secrets(text)[-TOOL_REPORT_TAIL_CHARS:]
+        tail = _redacted(text)[-TOOL_REPORT_TAIL_CHARS:]
         all_and = all(joiner == "&&" for joiner in call.joiners()[:-1])
         # V8: output speaks for a check only when it is the call's one check,
         # background ones counted, and nothing else in the call may print.
         attributable = call.output_attributable()
+        added: dict[int, dict[str, Any]] = {}
         for index in call.checks:
             words, rtk = call.words[index]
             background = call.background(index)
@@ -5501,6 +5557,9 @@ class _ToolReportTally:
                 }
             )
             self._last_added_runs.append((identity, self.runs[identity][-1]))
+            added[index] = self.runs[identity][-1]
+        if result is not None:
+            _chain_passes(call, text, added)
 
     @staticmethod
     def _outcome(
@@ -6311,6 +6370,7 @@ def press_checks(
     harness: str,
     sid: str,
     goal_texts: Iterable[str] = (),
+    scan_bytes: int | None = None,
 ) -> PressChecks:
     """`claude_check_press` for one session, found as `collect` finds it; empty elsewhere.
 
@@ -6323,6 +6383,9 @@ def press_checks(
     )
     if not transcript_path:
         return PressChecks({}, frozenset())
+    if scan_bytes:
+        # The bound the press's own listing read under, so the tails belong to the checks it lists.
+        config = dataclasses.replace(config, turn_scan_max_bytes=scan_bytes)
     return claude_check_press(
         config, transcript_path, goal_texts=goal_texts, remotes=state.ci_remotes
     )
@@ -7007,7 +7070,59 @@ def _merged_check_calls(
     return heapq.merge(*streams, key=lambda row: row[0])
 
 
+# The tallies one press has built, keyed by what built them. A press lists its checks through
+# `collect` and reads their output tails through `press_checks`, and each built the whole tally: on
+# an 18-hour session whose 282 subagents a press reads, that was 34 seconds each (2026-10-28).
+_PRESS_TALLIES: contextvars.ContextVar[dict[tuple[object, ...], _ToolReportTally] | None] = (
+    contextvars.ContextVar("press_tallies", default=None)
+)
+
+
+@contextlib.contextmanager
+def shared_tallies() -> Iterator[None]:
+    """Within the block, one tally per session and bounds, built once and read by every caller."""
+    token = _PRESS_TALLIES.set({})
+    try:
+        yield
+    finally:
+        _PRESS_TALLIES.reset(token)
+
+
 def _claude_tally(
+    config: RuntimeConfig,
+    transcript_path: str,
+    *,
+    max_bytes: int | None = None,
+    child_paths: Sequence[str] | None = None,
+    goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
+) -> _ToolReportTally:
+    shared = _PRESS_TALLIES.get()
+    goal_texts = tuple(goal_texts)
+    key = (
+        transcript_path,
+        config.turn_scan_max_bytes,
+        max_bytes,
+        None if child_paths is None else tuple(child_paths),
+        goal_texts,
+        id(remotes),
+    )
+    if shared is not None and key in shared:
+        return shared[key]
+    tally = _built_tally(
+        config,
+        transcript_path,
+        max_bytes=max_bytes,
+        child_paths=child_paths,
+        goal_texts=goal_texts,
+        remotes=remotes,
+    )
+    if shared is not None:
+        shared[key] = tally
+    return tally
+
+
+def _built_tally(
     config: RuntimeConfig,
     transcript_path: str,
     *,
@@ -11028,7 +11143,11 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
         # Fixed positions are published for the focused session only: its message index is one pass
         # over its whole transcript, and no other session's page asks for it.
         work_support = _session_work_evidence(
-            config,
+            (
+                dataclasses.replace(config, turn_scan_max_bytes=message_reach.scan_bytes)
+                if is_focused and message_reach is not None and message_reach.scan_bytes
+                else config
+            ),
             transcript_path,
             session,
             events,

@@ -951,7 +951,7 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(_PressCase):
             self.boom(),
         ):
             self.hooks.phase = lambda *_a: None
-            self.handler._reading_arguments = lambda *_a: {}
+            self.handler._reading_arguments = lambda *_a, **_kw: {}
             result = http_api._RequestHandler._compose_reading(
                 cast("Any", self.handler),
                 row,

@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 from compass_runtime import cli, observer, project_context, reading, settings
@@ -50,6 +50,7 @@ class StoreTest(unittest.TestCase):
         self.assertGreater(
             settings.DEFAULTS.analyze_listed_checks, project_context.TOOL_REPORT_MAX_ENTRIES
         )
+        self.assertGreater(settings.DEFAULTS.analyze_scan_megabytes * 1024 * 1024, 8 * 1024 * 1024)
 
     def test_no_setting_can_read_less_than_the_constants_it_replaced(self) -> None:
         floors = {limit.key: limit.minimum for limit in settings.LIMITS}
@@ -58,6 +59,8 @@ class StoreTest(unittest.TestCase):
                 "analyze_prompt_bytes": observer.OBSERVER_MODEL_MAX_PROMPT_BYTES,
                 "analyze_record_events": project_context.MAX_PROJECT_EVENTS,
                 "analyze_listed_checks": project_context.TOOL_REPORT_MAX_ENTRIES,
+                # The board's `turn_scan_max_bytes`, in MiB.
+                "analyze_scan_megabytes": 8,
             },
             floors,
         )
@@ -187,11 +190,19 @@ class RoutesTest(unittest.TestCase):
 
 
 class ThePressReadsTheSettings(reach_tests.TheHttpPressAsksForItsOwnWindow):
-    def test_the_window_carries_the_readers_record_and_listing_limits(self) -> None:
-        settings.save(self.config, {"analyze_record_events": 750, "analyze_listed_checks": 90})
+    def test_the_window_carries_the_readers_record_listing_and_scan_limits(self) -> None:
+        settings.save(
+            self.config,
+            {
+                "analyze_record_events": 750,
+                "analyze_listed_checks": 90,
+                "analyze_scan_megabytes": 64,
+            },
+        )
         _got, asked = self.press(self.context())
         self.assertEqual(750, asked[0].cap)
         self.assertEqual(90, asked[0].listed)
+        self.assertEqual(64 * 1024 * 1024, asked[0].scan_bytes)
 
     def test_the_prompt_is_bounded_by_the_readers_setting(self) -> None:
         settings.save(self.config, {"analyze_prompt_bytes": 65_536})
@@ -231,3 +242,33 @@ class TheCapsFollowThePress(reach_tests.PressReachTestCase):
 
         self.assertEqual(30, writes(self.collect(reach=self.window_at()._replace(listed=100))))
         self.assertEqual(project_context.TOOL_REPORT_MAX_ENTRIES, writes(self.collect()))
+
+
+class OnePressBuildsOneTally(reach_tests.PressReachTestCase):
+    def test_inside_a_press_the_listing_and_the_tails_share_one_build(self) -> None:
+        self.session.write(self.file("src/a.py"))
+        self.session.save(self.path)
+        path = str(self.path)
+        with mock.patch.object(
+            project_context, "_built_tally", wraps=project_context._built_tally
+        ) as built:
+            with project_context.shared_tallies():
+                first = project_context._claude_tally(self.config, path)
+                second = project_context._claude_tally(self.config, path)
+            third = project_context._claude_tally(self.config, path)
+        self.assertIs(first, second)
+        self.assertIsNot(first, third)
+        self.assertEqual(2, built.call_count)
+
+    def test_a_press_scan_bound_reaches_the_tails_it_sends(self) -> None:
+        self.session.write(self.file("src/a.py"))
+        self.session.save(self.path)
+        state = SimpleNamespace(ci_remotes=None)
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(project_context, "claude_check_press") as press,
+        ):
+            project_context.press_checks(
+                self.config, cast("Any", state), "claude", "s", scan_bytes=64 * 1024 * 1024
+            )
+        self.assertEqual(64 * 1024 * 1024, press.call_args.args[0].turn_scan_max_bytes)

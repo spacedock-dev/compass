@@ -214,7 +214,7 @@ class ThePressRecoversOnlyListedWindowWords(unittest.TestCase):
                             config=self.config, state=self.state, clock=lambda: 200
                         )
                     ),
-                    _reading_arguments=lambda *_args: {
+                    _reading_arguments=lambda *_args, **_kw: {
                         "model": model,
                         "stamp_text": "synthetic",
                         "now": 200,

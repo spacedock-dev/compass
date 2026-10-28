@@ -1548,8 +1548,14 @@ length and that total. Neither count is inferred for a legacy record. These coun
 and are stripped from page responses with the words. Amended 2026-10-28 by the owner: a press's bounds are the reader's, set on the Settings screen
 and stored in `compass-settings.json` (`settings`). The prompt bound is
 `settings.analyze_prompt_bytes`, 512 KiB by default and at most, never under the 16 KiB it was; the messages and checks a press keeps are `settings.analyze_record_events`, 2,000 by default
-and never under the project page's 100; and the checks and written files it lists are
-`settings.analyze_listed_checks`, 200 by default and never under the page's 12. Measured on an
+and never under the project page's 100; the checks and written files it lists are
+`settings.analyze_listed_checks`, 1,000 by default and never under the page's 12; and the
+transcript bytes it scans for them, the session's and its subagents', are
+`settings.analyze_scan_megabytes`, 512 MiB by default and never under the board's 8 MiB. The scan
+reads the same files the board's does (the subagent rule of
+[DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)), only further back; on the 18-hour
+session it read 282 subagent transcripts the board's bound left unread, which is where every
+builder ran its tests. Measured on an
 18-hour session, the old bounds kept 103 of 187 messages and sent each of the agent's messages as
 one line, and the reading could not tell; the defaults kept all of them. Larger bounds send more of
 the same content classes to the same destination, so `CONTENT_VERSION` is unchanged, and every

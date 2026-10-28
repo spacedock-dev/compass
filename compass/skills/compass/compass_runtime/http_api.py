@@ -3877,77 +3877,104 @@ class _RequestHandler(BaseHTTPRequestHandler):
         built here from it, and no second provider if that one is missing at
         launch or fails. A fresh press is the only retry.
         """
-        application = self.server.application
-        # Read at each press, so a change on the Settings screen applies to the next one.
-        limits = settings.load(application.config)
-        transcript = (
-            runtime_observer.resolve_transcript(
-                application.config, application.state, str(row.get("harness")), str(row.get("sid"))
-            )
-            or ""
-        )
-        press_stamp = runtime_project_context.transcript_stamp(transcript)
-        # The window of the revision being read, not the previous reading's: a first press has no
-        # stored one, and an edited Goal has moved it.
-        revisions = entry["revisions"]
-        reach = (
-            runtime_project_context.PressWindow(
-                runtime_reading.window_start(revisions[-1]),
-                press_stamp,
-                limits.analyze_record_events,
-                limits.analyze_listed_checks,
-            )
-            if revisions and press_stamp is not None
-            else None
-        )
-        context = _session_context(application, row, reach)
-        # What the press read back and the project cap kept, where it read back; else the tail's.
-        reached = (context.get("sources") or {}).get("message_reach")
-        facts = _facts_of(context)
-        return runtime_reading.produce(
-            application.config,
-            row,
-            entry["revisions"],
-            facts,
-            # Handed over unread: `produce` runs it only once it has decided to read, so a press it
-            # withholds launches no `gh` or `glab`.
-            ci=lambda: _read_ci(application, row, entry, transcript, facts, hooks),
-            settled_through=settled["through"] if (settled := entry.get("settled")) else None,
-            open_call_lookup=(
-                (
-                    lambda: runtime_project_context.claude_open_call_at(
-                        application.config, transcript
-                    )
-                )
-                if row.get("harness") == "claude" and transcript
-                else None
-            ),
-            record_coverage_lookup=lambda: (
-                dict(reached)
-                if reached
-                else runtime_project_context.transcript_tail_coverage(
+        # One check tally for the press: its listing and its output tails read the same build.
+        with runtime_project_context.shared_tallies():
+            application = self.server.application
+            # Read at each press, so a change on the Settings screen applies to the next one.
+            limits = settings.load(application.config)
+            transcript = (
+                runtime_observer.resolve_transcript(
                     application.config,
-                    transcript,
-                    expected_stamp=press_stamp,
+                    application.state,
+                    str(row.get("harness")),
+                    str(row.get("sid")),
                 )
-                if press_stamp is not None
-                else {}
-            ),
-            command_counts_lookup=lambda: _command_counts_of(
-                context, str(row.get("harness")), str(row.get("sid"))
-            ),
-            goal_source_lookup=lambda: runtime_project_context.transcript_user_facts(
+                or ""
+            )
+            press_stamp = runtime_project_context.transcript_stamp(transcript)
+            # The window of the revision being read, not the previous reading's: a first press has
+            # no stored one, and an edited Goal has moved it.
+            revisions = entry["revisions"]
+            reach = (
+                runtime_project_context.PressWindow(
+                    runtime_reading.window_start(revisions[-1]),
+                    press_stamp,
+                    limits.analyze_record_events,
+                    limits.analyze_listed_checks,
+                    limits.analyze_scan_megabytes * 1024 * 1024,
+                )
+                if revisions and press_stamp is not None
+                else None
+            )
+            context = _session_context(application, row, reach)
+            # What the press read back and the project cap kept, where it read back; else the
+            # tail's.
+            reached = (context.get("sources") or {}).get("message_reach")
+            facts = _facts_of(context)
+            return runtime_reading.produce(
                 application.config,
-                application.state,
-                transcript,
-                str(row.get("harness")),
-                str(row.get("sid")),
-                goal_choices=True,
-            ),
-            person_source_lookup=(
-                (
-                    lambda wanted: (
-                        runtime_project_context.transcript_window_words(
+                row,
+                entry["revisions"],
+                facts,
+                # Handed over unread: `produce` runs it only once it has decided to read, so a press
+                # it withholds launches no `gh` or `glab`.
+                ci=lambda: _read_ci(application, row, entry, transcript, facts, hooks),
+                settled_through=settled["through"] if (settled := entry.get("settled")) else None,
+                open_call_lookup=(
+                    (
+                        lambda: runtime_project_context.claude_open_call_at(
+                            application.config, transcript
+                        )
+                    )
+                    if row.get("harness") == "claude" and transcript
+                    else None
+                ),
+                record_coverage_lookup=lambda: (
+                    dict(reached)
+                    if reached
+                    else runtime_project_context.transcript_tail_coverage(
+                        application.config,
+                        transcript,
+                        expected_stamp=press_stamp,
+                    )
+                    if press_stamp is not None
+                    else {}
+                ),
+                command_counts_lookup=lambda: _command_counts_of(
+                    context, str(row.get("harness")), str(row.get("sid"))
+                ),
+                goal_source_lookup=lambda: runtime_project_context.transcript_user_facts(
+                    application.config,
+                    application.state,
+                    transcript,
+                    str(row.get("harness")),
+                    str(row.get("sid")),
+                    goal_choices=True,
+                ),
+                person_source_lookup=(
+                    (
+                        lambda wanted: (
+                            runtime_project_context.transcript_window_words(
+                                application.config,
+                                transcript,
+                                str(row.get("harness")),
+                                str(row.get("sid")),
+                                wanted,
+                                expected_stamp=press_stamp,
+                            )
+                            if press_stamp is not None
+                            else []
+                        )
+                    )
+                    if row.get("harness") in {"claude", "codex"}
+                    else None
+                ),
+                # The newest recorded final reply, read whole from the source version stamped
+                # above, before the context read: a file that moved since is refused there.
+                # Only this press carries it; the unasked lane never builds this call.
+                final_source_lookup=(
+                    (
+                        lambda wanted: runtime_project_context.transcript_newest_final_words(
                             application.config,
                             transcript,
                             str(row.get("harness")),
@@ -3955,53 +3982,35 @@ class _RequestHandler(BaseHTTPRequestHandler):
                             wanted,
                             expected_stamp=press_stamp,
                         )
-                        if press_stamp is not None
-                        else []
                     )
-                )
-                if row.get("harness") in {"claude", "codex"}
-                else None
-            ),
-            # The newest recorded final reply, read whole from the source version stamped
-            # above, before the context read: a file that moved since is refused there.
-            # Only this press carries it; the unasked lane never builds this call.
-            final_source_lookup=(
-                (
-                    lambda wanted: runtime_project_context.transcript_newest_final_words(
-                        application.config,
-                        transcript,
-                        str(row.get("harness")),
-                        str(row.get("sid")),
-                        wanted,
-                        expected_stamp=press_stamp,
-                    )
-                )
-                if press_stamp is not None
-                and row.get("harness") in runtime_project_context.AGENT_MESSAGE_HARNESSES
-                else None
-            ),
-            # A record never read withholds in its own sentence, not as an
-            # empty one (DRC-4689).
-            record_withheld=runtime_reading.record_withheld(
-                context, str(row.get("harness")), str(row.get("sid"))
-            ),
-            # The one caller that reads the outcome lines: the reader pressed
-            # for this reading (item 12 of the ruling
-            # `reading.MAX_OUTCOME_LINES` cites keeps them from
-            # every other).
-            read_lines=True,
-            # And the one that sends what the agent said: the unasked lane
-            # keeps the default and sends none of it (review, 2026-10-03).
-            read_agent_words=True,
-            # And the one that may read a turn stop, on the harnesses the
-            # ruling `reading.TURN_STOP_HARNESSES` cites names; the unasked
-            # lane keeps the closed default.
-            admit_turn_stop=str(row.get("harness")) in runtime_reading.TURN_STOP_HARNESSES,
-            # The job's phases, each told where it really begins (DRC-4686).
-            on_phase=hooks.phase,
-            max_prompt_bytes=limits.analyze_prompt_bytes,
-            **self._reading_arguments(row, entry, route, hooks),
-        )
+                    if press_stamp is not None
+                    and row.get("harness") in runtime_project_context.AGENT_MESSAGE_HARNESSES
+                    else None
+                ),
+                # A record never read withholds in its own sentence, not as an
+                # empty one (DRC-4689).
+                record_withheld=runtime_reading.record_withheld(
+                    context, str(row.get("harness")), str(row.get("sid"))
+                ),
+                # The one caller that reads the outcome lines: the reader pressed
+                # for this reading (item 12 of the ruling
+                # `reading.MAX_OUTCOME_LINES` cites keeps them from
+                # every other).
+                read_lines=True,
+                # And the one that sends what the agent said: the unasked lane
+                # keeps the default and sends none of it (review, 2026-10-03).
+                read_agent_words=True,
+                # And the one that may read a turn stop, on the harnesses the
+                # ruling `reading.TURN_STOP_HARNESSES` cites names; the unasked
+                # lane keeps the closed default.
+                admit_turn_stop=str(row.get("harness")) in runtime_reading.TURN_STOP_HARNESSES,
+                # The job's phases, each told where it really begins (DRC-4686).
+                on_phase=hooks.phase,
+                max_prompt_bytes=limits.analyze_prompt_bytes,
+                **self._reading_arguments(
+                    row, entry, route, hooks, limits.analyze_scan_megabytes * 1024 * 1024
+                ),
+            )
 
     def _session_facts(self, row: dict[str, Any]) -> list[Any]:
         """The observed record for one session, without refreshing anything."""
@@ -4013,6 +4022,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         entry: annotation_store.Annotation,
         route: runtime_reading_route.Route,
         hooks: runtime_reading_jobs.Hooks,
+        scan_bytes: int | None = None,
     ) -> dict[str, Any]:
         """Everything `produce` takes beyond the record, from the route that ran."""
         application = self.server.application
@@ -4030,6 +4040,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 harness,
                 sid,
                 runtime_project_context.goal_texts_of(row),
+                scan_bytes,
             )
             tool_output = runtime_reading.ToolOutput(
                 destination="",
@@ -4046,6 +4057,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 harness,
                 sid,
                 runtime_project_context.goal_texts_of(row),
+                scan_bytes,
             )
             tails = runtime_reading_route.tails_for(
                 route["provider"], harness, press.tails, press.tier3_calls

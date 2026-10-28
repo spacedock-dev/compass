@@ -541,9 +541,12 @@ An older reading says coverage was not recorded. A tail starting inside the inte
 every intent row "may be in the part not read"; claims stay independent. On Claude Code an Analyze
 press reads the session's messages back to the window start where it can, and says where it stopped
 when it cannot. How much a press keeps and sends is set on the page's Settings screen: the largest
-prompt (512 KB by default), how many of the session's messages and checks it keeps (2,000), and how
-many checks and written files it lists (200). The project page keeps its own 100 events and 12
-checks. An idle Claude Code session whose last turn has no recorded finish is read up to
+prompt (512 KB by default), how many of the session's messages and checks it keeps (2,000), how
+many checks and written files it lists (1,000), and how much of the session's and its subagents'
+transcripts it scans for them (512 MB), which is where delegated work runs its tests. The project
+page keeps its own 100 events and 12 checks and scans 8 MB. A check that `&&` joins ahead of a later
+check whose own summary ends the output counts as passed, since the later one only ran because the
+earlier one exited 0. An idle Claude Code session whose last turn has no recorded finish is read up to
 its last recorded entry, and the result says so with that entry's time, never as a final verdict. General scope and the
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state

@@ -418,6 +418,8 @@ CHECK_RESULT_WORDS = {
     "failed summary": "failed, per its summary line",
     "passed summary": "passed, per its summary line",
     "failed marker": "failed, per a failure line in its output",
+    # `project_context._chain_passes`: a later check in its `&&` chain is shown to have run.
+    "passed chain": "passed, since a later check in its && chain ran",
 }
 CHECK_NOT_RECORDED = "ran, result not recorded"
 CHECK_EARLIER_FAILED = "an earlier run failed"
