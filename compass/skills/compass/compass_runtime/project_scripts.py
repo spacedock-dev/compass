@@ -174,7 +174,7 @@ class Declarations:
 
 _lock = threading.Lock()
 _cache: OrderedDict[tuple[str, int], tuple[float, Declarations | None]] = OrderedDict()
-_problems: OrderedDict[tuple[str, str, str], str] = OrderedDict()
+_problems: OrderedDict[tuple[str, str, str], tuple[float, str | None]] = OrderedDict()
 
 
 def problems(home: str = "") -> list[dict[str, str]]:
@@ -184,9 +184,14 @@ def problems(home: str = "") -> list[dict[str, str]]:
     does not carry the reader's account name.
     """
     with _lock:
+        newest: dict[tuple[str, str], tuple[float, str | None]] = {}
+        for (top, name, _commit), (at, reason) in _problems.items():
+            if (top, name) not in newest or at >= newest[top, name][0]:
+                newest[top, name] = (at, reason)
         return [
             {"file": _from_home(os.path.join(top, name), home), "reason": reason}
-            for (top, name, _commit), reason in _problems.items()
+            for (top, name), (_at, reason) in newest.items()
+            if reason is not None
         ]
 
 
@@ -205,19 +210,17 @@ def reset() -> None:
         _problems.clear()
 
 
-def _repaired(toplevel: str, name: str, commit: str) -> None:
-    """Drop what an earlier load of this file at this base commit noted, so a file that has since
-    been repaired stops being reported. Keyed by commit as well as work tree because two sessions
-    of one project can start from different commits, and one session's clean load must not erase
-    the entry the other's still-broken file earned."""
-    with _lock:
-        _problems.pop((toplevel, name, commit), None)
+def _record(toplevel: str, name: str, commit: str, at: float, reason: str | None) -> None:
+    """Note this load's verdict on one file: a reason, or None for a clean read.
 
-
-def _note(toplevel: str, name: str, commit: str, reason: str) -> None:
+    The entry is kept per base commit because two sessions of one project can start from different
+    commits, and `problems` shows only the newest session's verdict per file, so a file repaired in
+    a newer commit stops being reported and one file never appears twice. A clean read is kept, not
+    dropped, so a later load of an older session cannot bring the older commit's problem back.
+    """
     key = (toplevel, name, commit)
     with _lock:
-        _problems[key] = reason
+        _problems[key] = (at, reason)
         _problems.move_to_end(key)
         while len(_problems) > _PROBLEMS_MAX:
             _problems.popitem(last=False)
@@ -291,9 +294,9 @@ def _load(session_dir: str, at: float, runner: Callable[..., Any]) -> Declaratio
         parsed, working, reason = _declarations(entry, top, committed_make)
         if reason is not None or parsed is None or working is None:
             skipped.append((entry.name, reason or PARSE_REASON))
-            _note(top, entry.name, committed.commit, reason or PARSE_REASON)
+            _record(top, entry.name, committed.commit, at, reason or PARSE_REASON)
             continue
-        _repaired(top, entry.name, committed.commit)
+        _record(top, entry.name, committed.commit, at, None)
         trusted.add(entry.name)
         digests[entry.name] = hashlib.sha256(working).digest()
         # A name two files of a kind both declare is read from the first, as `just` does; `make`

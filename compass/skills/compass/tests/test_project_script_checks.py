@@ -821,9 +821,7 @@ class AFileThatIsLaterRepairedIsNoLongerReported(ProjectScriptTestCase):
         project_scripts.load(str(self.cwd), at + 1)
         self.assertEqual([], project_scripts.problems())
 
-    def test_a_sessions_clean_load_keeps_the_entry_a_session_on_another_commit_earned(
-        self,
-    ) -> None:
+    def test_a_newer_commit_that_repaired_the_file_stops_the_older_commits_report(self) -> None:
         first = dt.datetime(2026, 9, 1, 12, tzinfo=dt.UTC).timestamp()
         later = dt.datetime(2026, 9, 3, tzinfo=dt.UTC).timestamp()
         self.commit({"package.json": "{"})
@@ -831,6 +829,17 @@ class AFileThatIsLaterRepairedIsNoLongerReported(ProjectScriptTestCase):
         self.commit(
             {"package.json": package(typecheck="tsc --noEmit")}, when="2026-09-02T00:00:00Z"
         )
+        project_scripts.load(str(self.cwd), later)
+        self.assertEqual([], project_scripts.problems())
+        project_scripts.load(str(self.cwd), first + 1)
+        self.assertEqual([], project_scripts.problems())
+
+    def test_two_commits_with_different_problems_report_the_file_once(self) -> None:
+        first = dt.datetime(2026, 9, 1, 12, tzinfo=dt.UTC).timestamp()
+        later = dt.datetime(2026, 9, 3, tzinfo=dt.UTC).timestamp()
+        self.commit({"package.json": "{"})
+        project_scripts.load(str(self.cwd), first)
+        self.commit({"package.json": "["}, when="2026-09-02T00:00:00Z")
         project_scripts.load(str(self.cwd), later)
         self.assertEqual(
             ["package.json"], [Path(p["file"]).name for p in project_scripts.problems()]
