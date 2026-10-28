@@ -695,6 +695,7 @@ _MASK_FLAGS: Final = frozenset(
 )
 # openssl's `-passin pass:value`, read on a command line only: `pass:` opens a sentence word
 # more often than a credential in prose. `env:` and `file:` sources name no value.
+_NPM_SECRET_KEY_ENDS: Final = (":_authToken", ":_auth", ":_password")
 _MASK_PASS_PREFIX: Final = (re.compile(r"^(['\"]?pass:).+$", re.DOTALL),)
 # The two header names the ruling named. They mask as a bare word anywhere, which
 # is what the check line has always done, and they are the only ones the prose
@@ -1169,7 +1170,7 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
             masked.append(word)
             pair_next = True
             continue
-        if word in flags or word in _MASK_COOKIE_FLAGS or word.endswith((":_authToken", ":_auth", ":_password")):
+        if word in flags or word in _MASK_COOKIE_FLAGS or word.endswith(_NPM_SECRET_KEY_ENDS):
             masked.append(word)
             mask_next = True
             plugin_flag = pytest and word == "-p"
@@ -2329,9 +2330,7 @@ def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> st
     }
     if not spellings:
         return text
-    plain, joined_flag, userinfo, touching, inner = _scrub_patterns(
-        tuple(sorted(spellings)), prose
-    )
+    plain, joined_flag, userinfo, touching, inner = _scrub_patterns(tuple(sorted(spellings)), prose)
     # Userinfo first: a plain pass would let a short spelling match inside `user:Fake99!@` in
     # prose and leave the `!` of the longer one, where the one-at-a-time loop took the longest.
     text = userinfo.sub(lambda match: match[1] + _SECRET_MARKER + match[2], text)
@@ -2387,9 +2386,7 @@ def _trie_regex(node: dict[str, Any]) -> str:
 @lru_cache(maxsize=2)
 def _scrub_patterns(
     spellings: tuple[str, ...], prose: bool
-) -> tuple[
-    re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str]
-]:
+) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str]]:
     """The patterns a scrub applies, each one alternation over every spelling.
 
     Compiling three patterns per spelling cost 0.18 s at 512 values and 1.8 s for ten scrubs

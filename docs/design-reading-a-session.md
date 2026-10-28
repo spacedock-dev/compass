@@ -3489,6 +3489,21 @@ Three changes, none changing what a check records.
   What was rejected: keeping the first 512 and dropping later
   ones without a word, which is what the old bound did.
 
+### Amended 2026-10-28 (owner): npm auth keys, more inline interpreters, the withheld sentence and touching values
+
+Four small changes to the masking and scrub, each closing a way a value or a false sentence could reach a page.
+
+- **npm keys.** `_auth` and `_password` are masked like `_authToken`: after `npm config set`, in a
+  `//registry/:_auth` or `:_password` key, as `--_auth=value` or `--_auth value`, and in `.npmrc`-style lines.
+- **Inline scripts.** A tier 3 line shows `bun -e`, `bun --eval` and `bun -p`, `deno eval` and `php -r`
+  as one opaque word, as it does `python -c` and `node -e`. `sh -c` and `bash -c` stay readable, because
+  their string is parsed again as commands and masked word by word.
+- **The withheld sentence.** The fixed sentence that says an explanation was withheld is stored only when
+  a reply carried an explanation. A departure or an unfinished result with no explanation stores none.
+- **Touching values.** Two masked values with nothing between them reject each other at the word
+  boundary, so neither was masked. A run of two or more touching values is now read whole and each value
+  in it is masked.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.
