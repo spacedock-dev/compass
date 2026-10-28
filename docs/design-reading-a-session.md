@@ -7704,6 +7704,13 @@ runner, or a `&&` chain of them, keeps the invocation a check, and a body that i
 fixer or cannot fail makes it an ordinary command. Where nothing is declared under that name, or no
 declaration was read (`--no-git`, not a repository), the closed list stands as before.
 
+A call that carries options is judged by the same body: a reporter, `--run`, `--coverage`, `--foo`, a
+`--` with forwarded arguments or `-u` cannot change which declared script ran, so `pnpm test --run` over
+`"test": "echo skipped"` is an ordinary command. The closed list still stands for the options that run
+another package's script, another directory's or none (`--filter`, `-r`, `-w`, `-C`, `--dir`, `--cwd`,
+`--prefix`, `--workspace`, `--script-shell`, `--ignore-scripts`), because the declaration Compass read is
+not necessarily the one that ran.
+
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
 Decided by the owner on 2026-10-27 (DRC-4973). This layer writes the ruling down; the layers that follow build

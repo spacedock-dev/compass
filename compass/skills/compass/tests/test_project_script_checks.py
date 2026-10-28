@@ -375,6 +375,28 @@ class AClosedListNameTheProjectDeclaresIsJudgedByItsBody(ProjectScriptTestCase):
                     self.ran(command)
                 self.assertEqual([], self.titles())
 
+    def test_a_call_with_options_the_body_can_still_decide_reads_by_the_body(self) -> None:
+        self.declare("echo skipped")
+        for command in (
+            "pnpm test --reporter x",
+            "pnpm test --run",
+            "pnpm test:stories --foo",
+            "npm test -- --watch",
+            "npm test -- --run",
+            "npm run test -- -u",
+            "yarn test --coverage",
+        ):
+            with self.subTest(command=command):
+                self.ran(command)
+        self.assertEqual([], self.titles())
+
+    def test_a_call_that_selects_another_package_keeps_the_closed_list(self) -> None:
+        self.declare("echo skipped")
+        selecting = ("pnpm test --filter web", "npm test --workspace web")
+        for command in selecting:
+            self.ran(command)
+        self.assertEqual(sorted(selecting), sorted(self.titles()))
+
     def test_a_body_that_is_a_runner_still_counts(self) -> None:
         self.declare("vitest run")
         for _script, command in self.NAMES:

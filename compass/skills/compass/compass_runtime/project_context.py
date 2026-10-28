@@ -3265,7 +3265,17 @@ def _asks_to_check_only(line: str) -> bool:
     return any(word in ("--check", "-c") for word in line.split())
 
 
-def _package_invocation(program: str, rest: list[str]) -> tuple[str, list[str]] | None:
+# Package-manager options that run another package's script, another directory's or none: the
+# declaration read for this directory is not the one that ran, even when the body is decidable.
+_SCRIPT_SELECTING_OPTIONS = re.compile(
+    r"^(?:-r|-w|-C|-F|--recursive|--workspaces?|--dir|--cwd|--prefix|--script-shell"
+    r"|--ignore-scripts|--filter(?:-prod)?)(?:=|$)"
+)
+
+
+def _package_invocation(
+    program: str, rest: list[str], *, deciding: bool = False
+) -> tuple[str, list[str]] | None:
     direct = program in ("pnpm", "yarn")
     if rest[:1] in (["run"], ["run-script"]) and len(rest) > 1:
         name, args = rest[1], rest[2:]
@@ -3278,6 +3288,17 @@ def _package_invocation(program: str, rest: list[str]) -> tuple[str, list[str]] 
     # `--ignore-scripts` each select another package or stop the script, so the declared one is
     # not what ran. After the `--` an argument reaches the script itself.
     own, _separator, forwarded = _partition_double_dash(args)
+    if deciding:
+        # Asking only which declared body ran: a reporter, a flag or a run option cannot change
+        # that, where a selecting option can, and the body's own writing arguments are judged
+        # by the runner check, not here.
+        if (
+            name.startswith("-")
+            or _SCRIPT_NAME_RE.fullmatch(name) is None
+            or any(_SCRIPT_SELECTING_OPTIONS.match(arg) for arg in own)
+        ):
+            return None
+        return "package", [name]
     if (
         name.startswith("-")
         or _SCRIPT_NAME_RE.fullmatch(name) is None
@@ -3308,7 +3329,7 @@ def _steers_a_script(raw: tuple[str, ...]) -> bool:
     )
 
 
-def _script_invocation(words: list[str]) -> tuple[str, list[str]] | None:
+def _script_invocation(words: list[str], *, deciding: bool = False) -> tuple[str, list[str]] | None:
     """The declaring-file kind and script names a command runs, or None for anything else.
 
     Only the plain forms: no package-manager option on either side of the script's name before a
@@ -3320,7 +3341,7 @@ def _script_invocation(words: list[str]) -> tuple[str, list[str]] | None:
         return None
     program, rest = words[0], words[1:]
     if program in ("npm", "pnpm", "yarn", "bun"):
-        return _package_invocation(program, rest)
+        return _package_invocation(program, rest, deciding=deciding)
     if program == "make":
         rest = [word for word in rest if not _MAKE_OPTIONS.match(word)]
     elif program != "just":
@@ -4523,7 +4544,8 @@ class _ShellCall:
         words = self.words[index][0]
         if words[:1] in (["npm"], ["pnpm"], ["yarn"]) and words[1:2] == ["test"]:
             words = [words[0], "run", *words[1:]]
-        invoked = _script_invocation(words) if not _steers_a_script(self.parts[index].raw) else None
+        steered = _steers_a_script(self.parts[index].raw)
+        invoked = None if steered else _script_invocation(words, deciding=True)
         if invoked is None:
             return False
         kind, names = invoked
