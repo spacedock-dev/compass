@@ -53,6 +53,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import subprocess
 import threading
 import time
@@ -293,6 +294,29 @@ def parse_remote(url: str) -> tuple[str, str]:
     return "", ""
 
 
+def _read_regular(path: str, limit: int = 1024) -> str | None:
+    """The first `limit` bytes of a regular file, or None for anything else or on any error.
+
+    A named pipe, a device or a socket planted where a git file belongs would block a plain
+    `open` for ever and the thread collecting a board with it, so the type is checked first and
+    the file is opened without waiting, then checked again on the descriptor it gave.
+    """
+    try:
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            return None
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        return os.read(descriptor, limit).decode("utf-8", "replace").strip()
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
+
+
 def _gitdir_of(dot_git: str) -> tuple[str, str] | None:
     """The git directory and the common directory a `.git` entry stands for, or None.
 
@@ -301,19 +325,13 @@ def _gitdir_of(dot_git: str) -> tuple[str, str] | None:
     """
     if os.path.isdir(dot_git):
         return dot_git, dot_git
-    try:
-        with open(dot_git, "rb") as handle:
-            line = handle.read(1024).decode("utf-8", "replace").strip()
-    except OSError:
-        return None
-    if not line.startswith("gitdir:"):
+    line = _read_regular(dot_git)
+    if line is None or not line.startswith("gitdir:"):
         return None
     base = os.path.dirname(dot_git)
     gitdir = os.path.normpath(os.path.join(base, line[len("gitdir:") :].strip()))
-    try:
-        with open(os.path.join(gitdir, "commondir"), "rb") as handle:
-            common = handle.read(1024).decode("utf-8", "replace").strip()
-    except OSError:
+    common = _read_regular(os.path.join(gitdir, "commondir"))
+    if common is None:
         return gitdir, gitdir
     return gitdir, os.path.normpath(os.path.join(gitdir, common))
 
@@ -336,13 +354,15 @@ def remote_stamp(folder: str) -> tuple[Any, ...] | None:
         if parent == current:
             return None
         current = parent
-    stats: list[tuple[int, int]] = []
+    stats: list[tuple[int, int, int]] = []
     for path in (os.path.join(found[0], "HEAD"), os.path.join(found[1], "config")):
         try:
             seen = os.stat(path)
         except OSError:
             return None
-        stats.append((seen.st_mtime_ns, seen.st_size))
+        # The inode is in the stamp because a same-size rewrite inside one clock tick keeps the
+        # other two; an editor or `git config` that replaces the file gets a new one.
+        stats.append((seen.st_mtime_ns, seen.st_size, seen.st_ino))
     return (found, *stats)
 
 

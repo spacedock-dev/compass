@@ -338,6 +338,10 @@ def _ascii_number(text: str) -> bool:
     return text.isascii() and text.isdigit() and len(text) <= 19
 
 
+def _all_digits(text: str) -> bool:
+    return text.isascii() and text.isdigit()
+
+
 def _run_view_target(positional: str, repository: str) -> Poll:
     """What a `gh run view` operand names: a run id, or a run URL carrying its own repository."""
     if not positional or (_ascii_number(positional) and 0 < int(positional) <= _NUMBER_MAX):
@@ -360,6 +364,9 @@ def _pull_request_target(target: str, repository: str) -> Poll:
     if _ascii_number(target):
         number = int(target)
         return Poll(repository, number) if 0 < number <= _NUMBER_MAX else Poll(valid=False)
+    if _all_digits(target):
+        # Too long to be a pull request number, and a bare number is never a branch.
+        return Poll(valid=False)
     urls = pull_request_urls(target) if target.startswith("https://") else ()
     if len(urls) == 1:
         url_repository, number = urls[0]
@@ -451,7 +458,7 @@ def _usable_branch(branch: str) -> bool:
     return bool(
         _BRANCH_RE.fullmatch(branch)
         # A bare number is how `gh pr view` names a pull request; a branch never is one.
-        and not _ascii_number(branch)
+        and not _all_digits(branch)
         and ".." not in branch
         and not branch.endswith((".lock", "/", "."))
     )
@@ -1295,6 +1302,8 @@ def folder_remote(
     shares one reading) a folder whose `HEAD` and `config` stats have not moved starts no git
     process. A folder with no stamp, and one whose probe read nothing, is read afresh each time.
     """
+    if not config.git_probe_enabled:
+        return "", ""
     stamp = git_status.remote_stamp(folder) if held is not None and folder else None
     if held is not None and stamp is not None:
         kept = held.get(folder, stamp)

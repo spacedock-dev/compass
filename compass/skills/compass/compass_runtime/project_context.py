@@ -2345,14 +2345,15 @@ def _cd_behind(words: list[str]) -> list[str] | None:
 
 
 def _decides_the_command(words: list[str]) -> bool:
-    """Whether the segment's command is `eval` or a variable's value: text this reading cannot
-    see, which may have moved the shell anywhere."""
+    """Whether the segment's command is `eval`, `source`, `.` or a variable's value: text or a
+    file this reading cannot see, which may have moved the shell anywhere."""
     for word in words:
         if _ASSIGNMENT_RE.match(word) or os.path.basename(word) in records.LAUNCH_WRAPPERS:
             continue
         if word == "-p":
             continue
-        return os.path.basename(word) == "eval" or word.startswith(("$", "`"))
+        # `source` and `.` run a file this reading cannot see, which can `cd` or set any variable.
+        return os.path.basename(word) in ("eval", "source", ".") or word.startswith(("$", "`"))
     return False
 
 
@@ -4310,6 +4311,25 @@ def _tail_result(tail: str) -> tuple[str, str] | None:
 _always_zero = records.always_zero
 
 
+# `gh pr checks` short flags that take a value: the rest of a cluster, or the next word, is it.
+_PR_CHECKS_SHORT_VALUE = frozenset("iqtR")
+
+
+def _clustered_web_flag(rest: list[str]) -> bool:
+    """Whether a short-flag cluster such as `-wi` or `-w5` carries `-w` ahead of any flag that
+    swallows the rest of the word (`-iw` is an interval of `w`, `-Rwidgets/x` a repository)."""
+    for word in rest:
+        if word == "--":
+            return False
+        if len(word) > 2 and word[0] == "-" and word[1] != "-":
+            for letter in word[1:]:
+                if letter == "w":
+                    return True
+                if letter in _PR_CHECKS_SHORT_VALUE:
+                    break
+    return False
+
+
 def _ci_run_kind(words: list[str]) -> str:
     """The tier-2 CI read a read-only segment is, or "" where it records no result.
 
@@ -4322,6 +4342,8 @@ def _ci_run_kind(words: list[str]) -> str:
     if words[:3] == ["gh", "pr", "checks"]:
         # `--web` only opens a browser: it prints no check and exits 0 whatever the checks say.
         if any(word in ("-w", "--web") or word.startswith("--web=") for word in words[3:]):
+            return ""
+        if _clustered_web_flag(words[3:]):
             return ""
         return "pr_checks"
     if words[:3] == ["gh", "run", "view"] and "--exit-status" in words[3:]:

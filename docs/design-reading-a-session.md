@@ -7981,6 +7981,11 @@ tiers exist to refuse.
   (a linked worktree's common directory included), so a collection or live replay that finds both unchanged
   starts no git. A global git config that moves a remote is not seen until one of those two files moves,
   which is accepted. The `earlier` words of a call are built once per call and not once per poll segment.
+  A later pass closed the shapes left: a short-flag cluster holding `-w` (`-wi 5`) is a browser open, a call
+  that runs `source` or `.` before the poll leaves its directory unplaced like `eval`, an all-digit operand too
+  long to be a pull request number binds to nothing, and the stamp adds the inode so a same-size rewrite in
+  the same clock tick reads as changed. The stamp opens only regular files, without waiting, so a named pipe
+  where `.git` or `commondir` belongs cannot block a collection, and it is not computed at all under `--no-git`.
 - **What was rejected.** Dropping the unbound poll from the list: a reader looking at a session that polled
   something sees nothing, and "ran" is the honest word. Asking `gh` which pull request a branch or run belongs
   to: that is a network call at collection time.

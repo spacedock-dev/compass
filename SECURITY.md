@@ -1911,7 +1911,7 @@ A poll that names a repository (`--repo`, `-R`, a `GH_REPO=` prefix, or a URL) i
 folder's `origin` wherever the call ran. One that names none counts only when the call ran in the session
 folder or a checkout of the same remote, so a `cd` into another clone does not count (`command cd` and
 `builtin cd` move the directory as `cd` does), and a directory the shell decides (a variable, a command
-substitution, a conditional `cd`, or an `eval` or a variable's value run earlier in the call) binds nothing.
+substitution, a conditional `cd`, or an `eval`, `source`, `.` or a variable's value run earlier in the call) binds nothing.
 `gh pr checks --web` only opens a browser, so it reads nothing and is not published as a CI read. A poll set up by
 `GH_HOST`, `GH_ENTERPRISE_TOKEN` or an exported `GH_REPO` in the same call binds nothing; a variable
 exported in an earlier call is not seen. Any other poll, and every poll in a folder with no `origin` on
@@ -2455,7 +2455,7 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   estimate when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding to the
   session's repository (see below). There they run only in the session folder and in a directory
   such a poll ran in, and never at the end of a session. A folder's reading is kept in memory and
-  reused while the stat of its `.git/HEAD` and `.git/config` is unchanged, so a session that holds a
+  reused while the stat (time, size and inode) of its `.git/HEAD` and `.git/config` is unchanged, so a session that holds a
   poll starts no git on a later collection or estimate; nothing is written to disk.
 - Compass keeps each check's name, bucket and completion time, the head commit and counts. A name is
   writable by whoever writes the workflows, so it takes a closed character set and a clip, and it

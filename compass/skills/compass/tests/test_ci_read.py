@@ -1094,6 +1094,11 @@ class ARecordedCiPollIsReadForWhatItNames(unittest.TestCase):
             run = ci_read.parse_poll("run_view", ["gh", "run", "view", operand, "--exit-status"])
             self.assertFalse(run.valid, operand)
 
+    def test_an_all_digit_operand_too_long_to_be_a_number_binds_to_nothing(self) -> None:
+        for operand in ("9" * 25, "0" * 30):
+            poll = self.poll(f"gh pr checks {operand}")
+            self.assertEqual((False, ""), (poll.valid, poll.branch), operand)
+
     def test_a_gh_repo_assignment_is_a_repository_the_poll_names(self) -> None:
         self.assertEqual(
             "other/old", self.poll("gh pr checks 4", raw=("GH_REPO=other/old", "gh")).repository

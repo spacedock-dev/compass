@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import shlex
+import shutil
 import subprocess
 import time
 import unittest
@@ -540,6 +542,8 @@ class ACiPollCountsOnlyWhenItReadsTheSessionsOwnPullRequest(ClaudeChecksTestCase
             "gh pr checks 42 --web",
             "gh pr checks -w 42",
             "gh pr checks 42 --web=true",
+            "gh pr checks -wi 5 42",
+            "gh pr checks -w -i5 42",
         ):
             self.session.bash(command, "Opening github.com in your browser.", is_error=False)
         self.session.bash("gh pr checks 42", "Exit code 1\nbuild\tfail", is_error=True)
@@ -651,10 +655,12 @@ class ACiPollReadsTheSessionFoldersRepository(ClaudeChecksTestCase):
             "$GOTO /srv/elsewhere; gh pr checks 4",
             "X=1 $RUN && gh pr checks 5",
             "command eval 'cd ../old'; gh pr checks 6",
+            "source ./env.sh && gh pr checks 7",
+            ". ./env.sh; gh pr checks 8",
         ):
             self.session.bash(command, "all pass", is_error=False)
         found = {t: p for t, p in self.polls().items() if t.startswith("gh pr checks")}
-        self.assertEqual(4, len(found))
+        self.assertEqual(6, len(found))
         for poll in found.values():
             self.assert_unbound(poll)
 
@@ -751,9 +757,18 @@ class ACiPollInRealCheckouts(ClaudeChecksTestCase):
     """Real repositories, so the folder's remote is read by git and compared, not stubbed."""
 
     def git(self, folder: Path, *args: str) -> None:
+        # The user's own git config and hooks stay out of the fixture repositories: a global
+        # `core.hooksPath`, a signing key or an `init.templateDir` would change what these build.
+        environ = {
+            **os.environ,
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+        }
         subprocess.run(
             [  # noqa: S607 - the test's own repositories, a real git on PATH
                 "git",
+                "-c",
+                "core.hooksPath=" + os.devnull,
                 "-c",
                 "user.name=T",
                 "-c",
@@ -765,6 +780,7 @@ class ACiPollInRealCheckouts(ClaudeChecksTestCase):
             cwd=folder,
             check=True,
             capture_output=True,
+            env=environ,
         )
 
     def repository(self, folder: Path, origin: str) -> None:
@@ -774,6 +790,8 @@ class ACiPollInRealCheckouts(ClaudeChecksTestCase):
         self.git(folder, "remote", "add", "origin", f"https://github.com/{origin}.git")
 
     def setUp(self) -> None:
+        if shutil.which("git") is None:
+            self.skipTest("git is not installed")
         super().setUp()
         self.probe_patch.stop()
         self.repository(self.cwd, "acme/widgets")
