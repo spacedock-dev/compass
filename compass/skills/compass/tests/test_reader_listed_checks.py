@@ -694,12 +694,12 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
 
     def test_a_hostile_sed_program_is_read_in_linear_time(self) -> None:
         program = "".join(" s" + chr(0x4E00 + i) + "y" for i in range(25000))
-        started = time.monotonic()
+        started = time.process_time()
         self.names(f"sed -n '{program}' check.sh")
-        self.assertLess(time.monotonic() - started, 10.0)
+        self.assertLess(time.process_time() - started, 10.0)
 
     def test_a_long_pipeline_is_judged_in_linear_time(self) -> None:
-        started = time.monotonic()
+        started = time.process_time()
         for command, expected in (
             ("x|" * 5000 + "check.sh", set()),
             ("check.sh|" + "x|" * 5000 + "y", set()),
@@ -707,4 +707,4 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
         ):
             with self.subTest(command=command[:30]):
                 self.assertEqual(self.names(command), expected)
-        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertLess(time.process_time() - started, 5.0)
