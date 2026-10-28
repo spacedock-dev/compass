@@ -1582,6 +1582,22 @@ class MoreSecretFormsTest(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertNotIn(self.VALUE, mask(line))
 
+    def test_an_npm_auth_or_password_key_is_masked_like_the_auth_token(self) -> None:
+        for line in (
+            f"npm config set _auth {self.VALUE}",
+            f"npm config set _auth={self.VALUE}",
+            f"npm config set //registry.example.com/:_auth {self.VALUE}",
+            f"npm config set //registry.example.com/:_password {self.VALUE}",
+            f"npm config set //registry.example.com/:_password={self.VALUE}",
+            f"npm publish --_auth={self.VALUE}",
+            f"npm publish --_auth {self.VALUE}",
+            f"echo _auth={self.VALUE}",
+            f"echo //registry.example.com/:_auth={self.VALUE}",
+            f"echo //registry.example.com/:_password={self.VALUE}",
+        ):
+            with self.subTest(line=line):
+                self.assertNotIn(self.VALUE, mask(line))
+
     def test_gh_secret_set_masks_its_body_and_a_pr_body_stays_readable(self) -> None:
         for line in (
             f"gh secret set API_KEY --body {self.VALUE}",

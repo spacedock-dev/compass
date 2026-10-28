@@ -684,6 +684,11 @@ _MASK_FLAGS: Final = frozenset(
         "--pwd",
         "--credentials",
         "_authToken",
+        "_auth",
+        "_password",
+        "--_authToken",
+        "--_auth",
+        "--_password",
         "-p",
         "-P",
     }
@@ -716,8 +721,9 @@ _MASK_WORD_FORMS: Final = (
     ),
     # `--from-literal=key=value`: kubectl's pair, the key stays.
     re.compile(r"^(['\"]?--from-literal=[^=]*=).+$", re.DOTALL),
-    # npm's `//registry/:_authToken=value` and the bare `_authToken=value`.
-    re.compile(r"^(['\"]?[^\s=]*_authToken=).+$", re.DOTALL),
+    # npm's `//registry/:_authToken=value`, `:_auth=` and `:_password=`, the bare `_auth=value`
+    # and the flag spelling `--_auth=value`.
+    re.compile(r"^(['\"]?[^\s=]*_(?:authToken|auth|password)=).+$", re.DOTALL),
     # `-pvalue` and `-Pvalue`.
     re.compile(r"^(['\"]?-[pP]).+$", re.DOTALL),
     # `NAME=value`: `PGPASSWORD=...`, `--env TOKEN=...`.
@@ -1139,7 +1145,7 @@ def mask_words(  # noqa: PLR0915 - one branch per masked form, read in one pass
             masked.append(word)
             pair_next = True
             continue
-        if word in flags or word in _MASK_COOKIE_FLAGS or word.endswith(":_authToken"):
+        if word in flags or word in _MASK_COOKIE_FLAGS or word.endswith((":_authToken", ":_auth", ":_password")):
             masked.append(word)
             mask_next = True
             plugin_flag = pytest and word == "-p"
