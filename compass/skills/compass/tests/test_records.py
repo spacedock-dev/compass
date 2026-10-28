@@ -24,6 +24,7 @@ import os
 import random
 import re
 import shlex
+import sys
 import time
 import unittest
 from contextlib import contextmanager
@@ -1072,6 +1073,8 @@ class InlineScriptAndQuoteCostTest(unittest.TestCase):
                 self.assertEqual({}, records.inline_script_words(shlex.split(line)))
 
     def test_a_quote_heavy_result_scrubs_quickly_at_the_value_cap(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         values = [f"Val{n}secret" for n in range(4096)]
         started = time.process_time()
         for text in ("'" * 100_000, "a'" * 50_000):
@@ -1200,6 +1203,8 @@ class ScrubManyValuesTest(unittest.TestCase):
         self.assertEqual(text, records.scrub_values(text, ["FakeAAAA11", "FakeBBBB22"]))
 
     def test_a_long_run_of_overlapping_values_scrubs_quickly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         values = ["a" * 4, "a" * 5, "a" * 6]
         started = time.process_time()
         records.scrub_values("a" * 400 + "-", values)
@@ -1235,6 +1240,8 @@ class ScrubManyValuesTest(unittest.TestCase):
                     )
 
     def test_a_scrub_stays_linear_on_a_hundred_thousand_characters(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         for text in ("a" * 100_000, "a:" * 50_000, "http://" + "a" * 100_000):
             for values in (["FakePass99xyz"], [f"FakePass{i:03d}xyz" for i in range(200)]):
                 for prose in (False, True):
@@ -1248,6 +1255,8 @@ class ScrubManyValuesTest(unittest.TestCase):
         self.assertEqual(f"a {records.SECRET_MARKER} b", out)
 
     def test_a_scrub_over_512_values_is_fast(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         values = [f"FakeSecret{i:04d}Zq" for i in range(512)]
         text = "ran deploy with FakeSecret0511Zq and FakeSecret0000Zq ok. " * 20
         records.scrub_values("warm", values)
@@ -1279,6 +1288,8 @@ class ScrubManyValuesTest(unittest.TestCase):
         # Base took about 4 s on this input and the combined scrub about 0.26 s here. Fresh values,
         # so the pattern cache cannot answer for it. The bound is ten times the measured time, wide
         # enough for a loaded runner.
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         values = [f"FakeCold{i:05d}Zqx" for i in range(4096)]
         start = time.process_time()
         records.scrub_values("ran with FakeCold00003Zqx", values, prose=True)
@@ -1763,6 +1774,8 @@ class MoreSecretFormsTest(unittest.TestCase):
                 self.assertEqual(words, masked)
 
     def test_every_new_form_stays_linear_on_a_hundred_thousand_characters(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
         run = "a" * 100_000
         for words in (
             ["tool", "--passphrase=" + run],
