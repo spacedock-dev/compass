@@ -250,6 +250,14 @@ export type CiProvider = 'GitHub' | 'GitLab';
    owner holds a dot (`ci_read.host_of`). */
 export const ciProvider = (repository: string): CiProvider =>
   repository.split('/')[0]?.includes('.') ? 'GitLab' : 'GitHub';
+/* The provider the verdict's own words name when no CI read is stored: a GitLab merge request URL, or an
+   `MR`/merge request wording with no `PR`/pull request beside it. Anything else says GitHub's word. */
+export const requestProviderOf = (text: string): CiProvider => {
+  if (/\/-\/merge_requests\/\d/.test(text)) return 'GitLab';
+  const merge = /\b(?:MRs?|merge\s+requests?)\b/i.test(text);
+  const pull = /\b(?:PRs?|pull\s+requests?)\b|\/pull\/\d/i.test(text);
+  return merge && !pull ? 'GitLab' : 'GitHub';
+};
 export const ciReadReason = (token: string, provider: CiProvider): string =>
   (provider === 'GitLab' ? CI_READ_ERRORS_GITLAB[token] : undefined) ??
   CI_READ_ERRORS[token] ??
@@ -345,7 +353,7 @@ export const goalVerdictQuoted = (numbers: readonly string[]): string =>
 export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
   `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;
 /* The two verdict reasons that name the request, worded for a reader on GitLab, where it is a merge request.
-   Read where the stored CI read is from GitLab (`ciProvider`); a reading with no CI read says GitHub's word. */
+   Read where the stored CI read is from GitLab (`ciProvider`); a reading with no CI read takes it from the verdict's own URL or wording (`requestProviderOf`). */
 const GOAL_VERDICT_WHY_GITLAB: Readonly<Record<string, string>> = {
   'pr-created-before':
     'the merge request its reason names is recorded as created before the verdict',

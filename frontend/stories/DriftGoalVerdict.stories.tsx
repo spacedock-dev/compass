@@ -165,6 +165,33 @@ export const ClaimConfirmedByCiOnAMergeRequestSaysMergeRequest: Story = {
   },
 };
 
+/* With no CI read stored, the card takes the provider from the reason's own merge request URL. */
+export const ClaimNamingAMergeRequestUrlWithNoCiReadSaysMergeRequest: Story = {
+  ...scenario({
+    session: {
+      session_goal: {
+        ...GOAL,
+        verdict: {
+          met: true,
+          at: VERDICT_AT,
+          reason: 'opened https://gitlab.example.com/acme/widgets/-/merge_requests/12',
+        },
+      },
+      ...checked('agrees', 'pr-created-before'),
+    },
+    facts: [...FACTS],
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await waitFor(() =>
+      expect(node).toHaveTextContent(
+        'Compass agrees: the merge request its reason names is recorded as created before the verdict.',
+      ),
+    );
+  },
+};
+
 /* A pass on a session that changed its own CI configuration still agrees, because a changed CI configuration is a caution and not a block.
    The card says both halves in one sentence. */
 export const ClaimConfirmedByCiOnASessionThatChangedItsConfiguration: Story = {

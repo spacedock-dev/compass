@@ -8301,8 +8301,9 @@ These are the follow-ups the review of the `glab` read found. The ruling's items
 - **A goal verdict names a merge request on GitLab.** The reasons `ci-passed` and `pr-created-before` said
   "the pull request" whatever the provider. The page now takes the provider from the reading's own stored CI read
   (the repository `host/group/project` of a GitLab read) and says "merge request" for it, for a reason and for a
-  claim that gave none. With no CI read the wording is GitHub's, which is the only provider whose created requests
-  the record holds. No token or producer field changes.
+  claim that gave none. With no CI read the page reads the verdict's own reason: a GitLab merge request URL, or `MR` or
+  "merge request" wording with no `PR` or "pull request" beside it, says "merge request", and anything else
+  says GitHub's word. No token or producer field changes.
 - **What was rejected.** A single deadline applied by shortening only the last call, which lets eleven slow
   calls through. Following `GLAB_CONFIG_DIR`: the host list would then depend on a variable the child cannot see.
 

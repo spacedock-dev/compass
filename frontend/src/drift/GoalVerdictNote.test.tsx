@@ -219,6 +219,29 @@ describe('the harness verdict on the Drift card', () => {
     }
   });
 
+  it('words the request from the verdict’s own URL when no CI read is stored', async () => {
+    for (const [text, noun] of [
+      ['merged https://gitlab.example.com/acme/widgets/-/merge_requests/12', 'merge request'],
+      ['merged https://github.com/acme/widgets/pull/12', 'pull request'],
+      ['merged MR !12', 'merge request'],
+      ['merged PR #12', 'pull request'],
+    ] as const) {
+      const page = mountDrift({
+        session: {
+          ...withVerdict({ verdict: { met: true, at: VERDICT_AT, reason: text } }),
+          ...checked('agrees', 'pr-created-before'),
+        },
+        facts: FACTS,
+      });
+      await page.settle();
+      await page.settle();
+      const note = textOf('[data-next-goal-verdict]');
+      expect(note).toContain(`the ${noun} its reason names`);
+      expect(note).not.toContain(noun === 'merge request' ? 'pull request' : 'merge request');
+      page.unmount();
+    }
+  });
+
   it('says where quoted text was found, by the number of the check, and stays unconfirmed', async () => {
     const page = mountDrift({
       session: {
