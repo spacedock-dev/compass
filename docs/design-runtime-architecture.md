@@ -240,6 +240,15 @@ Three objects, with deliberately different lifetimes:
   popup notifier, the diagnostic sink, and the clock. It owns the registry and the per-harness
   failure boundary, so one broken store cannot take the dashboard down.
 
+One exception is allowed, and it is a pure memo: a function-level `functools.lru_cache` on a module, kept
+only where the result depends on nothing but its arguments and recomputing it per call was measured to cost
+too much. `sessions._walk_encoded` is one, keyed on a transcript directory name. `records._scrub_patterns` is
+the other. It holds the compiled patterns a scrub applies, keyed on the masked values, so a press that scrubs
+ten explanations against one set compiles once (0.18 s at 512 values, 1.8 s for ten scrubs without it). Its key
+is the masked values themselves, so it holds them in memory across every server in one interpreter, for the
+last two sets only and never on disk; SECURITY.md discloses this where it describes the scrub. A memo that
+needed a server's state, a clock or a file would belong in `RuntimeState` instead.
+
 `CompassHTTPServer` stores exactly one `Application` and one mandatory page. Its handler reads
 both off the server instance. `cli.main` loads the renderer selected by frozen configuration and
 passes its verified pre-capability bytes into the application. A selected load failure is fatal

@@ -1956,8 +1956,8 @@ mask it. A press carries up to 4,096 masked values and 131,072 characters of the
 keeps the newest; when it has dropped any, the stored explanation is replaced by a fixed sentence saying it was withheld, rather than
 published unscrubbed. The server holds the masked values of the last two scrubs in a small in-memory
 cache for the life of the process, and writes them nowhere. A line that lists a command of the shell
-(not a check) shows the script given to `python -c`, `node -e` or `--eval`, `bun -e` or `--eval`,
-`deno eval`, `ruby -e`, `perl -e` and `php -r` as one ellipsis, also behind a wrapper such as `docker exec`, `timeout` or `uv run`, since a literal
+(not a check) shows the script given to `python -c`, `node -e`, `-p`, `--eval` or `--print`, `bun` with the same flags,
+`deno eval`, `ruby -e`, `perl -e` or `-E` and `php -r` as one ellipsis, also behind a wrapper such as `docker exec`, `timeout` or `uv run`, since a literal
 credential inside code has no form a mask can find; a check line keeps its own rule. A value at the
 end of a sentence or inside brackets or quotes is removed, while one inside a
 longer word, path or domain is not. The class lives in the observed record only, as
