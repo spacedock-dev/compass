@@ -1073,10 +1073,10 @@ class InlineScriptAndQuoteCostTest(unittest.TestCase):
 
     def test_a_quote_heavy_result_scrubs_quickly_at_the_value_cap(self) -> None:
         values = [f"Val{n}secret" for n in range(4096)]
-        started = time.monotonic()
+        started = time.process_time()
         for text in ("'" * 100_000, "a'" * 50_000):
             records.scrub_values(text, values, prose=True)
-        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertLess(time.process_time() - started, 5.0)
         self.assertEqual(
             "x …REDACTED and Val5secretX …REDACTED",
             records.scrub_values("x Val5secret and Val5secretX 'Val5secret'", values, prose=True),
@@ -1201,9 +1201,9 @@ class ScrubManyValuesTest(unittest.TestCase):
 
     def test_a_long_run_of_overlapping_values_scrubs_quickly(self) -> None:
         values = ["a" * 4, "a" * 5, "a" * 6]
-        started = time.monotonic()
+        started = time.process_time()
         records.scrub_values("a" * 400 + "-", values)
-        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertLess(time.process_time() - started, 2.0)
 
     def test_a_seeded_random_corpus_agrees_with_the_one_at_a_time_scrub(self) -> None:
         rng = random.Random(5001)
@@ -1239,9 +1239,9 @@ class ScrubManyValuesTest(unittest.TestCase):
             for values in (["FakePass99xyz"], [f"FakePass{i:03d}xyz" for i in range(200)]):
                 for prose in (False, True):
                     with self.subTest(text=text[:8], count=len(values), prose=prose):
-                        start = time.monotonic()
+                        start = time.process_time()
                         records.scrub_values(text, values, prose=prose)
-                        self.assertLess(time.monotonic() - start, 2.0)
+                        self.assertLess(time.process_time() - start, 2.0)
 
     def test_a_value_that_prefixes_another_leaves_no_tail(self) -> None:
         out = records.scrub_values("a abcdef b", ["abcd", "abcdef"])
@@ -1251,9 +1251,9 @@ class ScrubManyValuesTest(unittest.TestCase):
         values = [f"FakeSecret{i:04d}Zq" for i in range(512)]
         text = "ran deploy with FakeSecret0511Zq and FakeSecret0000Zq ok. " * 20
         records.scrub_values("warm", values)
-        start = time.monotonic()
+        start = time.process_time()
         out = records.scrub_values(text, values)
-        elapsed = time.monotonic() - start
+        elapsed = time.process_time() - start
         print(f"scrub of 512 values: {elapsed * 1000:.1f} ms")
         self.assertNotIn("FakeSecret", out)
         self.assertLess(elapsed, 1.0)
@@ -1280,9 +1280,9 @@ class ScrubManyValuesTest(unittest.TestCase):
         # so the pattern cache cannot answer for it. The bound is ten times the measured time, wide
         # enough for a loaded runner.
         values = [f"FakeCold{i:05d}Zqx" for i in range(4096)]
-        start = time.monotonic()
+        start = time.process_time()
         records.scrub_values("ran with FakeCold00003Zqx", values, prose=True)
-        self.assertLess(time.monotonic() - start, 5.0)
+        self.assertLess(time.process_time() - start, 5.0)
 
     def test_a_value_of_regex_syntax_is_matched_literally(self) -> None:
         out = records.scrub_values("x a.b*c+d(e z", ["a.b*c+d(e", "(((("])
@@ -1776,9 +1776,9 @@ class MoreSecretFormsTest(unittest.TestCase):
             ["x", "a:" * 50_000 + "b@"],
         ):
             with self.subTest(word=words[-1][:12]):
-                start = time.monotonic()
+                start = time.process_time()
                 records.mask_words(words)
-                self.assertLess(time.monotonic() - start, 1.0)
+                self.assertLess(time.process_time() - start, 1.0)
 
 
 class OutputSecretShapesTest(unittest.TestCase):
