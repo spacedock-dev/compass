@@ -444,7 +444,6 @@ def _repo(root: Path, *, fsmonitor_log: Path | None = None) -> Path:
     return root
 
 
-@unittest.skipIf(GIT is None, "git is not on PATH")
 class RemoteStampTest(unittest.TestCase):
     """`remote_stamp` keys a cached `origin` on two stats and starts no program, so a hand-built
     `.git` stands in for a repository and nothing here needs git."""
@@ -523,6 +522,7 @@ class RemoteStampTest(unittest.TestCase):
         stamp.assert_not_called()
 
 
+@unittest.skipIf(GIT is None, "git is not on PATH")
 class GitProbeContractTest(unittest.TestCase):
     """AC1 and AC2: one argv, and the three hazards its flags disarm.
 
