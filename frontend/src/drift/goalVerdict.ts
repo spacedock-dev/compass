@@ -4,12 +4,12 @@ import {
   GOAL_VERDICT_LABEL,
   GOAL_VERDICT_LINES,
   GOAL_VERDICT_QUOTED_WHY,
-  GOAL_VERDICT_WHY,
-  GOAL_VERDICT_WHY_GOAL,
   goalVerdictClaim,
   goalVerdictPullRequest,
   goalVerdictQuoted,
   goalVerdictRemoval,
+  goalVerdictWhy,
+  ciProvider,
 } from './sentences';
 import type { WorkEntry } from '../intent/work';
 import type { Shape } from './shape';
@@ -104,14 +104,16 @@ export function verdictNote(input: {
       : [];
   // A claim with no reason was tested against the goal's words, so the sentence names the goal.
   const byGoal = verdict.reason === '';
+  // The request is a merge request where the reading's own CI read came from GitLab.
+  const provider = shape?.ci ? ciProvider(shape.ci.repository) : 'GitHub';
   const why = tested
     ? tested.path && input.changedClock
       ? goalVerdictRemoval(tested.why, tested.path, input.changedClock)
       : quotedIn.length
         ? goalVerdictQuoted(quotedIn)
         : pr?.summary
-          ? goalVerdictPullRequest(pr.summary, byGoal)
-          : ((byGoal ? GOAL_VERDICT_WHY_GOAL : GOAL_VERDICT_WHY)[tested.why] ?? '')
+          ? goalVerdictPullRequest(pr.summary, byGoal, provider)
+          : goalVerdictWhy(tested.why, byGoal, provider)
     : '';
   const line = GOAL_VERDICT_LINES[state];
   return {

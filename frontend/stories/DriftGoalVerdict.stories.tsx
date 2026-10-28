@@ -120,6 +120,51 @@ export const ClaimConfirmedByTheCreatedPullRequest: Story = {
   },
 };
 
+/* The same answer for a reader on GitLab, where the request is a merge request: the card takes the provider from
+   the reading's own CI read. */
+const GITLAB_HEAD = 'a'.repeat(40);
+export const ClaimConfirmedByCiOnAMergeRequestSaysMergeRequest: Story = {
+  ...scenario({
+    session: {
+      session_goal: {
+        ...GOAL,
+        verdict: { met: true, at: VERDICT_AT, reason: 'the unit-tests job passed on the request' },
+      },
+      annotation_assessment: {
+        ...DEPARTURE_READING,
+        ci: {
+          read_at: 900,
+          error: '',
+          source: 'goal',
+          repository: 'gitlab.example.com/acme/widgets',
+          number: 12,
+          head: GITLAB_HEAD,
+          session_head: GITLAB_HEAD,
+          head_matches: true,
+          required_only: false,
+          not_counted: 0,
+          counts: { pass: 1, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+          caution: false,
+          checks: [{ name: 'unit-tests', bucket: 'pass', completed_at: 800 }],
+        },
+        goal_verdict: { at: VERDICT_AT, check: 'agrees', why: 'ci-passed', cites: [] },
+      },
+      annotation_reading_count: 1,
+    },
+    facts: [...FACTS],
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-goal-verdict-state', 'agrees');
+    await waitFor(() =>
+      expect(node).toHaveTextContent(
+        'Compass agrees: the merge request its reason names had every check that counts pass on this session’s commit.',
+      ),
+    );
+  },
+};
+
 /* A pass on a session that changed its own CI configuration still agrees, because a changed CI configuration is a caution and not a block.
    The card says both halves in one sentence. */
 export const ClaimConfirmedByCiOnASessionThatChangedItsConfiguration: Story = {

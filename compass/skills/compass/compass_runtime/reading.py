@@ -4837,8 +4837,9 @@ GOAL_VERDICT_FAILED = "check-failed"
 GOAL_VERDICT_DELETED_AFTER = "deleted-after"
 GOAL_VERDICT_MOVED_AFTER = "moved-after"
 GOAL_VERDICT_PR = "pr-created-before"
-# The pull request the verdict names had every check that counts pass on the session's commit,
-# as the press read them from GitHub. Its dispute is `GOAL_VERDICT_FAILED`.
+# The pull request or merge request the verdict names had every check that counts pass on the
+# session's commit, as the press read them from GitHub or GitLab. Its dispute is
+# `GOAL_VERDICT_FAILED`; the page words the request per provider.
 GOAL_VERDICT_CI = "ci-passed"
 # The same pass, on a session that changed its own CI configuration. A caution and not a block, so
 # the pass still agrees and the card says the checks may not be the ones the repository had:

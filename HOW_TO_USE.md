@@ -573,9 +573,11 @@ built from GitLab's documented answers, and the first press on your own host is 
    followed, and the card says the host is not configured. Copy or link that file to the usual path, or sign
    in again with `GLAB_CONFIG_DIR` unset.
 3. **Leave the host block on https.** A host whose block sets `api_protocol` to anything but `https`,
-   `api_host` to another name, or `skip_tls_verify` on is not read, and neither is one whose block holds a
-   line Compass cannot place a key in (a tab, a flow mapping, an anchor). The card says the host is not
-   configured.
+   `api_host` to another name, or `skip_tls_verify` to anything but a bare false (a comment, a tag or a value
+   on the next line counts as not false) is not read, and neither is one whose block holds a key that is not
+   a plain name or a line Compass cannot place a key in (a tab, a flow mapping, a complex key, a tag, a block
+   scalar). An anchor, alias or merge key anywhere under `hosts:` leaves no host read at all, since one host's
+   anchor can be merged into another's. The card says the host is not configured.
 
 `--no-ci-read` and the page's switch turn the read off. [SECURITY.md](SECURITY.md#pull-request-ci-reads) lists
 every bound the read keeps, the 60 second deadline over the whole GitLab read among them.

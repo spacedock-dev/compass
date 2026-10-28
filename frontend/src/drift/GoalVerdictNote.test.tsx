@@ -168,6 +168,57 @@ describe('the harness verdict on the Drift card', () => {
     );
   });
 
+  it('says a merge request where the reading’s own CI read is from GitLab, and a pull request elsewhere', async () => {
+    const head = 'a'.repeat(40);
+    const ci = (repository: string) => ({
+      read_at: 1000,
+      error: '',
+      source: 'goal',
+      repository,
+      number: 12,
+      head,
+      session_head: head,
+      head_matches: true,
+      required_only: false,
+      not_counted: 0,
+      counts: { pass: 1, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+      caution: false,
+      checks: [{ name: 'lint', bucket: 'pass', completed_at: 900 }],
+    });
+    for (const [repository, noun] of [
+      ['gitlab.example.com/acme/widgets', 'merge request'],
+      ['acme/widgets', 'pull request'],
+    ] as const) {
+      for (const [byGoal, owner] of [
+        [false, 'its reason'],
+        [true, 'the goal'],
+      ] as const) {
+        for (const why of ['ci-passed', 'pr-created-before']) {
+          const page = mountDrift({
+            session: {
+              ...withVerdict({
+                verdict: { met: true, at: VERDICT_AT, reason: byGoal ? '' : reason },
+              }),
+              ...checked('agrees', why),
+              annotation_assessment: {
+                ...ASSESSMENT,
+                ci: ci(repository),
+                goal_verdict: { at: VERDICT_AT, check: 'agrees', why, cites: [] },
+              },
+            },
+            facts: FACTS,
+          });
+          await page.settle();
+          await page.settle();
+          const text = textOf('[data-next-goal-verdict]');
+          expect(text).toContain(`the ${noun} ${owner} names`);
+          expect(text).not.toContain(noun === 'merge request' ? 'pull request' : 'merge request');
+          page.unmount();
+        }
+      }
+    }
+  });
+
   it('says where quoted text was found, by the number of the check, and stays unconfirmed', async () => {
     const page = mountDrift({
       session: {

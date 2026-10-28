@@ -329,8 +329,12 @@ export const CI_SWITCH_FAILED = 'Could not save that. Try again.';
 
 /* "the pull request its reason names, example-org/example-repo#7, is recorded as created before the verdict":
    the pull request fact the test confirmed, named from the entry it cites. */
-export const goalVerdictPullRequest = (name: string, byGoal = false): string =>
-  `the pull request ${byGoal ? 'the goal' : 'its reason'} names, ${name}, is recorded as created before the verdict`;
+export const goalVerdictPullRequest = (
+  name: string,
+  byGoal = false,
+  provider: CiProvider = 'GitHub',
+): string =>
+  `the ${provider === 'GitLab' ? 'merge' : 'pull'} request ${byGoal ? 'the goal' : 'its reason'} names, ${name}, is recorded as created before the verdict`;
 /* "the quoted text is in the output of check #12": where the text its reason quotes was found, named by the
    numbers the card gives the checks. It says where the text is and nothing about whether the check passed. */
 export const goalVerdictQuoted = (numbers: readonly string[]): string =>
@@ -340,6 +344,25 @@ export const goalVerdictQuoted = (numbers: readonly string[]): string =>
 /* "docs/e2e/notes.md was deleted at 22:59, after the verdict": the file and the moment the record shows. */
 export const goalVerdictRemoval = (why: string, path: string, at: string): string =>
   `${path} was ${why === 'moved-after' ? 'moved away' : 'deleted'} at ${at}, after the verdict`;
+/* The two verdict reasons that name the request, worded for a reader on GitLab, where it is a merge request.
+   Read where the stored CI read is from GitLab (`ciProvider`); a reading with no CI read says GitHub's word. */
+const GOAL_VERDICT_WHY_GITLAB: Readonly<Record<string, string>> = {
+  'pr-created-before':
+    'the merge request its reason names is recorded as created before the verdict',
+  'ci-passed':
+    'the merge request its reason names had every check that counts pass on this session’s commit',
+};
+const GOAL_VERDICT_WHY_GOAL_GITLAB: Readonly<Record<string, string>> = {
+  'pr-created-before': 'the merge request the goal names is recorded as created before the verdict',
+  'ci-passed':
+    'the merge request the goal names had every check that counts pass on this session’s commit',
+};
+export const goalVerdictWhy = (why: string, byGoal: boolean, provider: CiProvider): string =>
+  (provider === 'GitLab'
+    ? (byGoal ? GOAL_VERDICT_WHY_GOAL_GITLAB : GOAL_VERDICT_WHY_GITLAB)[why]
+    : undefined) ??
+  (byGoal ? GOAL_VERDICT_WHY_GOAL : GOAL_VERDICT_WHY)[why] ??
+  '';
 export const GOAL_VERDICT_LABEL = 'The harness’s claim:';
 /* Both claims name the product, not the payload's harness label ("Claude"). Claude Code and Codex report a
    goal met; only Claude Code gives one up this way, and the Intent card's note says "Claude Code" too. */
