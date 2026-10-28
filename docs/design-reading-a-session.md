@@ -3504,6 +3504,18 @@ Four small changes to the masking and scrub, each closing a way a value or a fal
   boundary, so neither was masked. A run of two or more touching values is now read whole and each value
   in it is masked.
 
+### Amended 2026-10-28 (owner): an unlisted flag's path value, a deno script and chained values
+
+- **Inline scripts.** A path-like word right after an unlisted interpreter flag is that flag's value, not the
+  script file, so `node --diagnostic-dir /tmp/x -e ...` still shows the script as one opaque word. A script
+  file ends the scan only when no flag stands before it. The cost is a script's own flag value hidden on a
+  tier 3 line (`node --strict deploy.js -e prod`), which is the safe side. `deno eval` hides every plain word
+  after its flags, because an unlisted flag's value is indistinguishable from the script.
+- **Chained values.** The scrub repeats its pass until nothing changes, so a value that was rejected at the
+  boundary of another value is read once that one is a marker: prose `V1:V2` masks both. The flag pass takes a
+  whole run after `-p`, so `-pV1V2` masks both values. Strict (output tail) mode still keeps a `:`, `.` or `/`
+  between two values as part of one word, as before.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.

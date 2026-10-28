@@ -1033,6 +1033,21 @@ class InlineScriptAndQuoteCostTest(unittest.TestCase):
                 (at,) = records.inline_script_words(words)
                 self.assertEqual(words.index("-e") + 1 if "-e" in words else at, at)
 
+    def test_an_unlisted_flag_with_a_path_value_does_not_expose_the_script(self) -> None:
+        for line in (
+            "node --diagnostic-dir /tmp/x -e 'x(\"FakePass99\")'",
+            "node --title ./foo -e 'x(\"FakePass99\")'",
+            "node --openssl-config /etc/ssl/o.cnf -e 'x(\"FakePass99\")'",
+            "python3 --some-flag lib/mod.py -c 'x(\"FakePass99\")'",
+        ):
+            with self.subTest(line=line):
+                words = shlex.split(line)
+                self.assertIn(len(words) - 1, records.inline_script_words(words))
+
+    def test_a_deno_eval_hides_the_script_after_an_unlisted_flag_value(self) -> None:
+        words = shlex.split("deno eval --unstable-x foo 'x(\"FakePass99\")'")
+        self.assertIn(len(words) - 1, records.inline_script_words(words))
+
     def test_bun_deno_and_php_inline_scripts_are_opaque_and_shell_wrappers_are_not(self) -> None:
         for line, script in (
             ("bun -e 'x(\"FakePass99\")'", 2),
@@ -1153,6 +1168,22 @@ class ScrubManyValuesTest(unittest.TestCase):
                     for value in values:
                         self.assertNotIn(value, out)
                     self.assertIn(records.SECRET_MARKER, out)
+
+    def test_two_masked_values_joined_by_a_colon_or_after_a_password_flag_are_all_masked(
+        self,
+    ) -> None:
+        values = ["FakeUser11", "FakePass22", "FakeThird33"]
+        for prose, text in (
+            (True, "tried FakeUser11:FakePass22 on it"),
+            (True, "tried FakeUser11:FakePass22:FakeThird33 on it"),
+            (False, "ran mysql -pFakeUser11FakePass22 now"),
+            (True, "ran mysql -pFakeUser11FakePass22FakeThird33 now"),
+            (False, "ran mysql -pFakeUser11FakePass22FakeThird33 now"),
+        ):
+            with self.subTest(text=text, prose=prose):
+                out = records.scrub_values(text, values, prose=prose)
+                for value in values:
+                    self.assertNotIn(value, out)
 
     def test_values_that_only_share_a_boundary_are_not_joined_into_a_longer_word(self) -> None:
         # One masked value inside a longer word stays: only a run of values is read as masked.

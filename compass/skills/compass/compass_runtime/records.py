@@ -1035,7 +1035,11 @@ def inline_script_words(words: list[str]) -> dict[int, str]:
         if word == "--" or (kind == "python" and word == "-m"):
             break
         if not word.startswith("-"):
-            if _looks_like_script_file(word):
+            # A path-like word right after an unlisted flag is taken as that flag's value
+            # (`node --diagnostic-dir /tmp/x -e ...`), because ending the scan there printed the
+            # script whole. The cost is a script's own flag value hidden on a tier 3 line
+            # (`node --strict deploy.js -e prod`), which is the safe side.
+            if _looks_like_script_file(word) and not words[index - 1].startswith("-"):
                 break
             index += 1
             continue
@@ -1052,16 +1056,19 @@ def inline_script_words(words: list[str]) -> dict[int, str]:
 
 
 def _deno_eval_script(words: list[str], start: int, value_flags: frozenset[str]) -> dict[int, str]:
-    """`deno eval [flags] SCRIPT`: the script is the first plain word after the subcommand."""
+    """`deno eval [flags] SCRIPT`: every plain word after the subcommand and the listed flags'
+    values. An unlisted flag's value looks like the script, and the script follows it, so
+    naming only the first plain word printed the real script."""
     if words[start + 1 : start + 2] != ["eval"]:
         return {}
+    found: dict[int, str] = {}
     index = start + 2
     while index < len(words):
         word = words[index]
         if not word.startswith("-"):
-            return {index: ""}
+            found[index] = ""
         index += 2 if word in value_flags else 1
-    return {}
+    return found
 
 
 def _plain_words(words: list[str], at: int, program: str, *, skip_assignments: bool) -> list[int]:
@@ -2330,7 +2337,23 @@ def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> st
     }
     if not spellings:
         return text
-    plain, joined_flag, userinfo, touching, inner = _scrub_patterns(tuple(sorted(spellings)), prose)
+    patterns = _scrub_patterns(tuple(sorted(spellings)), prose)
+    # A marker never matches a value, so a second pass reads what the first left behind a
+    # marker: `V1:V2` in prose rejects V1 at the `:` until V2 is a marker, so each pass can free
+    # one more value of a chain. It stops when nothing changes; the cap bounds a long chain.
+    for _ in range(_SCRUB_PASSES):
+        scrubbed = _scrub_pass(text, patterns)
+        if scrubbed == text:
+            break
+        text = scrubbed
+    return text
+
+
+_SCRUB_PASSES: Final = 16
+
+
+def _scrub_pass(text: str, patterns: tuple[re.Pattern[str], ...]) -> str:
+    plain, joined_flag, userinfo, touching, inner = patterns
     # Userinfo first: a plain pass would let a short spelling match inside `user:Fake99!@` in
     # prose and leave the `!` of the longer one, where the one-at-a-time loop took the longest.
     text = userinfo.sub(lambda match: match[1] + _SECRET_MARKER + match[2], text)
@@ -2407,7 +2430,8 @@ def _scrub_patterns(
     alternation = _trie_alternation(spellings)
     return (
         re.compile(rf"{before}(?:{alternation}){after}"),
-        re.compile(rf"(?<!{boundary})(-[pP])(?:{alternation}){after}"),
+        # A run after the flag is one password (`-pV1V2`), so the flag pass takes all of it.
+        re.compile(rf"(?<!{boundary})(-[pP])(?>(?:{alternation})+){after}"),
         re.compile(
             rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
         ),
