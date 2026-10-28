@@ -986,6 +986,10 @@ class ACiPollingLoopIsReadOnly(CheckLineTestCase):
             "for ((i=0;i<3;i++)) do sleep 1; done",
             "for i do sleep 1; done",
             "time for ((i=0;i<3;i++)); do sleep 1; done",
+            "time -p for i in 1 2; do sleep 1; done",
+            "time -p for ((i=0;i<3;i++)); do sleep 1; done",
+            "time -p for i; do sleep 1; done",
+            "time -p sleep 1",
             "out=$(gh pr checks 7 --repo acme/widgets)",
             "while ! gh pr checks 7; do sleep 5; done",
         ):
@@ -1011,6 +1015,8 @@ class ACiPollingLoopIsReadOnly(CheckLineTestCase):
             "for i do rm x; done",
             "for ((i=0;i<3;i++)) do rm x; done",
             "time for ((i=0;i<3;i++)); do rm x; done",
+            "time -p for ((i=0;i<3;i++)); do rm x; done",
+            "time -p rm x",
             "out=$(gh run download 123)",
             "while true; do gh pr checks 7 > checks.txt; done",
         ):

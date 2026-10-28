@@ -2103,7 +2103,8 @@ _SHELLS = frozenset({"bash", "sh", "zsh"})
 _SHELL_FLAGS_RE = re.compile(r"^-[eulc]+$")
 _SHELL_LONG_OPTIONS = frozenset({"--login", "--noprofile", "--norc"})
 _SHELL_WRAPPER_DEPTH = 2
-_WRAPPER_PAIRS = (["poetry", "run"], ["pipenv", "run"], ["pnpm", "exec"])
+# `time -p` is a pair: its `-p` is the POSIX format flag, not an argument of the timed command.
+_WRAPPER_PAIRS = (["poetry", "run"], ["pipenv", "run"], ["pnpm", "exec"], ["time", "-p"])
 _UV_VALUE_OPTIONS = frozenset(
     {"--with", "--with-requirements", "--python", "-p", "--project", "--directory", "--extra",
      "--group", "--package", "--env-file", "--index"}
