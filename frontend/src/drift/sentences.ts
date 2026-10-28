@@ -184,6 +184,7 @@ export const GOAL_VERDICT_WHY: Readonly<Record<string, string>> = {
     'the pull request its reason names is recorded as created before the verdict',
   'ci-passed':
     'the pull request its reason names had every check that counts pass on this session’s commit',
+  'ci-passed-config-changed': 'CI passed, and the session changed its CI configuration',
   'written-after': 'the file its reason names was written again after the verdict',
   'deleted-after': 'a file its reason or the goal names was deleted after the verdict',
   'moved-after': 'a file its reason or the goal names was moved away after the verdict',
@@ -200,6 +201,7 @@ export const GOAL_VERDICT_WHY_GOAL: Readonly<Record<string, string>> = {
   'pr-created-before': 'the pull request the goal names is recorded as created before the verdict',
   'ci-passed':
     'the pull request the goal names had every check that counts pass on this session’s commit',
+  'ci-passed-config-changed': 'CI passed, and the session changed its CI configuration',
   'written-after': 'the file the goal names was written again after the verdict',
   'deleted-after': 'a file the goal names was deleted after the verdict',
   'moved-after': 'a file the goal names was moved away after the verdict',
@@ -229,6 +231,8 @@ export const CI_READ_ERRORS: Readonly<Record<string, string>> = {
   'host-not-configured': 'glab’s own configuration does not name that GitLab host',
   'no-session-folder':
     'no folder is known for this session, so the pull request’s commit could not be matched to it',
+  'no-session-commit':
+    'the commit this session is on could not be read (git is off or the folder is not a repository), so the pull request’s commit could not be matched to it',
 };
 /* The three tokens both providers share, worded for GitLab. */
 const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
@@ -238,6 +242,8 @@ const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
   'unreadable-output': 'glab answered in a shape Compass does not read',
   'no-session-folder':
     'no folder is known for this session, so the merge request’s pipeline commit could not be matched to it',
+  'no-session-commit':
+    'the commit this session is on could not be read (git is off or the folder is not a repository), so the merge request’s pipeline commit could not be matched to it',
 };
 export type CiProvider = 'GitHub' | 'GitLab';
 /* Which provider a stored repository names. A GitLab one is stored as `host/group/project`, and no GitHub

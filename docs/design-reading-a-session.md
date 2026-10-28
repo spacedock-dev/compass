@@ -8231,6 +8231,25 @@ harness that records none read nothing.
   yet" and "will fail until" count as no claim) is agreed or disputed by that job's result, on the same counting rules. Without a
   read bound to this session there are no CI facts, and the reason stays as unconfirmed as before.
 
+### Amended 2026-10-28 (owner): a read needs a readable session commit, a changed CI configuration is a caution, and a job claim is read by its own clause
+
+Three loose ends in the `gh` and `glab` read and in how a reason is checked against it.
+
+- **A folder whose commit cannot be read launches nothing.** A recorded folder with no readable commit (the git
+  probe is off, the folder is not a repository, or `git` is missing) can never match the pull request's head, as
+  a session with no folder cannot, so `gh` or `glab` would settle nothing. The press stores a record whose error
+  is `no-session-commit` and starts no process, and the page says the commit could not be read. This is the
+  `no-session-folder` rule one step later; before it, such a press launched and stored a read that settled
+  nothing.
+- **A changed CI configuration is a caution, not a block.** The record already carried the caution, and the
+  pass-agrees check ignored it. A pass on a session that wrote a workflow or pipeline file still agrees with the
+  harness's `met` verdict, with its own reason, `ci-passed-config-changed`, which the page words as "CI passed,
+  and the session changed its CI configuration". A failure still disputes, and the level is unchanged.
+- **A job is named by its own words.** A one-word job name ("lint") is an ordinary word, so only a quoted
+  occurrence names the job, and a claim word counts only in a clause holding such an occurrence: "The `lint` job
+  exists. The lint is clean." no longer agrees. A claim hedged by a requirement, a doubt or a question
+  ("cannot pass", "needs to pass", "should pass", "I doubt it passes", "whether it passes") counts as no claim.
+
 ## DEC-31: the text of a command that is not a check may leave the machine, by vendor
 
 Decided by the owner on 2026-10-27 (DRC-4987). This layer writes the ruling down; the layers that follow build

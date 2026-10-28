@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
 REPO = "acme/widgets"
 SESSION_HEAD = "a" * 40
+ELSEWHERE_HEAD = git_status.GitIdentity("b" * 40, "github.com", "acme/widgets")
 OTHER_HEAD = "b" * 40
 GOAL_URL = f"https://github.com/{REPO}/pull/12"
 GOAL_TEXT = f"Fix the failing GitHub Actions on PR {GOAL_URL}"
@@ -867,11 +868,11 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(_PressCase):
     def read_ci(self, goal: str = GOAL_TEXT) -> dict[str, Any] | None:
         row = {"harness": "claude", "sid": "s1", "session_goal": {"text": goal, "at": 1.0}}
         entry = {"revisions": [{"n": 1, "goal": goal}]}
-        # A session folder the harness recorded, with no git behind it: the read is then allowed to
-        # launch, and the head the session was on is unknown.
+        # A session folder whose commit is readable but is not the pull request's head: the read
+        # is allowed to launch and settles nothing.
         with (
             mock.patch.object(project_context, "session_folder", return_value="/x"),
-            mock.patch.object(ci_read, "probe_session", return_value=None),
+            mock.patch.object(ci_read, "probe_session", return_value=ELSEWHERE_HEAD),
         ):
             return http_api._read_ci(
                 cast("Any", self.application),
@@ -915,7 +916,7 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(_PressCase):
         assert record is not None
         self.assertEqual("", record["error"])
         self.assertEqual(4, len(self.stub.calls))
-        # No folder was recorded, so no session commit: the read happened and settles nothing.
+        # The session's commit is not the pull request's head: the read happened and settles nothing.
         self.assertFalse(record["head_matches"])
 
     def test_every_launch_hands_its_group_to_the_cancel_hook(self) -> None:
@@ -1434,6 +1435,25 @@ class NoGhIsLaunchedForASessionWithNoFolder(_PressCase):
             self.assertEqual([], self.stub.calls)
             self.assertEqual([], ci_read.facts(record, harness, "s1"))
 
+    def test_a_folder_whose_commit_cannot_be_read_gets_a_reason_and_no_process(self) -> None:
+        # The git probe off, not a repository and git missing all read as no identity.
+        for harness in ("claude", "gemini"):
+            with (
+                self.subTest(harness=harness),
+                self.boom(),
+                mock.patch.object(project_context, "session_folder", return_value="/x"),
+                mock.patch.object(ci_read, "probe_session", return_value=None),
+                mock.patch.object(supervise, "run", side_effect=AssertionError("run")),
+                mock.patch.dict(os.environ, self.stub.environ, clear=True),
+            ):
+                record = self.press(harness, "t.jsonl")
+            assert record is not None
+            self.assertEqual(ci_read.ERROR_NO_COMMIT, record["error"])
+            self.assertEqual(12, record["number"])
+            self.assertIsNotNone(ci_read.validate(record))
+            self.assertEqual([], self.stub.calls)
+            self.assertEqual([], ci_read.facts(record, harness, "s1"))
+
     def test_no_binding_and_no_folder_says_nothing(self) -> None:
         row = {"harness": "gemini", "sid": "s1", "session_goal": {"text": "tidy", "at": 1.0}}
         entry = {"revisions": [{"n": 1, "goal": "tidy"}]}
@@ -1524,6 +1544,23 @@ class AReasonThatNamesOnlyCiJobsReachesTheCiFacts(base.AClaudeCodeReadingProduce
         # Only the job it named is cited, not its siblings.
         self.assertEqual(["ci:12:1"], list(verdict["cites"]))
 
+    def test_a_pass_on_a_session_that_changed_its_ci_configuration_agrees_with_a_caution(
+        self,
+    ) -> None:
+        # A caution and not a block: the answer stays `agrees`, and only the reason token differs.
+        for reason in ("The unit-tests job passed.", "Pull request #12 is green."):
+            with self.subTest(reason=reason):
+                verdict = self.checked(reason, record_with(*GREEN, caution=True))
+                self.assertEqual(reading.GOAL_VERDICT_AGREES, verdict["check"])
+                self.assertEqual(reading.GOAL_VERDICT_CI_CAUTION, verdict["why"])
+                plain = self.checked(reason, record_with(*GREEN))
+                self.assertEqual(reading.GOAL_VERDICT_CI, plain["why"])
+
+    def test_a_failure_on_a_session_that_changed_its_ci_configuration_still_disputes(self) -> None:
+        record = record_with(check("lint", "pass"), check("e2e-suite", "fail"), caution=True)
+        verdict = self.checked("Both lint and the e2e-suite job are green.", record)
+        self.assertEqual(reading.GOAL_VERDICT_DISPUTED, verdict["check"])
+
     def test_a_named_job_that_failed_disputes_it(self) -> None:
         record = record_with(check("lint", "pass"), check("e2e-suite", "fail"))
         verdict = self.checked("Both lint and the e2e-suite job are green.", record)
@@ -1550,6 +1587,32 @@ class AReasonThatNamesOnlyCiJobsReachesTheCiFacts(base.AClaudeCodeReadingProduce
         self.assertNotEqual(reading.GOAL_VERDICT_CI, plain["why"])
         quoted = self.checked("The `lint` job passed.", record)
         self.assertEqual(reading.GOAL_VERDICT_CI, quoted["why"])
+
+    def test_a_plain_word_claims_a_result_only_beside_a_quoted_mention_of_the_job(self) -> None:
+        record = record_with(check("lint", "pass"), check("unit-tests", "pass"))
+        # The unquoted `lint` is an ordinary word, so a quote elsewhere does not make it the job.
+        apart = self.checked("The `lint` job exists. The lint is clean.", record)
+        self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, apart["check"])
+        beside = self.checked("The `lint` job is clean.", record)
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, beside["check"])
+        self.assertEqual(["ci:12:0"], list(beside["cites"]))
+        # A joined name is not an ordinary word and needs no quote in its own clause.
+        joined = self.checked("The `lint` job exists. The unit-tests job passed.", record)
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, joined["check"])
+        self.assertEqual(["ci:12:1"], list(joined["cites"]))
+
+    def test_a_requirement_a_doubt_or_a_question_is_no_claim_of_a_result(self) -> None:
+        for reason in (
+            "The unit-tests job cannot pass until the migration lands.",
+            "The unit-tests job needs to pass before release.",
+            "The unit-tests job should pass once the fixture is fixed.",
+            "I doubt the unit-tests job passes on main.",
+            "It is unclear whether the unit-tests job passes.",
+        ):
+            with self.subTest(reason=reason):
+                verdict = self.checked(reason, record_with(*GREEN))
+                self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
+                self.assertNotEqual(reading.GOAL_VERDICT_CI, verdict["why"])
 
     def test_a_mention_that_claims_no_result_agrees_with_nothing(self) -> None:
         for reason in (

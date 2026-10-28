@@ -297,6 +297,7 @@ describe('the harness verdict on the Drift card', () => {
   it('words a Codex claim, which gives no reason, by what the goal names', async () => {
     for (const [why, said] of [
       ['written-before', 'the file the goal names is recorded as written before the verdict'],
+      ['ci-passed-config-changed', 'CI passed, and the session changed its CI configuration'],
       ['not-found', 'the record Compass read does not show what the goal names'],
     ] as const) {
       const page = mountDrift({

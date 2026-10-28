@@ -138,6 +138,23 @@ describe('the pull request check read, as the card says it', () => {
     expect(note.lines[0]).toContain('no folder is known for this session');
   });
 
+  it('words a read that never started for no folder, or no readable commit, by provider', () => {
+    const gitlab = 'gitlab.example.com/acme/widgets';
+    for (const token of ['no-session-folder', 'no-session-commit']) {
+      expect(ciReadReason(token, 'GitLab')).toContain('merge request’s pipeline commit');
+      expect(ciReadReason(token, 'GitLab')).not.toMatch(/\bpull request/);
+      expect(ciReadReason(token, 'GitHub')).toContain('pull request’s commit');
+      const note = ciReadNote(accepted({ repository: gitlab, error: token }), 'x');
+      expect(note.state).toBe('failed');
+      expect(note.lines[0]).toMatch(/^Merge request checks were not read from GitLab: /);
+    }
+    const noCommit = ciReadNote(
+      accepted({ error: 'no-session-commit', head_matches: false, session_head: '' }),
+      'x',
+    );
+    expect(noCommit.lines[0]).toContain('the commit this session is on could not be read');
+  });
+
   it('says a failed read in a sentence of its own, from a closed token', () => {
     const note = ciReadNote(accepted({ error: 'gh-missing' }), 'x');
     expect(note.state).toBe('failed');

@@ -717,6 +717,17 @@ def _bind_and_read_ci(
             caution=False,
             now=application.clock(),
         )
+    if identity is None:
+        # A folder whose commit cannot be read never matches the pull request's head, so a launch
+        # could settle nothing either. Said, rather than left to look like a read that found no
+        # pass.
+        return ci_read.refused(
+            binding,
+            ci_read.ERROR_NO_COMMIT,
+            session_head="",
+            caution=False,
+            now=application.clock(),
+        )
     written = (
         str(fact.get("summary") or "")
         for fact in facts
@@ -726,7 +737,7 @@ def _bind_and_read_ci(
     )
     return ci_read.read(
         binding,
-        session_head=identity.head if identity else "",
+        session_head=identity.head,
         caution=ci_read.changed_ci_configuration(written),
         now=application.clock(),
         floor=ci_read.FLOOR,

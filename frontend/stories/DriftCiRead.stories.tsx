@@ -240,6 +240,26 @@ export const NoSessionFolderSaysWhyNothingWasRead: Story = {
   },
 };
 
+export const NoReadableCommitSaysWhyNothingWasRead: Story = {
+  ...read(
+    record({
+      error: 'no-session-commit',
+      head: '',
+      session_head: '',
+      head_matches: false,
+      counts: { pass: 0, fail: 0, pending: 0, skipping: 0, cancel: 0 },
+      checks: [],
+    }),
+  ),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await expect(node).toHaveAttribute('data-next-ci-read-state', 'failed');
+    await expect(node).toHaveTextContent(
+      'Pull request checks were not read from GitHub: the commit this session is on could not be read (git is off or the folder is not a repository), so the pull request’s commit could not be matched to it.',
+    );
+  },
+};
+
 export const RequiredOnlySaysHowManyChecksItLeftOut: Story = {
   ...read(
     record({

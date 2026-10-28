@@ -4605,6 +4605,8 @@ class RecordedCi:
     at: float
     # The job's name as the press listed it, for a reason that names a job and no pull request.
     name: str = ""
+    # The session changed the CI configuration, so a pass is a caution and not a plain pass.
+    caution: bool = False
 
 
 class HeldOutput(NamedTuple):
@@ -4737,6 +4739,7 @@ def _recorded_ci(fact: Mapping[str, Any], harness: str, sid: str) -> RecordedCi 
             fact.get("ci_counts") is True,
             stamp,
             ci_read.check_name(fact),
+            fact.get("ci_caution") is True,
         )
     return None
 
@@ -4826,6 +4829,10 @@ GOAL_VERDICT_PR = "pr-created-before"
 # The pull request the verdict names had every check that counts pass on the session's commit,
 # as the press read them from GitHub. Its dispute is `GOAL_VERDICT_FAILED`.
 GOAL_VERDICT_CI = "ci-passed"
+# The same pass, on a session that changed its own CI configuration. A caution and not a block, so
+# the pass still agrees and the card says the checks may not be the ones the repository had:
+# [DEC-30](docs/design-reading-a-session.md#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze)  # noqa: E501
+GOAL_VERDICT_CI_CAUTION = "ci-passed-config-changed"
 # The text the reason quotes is in the output of a check the record holds. Said as where the text
 # is: the answer stays `unconfirmed`, because output that holds a phrase is no pass.
 GOAL_VERDICT_QUOTED = "quoted-in-check"
@@ -4840,6 +4847,7 @@ GOAL_VERDICT_PAIRS: dict[str, tuple[str, bool]] = {
     GOAL_VERDICT_PASSED: (GOAL_VERDICT_AGREES, True),
     GOAL_VERDICT_PR: (GOAL_VERDICT_AGREES, True),
     GOAL_VERDICT_CI: (GOAL_VERDICT_AGREES, True),
+    GOAL_VERDICT_CI_CAUTION: (GOAL_VERDICT_AGREES, True),
     GOAL_VERDICT_WRITTEN_AFTER: (GOAL_VERDICT_DISPUTED, True),
     GOAL_VERDICT_DELETED_AFTER: (GOAL_VERDICT_DISPUTED, False),
     GOAL_VERDICT_MOVED_AFTER: (GOAL_VERDICT_DISPUTED, False),
@@ -4920,22 +4928,27 @@ def _names_pr(named: Sequence[tuple[str, int]], repository: str, number: int) ->
     return any(n == number and r in ("", repository) for r, n in named)
 
 
-def _names_job(text: str, name: str) -> bool:
-    """Whether a reason names this CI job: its whole name, bounded as a token.
+def _job_spans(text: str, name: str) -> list[tuple[int, int]]:
+    """Where a reason names this CI job: each occurrence of its whole name, bounded as a token.
 
     A name that is one plain word ("build", "lint") is also an ordinary word of a reason, so only a
-    quoted or backticked one names a job. A joined name ("server-unittest", "unit / python 3.12")
-    is not an ordinary word, and stands unquoted.
+    quoted or backticked occurrence names a job. A joined name ("server-unittest", "unit / python
+    3.12") is not an ordinary word, and stands unquoted.
     """
     if not name:
-        return False
+        return []
     plain = re.fullmatch(r"\w+", name) is not None
     pattern = rf"(?<![\w-]){re.escape(name)}(?![\w-])"
+    spans: list[tuple[int, int]] = []
     for found in re.finditer(pattern, text, re.IGNORECASE):
         before, after = text[: found.start()][-1:], text[found.end() :][:1]
         if not plain or (before in _JOB_QUOTES and after in _JOB_QUOTES):
-            return True
-    return False
+            spans.append(found.span())
+    return spans
+
+
+def _names_job(text: str, name: str) -> bool:
+    return bool(_job_spans(text, name))
 
 
 _JOB_QUOTES = frozenset({"`", "'", '"', "\u2018", "\u2019", "\u201c", "\u201d"})
@@ -4955,7 +4968,10 @@ _JOB_HEDGE = re.compile(
     r"\b(?:will|would|might|may|could|going\s+to|until|once|yet|if|when)\b"
     r"|\b(?:not|never|no\s+longer)\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
     r"|\wn['\u2019]t\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
-    r"|\bfail\w*\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)",
+    r"|\bfail\w*\s+(?:\w+\s+){0,2}(?:pass\w*|green|succe\w*)"
+    # A doubt, a requirement or a question about a result is no report of one.
+    r"|\bcannot\b|\bcan\s+not\b|\b(?:should|must|ought|supposed)\b"
+    r"|\b(?:needs?|has|have)\s+to\b|\bdoubt\w*\b|\bwhether\b|\bunsure\b",
     re.IGNORECASE,
 )
 
@@ -4965,10 +4981,15 @@ def _job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
 
     `failed` is the record's own result for the job: only then does a failure word count as a claim.
     """
-    if not _names_job(text, name):
+    spans = _job_spans(text, name)
+    if not spans:
         return False
     result_words = (_JOB_RESULT, _JOB_FAILURE) if failed else (_JOB_RESULT,)
-    marked = re.sub(rf"(?<![\w-]){re.escape(name)}(?![\w-])", _JOB_MARK, text, flags=re.IGNORECASE)
+    # Only an occurrence that names the job is marked: a plain word of the reason that happens to be
+    # the job's name ("the lint is clean") is not a claim about the job, whatever else is quoted.
+    marked = text
+    for start, end in reversed(spans):
+        marked = marked[:start] + _JOB_MARK + marked[end:]
     return any(
         _JOB_MARK in clause
         and any(words.search(clause) for words in result_words)
@@ -5221,9 +5242,10 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         return result(GOAL_VERDICT_FAILED, failed)
     if writes:
         return result(GOAL_VERDICT_WRITTEN, [write.id for write in writes])
-    green = [ci.id for ci in named_ci if ci.counts and ci.result == CI_RESULT_PASSED]
+    green = [ci for ci in named_ci if ci.counts and ci.result == CI_RESULT_PASSED]
     if green:
-        return result(GOAL_VERDICT_CI, green)
+        why = GOAL_VERDICT_CI_CAUTION if any(ci.caution for ci in green) else GOAL_VERDICT_CI
+        return result(why, [ci.id for ci in green])
     created = [
         pr.id
         for pr in recorded.prs

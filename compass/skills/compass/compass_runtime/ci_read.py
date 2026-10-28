@@ -79,6 +79,9 @@ ERROR_HOST: Final = "host-not-configured"
 # The harness records no folder for the session, so the pull request's head could never be matched
 # to the session's commit and nothing the read said could settle anything: nothing is launched.
 ERROR_NO_FOLDER: Final = "no-session-folder"
+# A folder is recorded but its commit cannot be read (the git probe is off, it is not a repository,
+# or git is missing): `head_matches` could never be true, so nothing is launched.
+ERROR_NO_COMMIT: Final = "no-session-commit"
 ERRORS: Final = (
     ERROR_MISSING,
     ERROR_SIGNED_OUT,
@@ -92,6 +95,7 @@ ERRORS: Final = (
     ERROR_GLAB_FAILED,
     ERROR_HOST,
     ERROR_NO_FOLDER,
+    ERROR_NO_COMMIT,
 )
 
 TIMEOUT_SEC: Final = 20.0
@@ -1326,6 +1330,7 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
                 "at": at,
                 "result": _RESULT[bucket],
                 "ci_counts": bool(counted),
+                "ci_caution": bool(record["caution"]),
                 "completed_at": row["completed_at"],
                 "ci_repository": record["repository"],
                 "ci_number": record["number"],

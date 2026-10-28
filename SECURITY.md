@@ -2485,7 +2485,9 @@ correction you review and copy, so read it before pasting it into an agent.
 The off switches are `--no-ci-read` and a switch on the page, stored as one marker file in
 Compass's state directory. The flag wins over the page. `--no-observer-model`, Pause model calls and
 the rolling cap refuse the press before anything starts, because the read runs inside the admitted
-job. `--no-git` also leaves the read without a session commit, so it settles nothing. The one line
+job. `--no-git`, a session folder that is not a repository and a missing `git` leave the read without a
+session commit, which could never match the pull request's head, so nothing is launched and the card says
+the commit could not be read. The one line
 naming the read is part of the notice a press shows, and a reader who turns the read off sees no such line.
 
 ### Session summary calls

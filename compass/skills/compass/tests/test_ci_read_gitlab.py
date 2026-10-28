@@ -24,7 +24,7 @@ from unittest import mock
 from compass_runtime import ci_read, http_api, project_context, reading, supervise
 
 from . import test_reading as base
-from .test_ci_read import SESSION_HEAD, ci_goal_row
+from .test_ci_read import ELSEWHERE_HEAD, SESSION_HEAD, ci_goal_row
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -744,11 +744,11 @@ class APressOnAnUnconfiguredHostStartsNothing(unittest.TestCase):
     def press(self, goal: str) -> dict[str, Any] | None:
         row = {"harness": "claude", "sid": "s1", "session_goal": {"text": goal, "at": 1.0}}
         entry = {"revisions": [{"n": 1, "goal": goal}]}
-        # A session folder the harness recorded, with no git behind it: the read is then allowed to
-        # launch, and the head the session was on is unknown.
+        # A session folder whose commit is readable but is not the pipeline's: the read is allowed
+        # to launch and settles nothing.
         with (
             mock.patch.object(project_context, "session_folder", return_value="/x"),
-            mock.patch.object(ci_read, "probe_session", return_value=None),
+            mock.patch.object(ci_read, "probe_session", return_value=ELSEWHERE_HEAD),
         ):
             return http_api._read_ci(
                 cast("Any", self.application),

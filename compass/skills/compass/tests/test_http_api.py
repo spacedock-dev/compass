@@ -2981,6 +2981,10 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
             self.assertEqual(good, json.loads(collect_json(24, False)))
 
 
+# A commit that is not the pull request's head, so a read launches and settles nothing.
+_FOLDER_IDENTITY = runtime_git_status.GitIdentity("b" * 40, "github.com", "acme/widgets")
+
+
 class ReadingRouteTest(unittest.TestCase):
     """POST /api/reading over a real socket, and what it refuses to spend.
 
@@ -3542,11 +3546,19 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertTrue(json.loads(body)["ok"])
 
     @contextlib.contextmanager
-    def _github(self, config: Any, state: Any, *, folder: str = "/recorded") -> Any:
+    def _github(
+        self,
+        config: Any,
+        state: Any,
+        *,
+        folder: str = "/recorded",
+        identity: Any = _FOLDER_IDENTITY,
+    ) -> Any:
         """The route over one session whose goal names a pull request, with a stub `gh`.
 
-        `folder` is the working directory the harness is taken to have recorded, with no git
-        behind it; empty is a harness that records none, which launches nothing.
+        `folder` is the working directory the harness is taken to have recorded; empty is a
+        harness that records none, which launches nothing. `identity` is what the folder's git
+        reads as, and None is a folder whose commit cannot be read, which launches nothing either.
 
         `gh` resolves to the stub and its calls land in the stub's log, so what the press
         started is read off a file and no real login or network is involved.
@@ -3568,7 +3580,7 @@ class ReadingRouteTest(unittest.TestCase):
                 return_value="/recorded/session.jsonl" if folder else "",
             ),
             mock.patch.object(runtime_project_context, "session_folder", return_value=folder),
-            mock.patch.object(runtime_ci_read, "probe_session", return_value=None),
+            mock.patch.object(runtime_ci_read, "probe_session", return_value=identity),
             mock.patch.dict(os.environ, {"CI_STUB_DIR": str(stub.folder)}),
             mock.patch.object(
                 annotation_store, "ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_PASSED
@@ -3592,8 +3604,19 @@ class ReadingRouteTest(unittest.TestCase):
         assert entry is not None
         stored = entry["assessment"]["ci"]
         self.assertEqual(("acme/widgets", 12), (stored["repository"], stored["number"]))
-        # The folder has no git behind it, so there is no commit to match and nothing settles.
+        # The session's commit is not the pull request's head, so nothing settles.
         self.assertFalse(stored["head_matches"])
+
+    def test_a_folder_whose_commit_cannot_be_read_starts_no_gh_and_says_why(self) -> None:
+        config, state = self._runtime()
+        with self._github(config, state, identity=None) as port:
+            status, _ = self._post(port, self._press())
+        self.assertEqual(202, status)
+        self.assertEqual([], self.stub.calls)
+        self.assertEqual(1, len(self.model_calls))
+        entry = annotation_store.find(annotation_store.load(config), "pi", "s1")
+        assert entry is not None
+        self.assertEqual(runtime_ci_read.ERROR_NO_COMMIT, entry["assessment"]["ci"]["error"])
 
     def test_a_session_with_no_recorded_folder_starts_no_gh_and_says_why(self) -> None:
         config, state = self._runtime()
