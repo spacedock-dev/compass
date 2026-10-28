@@ -929,30 +929,8 @@ def _press_content(harness: str) -> int:
     )
 
 
-def _scan_of(context: dict[str, Any], harness: str, sid: str) -> dict[str, Any]:
-    """The full-scan metadata for this session, beside its bounded fact ledger."""
-    work = (context.get("sources") or {}).get("work") or {}
-    scans = work.get("tool_reports") if isinstance(work, dict) else None
-    return next(
-        (
-            s
-            for s in (scans if isinstance(scans, list) else [])
-            if isinstance(s, dict) and s.get("harness") == harness and s.get("sid") == sid
-        ),
-        {},
-    )
-
-
-def _command_counts_of(context: dict[str, Any], harness: str, sid: str) -> dict[str, Any]:
-    """The other-command counts this session's full scan measured, or nothing.
-
-    A scan cut from the tail counted only the commands after the cut, so neither
-    count is a measurement of the session and both are left out.
-    """
-    scan = _scan_of(context, harness, sid)
-    if scan.get("reads_from") is not None:
-        return {}
-    return {k: scan[k] for k in ("other_commands", "read_only_commands") if k in scan}
+_scan_of = runtime_project_context.scan_of
+_command_counts_of = runtime_project_context.command_counts_of
 
 
 def _facts_of(context: dict[str, Any]) -> list[Any]:

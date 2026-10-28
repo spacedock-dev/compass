@@ -3522,6 +3522,29 @@ Four small changes to the masking and scrub, each closing a way a value or a fal
   as the count bound does: compile time follows total length, and 4,096 values of 1,000 characters took
   32 s and 2.4 GB to compile cold.
 
+### Amended 2026-10-28 (owner): the unasked lane withholds a mixed call's tail and says what a later pass superseded
+
+Five edges of the lane above, each a place its words or its payload said more or less than was true.
+
+- **A call that also held a pass sends no tail.** An output tail is keyed by the call and is the whole
+  call's output, so a failed check and a passing run in one shell call shared a tail. The lane now drops the
+  tail of any call that ever held a passing run, a check or another command, and sends the failed row's line and
+  exit status alone. A pressed reading is unchanged.
+- **A superseded failure is said so.** The cutoff's sentence "No failed check or command was recorded" was
+  false when a failure was recorded and a later whole-suite pass then superseded it. The lane counts those
+  rows and the cutoff says "A failed check was recorded and a later passing run superseded it" (or the count),
+  both where nothing else was sent and beside the failures that were.
+- **The rule about withheld passes needs a ledger that lists failures.** The sentence "Only failed checks and
+  commands are listed" now enters a prompt only when the lane admitted tool reports. On the Codex fallback no
+  report is listed, so it is left out.
+- **The lane records the same counts a pressed reading does.** It passes the other-command counts and the
+  record's tail coverage to the producer, so its reading no longer says the count was not recorded when the
+  scan measured it.
+- **The stored goal verdict can quote a check's output.** The lane's tool output carries `quotable`, the
+  press's own attribution of one check's tail to one call. The press already read it for the tails, so the lane
+  reads nothing more of the transcript, and it is searched and dropped like a pressed reading's. A goal
+  reason that quotes a recorded failure's output is `quoted-in-check` instead of `not-found`.
+
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
 Amended 2026-10-22: item 3's Expected outcome is folded into an accordion under the Goal, closed by default and labelled "Expected outcome (optional) · up to 6 lines". It opens by itself over saved lines, a drafted or pending line, and a departure citing a line, on each rise of that condition rather than whenever it holds, so a reader's close stands. `+ Add a line` moved inside it. The six-line and 240-character limits are unchanged.

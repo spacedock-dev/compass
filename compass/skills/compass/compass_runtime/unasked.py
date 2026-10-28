@@ -119,6 +119,8 @@ class Lane:
         produce: Callable[..., tuple[runtime_reading.Assessment | None, str, bool]] | None = None,
         facts_for: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
         press_for: Callable[..., runtime_project_context.PressChecks] | None = None,
+        command_counts_for: Callable[..., Mapping[str, Any]] | None = None,
+        record_coverage_for: Callable[..., Mapping[str, Any]] | None = None,
         spawn: Callable[[Callable[[], None]], None] = _spawn,
     ) -> None:
         self.config = config
@@ -136,6 +138,11 @@ class Lane:
         self.produce = produce or runtime_reading.produce
         self.facts_for = facts_for or self._facts
         self.press_for = press_for or runtime_project_context.press_checks
+        # The same two measurements a pressed reading carries, so the cutoff counts the other
+        # commands and the record's reach instead of saying neither was recorded.
+        self.command_counts_for = command_counts_for or self._command_counts
+        self.record_coverage_for = record_coverage_for or self._record_coverage
+        self._counts: dict[tuple[str, str], Mapping[str, Any]] = {}
         self.spawn = spawn
         self._call_lock = threading.Lock()
         self._group: supervise.Group | None = None
@@ -304,9 +311,21 @@ class Lane:
             focus=(str(row.get("harness")), str(row.get("sid"))),
             model_consent=False,
         )
+        # Kept from the collection the facts came from, so the counts cost no second scan.
+        key = (str(row.get("harness") or ""), str(row.get("sid") or ""))
+        self._counts[key] = runtime_project_context.command_counts_of(context, *key)
         semantic = context.get("semantic") if isinstance(context, dict) else None
         facts = semantic.get("facts", []) if isinstance(semantic, dict) else []
         return list(facts) if isinstance(facts, list) else []
+
+    def _command_counts(self, _state: RuntimeState, row: Mapping[str, Any]) -> Mapping[str, Any]:
+        key = (str(row.get("harness") or ""), str(row.get("sid") or ""))
+        return self._counts.pop(key, {})
+
+    def _record_coverage(self, state: RuntimeState, row: Mapping[str, Any]) -> Mapping[str, Any]:
+        return runtime_project_context.session_tail_coverage(
+            self.config, state, str(row.get("harness") or ""), str(row.get("sid") or "")
+        )
 
     def _run(
         self,
@@ -362,6 +381,8 @@ class Lane:
             entry["revisions"],
             self.facts_for(state, row, now),
             now=now,
+            command_counts_lookup=lambda: self.command_counts_for(state, row),
+            record_coverage_lookup=lambda: self.record_coverage_for(state, row),
             stamp_text=f"unasked check at {time.strftime('%H:%M', time.localtime(now))}",
             tool_output=self._failed_results(state, row, route),
             failures_only=True,
@@ -419,8 +440,10 @@ class Lane:
         """What the lane may carry of a session's checks, or nothing.
 
         The press reads every output tail, and `build_ledger` under `failed_only` lists only the
-        failed ones, so a passing check's tail is read here and goes no further. No grant is
-        asked for, as for a pressed reading, and the destination must be nameable.
+        failed ones, so a passing check's tail is read here and goes no further. A tail is the
+        whole call's output, so a call that also held a passing run sends its failed row's line
+        and exit status with no tail. No grant is asked for, as for a pressed reading, and the
+        destination must be nameable.
         """
         if not reading_route.unasked_sends_failures(route):
             return None
@@ -429,14 +452,21 @@ class Lane:
         return runtime_reading.ToolOutput(
             destination=route["destination"],
             label=route["label"],
-            tails=reading_route.tails_for(
-                route["provider"], harness, press.tails, press.tier3_calls
-            ),
+            tails={
+                call: tail
+                for call, tail in reading_route.tails_for(
+                    route["provider"], harness, press.tails, press.tier3_calls
+                ).items()
+                if call not in press.passing_calls
+            },
             changed_after=press.changed_after,
             read_incomplete=press.read_incomplete,
             removals=press.removals,
             masked_values=press.masked_values,
             masked_values_partial=press.masked_values_partial,
+            # Held by the press already, searched and dropped; the lane reads nothing more of the
+            # transcript for it.
+            quotable=press.quotable,
         )
 
     def _announce(

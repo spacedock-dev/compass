@@ -179,6 +179,9 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
         *,
         tails: dict[str, str] | None = None,
         partial: bool = False,
+        passing_calls: frozenset[str] = frozenset(),
+        counts: dict[str, int] | None = None,
+        coverage: dict[str, Any] | None = None,
     ) -> unasked.Lane:
         def model(prompt: str, **_kw: Any) -> tuple[str, str]:
             self.prompts.append(prompt)
@@ -196,6 +199,7 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
                 frozenset(),
                 masked_values=frozenset(),
                 masked_values_partial=partial,
+                passing_calls=passing_calls,
             )
 
         return unasked.Lane(
@@ -207,6 +211,8 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
             facts_for=lambda _state, _row, _now: facts,
             spawn=lambda work: work(),
             press_for=press,
+            command_counts_for=lambda _state, _row: counts or {},
+            record_coverage_for=lambda _state, _row: coverage or {},
         )
 
     def _consider(self, lane: unasked.Lane) -> None:
@@ -322,6 +328,91 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
         pressed, _ = reading.build_prompt(_ledger(facts), goal="add retry", max_bytes=20_000)
         self.assertNotIn(reading.FAILURES_ONLY_RULE, pressed)
 
+    def test_the_tail_of_a_call_that_also_held_a_pass_is_withheld_and_its_line_is_sent(
+        self,
+    ) -> None:
+        mixed = f"{PASS_TAIL}\n{TAIL}"
+        facts = [WORDS, _report("bad", "failed", 4_200.0)]
+        lane = self._lane(
+            facts,
+            {"goal": {"result": "unverifiable", "cites": []}},
+            tails={"call-bad": mixed},
+            passing_calls=frozenset({"call-bad"}),
+        )
+
+        self._consider(lane)
+
+        (prompt,) = self.prompts
+        self.assertIn("tests/bad.py", prompt)
+        self.assertNotIn(PASS_TAIL, prompt)
+        self.assertNotIn("AssertionError", prompt)
+
+    def test_the_tail_of_a_call_with_no_pass_is_still_sent(self) -> None:
+        facts = [WORDS, _report("bad", "failed", 4_200.0)]
+        lane = self._lane(
+            facts,
+            {"goal": {"result": "unverifiable", "cites": []}},
+            passing_calls=frozenset({"call-elsewhere"}),
+        )
+
+        self._consider(lane)
+
+        (prompt,) = self.prompts
+        self.assertIn("AssertionError", prompt)
+
+    def test_the_tally_names_every_call_that_held_a_pass(self) -> None:
+        from compass_runtime import project_context  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "t.jsonl"
+            lines = []
+            for call, command, result in (
+                ("c1", "python3 -m pytest tests/a.py", "3 passed in 0.1s"),
+                ("c2", "python3 -m pytest tests/b.py", "FAILED tests/b.py::t - x"),
+            ):
+                lines.append(
+                    {
+                        "type": "assistant",
+                        "timestamp": "2026-10-20T10:00:00Z",
+                        "message": {
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "id": call,
+                                    "name": "Bash",
+                                    "input": {"command": command},
+                                }
+                            ]
+                        },
+                    }
+                )
+                lines.append(
+                    {
+                        "type": "user",
+                        "timestamp": "2026-10-20T10:00:01Z",
+                        "message": {
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": call,
+                                    "is_error": call == "c2",
+                                    "content": result,
+                                }
+                            ]
+                        },
+                    }
+                )
+            path.write_text("\n".join(json.dumps(line) for line in lines) + "\n")
+            config = build_runtime_config(
+                environ={"HOME": root},
+                platform_name="linux",
+                os_name="posix",
+                launcher_path=Path(root) / "server.py",
+            )
+            press = project_context.claude_check_press(config, str(path))
+        self.assertIn("c1", press.passing_calls)
+        self.assertNotIn("c2", press.passing_calls)
+
     def test_a_destination_that_cannot_be_named_sends_no_check(self) -> None:
         facts = [WORDS, _report("bad", "failed", 4_200.0)]
         lane = self._lane(facts, {"goal": {"result": "unverifiable", "cites": []}})
@@ -367,12 +458,68 @@ class TheLaneIsHandedFailuresAndNothingElse(unittest.TestCase):
             self._consider(lane)
 
         self.assertIsNone(self.kwargs[0]["tool_output"])
+        for prompt in self.prompts:
+            self.assertNotIn(reading.FAILURES_ONLY_RULE, prompt)
+
+    def test_the_rule_is_added_where_the_lane_admitted_tool_reports(self) -> None:
+        facts = [WORDS, _report("bad", "failed", 4_200.0)]
+        lane = self._lane(facts, {"goal": {"result": "unverifiable", "cites": []}})
+        self._consider(lane)
+        self.assertIn(reading.FAILURES_ONLY_RULE, self.prompts[0])
+
+    def test_the_lane_hands_produce_both_lookups_and_the_reading_records_the_counts(self) -> None:
+        facts = [WORDS, _report("bad", "failed", 4_200.0)]
+        seen: list[Any] = []
+
+        def produce(config: Any, row: Any, revisions: Any, found: Any, **kwargs: Any) -> Any:
+            self.kwargs.append(kwargs)
+            result = reading.produce(
+                config,
+                row,
+                revisions,
+                found,
+                **{**kwargs, "model": lambda _p, **_k: ("{}", "ok"), "now": NOW},
+            )
+            seen.append(result[0])
+            return result
+
+        lane = self._lane(
+            facts,
+            {},
+            counts={"other_commands": 7, "read_only_commands": 4},
+            coverage={"tail_truncated": False, "tail_start": 3_900.0},
+        )
+        lane.produce = produce
+        self._consider(lane)
+
+        self.assertIsNotNone(self.kwargs[0]["command_counts_lookup"])
+        self.assertIsNotNone(self.kwargs[0]["record_coverage_lookup"])
+        coverage = seen[0]["coverage"]
+        self.assertEqual(7, coverage["other_commands"])
+        self.assertEqual(4, coverage["read_only_commands"])
+        self.assertIs(False, coverage["tail_truncated"])
+
+    def test_the_lane_carries_what_the_press_holds_to_find_a_quoted_output(self) -> None:
+        facts = [WORDS, _report("bad", "failed", 4_200.0)]
+        quotable = {("call-bad", "python3 -m pytest tests/bad.py"): TAIL}
+        lane = self._lane(facts, {"goal": {"result": "unverifiable", "cites": []}})
+        lane.press_for = lambda *_a: PressChecks({"call-bad": TAIL}, frozenset(), quotable=quotable)
+        self._consider(lane)
+        self.assertEqual(quotable, dict(self.kwargs[0]["tool_output"].quotable))
 
 
 class TheCutoffAndTheUnreadFlagSayWhatWasWithheld(unittest.TestCase):
     def _produce(self, facts: list[dict[str, Any]]) -> tuple[Any, ...]:
-        tail = {"call-bad": TAIL, "call-ok": PASS_TAIL}
-        ledger = _ledger(facts)
+        ledger, superseded = reading.failure_ledger(
+            facts,
+            "claude",
+            "s-1",
+            cap_chars=reading.LEDGER_SUMMARY_CAP_CHARS,
+            tool_output={},
+            changed_after=frozenset(),
+            read_incomplete=frozenset(),
+            read_agent_words=False,
+        )
         note = reading._unsent_checks_note(
             cast("Any", object()),
             facts,
@@ -381,10 +528,44 @@ class TheCutoffAndTheUnreadFlagSayWhatWasWithheld(unittest.TestCase):
             True,
             True,
             sent_failure=any(row["type"] == "tool_report" for row in ledger),
+            superseded=superseded,
         )
         unsent = reading._has_unsent_reports(facts, "claude", "s-1", ledger, True, True)
-        del tail
         return note, unsent
+
+    def test_a_failure_a_later_pass_superseded_is_said_so_and_not_called_unrecorded(self) -> None:
+        note, _ = self._produce(
+            [
+                WORDS,
+                _report("bad", "failed", 4_200.0),
+                _report("later", "passed", 4_300.0, summary="python3 -m pytest ."),
+            ]
+        )
+        self.assertIn("A failed check was recorded and a later passing run superseded it", note)
+        self.assertNotIn("No failed check or command was recorded", note)
+
+    def test_a_superseded_failure_beside_a_listed_one_is_counted_in_the_sent_sentence(self) -> None:
+        note, _ = self._produce(
+            [
+                WORDS,
+                _report("old", "failed", 4_100.0, summary="python3 -m pytest ."),
+                _report("later", "passed", 4_150.0, summary="python3 -m pytest ."),
+                _report("bad", "failed", 4_200.0, summary="python3 -m pytest tests/bad.py"),
+            ]
+        )
+        self.assertIn("Only the failed checks and commands", note)
+        self.assertIn("A failed check was recorded and a later passing run superseded it", note)
+
+    def test_two_superseded_failures_are_counted(self) -> None:
+        note, _ = self._produce(
+            [
+                WORDS,
+                _report("a", "failed", 4_100.0),
+                _report("b", "failed", 4_110.0, summary="python3 -m pytest tests/b.py"),
+                _report("later", "passed", 4_300.0, summary="python3 -m pytest ."),
+            ]
+        )
+        self.assertIn("2 failed checks were recorded and later passing runs superseded them", note)
 
     def test_a_failure_with_a_pass_leaves_the_pass_unsent(self) -> None:
         note, unsent = self._produce(

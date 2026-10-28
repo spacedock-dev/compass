@@ -2039,8 +2039,9 @@ route `reading_route.resolve` selects and discloses before the press. Tool outpu
 default for a named destination, and the non-blocking reading notice names it. No separate grant
 is required; `tool-output-consent-required` is no longer a refusal. Explicit off blocks the press
 and the reservation. The unasked lane receives the failed results of a Claude Code session's checks and
-commands and no other tool output
-([the amendment](docs/design-reading-a-session.md#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results)).
+commands and no other tool output, and no output tail from a shell call that also held a run that
+passed ([the amendment](docs/design-reading-a-session.md#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results),
+[the mixed-call rule](docs/design-reading-a-session.md#amended-2026-10-28-owner-the-unasked-lane-withholds-a-mixed-calls-tail-and-says-what-a-later-pass-superseded)).
 
 - The legacy `tool_output_permission` table remains keyed by provider and destination, so an older
   build can still read its explicit grants. Old word-only answers remain distinct from those
