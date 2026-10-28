@@ -237,7 +237,7 @@ unqualified. Codex needs permission for the current destination from "Allow Code
 checks" in the session's Drift card; Attention points to it when saved typed goals are waiting.
 Claude Code needs no separate grant. Revoking Codex permission, Pause model calls and
 `--no-observer-model` stop checks; Analyze and Resume never grant them. On a Claude Code session an unasked
-check also reads the checks and commands that failed, with their output, so a failing test run against your
+check also reads the checks and commands that failed, with their output (not a shell call that ran more than one thing: its line and exit status only), so a failing test run against your
 goal can raise a departure while you are away. A check that passed is never sent, because the lane does not
 reassure. It stops at a per-session
 and a per-day limit, and a spent limit is stated rather than passed over, because a session nobody

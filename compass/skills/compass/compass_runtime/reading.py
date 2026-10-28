@@ -1969,7 +1969,7 @@ def build_ledger(  # noqa: PLR0913 (each is one keyword its caller names)
     if not harness.strip() or not sid.strip():
         return ()
     if failed_only:
-        return _failures_not_since_passed(
+        return failure_ledger(
             list(facts),
             harness,
             sid,
@@ -1978,7 +1978,7 @@ def build_ledger(  # noqa: PLR0913 (each is one keyword its caller names)
             changed_after=changed_after,
             read_incomplete=read_incomplete,
             read_agent_words=read_agent_words,
-        )
+        )[0]
     rows: list[LedgerEntry] = []
     for fact in facts:
         if not _listed(
@@ -2039,8 +2039,8 @@ def build_ledger(  # noqa: PLR0913 (each is one keyword its caller names)
     return tuple(rows)
 
 
-def _failures_not_since_passed(
-    facts: list[Mapping[str, Any]],
+def failure_ledger(
+    facts: Sequence[Mapping[str, Any]],
     harness: str,
     sid: str,
     *,
@@ -2049,8 +2049,10 @@ def _failures_not_since_passed(
     changed_after: frozenset[tuple[str, str]],
     read_incomplete: frozenset[tuple[str, str]],
     read_agent_words: bool,
-) -> tuple[LedgerEntry, ...]:
-    """`build_ledger`'s `failed_only` list: failures no later whole-suite pass has superseded.
+) -> tuple[tuple[LedgerEntry, ...], int]:
+    """`build_ledger`'s `failed_only` list and how many failures a later pass left out of it.
+
+    The list holds the failures no later whole-suite pass has superseded.
 
     The staleness is decided over every row, passes included, and only then are the passes
     dropped, so the lane never shows a failure the session has since fixed and never sends the
@@ -2095,10 +2097,14 @@ def _failures_not_since_passed(
         family = check_family(_check_text(row))
         return bool(family) and (evidence_at(row) or row["at"]) < latest_pass.get(family, -math.inf)
 
-    return tuple(
-        row
-        for row in full
-        if row["type"] != TOOL_REPORT_TYPE or (row["id"] in failed and not stale(row))
+    superseded = sum(1 for row in full if row["id"] in failed and stale(row))
+    return (
+        tuple(
+            row
+            for row in full
+            if row["type"] != TOOL_REPORT_TYPE or (row["id"] in failed and not stale(row))
+        ),
+        superseded,
     )
 
 
@@ -5709,16 +5715,10 @@ def produce(  # noqa: PLR0913
     facts = [*facts, *ci_read.facts(ci, harness, sid)]
     tails = tool_output.tails if tool_output is not None and tool_output.destination else None
     admitted = tails is not None
-    ledger = build_ledger(
-        facts,
-        harness,
-        sid,
-        tool_output=tails,
-        changed_after=tool_output.changed_after if tool_output is not None else frozenset(),
-        read_incomplete=tool_output.read_incomplete if tool_output is not None else frozenset(),
-        read_agent_words=read_agent_words,
-        failed_only=failures_only,
+    ledger, superseded = _ledger_and_superseded(
+        facts, harness, sid, tails, tool_output, read_agent_words, failures_only
     )
+    uncut = ledger
     ledger, stopped, left_out, withheld = _ledger_to_read(ledger, row, scope, window_start(latest))
     if withheld:
         return None, withheld, False
@@ -5742,7 +5742,9 @@ def produce(  # noqa: PLR0913
         goal_fact=source[0] if source else "",
         scope=scope,
         final_lookup=final_source_lookup if read_agent_words else None,
-        failures_only=failures_only,
+        # The rule says the ledger lists failures only, which is true of a lane that admitted
+        # tool reports; on a route that sent none (Codex) no failed entry exists to qualify.
+        failures_only=failures_only and admitted,
     )
     if not selected.entries:
         return None, WITHHELD_LEDGER_EMPTY, False
@@ -5849,6 +5851,8 @@ def produce(  # noqa: PLR0913
         admitted,
         failures_only,
         sent_failure=any(row["type"] == TOOL_REPORT_TYPE for row in ledger),
+        superseded=superseded,
+        outside_window=_failures_left_out(uncut, ledger),
     )
     revision = latest.get("n")
     assessment: Assessment = {
@@ -6039,7 +6043,39 @@ def _failed_on_record(facts: Sequence[Any], harness: str, sid: str, window_start
     )
 
 
-def _unsent_checks_note(
+def _ledger_and_superseded(
+    facts: list[Mapping[str, Any]],
+    harness: str,
+    sid: str,
+    tails: Mapping[str, str] | None,
+    tool_output: ToolOutput | None,
+    read_agent_words: bool,
+    failures_only: bool,
+) -> tuple[tuple[LedgerEntry, ...], int]:
+    """`produce`'s ledger, and under `failures_only` how many failures a later pass left out."""
+    args: dict[str, Any] = {
+        "tool_output": tails,
+        "changed_after": tool_output.changed_after if tool_output is not None else frozenset(),
+        "read_incomplete": tool_output.read_incomplete if tool_output is not None else frozenset(),
+        "read_agent_words": read_agent_words,
+    }
+    if failures_only:
+        return failure_ledger(facts, harness, sid, cap_chars=LEDGER_SUMMARY_CAP_CHARS, **args)
+    return build_ledger(facts, harness, sid, **args), 0
+
+
+def _failures_left_out(uncut: Sequence[LedgerEntry], kept: Sequence[LedgerEntry]) -> int:
+    """How many failed checks the window or the stop cut from what the press read.
+
+    Counted over the ledger as `_ledger_and_superseded` made it, before `_ledger_to_read` cut it,
+    so a cutoff never says no failure was recorded about a failure the window merely did not
+    reach.
+    """
+    sent = {row["id"] for row in kept}
+    return sum(1 for row in uncut if row["type"] == TOOL_REPORT_TYPE and row["id"] not in sent)
+
+
+def _unsent_checks_note(  # noqa: PLR0913, PLR0917 - each argument is one fact of the sentence
     tool_output: ToolOutput | None,
     facts: Sequence[Any],
     harness: str,
@@ -6047,16 +6083,37 @@ def _unsent_checks_note(
     admitted: bool,
     failures_only: bool,
     sent_failure: bool = True,
+    superseded: int = 0,
+    outside_window: int = 0,
 ) -> str:
     """The cutoff's sentence about the checks a reading was not shown, or none."""
     if admitted and failures_only:
+        left_out = (
+            ""
+            if not superseded
+            else (
+                " A failed check was recorded and a later passing run superseded it."
+                if superseded == 1
+                else f" {superseded} failed checks were recorded and later passing runs"
+                " superseded them."
+            )
+        )
+        if outside_window:
+            left_out += (
+                " A failed check was recorded outside the window this check read."
+                if outside_window == 1
+                else f" {outside_window} failed checks were recorded outside the window this"
+                " check read."
+            )
         if not sent_failure:
+            if superseded or outside_window:
+                return left_out + " A check that passed is never sent."
             return (
                 " No failed check or command was recorded, and a check that passed is never sent."
             )
         return (
             " Only the failed checks and commands this session recorded were sent, so a check"
-            " that passed is not shown."
+            " that passed is not shown." + left_out
         )
     if tool_output is None or admitted or not _has_reports(facts, harness, sid):
         return ""

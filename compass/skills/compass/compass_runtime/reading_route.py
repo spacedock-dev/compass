@@ -809,7 +809,8 @@ def unasked_parts(route: Route) -> list[str]:
         parts.insert(
             1,
             "A check or command that failed goes too, with its masked line, its exit status and "
-            f"the last {TOOL_OUTPUT_TAIL_CHARS} characters of its output as printed. Nothing that "
-            "passed is sent.",
+            f"the last {TOOL_OUTPUT_TAIL_CHARS} characters of its output as printed, except from a "
+            "shell call that ran more than one thing, where only the line and exit status go. "
+            "Nothing that passed is sent.",
         )
     return [*parts, CAVEAT]

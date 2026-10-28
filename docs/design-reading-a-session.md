@@ -3363,7 +3363,7 @@ nothing.
 The figure counts foreground Bash calls that hold no check. Background launches, calls that did not balance or
 never ran, and a call that also runs a check are not in it, and a call that holds several commands counts once, so
 it is a count of calls and a floor. A reading from the unasked-check lane carries no counts, so the page says they
-were not recorded.
+were not recorded (the lane now carries them: [the 2026-10-28 amendment](#amended-2026-10-28-owner-the-unasked-lane-withholds-a-mixed-calls-tail-and-says-what-a-later-pass-superseded)).
 
 The stored `coverage` mapping gains `other_commands` and `read_only_commands`, both or neither, so a reading
 stored before this change keeps its five keys and still validates. The page says "How many other commands ran
@@ -3392,7 +3392,8 @@ for DEC-18's rubric thresholds. This is the build.
 - **Where it applies.** Claude Code reading a Claude Code session, with a destination Compass can name.
   No grant is asked for, as for a pressed reading. A Codex fallback keeps the words-only Allow it runs under,
   which does not cover tool output, so it sends none. The output tail follows the vendor rule
-  (`reading_route.tails_for`); on the one route that sends, the session's own vendor, that is every tail.
+  (`reading_route.tails_for`); on the one route that sends, the session's own vendor, that is every tail except a mixed call's, which
+  [a later amendment](#amended-2026-10-28-owner-the-unasked-lane-withholds-a-mixed-calls-tail-and-says-what-a-later-pass-superseded) withholds.
 - **What stays.** The caps (three per session, twelve per rolling day, a fifteen-minute floor), the rule that
   only a typed goal makes a session a candidate, and the lane's refusal to send the agent's messages or an
   outcome line.
@@ -3521,6 +3522,39 @@ Four small changes to the masking and scrub, each closing a way a value or a fal
   masked values only up to 131,072 characters in total, newest first, and marks itself partial past it
   as the count bound does: compile time follows total length, and 4,096 values of 1,000 characters took
   32 s and 2.4 GB to compile cold.
+
+### Amended 2026-10-28 (owner): the unasked lane withholds a mixed call's tail and says what a later pass superseded
+
+Five edges of the lane above, each a place its words or its payload said more or less than was true.
+
+- **A call that also held a pass sends no tail.** An output tail is keyed by the call and is the whole
+  call's output, so a failed check and a passing run in one shell call shared a tail. The lane now drops the
+  tail of a call that ever held a passing run, a check or another command, that held more than one run, or
+  whose output the scan does not attribute to the one failed check, and sends the failed row's line and
+  exit status alone. The last two cases matter because the one exit status of a chained call settles none of
+  its runs: `ruff check . && pytest` that failed records the lint run as not recorded, never as passed, yet
+  its tail holds the lint run's output. A pressed reading is unchanged.
+- **A superseded failure is said so.** The cutoff's sentence "No failed check or command was recorded" was
+  false when a failure was recorded and a later whole-suite pass then superseded it. The lane counts those
+  rows and the cutoff says "A failed check was recorded and a later passing run superseded it" (or the count),
+  both where nothing else was sent and beside the failures that were.
+- **The rule about withheld passes needs a ledger that lists failures.** The sentence "Only failed checks and
+  commands are listed" now enters a prompt only when the lane admitted tool reports. On the Codex fallback no
+  report is listed, so it is left out.
+- **The coverage reach is the facts' own.** The transcript's stamp is taken before the facts are collected,
+  and the tail coverage is compared against it, so a transcript that grew in between reports its reach as
+  unknown instead of a reach later than the facts and counts it sits beside.
+- **The lane records the same counts a pressed reading does.** It passes the other-command counts and the
+  record's tail coverage to the producer, so its reading no longer says the count was not recorded when the
+  scan measured it.
+- **The stored goal verdict can quote a check's output.** The lane's tool output carries `quotable`, the
+  press's own attribution of one check's tail to one call. The press already read it for the tails, so the lane
+  reads nothing more of the transcript, and it is searched and dropped like a pressed reading's. A goal
+  reason that quotes a recorded failure's output is `quoted-in-check` instead of `not-found`.
+- **A failure outside the window is said so.** The window and the last-turn stop cut the ledger before
+  the cutoff asked whether a failure was sent, so a failure after the stop read as "No failed check or
+  command was recorded". The lane counts the failed rows the cut dropped and the cutoff says "A failed
+  check was recorded outside the window this check read" (or the count).
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
