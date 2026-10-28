@@ -21,7 +21,15 @@ import unittest
 from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
-from compass_runtime import ci_read, git_status, http_api, levels, reading, supervise
+from compass_runtime import (
+    ci_read,
+    git_status,
+    http_api,
+    levels,
+    project_context,
+    reading,
+    supervise,
+)
 
 from . import test_reading as base
 from .test_goal_verdict import goal_row
@@ -817,10 +825,14 @@ class TheTranscriptRecordsAreScanned(unittest.TestCase):
         self.assertEqual(((), ()), ci_read.scan_records(cast("Any", self.config), path))
 
 
-class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(unittest.TestCase):
-    """A test that fails on any subprocess, at every site `ci_read` could launch from."""
+class _PressCase(unittest.TestCase):
+    """The config, application and hooks a press runs against, and a guard on every subprocess."""
 
     def setUp(self) -> None:
+        # The floor is the process's and the clock here never moves, so a read an earlier test made
+        # would answer this one without launching anything.
+        ci_read.FLOOR.clear()
+        self.addCleanup(ci_read.FLOOR.clear)
         self.stub = StubGh(self)
         self.state = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.state, True)
@@ -838,14 +850,7 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(unittest.TestCase):
         self.handler = types.SimpleNamespace(
             server=types.SimpleNamespace(application=self.application)
         )
-        self.hooks = types.SimpleNamespace(cancelled=lambda: False)
-
-    def read_ci(self, goal: str = GOAL_TEXT) -> dict[str, Any] | None:
-        row = {"harness": "claude", "sid": "s1", "session_goal": {"text": goal, "at": 1.0}}
-        entry = {"revisions": [{"n": 1, "goal": goal}]}
-        return http_api._read_ci(
-            cast("Any", self.application), row, cast("Any", entry), "", [], cast("Any", self.hooks)
-        )
+        self.hooks = types.SimpleNamespace(cancelled=lambda: False, ci_spawned=lambda _group: None)
 
     def boom(self) -> Any:
         return mock.patch.multiple(
@@ -853,6 +858,28 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(unittest.TestCase):
             Popen=mock.Mock(side_effect=AssertionError("a subprocess was started")),
             run=mock.Mock(side_effect=AssertionError("a subprocess was started")),
         )
+
+
+class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(_PressCase):
+    """A test that fails on any subprocess, at every site `ci_read` could launch from."""
+
+    def read_ci(self, goal: str = GOAL_TEXT) -> dict[str, Any] | None:
+        row = {"harness": "claude", "sid": "s1", "session_goal": {"text": goal, "at": 1.0}}
+        entry = {"revisions": [{"n": 1, "goal": goal}]}
+        # A session folder the harness recorded, with no git behind it: the read is then allowed to
+        # launch, and the head the session was on is unknown.
+        with (
+            mock.patch.object(project_context, "session_folder", return_value="/x"),
+            mock.patch.object(ci_read, "probe_session", return_value=None),
+        ):
+            return http_api._read_ci(
+                cast("Any", self.application),
+                row,
+                cast("Any", entry),
+                "t.jsonl",
+                [],
+                cast("Any", self.hooks),
+            )
 
     def test_no_binding_no_launch(self) -> None:
         with self.boom(), mock.patch.object(supervise, "run", side_effect=AssertionError("run")):
@@ -912,10 +939,6 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(unittest.TestCase):
             )
         self.assertEqual("", why)
         self.assertIsNotNone(assessment)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 def _real_git() -> str | None:
@@ -1031,7 +1054,7 @@ class ThePressTimeIdentityReadsTheFolder(unittest.TestCase):
         application = types.SimpleNamespace(config=config, state=state, clock=lambda: 1_000.0)
         row = {"harness": "claude", "sid": "s1", "session_goal": {"text": "tidy up", "at": 1.0}}
         entry = {"revisions": [{"n": 1, "goal": "tidy up"}]}
-        hooks = types.SimpleNamespace(cancelled=lambda: False)
+        hooks = types.SimpleNamespace(cancelled=lambda: False, ci_spawned=lambda _group: None)
         git_dir = str(pathlib.Path(cast("str", _real_git())).parent)
         environ = {
             "PATH": os.pathsep.join([str(stub.bin), git_dir]),
@@ -1158,3 +1181,285 @@ class ARecordedCiPollIsReadForWhatItNames(unittest.TestCase):
     def test_no_remote_or_a_foreign_one_binds_nothing(self) -> None:
         for remote in (("", ""), ("gitlab.example.net", REPO), ("github.com", "")):
             self.assertFalse(ci_read.poll_bound(self.poll("gh pr checks"), remote, [], [], []))
+
+
+class TheLaunchWaitsForTheDecisionToRead(base.AClaudeCodeReadingProducer):
+    """Item 2 of the follow-ups: a withheld press launches nothing, and a Cancel kills a call."""
+
+    def produce(self, ci: Any, **over: Any) -> tuple[Any, str, bool]:
+        options: dict[str, Any] = {
+            "now": 200.0,
+            "stamp_text": "read at 10:00",
+            "model": self._model(json.dumps({"line_1": {"result": "unverifiable", "cites": []}})),
+            "read_lines": True,
+            "read_agent_words": True,
+            "ci": ci,
+        }
+        options.update(over)
+        return reading.produce(
+            self.config,  # type: ignore[arg-type]
+            {"harness": "claude", "sid": "s1", "state": "working", "ended_at": None},
+            [{"n": 1, "at": 50.0, "goal": GOAL_TEXT, "lines": ["CI is green"]}],
+            [base.WORDS_FACT],
+            **options,
+        )
+
+    def test_a_withheld_press_never_calls_the_read(self) -> None:
+        calls: list[int] = []
+
+        def lazy() -> dict[str, Any]:
+            calls.append(1)
+            return record_with(*GREEN)
+
+        assessment, why, spent = self.produce(lazy, record_withheld=reading.WITHHELD_WINDOW_EMPTY)
+        self.assertIsNone(assessment)
+        self.assertEqual(reading.WITHHELD_WINDOW_EMPTY, why)
+        self.assertFalse(spent)
+        self.assertEqual([], calls)
+
+    def test_a_press_that_reads_calls_it_once_and_stores_what_it_returned(self) -> None:
+        calls: list[int] = []
+
+        def lazy() -> dict[str, Any]:
+            calls.append(1)
+            return record_with(*GREEN)
+
+        assessment, why, _ = self.produce(lazy)
+        self.assertEqual("", why)
+        self.assertEqual([1], calls)
+        self.assertEqual(record_with(*GREEN), cast("Any", assessment)["ci"])
+
+    def test_a_read_that_found_nothing_leaves_the_key_off(self) -> None:
+        assessment, _, _ = self.produce(lambda: None)
+        self.assertNotIn("ci", cast("Any", assessment))
+
+
+class ACancelKillsACallAlreadyInFlight(unittest.TestCase):
+    def setUp(self) -> None:
+        self.stub = StubGh(self)
+
+    def test_a_slow_gh_is_killed_when_the_group_is_cancelled(self) -> None:
+        self.stub.set(
+            view={"sleep": 30, "stdout": json.dumps({"headRefOid": SESSION_HEAD, "number": 12})}
+        )
+        seen: list[Any] = []
+        record: list[dict[str, Any]] = []
+
+        def spawned(group: Any) -> None:
+            seen.append(group)
+            threading.Timer(0.3, group.cancel).start()
+
+        started = time.monotonic()
+        worker = threading.Thread(
+            target=lambda: record.append(read(self.stub, on_spawn=spawned)), daemon=True
+        )
+        worker.start()
+        worker.join(15)
+        self.assertFalse(worker.is_alive(), "the call outlived its Cancel")
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual(1, len(seen))
+        self.assertTrue(record[0]["error"])
+
+    def test_the_job_hands_each_call_group_to_a_cancel_that_already_came(self) -> None:
+        from compass_runtime import reading_jobs  # noqa: PLC0415 - only this test needs it
+
+        job = reading.Job(
+            id="j1",
+            harness="claude",
+            sid="s1",
+            provider="claude",
+            label="Claude Code",
+            phase=reading.PHASE_PREPARING,
+            started_at=1.0,
+            phase_at=1.0,
+        )
+        hooks = reading_jobs.Hooks(cast("Any", types.SimpleNamespace()), job)
+        group = mock.Mock()
+        hooks.ci_spawned(group)
+        group.cancel.assert_not_called()
+        self.assertIs(group, job.group)
+        job.cancelled_at = 2.0
+        later = mock.Mock()
+        hooks.ci_spawned(later)
+        later.cancel.assert_called_once_with()
+
+
+class TheReadSaysWhatItLeftOut(unittest.TestCase):
+    def setUp(self) -> None:
+        self.stub = StubGh(self)
+
+    def test_non_required_checks_are_counted_not_listed(self) -> None:
+        self.stub.set(
+            checks=[
+                check("lint", "pass"),
+                check("nightly-soak", "fail"),
+                check("docs-preview", "pending"),
+            ],
+            required=[check("lint", "pass")],
+        )
+        record = read(self.stub)
+        self.assertTrue(record["required_only"])
+        self.assertEqual(2, record["not_counted"])
+        self.assertEqual(["lint"], [row["name"] for row in record["checks"]])
+        self.assertEqual(record, ci_read.validate(json.loads(json.dumps(record))))
+
+    def test_no_required_checks_leaves_nothing_out(self) -> None:
+        self.assertEqual(0, read(self.stub)["not_counted"])
+
+    def test_a_record_from_before_the_count_reads_as_none_left_out(self) -> None:
+        older = record_with(*GREEN, required=True)
+        older.pop("not_counted", None)
+        self.assertEqual(0, cast("Any", ci_read.validate(older))["not_counted"])
+
+    def test_a_count_with_no_required_set_is_refused(self) -> None:
+        self.assertIsNone(ci_read.validate({**record_with(*GREEN), "not_counted": 3}))
+        for bad in (-1, True, "2", 1_001):
+            with self.subTest(bad=bad):
+                self.assertIsNone(
+                    ci_read.validate({**record_with(*GREEN, required=True), "not_counted": bad})
+                )
+
+
+class NoGhIsLaunchedForASessionWithNoFolder(_PressCase):
+    def press(self, harness: str, transcript: str) -> dict[str, Any] | None:
+        row = {"harness": harness, "sid": "s1", "session_goal": {"text": GOAL_TEXT, "at": 1.0}}
+        entry = {"revisions": [{"n": 1, "goal": GOAL_TEXT}]}
+        return http_api._read_ci(
+            cast("Any", self.application),
+            row,
+            cast("Any", entry),
+            transcript,
+            [],
+            cast("Any", self.hooks),
+        )
+
+    def test_a_harness_that_records_no_folder_gets_a_reason_and_no_process(self) -> None:
+        for harness, transcript in (("gemini", "t.json"), ("claude", "")):
+            with (
+                self.subTest(harness=harness),
+                self.boom(),
+                mock.patch.object(supervise, "run", side_effect=AssertionError("run")),
+                mock.patch.dict(os.environ, self.stub.environ, clear=True),
+            ):
+                record = self.press(harness, transcript)
+            assert record is not None
+            self.assertEqual(ci_read.ERROR_NO_FOLDER, record["error"])
+            self.assertEqual(12, record["number"])
+            self.assertIsNotNone(ci_read.validate(record))
+            self.assertEqual([], self.stub.calls)
+            self.assertEqual([], ci_read.facts(record, harness, "s1"))
+
+    def test_no_binding_and_no_folder_says_nothing(self) -> None:
+        row = {"harness": "gemini", "sid": "s1", "session_goal": {"text": "tidy", "at": 1.0}}
+        entry = {"revisions": [{"n": 1, "goal": "tidy"}]}
+        with self.boom():
+            record = http_api._read_ci(
+                cast("Any", self.application),
+                row,
+                cast("Any", entry),
+                "t.json",
+                [],
+                cast("Any", self.hooks),
+            )
+        self.assertIsNone(record)
+
+
+class AnSshRemoteBindsAsGithub(unittest.TestCase):
+    LINKS: tuple[tuple[str, int], ...] = ((REPO, 7),)
+
+    def bind(self, host: str, links: Any = LINKS, pushes: Any = ()) -> Any:
+        return ci_read.bind([""], links, pushes, (host, REPO))
+
+    def test_the_ssh_over_443_host_is_github(self) -> None:
+        self.assertEqual(
+            ci_read.Binding(REPO, 7, ci_read.SOURCE_RECORD), self.bind("ssh.github.com")
+        )
+        self.assertEqual(
+            ("ssh.github.com", REPO),
+            git_status.parse_remote(f"ssh://git@ssh.github.com:443/{REPO}.git"),
+        )
+
+    def test_an_alias_binds_when_a_link_names_the_same_repository(self) -> None:
+        self.assertEqual(
+            ci_read.Binding(REPO, 7, ci_read.SOURCE_RECORD), self.bind("github.com-work")
+        )
+        self.assertEqual(
+            ("github.com-work", REPO), git_status.parse_remote(f"git@github.com-work:{REPO}.git")
+        )
+
+    def test_an_alias_binds_nothing_when_no_record_names_its_repository(self) -> None:
+        self.assertIsNone(self.bind("github.com-work", links=[("other-org/other", 7)]))
+        self.assertIsNone(self.bind("github.com-work", links=[]))
+
+    def test_an_alias_never_binds_a_push_alone(self) -> None:
+        self.assertIsNone(self.bind("github.com-work", links=[], pushes=["fix/widget-guard"]))
+
+    def test_a_host_that_only_looks_like_the_alias_binds_nothing(self) -> None:
+        for host in ("github.com.evil.example", "notgithub.com-work", "github.com-", "gitlab.com"):
+            with self.subTest(host=host):
+                self.assertIsNone(self.bind(host))
+
+    def test_the_goal_url_names_the_repository_for_a_recorded_poll(self) -> None:
+        poll = ci_read.parse_poll("pr_checks", ["gh", "pr", "checks", "3"], (), ("export",))
+        goal = [f"https://github.com/{REPO}/pull/3"]
+        remote = ("github.com-work", REPO)
+        self.assertTrue(ci_read.poll_bound(poll, remote, goal, [], []))
+        self.assertTrue(ci_read.poll_bound(poll, ("ssh.github.com", REPO), goal, [], []))
+        self.assertFalse(ci_read.poll_bound(poll, remote, [], [], []))
+        self.assertFalse(ci_read.poll_bound(poll, remote, ["no url"], [("other-org/o", 3)], []))
+
+
+class AReasonThatNamesOnlyCiJobsReachesTheCiFacts(base.AClaudeCodeReadingProducer):
+    def checked(self, reason: str, record: dict[str, Any] | None) -> dict[str, Any]:
+        assessment, why, _ = reading.produce(
+            self.config,  # type: ignore[arg-type]
+            ci_goal_row("Make CI green", reason),
+            [{"n": 1, "at": 50.0, "goal": "Make CI green", "lines": []}],
+            [base.WORDS_FACT],
+            now=200.0,
+            stamp_text="read at 10:00",
+            model=self._model(json.dumps({"goal": {"result": "consistent", "cites": [1]}})),
+            read_lines=True,
+            read_agent_words=True,
+            ci=record,
+        )
+        self.assertEqual("", why)
+        return cast("dict[str, Any]", cast("Any", assessment)["goal_verdict"])
+
+    def test_a_named_job_that_passed_on_the_bound_pull_request_agrees(self) -> None:
+        verdict = self.checked("The unit-tests job passed.", record_with(*GREEN))
+        self.assertEqual(reading.GOAL_VERDICT_AGREES, verdict["check"])
+        self.assertEqual(reading.GOAL_VERDICT_CI, verdict["why"])
+        # Only the job it named is cited, not its siblings.
+        self.assertEqual(["ci:12:1"], list(verdict["cites"]))
+
+    def test_a_named_job_that_failed_disputes_it(self) -> None:
+        record = record_with(check("lint", "pass"), check("e2e-suite", "fail"))
+        verdict = self.checked("Both lint and the e2e-suite job are green.", record)
+        self.assertEqual(reading.GOAL_VERDICT_DISPUTED, verdict["check"])
+
+    def test_the_press_read_none_so_nothing_reaches_the_facts(self) -> None:
+        verdict = self.checked("The unit-tests job passed.", None)
+        self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
+        self.assertEqual(reading.GOAL_VERDICT_NOTHING_CHECKABLE, verdict["why"])
+
+    def test_a_job_the_press_did_not_list_agrees_with_nothing(self) -> None:
+        verdict = self.checked("The deploy-staging job passed.", record_with(*GREEN))
+        self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
+
+    def test_a_head_that_moved_settles_nothing(self) -> None:
+        verdict = self.checked(
+            "The unit-tests job passed.", record_with(*GREEN, head_matches=False)
+        )
+        self.assertEqual(reading.GOAL_VERDICT_UNCONFIRMED, verdict["check"])
+
+    def test_a_one_word_job_name_must_be_quoted_to_be_named(self) -> None:
+        record = record_with(check("lint", "pass"), check("unit-tests", "pass"))
+        plain = self.checked("The lint run is clean and nothing else changed.", record)
+        self.assertNotEqual(reading.GOAL_VERDICT_CI, plain["why"])
+        quoted = self.checked("The `lint` job passed.", record)
+        self.assertEqual(reading.GOAL_VERDICT_CI, quoted["why"])
+
+
+if __name__ == "__main__":
+    unittest.main()

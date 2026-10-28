@@ -4603,6 +4603,8 @@ class RecordedCi:
     result: str
     counts: bool
     at: float
+    # The job's name as the press listed it, for a reason that names a job and no pull request.
+    name: str = ""
 
 
 class HeldOutput(NamedTuple):
@@ -4734,6 +4736,7 @@ def _recorded_ci(fact: Mapping[str, Any], harness: str, sid: str) -> RecordedCi 
             str(fact.get("result") or ""),
             fact.get("ci_counts") is True,
             stamp,
+            ci_read.check_name(fact),
         )
     return None
 
@@ -4915,6 +4918,27 @@ def _verdict_prs(reason: str) -> tuple[tuple[str, int], ...]:
 
 def _names_pr(named: Sequence[tuple[str, int]], repository: str, number: int) -> bool:
     return any(n == number and r in ("", repository) for r, n in named)
+
+
+def _names_job(text: str, name: str) -> bool:
+    """Whether a reason names this CI job: its whole name, bounded as a token.
+
+    A name that is one plain word ("build", "lint") is also an ordinary word of a reason, so only a
+    quoted or backticked one names a job. A joined name ("server-unittest", "unit / python 3.12")
+    is not an ordinary word, and stands unquoted.
+    """
+    if not name:
+        return False
+    plain = re.fullmatch(r"\w+", name) is not None
+    pattern = rf"(?<![\w-]){re.escape(name)}(?![\w-])"
+    for found in re.finditer(pattern, text, re.IGNORECASE):
+        before, after = text[: found.start()][-1:], text[found.end() :][:1]
+        if not plain or (before in _JOB_QUOTES and after in _JOB_QUOTES):
+            return True
+    return False
+
+
+_JOB_QUOTES = frozenset({"`", "'", '"', "\u2018", "\u2019", "\u201c", "\u201d"})
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:
@@ -5107,6 +5131,13 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
     basis = reason if reason.strip() else str(goal.get("text") or "")
     files, kinds = _verdict_files(basis), _verdict_check_kinds(basis)
     named_prs = _verdict_prs(basis)
+    # A reason that names no pull request but names jobs of the one the press read for this session
+    # (the facts hold CI only where that read bound one): the jobs it names stand for themselves.
+    named_jobs = (
+        frozenset(ci.id for ci in recorded.ci if _names_job(basis, ci.name))
+        if not named_prs
+        else frozenset()
+    )
     # The condition names files too ("the file docs/e2e/notes.md exists"), and a file it names that
     # the record shows taken away after the verdict contradicts the claim whatever the reason said.
     named = tuple(dict.fromkeys((*files, *_verdict_files(str(goal.get("text") or "")))))
@@ -5119,7 +5150,7 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
             "path": records.safe_text(taken.path, VERDICT_PATH_CAP_CHARS),
             "changed_at": taken.at,
         }
-    if not files and not kinds and not named_prs:
+    if not files and not kinds and not named_prs and not named_jobs:
         return unconfirmed(GOAL_VERDICT_NOTHING_CHECKABLE)
     writes = [
         write
@@ -5135,7 +5166,11 @@ def check_goal_verdict(  # noqa: C901, PLR0911 - one return per answer the recor
         if (evidence_at(entry) or entry["at"]) >= set_at
         and kinds & _check_kinds(_check_text(entry))
     ]
-    named_ci = [ci for ci in recorded.ci if _names_pr(named_prs, ci.repository, ci.number)]
+    named_ci = [
+        ci
+        for ci in recorded.ci
+        if _names_pr(named_prs, ci.repository, ci.number) or ci.id in named_jobs
+    ]
     failed = [
         entry["id"]
         for entry in checks
@@ -5673,7 +5708,7 @@ def produce(  # noqa: PLR0913
     settled_through: Any = None,
     open_call_lookup: Callable[[], float | None] | None = None,
     failures_only: bool = False,
-    ci: Mapping[str, Any] | None = None,
+    ci: Mapping[str, Any] | Callable[[], Mapping[str, Any] | None] | None = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -5718,9 +5753,11 @@ def produce(  # noqa: PLR0913
     also reads mid-flight, but nothing is running there, so an unanswered call is an
     interruption and no call in flight excuses a departure; only work recorded after the words can.
 
-    `ci` is the reading route's: the press's read of the bound pull request (`ci_read.read`).
-    Its checks join the facts as `ci_check` entries, listed whatever the tool-output grant says
-    because GitHub said them and no session did, and the record is stored on the assessment.
+    `ci` is the reading route's: the press's read of the bound pull request (`ci_read.read`), or a
+    callable that makes it, which runs only here, after every refusal above it, so a press that is
+    withheld launches nothing. Its checks join the facts as `ci_check` entries, listed whatever the
+    tool-output grant says because GitHub said them and no session did, and the record is stored on
+    the assessment.
 
     `on_phase` is a reading job's, told `PHASE_CHECKING` once a reply arrived
     and never otherwise, so a published phase is one that really happened.
@@ -5745,7 +5782,8 @@ def produce(  # noqa: PLR0913
         return None, record_withheld, False
     latest = revisions[-1]
     harness, sid = str(row.get("harness") or ""), str(row.get("sid") or "")
-    facts = [*facts, *ci_read.facts(ci, harness, sid)]
+    ci_record = ci() if callable(ci) else ci
+    facts = [*facts, *ci_read.facts(ci_record, harness, sid)]
     tails = tool_output.tails if tool_output is not None and tool_output.destination else None
     admitted = tails is not None
     ledger, superseded = _ledger_and_superseded(
@@ -5902,8 +5940,8 @@ def produce(  # noqa: PLR0913
         "criteria": criteria,
         "coverage": coverage,
     }
-    if ci is not None:
-        assessment["ci"] = dict(ci)
+    if ci_record is not None:
+        assessment["ci"] = dict(ci_record)
     if latest.get("goal_source") in PROMPT_SOURCES:
         assessment["goal_source"] = str(latest["goal_source"])
         assessment["goal_source_at"] = baseline_at(latest)

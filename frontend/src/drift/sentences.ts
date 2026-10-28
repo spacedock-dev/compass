@@ -227,6 +227,8 @@ export const CI_READ_ERRORS: Readonly<Record<string, string>> = {
   'glab-signed-out': 'glab is not signed in, so run glab auth login to let Compass read them',
   'glab-failed': 'glab failed',
   'host-not-configured': 'glab’s own configuration does not name that GitLab host',
+  'no-session-folder':
+    'this harness records no folder for the session, so the pull request’s commit could not be matched to it',
 };
 /* The three tokens both providers share, worded for GitLab. */
 const CI_READ_ERRORS_GITLAB: Readonly<Record<string, string>> = {
@@ -296,6 +298,9 @@ export const CI_HEAD_UNKNOWN =
   'Compass could not read this session’s commit, so they settle nothing.';
 export const CI_CAUTION = 'This session changed the CI configuration.';
 export const CI_REQUIRED_ONLY = 'Only the checks GitHub requires are counted.';
+/* How many checks that rule left out, so a failing one that is not required is not silently hidden. */
+export const ciNotCounted = (count: number): string =>
+  `${String(count)} non-required ${count === 1 ? 'check' : 'checks'} not counted.`;
 /* The switch beside the notice. `flag-off` is the run's own `--no-ci-read`, which the page cannot lift. */
 export const CI_SWITCH_ON =
   'Pull request checks are read from GitHub or GitLab with your gh or glab login when you press Analyze.';

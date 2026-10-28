@@ -3177,6 +3177,10 @@ shows done, inside the evidence window. Neither can carry a departure, since nei
 The owner also ruled that `git commit` and `git push` keep counting as commands that may change files. That rule
 is unchanged: a pull request created is a fact beside them and not a reason to read their text.
 
+A pull request's CI state is a third kind of fact beside these two, and it comes from neither the record nor
+shell text: Compass reads it from the provider when the reader presses Analyze, under
+[DEC-30](#dec-30-compass-may-read-a-pull-requests-ci-state-when-the-reader-presses-analyze).
+
 Found on a real session whose goal was to use a skill and create a pull request: the agent did both, Claude
 Code recorded its own goal as met with a reason naming the pull request, and the analysis said Can't tell,
 because neither the pull request nor the skill was anywhere in what a reading is sent.
@@ -8188,6 +8192,37 @@ as written, and these are the choices it left open.
   is disputed as it does for a pull request.
 - **The notice line and the switch name both providers.** `--no-ci-read` and the page's switch govern
   both, and the line under What is sent says GitHub or GitLab.
+
+### Amended 2026-10-28 (owner): the CI read follows the press, says what it left out, and reaches a correction
+
+These are the follow-ups the review of the `gh` read found. The ruling's items stand as written.
+
+- **The read waits for the decision to read.** `produce` is handed the read as a callable and runs it only
+  after every refusal that precedes the ledger, so a press that is withheld launches nothing. A Cancel kills a
+  `gh` or `glab` call already in flight, because each call's process group is handed to the job as the model's
+  CLI is, and the CLI takes the handle after it.
+- **A session with no recorded folder reads nothing.** Only Claude Code, Codex and Pi record the folder a
+  session ran in, and without it the pull request's head can never equal the session's commit, so no launch
+  could settle anything. The press stores a record whose error is `no-session-folder`, which the page words,
+  and starts no process. A press that binds no pull request still stores nothing.
+- **The checks left out are counted.** Where the provider names required checks, the record carries
+  `not_counted`, the number of other checks it did not weigh, and the card says "N non-required checks not
+  counted". Item 3 is unchanged: a failing check that is not required still counts for nothing. The key is
+  optional in a stored record, so a reading made before it was kept still reads, as none left out.
+- **An ssh remote binds as `github.com`.** `ssh.github.com` is `github.com`. A host of the form
+  `github.com-<suffix>` is an ssh alias, and resolving it with `ssh -G` would start a process, so it counts as
+  `github.com` only when the goal's URL or a `pr-link` record names the same owner and repository on
+  `github.com`. An alias never binds a pushed branch alone, because a branch names no host.
+- **A correction names a failing CI check.** A departure may cite a CI check, which is no entry of the
+  session's record and has no number on the page. The correction adds the stored reading's CI facts to the
+  record it reads, treats them as work, and writes `, where CI check "<name>" failed on the pull request` after
+  the line's time, in the budget a quoted message already has. The name is the closed-character-set name the
+  record keeps. A check cannot be a check that failed after the words, so a CI failure alone is still nothing
+  to steer from.
+- **A reason that names only CI jobs reaches the CI facts.** A goal verdict whose reason names no pull request
+  but names a job of the one the press read for this session (the whole name, bounded as a token, and quoted
+  when it is one plain word) is agreed or disputed by that job's result, on the same counting rules. Without a
+  read bound to this session there are no CI facts, and the reason stays as unconfirmed as before.
 
 ## DEC-31: the text of a command that is not a check may leave the machine, by vendor
 

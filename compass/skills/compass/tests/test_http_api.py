@@ -3542,8 +3542,11 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertTrue(json.loads(body)["ok"])
 
     @contextlib.contextmanager
-    def _github(self, config: Any, state: Any) -> Any:
+    def _github(self, config: Any, state: Any, *, folder: str = "/recorded") -> Any:
         """The route over one session whose goal names a pull request, with a stub `gh`.
+
+        `folder` is the working directory the harness is taken to have recorded, with no git
+        behind it; empty is a harness that records none, which launches nothing.
 
         `gh` resolves to the stub and its calls land in the stub's log, so what the press
         started is read off a file and no real login or network is involved.
@@ -3559,6 +3562,13 @@ class ReadingRouteTest(unittest.TestCase):
         which = lambda name, _env: str(stub.bin / "gh") if name == "gh" else None  # noqa: E731
         with (
             mock.patch.object(runtime_git_status, "executable", which),
+            mock.patch.object(
+                runtime_observer,
+                "resolve_transcript",
+                return_value="/recorded/session.jsonl" if folder else "",
+            ),
+            mock.patch.object(runtime_project_context, "session_folder", return_value=folder),
+            mock.patch.object(runtime_ci_read, "probe_session", return_value=None),
             mock.patch.dict(os.environ, {"CI_STUB_DIR": str(stub.folder)}),
             mock.patch.object(
                 annotation_store, "ABSTENTION_CHECK", annotation_store.ABSTENTION_CHECK_PASSED
@@ -3582,8 +3592,20 @@ class ReadingRouteTest(unittest.TestCase):
         assert entry is not None
         stored = entry["assessment"]["ci"]
         self.assertEqual(("acme/widgets", 12), (stored["repository"], stored["number"]))
-        # A Pi session records no folder, so there is no commit to match and nothing settles.
+        # The folder has no git behind it, so there is no commit to match and nothing settles.
         self.assertFalse(stored["head_matches"])
+
+    def test_a_session_with_no_recorded_folder_starts_no_gh_and_says_why(self) -> None:
+        config, state = self._runtime()
+        with self._github(config, state, folder="") as port:
+            status, _ = self._post(port, self._press())
+        self.assertEqual(202, status)
+        self.assertEqual([], self.stub.calls)
+        # The reading itself still goes ahead, without the checks.
+        self.assertEqual(1, len(self.model_calls))
+        entry = annotation_store.find(annotation_store.load(config), "pi", "s1")
+        assert entry is not None
+        self.assertEqual(runtime_ci_read.ERROR_NO_FOLDER, entry["assessment"]["ci"]["error"])
 
     def test_the_page_switch_turns_the_read_off_and_back_on(self) -> None:
         config, state = self._runtime()

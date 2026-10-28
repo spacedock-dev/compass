@@ -76,6 +76,9 @@ ERROR_GLAB_SIGNED_OUT: Final = "glab-signed-out"
 ERROR_GLAB_FAILED: Final = "glab-failed"
 # A goal URL named a GitLab host that glab's configuration does not hold: nothing is launched.
 ERROR_HOST: Final = "host-not-configured"
+# The harness records no folder for the session, so the pull request's head could never be matched
+# to the session's commit and nothing the read said could settle anything: nothing is launched.
+ERROR_NO_FOLDER: Final = "no-session-folder"
 ERRORS: Final = (
     ERROR_MISSING,
     ERROR_SIGNED_OUT,
@@ -88,6 +91,7 @@ ERRORS: Final = (
     ERROR_GLAB_SIGNED_OUT,
     ERROR_GLAB_FAILED,
     ERROR_HOST,
+    ERROR_NO_FOLDER,
 )
 
 TIMEOUT_SEC: Final = 20.0
@@ -144,6 +148,11 @@ _GITLAB_STATUS_BUCKET: Final = {
     "waiting_for_resource": BUCKET_PENDING,
     "waiting_for_callback": BUCKET_PENDING,
 }
+# An ssh alias for github.com (`Host github.com-work` in `~/.ssh/config`), which says nothing about
+# where it points until a pull request link names the same repository on github.com.
+_ALIAS_HOST_RE = re.compile(r"github\.com-[a-z0-9][a-z0-9._-]{0,62}")
+# GitHub's own ssh-over-443 host, which is github.com.
+_SSH_HOST: Final = "ssh.github.com"
 _NAME_CHARS = re.compile(r"[^A-Za-z0-9 ._/:()+#@,\[\]-]")
 _WORKFLOW_PATH = re.compile(r"(?:^|/)(?:\.github/workflows/[^/]+|\.gitlab-ci\.yml)$")
 # `GLAB_CONFIG_DIR` moves the configuration the hosts check reads, and `OAUTH_TOKEN` and
@@ -222,6 +231,25 @@ def pull_request_urls(text: str) -> tuple[tuple[str, int], ...]:
     return tuple(found)
 
 
+def github_remote(remote: tuple[str, str], named: Iterable[tuple[str, int]]) -> str:
+    """The `owner/repo` a folder's `origin` names on github.com, or an empty string.
+
+    `ssh.github.com` is github.com. A `github.com-<suffix>` host is an ssh alias, and reading
+    `ssh -G` to resolve it would start a process, so it counts as github.com only where a goal URL
+    or a `pr-link` record (`named`) names the same owner and repository on github.com: those are the
+    reader's own words and Claude Code's own record, and neither can be made by a remote's name.
+    """
+    host, repository = remote
+    if not _github_repository(repository):
+        return ""
+    if host in (HOST, _SSH_HOST):
+        return repository
+    folded = repository.lower()
+    if _ALIAS_HOST_RE.fullmatch(host) and any(linked.lower() == folded for linked, _ in named):
+        return repository
+    return ""
+
+
 def bind(
     goal_texts: Iterable[str],
     links: Sequence[tuple[str, int]],
@@ -244,8 +272,8 @@ def bind(
         return Binding(repository, number, SOURCE_GOAL)
     if named:
         return None
-    host, repository = remote
-    if host != HOST or not _github_repository(repository):
+    repository = github_remote(remote, links)
+    if not repository:
         return None
     for linked, number in links:
         if linked.lower() == repository.lower() and 0 < number <= _NUMBER_MAX:
@@ -434,20 +462,15 @@ def poll_bound(
     that is not a GitHub repository, binds nothing: a recorded run cannot be checked further
     without a network call.
     """
-    host, repository = remote
-    if not poll.valid or host != HOST or not _github_repository(repository):
+    goal_urls = [url for text in goal_texts for url in pull_request_urls(text)]
+    repository = github_remote(remote, (*goal_urls, *links))
+    if not poll.valid or not repository:
         return False
     folded = repository.lower()
     if poll.repository and poll.repository.lower() != folded:
         return False
     if poll.number:
-        named = {
-            number
-            for text in goal_texts
-            for linked, number in pull_request_urls(text)
-            if linked.lower() == folded
-        }
-        named.update(number for linked, number in links if linked.lower() == folded)
+        named = {number for linked, number in (*goal_urls, *links) if linked.lower() == folded}
         return poll.number in named
     if poll.branch:
         return poll.branch in pushes
@@ -692,6 +715,7 @@ def _run(
     environ: Mapping[str, str],
     *,
     glab: bool = False,
+    on_spawn: Callable[[Any], None] | None = None,
 ) -> Any:
     """One `gh` call: its JSON whatever the exit code, or a `_FailureError` with a closed token.
 
@@ -705,7 +729,8 @@ def _run(
     ):
         out_path = os.path.join(out_dir, "stdout")
         err_path = os.path.join(out_dir, "stderr")
-        options: dict[str, Any] = {}
+        # Handed the child's group, so a Cancel kills a call already in flight.
+        options: dict[str, Any] = {} if on_spawn is None else {"on_spawn": on_spawn}
         if runner is supervise.run:
             options["output_limits"] = (
                 (out_path, OUTPUT_LIMIT_BYTES),
@@ -864,6 +889,7 @@ def read(
     environ: Mapping[str, str] | None = None,
     runner: Callable[..., Any] = supervise.run,
     floor: Floor | None = None,
+    on_spawn: Callable[[Any], None] | None = None,
 ) -> dict[str, Any]:
     """One press's read of one pull request: the stored record, with `error` set when it failed.
 
@@ -875,7 +901,7 @@ def read(
     key = (binding.repository, binding.number, binding.branch, session_head, caution)
     if floor is not None and (kept := floor.get(key, now)) is not None:
         return kept
-    record = _read_once(binding, session_head, caution, now, environ, runner)
+    record = _read_once(binding, session_head, caution, now, environ, runner, on_spawn)
     if floor is not None and not record["error"]:
         floor.put(key, now, record)
     return record
@@ -888,29 +914,17 @@ def _read_once(
     now: float,
     environ: Mapping[str, str] | None,
     runner: Callable[..., Any],
+    on_spawn: Callable[[Any], None] | None = None,
 ) -> dict[str, Any]:
     """One uncached read: `read` without the floor."""
-    record: dict[str, Any] = {
-        "read_at": now,
-        "error": "",
-        "source": binding.source,
-        "repository": binding.repository,
-        "number": binding.number,
-        "head": "",
-        "session_head": session_head if _HEAD_RE.fullmatch(session_head) else "",
-        "head_matches": False,
-        "required_only": False,
-        "counts": dict.fromkeys(BUCKETS, 0),
-        "caution": caution,
-        "checks": [],
-    }
+    record = blank(binding, session_head, caution, now)
     if not valid_repository(binding.repository) or not (
         0 < binding.number <= _NUMBER_MAX
         or (binding.number == 0 and _usable_branch(binding.branch))
     ):
         return {**record, "error": ERROR_FAILED}
     if host_of(binding.repository) != HOST:
-        return _read_gitlab(binding, record, environ, runner)
+        return _read_gitlab(binding, record, environ, runner, on_spawn)
     env = environment(os.environ if environ is None else environ)
     binary = git_status.executable("gh", env)
     if binary is None:
@@ -924,8 +938,12 @@ def _read_once(
         "--json",
         "headRefOid,number",
     ]
+
+    def call(argv: Sequence[str]) -> Any:
+        return _run(runner, binary, argv, env, on_spawn=on_spawn)
+
     try:
-        head, number = _head(_run(runner, binary, viewing, env))
+        head, number = _head(call(viewing))
         listing = [
             "pr",
             "checks",
@@ -934,23 +952,24 @@ def _read_once(
             "--json",
             "name,state,bucket,completedAt",
         ]
-        rows = _parse_checks(_run(runner, binary, listing, env))
-        required = frozenset(
-            row["name"]
-            for row in _parse_checks(_run(runner, binary, [*listing, "--required"], env))
-        )
+        rows = _parse_checks(call(listing))
+        required = frozenset(row["name"] for row in _parse_checks(call([*listing, "--required"])))
         # The head again, by the number now: `gh pr checks` names no commit, so a push between the
         # first look and the listing would put the new commit's checks under the old head. A head
         # that moved is the one reported, and it matches nothing.
-        later, _ = _head(_run(runner, binary, [*viewing[:2], str(number), *viewing[3:]], env))
+        later, _ = _head(call([*viewing[:2], str(number), *viewing[3:]]))
     except _FailureError as failure:
         return {**record, "error": failure.token}
     moved = later != head
     head = later
     # Where GitHub names required checks they are the ones that count and the ones listed, and
-    # the counts are over that same set, so the page's sentence and the verdict read one thing.
+    # the counts are over that same set, so the page's sentence and the verdict read one thing. The
+    # checks left out are counted, so the page can say how many it did not weigh.
+    left_out = 0
     if required:
-        rows = [row for row in rows if row["name"] in required]
+        kept = [row for row in rows if row["name"] in required]
+        left_out = min(len(rows) - len(kept), MAX_COUNTED)
+        rows = kept
     return {
         **record,
         "number": number,
@@ -959,8 +978,28 @@ def _read_once(
         and bool(record["session_head"])
         and head == record["session_head"],
         "required_only": bool(required),
+        "not_counted": left_out,
         "counts": _counts(rows),
         "checks": _listed(rows),
+    }
+
+
+def blank(binding: Binding, session_head: str, caution: bool, now: float) -> dict[str, Any]:
+    """A record that read nothing: the shape every read starts from, and a refusal ends with."""
+    return {
+        "read_at": now,
+        "error": "",
+        "source": binding.source,
+        "repository": binding.repository,
+        "number": binding.number,
+        "head": "",
+        "session_head": session_head if _HEAD_RE.fullmatch(session_head) else "",
+        "head_matches": False,
+        "required_only": False,
+        "not_counted": 0,
+        "counts": dict.fromkeys(BUCKETS, 0),
+        "caution": caution,
+        "checks": [],
     }
 
 
@@ -1051,6 +1090,7 @@ def _read_gitlab(
     record: dict[str, Any],
     environ: Mapping[str, str] | None,
     runner: Callable[..., Any],
+    on_spawn: Callable[[Any], None] | None = None,
 ) -> dict[str, Any]:
     """One merge request's pipeline, through `glab api` on a host glab's own configuration names.
 
@@ -1070,7 +1110,7 @@ def _read_gitlab(
 
     def call(endpoint: str) -> Any:
         argv = ["api", endpoint, "--hostname", host, "--method", "GET"]
-        return _run(runner, binary, argv, env, glab=True)
+        return _run(runner, binary, argv, env, glab=True, on_spawn=on_spawn)
 
     merge_request = f"{project}/merge_requests/{binding.number}"
     try:
@@ -1105,6 +1145,13 @@ def _read_gitlab(
     }
 
 
+def refused(
+    binding: Binding, token: str, *, session_head: str, caution: bool, now: float
+) -> dict[str, Any]:
+    """The record of a read that was never started, saying why in a closed token."""
+    return {**blank(binding, session_head, caution, now), "error": token}
+
+
 # --- the stored shape ---------------------------------------------------------------------------
 
 RECORD_KEYS: Final = (
@@ -1117,10 +1164,13 @@ RECORD_KEYS: Final = (
     "session_head",
     "head_matches",
     "required_only",
+    "not_counted",
     "counts",
     "caution",
     "checks",
 )
+# A record stored before the count of checks left out was kept has no such key, and reads as none.
+_OPTIONAL_KEYS: Final = frozenset({"not_counted"})
 _CHECK_KEYS = ("name", "bucket", "completed_at")
 
 
@@ -1142,8 +1192,11 @@ def validate(value: Any) -> dict[str, Any] | None:
     Closed tokens and plain values only: the page maps each token to a sentence it owns, so a
     sidecar rewritten to say something else refuses the reading whole.
     """
-    if not isinstance(value, dict) or set(value) != set(RECORD_KEYS):
+    if not isinstance(value, dict) or set(RECORD_KEYS) - set(value) - _OPTIONAL_KEYS:
         return None
+    if set(value) - set(RECORD_KEYS):
+        return None
+    value = {"not_counted": 0, **value}
     counts, checks = value["counts"], value["checks"]
     if (
         not _stamp(value["read_at"])
@@ -1159,6 +1212,8 @@ def validate(value: Any) -> dict[str, Any] | None:
             for key in ("head", "session_head")
         )
         or any(type(value[key]) is not bool for key in ("head_matches", "required_only", "caution"))
+        or not _count(value["not_counted"])
+        or (value["not_counted"] and not value["required_only"])
         or not isinstance(counts, dict)
         or set(counts) != set(BUCKETS)
         or not all(_count(counts[bucket]) for bucket in BUCKETS)
@@ -1280,6 +1335,22 @@ def facts(record: Mapping[str, Any] | None, harness: str, sid: str) -> list[dict
             }
         )
     return out
+
+
+def check_name(fact: Mapping[str, Any]) -> str:
+    """The check's name from a `ci_check` fact, which `facts` writes as the quoted first word.
+
+    Read back through the same JSON quoting and then the closed character set again, so a fact
+    that was not made by `facts` gives an empty string and never a name.
+    """
+    summary = fact.get("summary")
+    if not isinstance(summary, str) or not summary.startswith('"'):
+        return ""
+    try:
+        name, _ = json.JSONDecoder().raw_decode(summary)
+    except ValueError:
+        return ""
+    return clean_name(name) if isinstance(name, str) and name == clean_name(name) else ""
 
 
 def probe_session(

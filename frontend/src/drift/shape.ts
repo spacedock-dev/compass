@@ -689,6 +689,8 @@ export interface CiRead {
   readonly session_head: string;
   readonly head_matches: boolean;
   readonly required_only: boolean;
+  /* How many checks the required-only rule left out. Absent on a record stored before it was kept. */
+  readonly not_counted?: number;
   readonly counts: Readonly<Record<string, number>>;
   readonly caution: boolean;
   readonly checks: readonly {
@@ -698,6 +700,8 @@ export interface CiRead {
   }[];
 }
 
+/* Keys a stored record may lack: `not_counted` arrived after the first records were stored. */
+const CI_OPTIONAL_KEYS = ['not_counted'];
 const CI_KEYS = [
   'read_at',
   'error',
@@ -708,6 +712,7 @@ const CI_KEYS = [
   'session_head',
   'head_matches',
   'required_only',
+  'not_counted',
   'counts',
   'caution',
   'checks',
@@ -715,8 +720,11 @@ const CI_KEYS = [
 const CI_HEAD = /^(?:[0-9a-f]{40})?$/;
 
 export function readingCi(raw: unknown): CiRead | null {
-  if (!isRecord(raw) || Object.keys(raw).length !== CI_KEYS.length) return null;
-  if (CI_KEYS.some((key) => !Object.hasOwn(raw, key))) return null;
+  if (!isRecord(raw)) return null;
+  if (Object.keys(raw).some((key) => !CI_KEYS.includes(key))) return null;
+  if (CI_KEYS.some((key) => !Object.hasOwn(raw, key) && !CI_OPTIONAL_KEYS.includes(key))) {
+    return null;
+  }
   const counts = raw['counts'];
   const checks = raw['checks'];
   const at = raw['read_at'];
@@ -735,6 +743,10 @@ export function readingCi(raw: unknown): CiRead | null {
     !CI_HEAD.test(raw['session_head']) ||
     typeof raw['head_matches'] !== 'boolean' ||
     typeof raw['required_only'] !== 'boolean' ||
+    (Object.hasOwn(raw, 'not_counted') &&
+      (!Number.isInteger(raw['not_counted']) ||
+        (raw['not_counted'] as number) < 0 ||
+        ((raw['not_counted'] as number) > 0 && raw['required_only'] !== true))) ||
     typeof raw['caution'] !== 'boolean' ||
     !isRecord(counts) ||
     Object.keys(counts).length !== CI_BUCKETS.length ||

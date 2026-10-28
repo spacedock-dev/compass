@@ -169,6 +169,65 @@ export const AMissingExplanationKeepsTheLine: Story = {
   },
 };
 
+/* A departure that cites a failing check the press read from CI. The check has no number on the page, so the
+   server's text names it and its result where a message's words would stand (`correction._quote`). */
+const CI_RECORD = {
+  read_at: 1000,
+  error: '',
+  source: 'goal',
+  repository: 'acme/widgets',
+  number: 12,
+  head: 'a'.repeat(40),
+  session_head: 'a'.repeat(40),
+  head_matches: true,
+  required_only: false,
+  not_counted: 0,
+  counts: { pass: 1, fail: 1, pending: 0, skipping: 0, cancel: 0 },
+  caution: false,
+  checks: [
+    { name: 'server-unittest', bucket: 'fail', completed_at: 990 },
+    { name: 'lint', bucket: 'pass', completed_at: 980 },
+  ],
+};
+
+export const ADepartureOnAFailingCiCheckNamesIt: Story = {
+  ...scenario({
+    session: {
+      annotation_line_1: 'Tests pass',
+      annotation_assessment: {
+        ...DEPARTURE_READING,
+        ci: CI_RECORD,
+        criteria: {
+          goal: departs(['c1'], GOAL_WHY, 'Ship the queue'),
+          line_1: departs(['ci:12:0'], LINE_WHY, 'Tests pass'),
+        },
+      },
+      annotation_reading_count: 1,
+    },
+    facts: [PERSON, FAILED, PASSED],
+    correction: {
+      ok: true,
+      parts: [
+        'Back to my goal: Ship the queue\nA check failed at 00:08',
+        { entry: 'c1' },
+        '.\nWhere it stands against what I expect:\n- Tests pass: departed at 00:16',
+        { entry: 'ci:12:0' },
+        `, where CI check "server-unittest" failed on the pull request${WHY}${LINE_WHY}\nPlease continue from here.`,
+      ],
+    },
+  }),
+  play: async ({ canvasElement }) => {
+    const box = await openBox(canvasElement);
+    const lines = linesOf(box);
+    const line = lines.findIndex((text) => text.startsWith('- Tests pass: departed'));
+    await expect(lines[line]).toBe(
+      '- Tests pass: departed at 00:16, where CI check "server-unittest" failed on the pull request',
+    );
+    await expect(lines[line + 1]).toBe(`  ${CORRECTION_WHY_LABEL}${LINE_WHY}`);
+    await noOpeningLine(box);
+  },
+};
+
 /* The stored detail tries to open a slash command, a heading, a fence, a tag and a file mention; the server
    neutralises it (`correction.explanation`), so the box holds one inert line under its label. */
 const INJECTED =

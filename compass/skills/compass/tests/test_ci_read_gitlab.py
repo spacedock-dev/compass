@@ -21,7 +21,7 @@ import unittest
 from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
-from compass_runtime import ci_read, http_api, reading, supervise
+from compass_runtime import ci_read, http_api, project_context, reading, supervise
 
 from . import test_reading as base
 from .test_ci_read import SESSION_HEAD, ci_goal_row
@@ -739,14 +739,25 @@ class APressOnAnUnconfiguredHostStartsNothing(unittest.TestCase):
         self.application = types.SimpleNamespace(
             config=self.config, state=object(), clock=lambda: 1_000.0
         )
-        self.hooks = types.SimpleNamespace(cancelled=lambda: False)
+        self.hooks = types.SimpleNamespace(cancelled=lambda: False, ci_spawned=lambda _group: None)
 
     def press(self, goal: str) -> dict[str, Any] | None:
         row = {"harness": "claude", "sid": "s1", "session_goal": {"text": goal, "at": 1.0}}
         entry = {"revisions": [{"n": 1, "goal": goal}]}
-        return http_api._read_ci(
-            cast("Any", self.application), row, cast("Any", entry), "", [], cast("Any", self.hooks)
-        )
+        # A session folder the harness recorded, with no git behind it: the read is then allowed to
+        # launch, and the head the session was on is unknown.
+        with (
+            mock.patch.object(project_context, "session_folder", return_value="/x"),
+            mock.patch.object(ci_read, "probe_session", return_value=None),
+        ):
+            return http_api._read_ci(
+                cast("Any", self.application),
+                row,
+                cast("Any", entry),
+                "t.jsonl",
+                [],
+                cast("Any", self.hooks),
+            )
 
     def test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing(self) -> None:
         goal = f"Make the pipeline pass: https://not-configured.example.org/{PROJECT}/-/merge_requests/12"

@@ -125,7 +125,8 @@
     "glab-missing",
     "glab-signed-out",
     "glab-failed",
-    "host-not-configured"
+    "host-not-configured",
+    "no-session-folder"
   ],
   "ciSources": [
     "goal",
