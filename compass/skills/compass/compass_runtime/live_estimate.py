@@ -38,6 +38,7 @@ from . import project_context as pc
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
+    from . import git_status
     from .config import RuntimeConfig
 
 HARNESSES = frozenset({"claude"})
@@ -150,6 +151,7 @@ def for_session(
     *,
     floor: float | None,
     now: float,
+    remotes: git_status.StampCache | None = None,
 ) -> dict[str, Any]:
     """The live level for one session now, and where it last rose from.
 
@@ -195,6 +197,7 @@ def for_session(
                 None,
                 force_incomplete=True,
                 goal_texts=goal_texts,
+                remotes=remotes,
             )
             return {**answer, **uncertain.found}
         with _cache_lock:
@@ -212,7 +215,14 @@ def for_session(
             continue
         try:
             replayed = _replay(
-                config, transcript_path, sid, intent, unsettled, previous, goal_texts=goal_texts
+                config,
+                transcript_path,
+                sid,
+                intent,
+                unsettled,
+                previous,
+                goal_texts=goal_texts,
+                remotes=remotes,
             )
             after = _live_signature(config, transcript_path)
             if after != signature:
@@ -226,6 +236,7 @@ def for_session(
                     None,
                     force_incomplete=True,
                     goal_texts=goal_texts,
+                    remotes=remotes,
                 )
                 return {**answer, **uncertain.found}
             replayed.published = {**answer, **replayed.found}
@@ -531,7 +542,7 @@ def _replay_seed(
     return _new_tally(scan, results, force_incomplete=force_incomplete), 0, [], False
 
 
-def _replay(
+def _replay(  # noqa: PLR0913
     config: RuntimeConfig,
     transcript_path: str,
     sid: str,
@@ -541,9 +552,12 @@ def _replay(
     *,
     force_incomplete: bool = False,
     goal_texts: Sequence[str] = (),
+    remotes: git_status.StampCache | None = None,
 ) -> _Replayed:
     """The level now and where it rose, over the last `LIVE_REPLAY_STEPS` moving calls."""
-    scan = pc._live_check_scan(config, transcript_path, goal_texts=goal_texts)  # noqa: SLF001
+    scan = pc._live_check_scan(  # noqa: SLF001
+        config, transcript_path, goal_texts=goal_texts, remotes=remotes
+    )
     cwd = scan.session_dir
     results = pc._merged_check_results(scan.parent, scan.children)  # noqa: SLF001
     context = (

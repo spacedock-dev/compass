@@ -285,10 +285,11 @@ Anything that weakens either invariant is a security bug: a bind reaching an add
 not ask for, a request admitted that the bind's own Host gate should have refused, file reads outside
 the documented store paths and the project-read contract below (however the path was derived),
 writes to harness stores, running any program inside a user's repository other than the probe
-described in Repository git reads (the end-of-session probe) and the two identity
-commands described in Pull request CI reads (at an Analyze press, and where a recorded CI poll needs binding), running a program to reach a session's
-terminal other than the focus command described in Reaching a session's terminal (the focus
-command), or the hook client reaching a non-loopback destination. Those three exceptions are a
+described in Repository git reads (the end-of-session probe) and the two identity commands
+described in Pull request CI reads (at an Analyze press, and where a recorded CI poll needs
+binding), running a program to reach a session's terminal other than the focus command described
+in Reaching a session's terminal (the focus command), or the hook client reaching a
+non-loopback destination. Those three exceptions are a
 whitelist of three scoped clauses and not a general permission to execute: written generally the
 sentence would make documented security bugs of three paths Compass already ships, the native
 notifier's `osascript`, `--daemon`'s respawn of the server, and the quota fetcher's Keychain read.
@@ -1908,8 +1909,10 @@ folder the session began in, and, where it names a pull request or a branch, one
 your goal's URL, a recorded pull request link or created pull request, or a pushed branch of that repository.
 A poll that names a repository (`--repo`, `-R`, a `GH_REPO=` prefix, or a URL) is held to the session
 folder's `origin` wherever the call ran. One that names none counts only when the call ran in the session
-folder or a checkout of the same remote, so a `cd` into another clone does not count, and a directory the
-shell decides (a variable, a command substitution, a conditional `cd`) binds nothing. A poll set up by
+folder or a checkout of the same remote, so a `cd` into another clone does not count (`command cd` and
+`builtin cd` move the directory as `cd` does), and a directory the shell decides (a variable, a command
+substitution, a conditional `cd`, or an `eval` or a variable's value run earlier in the call) binds nothing.
+`gh pr checks --web` only opens a browser, so it reads nothing and is not published as a CI read. A poll set up by
 `GH_HOST`, `GH_ENTERPRISE_TOKEN` or an exported `GH_REPO` in the same call binds nothing; a variable
 exported in an earlier call is not seen. Any other poll, and every poll in a folder with no `origin` on
 `github.com` or when `--no-git` is set, is published as a plain command with its exit status and counts for
@@ -2451,7 +2454,9 @@ The launch keeps these bounds, each pinned by `test_ci_read`, and by `test_ci_re
   They run inside an admitted Analyze press, and also at collection and in the Live monitor's
   estimate when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding to the
   session's repository (see below). There they run only in the session folder and in a directory
-  such a poll ran in, and never at the end of a session.
+  such a poll ran in, and never at the end of a session. A folder's reading is kept in memory and
+  reused while the stat of its `.git/HEAD` and `.git/config` is unchanged, so a session that holds a
+  poll starts no git on a later collection or estimate; nothing is written to disk.
 - Compass keeps each check's name, bucket and completion time, the head commit and counts. A name is
   writable by whoever writes the workflows, so it takes a closed character set and a clip, and it
   reaches the model quoted. A description, a link or a log is never read.

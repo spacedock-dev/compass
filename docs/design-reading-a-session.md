@@ -7972,6 +7972,15 @@ tiers exist to refuse.
   `pr-link` or a created pull request is often recorded after the first poll and the entry cache never sees one
   arrive. The live estimate replays each call position, so a poll made before the record shows unbound there
   until the next replay, and the stored reading reads the full transcript.
+- **Edges closed 2026-10-28.** `gh pr checks --web` (or `-w`) only opens a browser and exits 0 whatever the
+  checks say, so it is not a CI read, as `gh run view` without `--exit-status` is not. `command cd` and
+  `builtin cd` run the builtin and move the directory like `cd`. A call that runs `eval` or a variable's value
+  before the poll leaves the poll's directory unplaced, as a `cd` to a variable does, so a poll that names no
+  repository binds nothing there; one that names the session's repository still counts. The folder's remote is
+  read once and kept in memory on the runtime state, keyed by the stat of the repository's `HEAD` and `config`
+  (a linked worktree's common directory included), so a collection or live replay that finds both unchanged
+  starts no git. A global git config that moves a remote is not seen until one of those two files moves,
+  which is accepted. The `earlier` words of a call are built once per call and not once per poll segment.
 - **What was rejected.** Dropping the unbound poll from the list: a reader looking at a session that polled
   something sees nothing, and "ran" is the honest word. Asking `gh` which pull request a branch or run belongs
   to: that is a network call at collection time.

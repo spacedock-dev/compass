@@ -529,7 +529,13 @@ def _lease_inputs(
     facts = _facts_of(_session_context(application, dict(row)))
     floor = annotation_store.direction_floor(entry, row)
     estimate = live_estimate.for_session(
-        config, row, transcript, facts, floor=floor, now=application.clock()
+        config,
+        row,
+        transcript,
+        facts,
+        floor=floor,
+        now=application.clock(),
+        remotes=application.state.ci_remotes,
     )
     words = " ".join(part for part in (saved.goal, *saved.lines) if part.strip())
     return live_lease.Inputs(transcript, facts, words if saved.saved else "", estimate)
@@ -623,7 +629,13 @@ def _with_levels(
     transcript = runtime_observer.resolve_transcript(config, application.state, harness, sid)
     if transcript:
         live = live_estimate.for_session(
-            config, row, transcript, _facts_of(context), floor=floor, now=application.clock()
+            config,
+            row,
+            transcript,
+            _facts_of(context),
+            floor=floor,
+            now=application.clock(),
+            remotes=application.state.ci_remotes,
         )
         work["live_levels"] = [live]
     return {**context, "sources": {**sources, "work": work}}

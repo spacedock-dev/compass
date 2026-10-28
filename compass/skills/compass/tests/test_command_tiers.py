@@ -20,6 +20,7 @@ from unittest import mock
 
 from compass_runtime import (
     ci_read,
+    git_status,
     http_api,
     levels,
     observer,
@@ -533,6 +534,20 @@ class ACiPollCountsOnlyWhenItReadsTheSessionsOwnPullRequest(ClaudeChecksTestCase
         self.assertEqual("ci_command", found["gh run view 5 --exit-status"]["subject"])
         self.assert_unbound(found["gh run view 6 --exit-status --repo other/old"])
 
+    def test_a_poll_that_only_opens_a_browser_reads_nothing(self) -> None:
+        self.goal_texts = ("Merge https://github.com/acme/widgets/pull/42 once it is green.",)
+        for command in (
+            "gh pr checks 42 --web",
+            "gh pr checks -w 42",
+            "gh pr checks 42 --web=true",
+        ):
+            self.session.bash(command, "Opening github.com in your browser.", is_error=False)
+        self.session.bash("gh pr checks 42", "Exit code 1\nbuild\tfail", is_error=True)
+        found = self.polls()
+        self.assertEqual(["gh pr checks 42"], list(found))
+        _entries, scan = self.read()
+        self.assertEqual((0, 1), (scan["ci_passed"], scan["ci_failed"]))
+
     def test_a_session_that_never_polled_runs_no_git(self) -> None:
         self.session.bash("make build", "done", is_error=False)
         with mock.patch.object(ci_read, "probe_session") as probe:
@@ -612,6 +627,42 @@ class ACiPollReadsTheSessionFoldersRepository(ClaudeChecksTestCase):
         self.session.bash('cd "$CHECKOUT" && gh pr checks 3 --repo acme/widgets', "ok")
         (poll,) = self.polls().values()
         self.assert_counts(poll)
+
+    def test_command_and_builtin_cd_move_the_directory_a_poll_runs_in(self) -> None:
+        for command in (
+            f"command cd {self.OTHER} && gh pr checks 3",
+            f"builtin cd {self.OTHER} && gh pr checks 4",
+            f"command -p cd {self.OTHER} && gh pr checks 5",
+        ):
+            self.session.bash(command, "all pass", is_error=False)
+        self.session.bash(f"command cd {self.TREE} && gh pr checks 6", "all pass")
+        found = self.polls()
+        self.assertEqual(4, len(found), list(found))
+        for title, poll in found.items():
+            with self.subTest(title=title):
+                if title == "gh pr checks 6":
+                    self.assert_counts(poll)
+                else:
+                    self.assert_unbound(poll)
+
+    def test_eval_or_a_variable_command_before_a_poll_leaves_its_directory_unplaced(self) -> None:
+        for command in (
+            'eval "$SETUP" && gh pr checks 3',
+            "$GOTO /srv/elsewhere; gh pr checks 4",
+            "X=1 $RUN && gh pr checks 5",
+            "command eval 'cd ../old'; gh pr checks 6",
+        ):
+            self.session.bash(command, "all pass", is_error=False)
+        found = {t: p for t, p in self.polls().items() if t.startswith("gh pr checks")}
+        self.assertEqual(4, len(found))
+        for poll in found.values():
+            self.assert_unbound(poll)
+
+    def test_an_eval_after_the_poll_does_not_unplace_it(self) -> None:
+        self.session.bash("gh pr checks 3 && eval true", "all pass", is_error=False)
+        found = {t: p for t, p in self.polls().items() if t.startswith("gh pr checks")}
+        self.assertEqual({"gh pr checks 3"}, set(found))
+        self.assert_counts(found["gh pr checks 3"])
 
     def test_an_environment_pointing_gh_elsewhere_binds_nothing(self) -> None:
         for command in (
@@ -733,6 +784,37 @@ class ACiPollInRealCheckouts(ClaudeChecksTestCase):
             },
             {title: poll["subject"] for title, poll in found.items()},
         )
+
+    def test_a_second_read_with_unchanged_git_files_starts_no_git(self) -> None:
+        remotes = git_status.StampCache()
+        self.session.bash(f"cd {self.tree} && gh pr checks 3", "all pass", is_error=False)
+        self.session.save(self.path)
+
+        def read() -> list[dict[str, Any]]:
+            return project_context.claude_tool_reports(
+                self.config,
+                str(self.path),
+                SHORT,
+                goal_texts=self.goal_texts,
+                remotes=remotes,
+            )[0]
+
+        with mock.patch.object(ci_read, "probe_session", wraps=ci_read.probe_session) as probe:
+            first = read()
+            started = probe.call_count
+            second = read()
+            self.assertEqual(started, probe.call_count)
+            self.assertEqual(first, second)
+            self.assertGreater(started, 0)
+            self.assertEqual(
+                {"ci_command"}, {e["subject"] for e in second if "gh pr" in e["title"]}
+            )
+            # The remote lives in the shared config, which a worktree reads from the common
+            # directory: changing it moves the stamp of the session folder and of the worktree.
+            self.git(self.cwd, "remote", "set-url", "origin", "https://github.com/other/old.git")
+            third = read()
+        self.assertGreater(probe.call_count, started)
+        self.assertEqual({"command"}, {e["subject"] for e in third if "gh pr" in e["title"]})
 
     def test_a_failed_poll_in_another_clone_blocks_no_level(self) -> None:
         self.session.write(str(self.cwd / "src" / "a.py"))
@@ -984,7 +1066,9 @@ class TheVendorRuleDecidesWhatOutputLeaves(ClaudeChecksTestCase):
         handler = SimpleNamespace(
             server=SimpleNamespace(
                 application=SimpleNamespace(
-                    config=self.config, state=SimpleNamespace(), clock=lambda: 1.0
+                    config=self.config,
+                    state=SimpleNamespace(ci_remotes=git_status.StampCache()),
+                    clock=lambda: 1.0,
                 )
             )
         )

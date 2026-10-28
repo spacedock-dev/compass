@@ -114,13 +114,13 @@ _PR_URL_RE = re.compile(
     r"/pull/(?P<number>[1-9][0-9]{0,7})(?![0-9])",
     re.IGNORECASE,
 )
-# A GitLab host: dotted labels ending in a name, so a bare IPv4 address, `localhost` and a port all
-# fail it. An IPv6 literal carries brackets and colons, which no label holds.
 _RUN_URL_RE = re.compile(
     r"https://github\.com/(?P<owner>[A-Za-z0-9-]{1,39})/(?P<repo>[A-Za-z0-9._-]{1,100})"
     r"/actions/runs/[1-9][0-9]{0,19}(?:/job/[1-9][0-9]{0,19})?",
     re.IGNORECASE,
 )
+# A GitLab host: dotted labels ending in a name, so a bare IPv4 address, `localhost` and a port all
+# fail it. An IPv6 literal carries brackets and colons, which no label holds.
 _HOST_RE = re.compile(
     r"(?=.{4,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?"
 )
@@ -1271,3 +1271,24 @@ def probe_session(
     if not config.git_probe_enabled or not folder:
         return None
     return git_status.identity(folder, timeout_sec=config.git_probe_timeout_sec, runner=runner)
+
+
+def folder_remote(
+    config: RuntimeConfig, folder: str, held: git_status.StampCache | None = None
+) -> tuple[str, str]:
+    """The folder's `origin` as a host and repository, two empty strings where nothing is read.
+
+    With `held` (the runtime's, so every collect and live replay of a session that polled CI
+    shares one reading) a folder whose `HEAD` and `config` stats have not moved starts no git
+    process. A folder with no stamp, and one whose probe read nothing, is read afresh each time.
+    """
+    stamp = git_status.remote_stamp(folder) if held is not None and folder else None
+    if held is not None and stamp is not None:
+        kept = held.get(folder, stamp)
+        if kept is not None:
+            return kept
+    found = probe_session(config, folder)
+    remote = (found.host, found.repository) if found else ("", "")
+    if held is not None and stamp is not None and found is not None:
+        held.put(folder, stamp, remote)
+    return remote

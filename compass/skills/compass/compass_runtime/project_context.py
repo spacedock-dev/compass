@@ -42,6 +42,7 @@ from . import state as runtime_state
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
+    from . import git_status
     from .config import RuntimeConfig
     from .state import RuntimeState
 
@@ -2331,6 +2332,30 @@ def _unwrap_rtk(words: list[str]) -> list[str]:
     return ["eslint", *words[2:]] if words[1:2] == ["lint"] else words[1:]
 
 
+def _cd_behind(words: list[str]) -> list[str] | None:
+    """The `cd` words behind `command` and `builtin`, which run the builtin all the same.
+
+    Left as wrapped words, `command cd /elsewhere` read as a program that moved nothing, and a CI
+    poll after it was bound to the directory it never ran in.
+    """
+    at = 0
+    while at < len(words) and words[at] in ("command", "builtin", "-p", "--"):
+        at += 1
+    return words[at:] if at and words[at : at + 1] == ["cd"] else None
+
+
+def _decides_the_command(words: list[str]) -> bool:
+    """Whether the segment's command is `eval` or a variable's value: text this reading cannot
+    see, which may have moved the shell anywhere."""
+    for word in words:
+        if _ASSIGNMENT_RE.match(word) or os.path.basename(word) in records.LAUNCH_WRAPPERS:
+            continue
+        if word == "-p":
+            continue
+        return os.path.basename(word) == "eval" or word.startswith(("$", "`"))
+    return False
+
+
 def _stripped(words: list[str]) -> tuple[list[str], bool]:
     """Item 3's stripping, and whether `rtk` wrapped the runner (owner, 2026-09-24)."""
     rtk = False
@@ -2360,7 +2385,7 @@ def _stripped(words: list[str]) -> tuple[list[str], bool]:
             words = words[1:] if words and _DURATION_RE.match(words[0]) else words
         else:
             break
-    return words, rtk
+    return _cd_behind(words) or words, rtk
 
 
 def _env_command(words: list[str]) -> list[str] | None:
@@ -4295,6 +4320,9 @@ def _ci_run_kind(words: list[str]) -> str:
     failed pipeline, as the CI rule for these reads says.
     """
     if words[:3] == ["gh", "pr", "checks"]:
+        # `--web` only opens a browser: it prints no check and exits 0 whatever the checks say.
+        if any(word in ("-w", "--web") or word.startswith("--web=") for word in words[3:]):
+            return ""
         return "pr_checks"
     if words[:3] == ["gh", "run", "view"] and "--exit-status" in words[3:]:
         return "run_view"
@@ -4705,6 +4733,32 @@ class _ShellCall:
             return None
         return _written_path(os.path.join(self.directories[at] or "/", target), cwd, session_dir)
 
+    def _raw_prefixes(self) -> tuple[list[str], list[int], int]:
+        """Every segment's raw words in order, where each segment's start falls in them, and the
+        first segment whose command is `eval` or a variable. Built once per call."""
+        cached = self.__dict__.get("_raw_prefix")
+        if cached is None:
+            raw: list[str] = []
+            starts: list[int] = []
+            first_decided = len(self.parts)
+            for at, part in enumerate(self.parts):
+                starts.append(len(raw))
+                if first_decided == len(self.parts) and _decides_the_command(list(part.raw)):
+                    first_decided = at
+                raw.extend(part.raw)
+            cached = self.__dict__["_raw_prefix"] = (raw, starts, first_decided)
+        return cached
+
+    def earlier_raw(self, index: int) -> list[str]:
+        """The raw words of the segments before this one."""
+        raw, starts, _first = self._raw_prefixes()
+        return raw[: starts[index]]
+
+    def directory_decided_before(self, index: int) -> bool:
+        """Whether an earlier segment runs `eval` or a variable's value, so no directory the call
+        names for this one can be relied on."""
+        return self._raw_prefixes()[2] < index
+
     def joiners(self) -> list[str]:
         cached = self.__dict__.get("_joiners")
         if cached is None:
@@ -4852,18 +4906,22 @@ class _CiBinding:
     """
 
     def __init__(
-        self, config: RuntimeConfig, transcript_path: str, goal_texts: Iterable[str] = ()
+        self,
+        config: RuntimeConfig,
+        transcript_path: str,
+        goal_texts: Iterable[str] = (),
+        remotes: git_status.StampCache | None = None,
     ) -> None:
         self._config = config
         self._transcript_path = transcript_path
+        self._shared = remotes
         self.goal_texts = tuple(text for text in goal_texts if text)
         self._remotes: dict[str, tuple[str, str]] = {}
         self._records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] | None = None
 
     def _remote(self, cwd: str) -> tuple[str, str]:
         if cwd not in self._remotes:
-            found = ci_read.probe_session(self._config, cwd)
-            self._remotes[cwd] = (found.host, found.repository) if found else ("", "")
+            self._remotes[cwd] = ci_read.folder_remote(self._config, cwd, self._shared)
         return self._remotes[cwd]
 
     def _same_checkout(self, cwd: str, session_dir: str, remote: tuple[str, str]) -> bool:
@@ -5420,7 +5478,7 @@ class _ToolReportTally:
                     ci,
                     words,
                     call.parts[index].raw,
-                    [word for part in call.parts[:index] for word in part.raw],
+                    call.earlier_raw(index),
                 )
                 if ci
                 else None
@@ -5467,7 +5525,9 @@ class _ToolReportTally:
                 "subject": CI_SUBJECT if ci else COMMAND_SUBJECT,
                 "ci_poll": poll,
                 # An unplaced directory binds nothing: a `cd` the shell decides could be anywhere.
-                "cwd": call.directories[index] if call.placed[index] else "",
+                "cwd": call.directories[index]
+                if call.placed[index] and not call.directory_decided_before(index)
+                else "",
                 "cannot_fail": masked,
                 "changes_later_in_call": any(
                     i > index
@@ -6051,6 +6111,7 @@ def claude_check_press(
     *,
     max_bytes: int | None = None,
     goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
 ) -> PressChecks:
     """The output tails, later-command flags and incomplete-read flags a press
     may carry, keyed by the call's record id and check line, and the record
@@ -6062,7 +6123,9 @@ def claude_check_press(
     output for ever holds it. The same scan and bounds as
     `claude_tool_reports`, so both belong to the run that fact lists.
     """
-    tally = _claude_tally(config, transcript_path, max_bytes=max_bytes, goal_texts=goal_texts)
+    tally = _claude_tally(
+        config, transcript_path, max_bytes=max_bytes, goal_texts=goal_texts, remotes=remotes
+    )
     return _press(tally)
 
 
@@ -6152,7 +6215,9 @@ def press_checks(
     )
     if not transcript_path:
         return PressChecks({}, frozenset())
-    return claude_check_press(config, transcript_path, goal_texts=goal_texts)
+    return claude_check_press(
+        config, transcript_path, goal_texts=goal_texts, remotes=state.ci_remotes
+    )
 
 
 # A subagent's own transcript sits under its parent's session directory, flat
@@ -6687,6 +6752,7 @@ def _live_check_scan(
     max_bytes: int | None = None,
     child_paths: Sequence[str] | None = None,
     goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
 ) -> _CheckScan:
     """Parent-first actual bytes; metadata sorts children without spending B."""
     budget = _scan_budget(config, max_bytes)
@@ -6744,7 +6810,7 @@ def _live_check_scan(
         tuple(source_reads),
         began_in,
         _declared_scripts(config, transcript_path, began_in, parent, children),
-        _CiBinding(config, transcript_path, goal_texts),
+        _CiBinding(config, transcript_path, goal_texts, remotes),
     )
 
 
@@ -6840,6 +6906,7 @@ def _claude_tally(
     max_bytes: int | None = None,
     child_paths: Sequence[str] | None = None,
     goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
 ) -> _ToolReportTally:
     scan = _live_check_scan(
         config,
@@ -6847,6 +6914,7 @@ def _claude_tally(
         max_bytes=max_bytes,
         child_paths=child_paths,
         goal_texts=goal_texts,
+        remotes=remotes,
     )
     return _tally_of(
         scan.parent,
@@ -7140,6 +7208,7 @@ def claude_tool_reports(
     window_start: float | _WindowNotRequested | None = _WINDOW_NOT_REQUESTED,
     index_provider: Callable[[], Any] | None = None,
     goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """The listed checks and written paths, and the full-scan counts behind them,
     a subagent's included and labelled.
@@ -7147,7 +7216,9 @@ def claude_tool_reports(
     Claude Code only, and published into the observed record only:
     [DEC-23](docs/design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)
     """
-    tally = _claude_tally(config, transcript_path, max_bytes=max_bytes, goal_texts=goal_texts)
+    tally = _claude_tally(
+        config, transcript_path, max_bytes=max_bytes, goal_texts=goal_texts, remotes=remotes
+    )
     # Asked for after the tally has read. A message written meanwhile is later than every entry the
     # tally read, so it cannot belong to the position of one of them.
     entries = tally.entries(sid, index_provider() if index_provider is not None else None)
@@ -8146,6 +8217,7 @@ def _session_work_evidence(
     events: list[dict[str, Any]],
     tool_report_scans: list[dict[str, Any]],
     index_provider: Callable[[], Any] | None = None,
+    remotes: git_status.StampCache | None = None,
 ) -> dict[str, int]:
     """Pi's demonstrated results and Claude Code's checks, appended for `collect`.
 
@@ -8164,6 +8236,7 @@ def _session_work_evidence(
             window_start=_assessment_window_start(session),
             index_provider=index_provider,
             goal_texts=goal_texts_of(session),
+            remotes=remotes,
         )
         events.extend(report_rows)
         tool_report_scans.append({**identity, **scan})
@@ -10847,6 +10920,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
             events,
             tool_report_scans,
             _index_provider(config, state, transcript_path, harness, sid) if is_focused else None,
+            state.ci_remotes,
         )
         backfill_rows, signature = _incremental_history_events(
             config, state, history_project, transcript_path, harness, sid, now=now
