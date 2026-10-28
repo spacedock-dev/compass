@@ -414,7 +414,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     # The browser proofs are no longer part of the gate (owner, 2026-10-12): the UI is verified by the
     # `storybook` job below. Their scripts stay in package.json and run on demand.
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -461,8 +461,9 @@ jobs:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: pnpm test:styles
       - name: Frontend behavioral unit tests
-        # Windows took 159 seconds against the old 180-second limit.
-        timeout-minutes: 6
+        # 6 minutes timed out on a suite whose every test had passed: the macOS runner took 5m16s on the
+        # commit before (2026-10-28). release.yml's copy of this step is held to the same limit.
+        timeout-minutes: 10
         run: pnpm test
       - name: Owned development lifecycle and isolation tests
         timeout-minutes: 3

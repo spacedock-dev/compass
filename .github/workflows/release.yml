@@ -201,7 +201,7 @@ jobs:
       # out on a suite that had passed (v1.1.0), so the two are held equal by
       # test_release_workflow.CiLimitsTest: raise one and the test says to raise the other.
       - name: Frontend behavioral unit tests
-        timeout-minutes: 6
+        timeout-minutes: 10
         run: pnpm test
       - name: Canonical rebuild and tracked artifact comparison
         timeout-minutes: 3
