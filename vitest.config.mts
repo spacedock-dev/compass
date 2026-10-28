@@ -45,8 +45,18 @@ export default defineConfig({
         },
       },
     ],
+    /* `pnpm test:coverage` enforces these locally and the quality gate's frontend coverage job enforces them on
+       every PR, where the `coverage-exception` label is the visible bypass, as it is for the Python threshold.
+       `include` names every shipped source, so a file no test imports counts as uncovered rather than absent.
+       Measured when the gate was added (2026-10-28): 92.8% statements, 86.6% branches, 94.1% functions and
+       94.5% lines. */
     coverage: {
-      exclude: ['frontend/stories/**', 'frontend/.storybook/**', 'frontend/storybook/**'],
+      provider: 'v8',
+      include: ['frontend/src/**/*.{ts,tsx}'],
+      exclude: ['frontend/src/**/*.test.{ts,tsx}', 'frontend/src/**/*.test.helper.{ts,tsx}'],
+      reporter: ['text', 'json-summary'],
+      reportsDirectory: 'coverage/frontend',
+      thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 },
     },
     // A hosted Windows runner took longer than the default five seconds on a generated-board test that
     // takes about one second here; a hang still ends, only later.

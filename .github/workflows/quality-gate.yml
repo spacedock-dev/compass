@@ -2,7 +2,7 @@ name: Quality Gate
 
 # Strict lint (ruff, all rules), formatting, mypy --strict, the frontend's own
 # checks (Biome, strict types, unit tests and the build; the UI is verified by Storybook),
-# and the full unittest suite under coverage with an enforced threshold. The
+# and both the Python and the frontend suites under coverage with enforced thresholds. The
 # final `quality-gate` job aggregates every result into the one status that
 # branch protection requires.
 #
@@ -474,6 +474,155 @@ jobs:
         timeout-minutes: 3
         run: pnpm build:preview
 
+  # The frontend's coverage threshold, held the way the Python one is in `test` above. The thresholds live in
+  # vitest.config.mts so `pnpm test:coverage` enforces the same gate locally, and a PR labeled
+  # `coverage-exception` may merge below them. Ubuntu only, as the Python coverage is; the macOS `frontend` job
+  # still runs the suite natively. The token here stays read-only, because this job runs the frontend's
+  # third-party test dependencies: the sticky comment is posted by `frontend-coverage-comment`, which runs none.
+  frontend-coverage:
+    name: Frontend tests + coverage threshold
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read # the coverage-exception label check, before any dependency is installed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # actions/setup-node@v7.0.0 — exact verified release commit.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .node-version
+          check-latest: false
+          package-manager-cache: false
+      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
+      # Keep Node authoritative above, and run the script-denied install explicitly.
+      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
+        with:
+          version: 12.9.1
+          install: false
+          node-version-file: false
+          cache: false
+      - name: Check coverage-exception label
+        id: exception
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          HAS=$(gh pr view "$PR" --repo "$REPO" \
+            --json labels --jq '[.labels[].name] | map(select(. == "coverage-exception")) | length')
+          echo "has_exception=${HAS:-0}" >> "$GITHUB_OUTPUT"
+          if [ "${HAS:-0}" != "0" ]; then
+            echo "::warning::coverage-exception label present — threshold will not block"
+          fi
+      - name: Verify effective builder versions
+        timeout-minutes: 1
+        run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"
+      - name: Frozen install with dependency scripts denied
+        timeout-minutes: 5
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      # Tests and the threshold in one run: Vitest checks the thresholds after the suite, and a failing test
+      # fails the step with or without the label.
+      - name: Frontend suite under coverage, and the threshold
+        timeout-minutes: 10
+        env:
+          EXCEPTION: ${{ steps.exception.outputs.has_exception || '0' }}
+        run: |
+          set -euo pipefail
+          if [ "$EXCEPTION" != "0" ]; then
+            echo "Threshold skipped (coverage-exception label)."
+            pnpm test:coverage --coverage.thresholds.statements=0 --coverage.thresholds.branches=0 \
+              --coverage.thresholds.functions=0 --coverage.thresholds.lines=0
+          else
+            pnpm test:coverage
+          fi
+      - name: Coverage summary
+        if: always()
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          SUMMARY=coverage/frontend/coverage-summary.json
+          if [ ! -f "$SUMMARY" ]; then
+            echo "No coverage summary was written."
+            exit 0
+          fi
+          node - "$SUMMARY" <<'JS'
+          const fs = require('node:fs');
+          const total = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).total;
+          const rows = ['statements', 'branches', 'functions', 'lines'].map(
+            (k) => `| ${k} | ${total[k].pct.toFixed(2)}% | ${total[k].covered} / ${total[k].total} |`,
+          );
+          const footer =
+            '_Thresholds: `coverage.thresholds` in vitest.config.mts · label `coverage-exception` to bypass ' +
+            '(visible in PR timeline)._';
+          const lines = ['<!-- frontend-coverage-marker -->', '### Frontend coverage', ''];
+          lines.push('| Metric | Covered | Count |', '|---|---|---|', ...rows, '', footer, '');
+          fs.writeFileSync('coverage/frontend/comment.md', lines.join('\n'));
+          JS
+          cat coverage/frontend/comment.md >> "$GITHUB_STEP_SUMMARY"
+          cat coverage/frontend/comment.md
+      - name: Upload frontend coverage artifact
+        if: always()
+        # actions/upload-artifact@v7 — pinned to immutable SHA.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frontend-coverage-${{ github.run_id }}
+          path: |
+            coverage/frontend/coverage-summary.json
+            coverage/frontend/comment.md
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Posts the summary `frontend-coverage` wrote. A separate job so the write token never shares a job with
+  # third-party package code; it checks out nothing and runs only the two pinned comment actions. Like the
+  # Python comment, it never gates: the threshold is enforced in `frontend-coverage`.
+  frontend-coverage-comment:
+    name: Frontend coverage comment
+    needs: frontend-coverage
+    if: >-
+      always() && needs.frontend-coverage.result != 'skipped' && github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # sticky coverage comment (same-repo PRs only)
+    steps:
+      - name: Fetch the coverage summary
+        id: fetch
+        continue-on-error: true
+        # actions/download-artifact@v8.0.1, the same pin as release.yml.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: frontend-coverage-${{ github.run_id }}
+          path: frontend-coverage
+      - name: Find existing frontend coverage comment
+        # hashFiles reads only the workspace, which is why the summary is fetched there.
+        if: steps.fetch.outcome == 'success' && hashFiles('frontend-coverage/comment.md') != ''
+        id: find-comment
+        continue-on-error: true
+        # peter-evans/find-comment@v4 — pinned to immutable SHA.
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "<!-- frontend-coverage-marker -->"
+      - name: Post frontend coverage comment
+        if: steps.find-comment.outcome == 'success'
+        continue-on-error: true
+        # peter-evans/create-or-update-comment@v5 — pinned to immutable SHA.
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          body-path: frontend-coverage/comment.md
+          edit-mode: replace
+
   # The shipped bundle is rebuilt from its sources and compared with the tracked file. Ubuntu only: the bundle is
   # platform-independent bytes, and a stale artifact has been caught here that a local build did not show. The
   # parity proofs that used to run against the bundle are retired from the gate (owner, 2026-10-12).
@@ -561,6 +710,7 @@ jobs:
       - test
       - platform-tests
       - frontend
+      - frontend-coverage
       - frontend-production
       - storybook
     if: always()
@@ -577,6 +727,7 @@ jobs:
           R_TEST: ${{ needs.test.result }}
           R_PLATFORM: ${{ needs.platform-tests.result }}
           R_FRONTEND: ${{ needs.frontend.result }}
+          R_FRONTEND_COVERAGE: ${{ needs.frontend-coverage.result }}
           R_FRONTEND_PRODUCTION: ${{ needs.frontend-production.result }}
           R_STORYBOOK: ${{ needs.storybook.result }}
         run: |
@@ -588,6 +739,7 @@ jobs:
           echo "test:           $R_TEST"
           echo "platform-tests: $R_PLATFORM"
           echo "frontend:       $R_FRONTEND"
+          echo "frontend-coverage: $R_FRONTEND_COVERAGE"
           echo "frontend-production: $R_FRONTEND_PRODUCTION"
           echo "storybook:      $R_STORYBOOK"
 
@@ -604,6 +756,7 @@ jobs:
           # upstream and GitHub cascaded it, which is a failure, not a pass.
           for pair in "lint:$R_LINT" "typecheck:$R_TYPECHECK" "runtime-floor:$R_FLOOR" \
                       "test:$R_TEST" "platform-tests:$R_PLATFORM" "frontend:$R_FRONTEND" \
+                      "frontend-coverage:$R_FRONTEND_COVERAGE" \
                       "frontend-production:$R_FRONTEND_PRODUCTION" "storybook:$R_STORYBOOK"; do
             job=${pair%%:*}
             res=${pair#*:}

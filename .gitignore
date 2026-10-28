@@ -59,6 +59,7 @@ tests/annotated_sessions/**/*.jsonl
 # Frontend dependency, build and browser-test artifacts (source stays tracked).
 node_modules/
 /.frontend-build/
+/coverage/
 /test-results/
 /playwright-report/
 /.pnpm-store/
