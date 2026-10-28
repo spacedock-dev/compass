@@ -1547,8 +1547,7 @@ records measure the full masked, folded length; a cropped prompt row labels its 
 length and that total. Neither count is inferred for a legacy record. These counts stay in memory
 and are stripped from page responses with the words. Amended 2026-10-28 by the owner: a press's bounds are the reader's, set on the Settings screen
 and stored in `compass-settings.json` (`settings`). The prompt bound is
-`settings.analyze_prompt_bytes`, 256 KiB by default, never under the 16 KiB it was and never over
-512 KiB; the messages and checks a press keeps are `settings.analyze_record_events`, 2,000 by default
+`settings.analyze_prompt_bytes`, 512 KiB by default and at most, never under the 16 KiB it was; the messages and checks a press keeps are `settings.analyze_record_events`, 2,000 by default
 and never under the project page's 100; and the checks and written files it lists are
 `settings.analyze_listed_checks`, 200 by default and never under the page's 12. Measured on an
 18-hour session, the old bounds kept 103 of 187 messages and sent each of the agent's messages as

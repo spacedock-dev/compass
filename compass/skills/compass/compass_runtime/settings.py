@@ -49,12 +49,12 @@ class Limit(NamedTuple):
 
 
 # The old constants are the floors, so no setting can make a press read less than it used to.
-# The prompt's ceiling is 512 KiB, about 130,000 tokens, which leaves a 200,000-token context room
-# for the instructions and the answer; a larger prompt would fail the press on such a model rather
-# than read more. The record's ceiling is well past the 187 messages and 385 entries the 18-hour
-# session measured above held.
+# The prompt's default is its ceiling, by the owner's choice (2026-10-28). The ceiling is 512 KiB,
+# about 130,000 tokens, which leaves a 200,000-token context room for the instructions and the
+# answer; a larger prompt would fail the press on such a model rather than read more. The record's
+# ceiling is well past the 187 messages and 385 entries the 18-hour session measured above held.
 LIMITS: Final = (
-    Limit("analyze_prompt_bytes", default=262_144, minimum=16_384, maximum=524_288),
+    Limit("analyze_prompt_bytes", default=524_288, minimum=16_384, maximum=524_288),
     Limit("analyze_record_events", default=2_000, minimum=100, maximum=20_000),
     Limit("analyze_listed_checks", default=200, minimum=12, maximum=2_000),
 )

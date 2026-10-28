@@ -541,7 +541,7 @@ An older reading says coverage was not recorded. A tail starting inside the inte
 every intent row "may be in the part not read"; claims stay independent. On Claude Code an Analyze
 press reads the session's messages back to the window start where it can, and says where it stopped
 when it cannot. How much a press keeps and sends is set on the page's Settings screen: the largest
-prompt (256 KB by default), how many of the session's messages and checks it keeps (2,000), and how
+prompt (512 KB by default), how many of the session's messages and checks it keeps (2,000), and how
 many checks and written files it lists (200). The project page keeps its own 100 events and 12
 checks. An idle Claude Code session whose last turn has no recorded finish is read up to
 its last recorded entry, and the result says so with that entry's time, never as a final verdict. General scope and the
