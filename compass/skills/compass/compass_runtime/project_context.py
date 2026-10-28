@@ -6143,7 +6143,7 @@ def _views_only(redirects: list[_Redirect], words: list[str]) -> bool:
     if _writes_a_file(redirects):
         return False
     program = words[0]
-    if program in _VIEWERS or words[:2] == ["git", "blame"]:
+    if program in _VIEWERS or " ".join(words[:2]) == "git blame":
         return True
     if program == "sed":
         # `-i` edits in place, a `w FILE` command writes one, and GNU `e` (a command, or the `e`

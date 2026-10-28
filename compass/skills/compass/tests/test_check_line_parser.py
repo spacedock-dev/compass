@@ -619,6 +619,10 @@ class EveryUnterminatedConstructIsACallThatDidNotRun(CheckLineTestCase):
                 self.assertEqual(1 - runs, scan["not_run"])
 
     def test_a_parser_fault_fails_closed_at_the_call(self) -> None:
+        # The call memo would answer these two texts from an earlier test and never reach the
+        # patched parser.
+        project_context._call_parts_memo.cache_clear()
+        self.addCleanup(project_context._call_parts_memo.cache_clear)
         self.session.bash("pytest", "5 passed", is_error=False)
         self.session.bash("pytest -q", "", is_error=False)
         with mock.patch.object(
