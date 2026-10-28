@@ -1,0 +1,14 @@
+{
+  "cases": 9,
+  "cases_digest": "4a09ef549037ea668f59492ea88a3a4dcbadbc93f61f8d44bbf87b139ccf0275",
+  "classes": [
+    "ci-after-workflow-edit",
+    "ci-other-commit",
+    "ci-other-target",
+    "command-cannot-fail",
+    "command-forced-zero"
+  ],
+  "marked": 9,
+  "marks_digest": "50d94aa838f3492cee087cbaf0960f834d05629605f31ad3920d0dfd4979ec5a",
+  "v": 1
+}
