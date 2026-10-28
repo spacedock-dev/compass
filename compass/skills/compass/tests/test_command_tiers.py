@@ -1314,6 +1314,13 @@ class TheEdgesOfTheCommandTiers(ClaudeChecksTestCase):
         for number in (14, 15, 16, 20, 21, 22, 23):
             self.assertEqual("not-recorded", got[f"gh pr checks {number}"])
 
+    def test_a_hostile_first_line_is_not_matched_against_the_error_shapes(self) -> None:
+        for line in ("a: " * 40_000, "a" * 100_000 + " gh auth login"):
+            started = time.monotonic()
+            self.assertFalse(project_context._gh_error_line(f"Exit code 1\n{line}"))
+            self.assertLess(time.monotonic() - started, 1.0)
+        self.assertTrue(project_context._gh_error_line("Exit code 1\ngh: Not Found (HTTP 404)"))
+
     def test_the_last_stage_of_a_pipe_after_work_speaks_for_itself(self) -> None:
         self.session.bash("make stage | ./release.sh", "done", is_error=False)
         self.session.bash("make stage2 | ./fail.sh", "boom", is_error=True)

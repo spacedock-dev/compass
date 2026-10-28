@@ -4361,6 +4361,9 @@ _NOT_A_CI_FAILURE = re.compile(
 )
 # gh's longest error is the login prompt, three lines; more than this is not one message.
 _GH_ERROR_MAX_LINES = 4
+# The shapes above backtrack on a long first line (a hundred thousand `a: ` took 23 s), and a gh
+# error line is a sentence, so a longer first line is not read as one.
+_GH_ERROR_LINE_MAX = 300
 _EXIT_CODE_RE = re.compile(r"\AExit code (\d+)\b")
 
 
@@ -4373,6 +4376,7 @@ def _gh_error_line(text: str) -> bool:
         bool(lines)
         and len(lines) <= _GH_ERROR_MAX_LINES
         and "\t" not in text
+        and len(lines[0]) <= _GH_ERROR_LINE_MAX
         and _NOT_A_CI_FAILURE.match(lines[0]) is not None
     )
 
