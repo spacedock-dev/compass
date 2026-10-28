@@ -2070,6 +2070,7 @@ MASKED_VALUES_MAX = 512
 _SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _PYTHON_RE = re.compile(r"^python(?:\d+(?:\.\d+)?)?$")
 _DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
 _REDIRECT_RE = re.compile(r"^(?:\d*>&\d+|&>.*|\d*>>?.+|<.+)$")
@@ -2102,7 +2103,8 @@ _SHELLS = frozenset({"bash", "sh", "zsh"})
 _SHELL_FLAGS_RE = re.compile(r"^-[eulc]+$")
 _SHELL_LONG_OPTIONS = frozenset({"--login", "--noprofile", "--norc"})
 _SHELL_WRAPPER_DEPTH = 2
-_WRAPPER_PAIRS = (["poetry", "run"], ["pipenv", "run"], ["pnpm", "exec"])
+# `time -p` is a pair: its `-p` is the POSIX format flag, not an argument of the timed command.
+_WRAPPER_PAIRS = (["poetry", "run"], ["pipenv", "run"], ["pnpm", "exec"], ["time", "-p"])
 _UV_VALUE_OPTIONS = frozenset(
     {"--with", "--with-requirements", "--python", "-p", "--project", "--directory", "--extra",
      "--group", "--package", "--env-file", "--index"}
@@ -2240,8 +2242,10 @@ _READ_ONLY_TRIPLES = frozenset(
 )
 # Words that write nothing: the loop and test keywords, and the commands a loop condition or a
 # polling loop's counter uses. `for`'s own header is `_for_header`.
+# An arithmetic command `((i++))` only sets a shell variable; a redirect on it is still read
+# as a write, and a substitution inside it is read on its own.
 _LOOP_WORDS = frozenset(
-    {"sleep", "seq", "true", "false", ":", "break", "continue", "test", "[", "[["}
+    {"sleep", "seq", "true", "false", ":", "break", "continue", "test", "[", "[[", _ARITHMETIC}
 )
 # At a command's start the shell reads these as syntax, not as a program: they are dropped so
 # the command after them is read as itself, as `then` always was. `!` negates the exit status,
@@ -2283,7 +2287,7 @@ def _skip_options(words: list[str], takes_value: frozenset[str]) -> list[str]:
 def _unwrap_rtk(words: list[str]) -> list[str]:
     """The words behind a leading `rtk`. `rtk lint` is rtk's own name for the eslint runner
     (`rtk rewrite 'eslint .'` prints `rtk lint .`); a bare `lint` stays no runner."""
-    if words[1:2] == ["proxy"]:
+    if words[1:2] in (["proxy"], ["bypass"]):
         return words[2:]
     return ["eslint", *words[2:]] if words[1:2] == ["lint"] else words[1:]
 
@@ -2295,9 +2299,10 @@ def _stripped(words: list[str]) -> tuple[list[str], bool]:
         if _ASSIGNMENT_RE.match(words[0]):
             words = words[1:]
         elif words[0] == "rtk":
-            # `rtk proxy` is unfiltered: the runner's own output and status pass
-            # through, so only another `rtk` form reads the flag alone.
-            proxied = words[1:2] == ["proxy"]
+            # `rtk proxy` and its 1.1.0 name `rtk bypass` are unfiltered: the runner's
+            # own output and status pass through, so only another `rtk` form reads the
+            # flag alone.
+            proxied = words[1:2] in (["proxy"], ["bypass"])
             words, rtk = _unwrap_rtk(words), rtk or not proxied
         elif words[:2] == ["uv", "run"]:
             words = _skip_options(words[2:], _UV_VALUE_OPTIONS)
@@ -2430,15 +2435,16 @@ class _ShellLexer:
         # word after a withheld brace word may be a named form's value.
         hide_next = False
         while self.pos < len(self.text):
-            if not words and self.text.startswith("((", self.pos):
-                # An arithmetic command: `<<` in it is a shift, not a heredoc.
+            if _before_loop_arithmetic(words) and self.text.startswith("((", self.pos):
+                # An arithmetic command, or the C-style `for ((init; test; step))` header,
+                # whose semicolons are not separators: `<<` in it is a shift, not a heredoc.
                 self.pos += 1
                 self._skip_group(arithmetic=True)
                 words.append(_ARITHMETIC)
                 continue
             if self._parenthesis(words, found) or self._skip_space() or self._pattern_alternative():
                 continue
-            joiner = self._joiner()
+            joiner = self._joiner() or self._do_after_header(words)
             if joiner is None:
                 redirect = self._redirection()
                 if redirect is None:
@@ -2459,6 +2465,14 @@ class _ShellLexer:
         if words or self.redirects or self.bodies or self.syntax:
             found.append(self._segment(words, ""))
         return found
+
+    def _do_after_header(self, words: list[str]) -> str | None:
+        """A `;` that was never typed: `for i do` and `for ((...)) do` need no separator, so
+        the `do` ends the header. It is left unread and then parses as the syntax word it is."""
+        if not _bare_for_header(words) or not self.text.startswith("do", self.pos):
+            return None
+        after = self._at(2)
+        return ";" if after == "" or after.isspace() or after == ";" else None
 
     def _add_word(self, words: list[str], *, hide_next: bool) -> bool:
         start = self.pos
@@ -3611,10 +3625,46 @@ def _reads_only(redirects: list[_Redirect], words: list[str]) -> bool:
     )
 
 
+# `time -p for ((…))` is the longest header that can precede a `do` without a separator.
+_LOOP_HEADER_WORDS = 4
+
+
+def _time_less(words: list[str]) -> list[str]:
+    """The words without a leading `time` or `time -p`, which time the loop and run nothing."""
+    if words[:2] == ["time", "-p"]:
+        return words[2:]
+    return words[1:] if words[:1] == ["time"] else words
+
+
+def _before_loop_arithmetic(words: list[str]) -> bool:
+    """Where a `((` starts an arithmetic command or a C-style `for` header."""
+    # The length guard keeps the lexer linear: this runs once per character on a long
+    # word list, and `_time_less` copies it.
+    return not words or (len(words) <= _LOOP_HEADER_WORDS and _time_less(words) == ["for"])
+
+
+def _bare_for_header(words: list[str]) -> bool:
+    """`for NAME` and `for ((…))` with no `in`: the forms whose `do` may follow without a `;`."""
+    if len(words) > _LOOP_HEADER_WORDS:
+        return False
+    header = _time_less(words)
+    return header[:1] == ["for"] and (
+        header[1:] == [_ARITHMETIC] or (len(header) == 2 and _NAME_RE.match(header[1]) is not None)
+    )
+
+
 def _for_header(words: list[str]) -> bool:
-    """`for NAME in WORDS`: it assigns a variable and runs nothing itself. A substitution in
-    the word list is read on its own, by `_body_facts`."""
-    return len(words) >= 3 and words[0] == "for" and words[2] == "in"
+    """`for NAME in WORDS`, bare `for NAME` and C-style `for ((…))`: each assigns a variable
+    and runs nothing itself. A substitution in the word list is read on its own, by
+    `_body_facts`."""
+    words = _time_less(words)
+    if words[:1] != ["for"]:
+        return False
+    if words[1:] == [_ARITHMETIC]:
+        return True
+    if len(words) == 2:
+        return _NAME_RE.match(words[1]) is not None
+    return len(words) >= 3 and words[2] == "in"
 
 
 def _gh_api_reads_only(args: list[str]) -> bool:

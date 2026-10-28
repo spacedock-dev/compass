@@ -3927,9 +3927,9 @@ _SUBCOMMAND_RUNNERS = frozenset(
 _RUNNING_SUBCOMMANDS = frozenset({"run", "task", "exec", "x", "dlx"})
 # Wrappers that run the command after them; that command is the tool.
 _WRAPPERS = (
-    ("rtk", "proxy"), ("rtk",), ("npx",), ("bunx",), ("uv", "run"), ("poetry", "run"),
-    ("pipenv", "run"), ("pnpm", "exec"), ("npm", "exec"), ("yarn", "dlx"), ("pnpm", "dlx"),
-    ("bundle", "exec"), ("coverage", "run", "-m"), ("env",), ("time",),
+    ("rtk", "proxy"), ("rtk", "bypass"), ("rtk",), ("npx",), ("bunx",), ("uv", "run"),
+    ("poetry", "run"), ("pipenv", "run"), ("pnpm", "exec"), ("npm", "exec"), ("yarn", "dlx"),
+    ("pnpm", "dlx"), ("bundle", "exec"), ("coverage", "run", "-m"), ("env",), ("time",),
 )  # fmt: skip
 _INTERPRETERS = frozenset({"node", "bash", "sh", "zsh"})
 _FAMILY_PYTHON_RE = re.compile(r"^python(?:\d+(?:\.\d+)?)?$")

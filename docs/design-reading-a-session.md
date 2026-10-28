@@ -3329,8 +3329,8 @@ is RTK's unfiltered mode: [the capture](captures/rtk/proxy-passthrough-1.1.0-mac
 printed unchanged with the command's own exit status, so `rtk proxy <runner>` is stripped to `<runner>` and read
 from its output as if `rtk` were absent, and bare `rtk <runner>` keeps the flag-only rule. A different program,
 Rust Type Kit, is also installed as `rtk`; the capture's version line reads `rtk X.Y.Z` for the one measured.
-rtk 1.1.0 renamed `rtk proxy` to `rtk bypass` and kept `proxy` as a deprecated alias; `rtk bypass` is not yet read as
-unfiltered, so a check run through it fails toward no recorded result.
+rtk 1.1.0 renamed `rtk proxy` to `rtk bypass` and kept `proxy` as a deprecated alias; the amendment of
+2026-10-28 below reads `rtk bypass` the same way.
 
 ### Amended 2026-10-27 (owner): pytest's `-p no:<plugin>` is shown
 
@@ -3396,6 +3396,30 @@ for DEC-18's rubric thresholds. This is the build.
 - **What was rejected.** Listing every result so the model could weigh a pass against a failure: it is the
   reassurance the lane is built not to give. Sending a failure's tail to Codex under a words-only Allow: it
   widens an Allow past the content it disclosed.
+
+### Amended 2026-10-28 (owner): `rtk bypass` is read as unfiltered, like `rtk proxy`
+
+`rtk bypass --help` says it executes the command without filtering and that `rtk proxy` is a deprecated alias
+that behaves identically, and [the capture](captures/rtk/proxy-passthrough-1.1.0-macos.jsonl) now holds the
+same three arms for both spellings with identical output and status. `rtk bypass <runner>` is stripped to
+`<runner>` and read from its output as if `rtk` were absent, whether the agent typed it or a hook rewrote the
+command to it. Bare `rtk <runner>` keeps the flag-only rule. The check reader, the masking pass and the tool
+family reader each take `bypass` wherever they took `proxy`. So does the hook-side irreversible-shape matcher, a
+separate closed list: `command_shape` in `event_hook.py`, and its copies in the Gemini and Droid roots, strips an
+`rtk bypass` prefix as well as `rtk proxy`.
+
+### Amended 2026-10-28 (owner): C-style and bare `for` headers are read-only
+
+The polling rule above counted `for NAME in WORDS` as read-only, so a loop written `for ((i=0;i<3;i++))`,
+`while ((i<3))` or `for i` aged every earlier local pass as "before a change", though none of them writes a
+file. Under-coverage of this kind keeps a pass aged and never makes a false one.
+
+- **The headers.** `for ((init; test; step))` is read as one arithmetic header, not split at its semicolons;
+  bare `for NAME` (which loops over the positional parameters) is a header when `NAME` is an identifier; an
+  arithmetic command such as `((i++))`, which `while ((…))` also uses, only sets a shell variable.
+- **What still ages a pass.** A redirect on any of them, a substitution inside them that writes, and every
+  body command that is not read-only, so `for ((;;)); do rm x; done` and `for ((i=0;i<3;i++)); do echo x > f;
+  done` still count as changes. A check inside the loop is still found and listed.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

@@ -900,6 +900,8 @@ class ALoopOrANegationAroundACheckIsStillThatCheck(CheckLineTestCase):
         for command in (
             "for i in 1 2 3; do pytest -q; done",
             "for i in 1 2\ndo\n  pytest -q\ndone",
+            "while ((1)); do pytest -q; done",
+            "for ((i=0;i<3;i++)); do pytest -q; done",
             "while true; do pytest -q; done",
             "until pytest -q; do sleep 1; done",
             "i=0; while [ $i -lt 2 ]; do pytest -q; i=$((i + 1)); done",
@@ -977,6 +979,17 @@ class ACiPollingLoopIsReadOnly(CheckLineTestCase):
             "gh run watch 123 --exit-status",
             "glab ci status",
             "for i in 1 2; do sleep 1; done",
+            "for ((i=0;i<3;i++)); do sleep 1; done",
+            "while ((i<3)); do sleep 1; i=$((i+1)); done",
+            "for i; do sleep 1; done",
+            "for ((i=0;i<3;i++)); do ((n++)); sleep 1; done",
+            "for ((i=0;i<3;i++)) do sleep 1; done",
+            "for i do sleep 1; done",
+            "time for ((i=0;i<3;i++)); do sleep 1; done",
+            "time -p for i in 1 2; do sleep 1; done",
+            "time -p for ((i=0;i<3;i++)); do sleep 1; done",
+            "time -p for i; do sleep 1; done",
+            "time -p sleep 1",
             "out=$(gh pr checks 7 --repo acme/widgets)",
             "while ! gh pr checks 7; do sleep 5; done",
         ):
@@ -991,11 +1004,44 @@ class ACiPollingLoopIsReadOnly(CheckLineTestCase):
             "gh pr merge 7",
             "for f in *; do rm $f; done",
             "for i in 1 2; do sleep 1; touch x; done",
+            "for ((;;)); do rm x; done",
+            "((i++)) > f",
+            "for ((i=0;i<$(rm x);i++)); do sleep 1; done",
+            "for ((i=0;i<3;i++)); do ((n++)) > f; done",
+            "((x=$(rm y)))",
+            "for ((i=0;i<3;i++)); do echo x > f; done",
+            "while ((i<3)); do i=$((i+1)); echo x > f; done",
+            "for i; do rm x; done",
+            "for i do rm x; done",
+            "for ((i=0;i<3;i++)) do rm x; done",
+            "time for ((i=0;i<3;i++)); do rm x; done",
+            "time -p for ((i=0;i<3;i++)); do rm x; done",
+            "time -p rm x",
             "out=$(gh run download 123)",
             "while true; do gh pr checks 7 > checks.txt; done",
         ):
             with self.subTest(command=command):
                 self.assertIs(True, self.changed_after(command, keep_commit=False))
+
+
+class ALongLineThatStartsWithTimeOrForStaysLinear(CheckLineTestCase):
+    """The loop-header checks run on every lexer step, so they must not copy a long word list."""
+
+    def test_the_header_checks_copy_only_short_word_lists(self) -> None:
+        copied = 0
+        real = project_context._time_less
+
+        def counting(words: list[str]) -> list[str]:
+            nonlocal copied
+            copied += len(words)
+            return real(words)
+
+        for lead in ("time ", "for i in ", "time -p for i in "):
+            with self.subTest(lead=lead):
+                copied = 0
+                with mock.patch.object(project_context, "_time_less", counting):
+                    project_context._call_parts(lead + "a " * 3000)
+                self.assertLess(copied, 100_000)
 
 
 class ALoopDoesNotPlaceADirectoryItMovesEachTurn(CheckLineTestCase):
