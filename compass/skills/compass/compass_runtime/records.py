@@ -2329,12 +2329,24 @@ def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> st
     }
     if not spellings:
         return text
-    plain, joined_flag, userinfo = _scrub_patterns(tuple(sorted(spellings)), prose)
+    plain, joined_flag, userinfo, touching, inner = _scrub_patterns(
+        tuple(sorted(spellings)), prose
+    )
     # Userinfo first: a plain pass would let a short spelling match inside `user:Fake99!@` in
     # prose and leave the `!` of the longer one, where the one-at-a-time loop took the longest.
     text = userinfo.sub(lambda match: match[1] + _SECRET_MARKER + match[2], text)
     text = joined_flag.sub(lambda match: match[1] + _SECRET_MARKER, text)
+    # Two masked values with nothing between them reject each other at the word boundary, so a
+    # run of them is read whole before the single-value pass sees either.
+    text = touching.sub(lambda match: _mask_run(match[0], inner), text)
     return plain.sub(_SECRET_MARKER, text)
+
+
+def _mask_run(run: str, inner: re.Pattern[str]) -> str:
+    """One marker per value in a run of touching values, or one for the run where the values
+    cannot be split back out of it."""
+    split = inner.sub(_SECRET_MARKER, run)
+    return split if split.replace(_SECRET_MARKER, "") == "" else _SECRET_MARKER
 
 
 def _trie_alternation(spellings: tuple[str, ...]) -> str:
@@ -2375,8 +2387,10 @@ def _trie_regex(node: dict[str, Any]) -> str:
 @lru_cache(maxsize=2)
 def _scrub_patterns(
     spellings: tuple[str, ...], prose: bool
-) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str]]:
-    """The three patterns a scrub applies, each one alternation over every spelling.
+) -> tuple[
+    re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str]
+]:
+    """The patterns a scrub applies, each one alternation over every spelling.
 
     Compiling three patterns per spelling cost 0.18 s at 512 values and 1.8 s for ten scrubs
     in a press. Longest first, so a value that is a prefix of another leaves no tail: the
@@ -2384,7 +2398,9 @@ def _scrub_patterns(
     branch that stops inside a longer word. The cache is keyed by the spellings, since a press
     scrubs several explanations and tails against the same set; two entries, because it holds
     real masked values. The userinfo pattern starts only at the head of a run, as
-    `_MASK_USERINFO` does, or a long word rescans its rest at every offset.
+    `_MASK_USERINFO` does, or a long word rescans its rest at every offset. The run pattern is
+    atomic, so a run of overlapping values such as `aaaa`, `aaaaa` and `aaaaaa` cannot be
+    split in exponentially many ways when the boundary after it fails.
     """
     boundary = r"[\w./:@+\-]"
     after = r"(?![\w@+\-]|[./:][\w/])" if prose else rf"(?!{boundary})"
@@ -2398,4 +2414,6 @@ def _scrub_patterns(
         re.compile(
             rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
         ),
+        re.compile(rf"{before}(?>(?:{alternation}){{2,}}){after}"),
+        re.compile(rf"(?:{alternation})"),
     )

@@ -1140,6 +1140,31 @@ class ScrubManyValuesTest(unittest.TestCase):
                         records.scrub_values(text, values, prose=prose),
                     )
 
+    def test_two_distinct_masked_values_touching_are_both_masked(self) -> None:
+        for values, text in (
+            (["FakeAAAA11", "FakeBBBB22"], "x FakeAAAA11FakeBBBB22 y"),
+            (["FakeAAAA11", "FakeBBBB22"], "x FakeBBBB22FakeAAAA11 y"),
+            (["FakeAAAA11", "FakeBBBB22", "FakeCCCC33"], "FakeAAAA11FakeBBBB22FakeCCCC33"),
+            (["FakeAAAA11", "FakeBBBB22"], "x 'FakeAAAA11FakeBBBB22' y"),
+        ):
+            for prose in (False, True):
+                with self.subTest(text=text, prose=prose):
+                    out = records.scrub_values(text, values, prose=prose)
+                    for value in values:
+                        self.assertNotIn(value, out)
+                    self.assertIn(records.SECRET_MARKER, out)
+
+    def test_values_that_only_share_a_boundary_are_not_joined_into_a_longer_word(self) -> None:
+        # One masked value inside a longer word stays: only a run of values is read as masked.
+        text = "see FakeAAAA11x and xFakeAAAA11"
+        self.assertEqual(text, records.scrub_values(text, ["FakeAAAA11", "FakeBBBB22"]))
+
+    def test_a_long_run_of_overlapping_values_scrubs_quickly(self) -> None:
+        values = ["a" * 4, "a" * 5, "a" * 6]
+        started = time.monotonic()
+        records.scrub_values("a" * 400 + "-", values)
+        self.assertLess(time.monotonic() - started, 1.0)
+
     def test_a_seeded_random_corpus_agrees_with_the_one_at_a_time_scrub(self) -> None:
         rng = random.Random(5001)
         for _ in range(300):
