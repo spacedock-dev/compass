@@ -107,6 +107,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
             "R_TEST": "success",
             "R_PLATFORM": "success",
             "R_FRONTEND": "success",
+            "R_FRONTEND_COVERAGE": "success",
             "R_FRONTEND_PRODUCTION": "success",
             "R_STORYBOOK": "success",
         }
@@ -126,6 +127,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
             "R_TEST": "skipped",
             "R_PLATFORM": "skipped",
             "R_FRONTEND": "skipped",
+            "R_FRONTEND_COVERAGE": "skipped",
             "R_FRONTEND_PRODUCTION": "skipped",
             "R_STORYBOOK": "skipped",
         }
@@ -136,7 +138,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
                     0,
                     self.aggregate(code="false", results={**skipped, "R_CHANGES": bad}).returncode,
                 )
-        for name in ("R_FRONTEND", "R_FRONTEND_PRODUCTION", "R_STORYBOOK"):
+        for name in ("R_FRONTEND", "R_FRONTEND_COVERAGE", "R_FRONTEND_PRODUCTION", "R_STORYBOOK"):
             with self.subTest(failed=name):
                 self.assertNotEqual(
                     0, self.aggregate(code="false", results={**skipped, name: "failure"}).returncode
@@ -211,22 +213,29 @@ class FrontendWiringControlsTest(unittest.TestCase):
                 "test",
                 "platform-tests",
                 "frontend",
+                "frontend-coverage",
                 "frontend-production",
                 "storybook",
             },
             set(aggregate["needs"]),
         )
+        self.assertNotIn("frontend-coverage-comment", aggregate["needs"], "the comment never gates")
         env = aggregate["steps"][0]["env"]
         self.assertEqual("${{ needs.frontend.result }}", env["R_FRONTEND"])
+        self.assertEqual("${{ needs.frontend-coverage.result }}", env["R_FRONTEND_COVERAGE"])
         self.assertEqual("${{ needs.frontend-production.result }}", env["R_FRONTEND_PRODUCTION"])
         self.assertEqual("${{ needs.storybook.result }}", env["R_STORYBOOK"])
         self.assertNotIn("frontend-proofs", workflow_jobs)
         self.assertNotIn("R_FRONTEND_PROOFS", env)
 
     def test_bootstrap_is_exact_without_auth_or_implicit_dependency_scripts(self) -> None:
-        for name in ("frontend", "frontend-production", "storybook"):
+        for name in ("frontend", "frontend-coverage", "frontend-production", "storybook"):
             with self.subTest(job=name):
                 self.check_bootstrap(jobs()[name]["steps"])
+
+    @staticmethod
+    def label_check(step: dict[str, Any]) -> bool:
+        return step.get("id") == "exception"
 
     def check_bootstrap(self, steps: list[dict[str, Any]]) -> None:
         node = next(
@@ -250,10 +259,69 @@ class FrontendWiringControlsTest(unittest.TestCase):
         commands = [step.get("run", "") for step in steps]
         self.assertIn("pnpm install --frozen-lockfile --ignore-scripts", commands)
         self.assertFalse(any("corepack" in command.lower() for command in commands))
-        for step in steps:
+        install = commands.index("pnpm install --frozen-lockfile --ignore-scripts")
+        for index, step in enumerate(steps):
             self.assertNotIn("registry-url", step.get("with", {}))
+            # The coverage-exception label check reads the PR with the job's read-only token. It is the
+            # one step allowed a token, and it runs before any dependency is installed.
+            if self.label_check(step):
+                self.assertLess(index, install, "a token-bearing step runs before the install")
+                continue
             for name in ("NODE_AUTH_TOKEN", "NPM_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
                 self.assertNotIn(name, step.get("env", {}))
+
+    def test_frontend_coverage_enforces_the_thresholds_with_a_visible_bypass(self) -> None:
+        """The frontend threshold is held as the Python one is: enforced on every run, bypassed only by the
+        `coverage-exception` label, and owned by vitest.config.mts so a local `pnpm test:coverage` agrees."""
+        job = jobs()["frontend-coverage"]
+        self.assertEqual("ubuntu-latest", job["runs-on"])
+        self.assertEqual({"contents": "read", "pull-requests": "read"}, job["permissions"])
+        steps = job["steps"]
+        names = [step.get("name") for step in steps]
+        label = next(step for step in steps if self.label_check(step))
+        self.assertEqual("github.event_name == 'pull_request'", label["if"])
+        self.assertEqual("${{ github.token }}", label["env"]["GH_TOKEN"])
+        self.assertIn("coverage-exception", label["run"])
+        install = names.index("Frozen install with dependency scripts denied")
+        self.assertLess(steps.index(label), install, "the token is used before dependencies exist")
+        gate = next(step for step in steps if "pnpm test:coverage" in step.get("run", ""))
+        self.assertNotIn("if", gate)
+        self.assertGreater(gate["timeout-minutes"], 0)
+        self.assertEqual(
+            "${{ steps.exception.outputs.has_exception || '0' }}", gate["env"]["EXCEPTION"]
+        )
+        enforced, bypass = gate["run"].split("else")[1], gate["run"].split("else")[0]
+        self.assertIn("pnpm test:coverage", enforced)
+        self.assertNotIn(
+            "thresholds", enforced, "without the label the configured thresholds apply"
+        )
+        for metric in ("statements", "branches", "functions", "lines"):
+            self.assertIn(f"--coverage.thresholds.{metric}=0", bypass)
+        scripts = json.loads((ROOT / "package.json").read_text())["scripts"]
+        self.assertEqual("vitest run --coverage", scripts["test:coverage"])
+        config = (ROOT / "vitest.config.mts").read_text()
+        self.assertIn(
+            "thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 }", config
+        )
+
+    def test_the_coverage_comment_holds_the_write_token_and_runs_no_code(self) -> None:
+        job = jobs()["frontend-coverage-comment"]
+        self.assertEqual({"pull-requests": "write"}, job["permissions"])
+        self.assertEqual("frontend-coverage", job["needs"])
+        for step in job["steps"]:
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn("run", step)
+                self.assertTrue(step.get("continue-on-error"), "the comment never gates")
+                action = step["uses"].split("@")[0]
+                self.assertIn(
+                    action,
+                    {
+                        "actions/download-artifact",
+                        "peter-evans/find-comment",
+                        "peter-evans/create-or-update-comment",
+                    },
+                )
+                self.assertRegex(step["uses"], r"@[0-9a-f]{40}$")
 
     def test_the_macos_job_runs_the_lifecycle_tests_once_and_no_browser_proof(self) -> None:
         """The browser proofs left the gate (owner, 2026-10-12): the UI is verified by the Storybook job."""
@@ -345,7 +413,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`
         lets the job skip where the aggregator expects it to run."""
         workflow_jobs = jobs()
-        for name in ("frontend", "frontend-production", "storybook"):
+        for name in ("frontend", "frontend-coverage", "frontend-production", "storybook"):
             with self.subTest(job=name):
                 job = workflow_jobs[name]
                 self.assertNotIn("continue-on-error", job)

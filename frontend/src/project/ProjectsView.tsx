@@ -19,6 +19,19 @@ import './project.css';
    published: two spellings of one directory are two rows and each says so. Ported from `next-projects.js`.
    Every count in a sentence is derived from the rows the row draws. */
 
+/* A member line's key is its harness and sid, so the button keeps its node, and with it keyboard focus, when a
+   refresh re-ranks the members. A board can publish one pair twice (the generated boards do), and only the
+   repeats take an occurrence number: an index on every key remounted each line below a newcomer. */
+function memberKeys(sessions: readonly ObservedSession[]): (readonly [string, ObservedSession])[] {
+  const seen = new Map<string, number>();
+  return sessions.map((session) => {
+    const identity = `${session.harness}\u0000${session.sid}`;
+    const repeat = seen.get(identity) ?? 0;
+    seen.set(identity, repeat + 1);
+    return [repeat ? `${identity}\u0000${String(repeat)}` : identity, session] as const;
+  });
+}
+
 function MemberLine({
   session,
   project,
@@ -108,12 +121,8 @@ function ProjectRow({
             ) : null}
           </div>
           <div className="next-project-sessions" aria-label="Observed sessions">
-            {members.shown.map((session) => (
-              <MemberLine
-                key={`${session.harness}\u0000${session.sid}`}
-                session={session}
-                project={project.key}
-              />
+            {memberKeys(members.shown).map(([key, session]) => (
+              <MemberLine key={key} session={session} project={project.key} />
             ))}
             {members.hidden ? (
               <Button

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { canonical, firstDifference } from '../observed/legacy.test.helper';
 import type { WorkEntry } from '../intent/work';

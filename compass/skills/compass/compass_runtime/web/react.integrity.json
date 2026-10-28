@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2159487,
+    "bytes": 2159663,
     "file": "react.html",
-    "sha256": "542dbddf035fd79fddde61fde53d6675859d915e22b458afa02dafe08024bb04"
+    "sha256": "272894342325d9800634e29d597ecd7ae8fc814c73817f850391f09c46fb1e9e"
   },
   "format": 1,
   "frontend": "react",
@@ -995,7 +995,7 @@
       },
       {
         "file": "frontend/src/project/ProjectsView.tsx",
-        "sha256": "dbad59c2d6aa5a55e5944a1e7b540c84f8d719d5793c6597e3abf0ff02644c47"
+        "sha256": "348b9963193c0c8237827a79c5a3e24132711a48c624fed9493c3aa380ecbd20"
       },
       {
         "file": "frontend/src/project/RecoveryStrip.tsx",
@@ -1687,11 +1687,11 @@
       },
       {
         "file": "package.json",
-        "sha256": "fa642d105fc2a2ef078ad6034d32fa86b081c37d9bc3115bf5eb8f42e959192e"
+        "sha256": "efc011003d62b57a4a2453890c232f4bba5c5bd66b8226d660b19c359ab7fb94"
       },
       {
         "file": "pnpm-lock.yaml",
-        "sha256": "f5f4267a3b2e7b5d6fdc650cde22790d29e2296e7c4fdbb40389aacfe410143e"
+        "sha256": "94f0a592b109ebaef9235195bf61fdecf93ff0c9df555ae50fdd502ff50c878e"
       }
     ]
   }

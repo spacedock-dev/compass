@@ -114,7 +114,12 @@ terminal assets remain local. The packaging boundaries are in the
 [AGENTS.md](AGENTS.md#pre-pr-checks) for the frontend checks. TypeScript checks source and dependency
 types, Biome lints (JavaScript, TypeScript and React rules) and checks formatting through one
 `pnpm lint`, with `pnpm format` rewriting what it reports, Vitest with Testing Library checks visible
-behavior, and Storybook checks components and views in Chromium. The rule set and what it deliberately
+behavior, and Storybook checks components and views in Chromium. Vitest runs `.ts` tests under Node and
+`.tsx` tests in jsdom; a `.ts` test that needs a DOM starts with an `@vitest-environment jsdom` comment, and
+one that forgets fails on a missing `document`. The jsdom tests run on VM workers, which give each file its
+own context only when there are at least two, so the config never runs fewer and `--no-file-parallelism`
+stops with an error. `pnpm test:coverage` runs the same suite under coverage and fails below the thresholds
+in `vitest.config.mts`. The rule set and what it deliberately
 does not cover are in the [migration contract](docs/design-frontend-migration.md#lint-and-format). Vite and its React plugin own the build and hot
 refresh. Shared controls use vendored shadcn components backed by Base UI; routing and state remain
 owned by the page. Node and pnpm are build tools: the shipped
@@ -296,6 +301,9 @@ same directories through the relative symlinks under `.agents/skills/`.
   shards. Ubuntu is covered by the coverage job and the runtime floor, which both run the whole suite there.
 - `Frontend (macos-latest)`, with exact Node and pnpm pins, lint, strict types, unit tests, owned
   development startup and cleanup tests, and a clean preview build.
+- `Frontend tests + coverage threshold`, the Vitest suite under coverage on Linux. Statements,
+  branches, functions and lines must each reach the 80% set in `vitest.config.mts`, and the same
+  `coverage-exception` label is the only bypass.
 - `Frontend production bundle`, which rebuilds and compares the tracked artifact on Linux and runs no
   proof.
 - `Storybook (ubuntu-latest)`, which builds the offline explorer and runs every story's assertions in

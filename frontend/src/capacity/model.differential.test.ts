@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { mulberry32, pick } from '../observed/generate.test.helper';
 import { canonical, firstDifference } from '../observed/legacy.test.helper';

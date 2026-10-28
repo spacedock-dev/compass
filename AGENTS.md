@@ -257,6 +257,7 @@ pnpm lint   # Biome: lint rules and formatting; `pnpm format` rewrites the forma
 pnpm typecheck
 pnpm test:styles --base origin/main   # exact CSS count, scale and live imports; CI uses the actual PR base SHA
 pnpm test
+pnpm test:coverage   # enforces the frontend coverage thresholds in vitest.config.mts
 pnpm build:storybook
 pnpm test:stories
 pnpm test:dev
@@ -448,7 +449,7 @@ is Sonnet 5.5. Reviewer acceptance and scored producer results retain their sepa
 
 ## Quality Gate
 
-Every PR must pass the `quality-gate` required check (`.github/workflows/quality-gate.yml`): ruff with `select = ALL` (curated ignores documented in `pyproject.toml`), `ruff format --check`, `mypy --strict`, a direct-launch smoke test on the Python 3.11 runtime floor followed by the whole suite there, the same suite under `coverage` on 3.12 with the `fail_under` threshold from `pyproject.toml` enforced once, and `platform-tests`, the same unit suite re-run natively on macOS with one dashboard leg and three script shards (Ubuntu is already covered by the two jobs before it). Python suite jobs use `scripts/run_tests.py`, one worker per core. The threshold only ratchets up; never lower it in a PR. A PR that must merge below threshold needs the `coverage-exception` label, which is visible in the PR timeline.
+Every PR must pass the `quality-gate` required check (`.github/workflows/quality-gate.yml`): ruff with `select = ALL` (curated ignores documented in `pyproject.toml`), `ruff format --check`, `mypy --strict`, a direct-launch smoke test on the Python 3.11 runtime floor followed by the whole suite there, the same suite under `coverage` on 3.12 with the `fail_under` threshold from `pyproject.toml` enforced once, and `platform-tests`, the same unit suite re-run natively on macOS with one dashboard leg and three script shards (Ubuntu is already covered by the two jobs before it). Python suite jobs use `scripts/run_tests.py`, one worker per core. The frontend suite has its own coverage threshold, 80% of statements, branches, functions and lines, set in `vitest.config.mts` and enforced by `Frontend tests + coverage threshold`. Each threshold only ratchets up; never lower one in a PR. A PR that must merge below either needs the `coverage-exception` label, which is visible in the PR timeline.
 
 **The required context always reports; its constituent jobs may not run.** A `changes` job decides
 whether the diff contains anything the gate can measure, and the measurable jobs are gated on
@@ -475,10 +476,17 @@ exercises owned development startup and cleanup (`pnpm test:dev`, Node tests). T
 used to follow, including the separate `Frontend proofs` job retired earlier, are no longer part of
 the gate (owner, 2026-10-12); the interface is verified by Storybook.
 
+`Frontend tests + coverage threshold` runs the Vitest suite under coverage on Linux (`pnpm test:coverage`)
+and fails below the thresholds in `vitest.config.mts`, unless the PR carries `coverage-exception`. It keeps
+the read-only token every frontend job has, because it runs third-party test dependencies; the sticky PR
+comment comes from `Frontend coverage comment`, a separate job that holds the write token, runs no
+repository or package code, and never gates. Vitest runs `.ts` tests under Node and `.tsx` tests in jsdom
+on VM workers, and a `.ts` test that needs a DOM says so with an `@vitest-environment jsdom` comment.
+
 `Frontend production bundle` runs on Linux: it rebuilds the tracked artifact from its sources and
 compares it, and runs no proof. The `Storybook (ubuntu-latest)` job builds the offline explorer and
-runs the component assertions in pinned Chromium. All three frontend jobs are in the aggregator's
-`needs`, and a skipped result passes only when the detector said `code=false`. The required status
+runs the component assertions in pinned Chromium. All four frontend jobs are in the aggregator's
+`needs` (the comment job is not), and a skipped result passes only when the detector said `code=false`. The required status
 checks on main remain `validate`, `version-guard` and `quality-gate`. Native harness canary Node
 requirements remain independent of this build toolchain.
 

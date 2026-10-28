@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { compatSessKey } from '../api/identity';
 import type { ContextEntry } from '../store/board';

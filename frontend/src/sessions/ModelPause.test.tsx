@@ -19,6 +19,10 @@ beforeEach(() => {
   });
 });
 
+/* Every query that waits runs before its `act`, never inside one: Testing Library turns IS_REACT_ACT_ENVIRONMENT off
+   while a `findBy` polls, and a Base UI animation-frame update landing in that window inside an open act scope made
+   React warn that the environment does not support act (measured on CI, 2026-10-28). */
+
 /* The copy inside "What is sent", which these tests open: the Drift card head holds another
    (usability review, 2026-10-20). */
 const popoverPause = async (): Promise<HTMLElement> =>
@@ -38,8 +42,9 @@ describe('the summaries switch is nested under Pause model calls', () => {
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
+    const pause = await popoverPause();
     await act(async () => {
-      fireEvent.click(await popoverPause());
+      fireEvent.click(pause);
     });
     const region = await screen.findByRole('region', { name: 'What the session has done' });
     const label = off ? 'Turn summaries on' : 'Turn off summaries';
@@ -53,8 +58,9 @@ describe('the summaries switch is nested under Pause model calls', () => {
       fireEvent.click(within(region).getByRole('button', { name: label }));
     });
     expect(script.posts).toHaveLength(0);
+    const resume = await screen.findByRole('button', { name: 'Resume model calls' });
     await act(async () => {
-      fireEvent.click(await screen.findByRole('button', { name: 'Resume model calls' }));
+      fireEvent.click(resume);
     });
     await waitFor(() => expect(script.paused).toBe(false));
     await act(async () => {
@@ -84,8 +90,9 @@ describe('the summaries switch is nested under Pause model calls', () => {
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
+    const pause = await popoverPause();
     await act(async () => {
-      fireEvent.click(await popoverPause());
+      fireEvent.click(pause);
     });
     const region = await screen.findByRole('region', { name: 'What the session has done' });
     await waitFor(() =>
@@ -130,8 +137,9 @@ describe('the summaries switch is nested under Pause model calls', () => {
       />,
     );
     const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const update = await within(region).findByRole('button', { name: 'Update summary' });
     await act(async () => {
-      fireEvent.click(await within(region).findByRole('button', { name: 'Update summary' }));
+      fireEvent.click(update);
     });
     await waitFor(() => expect(region.querySelector('[data-next-summary-notice]')).not.toBeNull());
     /* The summary stands, so the notice is folded to one line and is not a second "Model request notice"
@@ -142,8 +150,9 @@ describe('the summaries switch is nested under Pause model calls', () => {
     await act(async () => {
       fireEvent.click(within(drift).getByRole('button', { name: /What is sent/ }));
     });
+    const pause = await popoverPause();
     await act(async () => {
-      fireEvent.click(await popoverPause());
+      fireEvent.click(pause);
     });
     await waitFor(() => expect(within(region).getByText('Model calls are paused')).toBeVisible());
     /* The server cleared every notice with the pause; the tab does not keep drawing one. */
