@@ -5755,7 +5755,7 @@ class _ToolReportTally:
 
     def quotable(self) -> dict[tuple[str, str], str]:
         """(call id, check line) to the redacted output tail the call's rules attribute to that
-        one check, for the press alone.
+        one check, for the press and the unasked lane.
 
         The text a harness verdict's reason quotes is looked for here and nowhere else: the
         evaluator read the whole transcript, so its quote is in some tool output by construction,
@@ -5823,6 +5823,27 @@ class _ToolReportTally:
             if run["result"] == "passed"
         )
 
+    def shared_calls(self) -> frozenset[str]:
+        """The call ids whose output tail is not one check's own.
+
+        A call's tail is the whole call's output. It is shared when a run in it is not attributed
+        to that one check (a chained or piped call, where a passing run's output sits beside a
+        failure's), or when more than one run was recorded for the call, check or command. A
+        passing run in such a call is not always recorded as `passed`, because the call's one
+        exit status settles none of its runs, so `passing_calls` alone misses the common
+        `ruff check . && pytest` that failed.
+        """
+        seen: dict[str, int] = {}
+        shared: set[str] = set()
+        for history in self._all_histories():
+            for run in history:
+                call = run["record_id"]
+                seen[call] = seen.get(call, 0) + 1
+                if run.get("attributable", True) is not True:
+                    shared.add(call)
+        shared.update(call for call, count in seen.items() if count > 1)
+        return frozenset(shared)
+
     def _all_histories(self) -> Iterable[list[dict[str, Any]]]:
         return (*self.runs.values(), *self.commands.values())
 
@@ -5883,12 +5904,17 @@ class PressChecks(NamedTuple):
     # be sent: a tail of another call is a tier 1 or 2 tail.
     tier3_calls: frozenset[str] = frozenset()
     # (call id, check line) to the tail of the one check that call attributes its output to, read
-    # to find the text a harness verdict quotes (`_ToolReportTally.quotable`). Press only.
+    # to find the text a harness verdict quotes (`_ToolReportTally.quotable`). For the press and
+    # the unasked lane.
     quotable: Mapping[tuple[str, str], str] = {}
     # The calls that ever held a run that passed, a check or any other command. A call's tail is the
     # whole call's output, so a call that also holds a failed run carries a passing run's output
     # too, which the unasked lane must not send.
     passing_calls: frozenset[str] = frozenset()
+    # The calls whose tail is not one check's own (`_ToolReportTally.shared_calls`): a run that is
+    # not attributed to its call, or a call that held several runs. A passing run in such a call
+    # is not always recorded as a pass, so the unasked lane withholds these tails as well.
+    shared_calls: frozenset[str] = frozenset()
 
 
 def claude_check_press(
@@ -5920,6 +5946,7 @@ def _press(tally: _ToolReportTally) -> PressChecks:
         tally.tier3_calls(),
         tally.quotable(),
         tally.passing_calls(),
+        tally.shared_calls(),
     )
 
 
@@ -5957,11 +5984,21 @@ def command_counts_of(context: dict[str, Any], harness: str, sid: str) -> dict[s
 
 
 def session_tail_coverage(
-    config: RuntimeConfig, state: RuntimeState, harness: str, sid: str
+    config: RuntimeConfig,
+    state: RuntimeState,
+    harness: str,
+    sid: str,
+    *,
+    expected_stamp: tuple[int, int, int, int] | None = None,
 ) -> dict[str, Any]:
-    """`transcript_tail_coverage` for one session's transcript, found as `collect` finds it."""
+    """`transcript_tail_coverage` for one session's transcript, found as `collect` finds it.
+
+    `expected_stamp` is the stamp taken before the facts were collected. A transcript that grew
+    since then is not the file the facts and counts came from, so its coverage is unknown. With no
+    stamp given, the file's own is used, which only guards a change during this one read.
+    """
     transcript = observer.resolve_transcript(config, state, harness, sid) or ""
-    stamp = transcript_stamp(transcript)
+    stamp = expected_stamp or transcript_stamp(transcript)
     return transcript_tail_coverage(config, transcript, expected_stamp=stamp) if stamp else {}
 
 

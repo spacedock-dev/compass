@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Any
 from . import annotations as annotation_store
 from . import departures, notifications, reading_policy, reading_route, supervise
 from . import io as runtime_io
+from . import observer as runtime_observer
 from . import project_context as runtime_project_context
 from . import reading as runtime_reading
 from . import state as runtime_state
@@ -143,6 +144,9 @@ class Lane:
         self.command_counts_for = command_counts_for or self._command_counts
         self.record_coverage_for = record_coverage_for or self._record_coverage
         self._counts: dict[tuple[str, str], Mapping[str, Any]] = {}
+        # The transcript's stamp taken before the facts were collected, so the coverage lookup
+        # can tell that the file moved on since.
+        self._stamps: dict[tuple[str, str], tuple[int, int, int, int] | None] = {}
         self.spawn = spawn
         self._call_lock = threading.Lock()
         self._group: supervise.Group | None = None
@@ -299,8 +303,12 @@ class Lane:
 
     def _facts(
         self, state: RuntimeState, row: Mapping[str, Any], now: float
-    ) -> Sequence[Mapping[str, Any]]:  # pragma: no cover - exercised through the lane
+    ) -> Sequence[Mapping[str, Any]]:
         """The observed record this reading reads, the way `/api/reading` gets it."""
+        key = (str(row.get("harness") or ""), str(row.get("sid") or ""))
+        self._stamps[key] = runtime_project_context.transcript_stamp(
+            runtime_observer.resolve_transcript(self.config, state, *key) or ""
+        )
         context = runtime_project_context.collect(
             self.config,
             state,
@@ -312,7 +320,6 @@ class Lane:
             model_consent=False,
         )
         # Kept from the collection the facts came from, so the counts cost no second scan.
-        key = (str(row.get("harness") or ""), str(row.get("sid") or ""))
         self._counts[key] = runtime_project_context.command_counts_of(context, *key)
         semantic = context.get("semantic") if isinstance(context, dict) else None
         facts = semantic.get("facts", []) if isinstance(semantic, dict) else []
@@ -323,8 +330,12 @@ class Lane:
         return self._counts.pop(key, {})
 
     def _record_coverage(self, state: RuntimeState, row: Mapping[str, Any]) -> Mapping[str, Any]:
+        key = (str(row.get("harness") or ""), str(row.get("sid") or ""))
+        stamp = self._stamps.get(key)
+        if stamp is None:
+            return {"tail_truncated": None, "tail_start": None}
         return runtime_project_context.session_tail_coverage(
-            self.config, state, str(row.get("harness") or ""), str(row.get("sid") or "")
+            self.config, state, *key, expected_stamp=stamp
         )
 
     def _run(
@@ -351,6 +362,10 @@ class Lane:
             with self._call_lock:
                 self._group = None
                 self._provider = ""
+            # A reading that returned before asking for either leaves nothing behind.
+            slot = (str(row.get("harness") or ""), str(row.get("sid") or ""))
+            self._counts.pop(slot, None)
+            self._stamps.pop(slot, None)
             self._release(state, key)
 
     def _read_and_raise(
@@ -441,7 +456,8 @@ class Lane:
 
         The press reads every output tail, and `build_ledger` under `failed_only` lists only the
         failed ones, so a passing check's tail is read here and goes no further. A tail is the
-        whole call's output, so a call that also held a passing run sends its failed row's line
+        whole call's output, so a call that also held a passing run, or whose output is shared by
+        more than one run or not attributed to the one failed check, sends its failed row's line
         and exit status with no tail. No grant is asked for, as for a pressed reading, and the
         destination must be nameable.
         """
@@ -457,7 +473,7 @@ class Lane:
                 for call, tail in reading_route.tails_for(
                     route["provider"], harness, press.tails, press.tier3_calls
                 ).items()
-                if call not in press.passing_calls
+                if call not in press.passing_calls and call not in press.shared_calls
             },
             changed_after=press.changed_after,
             read_incomplete=press.read_incomplete,

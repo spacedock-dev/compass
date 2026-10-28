@@ -2040,7 +2040,7 @@ default for a named destination, and the non-blocking reading notice names it. N
 is required; `tool-output-consent-required` is no longer a refusal. Explicit off blocks the press
 and the reservation. The unasked lane receives the failed results of a Claude Code session's checks and
 commands and no other tool output, and no output tail from a shell call that also held a run that
-passed ([the amendment](docs/design-reading-a-session.md#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results),
+passed, ran more than one thing, or whose output is not one failed check's own ([the amendment](docs/design-reading-a-session.md#amended-2026-10-27-owner-the-unasked-lane-reads-failed-results),
 [the mixed-call rule](docs/design-reading-a-session.md#amended-2026-10-28-owner-the-unasked-lane-withholds-a-mixed-calls-tail-and-says-what-a-later-pass-superseded)).
 
 - The legacy `tool_output_permission` table remains keyed by provider and destination, so an older
@@ -3320,7 +3320,7 @@ and no goal is not read by it at all (item 12 of
 The lane uses `reading_policy.GuardedModel`, the same guarded model seam as a requested reading.
 It sends no outcome lines or agent messages, and no tool output but one kind: on Claude Code, reading a
 Claude Code session where Compass can name the destination, a check or command that failed goes with its masked
-line, its exit status and the last 180 characters of its output, as for a pressed reading. A check that passed,
+line, its exit status and the last 180 characters of its output, as for a pressed reading, except from a shell call that ran more than one thing, which sends the line and exit status alone. A check that passed,
 a run with no result, a CI pass and a command that cannot fail never go, and neither does anything on the Codex
 route, whose stored Allow covers words. The reading's cutoff says only failures were sent. Claude Code runs under
 the owner's 2026-10-02 acceptance and needs no separate grant. Codex sends only with a stored Allow for the
