@@ -19,7 +19,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 from . import (
     claude_data,
@@ -3094,14 +3094,26 @@ def _body_facts(body: str) -> tuple[bool, tuple[str, ...]]:
     return reads, masked
 
 
-@lru_cache(maxsize=512)
+# A memo keyed by the command text is process-wide, so it holds whatever text a session ran. A
+# long call (a pasted script, a generated heredoc) is the one that costs memory and rarely repeats,
+# so only a call this short is remembered and a longer one is parsed each time it is asked for.
+_MEMO_MAX_CHARS: Final = 2048
+
+
 def _call_parts_once(text: str) -> tuple[_Part, ...]:
-    """`_call_parts` for a whole Bash call, remembered by its text.
+    """`_call_parts` for a whole Bash call, remembered by its text when the text is short.
 
     The call is parsed for its facts and again for the names it writes, and the second parse
     doubled the cost of every call once a reader listed a path script. A failed parse raises
     and is not remembered. Callers read the segments and never change them.
     """
+    if len(text) > _MEMO_MAX_CHARS:
+        return tuple(_call_parts(text))
+    return _call_parts_memo(text)
+
+
+@lru_cache(maxsize=512)
+def _call_parts_memo(text: str) -> tuple[_Part, ...]:
     return tuple(_call_parts(text))
 
 
@@ -6146,6 +6158,15 @@ def _views_only(redirects: list[_Redirect], words: list[str]) -> bool:
 
 
 _STDIN_OPERATORS = ("<<", "<<-", "<<<")
+# Programs that take stdin as data and cannot run or save it as a file the call named, so text a
+# pipe carries into one is not carried to a segment that can write. Their own redirect targets are
+# judged by name elsewhere.
+_DATA_FILTERS = frozenset(
+    {"cat", "head", "tail", "sort", "uniq", "cut", "tr", "wc", "grep", "egrep", "fgrep", "rg",
+     "less", "more", "column", "fold", "nl", "rev", "tac", "jq", "base64", "xxd", "od", "hexdump",
+     "md5sum", "sha1sum", "sha256sum", "shasum", "cksum", "paste", "expand", "unexpand",
+     "strings", "fmt"}
+)  # fmt: skip
 
 
 def _stdin_text_withdraws(
@@ -6158,6 +6179,13 @@ def _stdin_text_withdraws(
     `python3 <<'EOF'` with `open('check.sh', 'w')` in the body. A reader on the closed list
     (`cat <<EOF`, `wc -l`) takes the text as data and does not withdraw it.
     """
+    # A heredoc body is in no segment, so its text is read from the command: everything after the
+    # first line. A name that appears only in another segment of the call is not in it.
+    body = command.partition("\n")[2]
+    # A here-string's word is blanked in its segment, so its text is the rest of that line.
+    in_body = _names_word_in_text(body, name) or any(
+        _names_word_in_text(rest.partition("\n")[0], name) for rest in command.split("<<<")[1:]
+    )
     # A heredoc inside a substitution is in no segment, only its `$(...)` placeholder is, so a
     # command with a heredoc that hands a placeholder to a program is judged by the program.
     has_heredoc = "<<" in command
@@ -6165,20 +6193,22 @@ def _stdin_text_withdraws(
         words = part.words
         if not words or tuple(words) in listed or words[0] in {"cd", "pushd"}:
             continue
-        if _runs_script(words, name):
+        if _runs_script(words, name) or words[0] in _DATA_FILTERS:
             continue
         if not part.hides_change and (
             _reads_only(part.redirects, words) or _views_only(part.redirects, words)
         ):
             continue
-        if any(r.operator.endswith(_STDIN_OPERATORS) for r in part.redirects):
+        if any(r.operator.endswith(_STDIN_OPERATORS) for r in part.redirects) and (
+            in_body or any(_names_word(w, name) for w in (*words, *part.raw))
+        ):
             return True
-        if has_heredoc and any("(…)" in w or "`" in w for w in words[1:]):
+        if has_heredoc and in_body and any("(…)" in w or "`" in w for w in words[1:]):
             return True
         j = i - 1
         while j >= 0 and parts[j].joiner.startswith("|"):
             feeder = parts[j]
-            if any(r.operator.endswith(_STDIN_OPERATORS) for r in feeder.redirects):
+            if in_body and any(r.operator.endswith(_STDIN_OPERATORS) for r in feeder.redirects):
                 return True
             if (
                 feeder.words
@@ -6188,6 +6218,10 @@ def _stdin_text_withdraws(
                 return True
             j -= 1
     return False
+
+
+def _names_word_in_text(text: str, name: str) -> bool:
+    return re.search(rf"(?<![\w.\-]){re.escape(name)}(?![\w\-])", text) is not None
 
 
 def _shell_names(

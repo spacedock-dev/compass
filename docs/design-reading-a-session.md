@@ -7725,8 +7725,8 @@ A project's check is sometimes something no rule finds: a custom script, `bazel 
 - **What counts.** A command typed in a session of that project whose words equal a listed entry's is a
   tier 2 check. A program on the PATH or by an absolute path counts from any folder; a script named by a
   relative path (`./check.sh`) is a file of the project, so it counts only where it ran from the project's
-  root, and not when the session wrote that file by a write tool or by a shell command that names it and is not a read of it (see the 2026-10-28 amendment
-  below). A
+  root, and not when the session wrote that file by a write tool or by a shell command that names it and
+  is not a read of it (see the 2026-10-28 amendment below). A
   listing keyed by a path the session's folder no longer has (a deleted worktree) matches nothing. Such a check
   is a tier 2 check, with the result of its exit status read as any check's is. `bazel test //...`
   listed does not make `bazel test //other/...` one. Such a check is published with `listed_by_reader`, and the
@@ -7745,8 +7745,8 @@ A project's check is sometimes something no rule finds: a custom script, `bazel 
 - **A session that writes the file.** A recorded write by a write tool to a file of that name, in any folder,
   or a shell command that names that file and is not a read of it (a redirect, `cp`, `tee`, an interpreter's
   argument; see the 2026-10-28 amendment below), withdraws every listed command for that session, and the
-  page says the session wrote the file where the reader lists checks, but only when the reader had listed something. The paged
-  reader carries that fact across pages, so it agrees with a whole read. The residual is an indirect write: a
+  page says the session wrote the file where the reader lists checks, but only when the reader had listed
+  something. The paged reader carries that fact across pages, so it agrees with a whole read. The residual is an indirect write: a
   script or a variable that builds the path.
 - **`--no-git` does not stop it.** No git command runs for a listing; it is one file read.
 - **What was rejected.** Reading a `.compass/` folder in the repository, so a team could share a list: the
@@ -7845,15 +7845,21 @@ told the session had written it, and an interpreter that rewrote a listed script
   cannot carry code (`bash -x check.sh`); `source` and `.` run it too. A pure viewer (`jq`, `bat`, `diff`,
   `nl`, `shellcheck`, `git blame`, and `sed` or `awk` not editing in place) only reads it. A command that
   will not parse, or whose substitution changes something, withdraws every listed file its text mentions.
-- **Text sent to a program through stdin is seen.** The body of a heredoc and a here-string are not words
-  of any segment, so a command that sends a program text mentioning the file, as a heredoc or here-string
-  (`python3 <<'EOF'`) or through a pipe from an earlier segment (`echo "...check.sh..." | python3`), counts
-  as writing it unless that program is a read (`cat <<EOF`, `wc -l`) or runs the script.
+- **Text sent to a program through stdin is seen, where it can reach a program that writes.** The body of
+  a heredoc and a here-string are not words of any segment, so a command that sends a program text
+  mentioning the file, as a heredoc or here-string (`python3 <<'EOF'`) or through a pipe from an earlier
+  segment (`echo "...check.sh..." | python3`), counts as writing it. A program that only filters its
+  input (`cat`, `wc`, `sort`, `grep`, `jq`) does not carry the name to a writer, so `cat check.sh | wc -l`
+  and `cat check.sh | sort > sorted.txt` are views. A heredoc withdraws the name only when the name is in
+  its body or in its own program's words, not when the name sits in an unrelated segment of the same call
+  (`cat check.sh; python3 <<'EOF'`).
 - **The residual is unchanged.** A write that builds the path indirectly, through a script or a variable, is
   not seen.
 - **Pages accumulate.** A page of the paged reader keeps every listed-file write an earlier page saw, also
   where the page itself lists nothing, so the cursor never forgets one.
-- **One parse per call.** A Bash call is parsed once and the segments reused by the scan for these names.
+- **One parse per call.** A Bash call of up to 2,048 characters is parsed once and its segments reused by
+  the scan for these names. A longer call is parsed each time it is asked for, so the process-wide memo does
+  not hold a pasted script.
 
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 

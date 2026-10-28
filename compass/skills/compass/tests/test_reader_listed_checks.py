@@ -488,7 +488,7 @@ class ACallIsParsedOnceWhenAScriptIsListed(ReaderChecksTestCase):
         commands = [f"echo {i} && ls" for i in range(6)] + ["cat check.sh", "cd . && ./check.sh"]
         for command in commands:
             self.session.bash(command, "ok")
-        project_context._call_parts_once.cache_clear()
+        project_context._call_parts_memo.cache_clear()
         real = project_context._call_parts
         seen: list[str] = []
 
@@ -501,6 +501,23 @@ class ACallIsParsedOnceWhenAScriptIsListed(ReaderChecksTestCase):
         # The call parts of one call are the same text, so they are parsed once for every
         # reader of it; before, the script-name scan parsed each call a second time.
         self.assertEqual(sorted(commands), sorted(c for c in seen if c in commands))
+
+    def test_a_long_call_is_not_held_in_the_process_wide_memo(self) -> None:
+        long_command = "echo " + "x" * (project_context._MEMO_MAX_CHARS + 1)
+        short_command = "echo short"
+        project_context._call_parts_memo.cache_clear()
+        real = project_context._call_parts
+        seen: list[str] = []
+
+        def counting(text: str, depth: int = 0) -> Any:
+            seen.append(text)
+            return real(text, depth)
+
+        with mock.patch.object(project_context, "_call_parts", side_effect=counting):
+            for command in (long_command, long_command, short_command, short_command):
+                project_context._call_parts_once(command)
+        self.assertEqual([long_command, long_command, short_command], seen)
+        self.assertEqual(1, project_context._call_parts_memo.cache_info().currsize)
 
 
 class APagedReadKeepsAnEarlierPagesListingWrite(ReaderChecksTestCase):
@@ -574,6 +591,35 @@ class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTes
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.names(command), set())
+
+    def test_a_file_only_viewed_through_a_pipe_is_not_withdrawn_by_a_filter_that_follows(
+        self,
+    ) -> None:
+        for command in (
+            "cat check.sh | wc -l > count.txt",
+            "cat check.sh | sort > sorted.txt",
+            "cat check.sh | grep -n x | head -5 > top.txt",
+            "cat compass-project-checks.json | jq . > pretty.json",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_a_file_viewed_beside_a_heredoc_that_never_mentions_it_is_not_withdrawn(self) -> None:
+        for command in (
+            "cat check.sh; python3 <<'EOF'\nprint(1)\nEOF",
+            "ls check.sh && bash <<< 'echo hi'",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), set())
+
+    def test_a_pipe_into_a_program_that_can_write_still_withdraws_what_it_carries(self) -> None:
+        for command in (
+            "cat check.sh | python3 -c 'import sys'",
+            "cat check.sh | xargs rm",
+            "cat <<'EOF' | sh\nrm check.sh\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.names(command), {"check.sh"})
 
     def test_a_viewer_or_a_run_with_an_option_is_not_a_write(self) -> None:
         for command in (
