@@ -4,10 +4,11 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
-import { Disclosure, disclosureKey } from '../controls';
+import { Disclosure, disclosureKey, useControls, useFocusKey } from '../controls';
 import { DraftInput } from '../controls/DraftField';
 import { datedClock } from '../observed/values';
 import { useNavigate } from '../shell/context';
@@ -62,6 +63,33 @@ import { RouteAnchor } from './RouteAnchor';
    leave it as the reader left it. docs/plans/2026-10-29-sessions-search.md owns the copy and the rules. */
 
 export const SEARCH_KEY = 'sessions-search';
+
+/** The focus key of a filter popover's trigger. */
+const filterKey = (popover: string): string => `sessions-filter-${popover}`;
+
+/* An option keeps its place by `<facet>:<value>`, the name its row carries, and an option that goes while
+   focused hands focus to its popover's trigger rather than to the document body. */
+function useOptionKey<T extends HTMLElement>(key: string, popover: string) {
+  const controls = useControls();
+  return useFocusKey<T>(controls.focusLane, key, { fallback: filterKey(popover) });
+}
+
+function KeyedCheckbox({
+  name,
+  inPopover,
+  ...props
+}: ComponentProps<typeof Checkbox> & { readonly name: string; readonly inPopover: string }) {
+  const ref = useOptionKey<HTMLElement>(name, inPopover);
+  return <Checkbox ref={ref} {...props} />;
+}
+
+function KeyedRadio({
+  name,
+  ...props
+}: ComponentProps<typeof RadioGroupItem> & { readonly name: string }) {
+  const ref = useOptionKey<HTMLElement>(name, 'date');
+  return <RadioGroupItem ref={ref} {...props} />;
+}
 
 export interface FilterBoard {
   readonly generated: number | null;
@@ -160,14 +188,21 @@ function OptionRow({
   readonly option: Option;
   readonly checked: boolean;
   readonly onToggle: () => void;
-  readonly facet: string;
+  readonly facet: Facet;
 }) {
+  const name = `${facet}:${option.value}`;
   return (
     <Label
       className={option.disabled ? `${ROW} cursor-not-allowed` : ROW}
-      data-filter-option={`${facet}:${option.value}`}
+      data-filter-option={name}
     >
-      <Checkbox checked={checked} disabled={option.disabled} onCheckedChange={onToggle} />
+      <KeyedCheckbox
+        name={name}
+        inPopover={facet}
+        checked={checked}
+        disabled={option.disabled}
+        onCheckedChange={onToggle}
+      />
       <span className="flex min-w-0 flex-1 flex-col">
         <span data-filter-label>{option.label}</span>
         {option.note ? (
@@ -235,12 +270,13 @@ function FilterButton({
         scope: null,
         name: `sessions-filter-${facet}`,
       })}
-      focusKey={`sessions-filter-${facet}`}
+      focusKey={filterKey(facet)}
       summaryLabel={selected ? `${name}, ${String(selected)} selected` : name}
       triggerClassName={TRIGGER}
       /* A short window flipped the tall Date list beside its button, over the search field; a filter list
          belongs under its button and scrolls there instead. */
       vertical
+      holdPaint
       summary={
         <>
           <span>{name}</span>
@@ -637,7 +673,7 @@ export function SessionsFilters({
             >
               {(['started', 'active'] as const).map((value) => (
                 <Label key={value} className={ROW} data-filter-option={`date-field:${value}`}>
-                  <RadioGroupItem value={value} />
+                  <KeyedRadio name={`date-field:${value}`} value={value} />
                   <span>{dateFieldLabel(value)}</span>
                 </Label>
               ))}
@@ -658,7 +694,7 @@ export function SessionsFilters({
             >
               {WHENS.map((when) => (
                 <Label key={when} className={ROW} data-filter-option={`when:${when}`}>
-                  <RadioGroupItem value={when} />
+                  <KeyedRadio name={`when:${when}`} value={when} />
                   <span className="min-w-0 flex-1" data-filter-label>
                     {whenLabel(when, filters.dateField)}
                   </span>
@@ -674,7 +710,9 @@ export function SessionsFilters({
               ))}
             </RadioGroup>
             <Label className={ROW} data-filter-option="include-unstamped">
-              <Checkbox
+              <KeyedCheckbox
+                name="include-unstamped"
+                inPopover="date"
                 checked={filters.includeUnstamped}
                 disabled={noClock}
                 onCheckedChange={(checked) => set({ includeUnstamped: checked })}

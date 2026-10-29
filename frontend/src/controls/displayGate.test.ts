@@ -1,17 +1,18 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { createBoardStore } from '../store/board';
 import { MAX_DEFERRED_COMMITS, MOTION_HOLD_MS } from '../store/commit-gate';
 import { createFakeClock } from '../transport/testing';
-import { createDisplayGate } from './displayGate';
+import { choiceOpenIn, createDisplayGate, installChoiceRelease } from './displayGate';
 
-function setup(options: { reduced?: boolean } = {}) {
+function setup(options: { reduced?: boolean; isChoiceOpen?: () => boolean } = {}) {
   const clock = createFakeClock();
   const held = { choice: false, reduced: options.reduced === true };
   const store = createBoardStore({ now: clock.now });
   const gate = createDisplayGate({
     clock,
     reducedMotion: () => held.reduced,
-    isChoiceOpen: () => held.choice,
+    isChoiceOpen: options.isChoiceOpen ?? (() => held.choice),
   });
   const detach = gate.attach(store);
   let generation = 0;
@@ -182,5 +183,87 @@ describe("the display gate: acceptance is immediate, paint is the reader's to ho
     store.setPending(['x']);
     expect(gate.getSnapshot().pending).toEqual([]);
     expect(store.subscriberCount()).toBe(0);
+  });
+});
+
+/* A filter popover's trigger as the page draws it: a popover trigger that opts in with `data-hold-paint`. */
+function page() {
+  document.body.innerHTML = `
+    <main id="app">
+      <button type="button" data-slot="popover-trigger" data-hold-paint aria-expanded="false">State</button>
+      <button type="button" data-slot="popover-trigger" aria-expanded="false">How these counts work</button>
+    </main>
+    <button type="button" data-slot="popover-trigger" data-hold-paint aria-expanded="false">Elsewhere</button>`;
+  const [filter, plain, outside] = [...document.querySelectorAll<HTMLElement>('button')];
+  if (!filter || !plain || !outside) throw new Error('The page did not draw.');
+  return { root: () => document.getElementById('app'), filter, plain, outside };
+}
+
+const observed = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+describe('an open filter popover holds the paint as an open Select does', () => {
+  it('holds only a marked trigger that declares itself open inside the page', () => {
+    const { root, filter, plain, outside } = page();
+    expect(choiceOpenIn(root)).toBe(false);
+    plain.setAttribute('aria-expanded', 'true');
+    expect(choiceOpenIn(root)).toBe(false);
+    outside.setAttribute('aria-expanded', 'true');
+    expect(choiceOpenIn(root)).toBe(false);
+    filter.focus();
+    expect(choiceOpenIn(root)).toBe(false);
+    filter.setAttribute('aria-expanded', 'true');
+    expect(choiceOpenIn(root)).toBe(true);
+    filter.setAttribute('aria-expanded', 'false');
+    expect(choiceOpenIn(root)).toBe(false);
+  });
+
+  it('defers up to twelve background paints while the filter is open, then paints without re-arming', async () => {
+    const { root, filter } = page();
+    const { arrive, shown, gate } = setup({ isChoiceOpen: () => choiceOpenIn(root) });
+    filter.setAttribute('aria-expanded', 'true');
+    for (let attempt = 1; attempt <= MAX_DEFERRED_COMMITS; attempt += 1) {
+      await arrive();
+      expect(shown(), `attempt ${String(attempt)}`).toBe(0);
+    }
+    expect(gate.hasPending()).toBe(true);
+    await arrive();
+    expect(shown()).toBe(MAX_DEFERRED_COMMITS + 1);
+    await arrive();
+    expect(shown()).toBe(MAX_DEFERRED_COMMITS + 2);
+  });
+
+  it('catches up once when the filter closes or its open trigger leaves, and never for an unmarked popover', async () => {
+    const { root, filter, plain } = page();
+    const { arrive, shown, gate } = setup({ isChoiceOpen: () => choiceOpenIn(root) });
+    const release = vi.spyOn(gate, 'releaseChoice');
+    const remove = installChoiceRelease(document, gate);
+    try {
+      plain.setAttribute('aria-expanded', 'true');
+      plain.setAttribute('aria-expanded', 'false');
+      await observed();
+      expect(release).not.toHaveBeenCalled();
+
+      filter.setAttribute('aria-expanded', 'true');
+      await arrive();
+      await arrive();
+      expect(shown()).toBe(0);
+      const listener = vi.fn();
+      gate.subscribe(listener);
+      filter.setAttribute('aria-expanded', 'false');
+      await observed();
+      expect(release).toHaveBeenCalledOnce();
+      expect(shown()).toBe(2);
+      expect(listener).toHaveBeenCalledOnce();
+
+      filter.setAttribute('aria-expanded', 'true');
+      await arrive();
+      expect(shown()).toBe(2);
+      filter.remove();
+      await observed();
+      expect(release).toHaveBeenCalledTimes(2);
+      expect(shown()).toBe(3);
+    } finally {
+      remove();
+    }
   });
 });

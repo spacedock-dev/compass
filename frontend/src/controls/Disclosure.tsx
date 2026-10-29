@@ -35,6 +35,9 @@ export interface DisclosureProps {
   readonly triggerClassName?: string;
   /** Opens below the trigger and scrolls in the room there, never flipping above or beside it. Popover only. */
   readonly vertical?: boolean;
+  /** While open, holds the board's background paint as an open Select does, so what the popover counts does not
+   * move under the pointer. Popover only. */
+  readonly holdPaint?: boolean;
   /** Marks drawn on the summary's row, right-aligned and outside the trigger, so they stay in view while the
    * panel is closed and may hold controls of their own. Accordion only. */
   readonly aside?: ReactNode;
@@ -198,6 +201,7 @@ function PopoverDisclosure({
   focusKey,
   triggerClassName,
   vertical = false,
+  holdPaint = false,
   children,
 }: DisclosureProps) {
   const controls = useControls();
@@ -281,6 +285,7 @@ function PopoverDisclosure({
             id={triggerId}
             ref={triggerRef}
             onBlur={onBlur}
+            {...(holdPaint ? { 'data-hold-paint': '' } : {})}
             {...(triggerClassName ? { className: triggerClassName } : {})}
             {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
           >

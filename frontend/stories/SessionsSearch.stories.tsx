@@ -710,3 +710,101 @@ export const AnnotationsOff: Story = {
     await expect(canvas.queryByRole('button', { name: 'Drift recorded' })).toBeNull();
   },
 };
+
+/* 16 */
+export const PaintHoldWhileAFilterIsOpen: Story = {
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    const { shell } = current();
+    const counts = () =>
+      options(
+        canvasElement.querySelector<HTMLElement>('[data-filter-popover="state"]') as HTMLElement,
+        'state',
+      ).map((one) => `${one.label} ${one.count ?? ''}`);
+    await openFilter(canvasElement, 'state', 'State');
+    const before = counts();
+    await expect(before).toEqual([
+      'Waiting on you 1',
+      'Working 2',
+      'Idle 7',
+      'Ended 1',
+      'State not published 1',
+    ]);
+    await poll({ bIdle: true });
+    await expect(shell.runtime.store.getSnapshot().acceptedCount).toBeGreaterThan(1);
+    await expect(shell.display.hasPending()).toBe(true);
+    await expect(counts()).toEqual(before);
+    await expect(
+      canvasElement.querySelector(
+        `[data-next-operation-group="active"] [data-next-session="${SIDS.B}"]`,
+      ),
+    ).not.toBeNull();
+    let painted = 0;
+    const stop = shell.display.subscribe(() => {
+      painted += 1;
+    });
+    try {
+      await closeFilters();
+      await waitFor(() =>
+        expect(counts()).toEqual([
+          'Waiting on you 1',
+          'Working 1',
+          'Idle 8',
+          'Ended 1',
+          'State not published 1',
+        ]),
+      );
+      await expect(painted).toBe(1);
+      await expect(shell.display.hasPending()).toBe(false);
+      await expect(
+        canvasElement.querySelector(
+          `[data-next-operation-group="history"] [data-next-session="${SIDS.B}"]`,
+        ),
+      ).not.toBeNull();
+    } finally {
+      stop();
+    }
+  },
+};
+
+/* 17 */
+export const FocusKeepsItsPlace: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = await ready(canvasElement);
+    const { shell } = current();
+    const titleLink = () =>
+      within(rowOf(canvasElement, 'B') as HTMLElement).getByRole('link', {
+        name: 'Open session Changelog for 2.4',
+      });
+    // A row that moves between groups on a poll keeps focus on its link, by the row's key.
+    const before = titleLink();
+    before.focus();
+    await poll({ bIdle: true });
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelector(
+          `[data-next-operation-group="history"] [data-next-session="${SIDS.B}"]`,
+        ),
+      ).not.toBeNull(),
+    );
+    await waitFor(() => expect(titleLink()).toHaveFocus());
+    await expect(titleLink()).not.toBe(before);
+    // Each option keeps its place by <facet>:<value>.
+    const state = await openFilter(canvasElement, 'state', 'State');
+    await pick(state, 'Idle');
+    await waitFor(() => expect(shownRows(canvasElement)).not.toContain('C'));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await expect(shell.controls.focusLane.focus('state:Idle')).toBe(true);
+    await expect(options(state, 'state').find((one) => one.label === 'Idle')?.box).toHaveFocus();
+    await closeFilters();
+    await waitFor(() => expect(trigger(canvasElement, 'State')).toHaveFocus());
+    // A focused row link that leaves the filtered set hands focus to the search field.
+    await waitFor(() => expect(shownRows(canvasElement)).toContain('B'));
+    titleLink().focus();
+    await poll({ bIdle: false });
+    await waitFor(() => expect(shownRows(canvasElement)).not.toContain('B'));
+    await waitFor(() =>
+      expect(canvas.getByRole('searchbox', { name: 'Search sessions' })).toHaveFocus(),
+    );
+  },
+};

@@ -157,6 +157,8 @@ function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: re
         route={row.route}
         className="next-operation-route"
         label={`Open session ${session.titleText}`}
+        focusKey={`sessions-row:${row.key}`}
+        fallback={SEARCH_KEY}
       >
         <strong
           {...(session.titleKnown
@@ -223,6 +225,8 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
         }
         extra={{ 'data-next-goal-focus': '' }}
         before={onGoal}
+        focusKey={`sessions-row-goal:${row.key}`}
+        fallback={SEARCH_KEY}
       >
         {goal.text}
       </RouteAnchor>
