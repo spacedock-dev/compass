@@ -9,6 +9,8 @@ const names: IconName[] = [
   'earlier-failed',
   'checks',
   'expand',
+  'search',
+  'check',
 ];
 const meta = { title: 'UI/Icons', component: Icon, args: { name: 'unrecorded' } } satisfies Meta<
   typeof Icon

@@ -211,6 +211,12 @@ capacity and browser-local tripwires. The terminal bridge and semantic history r
 the [cockpit design contract](docs/design-next-ui.md#cockpit-reconciliation) records their limits.
 Sessions puts active work above recent history, counts active now and working, and gives each active session the same four facts: where it
 is, what it is doing now, what it does next, and whether it is blocked.
+Its Find sessions bar searches titles, goals and prompts (press `/` to reach it) and filters by
+when a session started or was last active, project, harness, state, drift and goal, with a count
+beside each choice and presets for Waiting on you, Started today and Drift recorded. The counters
+keep counting the whole board. If the filters hide a session that is waiting on you, a warning says so,
+with a link to open it (or, for several, to see them on Attention). Filters last until you reload the tab and are never saved;
+[the design record](docs/design-sessions-search.md) says how they count and what they leave out.
 Attention collects what needs a human, and the Intent log lists every board session plus retained
 annotations, with typed, cached deterministic and workflow goals labeled by source. Keyboard shortcuts `s`, `p` and `a` reach
 Sessions, Projects and Attention; the Intent log is a nav link with no shortcut.

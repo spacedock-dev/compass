@@ -53,7 +53,7 @@ import {
   sessionSubagents,
   sessionTasks,
 } from './detail';
-import { RouteAnchor } from './SessionsView';
+import { RouteAnchor } from './RouteAnchor';
 import { harnessLabels } from './rows';
 import { sessionInstruction } from './intent';
 import { worktreeOf } from './worktree';

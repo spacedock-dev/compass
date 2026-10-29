@@ -32,7 +32,7 @@ function boardLayer(snapshot: BoardSnapshot): BoardLayer {
 export interface DisplayGateOptions {
   readonly clock: Clock;
   readonly reducedMotion: () => boolean;
-  /** A Base UI Select trigger inside the page declares its popup open. */
+  /** A Base UI Select trigger, or a popover trigger marked `data-hold-paint`, inside the page declares its popup open. */
   readonly isChoiceOpen: () => boolean;
 }
 
@@ -40,7 +40,7 @@ export interface DisplayGateOptions {
    the moment it arrives; this decides when a consumer shows it, with the two
    retained deferrals of docs/design-reader-state.md and nothing else:
 
-   - React keeps the Select value and popup state. While it is open, a background
+   - React keeps the Select value and popup state, and a filter popover's open state. While one is open, a background
      paint waits so changes around the trigger cannot move the choice: at most
      twelve in a row, then the board paints without re-arming. Closing the popup
      catches up once. Manual refresh still paints at the reader's request.
@@ -183,9 +183,17 @@ export function createDisplayGate(options: DisplayGateOptions) {
 
 export type DisplayGate = ReturnType<typeof createDisplayGate>;
 
+/* The triggers whose open popup holds a background paint: a Base UI Select, and a popover trigger that opts
+   in with `data-hold-paint`, such as a Sessions filter button, whose option counts would otherwise change
+   under the pointer. Both publish real open state as `aria-expanded`, and both share the one cap. */
+const HOLDING_TRIGGER = ['[data-slot="select-trigger"]', '[data-hold-paint]'] as const;
+const OPEN_HOLDING_TRIGGER = HOLDING_TRIGGER.map((one) => `${one}[aria-expanded="true"]`).join(
+  ', ',
+);
+
 /** The trigger remains in the page even when keyboard focus is in its portalled popup. */
 export function choiceOpenIn(root: () => Element | null, _doc: Document = document): boolean {
-  return Boolean(root()?.querySelector('[data-slot="select-trigger"][aria-expanded="true"]'));
+  return Boolean(root()?.querySelector(OPEN_HOLDING_TRIGGER));
 }
 
 /* Base UI publishes actual open state on the trigger. Observing its close also covers Escape,
@@ -194,7 +202,7 @@ export function installChoiceRelease(
   doc: Document,
   gate: Pick<DisplayGate, 'releaseChoice'>,
 ): () => void {
-  const trigger = '[data-slot="select-trigger"]';
+  const trigger = HOLDING_TRIGGER.join(', ');
   const observer = new MutationObserver((records) => {
     const closed = records.some((record) => {
       if (record.type === 'attributes') {
@@ -208,8 +216,7 @@ export function installChoiceRelease(
       return [...record.removedNodes].some(
         (node) =>
           node instanceof Element &&
-          (node.matches(`${trigger}[aria-expanded="true"]`) ||
-            node.querySelector(`${trigger}[aria-expanded="true"]`)),
+          (node.matches(OPEN_HOLDING_TRIGGER) || node.querySelector(OPEN_HOLDING_TRIGGER)),
       );
     });
     if (closed) gate.releaseChoice();

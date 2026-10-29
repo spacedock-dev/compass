@@ -1,7 +1,6 @@
 import { Card } from '../ui/card';
-import { buttonVariants } from '../ui/button';
-import { cn } from '../lib/utils';
-import { useMemo, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
+import { Button } from '../ui/button';
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
@@ -14,10 +13,31 @@ import { driftCtxFor } from '../drift/state';
 import { PillMeter } from '../drift/DriftLevelView';
 import { identityOf } from '../intent/context';
 import { useHeldVersion } from '../intent/useIntent';
-import { fragmentForRoute, type RouteInput } from '../router/grammar';
 import { selectObserved } from '../observed/select';
 import { selectHarnessSources } from '../store/selectors';
-import { useDisplayed, useNavigate, useShell } from '../shell/context';
+import { useDisplayed, useShell } from '../shell/context';
+import { windowHours } from '../shell/derive';
+import { datedClock } from '../observed/values';
+import type { TimerHandle } from '../transport/ports';
+import { RouteAnchor } from './RouteAnchor';
+import {
+  announcement,
+  applyFilters,
+  EMPTY_FILTERS,
+  groupEmptyLine,
+  harnessMeta,
+  indexScreen,
+  prepare,
+  type Filtered,
+  type FilterState,
+} from './filters';
+import { useFilterState } from './filterStore';
+import {
+  SEARCH_KEY,
+  SessionsFilters,
+  type FilterActions,
+  type FilterBoard,
+} from './SessionsFilters';
 import {
   analysisAvailable,
   buildSessionsScreen,
@@ -26,7 +46,7 @@ import {
   rowState,
   type SessionRow,
 } from './rows';
-import { sessionInstruction, type PromptCandidate } from './intent';
+import { assignmentOf, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
 import { worktreeLabel } from './worktree';
 import {
@@ -62,55 +82,6 @@ export function StatusDot({
     >
       {filled ? '●' : '○'}
     </span>
-  );
-}
-
-/* A link to a route that keeps the released fragment as its `href` (so it opens in a new tab and copies as
-   a link) and sends a plain click through the router, which stamps where a session was opened from. A
-   modified click or a non-primary button is the browser's own. */
-export function RouteAnchor({
-  route,
-  className,
-  label,
-  extra,
-  before,
-  children,
-}: {
-  readonly route: RouteInput;
-  readonly className?: string;
-  readonly label?: string;
-  readonly extra?: Record<string, string>;
-  readonly before?: () => void;
-  readonly children: ReactNode;
-}) {
-  const navigate = useNavigate();
-  const fragment = fragmentForRoute(route);
-  const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    )
-      return;
-    event.preventDefault();
-    before?.();
-    navigate(route);
-  };
-  return (
-    <a
-      data-slot="button-link"
-      className={cn(className, buttonVariants({ variant: 'native' }))}
-      href={fragment}
-      data-next-route={fragment.slice(3)}
-      {...(label ? { 'aria-label': label } : {})}
-      {...extra}
-      onClick={onClick}
-    >
-      {children}
-    </a>
   );
 }
 
@@ -161,14 +132,7 @@ function ObservedFact({
   );
 }
 
-function assignmentOf(source: Row | undefined): string {
-  const assignment = sessionInstruction(source, 'asked');
-  const text = assignment ? String(assignment['text'] || '').trim() : '';
-  const title = String(source?.['title'] || source?.['last_prompt'] || '').trim();
-  return text && text !== title ? text : '';
-}
-
-function Identity({ row }: { readonly row: SessionRow }) {
+function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: readonly string[] }) {
   const { session, source, history } = row;
   const assignment = history ? '' : assignmentOf(source);
   const names = source ? gapNames(source) : [];
@@ -186,6 +150,8 @@ function Identity({ row }: { readonly row: SessionRow }) {
         route={row.route}
         className="next-operation-route"
         label={`Open session ${session.titleText}`}
+        focusKey={`sessions-row:${row.key}`}
+        fallback={SEARCH_KEY}
       >
         <strong
           {...(session.titleKnown
@@ -201,6 +167,15 @@ function Identity({ row }: { readonly row: SessionRow }) {
       {!session.titleKnown && session.promptKnown ? (
         <span className="next-operation-assignment">{`LAST PROMPT · ${session.promptText}`}</span>
       ) : null}
+      {hints.map((hint) => (
+        <span
+          key={hint}
+          className="mt-1 block text-label leading-[1.5] text-muted-foreground"
+          data-next-row-hint
+        >
+          {hint}
+        </span>
+      ))}
       {assignment ? (
         <span className="next-operation-assignment">{`Current task · ${assignment}`}</span>
       ) : null}
@@ -243,6 +218,8 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
         }
         extra={{ 'data-next-goal-focus': '' }}
         before={onGoal}
+        focusKey={`sessions-row-goal:${row.key}`}
+        fallback={SEARCH_KEY}
       >
         {goal.text}
       </RouteAnchor>
@@ -329,7 +306,17 @@ function DriftMark({
   );
 }
 
-function RowView({ row }: { readonly row: SessionRow }) {
+const NO_HINTS: readonly string[] = [];
+
+/* Memoized with `Group`, so the urgent render a keystroke makes, which still holds the deferred result,
+   passes every row the same props and redraws none of them. */
+const RowView = memo(function RowView({
+  row,
+  hints = NO_HINTS,
+}: {
+  readonly row: SessionRow;
+  readonly hints?: readonly string[];
+}) {
   const { session, history } = row;
   const nowKind = 'NOW';
   const outcome = session.outcomeKnown ? (
@@ -364,7 +351,7 @@ function RowView({ row }: { readonly row: SessionRow }) {
       data-next-session={session.sid}
       {...(history ? { 'data-next-operation-history': 'true' } : {})}
     >
-      <Identity row={row} />
+      <Identity row={row} hints={hints} />
       {/* The project label alone: "Exact location not published" sat hatched on every row and read as an
           error, for a location no harness publishes here. */}
       <Fact
@@ -406,15 +393,16 @@ function RowView({ row }: { readonly row: SessionRow }) {
       <DriftMarkView row={row} />
     </Card>
   );
-}
+});
 
-function Group({
+const Group = memo(function Group({
   kind,
   title,
   label,
   rows,
   empty,
   caveat,
+  filter,
 }: {
   readonly kind: 'active' | 'history';
   readonly title: string;
@@ -422,7 +410,15 @@ function Group({
   readonly rows: readonly SessionRow[];
   readonly empty: string;
   readonly caveat?: { readonly summary: string; readonly body: string };
+  /** Set while the reader's filters are on: what they keep of this group, and how to take them off. */
+  readonly filter?: {
+    readonly filtered: Filtered;
+    readonly onClear: () => void;
+  };
 }) {
+  const kept = filter?.filtered.active
+    ? rows.filter((row) => filter.filtered.keys.has(row.key))
+    : rows;
   return (
     <section
       className={`next-operation-group next-operation-group--${kind}`}
@@ -445,6 +441,26 @@ function Group({
           </Disclosure>
         ) : null}
       </header>
+      {/* A sibling after the header, never inside it, so a filtered header reads exactly as an unfiltered one. */}
+      {filter?.filtered.active && rows.length ? (
+        <p
+          className="m-0 flex flex-wrap items-center gap-x-2 text-body text-muted-foreground"
+          data-next-sessions-shown={kind}
+        >
+          <span
+            data-next-sessions-shown-count
+          >{`${String(kept.length)} of ${String(rows.length)} shown`}</span>
+          <span aria-hidden="true">·</span>
+          <Button
+            type="button"
+            variant="native"
+            className="cursor-pointer border-0 bg-transparent p-0 font-[family-name:var(--sans)] text-body text-foreground underline"
+            onClick={filter.onClear}
+          >
+            Clear filters
+          </Button>
+        </p>
+      ) : null}
       <div className="next-operations-columns" aria-hidden="true">
         <span>SESSION</span>
         <span>PROJECT</span>
@@ -460,15 +476,27 @@ function Group({
         )}
       </div>
       <div className="next-operation-rows">
-        {rows.length ? (
-          rows.map((row) => <RowView key={row.key} row={row} />)
+        {kept.length ? (
+          kept.map((row) => (
+            <RowView
+              key={row.key}
+              row={row}
+              hints={filter?.filtered.hints.get(row.key) ?? NO_HINTS}
+            />
+          ))
+        ) : rows.length ? (
+          <p data-next-sessions-filtered-empty className="next-absence">
+            {groupEmptyLine(rows.length, title)}
+          </p>
         ) : (
           <p className="next-sessions-empty next-absence">{empty}</p>
         )}
       </div>
     </section>
   );
-}
+});
+
+const RECENT_CAVEAT = { summary: 'What recent means', body: RECENT_WHY };
 
 const FACT_KEYS = ['active', 'working', 'requests', 'reported-blocks'] as const;
 
@@ -494,14 +522,117 @@ export interface SessionsViewProps {
   readonly chosenFor?: (session: Row) => PromptCandidate | null;
 }
 
+const ANNOUNCE_KEY = 'sessions-filter';
+/* A reader still typing hears nothing; one who pauses hears the count once. */
+const TYPING_PAUSE_MS = 600;
+
+/* The reader's own changes, and only those, speak in the cue region: a poll that re-filters the board says
+   nothing, and the words typed are never read back. */
+function useFilterActions(
+  store: ReturnType<typeof useFilterState>[1],
+  indexed: ReturnType<typeof indexScreen>,
+  generated: number | null,
+  annotated: boolean,
+): FilterActions {
+  const shell = useShell();
+  const latest = useRef({ indexed, generated, annotated });
+  const timer = useRef<TimerHandle | null>(null);
+  useEffect(() => {
+    latest.current = { indexed, generated, annotated };
+  });
+  useEffect(
+    () => () => {
+      if (timer.current !== null) shell.clock.clearTimeout(timer.current);
+    },
+    [shell],
+  );
+  /* The choices as they stood before the change being spoken, held across a burst of typing, so the cue
+     says "Filters cleared" only when the change took the last choice away. */
+  const since = useRef<FilterState | null>(null);
+  return useMemo(() => {
+    const speak = (next: FilterState) => {
+      const now = latest.current;
+      const before = since.current ?? next;
+      since.current = null;
+      const result = applyFilters(now.indexed, prepare(next, now.generated, now.annotated), (at) =>
+        datedClock(at, now.generated ?? at),
+      );
+      // Forgotten first, so the same sentence after a second press is spoken again.
+      shell.announcer.forget(ANNOUNCE_KEY);
+      shell.announcer.announce(ANNOUNCE_KEY, announcement(result, next, before));
+    };
+    const cancel = () => {
+      if (timer.current === null) return;
+      shell.clock.clearTimeout(timer.current);
+      timer.current = null;
+    };
+    const hold = () => {
+      since.current ??= store.get();
+    };
+    return {
+      change(next, how) {
+        hold();
+        store.set(next);
+        cancel();
+        if (how === 'press') {
+          speak(next);
+          return;
+        }
+        timer.current = shell.clock.setTimeout(() => {
+          timer.current = null;
+          speak(store.get());
+        }, TYPING_PAUSE_MS);
+      },
+      clearAll() {
+        hold();
+        cancel();
+        store.reset();
+        speak(EMPTY_FILTERS);
+        shell.controls.focusLane.focus(SEARCH_KEY);
+      },
+    };
+  }, [shell, store]);
+}
+
 export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
+  const shell = useShell();
   const data = useDisplayed((snapshot) => snapshot.data);
   const model = useDisplayed(selectObserved);
   const screen = useMemo(
     () => (data ? buildSessionsScreen(data as unknown as Row, model, chosenFor) : null),
     [data, model, chosenFor],
   );
-  if (!screen) return null;
+  const [filters, store] = useFilterState(shell.controls);
+  /* The rows follow the choices a frame behind under load. The keystroke's own render keeps the deferred
+     result, and `Group` and `RowView` are memoized on it, so that render redraws the toolbar and no row. */
+  const deferred = useDeferredValue(filters);
+  const indexed = useMemo(() => (screen ? indexScreen(screen) : []), [screen]);
+  const generated = screen ? screen.context.generated : null;
+  const annotated = screen ? screen.context.annotate && !screen.context.unreadable : false;
+  const prepared = useMemo(
+    () => prepare(deferred, generated, annotated),
+    [deferred, generated, annotated],
+  );
+  const filtered = useMemo(
+    () => applyFilters(indexed, prepared, (at) => datedClock(at, generated ?? at)),
+    [indexed, prepared, generated],
+  );
+  const actions = useFilterActions(store, indexed, generated, annotated);
+  const board = useMemo((): FilterBoard | null => {
+    if (!data || !screen) return null;
+    const payload = data as unknown as Row;
+    return {
+      generated,
+      hours: windowHours(data),
+      showAll: shell.runtime.bootstrap.showAll || payload['show_all'] === true,
+      cleared: nextNumber(payload['cleared']) ?? 0,
+      harnesses: harnessMeta(payload),
+      annotate: screen.context.annotate,
+      unreadable: screen.context.unreadable,
+    };
+  }, [data, screen, generated, shell]);
+  const groupFilter = useMemo(() => ({ filtered, onClear: actions.clearAll }), [filtered, actions]);
+  if (!screen || !board) return null;
   const canAnalyze = analysisAvailable(data as unknown as Row);
   return (
     <section className="next-operations" data-next-view-body="sessions">
@@ -531,12 +662,24 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
           </section>
         ))}
       </section>
+      {/* No toolbar over an empty board: the existing sentences say why there is nothing to find. */}
+      {indexed.length ? (
+        <SessionsFilters
+          indexed={indexed}
+          filters={filters}
+          prepared={prepared}
+          filtered={filtered}
+          board={board}
+          actions={actions}
+        />
+      ) : null}
       <Group
         kind="active"
         title="Active now"
         label="working, waiting on you, an exact request, or recorded drift"
         rows={screen.active}
         empty="No exact session has active evidence right now."
+        filter={groupFilter}
       />
       <Group
         kind="history"
@@ -544,7 +687,8 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         label=""
         rows={screen.history}
         empty="No recent-history rows in this payload."
-        caveat={{ summary: 'What recent means', body: RECENT_WHY }}
+        caveat={RECENT_CAVEAT}
+        filter={groupFilter}
       />
       <CapacityStrip />
     </section>

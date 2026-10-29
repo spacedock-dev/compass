@@ -5,7 +5,7 @@ import { FALLBACK_POLL_MS, UNCOORDINATED_POLL_MS } from '../transport/live';
 import { Breadcrumb } from './Breadcrumb';
 import { useDisplayed, useRoute, useShell } from './context';
 import { Header } from './Header';
-import { shortcutTarget } from './keyboard';
+import { shortcutTarget, SKIP_ROLE_SELECTOR } from './keyboard';
 import { Notices } from './Notices';
 import { findSession } from './derive';
 import { selectObserved } from '../observed/select';
@@ -27,10 +27,7 @@ function useShellKeyboard(): void {
           key: event.key,
           tagName: target?.tagName ?? 'BODY',
           isContentEditable: editable,
-          role:
-            target
-              ?.closest('[role="combobox"], [role="listbox"], [role="option"]')
-              ?.getAttribute('role') ?? null,
+          role: target?.closest(SKIP_ROLE_SELECTOR)?.getAttribute('role') ?? null,
           metaKey: event.metaKey,
           ctrlKey: event.ctrlKey,
           altKey: event.altKey,

@@ -279,9 +279,10 @@
       "oracles": [
         "frontend/src/sessions/SessionsView.test.tsx",
         "frontend/src/sessions/sessions.differential.test.tsx",
-        "frontend/e2e/sessions-parity.mjs"
+        "frontend/e2e/sessions-parity.mjs",
+        "frontend/stories/SessionsSearch.stories.tsx"
       ],
-      "contract": "Active, blocked, ended and source-gap rows expose exact goals and drift with one-step access to a session."
+      "contract": "Active, blocked, ended and source-gap rows expose exact goals and drift with one-step access to a session. Search and filters are the reader's own and may hide any row, including one waiting on the reader; a guard counts every hidden waiting session and offers to open it when one is hidden, or to see them on Attention when several are, and to clear the filters, and ACTIVE NOW, WORKING and the reported blocks stay board-wide."
     },
     {
       "name": "session-detail-and-absence",
@@ -816,6 +817,19 @@
       "disposition": "store-held"
     },
     {
+      "name": "The Sessions search and filters",
+      "owner": "DRC-4824",
+      "oracles": [
+        "frontend/src/sessions/filterStore.test.ts",
+        "frontend/src/sessions/filters.test.ts",
+        "frontend/src/sessions/SessionsFilters.test.tsx",
+        "frontend/src/controls/fieldMemory.test.tsx",
+        "frontend/stories/SessionsSearch.stories.tsx"
+      ],
+      "contract": "The words, the Date mode and choice, the no-stamp checkbox and the Project, Harness, State, Drift and Goal choices are one snapshot held per controls instance for the life of the tab, across polls, view changes and session round trips, and never written to browser storage or the fragment. The uncontrolled search field takes back its words from the store and its caret through field memory under sessions-search; Clear all empties the live node and the store. Row, trigger and option focus keys are re-emitted, and a focused row that leaves the filtered set falls back to the search field.",
+      "disposition": "store-held"
+    },
+    {
       "name": "Intent log rows",
       "owner": "DRC-4825",
       "oracles": [
@@ -904,7 +918,7 @@
       "disposition": "store-held"
     },
     {
-      "name": "An open Select popup, or the open list of prompts",
+      "name": "An open Select popup, the open list of prompts, or an open Sessions filter",
       "owner": "DRC-4823",
       "oracles": [
         "frontend/src/controls/choiceProbe.test.tsx",
@@ -912,9 +926,10 @@
         "frontend/src/intent/PromptSelect.test.tsx",
         "frontend/e2e/controls-continuity.mjs",
         "frontend/e2e/intent-parity.mjs",
-        "frontend/e2e/css-contract.mjs"
+        "frontend/e2e/css-contract.mjs",
+        "frontend/stories/SessionsSearch.stories.tsx"
       ],
-      "contract": "React retains the controlled value and open Select popup, and the open list of prompts, a popover under a button that holds no value and is held open by its aria-expanded=true trigger. Defer background board paints while actually open for at most 12 consecutive holds; popup closure catches up once. Manual and cap paints retain popup identity.",
+      "contract": "React retains the controlled value and open Select popup, the open list of prompts and an open Sessions filter popover, each a popover under a button that holds no value and is held open by its aria-expanded=true trigger; a popover trigger holds only when it carries data-hold-paint, as the six filter buttons do. Defer background board paints while actually open for at most 12 consecutive holds; popup closure or removal of the open trigger catches up once. Manual and cap paints retain popup identity.",
       "disposition": "retained-deferral"
     },
     {
@@ -1577,11 +1592,13 @@
     "input": {
       "component": "frontend/src/ui/input.tsx",
       "owners": [
-        "frontend/src/controls/DraftField.tsx"
+        "frontend/src/controls/DraftField.tsx",
+        "frontend/src/sessions/SessionsFilters.tsx"
       ],
       "oracles": [
         "frontend/src/controls/fieldMemory.test.tsx",
-        "frontend/e2e/controls-continuity.mjs"
+        "frontend/e2e/controls-continuity.mjs",
+        "frontend/stories/SessionsSearch.stories.tsx"
       ]
     },
     "textarea": {

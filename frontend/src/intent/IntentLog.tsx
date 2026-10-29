@@ -6,7 +6,7 @@ import { payloadSessions } from '../api/bootstrap';
 import type { Row } from '../observed';
 import { asPayload, sessionKey } from '../observed/values';
 import { selectObserved } from '../observed/select';
-import { RouteAnchor } from '../sessions/SessionsView';
+import { RouteAnchor } from '../sessions/RouteAnchor';
 import { useDisplayed, useShell } from '../shell/context';
 import { intentLogFor, useIntentLogState } from './logContext';
 import { intentLogView, type LogRow } from './logModel';

@@ -213,6 +213,22 @@ export function anyChecked(rows: readonly Row[], context: SessionsContext): bool
   });
 }
 
+/* One row's check against the words the reader holds now: an unasked check that found no departure, or a
+   stored reading made against the current revision. A reading made against earlier words is not one. Null
+   while annotations are off, for the reason `anyChecked` is. Drift outranks it where a row has both. */
+export function checkedAgainstCurrentWords(
+  source: Row | undefined,
+  context: SessionsContext,
+): boolean | null {
+  if (!context.annotate) return null;
+  if (!source) return false;
+  if (source['departure_checked'] === true) return true;
+  const assessment = source['annotation_assessment'];
+  if (!isRecord(assessment)) return false;
+  const read = nextNumber(assessment['revision_read']);
+  return read !== null && read === nextNumber(source['annotation_revision']);
+}
+
 export const NOT_CHECKED = 'No session has been checked for drift yet; open one to check it.';
 
 export interface GoalCell {

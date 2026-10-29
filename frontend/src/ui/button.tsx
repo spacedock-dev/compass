@@ -49,6 +49,11 @@ const buttonVariants = cva(
           'block justify-normal items-normal border-0 border-none border-current bg-transparent text-muted-foreground',
         ),
         native: '',
+        /* A removable filter: one press removes it, so the remove glyph sits inside the button's name. */
+        'filter-chip': cn(
+          action,
+          'inline-flex gap-1.5 px-2.5 py-1 rounded-pill border-[var(--line)] bg-[var(--sunk)] text-body leading-[1.4] text-start hover:border-[var(--accent)]',
+        ),
         copy: cn(
           action,
           refused,

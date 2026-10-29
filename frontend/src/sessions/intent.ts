@@ -79,6 +79,16 @@ export function sessionInstruction(session: Row | null | undefined, label: strin
   return String(instruction['text'] == null ? '' : instruction['text']).trim() ? instruction : null;
 }
 
+/* The current task as an active row draws it under its title ("Current task · ..."): the asked instruction,
+   left out where it only repeats the title. Search reads the same rule, so a task the row does not draw is
+   searched as something the reader would have to open the session to see. */
+export function assignmentOf(source: Row | undefined): string {
+  const assignment = sessionInstruction(source, 'asked');
+  const text = assignment ? String(assignment['text'] || '').trim() : '';
+  const title = String(source?.['title'] || source?.['last_prompt'] || '').trim();
+  return text && text !== title ? text : '';
+}
+
 export interface PromptCandidate {
   readonly text: string;
   readonly at: number | null;

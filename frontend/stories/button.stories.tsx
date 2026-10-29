@@ -125,6 +125,22 @@ export const Native: Story = {
     await expect(node).toHaveFocus();
   },
 };
+export const FilterChip: Story = {
+  args: {
+    variant: 'filter-chip',
+    'aria-label': 'Remove Project: compass',
+    children: 'Project: compass',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const node = canvas.getByRole('button', { name: 'Remove Project: compass' });
+    await expect(node).toBeVisible();
+    await expect(node).toHaveTextContent('Project: compass');
+    await expect(node.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    node.focus();
+    await expect(node).toHaveFocus();
+  },
+};
 export const Copy: Story = {
   args: { variant: 'copy', children: 'Button copy' },
   play: async ({ canvasElement, args }) => {
