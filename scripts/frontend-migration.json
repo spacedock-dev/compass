@@ -282,7 +282,7 @@
         "frontend/e2e/sessions-parity.mjs",
         "frontend/stories/SessionsSearch.stories.tsx"
       ],
-      "contract": "Active, blocked, ended and source-gap rows expose exact goals and drift with one-step access to a session. Search and filters are the reader's own and may hide any row, including one waiting on the reader; a guard names every hidden waiting session with a way to open it or clear the filters, and ACTIVE NOW, WORKING and the reported blocks stay board-wide."
+      "contract": "Active, blocked, ended and source-gap rows expose exact goals and drift with one-step access to a session. Search and filters are the reader's own and may hide any row, including one waiting on the reader; a guard counts every hidden waiting session and offers to open it when one is hidden, or to see them on Attention when several are, and to clear the filters, and ACTIVE NOW, WORKING and the reported blocks stay board-wide."
     },
     {
       "name": "session-detail-and-absence",
@@ -826,7 +826,7 @@
         "frontend/src/controls/fieldMemory.test.tsx",
         "frontend/stories/SessionsSearch.stories.tsx"
       ],
-      "contract": "The words, the Date mode and choice, the no-stamp checkbox and the Project, Harness, State, Drift and Goal choices are one snapshot held per controls instance for the life of the tab, across polls, view changes and session round trips, and never written to browser storage or the fragment. The uncontrolled search field keeps its words and caret through field memory under sessions-search; Clear all empties the live node and the store. Row, trigger and option focus keys are re-emitted, and a focused row that leaves the filtered set falls back to the search field.",
+      "contract": "The words, the Date mode and choice, the no-stamp checkbox and the Project, Harness, State, Drift and Goal choices are one snapshot held per controls instance for the life of the tab, across polls, view changes and session round trips, and never written to browser storage or the fragment. The uncontrolled search field takes back its words from the store and its caret through field memory under sessions-search; Clear all empties the live node and the store. Row, trigger and option focus keys are re-emitted, and a focused row that leaves the filtered set falls back to the search field.",
       "disposition": "store-held"
     },
     {

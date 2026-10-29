@@ -1,6 +1,6 @@
 import { nextNumber } from '../api/bootstrap';
 import { isRecord, promptCopied, trimmed, type Row } from '../observed';
-import { sessionInstruction } from './intent';
+import { assignmentOf, sessionInstruction } from './intent';
 import {
   checkedAgainstCurrentWords,
   rowState,
@@ -133,6 +133,7 @@ const HIDDEN = {
   slashGoal: 'its /goal',
   outcome: 'your expected outcome',
   task: 'a task',
+  currentTask: 'its current task',
   sid: 'the session id',
 } as const;
 
@@ -169,17 +170,20 @@ export interface IndexedRow {
 }
 
 /* Built once per payload, so a keystroke folds no text. Placeholder sentences ("Add a goal", "Title not
-   published") are never fields, because a reader searching for them would match a fact nobody published. */
+   published") are never fields, because a reader searching for them would match a fact nobody published.
+   The current task is shown only where the row draws it (`assignmentOf`, on an active row); a history row
+   does not, so a match there is named in a hint like any other field the row does not show. */
 export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow {
   const readable = context.annotate && !context.unreadable;
   const { session, source, goal } = row;
   const titleShown = session.titleKnown ? session.titleText : '';
   const fallback = !session.titleKnown && session.promptKnown ? session.promptText : '';
   const task = sessionInstruction(source, 'asked');
+  const drawnTask = row.history ? '' : assignmentOf(source);
   const shown = [
     field('title', titleShown || fallback),
     field('goal', goal.known ? goal.text : ''),
-    field('task', task ? task['text'] : ''),
+    field('task', drawnTask),
     field('project', session.project),
     field('worktree', worktreeOf(source)),
     field('harness', row.harnessLabel),
@@ -204,6 +208,7 @@ export function indexRow(row: SessionRow, context: SessionsContext): IndexedRow 
   const hidden = [
     first,
     latest,
+    drawnTask ? null : field(HIDDEN.currentTask, task ? task['text'] : ''),
     field(HIDDEN.slashGoal, isRecord(stated) ? stated['text'] : ''),
     ...outcome,
     ...tasks,
@@ -271,23 +276,21 @@ export interface DayEdges {
   readonly week: number;
 }
 
-/* Local midnights around the board's own clock, never the browser's. `setDate` walks calendar days, so a
-   day that a daylight-saving change makes 23 or 25 hours long still starts at midnight. Last 7 days is
-   today and the six days before it. */
+/* Local midnights around the board's own clock, never the browser's. Each edge is built from the calendar
+   date, so a day that a daylight-saving change makes 23 or 25 hours long still starts at midnight. Walking
+   back from today's start did not: where the clocks jump at midnight (America/Santiago) that day begins at
+   01:00, and every earlier edge inherited the hour. Such a day's own edge is its first instant, 01:00. Last
+   7 days is today and the six days before it. */
 export function dayEdges(generated: number): DayEdges {
-  const midnight = new Date(generated * 1000);
-  midnight.setHours(0, 0, 0, 0);
-  const daysBack = (days: number) => {
-    const day = new Date(midnight);
-    day.setDate(day.getDate() - days);
-    return day.getTime() / 1000;
-  };
+  const now = new Date(generated * 1000);
+  const start = (daysBack: number) =>
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack).getTime() / 1000;
   return {
     generated,
     hour: generated - 3600,
-    today: midnight.getTime() / 1000,
-    yesterday: daysBack(1),
-    week: daysBack(6),
+    today: start(0),
+    yesterday: start(1),
+    week: start(6),
   };
 }
 
@@ -425,7 +428,9 @@ export function applyFilters(
 
 /* ---- Counts ---- */
 
-/* Faceted: how many rows would show with this value chosen in its facet and every other choice kept. */
+/* Faceted: how many rows carry this value among those every other filter keeps. The facet's own choice is
+   left out, so a count does not move under the pointer when a sibling value is pressed; with a sibling
+   already chosen, choosing this one shows both, which is more than this number. */
 export function facetCounts(
   indexed: readonly IndexedRow[],
   prepared: Prepared,
@@ -483,9 +488,11 @@ export interface Option {
   readonly disabled: boolean;
 }
 
+/* Two blank labels of different lengths are two options, never merged, so each says its length. */
 export function projectLabel(value: string): string {
   if (value === '') return 'No project published';
-  return value.trim() ? value : 'Blank project label';
+  if (value.trim()) return value;
+  return `Blank project label (${plural(value.length, 'character', 'characters')})`;
 }
 
 /* A label the rows of two or more locations carry. The row's own "N sessions share this display label"
@@ -622,15 +629,27 @@ export function hiddenWaiting(
   return indexed.filter((one) => one.state === 'Waiting on you' && !filtered.keys.has(one.row.key));
 }
 
-/* Who could be waiting without the page knowing: rows whose harness cannot report a wait, and the harnesses
-   on the board whose wait reporting holds only in some setups. An ended session waits on nobody (the order
-   `rowState` ranks by), so it is never counted as one that could be waiting. */
+/* Who could be waiting without the page knowing, by cause. A harness is named as not reporting a wait only
+   when the payload says so; a row of a harness that does report one, but whose wait state could not be read
+   (the server's "block state" gap, which a Pi or OpenCode row carries until its adapter sends an event), is
+   counted on a line of its own, as its BLOCKED cell says. Then the harnesses on the board whose reporting
+   holds only in some setups. An ended session waits on nobody (the order `rowState` ranks by), so it is
+   never counted as one that could be waiting. */
 export function waitCoverage(
   indexed: readonly IndexedRow[],
   harnesses: readonly HarnessMeta[],
 ): string[] {
+  const meta = new Map(harnesses.map((one) => [one.key, one]));
+  const reports = (one: IndexedRow) => {
+    const harness = meta.get(one.row.session.harness);
+    return harness !== undefined && harness.reportsWait && !harness.error;
+  };
   const silent = indexed.filter((one) => !one.row.session.blockKnown && one.state !== 'Ended');
-  const names = [...new Set(silent.map((one) => one.row.harnessLabel))].sort(collator.compare);
+  const mute = silent.filter((one) => !reports(one));
+  const unread = silent.filter(reports);
+  const namesOf = (rows: readonly IndexedRow[]) =>
+    [...new Set(rows.map((one) => one.row.harnessLabel))].sort(collator.compare);
+  const names = namesOf(mute);
   const onBoard = new Set(indexed.map((one) => one.row.session.harness));
   const qualified = harnesses
     .filter((one) => onBoard.has(one.key) && !one.error && one.reportsWait && one.waitWhen)
@@ -640,10 +659,16 @@ export function waitCoverage(
   if (names.length)
     lines.push(
       `${joinNames(names)} ${names.length === 1 ? 'does' : 'do'} not report when a session is waiting, so ${
-        silent.length === 1
+        mute.length === 1
           ? `${names.length === 1 ? 'its' : 'their'} 1 session`
-          : `${String(silent.length)} of ${names.length === 1 ? 'its' : 'their'} sessions`
+          : `${String(mute.length)} of ${names.length === 1 ? 'its' : 'their'} sessions`
       } could be waiting without showing here.`,
+    );
+  if (unread.length)
+    lines.push(
+      `The wait state of ${String(unread.length)} ${joinNames(namesOf(unread))} ${
+        unread.length === 1 ? 'session' : 'sessions'
+      } could not be read, so ${unread.length === 1 ? 'it' : 'they'} could be waiting without showing here.`,
     );
   if (qualified.length)
     lines.push(
@@ -666,9 +691,25 @@ export function resultLine(
   return `${plural(filtered.total, 'session', 'sessions')} on this board.`;
 }
 
-/* What the cue region says after the reader's own change. Never the words they typed. */
-export function announcement(filtered: Filtered): string {
-  if (!filtered.active) return `Filters cleared. Showing all ${String(filtered.total)} sessions.`;
+/* Whether the reader has chosen anything, applicable or not: words, a date or a facet value. The Date
+   popover's "Filter by" mode and its checkbox are settings of a date choice, not choices of their own. */
+export function hasChoices(filters: FilterState): boolean {
+  return (
+    queryTerms(filters.query).length > 0 ||
+    filters.when !== 'any' ||
+    FACETS.some((facet) => filters[facet].length > 0)
+  );
+}
+
+/* What the cue region says after the reader's own change, from the choices before it to the choices after.
+   "Filters cleared" only when the change took the last choice away: a press that adds a choice the board
+   cannot apply, or changes a setting while nothing is chosen, clears nothing. Never the words they typed. */
+export function announcement(filtered: Filtered, next: FilterState, before: FilterState): string {
+  const all = `Showing all ${String(filtered.total)} sessions.`;
+  if (!filtered.active) {
+    if (hasChoices(next)) return `${all} The filters you chose cannot be applied to this board.`;
+    return hasChoices(before) ? `Filters cleared. ${all}` : all;
+  }
   if (filtered.shown === 0) return 'No session matches these filters.';
   return `Showing ${String(filtered.shown)} of ${String(filtered.total)} sessions.`;
 }

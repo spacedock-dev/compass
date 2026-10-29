@@ -62,10 +62,12 @@ rows. The sentences those states already had speak instead.
 ## Search
 
 Search reads what the row shows: the title as published (including the LAST PROMPT fallback), the
-goal cell's text when the goal is known, the current task, the project label, the worktree and the
-harness label. It also reads what a reader would have to open the session to see: the first prompt
-(skipped when it was a control message or a copied prompt), the latest prompt, the session's /goal,
-the expected outcome lines, task subjects and the session id. Placeholder sentences such as "Add a
+goal cell's text when the goal is known, the current task where the row draws it, the project label,
+the worktree and the harness label. An active row draws the current task under its title unless it
+repeats the title; a history row does not draw it. Search also reads what a reader would have to open
+the session to see: the first prompt (skipped when it was a control message or a copied prompt), the
+latest prompt, the session's /goal, the expected outcome lines, task subjects, a current task the row
+does not draw, and the session id. Placeholder sentences such as "Add a
 goal" or "Title not published" are never searched, because a match on one would be a match on a fact
 nobody published.
 
@@ -73,21 +75,27 @@ Case and accents fold away (NFKD with the combining marks removed). A "quoted ph
 Terms are ANDed, and each term may match any field. The field reads at most 200 characters. A run of
 six or more id characters also matches a session id prefix, so a pasted id finds its session; a
 shorter run would match too many. Each row's folded text is built once per payload, and the rows
-follow the choices through `useDeferredValue`, so a keystroke never waits on hundreds of rows.
+follow the choices through `useDeferredValue`. The keystroke's own render still holds the earlier
+result, and the groups and rows are memoized on it, so that render redraws the toolbar and no row.
+On a 1,500-row board in jsdom it took 171 to 181 ms and drew every row before the memoization, and 7
+to 15 ms and no row after (measured 2026-10-29).
 
 When a term matched only a field the row does not show, the identity cell names that field with about
 80 characters around the match, for example `Matched in your first prompt: "write the release notes
 for 2.4"`. When exactly one row matches, the result line adds "Press Enter to open it." and Enter
 opens that session. Enter does nothing during an input-method composition or when zero or several
-rows match.
+rows match. The rows can lag the field by a render, so the line offers Enter only once they agree, and
+Enter itself reads the words in the field, not the rows still drawn.
 
 ## How filters combine and count
 
 Values inside one filter are ORed. Filters are ANDed with each other and with the search.
 
-Each option's count is faceted: it is the number of rows that would show if that value were chosen,
-with every other choice kept. Counts are derived from the rows the screen draws and are never
-authored. A duplicate identity counts once per drawn row (`SessionRow.key`), the way the screen draws
+Each option's count is faceted: it is the number of rows with that value that every other filter
+keeps. The filter's own choices are left out, so a count does not move when a sibling value is
+pressed. Once a sibling is chosen, choosing this value too shows both, which is more than the number
+beside it; How these counts work says the number is how many sessions with that value the other
+filters keep. Counts are derived from the rows the screen draws and are never authored. A duplicate identity counts once per drawn row (`SessionRow.key`), the way the screen draws
 it.
 
 Option order is fixed: collator order for Project, the payload's order for Harness, and fixed lists
@@ -97,7 +105,8 @@ would move the option under the pointer on the press itself.
 A preset sets exactly one value in another filter and reads pressed exactly when that value is set.
 Waiting on you is State "Waiting on you". Started today is Date with Started and Today, and releasing
 it returns Date to Any time. Drift recorded is Drift "Drift recorded", and is not drawn while
-annotations are off. Presets carry no count. A second preset adds its own filter, and both must
+annotations are off or the annotation store is unreadable, the states in which the Drift popover lists
+no options. Presets carry no count. A second preset adds its own filter, and both must
 match.
 
 A choice the board cannot apply keeps its chip but counts as no filter. That covers a date choice on
@@ -125,6 +134,13 @@ defined strictly: it needs `departure_checked === true` or a stored reading made
 revision of the reader's words, and recorded drift outranks it. A reading made against earlier words
 counts as not checked. The owner kept this option in the first version on 2026-10-29.
 
+One gap remains on the server's side. `departure_checked` counts any unasked check that has not been
+withdrawn, and a check is withdrawn only when the reader clears their words. After the reader edits
+their words to a new revision, a check of the earlier words keeps the session under "Checked against
+your current words" until the next check. The page cannot correct it, because a check that raised
+nothing publishes no revision. The fix belongs to `departures.checked`, which also chooses the
+sentence the session page shows when nothing departed, so it is left to a change of its own.
+
 The Project option carries "Label shared by more than one location" only when that label's rows carry
 two or more distinct non-empty `project_key` values, which is when the board falls back to grouping by
 label. The row's own note, "N sessions share this display label; shared location is not established",
@@ -142,12 +158,17 @@ as older.
   those rows. While a dated choice is on, each kept row says which time dated it, adding "from the
   first message" where the first message stood in for the start.
 - Project: the empty label is "No project published" and a whitespace-only label is "Blank project
-  label", each its own option, never merged and never dropped. A chosen label that leaves the board
+  label (n characters)", each its own option, never merged and never dropped. The length tells two
+  blank labels apart, which would otherwise read the same in the list and in the chip. A chosen label that leaves the board
   stays listed as "Not on the board now" and keeps its chip, and its rows return when it comes back.
 - State: an unknown state is "State not published", never Idle. A footnote names the harnesses on the
-  board that cannot report a wait, with how many of their sessions could be waiting unseen, and the
-  harnesses whose wait reporting holds only in some setups (`reports_needs_input_when`). An ended
-  session waits on nobody, so it is left out of that count.
+  board that do not report a wait (`reports_needs_input` is not true), with how many of their sessions
+  could be waiting unseen. A session of a harness that does report one, but whose wait state could not
+  be read, is counted on its own line: "The wait state of 2 OpenCode and Pi sessions could not be read,
+  so they could be waiting without showing here." The server marks such a row with the `block state`
+  source gap, and every Pi and OpenCode row carries it until its adapter sends an event. A last line
+  names the harnesses whose wait reporting holds only in some setups (`reports_needs_input_when`). An
+  ended session waits on nobody, so it is left out of every count.
 - Harness: an undiscovered harness is not listed, because listing all ten at zero would claim the
   board read stores it never found. A harness whose store could not be read is listed disabled as
   "Store could not be read", with no count.
@@ -156,9 +177,13 @@ as older.
 - Dates: with no published clock the Date popover says dates cannot be filtered and disables its
   choices. The browser's clock is never substituted.
 
-Day edges are local midnights around the board's `generated` time, built with `Date.setDate`, so a
-day that a daylight-saving change makes 23 or 25 hours long still starts at midnight. Last 7 days is
-today and the six days before it. Days follow this computer's clock and time zone.
+Day edges are local midnights around the board's `generated` time, each built from the calendar date
+(`new Date(year, month, day - n)`), so a day that a daylight-saving change makes 23 or 25 hours long
+still starts at midnight. Walking back from today's start did not: in a zone whose clocks jump at
+midnight, such as America/Santiago, that day begins at 01:00 and every earlier edge inherited the
+hour. That day's own edge is its first instant, 01:00. Last 7 days is today and the six days before
+it. Days follow this computer's clock and time zone. The suite runs in UTC, so the tests of these
+edges switch the zone for themselves, to America/New_York and America/Santiago.
 
 ## The board window
 
@@ -190,7 +215,8 @@ The owner accepted the guard instead on 2026-10-29.
 
 Whenever a hidden row's `rowState()` is "Waiting on you", a static amber `Alert` (it does not
 announce) under the result line says so: "1 session waiting on you is hidden by these filters." With
-one hidden, it offers Open it, a link to that session, and Clear filters. With two or more, it offers
+one hidden, it offers Open it, a link to that session named "Open it: " and the session's title, and
+Clear filters. With two or more, it offers
 Clear filters and See them on Attention. The line is recomputed on every displayed board, so a session
 that starts waiting behind the filters is surfaced at the next paint. The header's reported-blocks
 button and the favicon are board-wide, so neither goes quiet behind a filter.
@@ -246,9 +272,15 @@ field's handler returns early when the event is already prevented. Otherwise Esc
 text clears it and keeps focus, and in an empty field it does nothing, so focus is never dropped to
 the body.
 
-Removing a chip moves focus to the next chip, then to Clear all, then to the search field. Clear all
-and every Clear filters button empty the words (including the live field's value) and every filter,
-then focus the search field.
+Removing a chip moves focus to the next chip, then to Clear all, then to the search field. A chip's
+name is "Remove" and the words on it; a shortened chip ("Project: compass +1 more") is described by
+its whole list. Clear all and every Clear filters button empty the words (including the live field's
+value) and every filter, then focus the search field.
+
+Three buttons go as they are pressed, so each hands focus on first. Include them hands it to the Date
+button. Clear project filter hands it to Find a project when the list has one, or to the first
+project option. Filter by last active instead hands it to the Last active radio inside the Date
+popover, or to the Date button from the note under the result line.
 
 ## Focus across polls
 
@@ -260,14 +292,21 @@ fall back to `sessions-search`.
 
 So a focused row that moves between groups on a poll keeps focus, a focused row that leaves the
 filtered set hands focus to the search field, and a focused option that goes hands it to its
-popover's button. The field's words and caret are held by field memory, as every draft's are.
+popover's button. The search field's words are held by the filter store and its caret by field
+memory. Field memory restores a caret, scroll and size, never words, so Find a project keeps its words
+only while the popover's content stays mounted. When the list falls to eight projects or fewer the
+field leaves the page, and when it comes back it starts empty and narrows nothing.
 
 ## Announcements
 
 Only the reader's own change speaks, through the existing cue region outside `#app`: at once after a
 press, or 600ms after the last keystroke. The sentences are "Showing 4 of 12 sessions.", "No session
-matches these filters." and "Filters cleared. Showing all 12 sessions." The key is forgotten before
-each sentence, so the same sentence after a second press is spoken again. The typed words are never
+matches these filters." and "Filters cleared. Showing all 12 sessions." "Filters cleared" is said only
+when the change took the reader's last choice away. A change that leaves only choices the board
+cannot apply says "Showing all 12 sessions. The filters you chose cannot be applied to this board.",
+and a setting changed while nothing is chosen, such as the Date popover's Filter by, says "Showing all
+12 sessions." The key is forgotten before each sentence, so the same sentence after a second press is
+spoken again. The typed words are never
 read back. A poll never speaks, and no status region is added inside the Sessions view, because a
 region every revision redraws would talk over the reader.
 

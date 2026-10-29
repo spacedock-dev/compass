@@ -1,6 +1,6 @@
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { useDeferredValue, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
@@ -46,7 +46,7 @@ import {
   rowState,
   type SessionRow,
 } from './rows';
-import { sessionInstruction, type PromptCandidate } from './intent';
+import { assignmentOf, type PromptCandidate } from './intent';
 import { goalFocusFor } from './heldState';
 import { worktreeLabel } from './worktree';
 import {
@@ -130,13 +130,6 @@ function ObservedFact({
   return (
     <Fact kind={kind} label={label} value={text} detail={note} tone={known ? tone : 'unknown'} />
   );
-}
-
-function assignmentOf(source: Row | undefined): string {
-  const assignment = sessionInstruction(source, 'asked');
-  const text = assignment ? String(assignment['text'] || '').trim() : '';
-  const title = String(source?.['title'] || source?.['last_prompt'] || '').trim();
-  return text && text !== title ? text : '';
 }
 
 function Identity({ row, hints }: { readonly row: SessionRow; readonly hints: readonly string[] }) {
@@ -315,7 +308,9 @@ function DriftMark({
 
 const NO_HINTS: readonly string[] = [];
 
-function RowView({
+/* Memoized with `Group`, so the urgent render a keystroke makes, which still holds the deferred result,
+   passes every row the same props and redraws none of them. */
+const RowView = memo(function RowView({
   row,
   hints = NO_HINTS,
 }: {
@@ -398,9 +393,9 @@ function RowView({
       <DriftMarkView row={row} />
     </Card>
   );
-}
+});
 
-function Group({
+const Group = memo(function Group({
   kind,
   title,
   label,
@@ -499,7 +494,9 @@ function Group({
       </div>
     </section>
   );
-}
+});
+
+const RECENT_CAVEAT = { summary: 'What recent means', body: RECENT_WHY };
 
 const FACT_KEYS = ['active', 'working', 'requests', 'reported-blocks'] as const;
 
@@ -549,23 +546,32 @@ function useFilterActions(
     },
     [shell],
   );
+  /* The choices as they stood before the change being spoken, held across a burst of typing, so the cue
+     says "Filters cleared" only when the change took the last choice away. */
+  const since = useRef<FilterState | null>(null);
   return useMemo(() => {
     const speak = (next: FilterState) => {
       const now = latest.current;
+      const before = since.current ?? next;
+      since.current = null;
       const result = applyFilters(now.indexed, prepare(next, now.generated, now.annotated), (at) =>
         datedClock(at, now.generated ?? at),
       );
       // Forgotten first, so the same sentence after a second press is spoken again.
       shell.announcer.forget(ANNOUNCE_KEY);
-      shell.announcer.announce(ANNOUNCE_KEY, announcement(result));
+      shell.announcer.announce(ANNOUNCE_KEY, announcement(result, next, before));
     };
     const cancel = () => {
       if (timer.current === null) return;
       shell.clock.clearTimeout(timer.current);
       timer.current = null;
     };
+    const hold = () => {
+      since.current ??= store.get();
+    };
     return {
       change(next, how) {
+        hold();
         store.set(next);
         cancel();
         if (how === 'press') {
@@ -578,6 +584,7 @@ function useFilterActions(
         }, TYPING_PAUSE_MS);
       },
       clearAll() {
+        hold();
         cancel();
         store.reset();
         speak(EMPTY_FILTERS);
@@ -596,7 +603,8 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
     [data, model, chosenFor],
   );
   const [filters, store] = useFilterState(shell.controls);
-  /* The rows follow the choices a frame behind under load, so a keystroke never waits on hundreds of rows. */
+  /* The rows follow the choices a frame behind under load. The keystroke's own render keeps the deferred
+     result, and `Group` and `RowView` are memoized on it, so that render redraws the toolbar and no row. */
   const deferred = useDeferredValue(filters);
   const indexed = useMemo(() => (screen ? indexScreen(screen) : []), [screen]);
   const generated = screen ? screen.context.generated : null;
@@ -623,8 +631,8 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
       unreadable: screen.context.unreadable,
     };
   }, [data, screen, generated, shell]);
+  const groupFilter = useMemo(() => ({ filtered, onClear: actions.clearAll }), [filtered, actions]);
   if (!screen || !board) return null;
-  const groupFilter = { filtered, onClear: actions.clearAll };
   const canAnalyze = analysisAvailable(data as unknown as Row);
   return (
     <section className="next-operations" data-next-view-body="sessions">
@@ -679,7 +687,7 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
         label=""
         rows={screen.history}
         empty="No recent-history rows in this payload."
-        caveat={{ summary: 'What recent means', body: RECENT_WHY }}
+        caveat={RECENT_CAVEAT}
         filter={groupFilter}
       />
       <CapacityStrip />

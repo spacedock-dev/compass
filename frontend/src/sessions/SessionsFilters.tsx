@@ -2,6 +2,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentProps,
@@ -22,6 +23,7 @@ import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Separator } from '../ui/separator';
 import {
+  applyFilters,
   chipText,
   dateChip,
   dateCounts,
@@ -33,6 +35,7 @@ import {
   joinNames,
   narrowOptions,
   optionLabel,
+  prepare,
   projectOptions,
   QUERY_LIMIT,
   queryTerms,
@@ -138,7 +141,8 @@ function ShowAllLink() {
 }
 
 /* Where a dated choice reaches past what the board loaded. Started mode cannot be rescued by loading more,
-   because start times are read only for sessions active in the window; Last active can. */
+   because start times are read only for sessions active in the window; Last active can. The note is drawn
+   twice, under the result line and inside the Date popover, and its button goes as it is pressed. */
 export function WindowNote({
   filters,
   prepared,
@@ -297,8 +301,10 @@ function FilterButton({
 
 export const PROJECT_FIND_KEY = 'sessions-filter-project-find';
 
-/* Field memory puts the words back into a remounted field without an input event, so the narrowing is read
-   back from the node once it is restored; a child's layout effect runs after the restore inside it. */
+/* The narrowing is the field's words. The words last while the popover's content stays mounted, closed or
+   open; when the list falls to eight projects or fewer the field leaves the page and its words with it, so
+   a field that comes back reports what it holds, empty included, and no narrowing outlives what it shows.
+   Field memory restores only the caret, scroll and size. */
 function ProjectFind({
   id,
   onNarrow,
@@ -308,8 +314,7 @@ function ProjectFind({
 }) {
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const restored = box.current?.querySelector('input')?.value ?? '';
-    if (restored) onNarrow(restored);
+    onNarrow(box.current?.querySelector('input')?.value ?? '');
   }, [onNarrow]);
   return (
     <div ref={box}>
@@ -394,6 +399,7 @@ export function SessionsFilters({
   readonly actions: FilterActions;
 }) {
   const navigate = useNavigate();
+  const controls = useControls();
   const searchId = useId();
   const quickId = useId();
   const fieldBox = useRef<HTMLDivElement>(null);
@@ -460,11 +466,16 @@ export function SessionsFilters({
     next?.focus();
   });
 
+  const readable = board.annotate && !board.unreadable;
   const terms = queryTerms(prepared.filters.query);
-  const only =
-    filtered.active && filtered.shown === 1
-      ? indexed.find((one) => filtered.keys.has(one.row.key))
+  /* The rows lag the field while the deferred render catches up, so the one match is offered only once
+     they agree, and Enter reads the live words rather than the rows still drawn. */
+  const caughtUp = prepared.filters === filters;
+  const onlyIn = (result: Filtered) =>
+    result.active && result.shown === 1
+      ? indexed.find((one) => result.keys.has(one.row.key))
       : undefined;
+  const only = caughtUp ? onlyIn(filtered) : undefined;
   const onFieldKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     const node = event.currentTarget;
     if (event.key === 'Escape') {
@@ -476,19 +487,32 @@ export function SessionsFilters({
       actions.change({ ...filters, query: '' }, 'press');
       return;
     }
-    if (event.key === 'Enter' && !event.nativeEvent.isComposing && only) {
-      event.preventDefault();
-      navigate(only.row.route);
-    }
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    const live = caughtUp
+      ? only
+      : onlyIn(applyFilters(indexed, prepare(filters, board.generated, readable), () => ''));
+    if (!live) return;
+    event.preventDefault();
+    navigate(live.row.route);
   };
 
-  const dates = dateCounts(indexed, prepared);
+  /* Everything below reads the deferred choices, so a keystroke, which changes only the live ones, reuses it
+     and walks no row. */
+  const derived = useMemo(
+    () => ({
+      dates: dateCounts(indexed, prepared),
+      waiting: hiddenWaiting(indexed, filtered),
+      coverage: waitCoverage(indexed, board.harnesses),
+      projects: projectOptions(indexed, prepared),
+      harnesses: harnessOptions(indexed, prepared, board.harnesses),
+      state: fixedOptions(indexed, prepared, 'state'),
+      drift: fixedOptions(indexed, prepared, 'drift'),
+      goal: fixedOptions(indexed, prepared, 'goal'),
+    }),
+    [indexed, prepared, filtered, board.harnesses],
+  );
+  const { dates, waiting, coverage, projects, harnesses } = derived;
   const missing = unstampedHidden(dates, prepared);
-  const waiting = hiddenWaiting(indexed, filtered);
-  const coverage = waitCoverage(indexed, board.harnesses);
-  const projects = projectOptions(indexed, prepared);
-  const harnesses = harnessOptions(indexed, prepared, board.harnesses);
-  const readable = board.annotate && !board.unreadable;
   const noClock = board.generated === null;
   const stamped = filters.dateField === 'started' ? 'start time' : 'activity time';
 
@@ -523,7 +547,7 @@ export function SessionsFilters({
         ? projects.map((one) => one.value)
         : facet === 'harness'
           ? harnesses.map((one) => one.value)
-          : fixedOptions(indexed, prepared, facet).map((one) => one.value);
+          : derived[facet].map((one) => one.value);
     return [...filters[facet]].sort(
       (a, b) =>
         (order.indexOf(a) === -1 ? order.length : order.indexOf(a)) -
@@ -578,7 +602,8 @@ export function SessionsFilters({
           ? set({ when: 'any' })
           : set({ dateField: 'started', when: 'today' }),
     },
-    ...(board.annotate
+    // Drawn only where it can apply, as the Drift popover lists its options only then.
+    ...(readable
       ? [
           {
             key: 'drift',
@@ -591,12 +616,20 @@ export function SessionsFilters({
       : []),
   ];
 
-  const windowNote = (
+  /* Three buttons go as they are pressed, so each hands focus on before it goes: a focused node that leaves
+     the page drops focus to the body. */
+  const pressAndFocus = (change: Partial<FilterState>, key: string) => {
+    set(change);
+    controls.focusLane.focus(key);
+  };
+  const windowNote = (inPopover: boolean) => (
     <WindowNote
       filters={prepared.filters}
       prepared={prepared}
       board={board}
-      onSwitch={() => set({ dateField: 'active' })}
+      onSwitch={() =>
+        pressAndFocus({ dateField: 'active' }, inPopover ? 'date-field:active' : filterKey('date'))
+      }
     />
   );
 
@@ -732,7 +765,7 @@ export function SessionsFilters({
               </p>
             ) : null}
             <p className={NOTE}>Days follow this computer&apos;s clock and time zone.</p>
-            {windowNote}
+            {windowNote(true)}
             {board.showAll ? (
               <div className="flex flex-col items-start gap-1" data-sessions-all-note>
                 <p className={NOTE}>
@@ -757,7 +790,15 @@ export function SessionsFilters({
               onToggle={(value) => toggle('project', value)}
             />
             {filters.project.length ? (
-              <Button type="button" onClick={() => set({ project: [] })}>
+              <Button
+                type="button"
+                onClick={() =>
+                  pressAndFocus(
+                    { project: [] },
+                    projects.length > 8 ? PROJECT_FIND_KEY : `project:${projects[0]?.value ?? ''}`,
+                  )
+                }
+              >
                 Clear project filter
               </Button>
             ) : null}
@@ -775,7 +816,7 @@ export function SessionsFilters({
             <OptionList
               facet="state"
               name="State"
-              options={fixedOptions(indexed, prepared, 'state')}
+              options={derived.state}
               chosen={filters.state}
               onToggle={(value) => toggle('state', value)}
             />
@@ -796,7 +837,7 @@ export function SessionsFilters({
                 <OptionList
                   facet="drift"
                   name="Drift"
-                  options={fixedOptions(indexed, prepared, 'drift')}
+                  options={derived.drift}
                   chosen={filters.drift}
                   onToggle={(value) => toggle('drift', value)}
                 />
@@ -821,7 +862,7 @@ export function SessionsFilters({
               <OptionList
                 facet="goal"
                 name="Goal"
-                options={fixedOptions(indexed, prepared, 'goal')}
+                options={derived.goal}
                 chosen={filters.goal}
                 onToggle={(value) => toggle('goal', value)}
               />
@@ -864,9 +905,9 @@ export function SessionsFilters({
             summary="How these counts work"
           >
             <p className="next-why-body">
-              Each number beside an option is how many sessions on this board would show if you
-              chose it, with your other filters kept. Choices inside one filter widen the list;
-              separate filters and the search narrow it.
+              Each number beside an option is how many sessions with that value your other filters
+              keep. Choices inside one filter widen the list; separate filters and the search narrow
+              it.
             </p>
             <p className="next-why-body">
               A session that does not publish a value is counted under its own option, never as zero
@@ -877,24 +918,35 @@ export function SessionsFilters({
       </div>
       {chips.length ? (
         <div ref={chipBox} className="flex flex-wrap items-center gap-2" data-sessions-chips>
-          {chips.map((chip, index) => (
-            <Button
-              key={chip.key}
-              type="button"
-              variant="filter-chip"
-              aria-label={`Remove ${chip.full}`}
-              aria-describedby={chip.inert ? noteId(chip.inert) : undefined}
-              data-sessions-chip={chip.key}
-              data-sessions-chip-inert={chip.inert ? '' : undefined}
-              onClick={() => {
-                refocus.current = index;
-                chip.clear();
-              }}
-            >
-              <span>{chip.short}</span>
-              <Icon name="remove" />
-            </Button>
-          ))}
+          {chips.map((chip, index) => {
+            /* The name holds the words on the chip, so a reader who says what they see reaches it; a
+               shortened chip's whole list is its description. */
+            const fullId = chip.short === chip.full ? '' : `${quickId}-full-${chip.key}`;
+            const described = [fullId, chip.inert ? noteId(chip.inert) : ''].filter(Boolean);
+            return (
+              <Button
+                key={chip.key}
+                type="button"
+                variant="filter-chip"
+                aria-label={`Remove ${chip.short}`}
+                aria-describedby={described.length ? described.join(' ') : undefined}
+                data-sessions-chip={chip.key}
+                data-sessions-chip-inert={chip.inert ? '' : undefined}
+                onClick={() => {
+                  refocus.current = index;
+                  chip.clear();
+                }}
+              >
+                <span>{chip.short}</span>
+                {fullId ? (
+                  <span id={fullId} className="sr-only">
+                    {chip.full}
+                  </span>
+                ) : null}
+                <Icon name="remove" />
+              </Button>
+            );
+          })}
           <Button type="button" data-sessions-clear-all onClick={actions.clearAll}>
             Clear all
           </Button>
@@ -916,7 +968,7 @@ export function SessionsFilters({
         {resultLine(filtered, board)}
         {only ? ' Press Enter to open it.' : ''}
       </p>
-      {windowNote}
+      {windowNote(false)}
       {filtered.active && filtered.shown === 0 ? (
         <div className="flex flex-col items-start gap-1.5" data-sessions-nothing>
           <p className={`${SENTENCE} text-foreground`}>No session matches these filters.</p>
@@ -968,7 +1020,7 @@ export function SessionsFilters({
           {waiting.length === 1 && waiting[0] ? (
             <RouteAnchor
               route={waiting[0].row.route}
-              label={`Open session ${waiting[0].row.session.titleText}`}
+              label={`Open it: ${waiting[0].row.session.titleText}`}
               className="inline-flex items-center text-foreground underline"
             >
               Open it
@@ -990,7 +1042,10 @@ export function SessionsFilters({
       {missing ? (
         <div className="flex flex-wrap items-center gap-x-3" data-sessions-unstamped>
           <p className={SENTENCE}>{unstampedLine(missing, prepared.filters.dateField)}</p>
-          <Button type="button" onClick={() => set({ includeUnstamped: true })}>
+          <Button
+            type="button"
+            onClick={() => pressAndFocus({ includeUnstamped: true }, filterKey('date'))}
+          >
             Include them
           </Button>
         </div>

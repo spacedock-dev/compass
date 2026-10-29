@@ -111,6 +111,14 @@ export interface FixtureOptions {
   readonly bIdle?: boolean;
   /** `?all=1`: three older rows the default window would not load. */
   readonly showAll?: boolean;
+  /** Annotations on, but the annotation store could not be read. */
+  readonly unreadable?: boolean;
+  /** Sessions the reader marked handled, which the server leaves off the board. */
+  readonly cleared?: number;
+  /** Row B has started waiting on the reader since the first board. */
+  readonly bWaiting?: boolean;
+  /** The Pi and OpenCode rows carry the server's "block state" gap, as before their adapter sends an event. */
+  readonly blockGaps?: boolean;
 }
 
 export function sessionRows(options: FixtureOptions = {}): Record<string, unknown>[] {
@@ -133,9 +141,14 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       title: 'Changelog for 2.4',
       project: 'recce/compass',
       project_key: 'k-rc',
-      state: options.bIdle ? 'idle' : 'working',
+      state: options.bWaiting ? 'needs_input' : options.bIdle ? 'idle' : 'working',
       active: !options.bIdle,
-      state_detail: options.bIdle ? 'awaiting your message' : 'running Bash',
+      state_detail: options.bWaiting
+        ? 'Permission prompt: Edit'
+        : options.bIdle
+          ? 'awaiting your message'
+          : 'running Bash',
+      ...(options.bWaiting ? { blocked_since: local(0, 11, 59) } : {}),
       started_at: local(0, 10, 2),
       last_activity: local(0, 11, 59),
       first_prompt: 'write the release notes for 2.4',
@@ -205,6 +218,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       project_key: 'k-compass-b',
       state: 'idle',
       last_activity: local(0, 7),
+      ...(options.blockGaps ? { source_gaps: ['block state'] } : {}),
     },
     {
       harness: 'goose',
@@ -222,6 +236,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
       project: '',
       state: '',
       last_activity: local(0, 5, 10),
+      ...(options.blockGaps ? { source_gaps: ['block state'] } : {}),
     },
     {
       harness: 'codex',
@@ -289,6 +304,9 @@ export function sessionsSearchPayload(options: FixtureOptions = {}): Record<stri
     window_hours: 24,
     ...(options.showAll ? { show_all: true } : {}),
     annotate,
+    ...(options.unreadable
+      ? { annotate_unreadable: 'The annotation store could not be read.' }
+      : {}),
     annotate_cap: 240,
     annotate_goal_cap: 1000,
     ask: true,
@@ -303,7 +321,7 @@ export function sessionsSearchPayload(options: FixtureOptions = {}): Record<stri
         age_sec: 180,
       },
     ],
-    cleared: 0,
+    cleared: options.cleared ?? 0,
     harnesses: [...HARNESSES, ...OTHERS],
     sessions: sessionRows(options),
   };

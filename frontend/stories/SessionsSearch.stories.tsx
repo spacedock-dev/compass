@@ -229,7 +229,7 @@ export const SearchByWords: Story = {
     const guard = canvasElement.querySelector('[data-sessions-hidden-waiting]') as HTMLElement;
     await expect(guard).toHaveTextContent('1 session waiting on you is hidden by these filters.');
     await expect(
-      within(guard).getByRole('link', { name: 'Open session Combat Completion' }),
+      within(guard).getByRole('link', { name: 'Open it: Combat Completion' }),
     ).toBeVisible();
     await expect(fleet.textContent).toBe(before);
   },
@@ -266,6 +266,8 @@ export const StartedTodayAndMissingStartTimes: Story = {
     await closeFilters();
     await userEvent.click(canvas.getByRole('button', { name: 'Include them' }));
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(9));
+    // The button goes as it is pressed, and hands focus to the Date button rather than to the page.
+    await expect(date).toHaveFocus();
     await expect(chips(canvasElement)).toEqual(['Started: Today, plus 4 with no start time']);
     const again = await openFilter(canvasElement, 'date', 'Date');
     const unstamped = options(again, 'when').find((one) => one.label === 'Start not published');
@@ -298,6 +300,7 @@ export const DatesBeyondTheBoardWindow: Story = {
       within(started as HTMLElement).getByRole('button', { name: 'Filter by last active instead' }),
     );
     await waitFor(() => expect(shownRows(canvasElement)).toBe('L'));
+    await expect(trigger(canvasElement, 'Date')).toHaveFocus();
     const note = search.querySelector(
       ':scope > [data-sessions-window-note="active"]',
     ) as HTMLElement;
@@ -338,6 +341,11 @@ export const ProjectAndHarness: Story = {
     await expect(
       canvas.getByRole('button', { name: 'Remove Project: compass, recce/compass' }),
     ).toBeVisible();
+    const again = await openFilter(canvasElement, 'project', 'Project');
+    await userEvent.click(within(again).getByRole('button', { name: 'Clear project filter' }));
+    await waitFor(() => expect(chips(canvasElement)).toEqual([]));
+    await expect(options(again, 'project')[0]?.box).toHaveFocus();
+    await closeFilters();
     const harness = await openFilter(canvasElement, 'harness', 'Harness');
     const harnesses = options(harness, 'harness');
     await expect(harnesses.map((one) => one.label)).toEqual([
@@ -367,9 +375,7 @@ export const AWaitingSessionIsNeverHiddenSilently: Story = {
     await waitFor(() => expect(shownRows(canvasElement)).toBe('I'));
     const guard = canvasElement.querySelector('[data-sessions-hidden-waiting]') as HTMLElement;
     await expect(guard).toHaveTextContent('1 session waiting on you is hidden by these filters.');
-    await userEvent.click(
-      within(guard).getByRole('link', { name: 'Open session Combat Completion' }),
-    );
+    await userEvent.click(within(guard).getByRole('link', { name: 'Open it: Combat Completion' }));
     const { shell, history } = current();
     await waitFor(() =>
       expect(shell.router.getRoute()).toMatchObject({ view: 'session', session: SIDS.A }),

@@ -13,6 +13,7 @@ import {
   excerpt,
   facetCounts,
   filtersActive,
+  hasChoices,
   fixedOptions,
   harnessMeta,
   harnessOptions,
@@ -22,6 +23,7 @@ import {
   narrowOptions,
   normalize,
   prepare,
+  projectLabel,
   projectOptions,
   queryTerms,
   resultLine,
@@ -89,6 +91,36 @@ describe('the words', () => {
     expect(run({ query: SIDS.C.slice(2, 10) }).letters).toBe('');
   });
 
+  it('name a history row’s current task, which the row does not draw, and not an active row’s', () => {
+    const payload = sessionsSearchPayload() as Row;
+    // A saved goal, so the goal cell shows the reader's words and not a draft from the same task.
+    const task = (sid: string) => ({
+      instruction: { label: 'asked', text: `migrate the zebrafish tables ${sid}` },
+      annotation_goal: 'Balance the combat numbers',
+      annotation_revision: 1,
+    });
+    const sessions = (payload['sessions'] as Row[]).map((row) =>
+      row['sid'] === SIDS.L || row['sid'] === SIDS.A
+        ? { ...row, ...task(String(row['sid'])) }
+        : row,
+    );
+    const changed = { ...payload, sessions };
+    const indexed = indexScreen(buildSessionsScreen(changed, observe(changed)));
+    const filtered = applyFilters(
+      indexed,
+      prepare({ ...EMPTY_FILTERS, query: 'zebrafish' }, GENERATED, true),
+      String,
+    );
+    const hintOf = (sid: string) =>
+      filtered.hints.get(indexed.find((one) => one.row.session.sid === sid)?.row.key ?? '');
+    expect(filtered.shown).toBe(2);
+    // Row A is active, so its task is drawn under the title and needs no hint.
+    expect(hintOf(SIDS.A)).toBeUndefined();
+    expect(hintOf(SIDS.L)).toEqual([
+      `Matched in its current task: "migrate the zebrafish tables ${SIDS.L}"`,
+    ]);
+  });
+
   it('never match a placeholder sentence', () => {
     expect(run({ query: 'Add a goal' }).letters).toBe('');
     expect(run({ query: '"Title not published"' }, { showAll: true }).letters).toBe('');
@@ -118,13 +150,47 @@ describe('the dates', () => {
     expect(edges.hour).toBe(GENERATED - 3600);
   });
 
-  it('keep a day of any length whole across a clock change', () => {
-    // 2030-03-11 and 2030-11-04 are a day after US clock changes; whatever the zone, midnight stays midnight.
-    for (const at of [new Date(2030, 2, 11, 12), new Date(2030, 10, 4, 12)]) {
-      const edges = dayEdges(at.getTime() / 1000);
-      expect(new Date(edges.yesterday * 1000).getHours()).toBe(0);
-      expect(new Date(edges.yesterday * 1000).getDate()).toBe(at.getDate() - 1);
+  /* The suite pins UTC, which has no clock change, so these switch the zone for themselves. The logic
+     project runs in forked processes, where Node applies a new TZ at once; the January offset proves it did. */
+  const inZone = (zone: string, january: number, check: () => void) => {
+    const was = process.env['TZ'];
+    process.env['TZ'] = zone;
+    try {
+      expect(new Date(2030, 0, 1).getTimezoneOffset()).toBe(january);
+      check();
+    } finally {
+      process.env['TZ'] = was;
     }
+  };
+  const hours = (from: number, to: number) => (to - from) / 3600;
+  const local = (stamp: number) => new Date(stamp * 1000);
+
+  it('keep a day of any length whole across a clock change', () => {
+    inZone('America/New_York', 300, () => {
+      // 2030-03-10 is 23 hours long and 2030-11-03 is 25.
+      const spring = dayEdges(new Date(2030, 2, 11, 12).getTime() / 1000);
+      expect(hours(spring.yesterday, spring.today)).toBe(23);
+      expect(local(spring.yesterday).getHours()).toBe(0);
+      const autumn = dayEdges(new Date(2030, 10, 4, 12).getTime() / 1000);
+      expect(hours(autumn.yesterday, autumn.today)).toBe(25);
+      expect(local(autumn.yesterday).getHours()).toBe(0);
+    });
+  });
+
+  it('start every earlier day at midnight where the clocks jump at midnight', () => {
+    // In Santiago 2030-09-08 has no midnight: its first instant is 01:00.
+    inZone('America/Santiago', 180, () => {
+      const on = dayEdges(new Date(2030, 8, 8, 12).getTime() / 1000);
+      expect(local(on.today).getHours()).toBe(1);
+      expect(local(on.yesterday).getHours()).toBe(0);
+      expect(local(on.yesterday).getDate()).toBe(7);
+      expect(local(on.week).getHours()).toBe(0);
+      expect(local(on.week).getDate()).toBe(2);
+      const after = dayEdges(new Date(2030, 8, 9, 12).getTime() / 1000);
+      expect(local(after.yesterday).getHours()).toBe(1);
+      expect(hours(after.yesterday, after.today)).toBe(23);
+      expect(local(after.week).getHours()).toBe(0);
+    });
   });
 
   it('date a row by its start, or its first message, and never count an unstamped row as old', () => {
@@ -262,6 +328,57 @@ describe('the facets', () => {
     expect(run({ drift: ['recorded'] }).filtered.active).toBe(true);
   });
 
+  it('filter nothing on drift or goal while the annotation store cannot be read', () => {
+    const { indexed, prepared } = run({}, { unreadable: true });
+    expect(indexed.every((one) => one.drift === null && one.goal === null)).toBe(true);
+    expect(prepared.annotated).toBe(false);
+    const chosen = run({ drift: ['recorded'], goal: ['saved'] }, { unreadable: true });
+    expect(chosen.letters).toHaveLength(12);
+    expect(chosen.filtered.active).toBe(false);
+  });
+
+  it('give each blank project label its own option after the named ones, and the empty label last', () => {
+    const payload = sessionsSearchPayload() as Row;
+    const sessions = (payload['sessions'] as Row[]).map((row) =>
+      row['sid'] === SIDS.G
+        ? { ...row, project: ' ' }
+        : row['sid'] === SIDS.H
+          ? { ...row, project: '  ' }
+          : row,
+    );
+    const changed = { ...payload, sessions };
+    const indexed = indexScreen(buildSessionsScreen(changed, observe(changed)));
+    const options = projectOptions(indexed, prepare(EMPTY_FILTERS, GENERATED, true));
+    expect(options.slice(-3).map((one) => `${one.label} ${String(one.count)}`)).toEqual([
+      'Blank project label (1 character) 1',
+      'Blank project label (2 characters) 1',
+      'No project published 1',
+    ]);
+    expect(projectLabel('\t')).toBe('Blank project label (1 character)');
+  });
+
+  it('count a duplicate identity once per drawn row', () => {
+    const payload = sessionsSearchPayload() as Row;
+    const rows = payload['sessions'] as Row[];
+    const twice = { ...payload, sessions: [...rows, rows[0] as Row] };
+    const indexed = indexScreen(buildSessionsScreen(twice, observe(twice)));
+    expect(indexed).toHaveLength(13);
+    const keys = indexed.filter((one) => one.row.session.sid === SIDS.A).map((one) => one.row.key);
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys).size).toBe(2);
+    const prepared = prepare({ ...EMPTY_FILTERS, state: ['Waiting on you'] }, GENERATED, true);
+    const filtered = applyFilters(indexed, prepared, String);
+    expect(filtered.total).toBe(13);
+    for (const key of keys) expect(filtered.keys.has(key)).toBe(true);
+    expect(facetCounts(indexed, prepared, 'state').get('Waiting on you')).toBe(2);
+    const hiding = applyFilters(
+      indexed,
+      prepare({ ...EMPTY_FILTERS, project: ['recce-cloud-infra'] }, GENERATED, true),
+      String,
+    );
+    expect(hiddenWaiting(indexed, hiding).map((one) => one.row.key)).toEqual(keys);
+  });
+
   it('narrow a long project list without choosing', () => {
     const { indexed, prepared } = run({});
     expect(
@@ -281,6 +398,15 @@ describe('the guards and sentences', () => {
     const { indexed } = run({});
     expect(waitCoverage(indexed, harnessMeta(sessionsSearchPayload() as Row))).toEqual([
       'Gemini and Goose do not report when a session is waiting, so 2 of their sessions could be waiting without showing here.',
+      "Codex, OpenCode and Pi report a wait only in some setups; Attention's coverage says which.",
+    ]);
+  });
+
+  it('never name a harness that reports a wait as one that does not, when a row’s wait state was not read', () => {
+    const { indexed } = run({}, { blockGaps: true });
+    expect(waitCoverage(indexed, harnessMeta(sessionsSearchPayload() as Row))).toEqual([
+      'Gemini and Goose do not report when a session is waiting, so 2 of their sessions could be waiting without showing here.',
+      'The wait state of 2 OpenCode and Pi sessions could not be read, so they could be waiting without showing here.',
       "Codex, OpenCode and Pi report a wait only in some setups; Attention's coverage says which.",
     ]);
   });
@@ -310,9 +436,34 @@ describe('the guards and sentences', () => {
     expect(resultLine(some, { showAll: false, hours: 24 })).toBe(
       'Showing 2 of 12 sessions. ACTIVE NOW and WORKING above count the whole board.',
     );
-    expect(announcement(some)).toBe('Showing 2 of 12 sessions.');
-    expect(announcement(run({ query: 'zzzz' }).filtered)).toBe('No session matches these filters.');
-    expect(announcement(all)).toBe('Filters cleared. Showing all 12 sessions.');
+    const words = { ...EMPTY_FILTERS, query: 'release' };
+    expect(announcement(some, words, EMPTY_FILTERS)).toBe('Showing 2 of 12 sessions.');
+    expect(announcement(run({ query: 'zzzz' }).filtered, words, EMPTY_FILTERS)).toBe(
+      'No session matches these filters.',
+    );
+    expect(announcement(all, EMPTY_FILTERS, words)).toBe(
+      'Filters cleared. Showing all 12 sessions.',
+    );
+  });
+
+  it('never say filters were cleared for a press that cleared nothing', () => {
+    const all = run({}).filtered;
+    // A setting changed while nothing is chosen.
+    const mode = { ...EMPTY_FILTERS, dateField: 'active' as const };
+    expect(hasChoices(mode)).toBe(false);
+    expect(announcement(all, mode, EMPTY_FILTERS)).toBe('Showing all 12 sessions.');
+    // A choice the board cannot apply, added or left standing.
+    const drift = { ...EMPTY_FILTERS, drift: ['recorded'] };
+    const inert = run({ drift: ['recorded'] }, { unreadable: true }).filtered;
+    expect(announcement(inert, drift, EMPTY_FILTERS)).toBe(
+      'Showing all 12 sessions. The filters you chose cannot be applied to this board.',
+    );
+    expect(announcement(inert, drift, { ...drift, state: ['Working'] })).toBe(
+      'Showing all 12 sessions. The filters you chose cannot be applied to this board.',
+    );
+    expect(announcement(all, EMPTY_FILTERS, drift)).toBe(
+      'Filters cleared. Showing all 12 sessions.',
+    );
   });
 
   it('shorten a long chip and join names in plain English', () => {
