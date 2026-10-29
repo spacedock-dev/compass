@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2174547,
+    "bytes": 2174767,
     "file": "react.html",
-    "sha256": "dd0ab3882a159344ecd9de520d29a378cac686b0da306f427cab0f3db1eb3e7b"
+    "sha256": "8589b48b4dbeb36e80ba953979f088641cd6c16b8f490e77bc10ef0da8f5fe10"
   },
   "format": 1,
   "frontend": "react",
@@ -1183,7 +1183,7 @@
       },
       {
         "file": "frontend/src/sessions/WaitingBlock.tsx",
-        "sha256": "09a70e15a777cabac16cc898c94336a181911aa9b94bfdd4ec6401ec58c363df"
+        "sha256": "7a51fb10bff06c1e2979cdf367e39deeeb02a527fa88c5899b38738ebd1bf20d"
       },
       {
         "file": "frontend/src/sessions/WhatItDid.tsx",
@@ -1295,7 +1295,7 @@
       },
       {
         "file": "frontend/src/shell/Page.tsx",
-        "sha256": "f30edfb2bb9f8e5570981dbd0bba41adbf778d4716d57a413a9daf7a96d40a54"
+        "sha256": "02397d7244d6efc03e1fec5d5041ae5157541590be5f93f9b27bc61783b0992c"
       },
       {
         "file": "frontend/src/shell/ProjectTabs.tsx",

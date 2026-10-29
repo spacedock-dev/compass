@@ -78,6 +78,7 @@ interface Log {
   answers: string[];
   asking: boolean;
   gate: boolean;
+  resumable: boolean;
   release: (() => void) | null;
   readAt: number;
   served: number;
@@ -89,6 +90,7 @@ const log: Log = {
   answers: [],
   asking: false,
   gate: false,
+  resumable: true,
   release: null,
   readAt: G - 10,
   served: 0,
@@ -103,6 +105,7 @@ const log: Log = {
 function PageExample({
   asking = false,
   gate = false,
+  resumable = true,
   cites = null,
   windowStart = G - 200,
   stallOlder = false,
@@ -113,6 +116,8 @@ function PageExample({
   readonly asking?: boolean;
   /** A harness's own gate: the session waits on you with no exact request Compass can show. */
   readonly gate?: boolean;
+  /** Whether the session publishes a token its harness's CLI takes back in. */
+  readonly resumable?: boolean;
   readonly cites?: readonly string[] | null;
   readonly windowStart?: number;
   readonly stallOlder?: boolean;
@@ -124,6 +129,7 @@ function PageExample({
     log.answers = [];
     log.asking = asking;
     log.gate = gate;
+    log.resumable = resumable;
     log.release = null;
     log.readAt = G - 10;
     log.served = 0;
@@ -180,7 +186,7 @@ function PageExample({
                 project_key: '/demo',
                 title: 'Synthetic layout session',
                 state: log.asking || log.gate ? 'needs_input' : idle ? 'idle' : 'working',
-                resume_id: 's1',
+                ...(log.resumable ? { resume_id: 's1' } : {}),
                 started_at: G - 3600,
                 rate_per_min: 1450,
                 ...(log.gate
@@ -808,6 +814,18 @@ export const HarnessGateSaysWhereToAnswer: Story = {
     await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(true));
     const icon = document.head.querySelector('link[data-next-favicon]');
     await expect(icon?.getAttribute('href')).toBe(WAITING_ICON);
+  },
+};
+
+/* Attention carries a command back in only where the session publishes a token its CLI takes, so the block
+   names Attention for it only then. */
+export const HarnessGateWithNoWayBackNamesNoCommand: Story = {
+  render: () => <PageExample gate resumable={false} />,
+  play: async ({ canvasElement }) => {
+    const block = await within(canvasElement).findByRole('region', { name: 'Waiting on you' });
+    await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
+    await expect(within(block).queryByRole('link', { name: 'Attention' })).toBeNull();
+    await expect(block).not.toHaveTextContent('The command back into it');
   },
 };
 

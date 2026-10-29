@@ -22,9 +22,11 @@ page's 3px amber edge down the whole session page, and nothing else marked a wai
 read (a permission prompt, or a question not yet written to disk). On the one-column page that edge ran the page's full height and
 over the title's first letter. The page now draws the edge only beside the title and its status, padded off the
 text, and a "Waiting on you" block where the Asked-you block would stand. The block gives the wait's age and the
-harness's own words for it, says the prompt is answered in the session's terminal, and links to Attention for
-the command back in, since that command stays off the session page. The browser tab is titled "● Needs you · "
-before the session's title and its icon turns amber while the open session waits. No golden file is changed.
+harness's own words for it, and says the prompt is answered where the session is running. Where Attention
+holds a command back in (a Claude Code or Codex session with a resume token), it links there, since that command
+stays off the session page. The browser tab is titled "● Needs you · "
+before the session's title and its icon turns amber while the open session waits, the released id-only link
+included. No golden file is changed.
 `detail.differential.test.tsx` removes the block and its link from the React side, so every other word stays
 held to the recording, and `Page.test.tsx` restates the one fixture title that waits. The `Sessions/One-column
 page` stories hold the edge, the block, the title and the icon.

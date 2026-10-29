@@ -189,6 +189,8 @@ describe('the document title is one per view and does not move while the board r
       '#n=session:beta%2Fapi:claude:colon%3Asid',
       '● Needs you · Title not published — beta/api — Compass',
     ],
+    // The released id-only link names no harness and still opens that one session, so its tab says so too.
+    ['#n=session:beta%2Fapi:colon%3Asid', '● Needs you · Title not published — beta/api — Compass'],
     // An empty project leaves two dashes side by side, which `document.title` collapses to one space, as the legacy page's does.
     ['#n=session::codex:bare-project-sid', 'No project label — — Compass'],
   ])('%s is titled %s', async (hash, title) => {
