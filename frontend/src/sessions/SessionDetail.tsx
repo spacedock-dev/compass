@@ -9,6 +9,7 @@ import { sessionHome, type SessionRoute } from '../router/grammar';
 import { useDisplayed, useShell } from '../shell/context';
 import type { PayloadData } from '../api/types';
 import { AnswerBlock } from './AnswerBlock';
+import { WaitingBlock } from './WaitingBlock';
 import { SessionAge } from './SessionAge';
 import { usePruneAnswerNotes } from './usePruneAnswerNotes';
 import {
@@ -216,7 +217,9 @@ function Header({
   const showRate = observed.rateKnown && !observed.isEnded && !observed.isQuiet;
   return (
     <header
-      className={`next-session-detail-header${observed.isNeeds || observed.askKnown ? ' pb-0' : ''}`}
+      /* The edge runs beside the title and its status alone, padded off the text: drawn down the whole
+         unpadded page it ran its full height and over the title's first letter (owner, 2026-10-29). */
+      className={`next-session-detail-header${observed.isNeeds || observed.askKnown ? ' pb-0 border-l-[3px] border-l-[var(--amber)] pl-[14px]' : ''}`}
     >
       <div className="next-session-detail-title">
         <h1
@@ -342,6 +345,8 @@ export function SessionDetail({ route, data, session }: SessionDetailProps): Rea
             asks={asks}
             title={askingTitle(labels, session)}
           />
+        ) : observed.isNeeds ? (
+          <WaitingBlock observed={observed} />
         ) : null}
         <div className="next-session-columns flex flex-col gap-5">
           <DriftSlot

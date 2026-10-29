@@ -9,6 +9,8 @@ import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { WHAT_IT_DID_PLACEHOLDER } from '../src/sessions/WhatItDid';
 import { createShell } from '../src/shell/createShell';
+import { RESTING_ICON, WAITING_ICON, WAITING_TITLE_PREFIX } from '../src/shell/favicon';
+import { WAITING_ANSWER_WHERE } from '../src/sessions/WaitingBlock';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import { routeOf } from './drift.scenario';
@@ -75,6 +77,7 @@ const ASK = {
 interface Log {
   answers: string[];
   asking: boolean;
+  gate: boolean;
   release: (() => void) | null;
   readAt: number;
   served: number;
@@ -85,6 +88,7 @@ interface Log {
 const log: Log = {
   answers: [],
   asking: false,
+  gate: false,
   release: null,
   readAt: G - 10,
   served: 0,
@@ -98,6 +102,7 @@ const log: Log = {
    record page until the story releases it. */
 function PageExample({
   asking = false,
+  gate = false,
   cites = null,
   windowStart = G - 200,
   stallOlder = false,
@@ -106,6 +111,8 @@ function PageExample({
   readingWindow = G - 200,
 }: {
   readonly asking?: boolean;
+  /** A harness's own gate: the session waits on you with no exact request Compass can show. */
+  readonly gate?: boolean;
   readonly cites?: readonly string[] | null;
   readonly windowStart?: number;
   readonly stallOlder?: boolean;
@@ -116,6 +123,7 @@ function PageExample({
   const [shell] = useState(() => {
     log.answers = [];
     log.asking = asking;
+    log.gate = gate;
     log.release = null;
     log.readAt = G - 10;
     log.served = 0;
@@ -171,16 +179,19 @@ function PageExample({
                 project: 'demo',
                 project_key: '/demo',
                 title: 'Synthetic layout session',
-                state: log.asking ? 'needs_input' : idle ? 'idle' : 'working',
+                state: log.asking || log.gate ? 'needs_input' : idle ? 'idle' : 'working',
+                resume_id: 's1',
                 started_at: G - 3600,
                 rate_per_min: 1450,
-                ...(idle
-                  ? { finished_at: G - 600, state_detail: 'awaiting your message' }
-                  : {
-                      tasks: [{ subject: 'running Bash', status: 'in_progress' }],
-                      state_detail: 'running Bash',
-                      turn: { elapsed_h: '3m' },
-                    }),
+                ...(log.gate
+                  ? { state_detail: 'Permission prompt: Bash', blocked_since: G - 900 }
+                  : idle
+                    ? { finished_at: G - 600, state_detail: 'awaiting your message' }
+                    : {
+                        tasks: [{ subject: 'running Bash', status: 'in_progress' }],
+                        state_detail: 'running Bash',
+                        turn: { elapsed_h: '3m' },
+                      }),
                 delegated_launches: 2,
                 delegated_unpaired: 1,
                 delegated_visibility: 'full',
@@ -259,12 +270,14 @@ function PageExample({
 }
 
 const ORDER = ['Asked you', 'Intent', 'What the session has done', 'Drift', 'Full activity'];
+/* A harness's own gate takes the asked block's place, and never stands beside it. */
+const REGIONS = [...ORDER, 'Waiting on you'];
 
 /* The page's own regions, by role and accessible name, in document order. */
 function regions(root: HTMLElement): HTMLElement[] {
   return within(root)
     .getAllByRole('region')
-    .filter((node) => ORDER.includes(node.getAttribute('aria-label') ?? labelOf(node)));
+    .filter((node) => REGIONS.includes(node.getAttribute('aria-label') ?? labelOf(node)));
 }
 function labelOf(node: HTMLElement): string {
   const id = node.getAttribute('aria-labelledby');
@@ -745,5 +758,85 @@ export const QuestionLeadsAndAnswersOnce: Story = {
     log.release?.();
     await waitFor(() => expect(named(canvasElement)[0]).toBe('Intent'));
     await expect(log.answers).toHaveLength(1);
+  },
+};
+
+/* A session waiting on you is marked beside its title, not down its page (owner, 2026-10-29): the page is one
+   unpadded column, and an inset stripe on it ran its full height and over the title's first letter. */
+export const WaitingEdgeStaysBesideTheTitle: Story = {
+  render: () => <PageExample gate />,
+  play: async ({ canvasElement }) => {
+    const heading = await within(canvasElement).findByRole('heading', {
+      level: 1,
+      name: 'Synthetic layout session',
+    });
+    const page = canvasElement.querySelector<HTMLElement>('.next-session-detail--blocked');
+    await expect(page).not.toBeNull();
+    await expect(getComputedStyle(page as HTMLElement).boxShadow).toBe('none');
+    const header = heading.closest('header') as HTMLElement;
+    await expect(getComputedStyle(header).borderLeftWidth).toBe('3px');
+    await expect(heading.getBoundingClientRect().left).toBeGreaterThan(
+      header.getBoundingClientRect().left + 10,
+    );
+    const columns = canvasElement.querySelector('.next-session-columns') as HTMLElement;
+    await expect(columns.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      header.getBoundingClientRect().bottom,
+    );
+  },
+};
+
+/* A harness's own gate has no request Compass can show or answer, so it is said on its own: waiting, for how
+   long, what the harness said, and where it is answered. The command back in stays on Attention. */
+export const HarnessGateSaysWhereToAnswer: Story = {
+  render: () => <PageExample gate />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const block = await canvas.findByRole('region', { name: 'Waiting on you' });
+    await expect(block).toHaveTextContent('WAITING ON YOU · 15m');
+    await expect(block).toHaveTextContent('Permission prompt: Bash');
+    await expect(block).toHaveTextContent(WAITING_ANSWER_WHERE);
+    await expect(within(block).getByRole('link', { name: 'Attention' })).toBeVisible();
+    await expect(within(block).queryByRole('button', { name: /Copy/ })).toBeNull();
+    await expect(regions(canvasElement)[0]).toBe(block);
+    // It stands apart from the header above it and the card below it, as the cards stand apart from each other.
+    const box = block.getBoundingClientRect();
+    const above = (block.previousElementSibling as HTMLElement).getBoundingClientRect();
+    const below = (block.nextElementSibling as HTMLElement).getBoundingClientRect();
+    await expect(box.top - above.bottom).toBeGreaterThanOrEqual(16);
+    await expect(below.top - box.bottom).toBeGreaterThanOrEqual(16);
+    await expect(canvas.queryByRole('region', { name: 'Asked you' })).toBeNull();
+    await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(true));
+    const icon = document.head.querySelector('link[data-next-favicon]');
+    await expect(icon?.getAttribute('href')).toBe(WAITING_ICON);
+  },
+};
+
+/* An exact request keeps its own Asked-you block; the waiting block is for the gate Compass cannot answer. */
+export const ExactRequestKeepsItsOwnBlock: Story = {
+  render: () => <PageExample asking />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('region', { name: 'Asked you' });
+    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
+    await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(true));
+  },
+};
+
+/* A working session carries no waiting sign anywhere: no edge, no block, and the resting tab. */
+export const WorkingSessionCarriesNoWaitingSign: Story = {
+  render: () => <PageExample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const heading = await canvas.findByRole('heading', {
+      level: 1,
+      name: 'Synthetic layout session',
+    });
+    await expect(getComputedStyle(heading.closest('header') as HTMLElement).borderLeftWidth).toBe(
+      '0px',
+    );
+    await expect(canvas.queryByRole('region', { name: 'Waiting on you' })).toBeNull();
+    await waitFor(() => expect(document.title.startsWith(WAITING_TITLE_PREFIX)).toBe(false));
+    const icon = document.head.querySelector('link[data-next-favicon]');
+    await expect(icon?.getAttribute('href')).toBe(RESTING_ICON);
   },
 };

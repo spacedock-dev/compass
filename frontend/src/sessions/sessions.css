@@ -145,7 +145,6 @@
 .next-attention-risk-source{display:grid;gap:5px}
 .next-attention-risk-next{color:var(--ink2);font-family:var(--sans);font-size:var(--fs-label)}
 
-.next-session-detail--blocked{box-shadow:inset 3px 0 var(--amber)}
 /* ===== SESSION ===== */
 /* One column at every width (owner, 2026-10-19): the header, the answer
    block, Intent, What the session has done, Drift and Full activity, in that

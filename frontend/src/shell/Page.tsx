@@ -7,6 +7,8 @@ import { useDisplayed, useRoute, useShell } from './context';
 import { Header } from './Header';
 import { shortcutTarget } from './keyboard';
 import { Notices } from './Notices';
+import { selectObserved } from '../observed/select';
+import { showFavicon, WAITING_TITLE_PREFIX } from './favicon';
 import { documentTitle } from './title';
 import { RoutedView } from './views';
 
@@ -53,10 +55,21 @@ export function Page() {
 
   const route = useRoute();
   const snapshot = useDisplayed((current) => current);
-  const title = documentTitle(route, snapshot.data);
+  const model = useDisplayed(selectObserved);
+  const waiting =
+    route.view === 'session' &&
+    model.sessions.some(
+      (row) =>
+        row.harness === route.harness &&
+        row.sid === route.session &&
+        row.project === route.project &&
+        (row.isNeeds || row.askKnown),
+    );
+  const title = `${waiting ? WAITING_TITLE_PREFIX : ''}${documentTitle(route, snapshot.data)}`;
   useEffect(() => {
     document.title = title;
-  }, [title]);
+    showFavicon(document, waiting);
+  }, [title, waiting]);
 
   const retryMs = host.streamSupported ? FALLBACK_POLL_MS : UNCOORDINATED_POLL_MS;
   const scope =

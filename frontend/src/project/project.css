@@ -9,8 +9,7 @@
 .next-project-row--blocked,
 .next-session-row--blocked td:first-child,
 .next-project-plan-row--unhealthy,
-.next-activity-card--blocked,
-.next-session-detail--blocked{box-shadow:inset 3px 0 var(--amber)}
+.next-activity-card--blocked{box-shadow:inset 3px 0 var(--amber)}
 [data-next-withheld]{color:var(--ink-absence)}
 .next-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .next-live .next-status-dot{color:var(--ink);animation:next-live-pulse 1.6s ease-in-out infinite}

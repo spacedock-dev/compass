@@ -17,6 +17,18 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-29, a session waiting on a harness's own prompt says so on its page. The page carried the retired
+page's 3px amber edge down the whole session page, and nothing else marked a wait whose question Compass cannot
+read (a permission prompt, or a question not yet written to disk). On the one-column page that edge ran the page's full height and
+over the title's first letter. The page now draws the edge only beside the title and its status, padded off the
+text, and a "Waiting on you" block where the Asked-you block would stand. The block gives the wait's age and the
+harness's own words for it, says the prompt is answered in the session's terminal, and links to Attention for
+the command back in, since that command stays off the session page. The browser tab is titled "● Needs you · "
+before the session's title and its icon turns amber while the open session waits. No golden file is changed.
+`detail.differential.test.tsx` removes the block and its link from the React side, so every other word stays
+held to the recording, and `Page.test.tsx` restates the one fixture title that waits. The `Sessions/One-column
+page` stories hold the edge, the block, the title and the icon.
+
 2026-10-27, the quota fetch is on until turned off
 ([the amendment](../SECURITY.md#usage-quota-reads-the-quota-fetcher)). The recorded capacity answers hold the
 retired page's question ("Read your quota from the vendor?", Read my quota and No thanks) and its switch

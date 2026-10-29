@@ -66,6 +66,9 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
   for (const owned of copy.querySelectorAll('[data-next-cockpit-work], [data-next-drift-pill]')) {
     owned.remove();
   }
+  /* A harness's own gate draws a Waiting-on-you block the retired page never had (owner, 2026-10-29;
+     docs/design-frontend-migration.md#held-to-recorded-answers). The rest of the page is held unchanged. */
+  copy.querySelector('[data-next-session-section="waiting"]')?.remove();
   const meta = copy.querySelector('.next-session-detail-meta');
   // Compare retained counts in the recorded header order; the viewport proof owns their new placement.
   if (meta && header && !header.contains(meta)) {
@@ -93,7 +96,9 @@ function summarize(source: Element | DocumentFragment): DetailSummary {
       (button) =>
         `${button.getAttribute('data-next-answer')}#${button.getAttribute('data-next-answer-index')}:${norm(button)}`,
     ),
-    links: [...article.querySelectorAll('a')].map((anchor) => anchor.getAttribute('href') ?? ''),
+    links: [...article.querySelectorAll('a')]
+      .filter((anchor) => !anchor.closest('[data-next-session-section="waiting"]'))
+      .map((anchor) => anchor.getAttribute('href') ?? ''),
   };
 }
 

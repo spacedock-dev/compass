@@ -119,7 +119,10 @@ and accepts no input. Its xterm assets are vendored and served from loopback.
 
 Exact session detail is reachable from Sessions, cockpit session links and the Intent log. The
 page is one column at every width. It opens with the session's name (a Claude Code session holding a `/goal` is named by that goal, so a replaced or cleared `/goal` never names it; a generated title still wins; a Codex session started with `/goal` and not prompted since is named by its goal), its state beside a status dot
-and what it is doing, then the question first when the session is waiting on you. Then come the
+and what it is doing, then the question first when the session is waiting on you. A wait on the harness's
+own prompt, whose question Compass cannot answer, is said instead under "Waiting on you", with how long it
+has stood and where it is answered; while the open session waits, the tab's title starts "● Needs you" and
+its icon turns amber. Then come the
 **Intent** card with the goal and the expected outcome lines you typed, a **What the session has
 done** card, and a **Drift** card with the `Analyze drift` control, what an analysis reads and
 sends under it, the reading, and every departure on record, asked for or not. While a direction you
