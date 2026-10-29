@@ -115,7 +115,9 @@ describe('the question before the press', () => {
       },
     });
     await settle(page);
-    expect(text('.next-cockpit-direction-said')).toBe('2 later directions:');
+    expect(text('.next-cockpit-direction-said')).toBe(
+      'You sent 2 messages after your goal. Choose one to add or make the goal, or leave them all:',
+    );
     const pick = document.querySelector('[data-next-direction-select]') as HTMLButtonElement;
     await openSelect(pick);
     const labels = screen.getAllByRole('option').map((o) => o.textContent ?? '');
@@ -124,13 +126,14 @@ describe('the question before the press', () => {
     expect(labels[1]).toMatch(/^\d\d:\d\d · Second one\.$/);
     for (const label of labels) expect(label).not.toMatch(/#\d/);
     await chooseSelect(pick, 'f1');
-    const marked = [...document.querySelectorAll('.next-cockpit-direction-whole-item')].filter(
-      (item) => item.getAttribute('aria-current') === 'true',
+    // The picker is the list; only the direction it holds is quoted, the one the buttons act on.
+    const quoted = [...document.querySelectorAll('.next-cockpit-direction-whole-item')];
+    expect(quoted).toHaveLength(1);
+    expect(quoted[0]?.textContent).toContain('First one.');
+    expect(quoted[0]?.textContent).not.toContain('Second one.');
+    expect(text('.next-cockpit-direction-said')).toBe(
+      'You sent 2 messages after your goal. Choose one to add or make the goal, or leave them all:',
     );
-    expect(marked).toHaveLength(1);
-    expect(marked[0]?.textContent).toContain('First one.');
-    expect(marked[0]?.textContent).toContain('the one the buttons below use');
-    expect(text('.next-cockpit-direction-said')).toBe('2 later directions:');
     expect(pick.textContent).toContain('First');
     expect(page.posts('/api/annotate')).toBe(0);
   });
@@ -412,10 +415,10 @@ describe('Leave it', () => {
       }),
     );
     await settle(page);
-    expect(document.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(20);
-    expect(text('.next-cockpit-direction-whole')).toContain(
-      'Synthetic direction 19. Complete words.',
-    );
+    // All twenty are read before the press; the picker lists them and one is quoted whole.
+    expect(screen.getByText(/^You sent 20 messages after your goal\./)).toBeTruthy();
+    expect(document.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(1);
+    expect(text('.next-cockpit-direction-whole')).toContain('Complete words.');
     expect(page.posts('/api/annotate')).toBe(0);
     await press(control('direction-keep'));
     await settle(page);
@@ -453,8 +456,9 @@ describe('Leave it', () => {
       },
     });
     await settle(page);
-    // The partial read quotes what it could open, and Leave it refuses to settle words it could not show.
-    expect(text('.next-cockpit-direction-whole')).toContain('First complete.');
+    // The newest is quoted, from its summary while its whole words could not be opened, and Leave it refuses to
+    // settle words it could not read.
+    expect(text('.next-cockpit-direction-whole')).toContain('Third.');
     await press(control('direction-keep'));
     await settle(page);
     expect(text('.next-cockpit-direction-question')).toContain(
@@ -465,7 +469,7 @@ describe('Leave it', () => {
     await press(control('direction-keep'));
     await settle(page);
     expect(page.allPosts().at(-1)?.body?.['fact_ids']).toEqual(['f2', 'f3']);
-    expect(document.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(3);
+    expect(document.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(1);
     // Words the press just drew were not on screen when it was made, so they are read first.
     expect(page.posts('/api/annotate')).toBe(0);
     await press(control('direction-keep'));

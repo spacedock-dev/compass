@@ -7,6 +7,9 @@ import { useDisplayed, useRoute, useShell } from './context';
 import { Header } from './Header';
 import { shortcutTarget } from './keyboard';
 import { Notices } from './Notices';
+import { findSession } from './derive';
+import { selectObserved } from '../observed/select';
+import { showFavicon, WAITING_TITLE_PREFIX } from './favicon';
 import { documentTitle } from './title';
 import { RoutedView } from './views';
 
@@ -53,10 +56,26 @@ export function Page() {
 
   const route = useRoute();
   const snapshot = useDisplayed((current) => current);
-  const title = documentTitle(route, snapshot.data);
+  const model = useDisplayed(selectObserved);
+  /* Resolved as the page resolves it, so a released id-only link (no harness) still finds its one session. */
+  const shown =
+    route.view === 'session'
+      ? findSession(snapshot.data, route.project, route.harness, route.session)
+      : null;
+  const waiting =
+    shown !== null &&
+    model.sessions.some(
+      (row) =>
+        row.harness === String(shown.harness ?? '') &&
+        row.sid === String(shown.sid ?? '') &&
+        row.project === String(shown.project ?? '') &&
+        (row.isNeeds || row.askKnown),
+    );
+  const title = `${waiting ? WAITING_TITLE_PREFIX : ''}${documentTitle(route, snapshot.data)}`;
   useEffect(() => {
     document.title = title;
-  }, [title]);
+    showFavicon(document, waiting);
+  }, [title, waiting]);
 
   const retryMs = host.streamSupported ? FALLBACK_POLL_MS : UNCOORDINATED_POLL_MS;
   const scope =

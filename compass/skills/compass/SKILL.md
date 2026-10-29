@@ -119,7 +119,10 @@ and accepts no input. Its xterm assets are vendored and served from loopback.
 
 Exact session detail is reachable from Sessions, cockpit session links and the Intent log. The
 page is one column at every width. It opens with the session's name (a Claude Code session holding a `/goal` is named by that goal, so a replaced or cleared `/goal` never names it; a generated title still wins; a Codex session started with `/goal` and not prompted since is named by its goal), its state beside a status dot
-and what it is doing, then the question first when the session is waiting on you. Then come the
+and what it is doing, then the question first when the session is waiting on you. A wait on the harness's
+own prompt, whose question Compass cannot answer, is said instead under "Waiting on you", with how long it
+has stood and where it is answered; while the open session waits, the tab's title starts "● Needs you" and
+its icon turns amber. Then come the
 **Intent** card with the goal and the expected outcome lines you typed, a **What the session has
 done** card, and a **Drift** card with the `Analyze drift` control, what an analysis reads and
 sends under it, the reading, and every departure on record, asked for or not. While a direction you
@@ -424,7 +427,8 @@ an unsaved draft. Once a goal is saved, "Saved" names the window's opening time 
 A direction you gave after your intent (after the saved goal's words, or after the drafted prompt)
 is asked about before the press, in the control's place: "Your 11:05 message adds:" quotes the
 selected message whole under the time you sent it (the newest is preselected; you can choose another),
-and of several every unsettled one is quoted under its own time past the twenty-row bound. Compass reads
+and of several the page says how many you sent after your goal and lists them all, each by its time and
+opening words, in the Direction picker above the quote, which holds only the one the buttons act on. Compass reads
 those words when the question is drawn, so each choice acts on its first press. Nothing there decides
 whether it changes what you asked for: that is yours, and Compass does not write into the session
 either way. `Leave it` settles them through the newest one shown, adopting a draft in the same write,

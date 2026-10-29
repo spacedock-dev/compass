@@ -17,6 +17,31 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-29, several later directions are listed by the picker alone. The question quoted every unsettled
+direction whole, each under its time, above a Direction picker that listed the same directions again, so a
+long session put 23 messages between the reader and the buttons. The page now says "You sent 23 messages after
+your goal. Choose one to add or make the goal, or leave them all:", puts the picker under that sentence and
+quotes only the direction it holds, which is the one Add as a line and Make it the goal act on. Every direction
+is still read whole before any press, and Leave it still settles them all; the picker shows each by its time and
+opening words. `IntentDirections.test.tsx` and the `Intent/Direction actions` and drift stories hold the new shape. The
+recorded answer that holds the old list and its "N later directions:" sentence is
+`frontend/test/golden/e2e/intent-parity.json`, which only the on-demand browser proof reads; it is unchanged
+and the proof was not run for this change.
+
+2026-10-29, a session waiting on a harness's own prompt says so on its page. The page carried the retired
+page's 3px amber edge down the whole session page, and nothing else marked a wait whose question Compass cannot
+read (a permission prompt, or a question not yet written to disk). On the one-column page that edge ran the page's full height and
+over the title's first letter. The page now draws the edge only beside the title and its status, padded off the
+text, and a "Waiting on you" block where the Asked-you block would stand. The block gives the wait's age and the
+harness's own words for it, and says the prompt is answered where the session is running. Where Attention
+holds a command back in (a Claude Code or Codex session with a resume token), it links there, since that command
+stays off the session page. The browser tab is titled "● Needs you · "
+before the session's title and its icon turns amber while the open session waits, the released id-only link
+included. No golden file is changed.
+`detail.differential.test.tsx` removes the block and its link from the React side, so every other word stays
+held to the recording, and `Page.test.tsx` restates the one fixture title that waits. The `Sessions/One-column
+page` stories hold the edge, the block, the title and the icon.
+
 2026-10-27, the quota fetch is on until turned off
 ([the amendment](../SECURITY.md#usage-quota-reads-the-quota-fetcher)). The recorded capacity answers hold the
 retired page's question ("Read your quota from the vendor?", Read my quota and No thanks) and its switch
