@@ -1543,10 +1543,28 @@ This table describes the implementation and does not amend the owner-ruled table
   last job ended partial, cancelled or interrupted. A `before_window` or `bytes` gap offers nothing,
   because a rerun meets the same limit. Whether a rerun's first saved part replaces the stored
   summary before the rerun finishes is the job's, not the card's; the card draws what is saved.
-- The departure mark places a departure's cited entries against the summary by the activity list's
-  `#n`. A phase publishes no bounds, so its span is the span its own bullets cite, and an entry
-  between two phases is in neither ("inside the span the summary covers, but in no phase"). An entry
-  the page has not numbered cannot be placed, and the departure card says so.
+- The departure mark places a departure's cited entries against the summary by where each sits in
+  the record: its time, with its `#n` breaking a tie. A phase publishes no bounds, so its span is the
+  span its own bullets cite, and an entry between two phases is in neither ("inside the span the
+  summary covers, but in no phase"). An entry the page has not numbered cannot be placed, and the
+  departure card says so.
+- Placing by `#n` alone was tried and rejected (2026-10-29). A Claude Code check or file keeps the
+  number of its first run or write, so no number moves, while its id and time are the newest one's.
+  Measured on a Haiku session: turn 1 wrote `src/calc.py`, turn 2 wrote `docs/README.md` against a
+  line that ruled `docs/` out, and turn 3 wrote `src/calc.py` again. The rewrite read `#1.1`, so the
+  turn-3 phase's span reached back over the README write at `#3.1` and was marked as well as the
+  phase that held it.
+- Work recorded after the reading keeps its marks; only a reading against words since replaced, or
+  one marked not accurate, marks nothing. Clearing them on new work was the first rule, and it made
+  the two cards disagree: the Drift card still drew the departure with "This check is from before
+  your message", while every pill went away on the next turn of any session that kept working after
+  Analyze. The pill keeps its look, and its accessible name adds the analysis time and that newer
+  work followed it.
+- An unmatched session (`session_not_matched`, which includes one idle past the board's window
+  opened through `?all=1`) says so on the summary card. It used to share the store-failure sentence,
+  which sent a reader to a store that read fine. The focused read still collects only the board's
+  window, so such a session shows no summary or outline; carrying `?all=1` through the focused,
+  record, reading and summary routes is a separate change.
 - Delete summary sits at the foot of a saved summary, beside What is sent. The ruling requires the
   control and names no place for it. Deleting does not summarize the session again on the same open.
 - The view-only sample never posts an open start: its fixture carries a stored summary. Its board

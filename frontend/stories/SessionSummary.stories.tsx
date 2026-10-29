@@ -359,6 +359,28 @@ export const NoSummary: Story = {
   },
 };
 
+/* A page the server could not match to one session on the board says that, not that the store failed. */
+export const UnmatchedSessionSaysSo: Story = {
+  render: () => (
+    <SummaryPage
+      summary={{ state: 'unavailable', exists: false, reason: 'session_not_matched', job: null }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const none = await stateOf(region, 'none');
+    const line = await waitFor(() => {
+      const node = none.querySelector('[data-next-summary-reason="session_not_matched"]');
+      if (!node) throw new Error('no unmatched line');
+      return node;
+    });
+    await expect(line).toHaveTextContent(
+      'Compass could not match this page to exactly one session on the board',
+    );
+    await expect(none).not.toHaveTextContent('summary store');
+  },
+};
+
 /* A record read one page at a time holds only the newest page, so the header, the size beside Summarize and
    the entries line all say that count is a floor, in the same number, rather than the summary quoting the
    page as the whole session. */
@@ -1161,7 +1183,47 @@ export const DepartureInNoPhase = unmatched(
   'between',
 );
 
-/* A reading out of date, or marked not accurate, marks nothing. */
+/* Work since the reading keeps its marks: the Drift card still draws the departure, and its evidence still
+   sits in the same phase. The pill names the analysis it came from for a reader who hears it alone. */
+export const NewWorkKeepsTheMarks: Story = {
+  render: () => {
+    const reading = departureReading(['c3']);
+    const read = { ...reading.annotation_assessment, read_at: G - 235, evidence_through: G - 235 };
+    return (
+      <SummaryPage
+        summary={withCheck()}
+        session={departureReading(['c3'], { annotation_assessment: read })}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-result-stale]')).not.toBeNull(),
+    );
+    const marked = await waitFor(() => {
+      const node = summary.querySelector<HTMLElement>('[data-next-summary-marked]');
+      if (!node) throw new Error('no marked phase');
+      return node;
+    });
+    await expect(marked.dataset['nextSummaryPhase']).toBe('1:0');
+    await expect(marked.querySelector('[data-next-summary-holds]')).toHaveAttribute(
+      'data-next-summary-holds',
+      'before-newer-work',
+    );
+    await expect(
+      within(marked).getByRole('button', {
+        name: /^Departure · Goal, from the \d\d:\d\d analysis, before newer work, go to the card$/,
+      }),
+    ).toHaveTextContent('Departure · Goal');
+    await expect(
+      canvasElement.querySelector('[data-next-departure-summary="phase"]'),
+    ).toHaveTextContent(`In What the session has done:${SECOND_PHASE.title}`);
+  },
+};
+
+/* A reading read against words since replaced, or marked not accurate, marks nothing. */
 export const StaleReadingMarksNothing: Story = {
   render: () => (
     <SummaryPage
