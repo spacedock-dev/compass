@@ -33,6 +33,8 @@ export interface DisclosureProps {
   readonly focusKey?: string;
   /** Chrome for the popover's trigger itself, such as a filter button's border. Popover only. */
   readonly triggerClassName?: string;
+  /** Opens below the trigger and scrolls in the room there, never flipping above or beside it. Popover only. */
+  readonly vertical?: boolean;
   /** Marks drawn on the summary's row, right-aligned and outside the trigger, so they stay in view while the
    * panel is closed and may hold controls of their own. Accordion only. */
   readonly aside?: ReactNode;
@@ -195,6 +197,7 @@ function PopoverDisclosure({
   summaryLabel,
   focusKey,
   triggerClassName,
+  vertical = false,
   children,
 }: DisclosureProps) {
   const controls = useControls();
@@ -293,6 +296,9 @@ function PopoverDisclosure({
             initialFocus={false}
             finalFocus={false}
             aria-labelledby={triggerId}
+            {...(vertical
+              ? { collisionAvoidance: { side: 'none', align: 'shift', fallbackAxisSide: 'none' } }
+              : {})}
           >
             {children}
           </PopoverContent>

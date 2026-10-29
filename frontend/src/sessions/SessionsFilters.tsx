@@ -238,6 +238,9 @@ function FilterButton({
       focusKey={`sessions-filter-${facet}`}
       summaryLabel={selected ? `${name}, ${String(selected)} selected` : name}
       triggerClassName={TRIGGER}
+      /* A short window flipped the tall Date list beside its button, over the search field; a filter list
+         belongs under its button and scrolls there instead. */
+      vertical
       summary={
         <>
           <span>{name}</span>

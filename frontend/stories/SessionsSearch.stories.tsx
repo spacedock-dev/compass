@@ -254,6 +254,15 @@ export const StartedTodayAndMissingStartTimes: Story = {
     await expect(popup.querySelector('[data-sessions-unstamped-harnesses]')).toHaveTextContent(
       'No start time is published for: Cursor, Goose, OpenCode, Pi.',
     );
+    // The tall Date list opens under its button and scrolls there; it never flips beside it, over the search field.
+    const shell = popup.closest<HTMLElement>('[data-slot=popover-content]') as HTMLElement;
+    await waitFor(() => {
+      const box = shell.getBoundingClientRect();
+      const at = date.getBoundingClientRect();
+      expect(box.right).toBeGreaterThan(at.left);
+      expect(box.top).toBeGreaterThanOrEqual(at.bottom - 1);
+      expect(box.bottom).toBeLessThanOrEqual(innerHeight);
+    });
     await closeFilters();
     await userEvent.click(canvas.getByRole('button', { name: 'Include them' }));
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(9));
