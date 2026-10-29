@@ -13,7 +13,7 @@ import { worktreeOf } from './worktree';
 /* Sessions search and filters, as data: which drawn rows a reader's words and choices keep, how many each
    choice would keep, and what the choices hide. A pure function of the rows the screen draws, so every
    count is derived from the rows rendered and none is authored. The rules and their copy belong to
-   docs/plans/2026-10-29-sessions-search.md (sections 2, 4 and 5). */
+   docs/design-sessions-search.md#how-filters-combine-and-count and the sections after it. */
 
 export type DateField = 'started' | 'active';
 export type When = 'any' | 'hour' | 'today' | 'yesterday' | 'week' | 'unstamped';

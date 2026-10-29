@@ -1,6 +1,6 @@
 /* The board behind the Sessions search and filters sign-off stories and `filters.test.ts`: twelve rows worked
-   through `groupSessions` by hand (docs/plans/2026-10-29-sessions-search.md, section 8). The clock is local
-   noon, so Today and Yesterday agree on a desk in any time zone and on UTC CI.
+   through `groupSessions` by hand (docs/design-sessions-search.md). The clock is local noon, so Today and
+   Yesterday agree on a desk in any time zone and on UTC CI.
 
    Derived totals the stories assert:
    - Active now holds A, D, B and C; Recent history the other eight.

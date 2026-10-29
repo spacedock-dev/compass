@@ -15,7 +15,7 @@ import {
   type FixtureOptions,
 } from './sessionsSearch.fixture';
 
-/* Sessions search and filters, for sign-off (docs/plans/2026-10-29-sessions-search.md, section 8). Every story
+/* Sessions search and filters (docs/design-sessions-search.md), the stories the owner signed off. Every story
    mounts the real page over a static board of twelve rows; a poll is the story calling the runtime's refresh
    with the board's clock moved on a second. Nothing here is a production path: the counts the stories
    assert were worked out by hand from the fixture, so a figure that disagrees is the page's to explain. */

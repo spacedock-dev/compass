@@ -1100,3 +1100,67 @@ bytes with 14 package licenses, an increase of 33,284 bytes for the icons, Toolt
 components and their utilities together. The notices file adds the full `react-icons@5.7.0`
 license, including its icon-family attribution list and Phosphor MIT reference; the existing
 shadcn copied-source notice is unchanged. These are byte measurements, not a fluidity qualification.
+
+## Checkbox and Radio Group layer
+
+Checkbox and Radio Group are the base-nova items from the shadcn 4.21.4 registry
+(`https://ui.shadcn.com/r/styles/base-nova/checkbox.json` and `radio-group.json`), hand-ported onto
+the pinned `@base-ui/react` 1.8.0, which already ships `checkbox`, `radio` and `radio-group`. No npm
+package is added and the lockfile is unchanged. Each file's header names the CLI version, the
+registry source and the SHA-256 of the item's `content` as fetched, which is the record rule 3 asks
+of a CLI copy.
+
+The deviations are the ones every layer makes: the local `cn`, the page's own check glyph from
+`ui/icons.tsx` in place of the registry's icon import, `rounded-control` and `rounded-pill` for the
+page's radius tokens, the shared two-pixel outline focus ring, and no `dark:` or field-group
+variants. The box and the dot stay 16px. The 44px target is the full-width option label around each
+one, so the whole row takes the press, and an `after:` inset widens the control's own hit area. The
+existing shadcn copied-source notice in `react-licenses.txt` covers both files, so the notices file
+is unchanged. Storybook's explicit optimizer list adds `@base-ui/react/checkbox`, `radio` and
+`radio-group`. `checkbox.stories.tsx` asserts that Space and a press on the label toggle the box,
+that the label row is at least 44px tall and that a disabled box ignores both;
+`radio-group.stories.tsx` asserts that the arrow keys move the one checked item and that the group
+has one tab stop.
+
+Three existing ui files changed with it. Button gains a `filter-chip` variant, Tailwind only, for a
+removable filter: one press removes it, so the remove glyph sits inside the button's name.
+`ui/icons.tsx` adds `search` (`PiMagnifyingGlass`) and `check` (`PiCheck`) and reuses `remove`.
+`PopoverContent` passes Base UI's `collisionAvoidance` through to its positioner.
+
+### Find sessions controls
+
+The Sessions toolbar is the first user of both components. The
+[Sessions search record](design-sessions-search.md#the-toolbar) owns its behaviour; this section
+owns which component draws each part.
+
+| Part | Component |
+|---|---|
+| Search field and Find a project | Input, through `DraftInput`: uncontrolled, with field memory, as the form-controls layer requires of every typed field |
+| Six filter buttons and their popovers | The popover variant of `Disclosure`, so open state stays in the keyed store and Escape and blur follow the Popover layer |
+| Filter options | Checkbox for Project, Harness, State, Drift and Goal and the no-stamp checkbox; Radio Group for Date's Filter by and When |
+| A count on a filter button | Badge |
+| Presets | Button `variant="native"` with `aria-pressed` in a named group, the activity filter's idiom, instead of Toggle Group |
+| Chips | Button `variant="filter-chip"` |
+| Show all stored sessions, and back | `buttonVariants({ variant: 'native' })` on a plain `<a>`, so the link keeps its role |
+| The hidden-waiting guard | Alert, static (`announce={false}`), on the amber token |
+| Dividers inside popovers | Separator |
+
+The filter popovers keep the Popover layer's contract: non-modal, initial and final focus left alone,
+and Escape through `popoverEscape.ts`, which closes all popovers and returns focus to the trigger. The
+popover variant of `Disclosure` gains three props for them. `triggerClassName` adds the border, since
+the trigger's own class is only a minimum size and a focus outline and the chevron stays. `vertical`
+turns off side flipping (`side: 'none'`, `align: 'shift'`, `fallbackAxisSide: 'none'`), so a list
+opens below its button and scrolls inside the available height; in a short window the tall Date list
+had flipped beside its button, over the search field. `holdPaint` marks the trigger with
+`data-hold-paint`, which holds the board's background paint while the popover is open, as an open
+Select does ([An open option list](design-reader-state.md#an-open-option-list)).
+
+Not added, with the reasons the Sessions search record gives: Kbd, Input Group, Toggle Group, Switch,
+Calendar, Command, Combobox, DropdownMenu, Sheet, Drawer and Empty.
+
+Rule 9 puts a layer that adds a typed-words control under full adversarial review, and the search
+field is one, so this layer takes that tier rather than two lenses. The toolbar is Tailwind only:
+`SessionsFilters.tsx` joins the sessions `@source` list in `tailwind.css`, and hand-written CSS is
+unchanged at 121,030 bytes. Measured with `pnpm build` on this layer, the page grows from 2,174,695 to
+2,237,347 bytes (62,652 bytes for both components, the toolbar and the filter rules together), with
+14 bundled licenses before and after. These are byte measurements, not a fluidity qualification.

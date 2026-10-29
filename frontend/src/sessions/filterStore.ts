@@ -3,7 +3,7 @@ import type { Controls } from '../controls/kit';
 import { EMPTY_FILTERS, type FilterState } from './filters';
 
 /* The reader's Sessions search and filters, held for the life of the tab and never written to storage or the
-   fragment (docs/plans/2026-10-29-sessions-search.md, section 6). A filter silently restored on reload would
+   fragment (docs/design-sessions-search.md#persistence). A filter silently restored on reload would
    hide sessions, some of them waiting on the reader, so a reload is where it ends. Held outside the render so
    a poll, a view change and a trip into a session and back all leave it as it was. Each write replaces the
    snapshot, so `useSyncExternalStore` sees a change exactly when something changed. */

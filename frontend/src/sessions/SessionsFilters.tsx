@@ -60,7 +60,7 @@ import { RouteAnchor } from './RouteAnchor';
 /* The Find sessions toolbar: one search field, six filter popovers, three presets, the chips that say what is
    on, and the lines that say what the filters hide. It owns no state of its own beyond the "Find a project"
    narrowing: every choice is in the filter store, so a poll, a view change and a round trip through a session
-   leave it as the reader left it. docs/plans/2026-10-29-sessions-search.md owns the copy and the rules. */
+   leave it as the reader left it. docs/design-sessions-search.md#the-toolbar owns the copy and the rules. */
 
 export const SEARCH_KEY = 'sessions-search';
 

@@ -4,7 +4,7 @@
    MIT; the full upstream notice ships in react-licenses.txt.
    Deviations: local cn, the page's check icon, page radius and outline focus, no dark: or field-group
    variants. The box stays 16px; the row label around it is the 44px target.
-   docs/plans/2026-10-29-sessions-search.md#7-shadcn-components owns the adoption until its layer is recorded. */
+   docs/design-shadcn-adoption.md#checkbox-and-radio-group-layer owns the tuning. */
 import { Checkbox as CheckboxPrimitive } from '@base-ui/react/checkbox';
 import { cn } from '../lib/utils';
 import { Icon } from './icons';

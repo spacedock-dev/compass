@@ -4,7 +4,7 @@
    MIT; the full upstream notice ships in react-licenses.txt.
    Deviations: local cn, page radius tokens and outline focus, no dark: or field-group variants. The dot
    stays 16px; the row label around it is the 44px target.
-   docs/plans/2026-10-29-sessions-search.md#7-shadcn-components owns the adoption until its layer is recorded. */
+   docs/design-shadcn-adoption.md#checkbox-and-radio-group-layer owns the tuning. */
 import { Radio as RadioPrimitive } from '@base-ui/react/radio';
 import { RadioGroup as RadioGroupPrimitive } from '@base-ui/react/radio-group';
 import { cn } from '../lib/utils';
