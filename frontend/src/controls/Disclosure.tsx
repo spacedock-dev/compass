@@ -31,6 +31,8 @@ export interface DisclosureProps {
   readonly summaryLabel?: string;
   /** Registers the summary with the focus lane. */
   readonly focusKey?: string;
+  /** Chrome for the popover's trigger itself, such as a filter button's border. Popover only. */
+  readonly triggerClassName?: string;
   /** Marks drawn on the summary's row, right-aligned and outside the trigger, so they stay in view while the
    * panel is closed and may hold controls of their own. Accordion only. */
   readonly aside?: ReactNode;
@@ -192,6 +194,7 @@ function PopoverDisclosure({
   className,
   summaryLabel,
   focusKey,
+  triggerClassName,
   children,
 }: DisclosureProps) {
   const controls = useControls();
@@ -275,6 +278,7 @@ function PopoverDisclosure({
             id={triggerId}
             ref={triggerRef}
             onBlur={onBlur}
+            {...(triggerClassName ? { className: triggerClassName } : {})}
             {...(summaryLabel ? { 'aria-label': summaryLabel } : {})}
           >
             {summary}

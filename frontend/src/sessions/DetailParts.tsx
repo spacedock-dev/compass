@@ -3,7 +3,7 @@ import { Card } from '../ui/card';
 import { Separator } from '../ui/separator';
 import { Disclosure } from '../controls';
 import type { Landing } from '../observed';
-import { RouteAnchor } from './SessionsView';
+import { RouteAnchor } from './RouteAnchor';
 import { durationSince, isRecord, promptCopied, type Row } from '../observed';
 import { StatusDot } from './SessionsView';
 import type { CommandReports, Delivery, Facts, Health, Subagents, Tasks } from './detail';

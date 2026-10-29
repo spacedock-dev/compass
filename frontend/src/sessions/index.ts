@@ -3,7 +3,8 @@
    re-entry line, the goal-focus request) are exported beside the screens that own their wording. */
 export { AnswerBlock } from './AnswerBlock';
 export { SessionDetail } from './SessionDetail';
-export { SessionsView, RouteAnchor, StatusDot } from './SessionsView';
+export { SessionsView, StatusDot } from './SessionsView';
+export { RouteAnchor } from './RouteAnchor';
 export { goalFocusFor, answerNotesFor } from './heldState';
 export {
   intentDraft,

@@ -13,11 +13,24 @@ export interface KeyEventLike {
 }
 
 const FIELDS = ['input', 'select', 'textarea'];
+/* Roles whose own keys a letter must not steal: a choice list, and a checkbox or radio inside a filter popover,
+   where a reader pressing "p" means the option, not Projects. */
+export const SKIP_ROLES = ['combobox', 'listbox', 'option', 'checkbox', 'radio'] as const;
+export const SKIP_ROLE_SELECTOR = SKIP_ROLES.map((role) => `[role="${role}"]`).join(', ');
 const SHORTCUTS: Readonly<Record<string, RouteInput>> = {
   a: { view: 'attention', project: null, session: null },
   p: { view: 'projects', project: null, session: null },
   s: { view: 'sessions', project: null, session: null },
 };
+
+/* Whether a page-wide key must leave this event alone: a modifier is held, another handler took it, or the
+   reader is typing or working a control that owns its keys. Shared by the route shortcuts and the Sessions
+   "/" key, so the two cannot disagree about where the reader is typing. */
+export function keyIsTaken(event: Omit<KeyEventLike, 'key'>): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return true;
+  if (event.role && (SKIP_ROLES as readonly string[]).includes(event.role)) return true;
+  return FIELDS.includes(event.tagName.toLowerCase()) || event.isContentEditable === true;
+}
 
 /* Where a key takes the reader, or null for a key that is not the page's. Escape goes where the
    crumb's last link goes: a session returns to the view it was opened from (or to its project, when
@@ -28,9 +41,7 @@ const SHORTCUTS: Readonly<Record<string, RouteInput>> = {
    "leave this view"; the legacy page ran the popover handler first and returned, and here the
    shortcut listener sits on the window so every document-level handler has run before it. */
 export function shortcutTarget(event: KeyEventLike, route: RouteInput): RouteInput | null {
-  if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return null;
-  if (event.role && ['combobox', 'listbox', 'option'].includes(event.role)) return null;
-  if (FIELDS.includes(event.tagName.toLowerCase()) || event.isContentEditable) return null;
+  if (keyIsTaken(event)) return null;
   if (event.key === 'Escape') {
     const home = route.view === 'session' ? sessionHome(route) : 'sessions';
     if (home === 'projects' && route.project)

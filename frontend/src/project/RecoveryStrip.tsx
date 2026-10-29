@@ -13,7 +13,7 @@ import { useControls, useValueStore } from '../controls/kit';
 import { annotationOf } from '../intent/annotation';
 import { sessionKey } from '../observed/values';
 import type { ObservedSession } from '../observed';
-import { RouteAnchor } from '../sessions/SessionsView';
+import { RouteAnchor } from '../sessions/RouteAnchor';
 import { sessKey, workingSessions } from './group';
 import { instructionHeading, projectGoal } from './goal';
 import { briefingOf, noteKey, type ProjectModel } from './model';

@@ -7,6 +7,7 @@
 import type { IconBaseProps } from 'react-icons';
 import {
   PiCaretRight,
+  PiCheck,
   PiCheckCircle,
   PiCircle,
   PiClockCounterClockwise,
@@ -14,6 +15,7 @@ import {
   PiCopy,
   PiInfo,
   PiListChecks,
+  PiMagnifyingGlass,
   PiTerminal,
   PiWarning,
   PiX,
@@ -32,7 +34,9 @@ export type IconName =
   | 'expand'
   | 'remove'
   | 'compass'
-  | 'copy';
+  | 'copy'
+  | 'search'
+  | 'check';
 
 const ICONS = {
   unrecorded: PiCircle,
@@ -47,6 +51,8 @@ const ICONS = {
   remove: PiX,
   compass: PiCompass,
   copy: PiCopy,
+  search: PiMagnifyingGlass,
+  check: PiCheck,
 } as const;
 
 export function Icon({ name, ...props }: { readonly name: IconName } & IconBaseProps) {

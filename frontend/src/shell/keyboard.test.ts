@@ -1,6 +1,7 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { parseFragment } from '../router/grammar';
-import { shortcutTarget, type KeyEventLike } from './keyboard';
+import { keyIsTaken, shortcutTarget, SKIP_ROLE_SELECTOR, type KeyEventLike } from './keyboard';
 
 const route = (fragment: string) => parseFragment(fragment);
 const key = (value: string, extra: Partial<KeyEventLike> = {}): KeyEventLike => ({
@@ -83,9 +84,33 @@ describe('a shortcut never fires where the reader is typing or using a modifier'
       expect(shortcutTarget(key(k, { tagName }), route('#n=intent')), `${tagName} ${k}`).toBeNull();
   });
 
-  it.each(['combobox', 'listbox', 'option'])('leaves choice keys with the %s', (role) => {
-    for (const k of ['a', 'p', 's', 'Escape'])
-      expect(shortcutTarget(key(k, { tagName: 'BUTTON', role }), route('#n=intent'))).toBeNull();
+  it.each(['combobox', 'listbox', 'option', 'checkbox', 'radio'])(
+    'leaves choice keys with the %s',
+    (role) => {
+      for (const k of ['a', 'p', 's', 'Escape'])
+        expect(shortcutTarget(key(k, { tagName: 'SPAN', role }), route('#n=intent'))).toBeNull();
+    },
+  );
+
+  it('finds a filter popover checkbox or radio from the node that has focus', () => {
+    document.body.innerHTML =
+      '<span role="checkbox"><b id="in-box"></b></span><span role="radio" id="dot"></span><button id="plain"></button>';
+    expect(
+      document.getElementById('in-box')?.closest(SKIP_ROLE_SELECTOR)?.getAttribute('role'),
+    ).toBe('checkbox');
+    expect(document.getElementById('dot')?.closest(SKIP_ROLE_SELECTOR)?.getAttribute('role')).toBe(
+      'radio',
+    );
+    expect(document.getElementById('plain')?.closest(SKIP_ROLE_SELECTOR)).toBeNull();
+    document.body.innerHTML = '';
+  });
+
+  it('shares one rule with the Sessions "/" key, which is not a route shortcut', () => {
+    expect(keyIsTaken({ tagName: 'BODY' })).toBe(false);
+    expect(keyIsTaken({ tagName: 'INPUT' })).toBe(true);
+    expect(keyIsTaken({ tagName: 'SPAN', role: 'radio' })).toBe(true);
+    expect(keyIsTaken({ tagName: 'BODY', defaultPrevented: true })).toBe(true);
+    expect(shortcutTarget(key('/'), route('#n=sessions'))).toBeNull();
   });
 
   it('is ignored over editable content', () => {
