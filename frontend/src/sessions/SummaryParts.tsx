@@ -366,8 +366,9 @@ export function SummaryControls({
         <Line data-next-summary-reason={refusal?.reason ?? job?.reason ?? ''}>{why}</Line>
       ) : null}
       {state.focused?.state === 'unavailable' ? (
-        <Line data-next-summary-reason="store-unavailable">
-          {reasonSentence('store-unavailable', state.reasons)}
+        /* An unmatched session says so: blaming the store sent a reader to a store that read fine. */
+        <Line data-next-summary-reason={unavailableReason(state.focused.reason)}>
+          {reasonSentence(unavailableReason(state.focused.reason), state.reasons)}
         </Line>
       ) : (
         <>
@@ -564,6 +565,9 @@ function Hidden({
   );
 }
 
+const unavailableReason = (reason: string) =>
+  reason === 'session_not_matched' ? reason : 'store-unavailable';
+
 const PILL =
   'inline-flex min-h-0 min-w-0 items-center rounded-full px-2.5 py-0.5 text-label font-semibold [font-family:var(--mono)]';
 
@@ -573,19 +577,27 @@ const PILL =
    They sit outside the accordion's trigger so they stay in view while the lines are folded away. */
 function Mark({
   marks,
+  before = null,
   failures,
   tour,
 }: {
   readonly marks: readonly DepartureMark[];
+  /** When the analysis behind the marks was made, where work has arrived since it. */
+  readonly before?: number | null;
   readonly failures: number;
   readonly tour: boolean;
 }) {
   const { model } = useDrift();
   if (!marks.length && !failures) return null;
+  /* The Drift card says the analysis predates newer work; a pill read on its own says so too. */
+  const since = before === null ? '' : `, from the ${clock(before)} analysis, before newer work`;
   return (
     <>
       {marks.length ? (
-        <span className="contents" data-next-summary-holds>
+        <span
+          className="contents"
+          data-next-summary-holds={before === null ? '' : 'before-newer-work'}
+        >
           <span className="sr-only">{SUMMARY_HOLDS}</span>
           {tour ? <SampleMark id="phase" /> : null}
           {marks.map((mark) => (
@@ -594,7 +606,7 @@ function Mark({
               target={`departure-head:${model.key}:${mark.key}`}
               label={`Departure · ${mark.name}`}
               /* WCAG 2.5.3: the accessible name begins with the visible label. */
-              name={`Departure · ${mark.name}, go to the card`}
+              name={`Departure · ${mark.name}${since}, go to the card`}
               className={`${PILL} cursor-pointer border-0 bg-[var(--clay)] text-[color:var(--bg)] no-underline hover:brightness-110`}
             />
           ))}
@@ -844,6 +856,7 @@ export function SummaryView({
                     aside={
                       <Mark
                         marks={held}
+                        before={marks.before}
                         failures={
                           phase.bullets.filter(
                             (line) =>

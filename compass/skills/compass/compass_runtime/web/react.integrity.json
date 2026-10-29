@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2239075,
+    "bytes": 2240115,
     "file": "react.html",
-    "sha256": "cc004758b53561a7bdbd9fd6320b0db77c2302ac924518b6c73ae8e567345fdd"
+    "sha256": "369bf9c7acad36813c4bf7b100391cb72a5f4b5436e5dce3c0584340e7bf68e1"
   },
   "format": 1,
   "frontend": "react",
@@ -1187,7 +1187,7 @@
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",
-        "sha256": "793ebbcab8abaaf9c16d472ec690b79015be190b6ab7830f58e8e054caa40ebe"
+        "sha256": "a271b88f3bf54c0c031ddb9842956141057a86047eba330670f5d023e7385553"
       },
       {
         "file": "frontend/src/sessions/WaitingBlock.tsx",
@@ -1247,7 +1247,7 @@
       },
       {
         "file": "frontend/src/sessions/summary.ts",
-        "sha256": "c1225cc341e6f5d16dc62d149e2b0ca2f87b81a245532cd5f9de77ae8314ced1"
+        "sha256": "7dac5deadd5d7984f7da2204f63b119490a06476a1fb0cc0e0025ed21baf65a4"
       },
       {
         "file": "frontend/src/sessions/summaryActions.ts",
@@ -1259,7 +1259,7 @@
       },
       {
         "file": "frontend/src/sessions/summaryMarks.ts",
-        "sha256": "77b9654066505dba9a3b579e4b041f46230d684cbe32f01ac679fccf28ae5063"
+        "sha256": "621d77c4d6505c0a43563b0107472203fc3dd046fac963a499340a382a065e65"
       },
       {
         "file": "frontend/src/sessions/summaryState.ts",

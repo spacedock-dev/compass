@@ -15,6 +15,7 @@ import {
   outOfDateLine,
   placeDeparture,
   positionOf,
+  recordPositions,
   reasonSentence,
   saidText,
   SUMMARY_NOT_CLAUDE,
@@ -485,16 +486,19 @@ describe('what the card says', () => {
     ['a2', '4'],
     ['c3', '4.1'],
   ]);
+  // Each entry at the time its number implies, so these cases read as they did when placement used numbers.
+  const timed = [...numbers.keys()].map((id, n) => ({ id, at: 100 + n }));
+  const positions = recordPositions(timed, numbers);
   it('orders a sub-number between its neighbours', () => {
     expect(positionOf('2.1')).toEqual([2, 1]);
     expect(positionOf('x')).toBeNull();
   });
   it('places a departure in a phase, after, between or nowhere', () => {
     if (!base) throw new Error('no summary');
-    expect(placeDeparture(base, ['c1'], numbers)).toEqual({ where: 'phase', phases: ['0:0'] });
-    expect(placeDeparture(base, ['c3'], numbers).where).toBe('after');
-    expect(placeDeparture(base, ['c2'], numbers).where).toBe('between');
-    expect(placeDeparture(base, ['zz'], numbers).where).toBe('unplaced');
+    expect(placeDeparture(base, ['c1'], positions)).toEqual({ where: 'phase', phases: ['0:0'] });
+    expect(placeDeparture(base, ['c3'], positions).where).toBe('after');
+    expect(placeDeparture(base, ['c2'], positions).where).toBe('between');
+    expect(placeDeparture(base, ['zz'], positions).where).toBe('unplaced');
   });
   it('says only what it can stand behind when the page cannot number a summary citation', () => {
     if (!base) throw new Error('no summary');
@@ -514,9 +518,92 @@ describe('what the card says', () => {
           : block,
       ),
     };
-    expect(placeDeparture(unmatched, ['c2'], numbers).where).toBe('unplaced');
-    expect(placeDeparture(unmatched, ['c3'], numbers).where).toBe('unplaced');
-    expect(placeDeparture(unmatched, ['a2'], numbers)).toEqual({ where: 'phase', phases: ['1:0'] });
+    expect(placeDeparture(unmatched, ['c2'], positions).where).toBe('unplaced');
+    expect(placeDeparture(unmatched, ['c3'], positions).where).toBe('unplaced');
+    expect(placeDeparture(unmatched, ['a2'], positions)).toEqual({
+      where: 'phase',
+      phases: ['1:0'],
+    });
+  });
+  it('places a rerun check or a rewritten file at its newest run, not the number of its first', () => {
+    // Measured on a Haiku session: turn 1 wrote src/calc.py, turn 2 wrote docs/README.md against a line that
+    // ruled docs/ out, and turn 3 wrote src/calc.py again. The rewrite kept #1.1, its first write's number,
+    // with the newest write's id and time, so the turn-3 phase's span reached back over #3.1 and was marked too.
+    const rerun = parseFocusedSummary({
+      sources: {
+        summary: {
+          exists: true,
+          made_at: 1900000000,
+          model_stamp: 'claude:m:x',
+          blocks: [
+            {
+              first: 'm1',
+              last: 'm6',
+              entries: 9,
+              phases: [
+                { title: 'Subtract', bullets: [{ text: 'a', kind: 'did', cites: ['m1', 'm2'] }] },
+                {
+                  title: 'README',
+                  bullets: [{ text: 'b', kind: 'did', cites: ['m3', 'readme', 'm4'] }],
+                },
+                {
+                  title: 'Multiply',
+                  bullets: [{ text: 'c', kind: 'did', cites: ['m5', 'calc', 'm6'] }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })?.summary;
+    if (!rerun) throw new Error('no summary');
+    const labels = new Map([
+      ['m1', '1'],
+      ['calc', '1.1'],
+      ['m2', '2'],
+      ['m3', '3'],
+      ['readme', '3.1'],
+      ['m4', '4'],
+      ['m5', '5'],
+      ['m6', '6'],
+    ]);
+    const at = { m1: 10, m2: 20, m3: 30, readme: 31, m4: 40, m5: 50, calc: 51, m6: 60 };
+    const placed = recordPositions(
+      Object.entries(at).map(([id, time]) => ({ id, at: time })),
+      labels,
+    );
+    expect(placeDeparture(rerun, ['readme'], placed)).toEqual({ where: 'phase', phases: ['0:1'] });
+    expect(placeDeparture(rerun, ['calc'], placed)).toEqual({ where: 'phase', phases: ['0:2'] });
+  });
+  it('puts a message before a rerun that shares its time, as the server numbers them', () => {
+    const placed = recordPositions(
+      [
+        { id: 'rerun', at: 50 },
+        { id: 'm5', at: 50 },
+      ],
+      new Map([
+        ['rerun', '1.1'],
+        ['m5', '5'],
+      ]),
+    );
+    expect([...placed]).toEqual([
+      ['m5', [1, 0]],
+      ['rerun', [2, 0]],
+    ]);
+  });
+  it('places only an entry the page numbers and has a time for', () => {
+    const placed = recordPositions(
+      [
+        { id: 'a', at: 5 },
+        { id: 'b', at: null },
+        { id: 'c', at: 7 },
+      ],
+      new Map([
+        ['a', '1'],
+        ['b', '2'],
+      ]),
+    );
+    expect([...placed]).toEqual([['a', [1, 0]]]);
   });
 });
 

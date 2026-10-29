@@ -67,6 +67,8 @@ export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) =
     'This session is still running, so it is not summarized on open. Summarize reads the session so far.',
   'session-unavailable': () =>
     'Compass could not find this session on the board, so it cannot summarize it.',
+  session_not_matched: () =>
+    'Compass could not match this page to exactly one session on the board, so it cannot show a summary. A session idle longer than the board’s window is not on it.',
   'in-flight': () => 'A summary of this session is already being made.',
   'no-summary': () => 'There is no saved summary to update. Summarize makes a new one.',
   'summary-changed': () =>
@@ -561,15 +563,40 @@ export const PLACE_LINES: Readonly<Record<Exclude<Where, 'phase'>, string>> = {
   unplaced: 'Compass cannot place its evidence against the summary.',
 };
 
+/* Each numbered entry's place in the record, for placing a departure. A Claude Code check or file keeps the
+   number of its first run or write so no number moves, while its id and time are the newest one's: the
+   turn-3 rewrite of a file first written in turn 1 reads #1.1. Placing by that number stretched every phase
+   citing a rerun back to its first run, and a departure in one phase marked the later ones as well. So the
+   place is the entry's time; at an equal time a message comes first, as the server numbers a check after the
+   message at or before it, and then the number breaks the tie. Only an entry the page numbers is placed. */
+export function recordPositions(
+  entries: readonly { readonly id: string; readonly at: number | null }[],
+  numbers: ReadonlyMap<string, string>,
+): Map<string, Position> {
+  const placed = entries
+    .map((entry) => ({ id: entry.id, at: entry.at, n: positionOf(numbers.get(entry.id)) }))
+    .filter(
+      (row): row is { id: string; at: number; n: Position } => row.at !== null && row.n !== null,
+    )
+    .sort(
+      (a, b) =>
+        a.at - b.at ||
+        Number(a.n[1] > 0) - Number(b.n[1] > 0) ||
+        a.n[0] - b.n[0] ||
+        a.n[1] - b.n[1],
+    );
+  return new Map(placed.map((row, index) => [row.id, [index + 1, 0] as const]));
+}
+
 /* Where a departure's cited entries sit against a summary. A phase's span is the span its own bullets cite,
    because a phase publishes no bounds of its own; an entry between two phases is in neither. Positions come
-   from the activity list's `#n`, so an entry the page has not numbered cannot be placed. */
+   from `recordPositions`, so an entry the page has not numbered cannot be placed. */
 export function placeDeparture(
   summary: StoredSummary,
   cited: readonly string[],
-  numbers: ReadonlyMap<string, string>,
+  positions: ReadonlyMap<string, Position>,
 ): Placement {
-  const at = (id: string) => positionOf(numbers.get(id));
+  const at = (id: string): Position | null => positions.get(id) ?? null;
   const points = cited.map(at).filter((p): p is Position => p !== null);
   const phases: string[] = [];
   const spans = summary.blocks.map((block) => {
