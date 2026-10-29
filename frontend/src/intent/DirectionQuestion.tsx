@@ -32,16 +32,15 @@ import { usePanel } from './useIntent';
    reader has not been shown. */
 
 const REFUSED_ID = 'next-cockpit-reading-refused';
-/* Beside the direction the buttons act on, when several are listed: Add as a line and Make it the goal take
-   the one the picker holds, and nothing else on the list said which that was. */
-const ACTS_ON = 'the one the buttons below use';
-
 /* A direction in the picker: the time it was said, then its words. Never a number: the entry number is the
    record's own bookkeeping and shows the reader nothing they said. */
 function directionLabel(entry: WorkEntry): string {
   return `${clock(Number(entry.at) || 0)} · ${stripPasteWrapper(String(entry.summary || '')) || 'Your direction'}`;
 }
 
+/* Only the direction the picker holds is quoted. Every unsettled one used to be quoted above a picker that
+   listed them all again, which put 23 messages between the reader and the buttons on a long session (owner,
+   2026-10-29). The picker is the list; this is the words the buttons act on. */
 function WholeList({
   pending,
   selected,
@@ -56,10 +55,7 @@ function WholeList({
      the reader reads. */
   const ref = useFocusKey<HTMLOListElement>(ctx.shell.controls.focusLane, `direction-whole:${key}`);
   const now = ctx.shell.clock.now() / 1000;
-  const many = pending.length > 1;
-  const items = held?.drawn.size
-    ? pending.filter((entry) => held.drawn.has(String(entry.id || '')))
-    : pending;
+  const items = pending.filter((entry) => String(entry.id || '') === selected);
   if (!items.length) return null;
   return (
     <ol
@@ -73,16 +69,9 @@ function WholeList({
         const id = String(entry.id || '');
         const opened = held?.texts.get(id);
         return (
-          <li
-            key={id}
-            className="next-cockpit-direction-whole-item"
-            aria-current={many && id === selected ? 'true' : undefined}
-          >
-            {many ? (
-              <span className="next-cockpit-source">
-                {datedClock(Number(entry.at) || 0, now)}
-                {id === selected ? ` · ${ACTS_ON}` : ''}
-              </span>
+          <li key={id} className="next-cockpit-direction-whole-item">
+            {pending.length > 1 ? (
+              <span className="next-cockpit-source">{datedClock(Number(entry.at) || 0, now)}</span>
             ) : null}
             <span className="next-cockpit-direction-whole-text">
               {opened?.text ?? stripPasteWrapper(String(entry.summary || ''))}
@@ -148,7 +137,7 @@ export function DirectionQuestion({
   const said =
     count === 1
       ? `Your ${datedClock(Number(earliest.at) || 0, ctx.shell.clock.now() / 1000)} message adds:`
-      : `${String(count)} later directions:`;
+      : `You sent ${String(count)} messages after your goal. Choose one to add or make the goal, or leave them all:`;
 
   return (
     <>
@@ -158,6 +147,35 @@ export function DirectionQuestion({
         data-next-cockpit-direction-question
       >
         <p className="next-cockpit-direction-said">{said}</p>
+        {count > 1 ? (
+          <Label className="next-direction-select">
+            {'Direction '}
+            <Select
+              value={earliest.id}
+              onValueChange={(value) => {
+                if (value) pickDirection(ctx, session, value);
+              }}
+              items={pending.map((entry) => ({ value: entry.id, label: directionLabel(entry) }))}
+            >
+              <SelectTrigger
+                ref={pickRef}
+                data-next-direction-select
+                data-next-focus={`direction-pick:${key}`}
+                aria-label="Direction"
+                title={String(earliest.summary || 'Your direction')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {pending.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    {directionLabel(entry)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+        ) : null}
         <WholeList pending={pending} selected={String(earliest.id || '')} />
         <div className="next-cockpit-reading-ask items-start [&>button]:flex-auto">
           <DirectionActionButton
@@ -189,35 +207,6 @@ export function DirectionQuestion({
           />
           {buttons}
         </div>
-        {count > 1 ? (
-          <Label className="next-direction-select">
-            {'Direction '}
-            <Select
-              value={earliest.id}
-              onValueChange={(value) => {
-                if (value) pickDirection(ctx, session, value);
-              }}
-              items={pending.map((entry) => ({ value: entry.id, label: directionLabel(entry) }))}
-            >
-              <SelectTrigger
-                ref={pickRef}
-                data-next-direction-select
-                data-next-focus={`direction-pick:${key}`}
-                aria-label="Direction"
-                title={String(earliest.summary || 'Your direction')}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {pending.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {directionLabel(entry)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
-        ) : null}
         {edited ? (
           <p className="next-cockpit-reading-why" id={REFUSED_ID}>
             {reason}

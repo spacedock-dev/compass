@@ -427,7 +427,8 @@ an unsaved draft. Once a goal is saved, "Saved" names the window's opening time 
 A direction you gave after your intent (after the saved goal's words, or after the drafted prompt)
 is asked about before the press, in the control's place: "Your 11:05 message adds:" quotes the
 selected message whole under the time you sent it (the newest is preselected; you can choose another),
-and of several every unsettled one is quoted under its own time past the twenty-row bound. Compass reads
+and of several the page says how many you sent after your goal and lists them all, each by its time and
+opening words, in the Direction picker above the quote, which holds only the one the buttons act on. Compass reads
 those words when the question is drawn, so each choice acts on its first press. Nothing there decides
 whether it changes what you asked for: that is yours, and Compass does not write into the session
 either way. `Leave it` settles them through the newest one shown, adopting a draft in the same write,

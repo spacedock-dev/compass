@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2174767,
+    "bytes": 2174695,
     "file": "react.html",
-    "sha256": "8589b48b4dbeb36e80ba953979f088641cd6c16b8f490e77bc10ef0da8f5fe10"
+    "sha256": "37f70d6ef6280148f5f172363124cdc0ddc8b2b32c4f49fbeaf9b49c17c53d4e"
   },
   "format": 1,
   "frontend": "react",
@@ -775,7 +775,7 @@
       },
       {
         "file": "frontend/src/intent/DirectionQuestion.tsx",
-        "sha256": "74e4fb60bb969b94fb8ca9e35632d92323a7427a6258e912b8d07b57f6f15986"
+        "sha256": "f6eda3afedbe3c10f173dae3a0af9057955c2633534242ef38b26f96d65ca4aa"
       },
       {
         "file": "frontend/src/intent/FeedbackHint.tsx",

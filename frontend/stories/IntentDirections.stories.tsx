@@ -203,15 +203,25 @@ export const TwentyTwoDirections: Story = {
   args: { count: 22 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    // Every direction is quoted whole before any press, so Leave it settles words already on screen.
+    // The count is said once and the picker is the list (owner, 2026-10-29): only the direction it holds, the
+    // newest, is quoted whole, between the picker and the buttons that act on it.
+    const said = await canvas.findByText(/^You sent 22 messages after your goal\./);
     await waitFor(() =>
-      expect(canvasElement.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(22),
+      expect(canvasElement.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(1),
     );
+    const quote = canvasElement.querySelector('.next-cockpit-direction-whole-text') as HTMLElement;
     await waitFor(() =>
-      expect(
-        canvasElement.querySelectorAll('.next-cockpit-direction-whole-text')[21],
-      ).toHaveTextContent('Build synthetic outcome 22. Then run the targeted tests, and push.'),
+      expect(quote).toHaveTextContent(
+        'Build synthetic outcome 22. Then run the targeted tests, and push.',
+      ),
     );
+    const picker = canvasElement.querySelector('[data-next-direction-select]') as HTMLElement;
+    await expect(picker).not.toBeNull();
+    const leave = canvas.getByRole('button', { name: 'Leave it' });
+    const top = (node: Element) => node.getBoundingClientRect().top;
+    await expect(top(said)).toBeLessThan(top(picker));
+    await expect(top(picker)).toBeLessThan(top(quote));
+    await expect(top(quote)).toBeLessThan(top(leave));
     await expect(canvas.getByRole('button', { name: 'Leave it' })).not.toHaveAttribute(
       'aria-busy',
       'true',
@@ -254,7 +264,9 @@ export const AnalyzeStaysAvailable: Story = {
   args: { count: 2 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText('2 later directions:');
+    await canvas.findByText(
+      'You sent 2 messages after your goal. Choose one to add or make the goal, or leave them all:',
+    );
     await expect(await canvas.findByRole('button', { name: 'Analyze drift' })).toBeVisible();
     await expect(canvas.getByRole('button', { name: 'Leave it' })).toBeVisible();
   },
@@ -313,9 +325,10 @@ export const PartialBatch: Story = {
     await waitFor(() =>
       expect(canvasElement.querySelectorAll('.next-cockpit-direction-whole-item')).toHaveLength(1),
     );
+    // The newest is the one quoted; its whole words were out of reach, so its summary stands in.
     await expect(
       canvasElement.querySelector('.next-cockpit-direction-whole-text'),
-    ).toHaveTextContent('Build synthetic outcome 1.');
+    ).toHaveTextContent('Build synthetic outcome 2.');
     await userEvent.click(canvas.getByRole('button', { name: 'Leave it' }));
     await waitFor(() =>
       expect(canvasElement.querySelector('[data-next-action-feedback]')).toHaveTextContent(

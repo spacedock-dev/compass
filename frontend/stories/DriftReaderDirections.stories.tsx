@@ -87,7 +87,11 @@ export const TheReadersDirectionsAreNotTheAgentsDrift: Story = {
     // Nothing departs: the stored reading blames the agent for neither direction.
     await expect(shown.querySelectorAll('[data-next-departure]')).toHaveLength(0);
     // Both are the reader's later directions, which the page asks about before it reads on.
-    await expect(await within(drift).findByText('2 later directions:')).toBeVisible();
+    await expect(
+      await within(drift).findByText(
+        'You sent 2 messages after your goal. Choose one to add or make the goal, or leave them all:',
+      ),
+    ).toBeVisible();
     // Each is a row in Full activity under the reader's own words, never the agent's.
     for (const [id, words] of [
       ['u2', MID_TURN_WORDS],

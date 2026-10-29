@@ -17,6 +17,17 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-29, several later directions are listed by the picker alone. The question quoted every unsettled
+direction whole, each under its time, above a Direction picker that listed the same directions again, so a
+long session put 23 messages between the reader and the buttons. The page now says "You sent 23 messages after
+your goal. Choose one to add or make the goal, or leave them all:", puts the picker under that sentence and
+quotes only the direction it holds, which is the one Add as a line and Make it the goal act on. Every direction
+is still read whole before any press, and Leave it still settles them all; the picker shows each by its time and
+opening words. `IntentDirections.test.tsx` and the `Intent/Direction actions` and drift stories hold the new shape. The
+recorded answer that holds the old list and its "N later directions:" sentence is
+`frontend/test/golden/e2e/intent-parity.json`, which only the on-demand browser proof reads; it is unchanged
+and the proof was not run for this change.
+
 2026-10-29, a session waiting on a harness's own prompt says so on its page. The page carried the retired
 page's 3px amber edge down the whole session page, and nothing else marked a wait whose question Compass cannot
 read (a permission prompt, or a question not yet written to disk). On the one-column page that edge ran the page's full height and
