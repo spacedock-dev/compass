@@ -577,19 +577,35 @@ export const Announcements: Story = {
       await waitFor(() => expect(region).toHaveTextContent('Showing 1 of 12 sessions.'));
       await expect(writes).toBeGreaterThan(before);
       await closeFilters();
+      // A second press that lands on the same count says it again, so the reader hears their press counted.
+      const same = writes;
+      await pick(
+        await openFilter(canvasElement, 'project', 'Project'),
+        'projects/pendulum-of-despair',
+      );
+      await waitFor(() => expect(writes).toBe(same + 1));
+      await expect(region).toHaveTextContent('Showing 1 of 12 sessions.');
+      await closeFilters();
       await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
       await waitFor(() =>
         expect(region).toHaveTextContent('Filters cleared. Showing all 12 sessions.'),
       );
-      // Typing speaks once, after the reader pauses, and never the words.
+      /* Typing speaks once, after the reader pauses, and never the words. The announcer writes the region
+         synchronously while the observer counts on a microtask, so each step reads the region's text at once
+         and lets a microtask pass before it reads the count. */
       const typed = writes;
       await userEvent.type(canvas.getByRole('searchbox', { name: 'Search sessions' }), 'rel');
+      await Promise.resolve();
       await expect(writes).toBe(typed);
       const { clock } = current();
       clock.advance(599);
+      await expect(region).toHaveTextContent('Filters cleared. Showing all 12 sessions.');
+      await Promise.resolve();
       await expect(writes).toBe(typed);
       clock.advance(1);
-      await waitFor(() => expect(region).toHaveTextContent('Showing 2 of 12 sessions.'));
+      await expect(region).toHaveTextContent('Showing 2 of 12 sessions.');
+      await Promise.resolve();
+      await expect(writes).toBe(typed + 1);
       await expect(region).not.toHaveTextContent('rel');
       const settled = writes;
       await poll();

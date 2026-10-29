@@ -17,7 +17,6 @@ import { Badge } from '../ui/badge';
 import { Button, buttonVariants } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Icon } from '../ui/icons';
-import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Separator } from '../ui/separator';
@@ -30,6 +29,7 @@ import {
   harnessOptions,
   hiddenWaiting,
   isDated,
+  joinNames,
   narrowOptions,
   optionLabel,
   projectOptions,
@@ -85,6 +85,7 @@ const TRIGGER =
 const ROW = 'flex min-h-11 w-full items-center gap-2.5 cursor-pointer';
 const NOTE = 'm-0 text-label text-muted-foreground leading-[1.5]';
 const SENTENCE = 'm-0 text-body text-muted-foreground leading-[1.55]';
+const NO_CLOCK = 'The board published no clock time, so dates cannot be filtered.';
 const HOURS_WORD = (hours: number) => `${String(hours)} ${hours === 1 ? 'hour' : 'hours'}`;
 
 function showAllHref(all: boolean): string {
@@ -255,6 +256,36 @@ function FilterButton({
   );
 }
 
+export const PROJECT_FIND_KEY = 'sessions-filter-project-find';
+
+/* Field memory puts the words back into a remounted field without an input event, so the narrowing is read
+   back from the node once it is restored; a child's layout effect runs after the restore inside it. */
+function ProjectFind({
+  id,
+  onNarrow,
+}: {
+  readonly id: string;
+  readonly onNarrow: (text: string) => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const restored = box.current?.querySelector('input')?.value ?? '';
+    if (restored) onNarrow(restored);
+  }, [onNarrow]);
+  return (
+    <div ref={box}>
+      <DraftInput
+        id={id}
+        memoryKey={PROJECT_FIND_KEY}
+        focusKey={PROJECT_FIND_KEY}
+        autoComplete="off"
+        spellCheck={false}
+        onInput={(event) => onNarrow(event.currentTarget.value)}
+      />
+    </div>
+  );
+}
+
 function ProjectList({
   options,
   chosen,
@@ -275,7 +306,7 @@ function ProjectList({
           <Label htmlFor={id} className="text-label text-muted-foreground">
             Find a project
           </Label>
-          <Input id={id} onInput={(event) => setNarrow(event.currentTarget.value)} />
+          <ProjectFind id={id} onNarrow={setNarrow} />
           {listed.length < options.length ? (
             <p className={NOTE}>
               {`Showing ${String(listed.length)} of ${String(options.length)} projects. Keep typing to narrow.`}
@@ -422,10 +453,13 @@ export function SessionsFilters({
   const noClock = board.generated === null;
   const stamped = filters.dateField === 'started' ? 'start time' : 'activity time';
 
+  /* A chip the board cannot apply stays, so the reader still sees and can clear what they chose, and it is
+     described by the sentence its popover says (`filtersActive` counts it as nothing). */
   const chips: {
     readonly key: string;
     readonly full: string;
     readonly short: string;
+    readonly inert: string;
     readonly clear: () => void;
   }[] = [];
   const date = dateChip(filters, dates.unstamped);
@@ -434,6 +468,7 @@ export function SessionsFilters({
       key: 'date',
       full: date,
       short: date,
+      inert: noClock ? NO_CLOCK : '',
       clear: () => set({ when: 'any', includeUnstamped: false }),
     });
   const facetNames: Readonly<Record<Facet, string>> = {
@@ -462,20 +497,43 @@ export function SessionsFilters({
       facetNames[facet],
       ordered(facet).map((value) => optionLabel(facet, value, board.harnesses)),
     );
-    chips.push({ key: facet, ...text, clear: () => set({ [facet]: [] } as Partial<FilterState>) });
+    chips.push({
+      key: facet,
+      ...text,
+      inert:
+        (facet === 'drift' || facet === 'goal') && !readable
+          ? annotationSentence(board, facet)
+          : '',
+      clear: () => set({ [facet]: [] } as Partial<FilterState>),
+    });
   }
+  const inertNotes = [...new Set(chips.map((chip) => chip.inert).filter(Boolean))].map(
+    (sentence) => {
+      const names = chips
+        .filter((chip) => chip.inert === sentence)
+        .map((chip) => (chip.key === 'date' ? 'Date' : facetNames[chip.key as Facet]));
+      return {
+        sentence,
+        text: `${sentence} The ${joinNames(names)} ${names.length === 1 ? 'chip filters' : 'chips filter'} nothing.`,
+      };
+    },
+  );
+  const noteId = (sentence: string) =>
+    `${quickId}-inert-${String(inertNotes.findIndex((note) => note.sentence === sentence))}`;
 
   const presets = [
     {
       key: 'waiting',
       label: 'Waiting on you',
       pressed: filters.state.includes('Waiting on you'),
+      disabled: false,
       press: () => toggle('state', 'Waiting on you'),
     },
     {
       key: 'today',
       label: 'Started today',
       pressed: filters.dateField === 'started' && filters.when === 'today',
+      disabled: noClock,
       press: () =>
         filters.dateField === 'started' && filters.when === 'today'
           ? set({ when: 'any' })
@@ -487,6 +545,7 @@ export function SessionsFilters({
             key: 'drift',
             label: 'Drift recorded',
             pressed: filters.drift.includes('recorded'),
+            disabled: false,
             press: () => toggle('drift', 'recorded'),
           },
         ]
@@ -563,11 +622,7 @@ export function SessionsFilters({
         </div>
         <div role="group" aria-label="Filters" className="flex flex-wrap gap-2">
           <FilterButton facet="date" name="Date" selected={filters.when === 'any' ? 0 : 1}>
-            {noClock ? (
-              <p className={SENTENCE}>
-                The board published no clock time, so dates cannot be filtered.
-              </p>
-            ) : null}
+            {noClock ? <p className={SENTENCE}>{NO_CLOCK}</p> : null}
             <p id={`${searchId}-by`} className={NOTE}>
               Filter by
             </p>
@@ -640,14 +695,16 @@ export function SessionsFilters({
             {board.showAll ? (
               <div className="flex flex-col items-start gap-1" data-sessions-all-note>
                 <p className={NOTE}>
-                  {`Showing all stored sessions. Sessions not active in the last ${board.hours ? HOURS_WORD(board.hours) : 'day'} were not fully read, so their start time, title or model may not be published.`}
+                  {`Showing all stored sessions. ${board.hours ? `Sessions not active in the last ${HOURS_WORD(board.hours)}` : 'Sessions that were not recently active'} were not fully read, so their start time, title or model may not be published.`}
                 </p>
                 <a
                   data-slot="button-link"
                   className={`${buttonVariants({ variant: 'native' })} inline-flex items-center text-foreground underline`}
                   href={showAllHref(false)}
                 >
-                  {`Show only the last ${board.hours ? HOURS_WORD(board.hours) : 'day'}`}
+                  {board.hours
+                    ? `Show only the last ${HOURS_WORD(board.hours)}`
+                    : 'Show only recently active sessions'}
                 </a>
               </div>
             ) : null}
@@ -746,8 +803,9 @@ export function SessionsFilters({
               type="button"
               variant="native"
               aria-pressed={preset.pressed}
+              disabled={preset.disabled}
               data-sessions-preset={preset.key}
-              className="inline-flex cursor-pointer items-center rounded-control border border-solid border-[var(--line)] bg-transparent px-3 font-[family-name:var(--sans)] text-body text-muted-foreground hover:border-[var(--line-hi)] aria-pressed:border-[var(--accent)] aria-pressed:bg-[var(--raise)] aria-pressed:text-foreground"
+              className="inline-flex cursor-pointer items-center rounded-control border border-solid border-[var(--line)] bg-transparent px-3 font-[family-name:var(--sans)] text-body text-muted-foreground hover:border-[var(--line-hi)] aria-pressed:border-[var(--accent)] aria-pressed:bg-[var(--raise)] aria-pressed:text-foreground disabled:border-dashed disabled:text-[color:var(--ink3)] disabled:cursor-not-allowed"
               onClick={preset.press}
             >
               {preset.label}
@@ -784,7 +842,9 @@ export function SessionsFilters({
               type="button"
               variant="filter-chip"
               aria-label={`Remove ${chip.full}`}
+              aria-describedby={chip.inert ? noteId(chip.inert) : undefined}
               data-sessions-chip={chip.key}
+              data-sessions-chip-inert={chip.inert ? '' : undefined}
               onClick={() => {
                 refocus.current = index;
                 chip.clear();
@@ -797,6 +857,16 @@ export function SessionsFilters({
           <Button type="button" data-sessions-clear-all onClick={actions.clearAll}>
             Clear all
           </Button>
+          {inertNotes.map((note) => (
+            <p
+              key={note.sentence}
+              id={noteId(note.sentence)}
+              className={`${NOTE} basis-full`}
+              data-sessions-chip-note
+            >
+              {note.text}
+            </p>
+          ))}
         </div>
       ) : (
         <div ref={chipBox} hidden />

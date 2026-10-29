@@ -18,7 +18,6 @@ function create() {
   return {
     get: (): FilterState => state,
     set,
-    update: (change: (current: FilterState) => FilterState): void => set(change(state)),
     reset: (): void => set(EMPTY_FILTERS),
     subscribe(listener: () => void): () => void {
       listeners.add(listener);

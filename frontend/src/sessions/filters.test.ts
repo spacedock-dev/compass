@@ -39,9 +39,10 @@ function board(options: Parameters<typeof sessionsSearchPayload>[0] = {}) {
 }
 
 const run = (change: Partial<FilterState>, options: Parameters<typeof board>[0] = {}) => {
-  const { indexed, payload } = board(options);
+  const { indexed, payload, screen } = board(options);
   const generated = (payload['generated'] as number | undefined) ?? null;
-  const prepared = prepare({ ...EMPTY_FILTERS, ...change }, generated);
+  const annotated = screen.context.annotate && !screen.context.unreadable;
+  const prepared = prepare({ ...EMPTY_FILTERS, ...change }, generated, annotated);
   const filtered = applyFilters(indexed, prepared, (at) => datedClock(at, generated ?? at));
   const sids = indexed
     .filter((one) => filtered.keys.has(one.row.key))
@@ -175,8 +176,11 @@ describe('the dates', () => {
 
   it('filter nothing by date when the board published no clock', () => {
     const { indexed } = board();
-    const prepared = prepare({ ...EMPTY_FILTERS, when: 'today' }, null);
-    expect(applyFilters(indexed, prepared, String).shown).toBe(12);
+    const prepared = prepare({ ...EMPTY_FILTERS, when: 'today' }, null, true);
+    const filtered = applyFilters(indexed, prepared, String);
+    expect(filtered.shown).toBe(12);
+    // A choice the board cannot apply is not counted as a filter, so the result line does not claim one.
+    expect(filtered.active).toBe(false);
   });
 });
 
@@ -253,6 +257,9 @@ describe('the facets', () => {
       12,
     );
     expect(fixedOptions(indexed, prepared, 'drift').map((one) => one.count)).toEqual([0, 0, 0]);
+    // The chip stays for the reader to clear, but it is not a filter, so the result line claims none.
+    expect(run({ drift: ['recorded'] }, { annotate: false }).filtered.active).toBe(false);
+    expect(run({ drift: ['recorded'] }).filtered.active).toBe(true);
   });
 
   it('narrow a long project list without choosing', () => {
@@ -278,9 +285,22 @@ describe('the guards and sentences', () => {
     ]);
   });
 
+  it('never count an ended session as one that could be waiting', () => {
+    const payload = sessionsSearchPayload() as Row;
+    const sessions = (payload['sessions'] as Row[]).map((row) =>
+      row['sid'] === SIDS.F ? { ...row, ended_at: GENERATED - 600 } : row,
+    );
+    const ended = { ...payload, sessions };
+    const indexed = indexScreen(buildSessionsScreen(ended, observe(ended)));
+    expect(indexed.find((one) => one.row.session.sid === SIDS.F)?.state).toBe('Ended');
+    expect(waitCoverage(indexed, harnessMeta(ended))[0]).toBe(
+      'Goose does not report when a session is waiting, so its 1 session could be waiting without showing here.',
+    );
+  });
+
   it('count the whole board while filtering, and speak the reader’s change', () => {
     const all = run({}).filtered;
-    expect(filtersActive(EMPTY_FILTERS)).toBe(false);
+    expect(filtersActive(prepare(EMPTY_FILTERS, GENERATED, true))).toBe(false);
     expect(resultLine(all, { showAll: false, hours: 24 })).toBe(
       '12 sessions active in the last 24 hours.',
     );

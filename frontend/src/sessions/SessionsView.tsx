@@ -531,12 +531,13 @@ function useFilterActions(
   store: ReturnType<typeof useFilterState>[1],
   indexed: ReturnType<typeof indexScreen>,
   generated: number | null,
+  annotated: boolean,
 ): FilterActions {
   const shell = useShell();
-  const latest = useRef({ indexed, generated });
+  const latest = useRef({ indexed, generated, annotated });
   const timer = useRef<TimerHandle | null>(null);
   useEffect(() => {
-    latest.current = { indexed, generated };
+    latest.current = { indexed, generated, annotated };
   });
   useEffect(
     () => () => {
@@ -547,7 +548,7 @@ function useFilterActions(
   return useMemo(() => {
     const speak = (next: FilterState) => {
       const now = latest.current;
-      const result = applyFilters(now.indexed, prepare(next, now.generated), (at) =>
+      const result = applyFilters(now.indexed, prepare(next, now.generated, now.annotated), (at) =>
         datedClock(at, now.generated ?? at),
       );
       // Forgotten first, so the same sentence after a second press is spoken again.
@@ -595,12 +596,16 @@ export function SessionsView({ chosenFor }: SessionsViewProps = {}) {
   const deferred = useDeferredValue(filters);
   const indexed = useMemo(() => (screen ? indexScreen(screen) : []), [screen]);
   const generated = screen ? screen.context.generated : null;
-  const prepared = useMemo(() => prepare(deferred, generated), [deferred, generated]);
+  const annotated = screen ? screen.context.annotate && !screen.context.unreadable : false;
+  const prepared = useMemo(
+    () => prepare(deferred, generated, annotated),
+    [deferred, generated, annotated],
+  );
   const filtered = useMemo(
     () => applyFilters(indexed, prepared, (at) => datedClock(at, generated ?? at)),
     [indexed, prepared, generated],
   );
-  const actions = useFilterActions(store, indexed, generated);
+  const actions = useFilterActions(store, indexed, generated, annotated);
   const board = useMemo((): FilterBoard | null => {
     if (!data || !screen) return null;
     const payload = data as unknown as Row;

@@ -338,15 +338,25 @@ export interface Prepared {
   readonly filters: FilterState;
   readonly terms: readonly string[];
   readonly edges: DayEdges | null;
+  /** False while annotations are off or unreadable: drift and goal then have nothing to partition. */
+  readonly annotated: boolean;
 }
 
-export function prepare(filters: FilterState, generated: number | null): Prepared {
+export function prepare(
+  filters: FilterState,
+  generated: number | null,
+  annotated: boolean,
+): Prepared {
   return {
     filters,
     terms: queryTerms(filters.query),
     edges: generated === null ? null : dayEdges(generated),
+    annotated,
   };
 }
+
+/* The facets that read the annotation store. */
+export const ANNOTATION_FACETS: ReadonlySet<Facet> = new Set<Facet>(['drift', 'goal']);
 
 /* Values inside one facet widen (OR); facets, the date and the words narrow each other (AND). A facet whose
    rows publish nothing to partition (drift and goal with annotations off) filters nothing. */
@@ -364,11 +374,17 @@ export function passes(indexed: IndexedRow, prepared: Prepared, skip: Part | nul
   return true;
 }
 
-export function filtersActive(filters: FilterState): boolean {
+/* Whether any choice can change which rows show. A choice the board cannot apply (a date with no published
+   clock, drift or goal with annotations off) keeps its chip but counts as nothing, so the result line never
+   reads "Showing 12 of 12" for a filter that hides nothing. */
+export function filtersActive(prepared: Prepared): boolean {
+  const { filters, terms, edges, annotated } = prepared;
   return (
-    queryTerms(filters.query).length > 0 ||
-    filters.when !== 'any' ||
-    FACETS.some((facet) => filters[facet].length > 0)
+    terms.length > 0 ||
+    (edges !== null && filters.when !== 'any') ||
+    FACETS.some(
+      (facet) => (annotated || !ANNOTATION_FACETS.has(facet)) && filters[facet].length > 0,
+    )
   );
 }
 
@@ -386,7 +402,7 @@ export function applyFilters(
   prepared: Prepared,
   datedClock: (at: number) => string,
 ): Filtered {
-  const active = filtersActive(prepared.filters);
+  const active = filtersActive(prepared);
   const keys = new Set<string>();
   const hints = new Map<string, string[]>();
   const { filters, terms, edges } = prepared;
@@ -607,12 +623,13 @@ export function hiddenWaiting(
 }
 
 /* Who could be waiting without the page knowing: rows whose harness cannot report a wait, and the harnesses
-   on the board whose wait reporting holds only in some setups. */
+   on the board whose wait reporting holds only in some setups. An ended session waits on nobody (the order
+   `rowState` ranks by), so it is never counted as one that could be waiting. */
 export function waitCoverage(
   indexed: readonly IndexedRow[],
   harnesses: readonly HarnessMeta[],
 ): string[] {
-  const silent = indexed.filter((one) => !one.row.session.blockKnown);
+  const silent = indexed.filter((one) => !one.row.session.blockKnown && one.state !== 'Ended');
   const names = [...new Set(silent.map((one) => one.row.harnessLabel))].sort(collator.compare);
   const onBoard = new Set(indexed.map((one) => one.row.session.harness));
   const qualified = harnesses
