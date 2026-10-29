@@ -145,6 +145,14 @@ async function poll(change: Partial<Rig['live']> = {}) {
   await shell.runtime.refresh();
 }
 
+/* Two frames let layout and the popover positioner's ResizeObserver settle. Without them, Linux Chromium
+   resized the viewport in the same frame a popover was closing and reported "ResizeObserver loop completed
+   with undelivered notifications" (CI, 2026-10-29), which the story guard counts as a page error. */
+const settle = () =>
+  new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+
 async function atWidth(width: number, check: () => Promise<void>) {
   const browserPage =
     '__vitest_browser_runner__' in window ? (await import('vitest/browser')).page : null;
@@ -152,9 +160,12 @@ async function atWidth(width: number, check: () => Promise<void>) {
   if (browserPage) await browserPage.viewport(width, 800);
   try {
     if (browserPage) await expect(window.innerWidth).toBe(width);
+    await settle();
     await check();
   } finally {
+    await settle();
     if (browserPage) await browserPage.viewport(before.width, before.height);
+    await settle();
   }
 }
 
@@ -657,6 +668,10 @@ export const PhoneWidth: Story = {
           window.innerWidth - 16,
         );
         await closeFilters();
+        await waitFor(() =>
+          expect(trigger(canvasElement, 'State')).toHaveAttribute('aria-expanded', 'false'),
+        );
+        await waitFor(() => expect(box2).not.toBeVisible());
       });
     await userEvent.click(canvas.getByRole('button', { name: 'Waiting on you' }));
     await userEvent.click(canvas.getByRole('button', { name: 'Started today' }));
@@ -665,6 +680,9 @@ export const PhoneWidth: Story = {
       'projects/pendulum-of-despair',
     );
     await closeFilters();
+    await waitFor(() =>
+      expect(trigger(canvasElement, 'Project')).toHaveAttribute('aria-expanded', 'false'),
+    );
     await waitFor(() => expect(chips(canvasElement)).toHaveLength(3));
     for (const width of [400, 360, 1280])
       await atWidth(width, async () => {
