@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { DriftScenario, fact, passedCheck, type Scenario } from './drift.scenario';
+import { DriftScenario, fact, type Scenario } from './drift.scenario';
 
 /* The sentence "About this record" gives of what the whole scan of a session found: the check runs and their
    latest results, the files written, what was counted and not listed, and, where the session wrote the file a
@@ -17,6 +17,14 @@ type Story = StoryObj<typeof meta>;
 const LISTING =
   'The session wrote the file where you list checks, so none of the commands you listed counted as checks.';
 
+const passedFlag = (id: string, at: number, harness = 'claude') =>
+  fact(
+    id,
+    at,
+    { subject: 'check', result: 'passed', result_source: 'flag', summary: 'ruff check .' },
+    harness,
+  );
+
 const codexScanned = (scan: Record<string, unknown>): Pick<Story, 'args'> => ({
   args: {
     scenario: {
@@ -29,7 +37,7 @@ const codexScanned = (scan: Record<string, unknown>): Pick<Story, 'args'> => ({
 
 const scanned = (scan: Record<string, unknown>): Pick<Story, 'args'> => {
   const value: Scenario = {
-    facts: [passedCheck('c1', 500), fact('u1', 200, { type: 'user_message', by: 'person:me' })],
+    facts: [passedFlag('c1', 500), fact('u1', 200, { type: 'user_message', by: 'person:me' })],
     work: { tool_reports: [{ harness: 'claude', sid: 's1', ...scan }] },
   };
   return { args: { scenario: value } };
@@ -156,5 +164,83 @@ export const TheListingNoteComesAfterTheRest: Story = {
     const node = await sentence(canvasElement);
     await expect(node.textContent?.endsWith(LISTING)).toBe(true);
     await expect(node).toHaveTextContent('1 check run across 1 distinct check');
+  },
+};
+
+/* A pass the scan could not fully back. The row in Full activity says so beside "Passed", and the sentence
+   states how much was not read instead of implying nothing ran. Sign-off prototype: the wording and the mark
+   are the proposal. */
+const fullActivity = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
+  const canvas = within(canvasElement);
+  const trigger = await canvas.findByRole('button', { name: 'Full activity' }, { timeout: 8000 });
+  if (trigger.getAttribute('aria-expanded') !== 'true') await userEvent.click(trigger);
+  return waitFor(
+    () => {
+      const row = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="c1"]');
+      if (!row) throw new Error('no passed row');
+      return row;
+    },
+    { timeout: 8000 },
+  );
+};
+
+export const ClaudeCodeWithUnreadSubagentWork: Story = {
+  ...scanned({
+    check_runs: 1,
+    distinct_checks: 1,
+    failed: 0,
+    not_recorded: 0,
+    passed: 1,
+    subagent_transcripts_unread: 2,
+  }),
+  play: async ({ canvasElement }) => {
+    await fullActivity(canvasElement);
+    const mark = canvasElement.querySelector<HTMLElement>('[data-activity-mark="incomplete"]');
+    await expect(mark).toHaveTextContent('May not cover subagent work');
+    const passed = within(canvasElement).getByLabelText('Passed, as the tool reported');
+    await waitFor(() => expect(passed).toBeVisible(), { timeout: 8000 });
+    await expect(await sentence(canvasElement)).toHaveTextContent('2 subagents were not read.');
+  },
+};
+
+export const CodexWithUnreadSubagentsAndCalls: Story = {
+  args: {
+    scenario: {
+      harness: 'codex',
+      facts: [
+        passedFlag('c1', 500, 'codex'),
+        fact('u1', 200, { type: 'user_message', by: 'person:me' }, 'codex'),
+      ],
+      work: {
+        tool_reports: [
+          { harness: 'codex', sid: 's1', subagent_transcripts_unread: 2, unread_calls: 4 },
+        ],
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await fullActivity(canvasElement);
+    const mark = canvasElement.querySelector<HTMLElement>('[data-activity-mark="incomplete"]');
+    await expect(mark).toHaveTextContent('May not cover subagent work or every call');
+    await expect(await sentence(canvasElement)).toHaveTextContent(
+      '2 subagents and 4 calls were not read.',
+    );
+  },
+};
+
+export const EverythingReadCarriesNoMark: Story = {
+  ...scanned({
+    check_runs: 1,
+    distinct_checks: 1,
+    failed: 0,
+    not_recorded: 0,
+    passed: 1,
+    subagent_transcripts_unread: 0,
+    unread_calls: 0,
+  }),
+  play: async ({ canvasElement }) => {
+    await fullActivity(canvasElement);
+    await expect(canvasElement.querySelector('[data-activity-mark="incomplete"]')).toBeNull();
+    await expect(await sentence(canvasElement)).not.toHaveTextContent('not read');
   },
 };
