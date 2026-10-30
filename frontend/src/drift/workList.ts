@@ -23,7 +23,7 @@ import { harnessLabels } from '../sessions/rows';
 import { readingRoute } from './route';
 import {
   CODEX_COMMANDS_UNREAD,
-  CODEX_RECORD,
+  codexRecord,
   WORK_AS_REPORTED,
   WORK_READ_FROM,
   WORK_HARNESSES,
@@ -411,7 +411,7 @@ export function workMix(entries: readonly WorkEntry[]): string {
   return `${parts.join(' · ')}.`;
 }
 
-export function evidenceOwn(payload: Row, harness: string, sent = true): string {
+export function evidenceOwn(payload: Row, harness: string, sent = true, scan?: Row | null): string {
   const label = harnessLabels(payload).get(harness) || humanLabel(harness);
   if (harness === 'pi')
     return `${label} publishes demonstrated work results, and they are read here.`;
@@ -428,7 +428,9 @@ export function evidenceOwn(payload: Row, harness: string, sent = true): string 
   if (harness === 'codex') {
     const route = sent ? readingRoute(payload, { harness }) : null;
     const output = route?.['provider'] ? String(route['tool_output'] || '') : '';
-    return `${label} ${CODEX_RECORD}` + (output ? ` ${output}` : '');
+    const read = nextNumber(scan?.['subagent_transcripts']) || 0;
+    const unread = nextNumber(scan?.['subagent_transcripts_unread']) || 0;
+    return `${label} ${codexRecord(read, unread)}` + (output ? ` ${output}` : '');
   }
   /* "Compass reads those on Pi alone" stood here, and stopped being true when Claude Code's checks were read
      too. The panel's own harness limit is the level's, so this line says only what the record above is. */
@@ -684,8 +686,8 @@ export function workList(input: WorkListInput): WorkList {
   const harness = String(session['harness'] || '');
   const reads = WORK_HARNESSES.includes(harness);
   const limit = reads
-    ? `${WORK_READ_FROM} ${evidenceOwn(payload, harness, false)}`
-    : `${WORK_READ_FROM} ${evidenceOwn(payload, harness)}`;
+    ? `${WORK_READ_FROM} ${evidenceOwn(payload, harness, false, source.scan)}`
+    : `${WORK_READ_FROM} ${evidenceOwn(payload, harness, true, source.scan)}`;
   return {
     anchor,
     unnumbered,
