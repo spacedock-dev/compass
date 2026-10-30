@@ -76,8 +76,9 @@ DIGEST_PATH = os.path.join(_ROOT, "docs", "drift-replay", "marks-digest.json")
 CLAIM_DIGEST_PATH = os.path.join(_ROOT, "docs", "drift-replay", "claim-marks-digest.json")
 RESULTS_PATH = os.path.join(_ROOT, "docs", "drift-replay", "results.json")
 ORIGINALS = os.path.expanduser("~/.claude/projects")
-# Pinned under the operator's own home, not COMPASS_HOME: moving the home must not reset the spend.
-LEDGER_PATH = campaign_authority.canonical_store_path("drift-replay", "spend.json")
+# Pinned to the study's fixed home (`abstention_ledger.STUDY_HOME`), not COMPASS_HOME: moving
+# the home must not reset the spend.
+LEDGER_PATH = campaign_authority.study_path("drift-replay", "spend.json")
 
 # Ordinary turn stops sampled per session as negatives, and the seed that picks them, so a rebuild
 # picks the same stops. Eight per session gives about thirty, the size the review asked for.

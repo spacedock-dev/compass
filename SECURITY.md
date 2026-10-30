@@ -2880,7 +2880,7 @@ ledger prefix and a new case digest, and its sealed phase binds the new marks an
 digests before scoring. Each later grant may follow a continuation that also failed, bound to that
 result the same way, and only while every earlier grant is sealed with a `next` key equal to the
 following grant's `previous`. A grant without its predecessor, numbered past the chain's fixed
-bound of nine, or under a name the pattern never writes, is refused. Every earlier packet's charges must carry its own key, in ledger order,
+bound of eleven, or under a name the pattern never writes, is refused. Every earlier packet's charges must carry its own key, in ledger order,
 and the whole chain is checked under the charge lock against the same 28-call cap. The failed result cannot be overwritten, and a grant is not permission
 to send real session evidence or increase spend; both need separate owner authorization. The
 ledger holds case ids, times, statuses and digests only. The
@@ -2950,7 +2950,7 @@ the qualification uses: the person's messages, the agent's messages once the pro
 each check's line, result, times and redacted output tail, and the intent. The owner authorized that
 send and its spend on 2026-10-03, bounded at 240 calls, raised to 440 on 2026-10-04, and then to
 870 on 2026-10-04 for the Analyze drift follow-up, on the same ledger
-`~/.compass/drift-replay/spend.json`. That path is under the operator's home whatever
+`~/.cargento/drift-replay/spend.json`, a fixed path in the operator's own home whatever
 `COMPASS_HOME` says, so moving the home does not reset the count. Each call is charged before it is
 made, under an exclusive lock on macOS and Linux (Windows has none, so the cap there holds for one
 run at a time), and never by a case the producer withholds or by a dry run; a ledger
@@ -2970,7 +2970,7 @@ The authorized follow-up has at most 239 additional Analyze attempts across all 
 and 28 qualification charges stay intact, along with their failed results and grants.
 
 `scripts/analyze_campaign.py` reads a reviewed repository manifest and a fixed account ledger,
-`~/.compass/analyze-closure-spend.json`. Actual final prompt, model, runtime and output-cap
+`~/.cargento/analyze-closure-spend.json` (the [study home ruling](#tenth-qualification-continuation-2026-10-30)). Actual final prompt, model, runtime and output-cap
 digests bind each reservation; experimental replay also binds its study code and condition.
 Reservations precede transport, and failures remain charged. Immutable reservation,
 classification and acceptance receipts detect missing or rewritten state. A reviewed zero-charge
@@ -3208,6 +3208,77 @@ profile cannot mint a second allocation. Every reservation stays charged, and se
 failures are immutable. A late source change cannot hide an already charged native warning
 or prevent its durable closed settlement. Missing state, orphaned calls, unknown statuses
 and source or admission changes refuse another launch; no retry is allocated to this route.
+
+##### Tenth qualification continuation, 2026-10-30
+
+The ninth run measured all thirty registered readings and failed without stopping. It used
+none of its one availability retry. On 2026-10-30 the owner funded one tenth continuation of
+31 calls: the held retry carries forward and thirty attempts are renewed. The cumulative
+ceilings become 99 native and 279 shared attempts, with 68 native and 40 shared charges
+retained. Replay's 190 and live's 18 attempts remain held.
+
+If the tenth fails, one corrected retry run of at most 31 more calls may follow, and then the
+study stops. Its numbers follow from what the tenth spent. With P native charges when the
+tenth's failed result is recorded (69 to 99), the retry carries the tenth's 99 - P unused
+attempts and renews its P - 68 spent ones. Its ceilings are P + 31 native, at most 130, and
+279 + (P - 68) shared, at most 310. It needs its own grant, the eleventh, whose prior result
+must read `failed` with an attempt count equal to P - 68, and its own reviewed handoff and
+epoch seven. The grant chain's fixed bound is eleven names. Once any grant has carried an
+allowance, a later grant that carries none admits no charge: its key is held to the 28-call
+base cap, and a charge under it is refused even if a ledger built under the grant before it
+asks.
+
+The tenth and the retry keep the ninth's measurement rule. All thirty readings are measured, a
+semantic failure waits for its batch review instead of stopping the run, and only an unusable
+attempt may use the retry. Each fixed grant and independently reviewed handoff binds the
+predecessor's charges, batch reviews and failed result, every earlier epoch and the native
+prefix. Merged software and passing current-head CI come before any spending.
+
+The study's ledgers, epochs and receipts were written under `~/.cargento`, before the rename
+moved the default store to `~/.compass`. They stay there. The scripts read the native
+qualification ledger, the shared campaign ledger (`analyze-closure-spend.json`, with its
+`.epochs` and `.reservations`), the replay ledger (`drift-replay/spend.json`) and the browser
+route's account, context and activation receipt at fixed paths under `~/.cargento` in the
+account's own home. Neither `COMPASS_HOME` nor `HOME` moves them, and no study ledger is read from
+`~/.compass`. Nothing is moved, copied or rewritten. A ledger missing from `~/.cargento` reads as
+empty, exactly as a missing ledger always has. An empty ledger cannot begin with the committed
+chain, so every charge is refused. Packet homes and the replay's cases and marks are not
+ledgers: they are found through `COMPASS_HOME`, which the operator points at the packet, as
+before.
+
+The freeze still reads lifecycle evidence from the live dashboard store. Two carried cases were
+vouched by history observations that both stores have since rolled past, and their transcripts'
+nearest Stop records are about 100 seconds from the stop. As an orchestrator decision of
+2026-10-30, which the owner may overrule, such a case may be re-frozen with `--prior-packet` at the
+same recorded stop. The prior packet must be the one a sealed grant names by its case digest,
+with a committed result whose ledger chain still begins the spend ledger. Its case must be
+recorded and unconfirmed by nothing, with the same session, lifecycle and capture time, and the
+transcript must still hold the same bytes up to the capture, by that packet's own prefix
+digest. Any mismatch leaves the case synthetic, and the scorer checks it all again. A result
+counts these cases apart from transcript-vouched ones.
+
+For this study only, blind markers and reviewers may run in Antigravity (AGY) on Google's Gemini
+models `gemini-3.8-flash-medium` or `gemini-3.8-flash-high`. Every marking, kind-review and
+handoff-review receipt in a tenth or retry handoff, and every batch review, names its model and
+effort. The effort is the one the model's name selects, and any other model or effort is
+refused. The operator runs these calls from AGY under their own Google account. The dashboard
+never sends anything to Gemini. What is sent:
+
+- For source and kind admission and for blind marks, the case screen the marker prints: the
+  harness and title (or the case id when there is no title), the recorded lifecycle and capture
+  time, the opening request when one was recorded, the goal and each outcome line with its
+  source, and the frozen evidence entries. Each entry is an id, a type, a source and a summary
+  with its flags, plus a check's redacted output tail and, for a production-reading packet, the
+  agent's excerpt. Such a packet also shows the newest final source: its outcome, fact id, time
+  and word digest. The question for each constraint is sent too. Marks are made before any
+  output exists, so a marker never sees the producer's answers.
+- For batch and handoff reviews, the batch's charge receipts, statuses and counts, the producer's
+  parsed answers and rubric grades, and the case material those answers cite, as above. The
+  handoff review gets the digests and counts it binds.
+
+Session ids, project paths, account identifiers, credentials and the ledger files themselves are
+never sent. Titles, summaries, command lines and output tails can name the project's own files.
+Redaction is the one a reading applies, and it does not remove those names.
 
 #### Prospective qualification source cuts, 2026-10-05
 
