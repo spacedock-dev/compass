@@ -2213,21 +2213,32 @@ A subagent's commands are in its own rollout. Every rollout the Codex store hold
 found by the session id its head names, a subagent's own subagents included, is read through the
 same reader and within the same byte budget as the root, newest first, so the budgeted bytes
 never exceed what the root alone could read; each child's head, up to 200 KB, is read outside
-that budget to learn its version and folder. Its checks and files are listed as the subagent's,
-labelled by their source. A second rollout of a thread already read is not read and is counted
-unread, and a call id already taken by the root or an earlier child is refused and ages every
-earlier pass, so one rollout's result can never stand in for another's. A pass is marked incomplete and supports no `consistent` when
-a child could not be read: the budget was spent before it, its version records no exit status, or
-a child a call names, or a spawn, has no rollout to read. A child read only in part moves that line
-to the oldest record read.
+that budget to learn its version, its folder and the thread that spawned it. A head longer than
+that is read for its first 4,096 bytes alone, and only where they open with the fixed-format fields
+Codex writes first (the root's id, the child's and its parent's), so text a later field holds is
+never read as one of them. Its checks and files are listed as the subagent's, labelled by their
+source. A second rollout of a thread already read is not read and is counted unread, and a call id
+already taken by the root or an earlier child keeps the first while the later call is read under an
+id of its own, so one rollout's result can never stand in for another's and no failure becomes
+silence. A pass is marked incomplete and supports no `consistent` when a child could not be read
+(the budget was spent before it, its version records no exit status, the read failed): from that
+child's last write back, and whatever the pass's time when a read names the child or its last write
+falls inside the part of the root read, since it may hold a failure no row lists or a command it
+left running. It is incomplete too when a child a call names, or a spawn that did not fail, has no
+rollout to read. Spawns are compared with the children whose heads name their spawner, so one
+rollout's child never stands in for another's. A child read only in part moves that line to the
+oldest record read.
 
 What is not read is said rather than guessed. A rollout written before 0.149 records no exit status,
 and its commands are not read or counted. The `js` tool, any connector call not marked read-only, a
 command in any other shape and input written into a running command, from a top-level `write_stdin`
 or from one inside an `exec` script, age every earlier pass, since each may have changed files; a
-script that never returned is dated as ending at the newest record read in the root or any child. A
-second item under an id already read is refused rather than read in place of the first, and ages
-every earlier pass too. A command left running inside an `exec` script is seen only once its entry
+script that never returned is dated as ending at the newest record read in the root or any child.
+A script's `write_stdin` is read as a poll only where every mention of it is a direct call given an
+object literal of plain keys and values with one `chars`, an empty string; an alias, a subscript, a
+tool picked by a subscript on `tools`, and a computed or escaped key are read as input. A second
+item under an id already read is read under an id of its own, never in place of the first. A
+command left running inside an `exec` script is seen only once its entry
 is written, since what the script prints is not Codex's own words.
 
 Where it may go follows the vendor rule above: a Codex reading of a Codex session may be sent every
@@ -3999,7 +4010,8 @@ The operator-cockpit prototype also reads dispatch evidence:
   `readOnlyHint`, never its arguments or result. Of an `exec_command` or `write_stdin` call's
   `output` it reads only the header Codex writes before the `Output:` line, once, for Codex's own
   line saying a command is still running; what the command printed after that line is never
-  matched, and nothing else of the output is kept. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states its bounds.
+  matched. Of a `spawn_agent` call's `output` it reads only whether it is a JSON object, which a
+  spawn that failed is not. Nothing else of either output is kept. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states its bounds.
 
 These are evidence reads, not command execution. In total, eleven expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.

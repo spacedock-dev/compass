@@ -3030,7 +3030,13 @@ the measured note that DEC-23 reads the root session's calls alone.
    result does not increase the named-child count. Until its child can be read completely, it
    still makes held passes incomplete; the missing call cannot certify that delegated work was
    absent. Any valid named child that remains unavailable marks every held passing check
-   `read_incomplete`, even if the parent passed later. A failed check that was actually read keeps
+   `read_incomplete`, even if the parent passed later. Amended 2026-10-30 (DRC-5033 item 1): so
+   does an unread child no paired result names, when its last write falls inside the part of the
+   parent read. Its last write bounds what it wrote, not a call it left running, and it may hold a
+   failure no row lists; before, it only moved the horizon, so a parent pass after its last write
+   read complete. An unnamed child older than the part read still only moves the horizon, which
+   every pass read is after. The frozen check read, which reads the parent from its start, marks
+   every held pass for any unread child. A failed check that was actually read keeps
    its failure and High level. An incomplete pass cannot support a consistent outcome or the live
    "None or low" floor; incompleteness alone is not a departure. Collection, press and frozen check
    scans each get their own allowance. Activity, identity and user-message reads are separate, so
@@ -3676,8 +3682,11 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   nothing (the 2026-10-30 arbiter's ruling, which replaced DRC-5029's first criterion with these
   words). No item is matched to a header: a command whose item was written began at or before it
   and ended at or after it, so the item already ages every pass the header would. One cost is
-  known: a check that was itself left running, and whose item lands later, is aged by its own
-  header.
+  known, and ruled rather than fixed (DRC-5033 item 8): a check that was itself left running, and
+  whose item lands later, is aged by its own header. Nothing links the two: of 285 local yield
+  sessions, one has an item with its script spanning its header, and none of them a check, and
+  matching by time cannot tell the check from a command running beside it. The error is toward
+  "possibly changed", never toward a pass.
   A change (a command that may change files, a patch, a tool whose effect is not read) is dated by
   its `completed_at_ms` and a check by its `started_at_ms`, so a change still running when a pass
   began ages it. Dating both by their starts read a pass as current while a `sed -i` begun a
@@ -3701,15 +3710,24 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   runs Node with filesystem reach and every recorded call of it says `true`; any connector call
   whose `readOnlyHint` is not `true`; a command in any other shape; a `write_stdin` call that
   sends input to a running command, or whose arguments do not parse (an empty one only polls for
-  output); an `exec` script with a `write_stdin(...)` in it whose object literal's `chars` is
-  anything but a literal empty string, dated from the script's start to its return, since where in
-  the script the input went is not recorded (one that never returned ends at the newest record
-  read across the root and every child, since a child can outlast its root's last record); and a second call item under an id already read,
-  which is refused rather than read in place of the first, so a read-only command's output can
-  never travel as a check's tail (no local rollout repeats a call item's id). Each ages every
-  earlier pass
-  and publishes nothing, the rule this ruling gave Pi: guessing that an unknown tool only reads is
-  what would produce a false `consistent`.
+  output); and an `exec` script that may send `write_stdin` input, dated from the script's start
+  to its return, since where in the script the input went is not recorded (one that never returned
+  ends at the newest record read across the root and every child, since a child can outlast its
+  root's last record). A script only polls where every mention of `write_stdin` is a direct call
+  given an object literal of plain keys (a name, or a quoted name with no escape) and plain values,
+  with exactly one `chars`, a literal empty string, and no subscript on `tools` picks a tool. An
+  alias, a subscript or a destructured name hides where the call went, and in a literal the later
+  key wins, so a computed, escaped or unread key after an empty `chars` may be the input (DRC-5033
+  item 2). That reading moved 42 of 6,750 local scripts that call it to input: 40 that pick a tool
+  by subscript, a poll whose value is a conditional, and one malformed literal. Each ages every
+  earlier pass and publishes nothing, the rule this ruling gave Pi: guessing that an unknown tool
+  only reads is what would produce a false `consistent`.
+- A second call item under an id already read is read under an id of its own, its id and its
+  start, never in place of the first, so a read-only command's output can never travel as a
+  check's tail and a later failure is never silenced (no local rollout repeats a call item's id).
+  It ages earlier passes only as any call does. Refusing it as a call whose effect is not read,
+  the first build, turned a failing `pytest` after a passing one into a stale pass (DRC-5033 item
+  3).
 - A child thread writes its commands into its own rollout, about 44% of all recorded commands.
   Every rollout the Codex store holds whose head names the root's id as its `session_id` is read
   as the root is: 589 of 589 local child rollouts name it, 15 of them a child's child and 132 in
@@ -3719,14 +3737,34 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   Code subagent's are, and its ids are prefixed with its thread. The prefix alone does not make an
   id unique: two files can end in one thread id, and a root item id can be written as
   `<thread>/item_001`. So a second rollout of a thread already read is not read and is counted
-  unread, and a prefixed id the root or an earlier child already holds is refused, the first kept
-  and the later one an unread call, so no rollout's result or tail stands in for another's. A pass is marked incomplete, and never supports a `consistent`, when a child could
-  not be read (the budget was spent, its version records no exit status, the read failed), from
-  that child's last write back; when a child a read names (a `SubAgentActivity` or
-  `CollabAgentToolCall` item) or a `spawn_agent` call has no rollout, whatever its time; and when a
-  caller did not look for the children and the part read names a subagent (those items, or a
-  `spawn_agent`, `wait_agent`, `send_message`, `followup_task`, `interrupt_agent` or `close_agent`
-  call).
+  unread, and a prefixed id the root or an earlier child already holds keeps the first, the later
+  one read under an id of its own, so no rollout's result or tail stands in for another's and no
+  failure becomes silence. A pass is marked incomplete, and never supports a `consistent`, when a
+  child could not be read (the budget was spent, its version records no exit status, the read
+  failed): from that child's last write back, and whatever its time when a read names the child or
+  its last write falls inside the part of the root read, as an unread Claude Code subagent the
+  parent names is (DRC-5033 item 1). The last write bounds what the child wrote, not a command it
+  left running, and an unread child may hold a failure no row lists. An unnamed child older than
+  the part read moves the horizon only, which every pass read is after. A pass is incomplete too
+  when a child a read names (a `SubAgentActivity` or `CollabAgentToolCall` item) or a `spawn_agent`
+  call has no rollout, whatever its time; and when a caller did not look for the children and the
+  part read names a subagent (those items, or a `spawn_agent` that did not fail, `wait_agent`,
+  `send_message`, `followup_task`, `interrupt_agent` or `close_agent` call).
+- Spawns are compared per parent: each rollout read, with the children whose heads name it in
+  `parent_thread_id`. Compared with every rollout found, a grandchild found while its own parent
+  went unread stood in for a sibling of that parent with no rollout (DRC-5033 item 4). A spawn
+  whose output is not a JSON object failed: 588 local spawn outputs are objects and all 27 that are
+  text are errors ("collab spawn failed: ..."), so a failed spawn no longer holds every pass
+  incomplete for the rest of the session (item 5). Only that shape of the output is read.
+- A child's head is read through the first-line cap, 200 KB. One longer than that is read for its
+  first 4,096 bytes alone, and only where they open with the fields Codex writes before any free
+  text: the root's id, the child's and its parent's (589 of 589 local child heads, none of 498
+  roots; the largest field, `base_instructions`, comes later in 1,077 of 1,087). Without it a child
+  whose head was too long was neither found nor counted (item 7); the largest local head is 49 KB.
+- Discovery keeps what each rollout's head said, since a head is written once: a store that moved
+  reads only the heads it has not read. The index #697 built already listed the store only when a
+  day folder moved; past the shared metadata cache each rebuild still re-read every head, 0.7 to
+  0.8 seconds at 9,000 rollouts (item 6).
 - A rollout written before 0.149 records no exit status. Its commands are
   not read or counted, and the scan publishes `commands_unreadable` and no count, so the page never
   says no check ran. Where the head names no version, shell calls with no command item say the same.
@@ -3758,6 +3796,12 @@ rule, which fails the issue's own first criterion. Prefixing a child's ids by it
 read, which would move every stored citation when two children's modification times swap.
 Reading a yield out of what an `exec` script printed, which is the script's words rather than
 Codex's, so a command left running inside a script and never written as an item is still not seen.
+Holding an unread child's passes incomplete only until a `SubAgentActivity` records its end, which
+would leave a pass after it reading complete while the child could hold a failure no row lists,
+and a Codex session laxer than Claude Code's named-child rule. Reading every use of `tools` but a
+dot access as a possible `write_stdin`, which moved 1,345 local scripts, nearly all a `tools` folder
+in a path. Linking a check left running to its header by the command's script, which 1 of 285
+local yield sessions could use.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
