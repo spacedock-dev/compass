@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2240115,
+    "bytes": 2240287,
     "file": "react.html",
-    "sha256": "369bf9c7acad36813c4bf7b100391cb72a5f4b5436e5dce3c0584340e7bf68e1"
+    "sha256": "045b550d2298d244fb1e2ed936cb46cac73fde911d15a80f4af9cbfbcac275a5"
   },
   "format": 1,
   "frontend": "react",
@@ -359,7 +359,7 @@
       },
       {
         "file": "frontend/src/capacity/CapacityStrip.tsx",
-        "sha256": "351d3f9f1350bede9f210b34f029abb54444d6832c1bb57c1f413ddb448173f1"
+        "sha256": "d300725245a08fed7d0dc210d9849e086428c90b5115c333393fad8e298cc43d"
       },
       {
         "file": "frontend/src/capacity/ObserverControls.tsx",
@@ -367,7 +367,7 @@
       },
       {
         "file": "frontend/src/capacity/UsageConsent.tsx",
-        "sha256": "a70594e981453b28ba917b74f119b5de156567ecfd0d74ff8f3545dc69477b91"
+        "sha256": "3da5e541705b927fcdfa20f878463685c9722fde97b85000196d32248c0ff067"
       },
       {
         "file": "frontend/src/capacity/capacity.css",
@@ -379,7 +379,7 @@
       },
       {
         "file": "frontend/src/capacity/index.ts",
-        "sha256": "184d09604728491770a713d6c556f1d3179bd63df10269b8cd011c661acc6b32"
+        "sha256": "ee8673cc99d3195da99cfa132e5e45738a0b71b91b9f1acf22e0e8787e4d63f2"
       },
       {
         "file": "frontend/src/capacity/model.ts",
@@ -495,11 +495,11 @@
       },
       {
         "file": "frontend/src/delegation/CapacityPanel.tsx",
-        "sha256": "ee5ff4ff70238aaa94e30e415633d227ff81078a55ae4755db974e8d310e6c25"
+        "sha256": "2621069e3a3e281748307776428c4cc746012473480e07ebe0b8916c32f36cc7"
       },
       {
         "file": "frontend/src/delegation/Console.tsx",
-        "sha256": "8e9c5a1439cf855bec3c21ed811e1833af3c004767568a56cea940c6c9a8b147"
+        "sha256": "3f5dd0ba7f88bb897ebc1164d084530bb3ddd43536d060c250d71da290037edd"
       },
       {
         "file": "frontend/src/delegation/DelegationPanel.tsx",
@@ -1399,7 +1399,7 @@
       },
       {
         "file": "frontend/src/steering/slots.tsx",
-        "sha256": "70519be80f558ca9df311a4b6630e2e6dd76ab8faf98ef9ad8907b72e54686bb"
+        "sha256": "fd38355cedff8ee880f768c35ac0cb8e95f394d2b730ba697cf8d05ca0d55d9e"
       },
       {
         "file": "frontend/src/steering/stage.ts",
