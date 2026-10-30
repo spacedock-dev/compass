@@ -2202,16 +2202,21 @@ lists, masking, listing cap and redaction. Claude Code's trailer lines are not s
 rewrite, structured `gitOperation` record or pull request link is read, since Codex writes none of
 them. The folder is read only from a `file://` URI with an empty host and no encoding; any other
 form leaves it unknown, and a file a command writes there is counted and not named. A command still
-running has no entry, because Codex writes one only when the command ends. One that Codex reported
-still running, by its own line in an `exec_command` or `write_stdin` output, and whose entry the
-read does not hold, ages every pass that began before the newest record read, since it may still
-be changing files.
+running has no entry, because Codex writes one only when the command ends. Codex's own line saying
+a command is still running is read from the header of an `exec_command` or `write_stdin` output,
+before its `Output:` line and once per output, never from what the command printed after it. Each
+session id it names is one call whose effect is not read, dated at that session's latest such
+line, as a Claude Code background launch is dated at its launch: it ages a pass that began at or
+before then, and none after.
 
 A subagent's commands are in its own rollout. Every rollout the Codex store holds for the session,
 found by the session id its head names, a subagent's own subagents included, is read through the
-same reader and within the same byte budget as the root, newest first, so reading the children
-never reads more bytes than the root alone could. Its checks and files are listed as the
-subagent's, labelled by their source. A pass is marked incomplete and supports no `consistent` when
+same reader and within the same byte budget as the root, newest first, so the budgeted bytes
+never exceed what the root alone could read; each child's head, up to 200 KB, is read outside
+that budget to learn its version and folder. Its checks and files are listed as the subagent's,
+labelled by their source. A second rollout of a thread already read is not read and is counted
+unread, and a call id already taken by the root or an earlier child is refused and ages every
+earlier pass, so one rollout's result can never stand in for another's. A pass is marked incomplete and supports no `consistent` when
 a child could not be read: the budget was spent before it, its version records no exit status, or
 a child a call names, or a spawn, has no rollout to read. A child read only in part moves that line
 to the oldest record read.
@@ -2219,7 +2224,8 @@ to the oldest record read.
 What is not read is said rather than guessed. A rollout written before 0.149 records no exit status,
 and its commands are not read or counted. The `js` tool, any connector call not marked read-only, a
 command in any other shape and input written into a running command, from a top-level `write_stdin`
-or from one inside an `exec` script, age every earlier pass, since each may have changed files. A
+or from one inside an `exec` script, age every earlier pass, since each may have changed files; a
+script that never returned is dated as ending at the newest record read in the root or any child. A
 second item under an id already read is refused rather than read in place of the first, and ages
 every earlier pass too. A command left running inside an `exec` script is seen only once its entry
 is written, since what the script prints is not Codex's own words.
@@ -3991,8 +3997,9 @@ The operator-cockpit prototype also reads dispatch evidence:
   `stderr` or `formatted_output`, and of each `FileChange` the paths it names and each change's
   kind, never the patch's content or diff. Of a connector call it reads the tool's name and its
   `readOnlyHint`, never its arguments or result. Of an `exec_command` or `write_stdin` call's
-  `output` it matches only Codex's own line saying a command is still running, and keeps nothing
-  else of it. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states its bounds.
+  `output` it reads only the header Codex writes before the `Output:` line, once, for Codex's own
+  line saying a command is still running; what the command printed after that line is never
+  matched, and nothing else of the output is kept. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states its bounds.
 
 These are evidence reads, not command execution. In total, eleven expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.

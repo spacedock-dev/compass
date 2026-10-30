@@ -3666,11 +3666,18 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   or `zsh` by basename), `-c` or `-lc`, and the script, which is then read exactly as a Claude
   Code `Bash` command is. A call's time is `started_at_ms` and its result's `completed_at_ms`.
   Codex writes the item only once the command ends, so a command still running has no entry.
-  One Codex reported still running, by its own "Process running with session ID" line in an
-  `exec_command` or `write_stdin` output, is matched to a command item that was running at that
-  line (one item per session id, the earliest-ending first, within a second). One with no such
-  item is a change whose end is not recorded, so it is dated as ending no earlier than the newest
-  record read and ages every pass that began before then, by the rule below.
+  Codex's own "Process running with session ID" line is read only from the header of an
+  `exec_command` or `write_stdin` output, before its `Output:` line and at most once per output
+  (569 of 569 local yields sit there); what the command printed after that line is its own words
+  and can copy the line. Each session id is one call whose effect is not read, dated and ended at
+  that session's latest header, as a Claude Code background launch is dated at its launch. So a
+  pass followed by Codex's own running header, with no item for it, reads `changed_after`; a pass
+  after that session's last header does not on that account; a printed copy of the line adds
+  nothing (the 2026-10-30 arbiter's ruling, which replaced DRC-5029's first criterion with these
+  words). No item is matched to a header: a command whose item was written began at or before it
+  and ended at or after it, so the item already ages every pass the header would. One cost is
+  known: a check that was itself left running, and whose item lands later, is aged by its own
+  header.
   A change (a command that may change files, a patch, a tool whose effect is not read) is dated by
   its `completed_at_ms` and a check by its `started_at_ms`, so a change still running when a pass
   began ages it. Dating both by their starts read a pass as current while a `sed -i` begun a
@@ -3696,7 +3703,8 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   sends input to a running command, or whose arguments do not parse (an empty one only polls for
   output); an `exec` script with a `write_stdin(...)` in it whose object literal's `chars` is
   anything but a literal empty string, dated from the script's start to its return, since where in
-  the script the input went is not recorded; and a second call item under an id already read,
+  the script the input went is not recorded (one that never returned ends at the newest record
+  read across the root and every child, since a child can outlast its root's last record); and a second call item under an id already read,
   which is refused rather than read in place of the first, so a read-only command's output can
   never travel as a check's tail (no local rollout repeats a call item's id). Each ages every
   earlier pass
@@ -3708,8 +3716,11 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   another day's folder than their root, so a child spawned before a clipped read is found too.
   They are read within the root's own byte budget, newest first, so the bytes a collect reads do
   not grow with the number of children. A child's calls are labelled subagent work, as a Claude
-  Code subagent's are, and its ids are prefixed with its thread so none collides with another
-  rollout's. A pass is marked incomplete, and never supports a `consistent`, when a child could
+  Code subagent's are, and its ids are prefixed with its thread. The prefix alone does not make an
+  id unique: two files can end in one thread id, and a root item id can be written as
+  `<thread>/item_001`. So a second rollout of a thread already read is not read and is counted
+  unread, and a prefixed id the root or an earlier child already holds is refused, the first kept
+  and the later one an unread call, so no rollout's result or tail stands in for another's. A pass is marked incomplete, and never supports a `consistent`, when a child could
   not be read (the budget was spent, its version records no exit status, the read failed), from
   that child's last write back; when a child a read names (a `SubAgentActivity` or
   `CollabAgentToolCall` item) or a `spawn_agent` call has no rollout, whatever its time; and when a
@@ -3738,6 +3749,13 @@ this one; parsing the `Exit code:` text of 0.77 to 0.91 rollouts, which covers a
 and none since. Giving each child rollout a budget of its own, which would multiply the bytes a
 collect reads by the number of children. Linking a yield to its command item by id, which never
 works: the session id Codex prints is not the item's `process_id` (568 of 569 local yields).
+Matching a yield to a command item running at it by time, the first build: it cost yields times
+items, so 20,000 printed copies of the line beside 8,000 commands took 16 seconds a read, and its
+end, the newest record of one rollout, left a child's pass after the root's last record current.
+Resolving a yield by Codex's later "Process exited" line, which buys about 1 case in 6,500 and
+holds a session with a dev server stricter than Claude Code for its whole life; and dropping the
+rule, which fails the issue's own first criterion. Prefixing a child's ids by its place in the
+read, which would move every stored citation when two children's modification times swap.
 Reading a yield out of what an `exec` script printed, which is the script's words rather than
 Codex's, so a command left running inside a script and never written as an item is still not seen.
 
