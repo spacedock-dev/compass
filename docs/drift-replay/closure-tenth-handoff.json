@@ -1,0 +1,56 @@
+{
+  "v": 1,
+  "verdict": "GO",
+  "prepared_by": "/root/g10-packet-builder",
+  "reviewed_by": "agy/gemini-3.8-flash-high/tenth-handoff-review",
+  "receipts": {
+    "marking": {
+      "model": "gemini-3.8-flash-high",
+      "effort": "high"
+    },
+    "kind_review": {
+      "model": "gemini-3.8-flash-high",
+      "effort": "high"
+    },
+    "handoff_review": {
+      "model": "gemini-3.8-flash-high",
+      "effort": "high"
+    }
+  },
+  "parent": {
+    "manifest_digest": "d64960a061bd5f1a17cf2df79dfd6e1814cdc2b822919ee13f5ece9a68a5b89f",
+    "activation_anchor": "f9b5c19904586808f650be526192839653e235e3a62250582bf809de0edec2a6",
+    "handoff_digest": "011b4ad875372fc150c48412f0a90ccd2e5586a60019443ef392ec3ca09acaf0",
+    "state_digest": "81c42bbbc4730e6e874bc4fb51273d8eb99134d9323e64c754ef351c8164e74f",
+    "original_digest": "8f06ffb031666f7eaf4db3414f710a8ba771e214a77fd7863312e4965004d143",
+    "ancestor_epochs_digest": "dbf5e3d8dc5639773b9e67afb80358df49859e564aeac9bb95c8952b8bfc2e6f",
+    "calls": 30,
+    "calls_digest": "3dcc29886e4e2cc622dcca035f66cfe484e1e4ac6d4e00aca25b89496918d2ba",
+    "batch_reviews_digest": "12f66c155b18ed6326c9959245abd409483634d9a6e13f43b4ce3c9efedfdc6b",
+    "failed_result_digest": "18432a6896103a686144e76463f42a997a8620077bb8df179b9f1204b3ef8c97",
+    "native_calls": 68,
+    "native_calls_digest": "af3c0227b56ff206fb43414200feb0188fdb16e352d9700e85170c6d6ef75804",
+    "native_chain": {
+      "first": "92c26ee2b2b24750a1e2870aec5beb43",
+      "calls": 68,
+      "head": "8f8378a36c08474a0422d2743c76766f232d1c84a643b984627a5ac526e9c6a8"
+    }
+  },
+  "successor": {
+    "manifest_digest": "67e1c9a3fa5f81e051e39708fd98920e8c3acec174f8c8fcb1fd390b9b007080",
+    "grant_digest": "0f9bcb26836d2a424af52fb5c404182435c4d09111b54aeb8cb20f464a73334c",
+    "evidence": {
+      "source": "cd9c92e488311c7f5a43212ab940d49dbee38dff786acb7813cf10ab11688ed3",
+      "scorer": "abab5c751c66dcf627b73abc26f320899527fd899f01951f4a988f9cc21eb26e",
+      "marks": "5398b2ada6f0903834f26d53a4ab0903d86aa04e86abb0bdd42436257d2b0247"
+    },
+    "cases_digest": "30ac8c0d72d7abf6ca6b215d0354c111643565439a85c81937abd3f9f01e7b8b",
+    "inputs_digest": "0622e79f980d327467df2f1066cd80987ca4c9bb9100d855489c49a0807f0eaf",
+    "model_binding": "c3da12cedf0bd0647942b251de47b1a53d2061b8df5855c1fe2e6e159273d62b",
+    "additional_calls": 31,
+    "carried_calls": 1,
+    "renewed_calls": 30,
+    "shared_total": 279,
+    "native_total": 99
+  }
+}

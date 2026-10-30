@@ -589,7 +589,7 @@ Claude-only browser reading cannot be armed.
 
 ### Tenth qualification preparation, 2026-10-30
 
-Planned, with no packet, marks or results yet. The owner funded one tenth continuation of
+The packet is prepared and sealed (see the next section); no result yet. The owner funded one tenth continuation of
 31 calls on 2026-10-30: thirty registered Sonnet 5.5/high readings and one availability
 retry. If it fails, one corrected retry run of at most 31 more calls follows, and then the
 study stops. Every earlier failure and charge stays as it is.
@@ -656,6 +656,42 @@ Planned order:
    follow. Batches stay one, nine, ten and ten, each reviewed before the next.
 5. The run happens from a pinned checkout with `--max-calls 99`. Its result is recorded in its
    own section here.
+
+### Tenth qualification packet, 2026-10-30
+
+Steps 1 to 4 are done, with no Claude or Codex model call. The [tenth grant](claude-continuation-10.json)
+is sealed, the [fixed manifest](../drift-replay/closure-campaign-tenth.json) is sealed with its
+activation anchor, the [handoff](../drift-replay/closure-tenth-handoff.json) passed its independent
+review, and epoch six holds zero charges. The native ledger is unchanged at 68.
+
+The packet was re-frozen on the producer-guards tree. Five recorded cases cover the five kinds and
+five authored synthetic adversaries are rebuilt from their reviewed source. The ninth's
+`a3458822654ec47a` is vouched by the ninth packet at its recorded stop, as the prior-packet rule allows.
+The steer-then-explain two-turn case `19f966db1f403710` is frozen at its second turn stop with both
+turns, and its lifecycle is vouched by that stop's own transcript record. An independent AGY kind review
+(`gemini-3.8-flash-high`, effort `high`) was shown the case's record and the five kind definitions and no
+model output or result. It assigned `legitimate-change`, with `supported-departure` second. The case
+therefore takes the legitimate-change slot. **The ninth's legitimate-change case `a3c76f898154b2fa` was
+retired by that review and is not re-measured.** Its compound line about how a check ran, which failed in
+all three ninth repeats, is not asked in the tenth. Result 10 must say so. `8b8c1a02f6376201` keeps the
+supported-departure slot.
+
+All 32 questions were marked fresh and blind under the current rulings, including the 2026-10-30 ruling on
+a line about how a check ran. Two AGY markers (`gemini-3.8-flash-high`, `high`) agreed on 24, and an AGY
+arbiter on the same model settled the other 8. No expectation transfers. The
+[marks record](claude-marks-transfer-10.json) compares the sealed marks with the ninth's after sealing.
+Six expectations moved: two judge-to-abstain on `a3458822654ec47a`, one on a claims question, two
+consistent-to-departure on `f25545d5bf50515f` and one abstain-to-judge on an adversary's Goal.
+
+A model-free dry pass ran the frozen packet through the real scorer path with fake models. An
+all-`unverifiable` reply leaves all ten cases usable, so no DEC-17 failure is built into the code, and an
+all-`consistent` reply fails all ten. A reply equal to the rubric scores 32 of 32 correct, so every
+expectation can be reached through the resolver. These are construction checks, not a measurement. With
+every charge and write fenced, the scorer admits `--max-calls 99`, passes every pre-call refusal, stops at
+the first slot, and refuses 100.
+
+The model binding pins Claude Code 2.1.314, Sonnet 5.5 at high effort. The run must use that installed
+version, from a checkout whose runtime, scorer and parser files match the manifest's evidence.
 
 ### Fourth qualification outcome, 2026-10-06
 

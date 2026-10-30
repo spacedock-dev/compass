@@ -122,6 +122,10 @@ class CampaignFixtureIsolation(unittest.TestCase):
             "CLAUSE_ISOLATION_HANDOFF_PATH",
             "CONDITIONAL_PRIORITY_MANIFEST_PATH",
             "CONDITIONAL_PRIORITY_HANDOFF_PATH",
+            "TENTH_MANIFEST_PATH",
+            "TENTH_HANDOFF_PATH",
+            "RETRY_MANIFEST_PATH",
+            "RETRY_HANDOFF_PATH",
         ):
             with self.subTest(published=field), tempfile.TemporaryDirectory() as outside:
                 published = Path(outside) / "published-successor.json"
@@ -158,6 +162,10 @@ class CampaignFixtureIsolation(unittest.TestCase):
             "CLAUSE_ISOLATION_HANDOFF_PATH",
             "CONDITIONAL_PRIORITY_MANIFEST_PATH",
             "CONDITIONAL_PRIORITY_HANDOFF_PATH",
+            "TENTH_MANIFEST_PATH",
+            "TENTH_HANDOFF_PATH",
+            "RETRY_MANIFEST_PATH",
+            "RETRY_HANDOFF_PATH",
         ):
             with self.subTest(published=field), tempfile.TemporaryDirectory() as outside:
                 published = Path(outside) / "published-successor.json"
@@ -257,6 +265,10 @@ class CampaignReservations(unittest.TestCase):
             ("CLAUSE_ISOLATION_HANDOFF_PATH", self.root / "clause-isolation-handoff.json"),
             ("CONDITIONAL_PRIORITY_MANIFEST_PATH", self.root / "conditional-priority.json"),
             ("CONDITIONAL_PRIORITY_HANDOFF_PATH", self.root / "conditional-priority-handoff.json"),
+            ("TENTH_MANIFEST_PATH", self.root / "tenth.json"),
+            ("TENTH_HANDOFF_PATH", self.root / "tenth-handoff.json"),
+            ("RETRY_MANIFEST_PATH", self.root / "retry.json"),
+            ("RETRY_HANDOFF_PATH", self.root / "retry-handoff.json"),
         ):
             patch = mock.patch.object(self.module, key, str(value))
             patch.start()
